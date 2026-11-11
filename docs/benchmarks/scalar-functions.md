@@ -11197,3 +11197,78 @@ full-job copy/conversion optimization remain in
 [#610](https://github.com/datafusion-contrib/StreamFusion/issues/610).
 Additional SQL/JSON signatures remain in
 [#506](https://github.com/datafusion-contrib/StreamFusion/issues/506).
+
+## Byte-preserving CONCAT
+
+Measured on Apple M4 Pro, macOS, JDK 17.0.12 and released Flink 2.2.1 on 2026-11-10, based on
+main `87d6edbf`. Cargo uses release, the system allocator and `--no-default-features`; no state
+backend is involved. Separate correctness tests use JDK 11.0.27 with released Flink 1.18.1 and
+2.2.1, comparing raw bytes and actual native consumption.
+
+The `byte_string_concat` example runs the production compiled Calc for `CONCAT(s, '!')` on
+prebuilt Arrow buffers. Stock Flink uses its generated expression evaluator on prebuilt byte-backed
+RowData. Allocation, concatenation and output consumption remain timed; native timing is inside
+Rust. Input preparation, initial JNI entry and perimeter transposes are excluded. Both engines
+consume lengths and first/last bytes and must produce matching checksums. The Utf8 control uses
+the existing DataFusion-backed CONCAT path in the same binary. Invalid input cannot be represented
+as valid Arrow Utf8, so that control is omitted for malformed data.
+
+Each trial processes 4096 rows 256 times (1,048,576 rows), with 12 warmups and nine retained trials.
+Engine order rotates. Entries are median milliseconds, with min-max in parentheses.
+
+| Input | Stock Flink | Existing Utf8 | Binary |
+|---|---:|---:|---:|
+| 1-byte ASCII | 36.075 (35.485-36.545) | 7.591 (7.162-7.701) | 5.529 (5.300-5.654) |
+| 16-byte ASCII | 33.640 (31.892-34.203) | 8.972 (8.489-9.942) | 6.549 (6.075-7.270) |
+| 64-byte ASCII | 40.182 (38.457-42.355) | 9.725 (9.286-10.451) | 6.160 (5.781-6.864) |
+| 16 three-byte characters | 36.667 (35.634-39.760) | 32.145 (30.914-36.918) | 7.454 (7.318-7.671) |
+| 16-byte ASCII, every seventh row NULL | 31.496 (30.931-33.900) | 6.268 (5.939-6.388) | 6.301 (6.178-6.434) |
+| 16 bytes, first byte FF every 1000 rows | 32.633 (32.019-32.994) | not applicable | 6.297 (6.130-6.418) |
+| 16 bytes, first byte FF in every row | 32.433 (31.687-34.300) | not applicable | 6.339 (6.275-6.727) |
+
+The Binary path needs no UTF-8 decode, validation or JVM fallback. These prepared cases exceed
+stock throughput; nullable input is effectively tied with the existing native path. These results
+do not establish that other string functions or query shapes improve.
+
+`ByteStringConcatPipelineBenchmark` separately retains a row source, both transposes and a blackhole
+row sink, and asserts its Binary plan and positive native consumption. It runs two million rows at
+parallelism one, each containing 16 ASCII characters plus a runtime suffix from 0 to 255. Timing
+includes query execution through completion. There are three warmups and five retained trials,
+alternating engines, with an 8 GiB Java heap, Arrow unsafe access enabled and Arrow null checks
+disabled.
+
+| Complete-job cohort | Flink seconds, median (min-max) | Native seconds, median (min-max) |
+|---|---:|---:|
+| New Binary boundary | 0.451 (0.449-0.456) | 0.279 (0.277-0.286) |
+| Prior Java boundary / existing Utf8 kernel | 0.440 (0.431-0.445) | 0.283 (0.280-0.304) |
+
+The boundary control compiles the changed Java production classes from `87d6edbf`, places them
+before the new classes and runs the same fixture with an asserted Utf8 plan. It uses the existing
+Utf8 kernel from the same native library, not a separately rebuilt historical native library.
+The new job is about 1.62x stock Flink in its cohort. Native times against the prior boundary
+control are effectively tied; their small difference is within observed variability. The first
+cold job took 1.313 s for Flink and 0.469 s for Binary native. These short complete jobs remain
+sensitive to startup/JIT and do not establish long-running production throughput.
+
+Use JDK 17 for the standalone example on macOS: the embedded-JVM driver did not successfully
+start the Flink baseline with JDK 11 on the measured host; those failed runs are excluded.
+Compile Java test classes and obtain the test dependency classpath with Maven, then set
+`SF_NATIVE_BENCH_CLASSPATH` to the test classes, production classes and dependency classpath.
+From `native/`, run:
+
+```sh
+cargo run -p streamfusion --release --no-default-features --example byte_string_concat -- 16 false false 0
+```
+
+Arguments are character repetitions, multibyte input, nullable input and the malformed-row interval
+(zero disables malformed input). For the complete job, first build the release JNI library and run:
+
+```sh
+SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime -am test \
+  -Dnative.build.skip=true -Dtest=ByteStringConcatPipelineBenchmark \
+  -Dsurefire.failIfNoSpecifiedTests=false
+```
+
+The [coverage contract](../operators/calc-filter.md#byte-preserving-concat-input) lists the limited
+plan shape admitted by these measurements; broader representation work remains in
+[#622](https://github.com/datafusion-contrib/StreamFusion/issues/622).

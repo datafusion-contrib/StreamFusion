@@ -19,10 +19,38 @@ The shared cap currently covers:
 - native operator state and DataFusion working-memory reservations; and
 - Arrow buffers allocated by the shared Arrow C Data Interface allocator.
 
-Reservations are acquired before the corresponding native capacity is made available and are
-released with their owner. Arrow allocations are charged and released at their actual allocation
+Boundary workspaces are reserved before evaluation and released with their owner.
+DataFusion working-state reservations use its reported capacity estimates; grouped hash
+state reports growth after processing an input batch and handles a denial through its
+existing spill path. These are memory reservations, rather than a per-allocation RSS limit. Arrow allocations are charged and released at their actual allocation
 lifetime; operator and zero-copy batch handles also release ownership on normal close and task
 cancellation.
+Native DataFusion pools cache the Java authority class on the calling thread, so
+worker callbacks retain the correct application classloader. The internal bounded
+runtime additionally keeps its owner registration alive through the pool's final
+reference, including asynchronously cancelled workers; it does not reclaim their
+balance at Java operator close. Bounded sort copies borrowed Java input into compact
+native buffers under a reusable reservation before DataFusion retains it. Output
+uses the reverse handoff: native reserves the copy, Java imports/charges its Arrow
+buffers, then acknowledges that transfer so native can retire its copy reservation.
+Temporary overlap covers actual handoff allocations rather than charging every
+retained sort run through both allocators. Spillable sort state leaves headroom
+within the same process cap for the next input/copy/output; other consumers may use
+that headroom. See the [bounded runtime](batch-execution-runtime.md) for the lifetime
+and exhaustion controls. Verified fixed-width global batch aggregates consume
+imported input directly and retain only scalar accumulator values. The original
+Arrow allocation remains charged until consumption releases its C Data reference;
+an explicit expression workspace covers cast, literal, fixed decimal, TIME
+normalization and FILTER temporaries before evaluation, without a retained-sort
+ownership copy. Output uses the same compact, acknowledged
+handoff even when its aggregate schema differs from the input.
+Grouped aggregate projection space remains charged across every output/replay batch.
+After projection temporaries retire, a sibling `MemoryReservation.split` transfers
+that budget to the compact result/copy handoff. Acknowledgement retires the output
+charge and the next poll replenishes projection space. This shares the existing
+working budget instead of taking a second reservation while spill readers hold
+memory. DataFusion's grouped state and spill/replay use the same pool; no additional
+operator cap or overcommit allowance is introduced.
 Mini-batch cleanup skips native flushes when initialization has not acquired a state handle or
 completed bundle setup. This also applies after the handle is closed: cleanup must preserve the
 original initialization failure rather than enter JNI with an absent handle. Partially acquired
@@ -159,3 +187,15 @@ releasing their reservations. They must not leave the pool unconfigured for subs
 harnesses, whose mock TaskManager configuration has no off-heap setting. Test-only resets reject
 live reservations rather than erasing their accounting, so restoration cannot hide a leak.
 The production requirement for a positive task off-heap setting is unchanged.
+
+### Bounded Parquet input
+
+The optional native filesystem Parquet source shares this same authority. After
+reading the footer and before decoding a row group, it reserves the largest sum of
+compressed and uncompressed **projected** column chunks in a row group. It retains
+that decoder workspace reservation until the reader closes; imported Arrow output
+is separately accounted by the shared allocator until its final consumer closes it.
+Unprojected chunks are not read or reserved. The existing INT96 decoder's paired
+reader multiplier remains unchanged, although the initial filesystem source does
+not admit timestamp columns. Reader cancellation closes queued, unconsumed Arrow
+batches promptly. No source-specific memory budget is introduced.

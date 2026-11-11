@@ -8,6 +8,7 @@ import org.apache.arrow.vector.types.pojo.FieldType;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.configuration.ReadableConfig;
+import org.apache.flink.streaming.api.transformations.OneInputTransformation;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.planner.delegation.PlannerBase;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNodeBase;
@@ -15,6 +16,7 @@ import org.apache.flink.table.planner.plan.nodes.exec.ExecNodeConfig;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNodeContext;
 import org.apache.flink.table.planner.plan.nodes.exec.InputProperty;
 import org.apache.flink.table.planner.plan.nodes.exec.SingleTransformationTranslator;
+import org.apache.flink.table.planner.plan.nodes.exec.batch.BatchExecTableSourceScan;
 import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.utils.ExecNodeUtil;
 import org.apache.flink.table.types.logical.RowType;
@@ -22,6 +24,7 @@ import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.arrow.NestedRepresentation;
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.ArrowBatchTypeInformation;
+import tech.streamfusion.operator.NativeColumnarShareOperator;
 import tech.streamfusion.operator.RowDataToArrowOperator;
 import tech.streamfusion.operator.SynchronousArrowInput;
 
@@ -36,9 +39,53 @@ public class RowDataToArrowExecNode extends ExecNodeBase<ArrowBatch>
   private final RowType rowType;
   private final boolean carryRowKind;
   private final RowType sourceType;
-  private final byte[] arrowSchema;
+  private byte[] arrowSchema;
   private final boolean preserveStringCaches;
   private boolean binaryRowKeys;
+  private FileSourceGroup fileSource;
+
+  boolean acceptsNativeFileSource() {
+    return sourceType == null && !carryRowKind && !preserveStringCaches && !binaryRowKeys;
+  }
+
+  void allowNativeFileSource(FileSourceGroup group) {
+    fileSource = group;
+  }
+
+  static final class FileSourceGroup {
+    private final BatchExecTableSourceScan scan;
+    private final int consumers;
+    private boolean attempted;
+    private Transformation<ArrowBatch> converted;
+
+    FileSourceGroup(BatchExecTableSourceScan scan, int consumers) {
+      this.scan = scan;
+      this.consumers = consumers;
+    }
+
+    Transformation<ArrowBatch> translate(
+        PlannerBase planner, Transformation<RowData> input, RowType output, int rows) {
+      if (attempted) return converted;
+      attempted = true;
+      for (var extension :
+          NativePlannerExtensions.load(planner.getFlinkContext().getClassLoader()).extensions()) {
+        converted =
+            extension.lowerBatchFileSource(
+                scan, input, output, rows, planner.getTableConfig().getConfiguration());
+        if (converted == null) continue;
+        if (consumers > 1)
+          converted =
+              new OneInputTransformation<>(
+                  converted,
+                  "NativeFileSourceShare",
+                  new NativeColumnarShareOperator(consumers),
+                  ArrowBatchTypeInformation.INSTANCE,
+                  input.getParallelism());
+        return converted;
+      }
+      return null;
+    }
+  }
 
   public RowDataToArrowExecNode(
       ReadableConfig tableConfig,
@@ -140,6 +187,15 @@ public class RowDataToArrowExecNode extends ExecNodeBase<ArrowBatch>
     return this;
   }
 
+  RowDataToArrowExecNode withByteStringColumns(int[] columns) {
+    if (columns.length > 0) {
+      var schema = Schema.deserializeMessage(java.nio.ByteBuffer.wrap(arrowSchema));
+      arrowSchema = tech.streamfusion.arrow.ByteStringTransport.inputSchema(schema, columns)
+          .serializeAsMessage();
+    }
+    return this;
+  }
+
   static Schema binaryRowKeySchema(RowType type) {
     return ArrowConversion.toBinaryRowKeySchema(type);
   }
@@ -150,6 +206,15 @@ public class RowDataToArrowExecNode extends ExecNodeBase<ArrowBatch>
       PlannerBase planner, ExecNodeConfig config) {
     Transformation<RowData> input =
         (Transformation<RowData>) getInputEdges().get(0).translateToPlan(planner);
+    if (fileSource != null && acceptsNativeFileSource()) {
+      var converted = fileSource.translate(planner, input, rowType, batchRows);
+      if (converted != null) return converted;
+    }
+    return ordinaryTranspose(input, config);
+  }
+
+  private Transformation<ArrowBatch> ordinaryTranspose(
+      Transformation<RowData> input, ExecNodeConfig config) {
     return ExecNodeUtil.createOneInputTransformation(
         SynchronousArrowInput.forTranspose(input, sourceType == null ? rowType : sourceType),
         createTransformationMeta(TRANSFORMATION, config),
@@ -159,7 +224,9 @@ public class RowDataToArrowExecNode extends ExecNodeBase<ArrowBatch>
             carryRowKind,
             sourceType,
             preserveStringCaches,
-            binaryRowKeys ? binaryRowKeySchema(rowType).serializeAsMessage() : arrowSchema),
+            binaryRowKeys ? binaryRowKeySchema(rowType).serializeAsMessage() : arrowSchema,
+            config.get(org.apache.flink.configuration.ExecutionOptions.RUNTIME_MODE)
+                == org.apache.flink.api.common.RuntimeExecutionMode.BATCH),
         ArrowBatchTypeInformation.INSTANCE,
         input.getParallelism(),
         false);

@@ -1,5 +1,9 @@
 # Flink line compatibility
 
+[Partial batch SQL](operators/batch.md) uses the same two released host lines and
+the existing Arrow/compiled-expression runtime. Its admission and performance
+evidence are separate from the streaming coverage below.
+
 The default build targets Flink **2.2.1** and also admits the released **2.2.0** planner ABI.
 The `flink-1.18` profile builds a separate **1.18.1** payload from the same source tree.
 Both support JDK 11 and JDK 17. Core and the existing connector/format artifacts target Java 11 (class version 55),

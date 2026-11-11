@@ -11,6 +11,13 @@ both aggregate checks for the exact PR head before merging; see [docs/ci.md](doc
 result mirroring, and existing-PR migration. Direct changes to canonical `main` require explicit
 maintainer authorization.
 
+Use hosted CI for the final merge candidate. Batch changes locally and push when the commit is
+ready for the required checks. Before dispatching or retrying a workflow, verify its commit is
+still the current PR head or, before a PR exists, the current branch tip. Reuse queued, running,
+and successful checks for that commit. When a push supersedes it, cancel queued and running CI
+for the older commits on that PR. Retry only the failed jobs needed for the current head and
+merge after its required checks pass.
+
 This personal-fork workflow applies only to StreamFusion contributions. Do not depend on fork-hosted,
 locally published, snapshot, Git, or filesystem builds of third-party code; use released artifacts from
 its canonical registry. Do not modify a sibling or other external repository unless the user explicitly

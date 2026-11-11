@@ -1,0 +1,68 @@
+{
+  "date": "2026-11-09",
+  "performance": "Correctness and native-execution witnesses only",
+  "lines": {
+    "2.2": {
+      "batchDefaultRows": 1024,
+      "tests": [
+        {
+          "class": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "tech.streamfusion.BatchTypedAggregateSqlTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ],
+      "contracts": [
+        "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testGroupByOnly\t*\tNativeBatchAggregateOperator=18,NativeBatchSortOperator=24,NativeCalcOperator=15\t",
+        "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testNullGroupKeyAggregation\t*\tNativeBatchAggregateOperator=23,NativeBatchSortOperator=35,NativeCalcOperator=23\t",
+        "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testTwoPhasesAggregation\t*\tNativeBatchAggregateOperator=18,NativeBatchSortOperator=24,NativeCalcOperator=18\t"
+      ]
+    },
+    "1.18": {
+      "batchDefaultRows": 8192,
+      "tests": [
+        {
+          "class": "tech.streamfusion.operator.NativeBatchAggregateOperatorTest",
+          "tests": 11,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "tech.streamfusion.BatchTypedAggregateSqlTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "tech.streamfusion.BatchHashJoinSqlTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ],
+      "contracts": [
+        "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testNullGroupKeyAggregation\t*\tNativeBatchAggregateOperator=23,NativeBatchSortOperator=35,NativeCalcOperator=23\t",
+        "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testTwoPhasesAggregation\t*\tNativeBatchAggregateOperator=18,NativeBatchSortOperator=24,NativeCalcOperator=18\t",
+        "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testGroupByOnly\t*\tNativeBatchAggregateOperator=18,NativeBatchSortOperator=24,NativeCalcOperator=15\t"
+      ]
+    }
+  }
+}

@@ -1,0 +1,941 @@
+{
+  "mode": "verify",
+  "format": "parquet",
+  "resultOrderValidation": "Exact rows and multiplicities, preserving ORDER BY key order; row order within equal-key groups is immaterial",
+  "profile": false,
+  "scale": 0.01,
+  "javaVersion": "17.0.17",
+  "javaVm": "OpenJDK 64-Bit Server VM",
+  "os": "Mac OS X aarch64",
+  "maxHeapBytes": 8589934592,
+  "generator": "io.airlift.tpch:tpch:0.10",
+  "schema": "TPC-H identifiers BIGINT, integer INT, numeric DECIMAL(15,2), date DATE, text STRING",
+  "parallelism": 2,
+  "nativeBytes": 536870912,
+  "nativeBatchRows": 8192,
+  "warmups": 0,
+  "trials": 1,
+  "tables": {
+    "customer": {
+      "sha256": "22156f2770387f5adadbc72774f2282d353aedd5092bd8fc54871b3bf5e74cba",
+      "rows": 1500,
+      "bytes": 239490
+    },
+    "orders": {
+      "sha256": "a444603dfba6c47e902e24b517608a5eb3b117127e99dff16a40f4eaa47b812c",
+      "rows": 15000,
+      "bytes": 1644137
+    },
+    "lineitem": {
+      "sha256": "517b566190fbeadc638602554d109a463631e19788936ccb97196ebd407b51f1",
+      "rows": 60175,
+      "bytes": 7204075
+    },
+    "part": {
+      "sha256": "604232ee10e95dca875c196f759c07babf34293dfac8c99b9f1f0c2708f0561b",
+      "rows": 2000,
+      "bytes": 235134
+    },
+    "partsupp": {
+      "sha256": "906f58419af6ad5d62489a7e2105257654bb6d8458a7fd8fe19b76655aac50c7",
+      "rows": 8000,
+      "bytes": 1153705
+    },
+    "supplier": {
+      "sha256": "b199bef3350840676cfe4be096091851bc47b6a57cd8a71b3f559d42b7d9dacd",
+      "rows": 100,
+      "bytes": 13695
+    },
+    "nation": {
+      "sha256": "7d47bc9397da331054fa92b8fb92e4c074004bad72dcbb893012093218dccf6c",
+      "rows": 25,
+      "bytes": 2199
+    },
+    "region": {
+      "sha256": "5a7c2fe9718db00ff5e5bc82a9ebfa8abc492cc75260d3c0ffb411974f235ab0",
+      "rows": 5,
+      "bytes": 384
+    }
+  },
+  "queries": [
+    {
+      "query": 1,
+      "sqlSha256": "864a088f29bb394a6397b71c28a5bdb1dbd74e667f690917feff0d9e293df4e6",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "75179327cd12b73b61a02a1fd888e3f5",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "2f54df6083a72303b3ebac607e2140dc",
+          "nativeRows": 119490
+        }
+      ],
+      "resultType": "ROW<`l_returnflag` STRING, `l_linestatus` STRING, `sum_qty` DECIMAL(38, 2), `sum_base_price` DECIMAL(38, 2), `sum_disc_price` DECIMAL(38, 4), `sum_charge` DECIMAL(38, 6), `avg_qty` DECIMAL(38, 6), `avg_price` DECIMAL(38, 6), `avg_disc` DECIMAL(38, 6), `count_order` BIGINT NOT NULL> NOT NULL",
+      "rows": 4,
+      "resultSha256": "9ec085e2998adc5572315b4ad435c9fa0c643bbc38c2ab22fce26a8719507df0",
+      "stockNanos": [
+        989754834
+      ],
+      "nativeNanos": [
+        282336125
+      ],
+      "stockRuntimeMs": [
+        784
+      ],
+      "nativeRuntimeMs": [
+        184
+      ],
+      "status": "passed",
+      "jvmEvaluatorPlanMentions": 0
+    },
+    {
+      "query": 2,
+      "sqlSha256": "f42e396d36f43602ff020b8f4d37f44a3734aaf0cfb5ce468f674f07555cb79d",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "1139b061873e77bdb567e67b7d8c210a",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "80d7bfa91cef323ce1154fcaf8f6fa70",
+          "nativeRows": 66229
+        }
+      ],
+      "resultType": "ROW<`s_acctbal` DECIMAL(15, 2), `s_name` STRING, `n_name` STRING, `p_partkey` BIGINT, `p_mfgr` STRING, `s_address` STRING, `s_phone` STRING, `s_comment` STRING> NOT NULL",
+      "rows": 4,
+      "resultSha256": "b9ecb7f74e0cb46abe3628e8311fbf0fa89fadc14f54551e9fb739eae43b5c9e",
+      "stockNanos": [
+        513247625
+      ],
+      "nativeNanos": [
+        351847333
+      ],
+      "stockRuntimeMs": [
+        325
+      ],
+      "nativeRuntimeMs": [
+        216
+      ],
+      "status": "passed",
+      "jvmEvaluatorPlanMentions": 0
+    },
+    {
+      "query": 3,
+      "sqlSha256": "d8d2f7579eac245cd2609e49f572025a6efa1725dc30e3ccc3c6887f4c4f0bbf",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "39cdd7f3d2b891bbc28b17d4d164e1ff",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "ebedfdd4b5c753d549862aef34cce3d0",
+          "nativeRows": 123304
+        }
+      ],
+      "resultType": "ROW<`l_orderkey` BIGINT, `revenue` DECIMAL(38, 4), `o_orderdate` DATE, `o_shippriority` INT> NOT NULL",
+      "rows": 10,
+      "resultSha256": "68cd033f95f528eec57ffa8bcf64e8d6e0ccac13181514c03e9e9d4e38916491",
+      "stockNanos": [
+        311680167
+      ],
+      "nativeNanos": [
+        282209333
+      ],
+      "stockRuntimeMs": [
+        228
+      ],
+      "nativeRuntimeMs": [
+        136
+      ],
+      "status": "passed",
+      "jvmEvaluatorPlanMentions": 0
+    },
+    {
+      "query": 4,
+      "sqlSha256": "04297c2ddbbcc2bd3999494f3f531235e8bf5d723e678796ee485c0309711594",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "9fed15fc54aa48677cd6d318f208a519",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "e3ff0481a07fefe3054b5ada5064ee41",
+          "nativeRows": 152631
+        }
+      ],
+      "resultType": "ROW<`o_orderpriority` STRING, `order_count` BIGINT NOT NULL> NOT NULL",
+      "rows": 5,
+      "resultSha256": "7e56380468cb51ff6ffe7601b7d279b8b6a53fb8be7398b02e35982042159670",
+      "stockNanos": [
+        282116917
+      ],
+      "nativeNanos": [
+        291319542
+      ],
+      "stockRuntimeMs": [
+        181
+      ],
+      "nativeRuntimeMs": [
+        149
+      ],
+      "status": "passed",
+      "jvmEvaluatorPlanMentions": 0
+    },
+    {
+      "query": 5,
+      "sqlSha256": "c4fe1313161ee7e67d0c554a54126ac20560c0df04b86e33aa5ec251f908c315",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "d67720864d285e9387de71230c62b330",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "bb56554d52bd7f780787cb6925630d7c",
+          "nativeRows": 108076
+        }
+      ],
+      "resultType": "ROW<`n_name` STRING, `revenue` DECIMAL(38, 4)> NOT NULL",
+      "rows": 5,
+      "resultSha256": "4be9310584821abd3672dd8c5a5fe52fd24373ff9935679e2c18d2506dd3ddab",
+      "stockNanos": [
+        417066875
+      ],
+      "nativeNanos": [
+        301200458
+      ],
+      "stockRuntimeMs": [
+        245
+      ],
+      "nativeRuntimeMs": [
+        185
+      ],
+      "status": "passed",
+      "jvmEvaluatorPlanMentions": 0
+    },
+    {
+      "query": 6,
+      "sqlSha256": "9a0f373ae3a61ce5596f4b77647988f09b3f8261661853a11db1930708771c21",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "7cd0b12f60cd01a83c34dbca7bf61db3",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "46e97ebd384d24049a944f5e1048a6ae",
+          "nativeRows": 61367
+        }
+      ],
+      "resultType": "ROW<`revenue` DECIMAL(38, 4)> NOT NULL",
+      "rows": 1,
+      "resultSha256": "1618df4be83c3b8f05deb7f16459269384a8fabf25faccfc7f883c39244dc83c",
+      "stockNanos": [
+        245501750
+      ],
+      "nativeNanos": [
+        136862083
+      ],
+      "stockRuntimeMs": [
+        123
+      ],
+      "nativeRuntimeMs": [
+        110
+      ],
+      "status": "passed",
+      "jvmEvaluatorPlanMentions": 0
+    },
+    {
+      "query": 7,
+      "sqlSha256": "ae45f801e45c97c4a69a9156b2709b29a7373b5a3a82741bf1a4fb1415fa100b",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "84e9c0e0caf1da658cce3e3d4426f86b",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "e62146ccd7f3c083320072c746f4ac28",
+          "nativeRows": 224922
+        }
+      ],
+      "resultType": "ROW<`supp_nation` STRING, `cust_nation` STRING, `l_year` BIGINT, `revenue` DECIMAL(38, 4)> NOT NULL",
+      "rows": 4,
+      "resultSha256": "7210ea9d6979246007769e271f182a35d8ad1b45c5542e31e9b648b858c05599",
+      "stockNanos": [
+        440815917
+      ],
+      "nativeNanos": [
+        326510541
+      ],
+      "stockRuntimeMs": [
+        276
+      ],
+      "nativeRuntimeMs": [
+        165
+      ],
+      "status": "passed",
+      "jvmEvaluatorPlanMentions": 0
+    },
+    {
+      "query": 8,
+      "sqlSha256": "32f7a9d5fa9a84fecdc2c25f2acf33491d1cf8e176eaca5c2d48bcf5a8c41c31",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "dfcd7e0781a182a9c8b984532cd8e88f",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "5dd53bfebfefadcaaddbb018276cf77f",
+          "nativeRows": 89574
+        }
+      ],
+      "resultType": "ROW<`o_year` BIGINT, `mkt_share` DECIMAL(38, 6)> NOT NULL",
+      "rows": 2,
+      "resultSha256": "2b88fd12aa466431ccbcc107c0d21d207fb65edfc559d7430812843ebf98283d",
+      "stockNanos": [
+        453261167
+      ],
+      "nativeNanos": [
+        342212750
+      ],
+      "stockRuntimeMs": [
+        254
+      ],
+      "nativeRuntimeMs": [
+        179
+      ],
+      "status": "passed",
+      "jvmEvaluatorPlanMentions": 0
+    },
+    {
+      "query": 9,
+      "sqlSha256": "0adb679bcda7561efec2c45c9bbc3de42549f21c3aee299cf6ef47f9e58662f0",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "4ae1279c4403e486f3fbecf22f521852",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "8622fea2fb725299dfdb430450ccbe03",
+          "nativeRows": 139517
+        }
+      ],
+      "resultType": "ROW<`nation` STRING, `o_year` BIGINT, `sum_profit` DECIMAL(38, 4)> NOT NULL",
+      "rows": 173,
+      "resultSha256": "6c1cb82ff0e006e203ef1aad7dd92ee83dfe4cadd862264a402a9f6897b00b48",
+      "stockNanos": [
+        533736708
+      ],
+      "nativeNanos": [
+        282677000
+      ],
+      "stockRuntimeMs": [
+        334
+      ],
+      "nativeRuntimeMs": [
+        168
+      ],
+      "status": "passed",
+      "jvmEvaluatorPlanMentions": 0
+    },
+    {
+      "query": 10,
+      "sqlSha256": "2c82e9ab8c67d6423ed357ef3c945f60cc140f50d489a1a098cbb290fd1f191e",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "a7eb0e4d0a1e6fac574909deb58ef496",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "89fa2c9ec463d9e549b78c160d3e7044",
+          "nativeRows": 100576
+        }
+      ],
+      "resultType": "ROW<`c_custkey` BIGINT, `c_name` STRING, `revenue` DECIMAL(38, 4), `c_acctbal` DECIMAL(15, 2), `n_name` STRING, `c_address` STRING, `c_phone` STRING, `c_comment` STRING> NOT NULL",
+      "rows": 20,
+      "resultSha256": "f8cf8af189283b7bad4e806729559e512b2a3cec030afdb2fa735f05ff15bc6b",
+      "stockNanos": [
+        421827958
+      ],
+      "nativeNanos": [
+        278299625
+      ],
+      "stockRuntimeMs": [
+        263
+      ],
+      "nativeRuntimeMs": [
+        133
+      ],
+      "status": "passed",
+      "jvmEvaluatorPlanMentions": 0
+    },
+    {
+      "query": 11,
+      "sqlSha256": "6c13dffd3aa87a4bb45ccb379ff54b834d12b87d070ee3dafd63906c8c6ce8ce",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "d46d5f1a25fdac5e8457ef3848fb498d",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "7da4dc2f8a4aefbe52a3b91cda5cc985",
+          "nativeRows": 59529
+        }
+      ],
+      "resultType": "ROW<`ps_partkey` BIGINT, `value` DECIMAL(38, 2)> NOT NULL",
+      "rows": 359,
+      "resultSha256": "6f8c69ff95b7659ffbf2a2da0e1429ebef702290d9bc6ab203e4f6f2b6b6c954",
+      "stockNanos": [
+        302596500
+      ],
+      "nativeNanos": [
+        306088000
+      ],
+      "stockRuntimeMs": [
+        179
+      ],
+      "nativeRuntimeMs": [
+        151
+      ],
+      "status": "passed",
+      "jvmEvaluatorPlanMentions": 0
+    },
+    {
+      "query": 12,
+      "sqlSha256": "8622e45700f76a2b08b67c19a124013fc4e021623a8bd2c0d65845b1a1a3e9b0",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "4cf9104fd6b06090e53998cddd038448",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "a15cb8f8b2b73a422c666f23d34eb697",
+          "nativeRows": 76407
+        }
+      ],
+      "resultType": "ROW<`l_shipmode` STRING, `high_line_count` INT NOT NULL, `low_line_count` INT NOT NULL> NOT NULL",
+      "rows": 2,
+      "resultSha256": "c6c7bcef5322699f445da4d52fa4cbed4e78a3d1e60f9bf8959ab7972fe7e4da",
+      "stockNanos": [
+        265000916
+      ],
+      "nativeNanos": [
+        256236792
+      ],
+      "stockRuntimeMs": [
+        196
+      ],
+      "nativeRuntimeMs": [
+        122
+      ],
+      "status": "passed",
+      "jvmEvaluatorPlanMentions": 0
+    },
+    {
+      "query": 13,
+      "sqlSha256": "38b57cf5cb9b9f964337c1abfada5989add38d7c3bad9d339d49ee812ef387a9",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "2401ed4985ea976698d7f9a3721ebe4c",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "8cdf4f82f5420108a2954093d35b039f",
+          "nativeRows": 81430
+        }
+      ],
+      "resultType": "ROW<`c_count` BIGINT NOT NULL, `custdist` BIGINT NOT NULL> NOT NULL",
+      "rows": 33,
+      "resultSha256": "b4a93aa33cc5ce65310822781fc7aaf990192bff4cd1d1bda67c55cc6101e0b8",
+      "stockNanos": [
+        420107625
+      ],
+      "nativeNanos": [
+        286090292
+      ],
+      "stockRuntimeMs": [
+        234
+      ],
+      "nativeRuntimeMs": [
+        155
+      ],
+      "status": "passed",
+      "jvmEvaluatorPlanMentions": 0
+    },
+    {
+      "query": 14,
+      "sqlSha256": "a8b179c98ec22511cd9e4333d9ee3000eb89ca2cc83291824e76d71fabe88b2c",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "24bb08f64c48c5243dc60c2d62a2650b",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "f65b9ac24c06d981ce67408cf19db731",
+          "nativeRows": 65065
+        }
+      ],
+      "resultType": "ROW<`promo_revenue` DECIMAL(38, 6)> NOT NULL",
+      "rows": 1,
+      "resultSha256": "00d74dda8105046f3247bffec02cc305ba169e3bdc180c1167e9a55261149c83",
+      "stockNanos": [
+        294069083
+      ],
+      "nativeNanos": [
+        275902084
+      ],
+      "stockRuntimeMs": [
+        170
+      ],
+      "nativeRuntimeMs": [
+        137
+      ],
+      "status": "passed",
+      "jvmEvaluatorPlanMentions": 0
+    },
+    {
+      "query": 15,
+      "sqlSha256": "24ffeb12ad93550c3241dbea68868484c9ad6fe71d3185aeb49b844539b0ec27",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "0a608447671012de42709f513ef4624d",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "d267a043d7756cd21ebf406530b94920",
+          "nativeRows": 63267
+        }
+      ],
+      "resultType": "ROW<`s_suppkey` BIGINT, `s_name` STRING, `s_address` STRING, `s_phone` STRING, `total_revenue` DECIMAL(38, 4)> NOT NULL",
+      "rows": 1,
+      "resultSha256": "71bf5a765d0300a567172c868ce9ad15ed37b7665c8555dbf4837c6e28c4a6c9",
+      "stockNanos": [
+        307664459
+      ],
+      "nativeNanos": [
+        306744708
+      ],
+      "stockRuntimeMs": [
+        180
+      ],
+      "nativeRuntimeMs": [
+        149
+      ],
+      "status": "passed",
+      "jvmEvaluatorPlanMentions": 0
+    },
+    {
+      "query": 16,
+      "sqlSha256": "71a2bdd941e0fe9929daed3b93b988e6d666625b7ed7c70faa9678d3d5ce6079",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "a3d933f33734c5b96d348115b821a572",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "b13c89eac7be0a6694c070fb9cc8dbe1",
+          "nativeRows": 17530
+        }
+      ],
+      "resultType": "ROW<`p_brand` STRING, `p_type` STRING, `p_size` INT, `supplier_cnt` BIGINT NOT NULL> NOT NULL",
+      "rows": 296,
+      "resultSha256": "3c59a1e7bdb551f04c803051f67e9777ffffd62a2be08a2687118360aeebafdf",
+      "stockNanos": [
+        406975916
+      ],
+      "nativeNanos": [
+        254183000
+      ],
+      "stockRuntimeMs": [
+        231
+      ],
+      "nativeRuntimeMs": [
+        127
+      ],
+      "status": "passed",
+      "jvmEvaluatorPlanMentions": 0
+    },
+    {
+      "query": 17,
+      "sqlSha256": "3bf63af45d8c0120013a1dc302df5a4d7923b12522ed10ce0d251922b118cd4b",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "a05720dc8c46fa3864dc0958710529d6",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "7d75508d9e7ef8eccd0cfb7dfd79c1f3",
+          "nativeRows": 188528
+        }
+      ],
+      "resultType": "ROW<`avg_yearly` DECIMAL(38, 6)> NOT NULL",
+      "rows": 1,
+      "resultSha256": "15e47eee2b762359729cbeaaad535d9e3f135cb024af14f2ebe5912a92b310b8",
+      "stockNanos": [
+        289951250
+      ],
+      "nativeNanos": [
+        258826250
+      ],
+      "stockRuntimeMs": [
+        202
+      ],
+      "nativeRuntimeMs": [
+        146
+      ],
+      "status": "passed",
+      "jvmEvaluatorPlanMentions": 0
+    },
+    {
+      "query": 18,
+      "sqlSha256": "99f8f2933f20acf8a17b3886cfd40418749d8a33cb33d126b11cf9e465f393d4",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "8f5805e2fb95ac54cc0d2a01cd2a71dd",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "aa9e0a5bc60a7e5c9e39d162fb4d4500",
+          "nativeRows": 198394
+        }
+      ],
+      "resultType": "ROW<`c_name` STRING, `c_custkey` BIGINT, `o_orderkey` BIGINT, `o_orderdate` DATE, `o_totalprice` DECIMAL(15, 2), `EXPR$5` DECIMAL(38, 2)> NOT NULL",
+      "rows": 2,
+      "resultSha256": "27db06402edc67460400ddc368344bda7609783bc2d6305a53e50d2d9e385be6",
+      "stockNanos": [
+        425920875
+      ],
+      "nativeNanos": [
+        285360375
+      ],
+      "stockRuntimeMs": [
+        234
+      ],
+      "nativeRuntimeMs": [
+        138
+      ],
+      "status": "passed",
+      "jvmEvaluatorPlanMentions": 0
+    },
+    {
+      "query": 19,
+      "sqlSha256": "8428fa6c46796c312c1eb99ff458dbd4587c201a5ebb7ed31208e68e34f42e5b",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "a4935e8254f968da0a69c253ead772df",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "8dfb77037043cb9f706f73e933185f59",
+          "nativeRows": 63389
+        }
+      ],
+      "resultType": "ROW<`revenue` DECIMAL(38, 4)> NOT NULL",
+      "rows": 1,
+      "resultSha256": "7cc0e0c6b80be8fc2955ed742793f04b8b81129ea0d4d199aabffe3993d6c20d",
+      "stockNanos": [
+        289127333
+      ],
+      "nativeNanos": [
+        296317250
+      ],
+      "stockRuntimeMs": [
+        127
+      ],
+      "nativeRuntimeMs": [
+        136
+      ],
+      "status": "passed",
+      "jvmEvaluatorPlanMentions": 0
+    },
+    {
+      "query": 20,
+      "sqlSha256": "4187d0ff2534a26399db48983cd9f4e1c5eb0283c4a43f791d38dfed85007e8d",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "ba486089bb031e47b3f9d24aee5dc78a",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "e09b3057ce7d2c241851c01c12b2ba1f",
+          "nativeRows": 91265
+        }
+      ],
+      "resultType": "ROW<`s_name` STRING, `s_address` STRING> NOT NULL",
+      "rows": 1,
+      "resultSha256": "4d22941cf4b8739bf46614e7b07d41e497b042dc565c71a65a30f4bf6e7cc778",
+      "stockNanos": [
+        408589084
+      ],
+      "nativeNanos": [
+        281104708
+      ],
+      "stockRuntimeMs": [
+        224
+      ],
+      "nativeRuntimeMs": [
+        169
+      ],
+      "status": "passed",
+      "jvmEvaluatorPlanMentions": 0
+    },
+    {
+      "query": 21,
+      "sqlSha256": "07ae101f42fa177606cf17744335782723f50c4149ea0dcb02c528b9732b0c7a",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "d0462b5c8d2aa878adc3a4008f0dd027",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "59247fdfb726ee537e45c4d3c5237491",
+          "nativeRows": 437086
+        }
+      ],
+      "resultType": "ROW<`s_name` STRING, `numwait` BIGINT NOT NULL> NOT NULL",
+      "rows": 1,
+      "resultSha256": "0173745cbea9c4130c92ae1b92a990ca5ff07dd24d8b2d86c998d0be50997efc",
+      "stockNanos": [
+        352094334
+      ],
+      "nativeNanos": [
+        318298417
+      ],
+      "stockRuntimeMs": [
+        200
+      ],
+      "nativeRuntimeMs": [
+        143
+      ],
+      "status": "passed",
+      "jvmEvaluatorPlanMentions": 0
+    },
+    {
+      "query": 22,
+      "sqlSha256": "21b5e9cedbbb4bb9ee5a987ce9a901f9aaeb8736e96d7daf0ad3fbfea7632100",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "fc95a2bc5399e676d5d6f5ef6a32592b",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "fe23d86bf03679207e6ccd09e1b392bd",
+          "nativeRows": 34291
+        }
+      ],
+      "resultType": "ROW<`cntrycode` STRING, `numcust` BIGINT NOT NULL, `totacctbal` DECIMAL(38, 2)> NOT NULL",
+      "rows": 7,
+      "resultSha256": "4264a833449813448998b6554531bcc23bb48102f910a9ef671e8d9a5ca19d06",
+      "stockNanos": [
+        424303083
+      ],
+      "nativeNanos": [
+        351073334
+      ],
+      "stockRuntimeMs": [
+        221
+      ],
+      "nativeRuntimeMs": [
+        146
+      ],
+      "status": "passed",
+      "jvmEvaluatorPlanMentions": 0
+    }
+  ],
+  "parquet": {
+    "writer": "stock Flink filesystem/Parquet, SNAPPY, outside query timing",
+    "writerParallelism": 2,
+    "sourceCsvManifestSha256": "6964ffce861cdccddb9dcc06aa166b8c0d7b646eb2a23eb97358864809b5cb81",
+    "writerJobIds": [
+      "7f30c272acbbd58cf1f8e1fa434a9580",
+      "4b8979135111a8b6f06ae5789c32d55f",
+      "b24470923b4130a91de997e39b169491",
+      "d0bc301c940e70575e47a50aa663f172",
+      "1d8e13719b00527659e69f3ab27fcec5",
+      "b7fd11e621ecfe355a80c7dfbd23998a",
+      "12da63a7a9334d314489806b6b0a320d",
+      "e5f9c9460c2dd6a8cc29c774050f8c40"
+    ],
+    "files": [
+      {
+        "sha256": "0bed16abcd66d5fbf3a121362aa6f5c88089e64710db8e49c8304c61e492d887",
+        "path": "customer/part-43737228-0c57-44b7-9e01-bff10bd6eca5-task-0-file-0",
+        "bytes": 127988
+      },
+      {
+        "sha256": "3abfc3c521afd69172d2a515e694d1a5112e2b923953d6ccb196638480bb5aa1",
+        "path": "lineitem/part-cb2e0e55-aba8-4091-9c56-089344d9b954-task-0-file-0",
+        "bytes": 2110201
+      },
+      {
+        "sha256": "39d27472686eab383e9b2a791390e8b12e25023d6f605afc26e75679aa3cea5e",
+        "path": "nation/part-a9d6b7da-5b03-4086-a657-3f52d71ac1af-task-0-file-0",
+        "bytes": 2718
+      },
+      {
+        "sha256": "c3a7d8f4eee148f4861abfab7421970a7b8efc93309a85799a8f380d68fda7de",
+        "path": "orders/part-1a269164-927a-4f34-9808-1f9d3b849333-task-1-file-0",
+        "bytes": 532819
+      },
+      {
+        "sha256": "0060cb0470e7007aff3acc096e7680c775a49978cf49c059a7367a223b5448a6",
+        "path": "part/part-6217d161-4f60-464c-a4b4-c1be28d456d2-task-1-file-0",
+        "bytes": 69474
+      },
+      {
+        "sha256": "3685b0e000239e2ca1afe814aa12cbc6b96c2b256b8aeadcb32c8dba4dc0081c",
+        "path": "partsupp/part-e878a97b-59c9-485a-ad32-3f53935d6c82-task-0-file-0",
+        "bytes": 435962
+      },
+      {
+        "sha256": "66c15ec490f7d140d3bc4795b1404df6e31ad08efea5b5bceaf19f45e7c88740",
+        "path": "region/part-07907b2f-6aa9-4c15-ac62-3acaaf22e9d6-task-0-file-0",
+        "bytes": 1241
+      },
+      {
+        "sha256": "87470d30074b198a72e486b919d8c92effb1d1b67d3d3814d9c4cf42c91cac0f",
+        "path": "supplier/part-b6d96916-6f58-444d-a4be-a8ad4780a2cb-task-1-file-0",
+        "bytes": 11202
+      }
+    ]
+  },
+  "completeWorkload": true,
+  "flinkLine": "2.2",
+  "scope": "All22 exact rows/types/native after native DATE leaf comparisons; release verification is not repeated performance evidence",
+  "controls": {
+    "dateComparisonControl": 1,
+    "transposeControls": 16,
+    "unchangedUpstreamDateCasesExpectedStock": 2
+  },
+  "fullSignedDayControl": {
+    "passed": true,
+    "rowsPerEngine": 5003,
+    "stockNativeOperators": 0,
+    "nativeCalcConsumptionRequired": true,
+    "method": "FlinkDateComparisonSqlHarnessTest#leafComparisonsPreserveNullsAndTheFullSignedDayRange",
+    "range": "Integer.MIN_VALUE..Integer.MAX_VALUE internal DATE days, NULL pairs, all6 comparisons and reversed literal"
+  },
+  "dateCalcEvaluatorChange": {
+    "6": {
+      "registeredJavaEvaluatorsPerDateCalcBefore": 2,
+      "after": 0
+    },
+    "14": {
+      "registeredJavaEvaluatorsPerDateCalcBefore": 2,
+      "after": 0
+    },
+    "15": {
+      "registeredJavaEvaluatorsPerDateCalcBefore": 2,
+      "after": 0
+    }
+  }
+}

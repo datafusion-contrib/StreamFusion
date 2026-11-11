@@ -57,6 +57,18 @@ final class NativePlanDetails {
     List<Pair<String, String>> details = new ArrayList<>(attributes);
     details.add(Pair.of("nativeFunctions", String.join(", ", expression.nativeFunctionCalls())));
     details.add(Pair.of("jvmFunctions", String.join(", ", expression.jvmFunctionCalls())));
+    if (expression.jvmExpressionCount() != 0) {
+      details.add(Pair.of("jvmExpressions", Integer.toString(expression.jvmExpressionCount())));
+      if (!expression.jvmExpressionDetails().isEmpty())
+        details.add(
+            Pair.of("jvmExpressionDetails", String.join("; ", expression.jvmExpressionDetails())));
+      details.add(
+          Pair.of(
+              "jvmEvaluation",
+              expression.requiresWholeStructInputs()
+                  ? "whole Calc: " + expression.jvmExecutionReason()
+                  : "scalar expressions"));
+    }
     return new NativePlanDetails(details);
   }
 

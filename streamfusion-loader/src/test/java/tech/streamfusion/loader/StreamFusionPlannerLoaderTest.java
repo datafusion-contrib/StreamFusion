@@ -1,6 +1,7 @@
 package tech.streamfusion.loader;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -127,6 +128,158 @@ class StreamFusionPlannerLoaderTest {
     assertEquals(List.of(6, 8, 10), collectInts(tableEnvironment.executeSql(sql)));
   }
 
+  @Test
+  void installsBatchPlannerFromThePackagedPayload() throws Exception {
+    TableEnvironment table = TableEnvironment.create(EnvironmentSettings.inBatchMode());
+    table.getConfig().set("parallelism.default", "1");
+    table.getConfig().set("taskmanager.memory.task.off-heap.size", "128m");
+    table.executeSql(
+        "CREATE TABLE batch_input (id BIGINT) WITH ('connector'='datagen',"
+            + " 'number-of-rows'='3', 'fields.id.kind'='sequence',"
+            + " 'fields.id.start'='3', 'fields.id.end'='5')");
+    String sql = "SELECT CAST(id * 2 AS INT), SHA2(CAST(id AS STRING), 256) FROM batch_input";
+    String plan = table.explainSql(sql);
+    assertTrue(plan.contains("NativeCalc"), plan);
+    assertEquals(List.of(6, 8, 10), collectInts(table.executeSql(sql)));
+  }
+
+  @Test
+  void sortsBlockingArrowInputFromThePackagedPayload() throws Exception {
+    assertPackagedSort(0, -1);
+  }
+
+  @Test
+  void limitsBlockingArrowInputFromThePackagedPayload() throws Exception {
+    assertPackagedSort(1023, 1025);
+  }
+
+  @Test
+  void aggregatesBlockingPartialStatesFromThePackagedPayload() throws Exception {
+    TableEnvironment table = packagedAggregateEnvironment();
+    for (String predicate : List.of("", " AND id < 0")) {
+      String sql =
+          "SELECT SUM(id),COUNT(*),AVG(id) FROM batch_aggregate_input"
+              + " WHERE SHA2(CAST(id AS STRING),256) <> ''"
+              + predicate;
+      String plan = table.explainSql(sql);
+      assertTrue(plan.contains("NativeAggregate") && plan.contains("NativeExchange"), plan);
+      try (CloseableIterator<Row> rows = table.executeSql(sql).collect()) {
+        assertTrue(rows.hasNext());
+        Row result = rows.next();
+        assertEquals(
+            predicate.isEmpty() ? Row.of(2_102_275L, 2051L, 1025L) : Row.of(null, 0L, null),
+            result);
+        assertFalse(rows.hasNext());
+      }
+    }
+  }
+
+  @Test
+  void aggregatesTypedPartialStatesFromThePackagedPayload() throws Exception {
+    TableEnvironment table = packagedAggregateEnvironment();
+    for (String predicate : List.of("", " AND id < 0")) {
+      String sql =
+          "SELECT MIN(MOD(id,2)=0),MAX(MOD(id,2)=0),"
+              + "MIN(CAST(id AS DECIMAL(38,18))),MAX(CAST(id AS DECIMAL(38,18))),COUNT(*)"
+              + " FROM batch_aggregate_input WHERE SHA2(CAST(id AS STRING),256) <> ''"
+              + predicate;
+      String plan = table.explainSql(sql);
+      assertTrue(plan.contains("NativeAggregate") && plan.contains("NativeExchange"), plan);
+      try (CloseableIterator<Row> rows = table.executeSql(sql).collect()) {
+        assertTrue(rows.hasNext());
+        Row expected =
+            predicate.isEmpty()
+                ? Row.of(
+                    false,
+                    true,
+                    new java.math.BigDecimal("0.000000000000000000"),
+                    new java.math.BigDecimal("2050.000000000000000000"),
+                    2051L)
+                : Row.of(null, null, null, null, 0L);
+        assertEquals(expected, rows.next());
+        assertFalse(rows.hasNext());
+      }
+    }
+  }
+
+  @Test
+  void groupsBlockingArrowPartitionsFromThePackagedPayload() throws Exception {
+    TableEnvironment table = packagedAggregateEnvironment();
+    table.getConfig().set("execution.batch.adaptive.auto-parallelism.enabled", "false");
+    table.getConfig().set("table.exec.resource.default-parallelism", "2");
+    String sql = "SELECT MOD(id,3),SUM(id),COUNT(*) FROM batch_aggregate_input GROUP BY MOD(id,3)";
+    String plan = table.explainSql(sql);
+    assertTrue(plan.contains("NativeAggregate") && plan.contains("NativeExchange"), plan);
+    List<String> actual = new java.util.ArrayList<>();
+    try (CloseableIterator<Row> rows = table.executeSql(sql).collect()) {
+      while (rows.hasNext()) actual.add(rows.next().toString());
+    }
+    actual.sort(String::compareTo);
+    assertEquals(
+        List.of(
+            Row.of(0L, 700758L, 684L).toString(),
+            Row.of(1L, 701442L, 684L).toString(),
+            Row.of(2L, 700075L, 683L).toString()),
+        actual);
+  }
+
+  @Test
+  void joinsBlockingArrowInputsFromThePackagedPayload() throws Exception {
+    TableEnvironment table = packagedAggregateEnvironment();
+    table.getConfig().set("execution.batch.adaptive.auto-parallelism.enabled", "false");
+    table.getConfig().set("table.exec.resource.default-parallelism", "2");
+    table.getConfig().set("table.optimizer.join.broadcast-threshold", "-1");
+    String sql =
+        "SELECT COUNT(*),COUNT(b.id),SUM(b.id) FROM batch_aggregate_input a"
+            + " LEFT JOIN batch_aggregate_input b ON a.id=b.id AND b.id<1031";
+    String plan = table.explainSql(sql);
+    assertTrue(plan.contains("NativeJoin") && plan.contains("NativeExchange"), plan);
+    try (CloseableIterator<Row> rows = table.executeSql(sql).collect()) {
+      assertEquals(Row.of(2051L, 1031L, 530965L), rows.next());
+      assertFalse(rows.hasNext());
+    }
+  }
+
+  private static TableEnvironment packagedAggregateEnvironment() throws Exception {
+    TableEnvironment table = TableEnvironment.create(EnvironmentSettings.inBatchMode());
+    table.getConfig().set("parallelism.default", "2");
+    table.getConfig().set("pipeline.operator-chaining.enabled", "false");
+    table.getConfig().set("table.optimizer.agg-phase-strategy", "TWO_PHASE");
+    table.getConfig().set("taskmanager.memory.task.off-heap.size", "128m");
+    table.executeSql(
+        "CREATE TABLE batch_aggregate_input(id BIGINT) WITH ('connector'='datagen',"
+            + " 'number-of-rows'='2051', 'fields.id.kind'='sequence',"
+            + " 'fields.id.start'='0', 'fields.id.end'='2050')");
+    return table;
+  }
+
+  private static void assertPackagedSort(long offset, long fetch) throws Exception {
+    TableEnvironment table = TableEnvironment.create(EnvironmentSettings.inBatchMode());
+    table.getConfig().set("parallelism.default", "2");
+    table.getConfig().set("pipeline.operator-chaining.enabled", "false");
+    table.getConfig().set("table.optimizer.range-sort.enabled", "false");
+    table.getConfig().set("taskmanager.memory.task.off-heap.size", "128m");
+    table.executeSql(
+        "CREATE TABLE batch_sort_input (id BIGINT) WITH ('connector'='datagen',"
+            + " 'number-of-rows'='2051', 'fields.id.kind'='sequence',"
+            + " 'fields.id.start'='0', 'fields.id.end'='2050')");
+    String sql =
+        "SELECT id FROM batch_sort_input"
+            + (fetch < 0 ? "" : " WHERE SHA2(CAST(id AS STRING), 256) <> ''")
+            + " ORDER BY id DESC";
+    if (fetch >= 0) sql += " OFFSET " + offset + " ROWS FETCH NEXT " + fetch + " ROWS ONLY";
+    String plan = table.explainSql(sql);
+    assertTrue(plan.contains("NativeSort"), plan);
+    assertTrue(plan.contains("NativeExchange"), plan);
+    try (CloseableIterator<Row> rows = table.executeSql(sql).collect()) {
+      long expected = 2050 - offset;
+      while (rows.hasNext()) {
+        assertEquals(expected--, rows.next().getField(0));
+      }
+      assertEquals(fetch < 0 ? -1 : 2050 - offset - fetch, expected);
+    }
+  }
+
   @ParameterizedTest
   @ValueSource(strings = {"rocksdb", "tech.streamfusion.state.RocksDBNativeStateBackendFactory"})
   void installsNativeStatefulPlannerWithConfiguredHostBackend(String backend) throws Exception {
@@ -138,8 +291,7 @@ class StreamFusionPlannerLoaderTest {
             PlannerModule.getInstance().getSubmoduleClassLoader()));
     org.apache.flink.configuration.Configuration configuration =
         new org.apache.flink.configuration.Configuration();
-    configuration.set(
-        org.apache.flink.configuration.StateBackendOptions.STATE_BACKEND, backend);
+    configuration.set(org.apache.flink.configuration.StateBackendOptions.STATE_BACKEND, backend);
     TableEnvironment table =
         TableEnvironment.create(
             EnvironmentSettings.newInstance()

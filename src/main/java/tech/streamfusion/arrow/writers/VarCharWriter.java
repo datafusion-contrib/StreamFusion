@@ -25,7 +25,7 @@ import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.data.StringData;
 import org.apache.flink.table.data.binary.BinaryStringData;
 
-import org.apache.arrow.vector.VarCharVector;
+import org.apache.arrow.vector.BaseVariableWidthVector;
 
 import java.nio.charset.StandardCharsets;
 
@@ -38,17 +38,17 @@ public abstract class VarCharWriter<T> extends ArrowFieldWriter<T> {
     private byte[] previousEncoding;
     private int encodingMisses;
 
-    public static VarCharWriter<RowData> forRow(VarCharVector varCharVector) {
+    public static VarCharWriter<RowData> forRow(BaseVariableWidthVector varCharVector) {
         return new VarCharWriterForRow(varCharVector);
     }
 
-    public static VarCharWriter<ArrayData> forArray(VarCharVector varCharVector) {
+    public static VarCharWriter<ArrayData> forArray(BaseVariableWidthVector varCharVector) {
         return new VarCharWriterForArray(varCharVector);
     }
 
     // ------------------------------------------------------------------------------------------
 
-    private VarCharWriter(VarCharVector varCharVector) {
+    private VarCharWriter(BaseVariableWidthVector varCharVector) {
         super(varCharVector);
     }
 
@@ -58,7 +58,7 @@ public abstract class VarCharWriter<T> extends ArrowFieldWriter<T> {
 
     @Override
     public void doWrite(T in, int ordinal) {
-        VarCharVector vector = (VarCharVector) getValueVector();
+        BaseVariableWidthVector vector = (BaseVariableWidthVector) getValueVector();
         if (isNullAt(in, ordinal)) {
             vector.setNull(getCount());
             return;
@@ -118,7 +118,7 @@ public abstract class VarCharWriter<T> extends ArrowFieldWriter<T> {
     /** {@link VarCharWriter} for {@link RowData} input. */
     public static final class VarCharWriterForRow extends VarCharWriter<RowData> {
 
-        private VarCharWriterForRow(VarCharVector varCharVector) {
+        private VarCharWriterForRow(BaseVariableWidthVector varCharVector) {
             super(varCharVector);
         }
 
@@ -136,7 +136,7 @@ public abstract class VarCharWriter<T> extends ArrowFieldWriter<T> {
     /** {@link VarCharWriter} for {@link ArrayData} input. */
     public static final class VarCharWriterForArray extends VarCharWriter<ArrayData> {
 
-        private VarCharWriterForArray(VarCharVector varCharVector) {
+        private VarCharWriterForArray(BaseVariableWidthVector varCharVector) {
             super(varCharVector);
         }
 

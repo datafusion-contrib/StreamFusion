@@ -1,4 +1,8 @@
 # Unchanged upstream method<TAB>fixture selector<TAB>expected route.
+# Batch Calc uses the same verified expression runtime through batch graph wrappers.
+org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testManySelectWithFilter	*	!batch Calc: standalone scalar pipeline has no verified speedup
+org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testFilterOnInteger	*	!batch Calc: standalone scalar pipeline has no verified speedup
+org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testUserDefinedScalarFunction	*	NativeCalcOperator
 # * matches every invocation; field=true/false selects a pinned fixture parameter.
 # + requires every operator; | separates alternatives; ! requires full fallback and its reason.
 org.apache.flink.table.planner.runtime.stream.sql.CalcITCase#testNotIn	*	NativeFilterOperator|NativeCalcOperator
@@ -123,3 +127,44 @@ org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowT
 # Scalar-only SQL UDAF witnesses retain unbounded event-time coverage without the Table API ARRAY result.
 org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver	*	NativeColumnarJvmOverOperator
 org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRowsOver	*	NativeColumnarJvmOverOperator
+
+# Bounded scalar sort requires positive native work; unsupported key types stay stock.
+org.apache.flink.table.planner.runtime.batch.sql.MiscITCase#testNullOrdering	*	NativeBatchSortOperator
+org.apache.flink.table.planner.runtime.batch.sql.MiscITCase#testGlobalSorting	*	NativeBatchSortOperator
+org.apache.flink.table.planner.runtime.batch.sql.MiscITCase#testNullOrderingOnMultiColumn	*	NativeBatchSortOperator
+
+# Cheap standalone sorted limits retain stock after the complete-job performance gate.
+org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByWithOffsetAndFetch	*	!batch sort limit: standalone pipeline has no verified speedup
+org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByLimit	*	!batch sort limit: standalone pipeline has no verified speedup
+org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByLessThanOffset	*	!batch sort limit: standalone pipeline has no verified speedup
+org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByRepeatedFields	*	!batch sort limit: standalone pipeline has no verified speedup
+org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByLimitBehindField	*	!batch sort limit: standalone pipeline has no verified speedup
+org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderBehindField	*	NativeBatchSortOperator
+
+# Global integer batch aggregates compose with qualified pipelines; standalone jobs retain stock.
+org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testAggWithoutGroups	*	!batch aggregate: standalone pipeline has no verified speedup
+org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testAggregationWithoutGroupby	*	!batch aggregate: standalone pipeline has no verified speedup
+org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testCountStar	*	!batch aggregate: standalone pipeline has no verified speedup
+org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testAggWithoutGroups	*	!batch aggregate: standalone pipeline has no verified speedup
+org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testAggregationWithoutGroupby	*	!batch aggregate: standalone pipeline has no verified speedup
+org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testCountStar	*	!batch aggregate: standalone pipeline has no verified speedup
+
+# Released Table API aggregate type controls retain explicit host admission.
+org.apache.flink.table.planner.runtime.batch.table.AggregationITCase#testAggregationTypes	*	!batch aggregate: standalone pipeline has no verified speedup
+org.apache.flink.table.planner.runtime.batch.table.AggregationITCase#testWorkingAggregationDataTypes	*	!batch aggregate: SUM/SUM0/AVG require signed integers or DECIMAL; MIN/MAX require signed integers, BOOLEAN, DECIMAL, DATE or TIME
+
+# Bounded grouped hash reduction and DISTINCT; SortAgg preserves ordered group output.
+org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testTwoPhasesAggregation	*	NativeBatchAggregateOperator
+org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testNullGroupKeyAggregation	*	NativeBatchAggregateOperator
+org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testGroupByOnly	*	NativeBatchAggregateOperator
+org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testTwoPhasesAggregation	*	NativeBatchAggregateOperator
+org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testNullGroupKeyAggregation	*	NativeBatchAggregateOperator
+org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testGroupByOnly	*	NativeBatchAggregateOperator
+
+# Released outer-join/grouping fixtures cover forced hash, broadcast, merge and nested-loop plans.
+org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg	*	NativeBatchJoinOperator
+org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateCompareWithDateString	*	!batch Calc: standalone scalar pipeline has no verified speedup
+org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateEqualsWithDateString	*	!batch Calc: standalone scalar pipeline has no verified speedup
+org.apache.flink.table.planner.runtime.batch.sql.CodeSplitITCase#testManyIns	*	!batch Calc: expression nesting exceeds the native compiler limit of 32
+org.apache.flink.table.planner.runtime.batch.sql.CodeSplitITCase#testManyOrsInCondition	*	!batch Calc: expression nesting exceeds the native compiler limit of 32
+org.apache.flink.table.planner.runtime.batch.sql.CodeSplitITCase#testManyAggregationsWithGroupBy	*	NativeBatchAggregateOperator

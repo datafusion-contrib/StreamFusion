@@ -38,6 +38,7 @@ public class RowDataToArrowOperator extends FlinkStreamOperator<ArrowBatch>
   private final RowType sourceType;
   private final boolean preserveStringCaches;
   private final byte[] arrowSchema;
+  private final boolean boundedInput;
   private transient org.apache.arrow.vector.types.pojo.Schema inputSchema;
   private transient StringCacheColumns.Writer stringCaches;
 
@@ -81,12 +82,19 @@ public class RowDataToArrowOperator extends FlinkStreamOperator<ArrowBatch>
       RowType sourceType,
       boolean preserveStringCaches,
       byte[] arrowSchema) {
+    this(rowType, batchSize, carryRowKind, sourceType, preserveStringCaches, arrowSchema, false);
+  }
+
+  public RowDataToArrowOperator(
+      RowType rowType, int batchSize, boolean carryRowKind, RowType sourceType,
+      boolean preserveStringCaches, byte[] arrowSchema, boolean boundedInput) {
     this.preserveStringCaches = preserveStringCaches;
     this.arrowSchema = arrowSchema.clone();
     this.rowType = rowType;
     this.batchSize = batchSize;
     this.carryRowKind = carryRowKind;
     this.sourceType = sourceType;
+    this.boundedInput = boundedInput;
   }
 
   @Override
@@ -98,7 +106,7 @@ public class RowDataToArrowOperator extends FlinkStreamOperator<ArrowBatch>
         org.apache.arrow.vector.types.pojo.Schema.deserializeMessage(
             java.nio.ByteBuffer.wrap(arrowSchema));
     writeRowKind = carryRowKind;
-    flushLatencyMs = NativeConfig.transposeFlushLatencyMs();
+    flushLatencyMs = boundedInput ? 0 : NativeConfig.transposeFlushLatencyMs();
     flushDeadline = Long.MIN_VALUE;
     // Prune before taking ownership so unused payload is neither copied nor buffered.
     projector = sourceType == null ? null : PrunedRowData.of(sourceType, rowType);

@@ -1,26 +1,28 @@
 package tech.streamfusion.arrow;
 
+import org.apache.arrow.vector.BaseVariableWidthVector;
 import org.apache.arrow.vector.FieldVector;
+import org.apache.arrow.vector.VarBinaryVector;
 import org.apache.arrow.vector.VarCharVector;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.core.memory.MemorySegment;
 import org.apache.flink.core.memory.MemorySegmentFactory;
 import org.apache.flink.table.data.binary.BinaryStringData;
 
-/** Mutable UTF-8 lookup views valid only while the owning Arrow batch remains open. */
+/** Mutable logical-string byte views valid only while the owning Arrow batch remains open. */
 @Internal
 public final class BorrowedStringValues {
-  private final VarCharVector input;
+  private final BaseVariableWidthVector input;
   private final MemorySegment[] segments;
   private final BinaryStringData value;
 
   public static BorrowedStringValues create(FieldVector input) {
-    if (!(input instanceof VarCharVector) || input.getDataBuffer().capacity() > Integer.MAX_VALUE)
-      return null;
-    return new BorrowedStringValues((VarCharVector) input);
+    if (!(input instanceof VarCharVector || input instanceof VarBinaryVector)
+        || input.getDataBuffer().capacity() > Integer.MAX_VALUE) return null;
+    return new BorrowedStringValues((BaseVariableWidthVector) input);
   }
 
-  private BorrowedStringValues(VarCharVector input) {
+  private BorrowedStringValues(BaseVariableWidthVector input) {
     this.input = input;
     int bytes = Math.toIntExact(input.getDataBuffer().capacity());
     segments =

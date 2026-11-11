@@ -10,11 +10,11 @@ import org.apache.flink.table.delegation.PlannerFactory;
 import org.apache.flink.table.planner.delegation.DefaultPlannerFactory;
 
 /**
- * Installs native substitution after Flink expands the complete streaming plan.
+ * Installs native substitution after Flink expands the complete SQL plan.
  *
  * <p>This class is instantiated by StreamFusion's planner-loader shim inside Flink's isolated
- * planner classloader. Streaming uses Flink's planner with a post-optimization hook; batch and
- * disabled acceleration use its stock factory.
+ * planner classloader. Both execution modes retain Flink's planners with mode-specific
+ * post-optimization hooks; disabled acceleration uses its stock factory.
  */
 public final class StreamFusionPlannerFactory implements PlannerFactory {
 
@@ -39,10 +39,10 @@ public final class StreamFusionPlannerFactory implements PlannerFactory {
   public Planner create(Context context) {
     try (NativeConfig.Scope ignored =
         NativeConfig.usePlannerConfig(context.getTableConfig().getConfiguration())) {
-      if (NativeConfig.nativeEnabled()
-          && context.getTableConfig().get(ExecutionOptions.RUNTIME_MODE)
-              == RuntimeExecutionMode.STREAMING) {
-        return createStreamingPlanner(context);
+      if (NativeConfig.nativeEnabled()) {
+        RuntimeExecutionMode mode = context.getTableConfig().get(ExecutionOptions.RUNTIME_MODE);
+        if (mode == RuntimeExecutionMode.STREAMING) return createStreamingPlanner(context);
+        if (mode == RuntimeExecutionMode.BATCH) return createBatchPlanner(context);
       }
     }
     return delegate.create(context);
@@ -51,5 +51,9 @@ public final class StreamFusionPlannerFactory implements PlannerFactory {
   /** Also used by the upstream SQL harness to exercise the deployed planner construction path. */
   public static Planner createStreamingPlanner(Context context) {
     return new NativeStreamPlanner(context);
+  }
+
+  public static Planner createBatchPlanner(Context context) {
+    return new NativeBatchPlanner(context);
   }
 }

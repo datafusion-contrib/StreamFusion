@@ -1,0 +1,298 @@
+{
+  "date": "2026-11-09",
+  "nativeBoundedTests": 52,
+  "sqlContracts": {
+    "flink2.2": {
+      "tech.streamfusion.BatchSortSqlTest": {
+        "tests": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "tech.streamfusion.BatchAggregateSqlTest": {
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "tech.streamfusion.BatchTypedAggregateSqlTest": {
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "tech.streamfusion.BatchGroupedAggregateSqlTest": {
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    "flink1.18": {
+      "tech.streamfusion.operator.SplitByKeyGroupOperatorTest": {
+        "tests": 13,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "tech.streamfusion.operator.ColumnarShuffleOutputTest": {
+        "tests": 20,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "tech.streamfusion.operator.NativeBatchAggregateOperatorTest": {
+        "tests": 11,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "org.apache.flink.table.planner.runtime.batch.table.AggregationITCase": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase": {
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "tech.streamfusion.TpchBenchmark": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "tech.streamfusion.BatchTypedAggregateSqlTest": {
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "tech.streamfusion.BatchGroupedAggregateSqlTest": {
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "org.apache.flink.table.planner.runtime.batch.sql.MiscITCase": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    }
+  },
+  "unchangedUpstream": {
+    "2.2": [
+      {
+        "test": "org.apache.flink.table.planner.runtime.batch.table.AggregationITCase#testWorkingAggregationDataTypes",
+        "variant": "*",
+        "work": "",
+        "fallbacks": [
+          "batch aggregate: SUM/SUM0/AVG require signed integers or DECIMAL; MIN/MAX require signed integers, BOOLEAN, DECIMAL, DATE or TIME"
+        ]
+      },
+      {
+        "test": "org.apache.flink.table.planner.runtime.batch.sql.MiscITCase#testNullOrderingOnMultiColumn",
+        "variant": "*",
+        "work": "NativeBatchSortOperator=56",
+        "fallbacks": []
+      },
+      {
+        "test": "org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderBehindField",
+        "variant": "*",
+        "work": "NativeBatchSortOperator=21",
+        "fallbacks": []
+      },
+      {
+        "test": "org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByLimitBehindField",
+        "variant": "*",
+        "work": "",
+        "fallbacks": [
+          "batch sort limit: standalone pipeline has no verified speedup"
+        ]
+      }
+    ],
+    "1.18": [
+      {
+        "test": "org.apache.flink.table.planner.runtime.batch.sql.MiscITCase#testNullOrderingOnMultiColumn",
+        "variant": "*",
+        "work": "NativeBatchSortOperator=56",
+        "fallbacks": []
+      },
+      {
+        "test": "org.apache.flink.table.planner.runtime.batch.table.AggregationITCase#testWorkingAggregationDataTypes",
+        "variant": "*",
+        "work": "",
+        "fallbacks": [
+          "batch aggregate: SUM/SUM0/AVG require signed integers or DECIMAL; MIN/MAX require signed integers, BOOLEAN, DECIMAL, DATE or TIME"
+        ]
+      },
+      {
+        "test": "org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderBehindField",
+        "variant": "*",
+        "work": "NativeBatchSortOperator=21",
+        "fallbacks": []
+      },
+      {
+        "test": "org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByLimitBehindField",
+        "variant": "*",
+        "work": "",
+        "fallbacks": [
+          "batch sort limit: standalone pipeline has no verified speedup"
+        ]
+      }
+    ]
+  },
+  "performance": "Correctness/native witnesses only; benchmark results recorded separately.",
+  "tpchScale001": [
+    {
+      "query": 1,
+      "sqlSha256": "864a088f29bb394a6397b71c28a5bdb1dbd74e667f690917feff0d9e293df4e6",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "31c9b07ba262ff444f57e921dbdacb65",
+          "nativeWork": []
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "3a28b30199438d59365686ffd2a05bbc",
+          "nativeWork": [
+            {
+              "jobId": "3a28b30199438d59365686ffd2a05bbc",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 0,
+              "operator": "NativeAggregate(groupBy=[l_returnflag, l_linestatus], select=[l_returnflag, l_li",
+              "recordsIn": 0
+            },
+            {
+              "jobId": "3a28b30199438d59365686ffd2a05bbc",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 0,
+              "operator": "NativeCalc(select=[l_returnflag, l_linestatus, l_quantity, l_extendedprice, *(l_",
+              "recordsIn": 0
+            },
+            {
+              "jobId": "3a28b30199438d59365686ffd2a05bbc",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 2,
+              "operator": "NativeAggregate(isMerge=[true], groupBy=[l_returnflag, l_linestatus], select=[l_",
+              "recordsIn": 2
+            },
+            {
+              "jobId": "3a28b30199438d59365686ffd2a05bbc",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 4,
+              "operator": "NativeSort(orderBy=[l_returnflag ASC, l_linestatus ASC])[45]",
+              "recordsIn": 4
+            },
+            {
+              "jobId": "3a28b30199438d59365686ffd2a05bbc",
+              "attempt": "0",
+              "subtask": "1",
+              "recordsOut": 2,
+              "operator": "NativeAggregate(isMerge=[true], groupBy=[l_returnflag, l_linestatus], select=[l_",
+              "recordsIn": 2
+            },
+            {
+              "jobId": "3a28b30199438d59365686ffd2a05bbc",
+              "attempt": "0",
+              "subtask": "1",
+              "recordsOut": 4,
+              "operator": "NativeAggregate(groupBy=[l_returnflag, l_linestatus], select=[l_returnflag, l_li",
+              "recordsIn": 59307
+            },
+            {
+              "jobId": "3a28b30199438d59365686ffd2a05bbc",
+              "attempt": "0",
+              "subtask": "1",
+              "recordsOut": 59307,
+              "operator": "NativeCalc(select=[l_returnflag, l_linestatus, l_quantity, l_extendedprice, *(l_",
+              "recordsIn": 60175
+            }
+          ]
+        }
+      ],
+      "resultType": "ROW<`l_returnflag` STRING, `l_linestatus` STRING, `sum_qty` DECIMAL(38, 2), `sum_base_price` DECIMAL(38, 2), `sum_disc_price` DECIMAL(38, 4), `sum_charge` DECIMAL(38, 6), `avg_qty` DECIMAL(38, 6), `avg_price` DECIMAL(38, 6), `avg_disc` DECIMAL(38, 6), `count_order` BIGINT NOT NULL> NOT NULL",
+      "rows": 4,
+      "resultSha256": "9ec085e2998adc5572315b4ad435c9fa0c643bbc38c2ab22fce26a8719507df0",
+      "status": "passed"
+    },
+    {
+      "query": 6,
+      "sqlSha256": "9a0f373ae3a61ce5596f4b77647988f09b3f8261661853a11db1930708771c21",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "ce3aa828b48c6329104ceb185a30a860",
+          "nativeWork": []
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "819dc56113f77e490943dd65f51b9dd2",
+          "nativeWork": [
+            {
+              "jobId": "819dc56113f77e490943dd65f51b9dd2",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 1,
+              "operator": "NativeAggregate(isMerge=[true], select=[Final_SUM(sum$0) AS revenue])[83]",
+              "recordsIn": 1
+            },
+            {
+              "jobId": "819dc56113f77e490943dd65f51b9dd2",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 1,
+              "operator": "NativeAggregate(select=[Partial_SUM($f0) AS sum$0])[81]",
+              "recordsIn": 1191
+            },
+            {
+              "jobId": "819dc56113f77e490943dd65f51b9dd2",
+              "attempt": "0",
+              "subtask": "0",
+              "recordsOut": 1191,
+              "operator": "NativeCalc(select=[*(l_extendedprice, l_discount) AS $f0], where=[AND(SEARCH(l_s",
+              "recordsIn": 60175
+            },
+            {
+              "jobId": "819dc56113f77e490943dd65f51b9dd2",
+              "attempt": "0",
+              "subtask": "1",
+              "recordsOut": 0,
+              "operator": "NativeAggregate(select=[Partial_SUM($f0) AS sum$0])[81]",
+              "recordsIn": 0
+            },
+            {
+              "jobId": "819dc56113f77e490943dd65f51b9dd2",
+              "attempt": "0",
+              "subtask": "1",
+              "recordsOut": 0,
+              "operator": "NativeCalc(select=[*(l_extendedprice, l_discount) AS $f0], where=[AND(SEARCH(l_s",
+              "recordsIn": 0
+            }
+          ]
+        }
+      ],
+      "resultType": "ROW<`revenue` DECIMAL(38, 4)> NOT NULL",
+      "rows": 1,
+      "resultSha256": "1618df4be83c3b8f05deb7f16459269384a8fabf25faccfc7f883c39244dc83c",
+      "status": "passed"
+    }
+  ],
+  "tpchScale001FlinkVersion": "1.18.1"
+}

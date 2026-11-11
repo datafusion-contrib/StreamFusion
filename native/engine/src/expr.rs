@@ -851,8 +851,7 @@ struct FlinkConcat {
 impl FlinkConcat {
     fn new() -> Self {
         Self {
-            signature: datafusion::logical_expr::Signature::variadic(
-                vec![DataType::Utf8],
+            signature: datafusion::logical_expr::Signature::variadic_any(
                 datafusion::logical_expr::Volatility::Immutable,
             ),
         }
@@ -868,8 +867,19 @@ impl datafusion::logical_expr::ScalarUDFImpl for FlinkConcat {
         &self.signature
     }
 
-    fn return_type(&self, _: &[DataType]) -> datafusion::common::Result<DataType> {
-        Ok(DataType::Utf8)
+    fn return_type(&self, inputs: &[DataType]) -> datafusion::common::Result<DataType> {
+        if inputs.is_empty()
+            || inputs
+                .iter()
+                .any(|t| !matches!(t, DataType::Utf8 | DataType::Binary | DataType::Null))
+        {
+            return datafusion::common::exec_err!("CONCAT expects character arguments");
+        }
+        Ok(if inputs.contains(&DataType::Binary) {
+            DataType::Binary
+        } else {
+            DataType::Utf8
+        })
     }
 
     fn invoke_with_args(
@@ -878,6 +888,10 @@ impl datafusion::logical_expr::ScalarUDFImpl for FlinkConcat {
     ) -> datafusion::common::Result<datafusion::logical_expr::ColumnarValue> {
         use arrow::buffer::NullBuffer;
         use datafusion::logical_expr::ColumnarValue;
+
+        if args.return_field.data_type() == &DataType::Binary {
+            return crate::flink_functions::byte_concat::concat(&args.args, args.number_rows);
+        }
 
         // Children are already evaluated. Inspect their validity once, before copying any bytes.
         let mut nulls = None;

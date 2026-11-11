@@ -1,0 +1,22 @@
+{
+  "generator": "io.airlift.tpch:tpch:0.10",
+  "queries": "Unchanged generator resources except the four unchanged SQL adaptations used by released Flink 2.2.1 TPC-H e2e tests. Both engines receive identical SQL.",
+  "adaptations": {
+    "q6.sql": {
+      "url": "https://raw.githubusercontent.com/apache/flink/release-2.2.1/flink-end-to-end-tests/test-scripts/test-data/tpch/modified-query/q6.sql",
+      "sha256": "9a0f373ae3a61ce5596f4b77647988f09b3f8261661853a11db1930708771c21"
+    },
+    "q11.sql": {
+      "url": "https://raw.githubusercontent.com/apache/flink/release-2.2.1/flink-end-to-end-tests/test-scripts/test-data/tpch/modified-query/q11.sql",
+      "sha256": "6c13dffd3aa87a4bb45ccb379ff54b834d12b87d070ee3dafd63906c8c6ce8ce"
+    },
+    "q15.sql": {
+      "url": "https://raw.githubusercontent.com/apache/flink/release-2.2.1/flink-end-to-end-tests/test-scripts/test-data/tpch/modified-query/q15.sql",
+      "sha256": "24ffeb12ad93550c3241dbea68868484c9ad6fe71d3185aeb49b844539b0ec27"
+    },
+    "q20.sql": {
+      "url": "https://raw.githubusercontent.com/apache/flink/release-2.2.1/flink-end-to-end-tests/test-scripts/test-data/tpch/modified-query/q20.sql",
+      "sha256": "4187d0ff2534a26399db48983cd9f4e1c5eb0283c4a43f791d38dfed85007e8d"
+    }
+  }
+}

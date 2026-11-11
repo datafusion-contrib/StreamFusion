@@ -1207,6 +1207,222 @@
       "forbidden_operators_on_native_routes": [
         "org.apache.flink.streaming.api.operators.KeyedProcessOperator"
       ]
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testManySelectWithFilter",
+      "display_name": "testManySelectWithFilter()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testFilterOnInteger",
+      "display_name": "testFilterOnInteger()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testUserDefinedScalarFunction",
+      "display_name": "testUserDefinedScalarFunction()",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.MiscITCase#testNullOrdering",
+      "display_name": "testNullOrdering()",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.MiscITCase#testGlobalSorting",
+      "display_name": "testGlobalSorting()",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.MiscITCase#testNullOrderingOnMultiColumn",
+      "display_name": "testNullOrderingOnMultiColumn()",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByWithOffsetAndFetch",
+      "display_name": "testOrderByWithOffsetAndFetch()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByLimit",
+      "display_name": "testOrderByLimit()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByLessThanOffset",
+      "display_name": "testOrderByLessThanOffset()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByRepeatedFields",
+      "display_name": "testOrderByRepeatedFields()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByLimitBehindField",
+      "display_name": "testOrderByLimitBehindField()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderBehindField",
+      "display_name": "testOrderBehindField()",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testAggWithoutGroups",
+      "display_name": "testAggWithoutGroups()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testAggregationWithoutGroupby",
+      "display_name": "testAggregationWithoutGroupby()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testCountStar",
+      "display_name": "testCountStar()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testAggWithoutGroups",
+      "display_name": "testAggWithoutGroups()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testAggregationWithoutGroupby",
+      "display_name": "testAggregationWithoutGroupby()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testCountStar",
+      "display_name": "testCountStar()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.table.AggregationITCase#testAggregationTypes",
+      "display_name": "testAggregationTypes()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.table.AggregationITCase#testWorkingAggregationDataTypes",
+      "display_name": "testWorkingAggregationDataTypes()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testTwoPhasesAggregation",
+      "display_name": "testTwoPhasesAggregation()",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testNullGroupKeyAggregation",
+      "display_name": "testNullGroupKeyAggregation()",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testGroupByOnly",
+      "display_name": "testGroupByOnly()",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testTwoPhasesAggregation",
+      "display_name": "testTwoPhasesAggregation()",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testNullGroupKeyAggregation",
+      "display_name": "testNullGroupKeyAggregation()",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testGroupByOnly",
+      "display_name": "testGroupByOnly()",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+      "display_name": "expectedJoinType=BroadcastHashJoin",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+      "display_name": "expectedJoinType=HashJoin",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+      "display_name": "expectedJoinType=SortMergeJoin",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+      "display_name": "expectedJoinType=NestedLoopJoin",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateCompareWithDateString",
+      "display_name": "testDateCompareWithDateString()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateEqualsWithDateString",
+      "display_name": "testDateEqualsWithDateString()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.CodeSplitITCase#testManyIns",
+      "display_name": "testManyIns()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.CodeSplitITCase#testManyOrsInCondition",
+      "display_name": "testManyOrsInCondition()",
+      "count": 1,
+      "route": "batch_host_only"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.sql.CodeSplitITCase#testManyAggregationsWithGroupBy",
+      "display_name": "testManyAggregationsWithGroupBy()",
+      "count": 1,
+      "route": "native"
+    },
+    {
+      "test": "org.apache.flink.table.planner.runtime.batch.table.SetOperatorsITCase#testUnion",
+      "display_name": "testUnion()",
+      "count": 1,
+      "route": "native"
     }
   ]
 }
