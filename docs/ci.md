@@ -200,6 +200,10 @@ rows under that historical name. Candidate checks retain the detailed `NativeCal
 name, and fallback controls require zero native operators. This compatibility changes
 only metric-name recognition; workloads, timing and the pinned baseline stay unchanged.
 
+Previous-runtime diagnostics copy the current benchmark fixtures together with their test-only
+timing helper. The recorded fixture hashes include that helper, so the immutable baseline can
+compile the current instrumentation without copying any production implementation from the candidate.
+
 ## Shared debug native libraries
 
 Host and Darwin release builds compile the selected native packages together in one Cargo

@@ -18,6 +18,7 @@ FIXTURES = [
     "JvmAggregateBenchmark.java",
     "TableFunctionBenchmark.java",
     "RecoveryExecutionMetrics.java",
+    "CiFixtureTimings.java",
 ]
 
 
