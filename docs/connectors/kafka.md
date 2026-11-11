@@ -227,7 +227,38 @@ For a targeted checkpoint fixture run, add `-Dsf.canonical.kafka.mode=checkpoint
 complete matrix. This is a correctness lane, independent of the benchmark environment flag.
 
 
+Portable-plan sink admission reads the released sink's declared ability specifications directly
+on both Flink lines. The 1.18 adapter does not translate the schema-only placeholder input into
+an execution graph while checking admission. This preserves the same metadata/constraint and
+connector-option gates as ordinary SQL, including stock fallback for unsupported sink abilities.
+All 22 shared ordinary/compiled planning cases pass on each release. These planning checks are
+separate from the real-broker qualification below.
+
 ## Canonical sink handoffs (partial)
+
+Sink and pipeline handoff fixtures are shared between released Flink 1.18.1/Kafka connector
+3.2.0-1.18 and Flink 2.2.1/connector 5.0.0-2.2. They cover continuation, no-input returns,
+native-checkpoint recovery, writer/joint-reader rescaling, controlled batch barriers, fencing,
+task/process failure and recovery after completed-savepoint acknowledgement loss. The 1.18
+connector has no transaction-naming option or pooling strategy: its writer stores the prefix,
+its subtask partitions determine ownership, and pending transactions are decoded from the
+released committer collector. The 2.2 fixture keeps its explicit writer-ownership and
+precommitted-ID checks. Fencing on 1.18 matches actual persisted pending transaction IDs against
+the IDs fenced at the broker; its runtime has no failed-committable metric. The 2.2 metric check
+remains required. Both require pending transaction state when input advanced, exact
+`read_committed` effects, native work and unchanged stock identities. Shared source/compilation
+coverage does not by itself qualify every scenario on both releases.
+
+The selected Flink 1.18 cohort passes 24 real-broker scenarios: all twelve sink/pipeline fixture
+families under the local scenario selector, plus both Kafka-source checkpoint cases. This covers
+five principal sink modes, five pipeline modes, controlled partial/full batches, joint reader/writer
+rescaling and all four failure families on each input route. A follow-up runs all four continued
+handoff combinations across ordinary SQL/compiled plans and both initial engine orders. Twenty-two
+admission controls pass as well. These JDK 17 selections use the three-nullable-BIGINT JSON fixture;
+they do not qualify every inherited provider, schema or release upgrade. Hosted CI retains all
+release-supported combinations, including both naming strategies on 2.2. The same selected
+24-scenario broker cohort passes on a clean 2.2 build, alongside 22 admission and six shared cache
+controls (52 checks total), with no failures or skips.
 
 Native Kafka serialization is synchronous and owns no durable state. Its unchanged Flink Kafka
 writer and committer retain their released state codecs and transaction ownership. Canonical
@@ -242,7 +273,7 @@ The submission artifact stays stock JSON; native encoding is installed only in t
 The compiled-plan adapter supplies the original input schema to admission without executing a
 synthetic input. Runtime records continue over the actual restored source edge.
 
-The consolidated 36-case real-broker sink matrix passes: eight continued-input, eight no-input,
+The established Flink 2.2.1/connector 5.0.0-2.2 36-case real-broker sink matrix passes: eight continued-input, eight no-input,
 four native-job checkpoint recovery, eight writer-rescale cases with generated hashes and chaining
 disabled, and eight writer-rescale cases with automatic UID generation and normal chaining. Both
 SQL/compiled submissions, initial engine orders where applicable, and incrementing/pooling names
@@ -252,8 +283,8 @@ sink. Source offsets, transaction prefixes/ownership/precommitted transactions, 
 row counts (including partial barrier batches), clean stock classpaths and exact `read_committed`
 records are checked after each switch. Native execution is witnessed by the actual submitted job
 graph and row counters. The separate 875-check cohort includes fourteen Kafka source jobs and
-sixty-six sink admission/graph controls; its cases overlap earlier cohorts. Twenty-two shared
-Flink 1.18 checks establish processing regressions only.
+sixty-six sink admission/graph controls; its cases overlap earlier cohorts. The selected 1.18
+broker qualification is listed above.
 
 Changing parallelism with generated hashes can change chaining and therefore stock identities.
 Both unchanged stock-to-stock SQL/compiled controls reproduce the same unmatched source ID.

@@ -357,7 +357,10 @@ class CanonicalBufferedDedupInteropTest {
     return (CheckpointableKeyedStateBackend<RowData>)
         java.lang.reflect.Proxy.newProxyInstance(
             CanonicalBufferedDedupInteropTest.class.getClassLoader(),
-            new Class<?>[] {CheckpointableKeyedStateBackend.class},
+            new Class<?>[] {
+              CheckpointableKeyedStateBackend.class,
+              org.apache.flink.runtime.state.InternalKeyContext.class
+            },
             (proxy, method, args) -> {
               try {
                 Object result = method.invoke(backend, args);

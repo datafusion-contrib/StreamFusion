@@ -59,6 +59,97 @@ class StockCanonicalSnapshotTest {
           SavepointType.savepoint(SavepointFormatType.CANONICAL),
           CheckpointStorageLocationReference.getDefault());
 
+  @ParameterizedTest
+  @ValueSource(strings = {"complete", "cancel", "task-cancel", "closed-registry", "failed-keyed"})
+  void operatorStateRetainsItsBackendAfterKeyedStateFinishes(String mode) throws Exception {
+    var source = harness(true);
+    var executor = java.util.concurrent.Executors.newSingleThreadExecutor();
+    OperatorSnapshotFutures captured = null;
+    try {
+      source.open();
+      var operator = (Fixture) source.getOperator();
+      var operatorBackend = operator.getOperatorStateBackend();
+      assertInstanceOf(CanonicalOperatorStateBackend.class, operatorBackend);
+      operator.store.getUnionListState(WATERMARK).update(List.of(123L));
+      if (mode.equals("closed-registry")) {
+        operator.cancelables().close();
+        assertThrows(
+            IOException.class,
+            () -> operatorBackend.snapshot(1, 0, new MemCheckpointStreamFactory(1 << 20), OPTIONS));
+      } else {
+        boolean failedKeyed = mode.equals("failed-keyed");
+        if (failedKeyed) {
+          var keyed = backend(source);
+          keyed.setCurrentKey(key());
+          keyed.getPartitionedState(1000L, LongSerializer.INSTANCE, ACCUMULATOR).update(7L);
+        }
+        var streams =
+            new MemCheckpointStreamFactory(1 << 20) {
+              @Override
+              public org.apache.flink.runtime.state.CheckpointStateOutputStream
+                  createCheckpointStateOutputStream(
+                      org.apache.flink.runtime.state.CheckpointedStateScope scope)
+                      throws IOException {
+                if (failedKeyed) throw new IOException("failed keyed write");
+                return super.createCheckpointStateOutputStream(scope);
+              }
+            };
+        captured = operator.snapshotState(1, 0, OPTIONS, streams);
+        if (failedKeyed) {
+          var failed = captured;
+          Exception failure =
+              assertThrows(
+                  Exception.class,
+                  () -> tech.streamfusion.compat.CanonicalTestCompat.finishSnapshot(failed));
+          Throwable cause = failure;
+          while (cause.getCause() != null) cause = cause.getCause();
+          assertEquals("failed keyed write", cause.getMessage());
+          assertFalse(captured.getOperatorStateManagedFuture().isDone());
+        } else {
+          org.apache.flink.util.concurrent.FutureUtils.runIfNotDoneAndGet(
+              captured.getKeyedStateManagedFuture());
+        }
+        var entered = new java.util.concurrent.CountDownLatch(1);
+        var closing =
+            executor.submit(
+                () -> {
+                  entered.countDown();
+                  operator.close();
+                  return null;
+                });
+        assertTrue(entered.await(5, java.util.concurrent.TimeUnit.SECONDS));
+        assertThrows(
+            java.util.concurrent.TimeoutException.class,
+            () -> closing.get(100, java.util.concurrent.TimeUnit.MILLISECONDS));
+        if (mode.equals("cancel") || failedKeyed) captured.cancel();
+        else if (mode.equals("task-cancel")) operator.cancelables().close();
+        else {
+          var saved = finish(captured);
+          try (var restored = harness()) {
+            restored.initializeState(saved);
+            restored.open();
+            assertEquals(
+                List.of(123L),
+                values(
+                    ((Fixture) restored.getOperator()).store.getUnionListState(WATERMARK).get()));
+          }
+        }
+        closing.get(5, java.util.concurrent.TimeUnit.SECONDS);
+      }
+    } finally {
+      try {
+        if (captured != null) captured.cancel();
+      } finally {
+        executor.shutdownNow();
+        try {
+          assertTrue(executor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS));
+        } finally {
+          source.close();
+        }
+      }
+    }
+  }
+
   @Test
   void keyedAccumulatorsAndUnionWatermarkBelongToTheSameImmutableCapture() throws Exception {
     try (var source = harness();
@@ -417,6 +508,11 @@ class StockCanonicalSnapshotTest {
 
   private static KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> harness()
       throws Exception {
+    return harness(false);
+  }
+
+  private static KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> harness(
+      boolean canonical) throws Exception {
     var selector =
         KeySelectorUtil.getRowDataSelector(
             StockCanonicalSnapshotTest.class.getClassLoader(),
@@ -425,7 +521,16 @@ class StockCanonicalSnapshotTest {
     var harness =
         new KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData>(
             new Fixture(), selector, selector.getProducedType(), 128, 1, 0);
-    harness.setStateBackend(new HashMapStateBackend());
+    harness.setStateBackend(
+        canonical
+            ? new CanonicalStateBackend(
+                new HashMapStateBackend(),
+                java.util.Map.of(
+                    harness.getStreamConfig().getOperatorID().toHexString(),
+                    new CanonicalStateBackend.BoundContract(
+                        Fixture.class.getSimpleName(),
+                        new StockFirstNStateContract(new RowDataSerializer(KEY), KEY, false))))
+            : new HashMapStateBackend());
     harness.setup(new RowDataSerializer(KEY));
     return harness;
   }
@@ -441,9 +546,26 @@ class StockCanonicalSnapshotTest {
       implements OneInputStreamOperator<RowData, RowData> {
     transient OperatorStateStore store;
 
+    CloseableRegistry cancelables() {
+      return getContainingTask().getCancelables();
+    }
+
     @Override
     public void initializeState(StateInitializationContext context) {
       store = context.getOperatorStateStore();
+      if (getKeyedStateBackend() instanceof CanonicalKeyedStateBackend) {
+        CanonicalStateBackend.configureOperatorSnapshots(
+            getOperatorStateBackend(),
+            cancelables(),
+            ((CanonicalKeyedStateBackend<?>) getKeyedStateBackend())::retainCanonicalReader);
+      }
+    }
+
+    @Override
+    public void close() throws Exception {
+      if (getKeyedStateBackend() instanceof CanonicalKeyedStateBackend)
+        ((CanonicalKeyedStateBackend<?>) getKeyedStateBackend()).closeCanonicalReaders();
+      super.close();
     }
 
     @Override

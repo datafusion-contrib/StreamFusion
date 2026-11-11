@@ -6,7 +6,7 @@ schema. Their qualified scope is documented below. Unbound operators retain rese
 state containing StreamFusion's logical representation, which still requires StreamFusion on restore.
 Flink owns state metadata, key-group indexes, stream handles, redistribution and integrity checks.
 
-Automatic representative canonical conversion paths now exist in all **15 operator families**.
+Representative canonical conversion paths exist in all **15 operator families**.
 Every family remains partial; this count excludes connector protocols and is not a percentage of
 overall completion or individual state variants.
 
@@ -24,19 +24,75 @@ pages. Historical cohorts are not silently requalified against each newer librar
 | [Top-N / First-N / LIMIT](../operators/top-n.md#first-n-canonical-handoffs) | Automatic first-N, append, updating and retracting rank subsets | Algorithm-specific bounds, TTL, sort and retained-type gaps |
 | [Regular joins](../operators/joins/regular-join.md) | Automatic qualified stock layouts and complete-job handoffs | Wider uniqueness, mini-batch, schema and TTL combinations |
 | [Fixed windows](../operators/window-aggregate.md#stock-canonical-savepoint-interoperability) | Automatic binding, namespaced/DISTINCT state and selected complete-job handoffs | Complete phase/type/view and failure matrix |
-| [Sessions](../operators/window-aggregate.md) | Automatic partitioned-session binding, operator recovery and selected complete-job handoffs | Native unpartitioned session assignment and wider merging/timer/recovery matrix |
+| [Sessions](../operators/window-aggregate.md) | Automatic partitioned TVF and legacy event/processing-time SESSION binding, operator recovery and selected complete-job handoffs | Native unpartitioned SESSION TVF assignment and wider merging/timer/recovery matrix |
 | [Window rank](../operators/top-n.md#window-rank-canonical-interchange-partial) | Automatic event-time retained sort-list, timer and watermark binding | Wider bounds/types, processing-time projection and failure/delivery matrix |
 | [Window deduplication](../operators/deduplication.md#window-deduplication-canonical-interchange-partial) | Automatic event-time winner, timer and watermark binding | Wider winner/types, processing-time projection and failure/delivery matrix |
-| [OVER](../operators/over.md#automatic-bounded-arithmetic-state-binding-partial) | Bounded arithmetic, processing-time unbounded scalar and event-time unbounded V2 scalar contracts with automatic binding | Legacy event-time V1, wider keys/types, DISTINCT/views and bounded event-ROWS cleanup |
+| [OVER](../operators/over.md#automatic-bounded-arithmetic-state-binding-partial) | Bounded arithmetic, processing-time unbounded scalar and event-time unbounded scalar contracts (1.18 V1 / 2.2 V2) with automatic binding | Explicit legacy V1 on 2.2, wider keys/types, DISTINCT/views and bounded event-ROWS cleanup |
 | [Changelog normalization](../operators/changelog-normalize.md#canonical-savepoint-adapter) | Automatic retained-row/TTL contract and complete jobs | Wider keys, mini-batches, consumers and failure matrix |
 | [Interval joins](../operators/joins/interval-join.md#complete-job-handoff-matrix) | Event/proctime state, four join kinds and selected complete-job/rescale matrices | Wider schemas, cleanup edges and remaining ordinary-SQL combinations |
 | [Temporal joins](../operators/joins/temporal-join.md#complete-job-handoff-matrix) | Qualified INNER/LEFT history/probe/timer state and complete jobs | Legacy proctime variant, wider schemas and commit-failure matrix |
 | [Event-time sort](../operators/event-time-sort.md#stock-compatible-canonical-interchange) | Automatic single ascending-rowtime contract and complete-job handoffs | Secondary sorting and wider schema/connector/failure/version matrices |
-| [Sink materialization](../operators/sink-upsert-materialize.md#canonical-interchange-qualification) | All five stock layouts; qualified BIGINT compiled-plan jobs | Ordinary SQL, accelerated connector binding, wider types and writer rescaling |
+| [Sink materialization](../operators/sink-upsert-materialize.md#canonical-interchange-qualification) | Explicit LEGACY contract on both releases; 2.2 VALUE/MAP/ADAPTIVE layouts | Automatic planner/connector binding, complete jobs, wider types and writer rescaling |
 | [Window joins](../operators/joins/window-join.md#stock-canonical-savepoint-interoperability) | Qualified event-time INNER/outer window layouts and complete jobs | Wider schemas/residuals and additional exchange/rescale combinations |
 
-Stock-compatible canonical qualification is on released Flink 2.2.1. Shared Flink 1.18 tests establish
-processing/native-checkpoint regressions only. Custom stock source/committer fixtures retain their
+## Release parity and frozen scope
+
+The current scope freezes the admitted logical operator contracts above. It adds no operator,
+type, algorithm or canonical-state layout. Flink 1.18.1 and 2.2.1 compile the same planner and
+conversion contracts; narrow release adapters select actual stock serializers and runtime owners.
+For SESSION, 1.18 uses the legacy group-window owner because it has no SESSION TVF. Event-time
+unbounded OVER uses V1 on 1.18 and V2 on 2.2. Sink materialization uses LEGACY on 1.18; VALUE,
+MAP and ADAPTIVE exist only in 2.2. Parity means the same admitted logical operations can hand
+state to their own released stock runtime, including async native RocksDB capture. It does not
+claim a downgrade from a newer stock state format into an older release.
+
+Sink-materializer contracts require explicit attachment on both lines. An unused 2.2 runtime-node
+prototype was never called by the planner; earlier automatic-binding and complete-job claims on
+its operator page were stale. Automatic sink binding remains outside this frozen scope.
+Captured JVM aggregate handlers already store their accumulators/views in released Flink managed
+state. Their bounded bundles/caches drain at the barrier, then Flink's own RocksDB snapshot and
+canonical writer handle that state; no native-state projection is needed.
+
+A corresponding complete-job selection passes 24 cases per release: twelve scalar/DISTINCT
+SESSION round trips, six bounded OVER round trips, and two each for window rank, window
+deduplication and temporal sort. These compare committed output and independent oracles after
+stock/native continuation. The SESSION selection includes ordinary SQL and compiled plans with
+both engine orders. Existing selected Kafka, join, group, deduplication and restore cohorts below
+remain separate evidence; these counts do not imply exhaustive configuration testing.
+
+Flink 1.18.1 and 2.2.1 share the planner, metadata projection, state contracts and canonical backend. Complete-job controls cover
+First-N, grouped arithmetic, regular joins, normalization, eager deduplication and qualified fixed
+windows (including two-phase and DISTINCT controls) and selected unbounded event-time OVER
+ROWS/RANGE jobs on both native stores. Component controls additionally cover typed/grouped state, ranks, fixed TUMBLE/HOP/CUMULATE
+windows, interval joins, temporal state and processing-time OVER. Shared-window binding preserves
+1.18's uninitialized timer-service watermark until the first post-restore watermark; it uses the
+same stock state and timer serializers as 2.2. Session TVFs are unavailable in 1.18; legacy event/processing-time
+SESSION group windows now bind their released accumulator, merge-alias and timer contract on both
+lines, including keyed/global and scalar/COUNT DISTINCT layouts. Legacy sessions reset their
+watermark on recovery and add no operator watermark state; TVFs retain their existing UNION state.
+Legacy processing-time SESSION admits against the processing clock even after event watermarks
+advance; the 2.2 TVF watermark-based merging rule retains its own admission mode. Both use the
+same converters, pinned captures and checkpoint state encoding. Legacy window controls
+compare heap-restored timers and continued RocksDB output separately. Stock-only
+2.2.1 legacy HOP restores can change results when DST-gap timers tie and heap/RocksDB clear shared
+panes in different orders; this upstream output-order boundary remains outside qualification.
+Legacy event/processing-time TUMBLE/HOP group windows share the slicing converter with released
+TimeWindow accumulator/pane and timer namespaces. HOP requires a positive size that is an integral
+multiple of its slide. These legacy owners also reset their watermark and write no operator state.
+Buffered dedup
+uses the older eager owner, and explicit legacy V1 mode on 2.2 remains unqualified. The shared
+unbounded event-time scalar binding preserves 1.18 polling callbacks separately from pending
+timestamps; its captured RocksDB reader leaves metadata on disk. These same-line controls do not qualify every variant or cross-line upgrades. Both lines
+compile the shared canonical job fixtures, including all twelve Kafka sink/pipeline families. Their release adapters
+inspect the host connector's own writer/committer recovery format and retain exact transaction,
+identity and external-effect assertions; compilation parity is separate from job qualification.
+Selected 1.18 qualification now includes 24 real-broker Kafka scenarios spanning all twelve
+sink/pipeline families and source checkpoint recovery, plus four full continuation combinations
+covering ordinary SQL/compiled plans and both initial engine orders. The local family selector
+is narrower than each fixture's exhaustive hosted provider; no host-supported provider is removed.
+The equivalent clean 2.2 cohort passes the same 24 broker scenarios; its 22 admission and six shared
+cache controls bring that selection to 52 checks, with no failures or skips.
+Custom stock source/committer fixtures retain their
 state and external effects in the qualified jobs. Native connector protocols have separate
 qualification: the [Kafka handoff matrices](../connectors/kafka.md#canonical-sink-handoffs-partial)
 include real-broker exactly-once sink and both-native pipelines, writer rescaling, transaction
@@ -44,6 +100,429 @@ ownership and selected process/commit-failure cases. Combining partition discove
 and broker/coordinator/publication failures remains open; those historical cohorts are not
 implicitly requalified by newer operator libraries. Benchmarking stays deferred under
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+The frozen-contract audit follows the shared planner admission into direct native RocksDB
+capability checks and the common snapshot lifecycle. Arithmetic/typed groups, ranks, normalization,
+deduplication, windows/sessions, OVER, joins, temporal sort and the explicit materializer adapter
+all retain direct RocksDB state for their admitted stock-canonical shapes. Wider accelerated
+shapes that use `rocksdb-snapshot` remain outside these stock contracts. Component-only heap
+projection branches do not run in the disk-backed canonical writer. Captured managed JVM handlers
+use Flink's stock RocksDB writer directly after flushing bounded caches.
+
+The final Java-only conversion cohort passes 65 checks on 1.18, with four expected SESSION TVF
+skips, and 225 checks on a clean 2.2 build without skips. It includes all materializer layouts
+available on the host, shared spool/routing controls, nested retained payloads and overlapping
+DISTINCT captures. Rust did not change in this cohort, so its already-qualified native build and
+tests were reused. Benchmarking remains deferred; exact-head hosted checks still gate any merge.
+
+## Streaming stock-state capture
+
+Backend ownership covers both the keyed canonical reader and the managed operator-state future.
+Flink finalizes keyed state first; releasing that reader alone must not let concurrent operator
+closure cancel a still-pending watermark or operator-state write. The managed future retains its
+own lease through Flink's asynchronous callable lifecycle, including cancellation before execution
+and task cancellation. The operator-state backend factory installs the ownership wrapper, and
+operator initialization binds it to the native reader guard and the task's live cancellation
+registry; the factory's restore-only registry has already closed by the first snapshot. This gives
+Flink 1.18's final snapshot entry point the same lifetime rules as 2.2's operator hook. Framework controls use each released operator snapshot entry point and verify
+that the configured backend is installed, rather than calling only the conversion helper.
+Disposal controls finish keyed state first and require closure to remain blocked until
+operator-state capture finishes or cancels.
+
+The ordinary SQL window-join fixture scopes each window table function in its own derived table,
+matching upstream Flink's queries so 1.18 resolves both rowtime descriptors unambiguously. The
+shared rowtime-first dedup fixture checks the released eager 1.18 winner/retraction rules separately
+from 2.2's buffered watermark rules, retaining independent per-cut winners and exact signed output
+against a clean stock job.
+
+Isolated worker timeouts include both the worker log and thread dump in the retained test report,
+so a failed handoff can be diagnosed without preserving the whole temporary job directory.
+
+Expected-failure controls own their snapshot futures explicitly and cancel them after failed
+finalization, matching Flink's asynchronous checkpoint runner. The released operator test harness
+finalizer does not perform that cancellation itself. Leaving a managed operator future pending
+would correctly keep its backend lease alive and make fixture teardown wait indefinitely. The
+window-deduplication rejection control cancels the failed capture before checking that both live
+native candidate rows survived. A released-framework control injects an asynchronous keyed
+write failure and verifies that explicit cancellation releases the remaining operator lease before
+closure can finish.
+
+Canonical conversion runs only when Flink requests a canonical savepoint. Ordinary checkpoints and
+native-format savepoints retain their existing native recovery path. Both supported Flink lines
+use the released `SavepointSnapshotStrategy` and `FullSnapshotAsyncWriter`; StreamFusion supplies
+the stock serializer metadata and snapshot entries.
+
+First-N counters, arithmetic grouped accumulators, typed grouped accumulators without shared
+DISTINCT views, eager deduplication, changelog normalization and processing-time unbounded OVER
+can stream from a pinned native
+RocksDB MVCC snapshot. At the barrier, the store commits its pending bundle and captures the read
+view plus immutable decoder configuration. Flink's asynchronous writer pulls bounded native frames,
+converts each entry with the stock serializers and writes canonical bytes in key-group order.
+Continued input updates the live database independently; concurrent savepoints own separate views.
+These exports construct neither a stock-schema database nor a complete intermediate state file.
+The backend retains its working directory and memory-pool ownership until readers finish or cancel.
+
+Contracts running on direct native RocksDB pin the same database read views and run their existing
+stock-state adapters on Flink's asynchronous writer thread. Each savepoint owns an independent
+native reader and a temporary stock-schema RocksDB backend, including disk-backed timer queues.
+This reuses the qualified map/list/timer conversion logic instead of duplicating every layout in a
+second streaming codec. It adds temporary disk I/O compared with the direct value-state cursors.
+The existing canonical COUNT DISTINCT fixed/session bindings now use the same pinned native
+RocksDB capture. Scalar headers and separate value/count records stream into the stock projection
+on the asynchronous writer thread; conversion does not reconstruct the native execution sets.
+This covers admitted TUMBLE/HOP/CUMULATE contracts on both releases and admitted SESSION TVFs on
+2.2, plus legacy event/processing-time SESSION/TUMBLE/HOP group windows on both releases.
+The legacy route shares the same converter and pinned RocksDB capture; it does not introduce a second state codec.
+Buffered event-time deduplication, event-time sort and window rank/deduplication additionally
+use a shared retained-row codec for nested ROW/ARRAY/MAP payloads. These already-canonical
+payloads now stay in native RocksDB during capture. Scalar checkpoint bytes remain unchanged;
+previous snapshot-backed databases migrate one key-group blob at a time at open. Keys and sort
+semantics keep their independent admission rules. This does not qualify additional state layouts.
+The nested-row cohort passes 1,533 native tests (two existing ignores), memory-only compilation
+and the JNI library build. Selected component/async checks pass 324 cases on a clean 1.18 build
+and 433 on 2.2, with no skips. Both releases include nine writer-thread captures for ARRAY/ROW/MAP
+sort and window rank/dedup, completed after live updates and native-owner closure. The 2.2
+selection also includes six buffered-winner captures across nested keys and TTL settings and
+48 existing typed-key continuation controls that now require direct native RocksDB. These local
+parameter/pair selections do not establish exhaustive or cross-release upgrade qualification.
+Retained grouped DISTINCT with per-entry TTL
+is outside current canonical admission and remains later coverage expansion.
+
+Additional actual-operator writer controls cover regular joins, window joins and append rank on
+both releases. Each captures two versions, changes live state, closes the native handle, finishes
+the futures in reverse order and compares nonempty stock continuation with independent stock
+captures. Regular joins check all six kinds, released value/unique-map/occurrence-map layouts and
+TTL ages; window joins check pending lists, namespaces and timers; append rank checks winner/list
+changes, rank output and TTL. Local selection adds 41 capture cases per release (19 regular joins,
+14 window joins and eight ranks); default providers retain 48/96/8 combinations respectively.
+Clocked harnesses align native processing time with stock TTL time and restore-compatible event
+frontiers. These controls qualify the exercised contracts, not the entire operator inventory.
+The 1.18 selection passes 67 checks, including shared capture/cancellation/routing controls.
+A clean 2.2 regression batch passes 233 without skips, including the existing join, window-join
+and typed append-rank controls. No Rust code changed, so native builds and suites were not repeated.
+OVER retained input and interval/temporal join payloads now use that same retained-row codec.
+Already-canonical ROW/ARRAY/MAP payloads therefore remain in native RocksDB instead of selecting
+the snapshot-backed memory path. Aggregate-state, ordering and partition-key admission remain
+separate. Old blob-backed checkpoints migrate one key-group partition at a time, including clipped
+restore; the interval processing deadline survives that migration. An OVER checkpoint containing
+only pending input can have no accumulator-key schema, so empty fold batches install no keys.
+Shared writer-thread controls pass on both releases for five OVER shapes (bounded RANGE,
+event/processing ROWS and unbounded event ROWS/RANGE), FULL interval joins and INNER/LEFT temporal
+joins across ARRAY, ROW and MAP payloads. They assert direct native RocksDB, overlap two captures,
+continue live input, close the native owner and finish the captures in reverse order before
+nonempty stock continuation. NULL payloads and nested NULL values are included. Payload decode
+retains the requested nested child names even when the configured and runtime Arrow schemas use
+different names. These selected contracts do not qualify wider keys, aggregate layouts or the
+complete recovery/failure matrix.
+OVER and temporal-join metadata export share a flat key/kind/long-value bridge. OVER uses it for
+RANGE cutoffs, cleanup values, processing callbacks and V1 physical event callbacks. Temporal joins
+use it for independent signed probe cursors, registered values, cleanup clocks and callbacks. Frozen RocksDB readers borrow and validate
+encoded timer entries without rebuilding per-owner timer vectors or Arrow lists. The bridge emits
+at most 1,024 records with a four-MiB payload estimate, allowing an oversized key. Raw snapshot
+batches and conversion buffers draw from the native memory pool, and cancellation is checked
+inside a hot owner as well as between database batches. Resident metadata uses the same bridge.
+The disk-backed stock projection installs each scalar or queue entry directly; heap component
+RANGE projections retain their separate map-order path. Native checkpoint bytes retain their format, and the projection continues to use released stock
+serializers. The largest encoded native or stock KV remains a lower bound
+on working memory. RANGE restore now uses separate bounded frame-payload and flat metadata
+streams. The frame owner stays guarded until cleanup, last trigger, physical timers and map
+membership complete. Heap targets rebuild their normal execution map incrementally; RocksDB
+targets check sorted membership against frame keys without loading frame values or a full
+per-owner timestamp array. Pending-only and timer-only owners use the same bridge. Legacy
+list-based native APIs retain their existing behavior.
+Unbounded event-time OVER restore now uses the same flat records for V1 polling and V2 cleanup
+metadata. Both validation and apply retain only the active owner's cursor, preserving order
+when a chunk separates a cleanup value from its physical callback. Validation installs no
+execution state. Normal processing, export and
+checkpointing reject unfinished or failed imports. Decoded buffers and timer-vector growth are
+reserved before mutation. Completed owners flush their native metadata once; a hot owner is not
+serialized again for every transfer chunk. The cursor is transient and native checkpoint bytes
+retain their existing format.
+The temporal metadata cohort adds split 2,051-callback transfers, signed cursor extremes,
+independent metadata-only owners, malformed phase/order rejection, denied-memory cleanup and
+flat-record checks against an immutable captured database after live updates. All 24 temporal
+native checks pass, and the memory-only build passes. Selected shared snapshot/temporal/OVER
+checks pass 514 cases on 1.18 and 482 on a clean 2.2 build, with 36 expected V1-only skips on 2.2.
+These are focused component selections, not exhaustive job portability qualification.
+The RANGE/memory cohort passes 1,499 native checks with two existing ignores and the memory-only
+build passes. Selected OVER controls pass 572 checks on 1.18 and 540 on a clean 2.2 build, with
+36 expected V1-only skips on 2.2. Each release includes six complete-job continued handoffs across
+three bounded shapes and both native stores. Four new native RANGE controls cover split row and
+metadata completion, 2,051-entry transfers, peer rows spanning chunks, missing membership, denied
+memory, cancellation and failed writes. Two metadata controls check denial before database writes
+and a 2,051-owner flush under a bounded work allowance. Existing raw-COUNT corruption checks also
+verify C Data releases before Java errors are raised. These selected controls do not expand
+operator admission or replace exhaustive CI.
+
+The barrier pins the databases and immutable reader configuration. Native reader construction,
+metadata hydration and stock conversion all run on the asynchronous writer thread; no restore
+constructor or TTL adoption scan runs at capture. Reader configuration and its shared-cache lease
+are independent of the live operator. The captured decoder cannot modify live state; TTL compaction
+retains entries until the last pinned reader releases its view. Each reader uses the clock frozen
+with that view, even if input advances the live clock before the reader opens.
+
+Memory-backed operators capture independent native state graphs before returning from the barrier.
+They copy mutable maps and counters and share immutable Arrow buffers and row payloads. Windows
+and sessions additionally share accumulator versions, detaching before either owner mutates them.
+Stock conversion and serialization run asynchronously through the same independent stock backend.
+Window/session capture measures resident state even when the source has no accounting pool. It
+reserves the captured owner and new sharing wrappers before changing either graph; refusal leaves
+both owners unchanged and is reported as a native memory-limit exception. Repeated captures do
+not charge wrappers twice. Aggregate factories are shared across groups, and a frozen owner's
+size estimate remains stable while a peer detaches or serializes its accumulator.
+Memory capture still visits resident state and can retain a second copy of mutable state; it does
+not provide the constant-time barrier behavior of a RocksDB snapshot. Unbound private native
+recovery paths retain their existing capture mechanisms.
+
+The window/session capture accounting cohort passes 1,541 native tests with two existing ignores,
+memory-only compilation and the JNI build. Selected 2.2 checks pass 510 cases without skips;
+a clean 1.18 selection of the affected contracts passes 110, with four expected SESSION TVF skips.
+The async DISTINCT controls use both native stores and complete overlapping futures on a writer
+thread after further live input and native-owner closure, then restore each into stock Flink.
+Reservation controls cover unaccounted sources, refusal before graph mutation and repeated capture.
+These component selections do not establish full operator or release-line coverage.
+
+Both capture paths preserve original TTL write ages and independently own overlapping savepoints.
+Cancellation signals the native reader before waiting for conversion to leave its critical section;
+completion, failure and cancellation release the captured handle, database views and backend lease.
+The backend cannot dispose its working directory or native memory authority while readers remain.
+Focused controls cancel a deferred capture before writing and inject failure after stock-state
+construction, then verify a later savepoint and continued live input against stock Flink on both
+native stores. These controls complement overlapping-capture and operator-close checks.
+Canonical-capable jobs reserve Flink state-backend managed memory for the temporary stock view even
+when live native state uses memory. Imports also use that released RocksDB backend. Clearing a view
+uses a captured state iterator, preserving serializers and the caller's key context without
+collecting every key.
+
+Each deferred capture now carries the operator's conversion-memory authority into the writer
+thread. Default copied and borrowed RocksDB scans share that authority instead of silently
+running without a reservation. Copied scans inspect borrowed keys/values, reserve the frame,
+container capacity and continuation key before copying, and commit the continuation only after
+the frame succeeds. Allocation refusal leaves the cursor retryable. The byte limit splits
+before the next record would exceed four MiB; one oversized record is allowed. Direct value
+cursors additionally reserve their decoding estimate before copying or decoding.
+
+Window-rank export borrows each encoded bucket from its pinned iterator rather than first
+copying the complete bucket into a Rust buffer. It reserves bounded row slices and decoding
+work before visiting them. Fixed/session DISTINCT membership visits likewise borrow encoded
+entries and reserve their prefix, retained values and repeated-owner frame estimate before
+parsing. Failure, cancellation and completion release these reservations. Operator shutdown waits on the
+RocksDB reader guard before closing either the native handle or the operator's memory owner, so
+a deferred writer can still allocate after shutdown begins. Other memory-backed capture layouts,
+ordinary checkpoint accounting and the remaining conversion estimates still require the broader audit; these
+controls do not establish a strict bound on every allocator or remove the largest native/stock
+encoded KV as a working-memory floor.
+
+The reservation cohort passes 1,538 native tests with two existing ignores, memory-only
+compilation and the JNI build. Selected 1.18 checks pass 280 cases with two expected SESSION skips;
+a clean 2.2 build passes 362 checks with 0 skips. Controls include partial-frame refusal/retry,
+no decoding before denial, receiver/cancellation refunds, a 4,100-row bucket under a smaller
+conversion budget, unchanged Arrow/handle balances and continued stock results after refusal.
+Both direct and deferred writers finish while full operator shutdown waits. The affected-class
+1.18 retries replace earlier class results in that count. These are local component selections.
+
+The direct cursors bound decoded working memory by the current frame/entry and owned key groups.
+Fixed-window groups and timer ledgers, session state, OVER fold/pending/cleanup tables, temporal
+sort, buffered deduplication and temporal/interval/window joins share the pinned batch visitor,
+with both row and byte limits before decoding and cancellation checks while scanning. Typed
+header scans use that same reader; DISTINCT/extrema companion visits also bound bytes and check
+cancellation within each owner, retaining original TTL ages and signed counts. OVER DISTINCT
+membership visitors use the same byte limits, with cancellation inside a partition; their existing
+component-transfer coverage is unchanged. Window-rank
+list values also enforce row/byte bounds and cancellation within a stored bucket. Fixed-window export no
+longer collects every persisted group or timer. OVER readers fetch cleanup stamps, processing-ROWS
+counters and RANGE timers directly from their captured tables; they do not hydrate metadata maps
+for all keys. Processing-ROWS metadata/frame ownership is checked by streaming partitions and point
+reads rather than collecting all partition keys. Captured temporal-join readers likewise skip live
+metadata/deadline cache hydration. Their metadata export streams the union of persisted metadata
+and deadline-only keys through bounded scans and point reads, preserving physical callbacks and
+original cleanup deadlines without retaining a key inventory. An individual
+oversized value remains the lower bound on working memory. Receiver failure and cancellation
+release the visitor; overlapping live writes and compaction do not change its captured version.
+Captured RocksDB OVER frames also stream bounded chunks within a partition. Positions continue
+across chunks, and the stock accumulator and hidden counts are installed only from the final chunk.
+RANGE export does not build a timestamp inventory or reinsert the projection's inputs: the stock
+RocksDB map and canonical writer already iterate encoded keys in order. Heap-backed component
+transfers retain their separate map-order reconstruction. The general adapters still retain other
+per-key working sets, and oversized individual stock map/list values remain open bounded-memory
+work. Restore validation for event OVER, buffered deduplication, temporal join, grouped extrema
+and retracting rank now stores owner unions and callback membership in one scoped disk index,
+using the released RocksDB library on both Flink lines. Its write buffers and open-file count are
+bounded and its block cache is disabled. The configured two-MiB write-buffer budget is reserved
+from task off-heap memory before scratch creation and released after close, including failed open.
+Interval joins also use this index for scheduled-versus-owned cleanup callbacks. Both sides may
+share a physical callback, while orphan callbacks and missing side deadlines still fail before
+native installation. SESSION restores keep timers, historical merge aliases, sorted window bounds
+and accumulator ownership in the same scoped disk storage. Point reads retain complete state-window
+end identity, and ordered disk scans reject overlapping mappings without a per-owner TreeMap.
+DISTINCT namespaces resolve their actual merged window through the alias index. SESSION scalar
+batches now obey both row and byte limits. No scratch descriptors enter the savepoint.
+The selected metadata-inventory cohort passes 966 checks on 2.2 with 32 expected V1-only skips.
+A final clean 1.18 cohort passes 690 checks, including V1 polling semantics and the extended local
+interval selections. The 2.2 run retains the earlier full interval typed-key/proctime providers;
+these differently selected cohorts are not exhaustive release-line parity qualification.
+SESSION controls include 2,051 historical aliases over hot and independent keys, both stores,
+exact state-window-end mismatch, overlapping mappings and duplicate timer-start rejection.
+Both scalar and DISTINCT SESSION return to stock and continue output. Four processing-ROWS
+controls restore 2,051 distinct original clocks and compare exact canonical bytes before continuing.
+These component proofs do not expand the partial admission table above.
+Complete validation precedes applying native state;
+subsequent passes reread the unchanged source. Failed conversion closes cursors and deletes the
+index without registering scratch descriptors in source state. Bounded OVER validates one owner
+at a time using bucket counts, then streams retained and pending row payloads in batches of at
+most 1,024 rows with a payload estimate of four MiB, before installing any native state.
+Original input clocks and positions span chunks; raw accumulators occur only at the end.
+The native importer writes RocksDB frames directly and guards unfinished/failed restores from
+processing or snapshotting. Decode reservations transfer into retained-state charges, including
+failed writes. Bounded OVER now computes ownership, retained-row counts and cutoff maxima by
+scanning staged buckets and timers, without per-owner Java timestamp/count maps or timer sets.
+Frame and pending transfers iterate the disk index directly. V1 polling OVER streams callbacks
+from that index through the shared flat bridge, without a per-owner Java timer array. The native
+import appends to its normal execution ledger. Temporal joins use the same transport, reading
+individual callbacks from the disk index and borrowing encoded metadata during export. A first
+native validation pass installs no execution state; the apply pass moves each active owner's
+normal callback tree into state once. Processing, cleanup, export and checkpointing reject an
+unfinished or failed restore. Row payloads are separately bounded by row count and a four-MiB
+estimate. RANGE streams its callbacks and map membership independently of
+frame rows, keeping the restored owner guarded until both finish. Other adapters' inventories
+and memory capture/accounting remain open work. OVER and temporal-sort
+exports now stage each map-list row once in the shared disk spool. A scoped lazy list lets the
+released stock ListSerializer stream each timestamp bucket into the RocksDB projection once,
+without per-row bucket reads or repeated list reconstruction. Heap component backends receive
+ordinary owned lists. No scratch descriptors or helper serializers enter the savepoint. Working
+memory still includes the largest encoded stock KV required by Flink's snapshot iterator.
+Interval joins and window rank now share this staging for tuple payloads and typed sort keys,
+including namespaced window owners. Their export writes each list bucket once; raw canonical
+map/list snapshot visits validate the released serializers and decode individual tuples/rows in
+preflight and apply passes. Window join and window rank/dedup restore keep timer/namespace
+membership in the scoped disk spool instead of job-sized Java sets. Slicing-window restore
+uses that same index for per-window ownership and shared-key pending timers, preserving past
+shared slices and independent timer entries. Their accumulator/row transfers, shared-window
+timers and interval cleanup-clock transfers, share the 1,024-row/four-MiB estimate with one oversized value
+allowed. The largest raw canonical/native KV remains a working-memory floor; no new operator
+variants are admitted by these transport changes. Selected 2.2 cohorts pass 475 list/join/rank
+checks and 119 slicing-window/batched-input checks; these selections overlap. One clean 1.18
+cohort passes 500 checks with 10 expected skips for absent released SESSION TVFs. New controls
+cover 2,051-entry namespaced tuple buckets, typed/null sort keys, independent match flags,
+receiver failure, exact released list bytes and 1,024-row/four-MiB transfer boundaries including
+an oversized value. These component selections do not establish complete-job or full-variant
+qualification, and native checkpoint formats are unchanged.
+Append and retracting rank export now stage retained peer lists once, keeping explicit empty
+headers and the original TTL timestamp. Retracting count maps use the native comparator order
+through a lazy sorted-map view; the released serializer emits entries without a second Java
+TreeMap. Restore validates raw canonical TTL/list/counter envelopes and decodes one entry at a
+time. Updating-rank restore indexes unique keys and consecutive inner positions on disk. All
+three use the shared row/byte sender and preserve existing nested map/list C Data conventions.
+Released 2.2 restore programs pass 32 stock and 32 native invocations across ranks, joins and
+window rank/dedup, retaining 29 native routes, two expected fallbacks and one interval elision.
+Import audit hooks see the actual transferred rows after successful application; metadata-only
+retract frames and temporal validation passes cannot satisfy native import evidence.
+A final clean 1.18 cohort passes 508 checks. The selected 2.2 rank cohort qualifies 311 checks
+across the initial run and a 66-check typed rerun after correcting stale guards: an empty-directory
+native flush creates no checkpoint files and is required before pinning. The final released fixture
+run also passes 202 execution-audit controls. These selections overlap earlier cohorts and do not
+replace complete-job/full-variant qualification.
+Heap stock component backends receive normal owned collections. Append, updating and retracting
+rank export share one bounded Arrow emitter for resident and RocksDB state. The RocksDB reader
+borrows encoded keys and values from a pinned raw iterator, without copying a complete value or
+rebuilding its execution vectors, count maps or retained lists. Checked cursors preserve legacy
+row layouts, optional bound/kind trailers, independent signed counts, empty-state headers and
+original TTL ages. Updating peer ordinals continue across frame boundaries. Frames use both
+1,024-row and four-MiB work estimates, allowing one oversized record; their work is reserved
+before Arrow decoding, with cancellation checks inside a hot owner. Retracting checkpoint
+encoding also appends directly into the destination buffer and computes its size without
+serializing a second copy. Native checkpoint bytes retain their existing format.
+The underlying RocksDB iterator and stock serializers can still expose one complete encoded KV,
+so an oversized native or stock KV remains a memory floor. This does not establish fixed memory
+below that entry size or expand operator admission.
+The borrowed-rank cohort passes 1,510 native checks with two existing ignores and the memory-only
+build. Eight new controls cover legacy and optional-trailer bytes, 2,051-row peer groups,
+independent signed/empty retract state, original ages, wide/oversized rows, cancellation,
+memory denial before decoding and an immutable raw view across live writes and compaction.
+The raw-store control deliberately fails if execution-state decoding is invoked.
+For bounded OVER, unbounded event-time OVER and temporal sort, restore stages those opaque map
+values on disk and decodes one row at a time with the released row serializer. The shared reader
+checks the captured map/list and namespace serializers and parses composite keys through Flink's
+public utility on both release lines. Per-owner source bucket order remains intact for heap RANGE
+semantics. All source rows and timer relationships validate before native installation; source
+entries clear only after successful conversion. Temporal sort also compares bucket/timer sets on
+disk rather than retaining all pending rows or timestamps in Java collections. Pending-row Arrow
+transfers use both 1,024-row and four-MiB payload-estimate limits, allowing one oversized row.
+This removes the additional complete Java list allocation; it does not remove Flink's encoded-KV
+bound or the heap backend's own resident state. Other adapters still have list imports.
+Direct decoder controls check lazy consumption, null/empty values, truncated rows, negative and
+oversized counts, trailing bytes, independent row ownership and two-MiB rows. Actual heap/RocksDB
+backend controls check captured serializer rejection, original bucket/peer order and independent
+staged reads after source mutation. A 2,051-row temporal-sort bucket with three 1.5-MiB rows crosses
+both transport limits and resumes through stock/native/stock handoffs on both native stores.
+The selected list-import cohort passes 571 checks on 1.18 and 543 on 2.2, with 32 expected V1-only
+skips on 2.2. Five decoder/backend controls pass separately on 2.2; a final clean 1.18 run passes those five
+plus all four wide-bucket handoffs. These overlapping controls
+retain local pairwise matrix selection; exhaustive CI and broader admission remain separate.
+Asynchronous capture does not imply that every conversion path has a fixed working set. OVER cleanup, counter and both event-timer policies now share incremental
+metadata persistence during normal processing. The journal deduplicates changed keys and writes
+bounded row/byte batches, retaining updates if a flush fails. Normal capture does not rebuild
+metadata inventories; native restore reconciles older metadata once before processing resumes.
+Unbounded polling metadata uses a tagged namespace alongside DISTINCT membership tables, with
+bounded migration of the older scalar ledger. Shared capture and timer controls pass
+on both releases, with representative operator matrices and isolated First-N, grouped arithmetic,
+regular-join, normalization and eager-deduplication jobs on 1.18. The earlier 1.18 cohort passed 861
+checks with 138 window exclusions; shared windows are now separately qualified by 295 runtime
+checks and 408 planner checks, with 54 SESSION TVF capability skips. Released 2.2 restore controls additionally pass
+six stock and six native invocations across First-N, append/update/retract ranks and eager dedup,
+with positive native canonical-import and subsequent-input evidence. Representative checks do not
+replace the exhaustive CI matrix or expand the partial stock-layout inventory above.
+Seven OVER variants with 2,051 keys each verify that capture performs no state scans and writes
+only the reserved watermark/sequence batch. Their pinned metadata survives live writes, and failed
+journal writes retry without losing updates. DISTINCT membership and polling metadata also retain
+independent values through capture and native recovery.
+Cold-reader controls preserve empty metadata maps while checking original frames, counters,
+physical timers and cleanup deadlines after live writes. The wide-state cases include 2,051-row
+hot OVER partitions, 2,052 temporal metadata/deadline keys, 2 MiB companion entries and a single
+large rank bucket. They check row/byte boundaries, receiver failure/retry and cancellation inside
+a partition. The earlier metadata foundation native suite passes 1,477 tests with two existing ignores; the
+memory-only build also passes. Its selected state/restore cohort passes 779 checks on 1.18 and 751 on 2.2,
+with 32 V1-only skips on 2.2 and four complete jobs per line included. Other selected
+operator/planner matrices run on both releases. A final 2.2 accounting cohort passes 314 checks,
+with 32 V1-only skips, including scalar TTL, processing ROWS and task memory ownership.
+Released scalar/DISTINCT group restore programs additionally pass two stock and two native
+invocations with positive canonical import/continued input and no fallback; their assertions
+remain unchanged. These controls preserve existing layout coverage rather than expanding admission.
+The restore-inventory cohort passes 1,086 checks on Flink 1.18, including selected grouped-extrema,
+retracting-rank and temporal-join canonical fixtures as well as OVER. Four 2,051-owner event-OVER
+handoffs per release preserve exact canonical state and continued execution across both stores.
+The index controls cover 4,099 owners, signed timer ordering, duplicate/prefix isolation, failed
+receivers, denied task memory and failed open, with scratch deletion and reservation release.
+Flink 2.2 passes a 114-check resource/recovery follow-up and a 63-check clean-build cleanup cohort;
+these overlap the broader per-contract controls and are not cumulative totals. The native suite
+for chunked imports subsequently passes 1,482 tests with two existing ignores and the memory-only
+build. It covers all three bounded shapes on heap and RocksDB, broken
+continuations, prior-chunk RANGE ownership, memory denial/transfer and write failure.
+Its shared Flink 1.18 cohort passes 537 checks, while the corrected 2.2 cohort passes 311 runtime
+and accounting checks alongside 229 frame-bridge checks. The twelve 2,051-row handoffs per line
+cover all three bounded shapes and both stock/native stores. These cohorts overlap earlier runs;
+the full CI matrix remains required. These controls do not expand operator admission or qualify
+every complete-job matrix on 1.18. The map-list spool controls retain 8,195 interleaved rows,
+multiple independent readers and a two-MiB row. Released list serialization remains byte-for-byte
+identical, heap values survive spool close, and receiver failure closes readers, deletes scratch
+state and releases the fixed write-buffer reservation. The selected 2.2 cohort passes 658 checks
+with 32 V1-only skips, including all 128 temporal precision cases before adding their optional
+local pairwise selector. The final clean Flink 1.18 cohort passes 574 selected checks. A separate
+131-check spool/precision follow-up includes the full 128 precision cases on that line. These are overlapping controls, rather than exhaustive admission qualification.
+Conversion cost, barrier duration and temporary I/O have not been benchmarked.
+
+Flink 1.18's final operator snapshot method is preserved. Its ordinary operator hook flushes pending
+input and snapshots managed operator metadata; the keyed backend's `savepoint()` hook captures stock
+state. The native checkpoint callback remains separate. Flink 2.2 retains its compatible operator
+snapshot entry point and uses the same state contracts and writer. Flink 1.18 materializes its
+storage provider explicitly so its older executor cannot bypass operator-ID projection with an
+already-created storage instance. Operator-ID metadata deserializes with its defining engine
+classloader, while storage-provider loading retains the configured user classloader. This avoids
+casting between distinct copies of the projection class across Flink's isolated planner/user
+boundary; a shared regression deliberately exposes both copies. The image rerun remains CI
+qualification. All timer-bearing adapters inspect canonical snapshot bytes through Flink's released serializers,
+avoiding stale live queue iteration hints when a deadline is removed and reinserted. Shared controls
+check removal, reinsertion, namespace changes and preserved key context on heap and RocksDB state.
 
 ## Private native envelope
 
@@ -180,8 +659,8 @@ is cleared. A synchronous capture failure cancels both futures without replacing
 error. This preserves stock operator metadata such as UNION list distribution without an
 intermediate native snapshot. Window watermark support prepares the released `watermark` UNION
 list with its `LongSerializer` and minimum-on-restore rule, including Flink's maximum-value sentinel;
-it rejects unexpected operator/broadcast state and incompatible metadata. These foundations do not
-yet qualify native windows for stock savepoint interchange under #569.
+it rejects unexpected operator/broadcast state and incompatible metadata. Qualified native-window interchange remains limited to the contracts documented above;
+these timer foundations alone do not qualify additional layouts.
 
 The native SESSION transfer primitive visits scalar accumulators and actual merged bounds
 directly from memory or typed RocksDB, in batches of at most 1,024 sessions. The persistent
@@ -195,8 +674,34 @@ Import checks the complete view before making the restored operator available; d
 orphaned or excessive memberships cannot be used as a valid restore. Counted views preserve
 frequencies independently of their scalar. Export restores draining aggregate factories before
 calling the receiver so callback failure leaves live state intact.
-Typed RocksDB session state still supports scalar accumulators; membership state retains the
-existing snapshot-backed native checkpoint path.
+The fixed/session stores share a native codec that separates scalar headers from value/count
+records. Production JNI construction, backend admission and canonical adapters use this codec.
+Scalar-only state keeps its previous row bytes. Membership import has per-owner disk counters
+and rejects duplicates, orphans and excessive set entries before applying a frame; counted
+cardinalities remain independent of their signed maps. Processing, canonical export and native
+checkpointing reject unfinished membership imports. Snapshot readers visit at most 1,024 records
+with a four-MiB payload estimate, including repeated owner keys and allowing an oversized record,
+without reconstructing execution sets. The execution path may still reconstruct the touched
+window/session; that cost is separate from canonical conversion.
+
+Existing snapshot-backed window/session and retracting MIN/MAX checkpoints migrate at open,
+one opaque key-group partition at a time, into typed records. Aligned and clipped restore keep
+processing deadlines, including empty timer-only checkpoints. Legacy blobs still impose a
+one-partition memory floor during migration; new canonical conversion does not use that path.
+The native cohort passes 1,529 tests with two existing ignores; memory-only compilation and
+the JNI library build pass. Controls include bidirectional bounded header/member transfer,
+pending-import rejection, hot-owner pinned capture after live-owner closure, floating identity,
+signed counters, shared-pane accounting, session bridging and legacy checkpoint migration.
+These tests do not widen the canonical planner whitelist.
+The selected 1.18 Java cohort passes 723 checks with 29 expected host/layout skips, including
+six applicable asynchronous COUNT DISTINCT capture cases and three complete-job controls.
+The captures finish on a writer thread after further live writes and native-owner closure;
+two independent snapshots restore into stock Flink. The complete jobs require the native storage
+route and retain stock/native result and continued-input assertions. This local selection uses
+the existing parameter/pair smoke selector and does not qualify the exhaustive matrix.
+A clean 2.2 build passes 1144 checks with 0 skips, including all eight asynchronous
+DISTINCT captures, the existing SESSION interoperability/processing-clock controls and six
+complete-job controls across DISTINCT fixed windows and scalar sessions.
 Native controls cover both stores, keyless state, bridging, malformed namespaces, bounded export
 and memory-limit cleanup. This foundation alone does not qualify the whole SESSION family.
 
@@ -248,13 +753,13 @@ binding. Java/JNI recovery controls merge additional partials after restore and 
 closed end stays closed on both native memory and typed RocksDB.
 
 Local windows already emit every pending partial before a checkpoint barrier. A dedicated
-stock-compatible local mode on Flink 2.2 now returns empty snapshot futures after that drain,
+stock-compatible local mode on both Flink lines returns empty state after that drain,
 so the stateless stage saves neither native keyed metadata nor serializer references. Missing
 the drain fails the snapshot without consuming the pending partials; it never emits them after
 the barrier. Scalar and counted-DISTINCT controls check all four managed/raw state collections,
 exact frequencies and continued input without replay. Stateful operators and the ordinary local
-mode retain the existing snapshot path by default. The version bridge keeps Flink 1.18's final
-snapshot lifecycle unchanged; this foundation does not establish 1.18 stock interoperability.
+mode retain the existing snapshot path by default. Flink 1.18 uses its final snapshot lifecycle
+with a stateless barrier hook; its qualified local TUMBLE controls cover scalar and DISTINCT partials.
 
 When an adapter reconstructs a key from logical fields, ordinary row serialization is not the
 same operation as Flink's generated key projection. The projection reserves NULL variable slots
@@ -599,10 +1104,12 @@ empty. Exported serializer snapshots restore with StreamFusion and planner class
 Strict Arrow ownership checks remain enabled across every handoff and teardown.
 
 The independent build passes 1,184 native tests (two existing ignores) and 185 Java checks on
-2.2.1, including the controls above and 73 overlapping stock/runtime/SQL regressions. Shared
-runtime checks on 1.18.1 pass 54 cases with one existing unsupported SESSION table-function skip;
-those checks do not qualify the temporal canonical adapter on 1.18. Finish retains final native
-cleanup clocks without trying to schedule on an already stopped processing-time service.
+2.2.1, including the controls above and 73 overlapping stock/runtime/SQL regressions. Earlier
+shared runtime checks on 1.18.1 pass 54 cases with one SESSION capability skip. The later shared
+disk-inventory cohort passes 26 selected actual-operator interchange cases, all 32 malformed-state
+checks and 18 metadata-trace controls on 1.18, qualifying those exercised BIGINT component layouts.
+It does not qualify the full 2.2 temporal job or wider-schema matrices on that line. Finish retains
+final native cleanup clocks without scheduling on a stopped processing-time service.
 
 This qualifies representative operator conversion using BIGINT keys/payloads and compact time
 fixtures. Automatic temporal compiled-plan binding and released upstream restore programs are
@@ -1303,9 +1810,11 @@ actual MapView IDs and serializers, including ExternalSerializer snapshots; equi
 alone do not establish serializer compatibility. A fresh raw projection backend avoids TTL wrapper
 filtering or clock refresh during import. Header and map validation finish before any apply, and
 source entries are cleared only after success. Export visits live native state directly in bounded
-frames. Mapped extrema use memory aggregation with raw RocksDB snapshot backing when RocksDB is
-configured. Their ordinary native checkpoints add an optional absent-header frame only when
-orphaned views exist; the default and append-only formats are unchanged.
+frames. Qualified per-record mapped extrema use direct RocksDB accumulator headers and separate
+record-level companion maps. Savepoint capture pins the database; the asynchronous writer streams
+both tables without hydrating the maps. Independent map ages and expired accumulator presence
+survive conversion. Mini-batch mapped execution retains raw RocksDB snapshot backing. Legacy raw
+snapshots remain readable; the default and append-only formats are unchanged.
 Unqualified upstream grouped owners in the rank-template path remain stock-owned. Qualified isolated
 arithmetic jobs verify custom source and committing-sink state, both transposes, immediate re-export,
 native checkpoint recovery and rescaling through one, three and two tasks. They compare full
@@ -1507,6 +2016,13 @@ Its separate 194-control and 32-job cohorts qualify the precise subset on the
 Retraction/view, type/precision and broader failure/version coverage remain open under #569.
 
 
+Local aggregate lifecycle, orphan/cache boundary and corruption cohorts also honor
+`streamfusion.test.canonicalSmoke=true`: the shared selector retains every parameter value and
+pair while avoiding repeated stock RocksDB backend construction for the full Cartesian product.
+Default tests and CI retain the exhaustive providers. The independent asynchronous capture test
+runs all eight type declarations with TTL on/off, then converts two pinned captures on a writer
+thread after live writes and owner close.
+
 The structured retracting MIN/MAX adapter additionally binds integral, date, time and boolean
 cached selections and retained map keys. Its bounded transport uses a lossless internal long
 carrier while stock state retains the exact captured logical serializers and boxed values.
@@ -1681,8 +2197,16 @@ checkpoint recovery and actual SQL/compiled transpose-schema controls. The merge
 2,086 checks, all nine unchanged released aggregate programs per engine and all 192 event-time
 OVER full jobs on the same source/library. The latter retain both native stores, ROWS/RANGE,
 keyed/global state, cleanup on/off, custom connectors and transpose boundaries, no-input returns,
-ordinary native recovery and selected 1→3→2 keyed rescaling. The separate 212-check Flink 1.18 run
-is shared-code regression coverage, not canonical qualification. See [exact OVER coverage](../operators/over.md#released-v2-event-time-unbounded-scalar-binding-partial).
+ordinary native recovery and selected 1→3→2 keyed rescaling. The older 212-check Flink 1.18 run
+established shared-code regression coverage. See [exact OVER coverage](../operators/over.md#released-v2-event-time-unbounded-scalar-binding-partial).
+The same scalar layouts now bind Flink 1.18's released V1 ROWS/RANGE owners through a narrow
+polling-timer policy. Physical callbacks survive independently of timestamp buckets, including
+negative-watermark behavior, future-only neutral folds and overlapping restored timers. Polling
+ledger updates persist during processing, and captured readers stream that pinned metadata
+without hydrating per-key maps. The existing private checkpoint footer carries polling metadata;
+older private checkpoints re-arm pending keys whose writers did not retain a ledger. Four
+selected 1.18 full-job handoffs pass, including native-checkpoint recovery. See the
+[V1 lifecycle and remaining limits](../operators/over.md#flink-118-unbounded-event-time-polling-timers).
 Every operator family remains partial and benchmarking remains deferred under #569.
 
 
@@ -1746,7 +2270,8 @@ preserve arbitrary subclass fields; such factories are not admitted to portable-
 Ordinary SQL that requires a stock sink-materialization helper retains its complete physical
 execution and native-checkpoint route. These ordinary helper identities are not yet qualified
 for canonical interchange; fresh planner display IDs must not make a working job fail during
-topology binding. Qualified stock compiled-plan materializer lowering retains its existing path.
+topology binding. Compiled-plan lowering also has no automatic materializer contract binding;
+explicit adapters have their own component qualification.
 
 The shared two-phase JVM aggregate node also rebuilds its local/global state owners from the
 stock template. This keeps canonical identities, maximum parallelism and serializer contracts
@@ -1776,3 +2301,11 @@ The fixture publishes its staged-input offset atomically after writing the compl
 file. Observers therefore cannot mistake a newly created empty file for the source boundary.
 Kafka handoff workers still require the exact expected offset and include the observed value
 in a mismatch diagnostic; transaction and committed-output assertions remain unchanged.
+
+## OVER metadata serialization memory
+
+Native OVER metadata serialization reserves encoded keys/values, entry-vector growth and the
+write-batch copy before allocation. Keys and timer/counter ledgers allocate their encoded
+capacity once; batching occurs before adding an owner. A denied reservation keeps the dirty
+journal intact and writes nothing for that batch, so a fresh allowance can retry. The encoded
+formats and ordinary native recovery behavior remain unchanged.

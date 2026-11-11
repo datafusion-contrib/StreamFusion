@@ -139,6 +139,68 @@ public final class Native {
   /** Key descriptor prefix selecting Flink's generated projection layout, including NULL slots. */
   public static final int STOCK_KEY_PROJECTION = Integer.MIN_VALUE;
 
+  public static native void configureChangelogNormalizerComparison(
+      long handle, boolean persistent, boolean compareRowKind);
+
+  public static native long captureOverFoldCanonicalSnapshot(long handle);
+
+  public static native long captureChangelogNormalizerCanonicalSnapshot(long handle, long schema);
+
+  public static native long captureEagerDeduplicatorCanonicalSnapshot(long handle, long schema);
+
+  public static native long captureGroupArithmeticCanonicalSnapshot(long handle);
+
+  public static native long captureGroupTypedCanonicalSnapshot(long handle);
+
+  public static native long captureFirstNCanonicalSnapshot(long handle);
+
+  public static native boolean nextCanonicalSnapshot(long snapshot, BatchReceiver receiver);
+
+  public static native void closeCanonicalSnapshot(long snapshot);
+
+  public static native long pinCanonicalDatabases(String directory, long memoryBudget);
+
+  public static native long createCanonicalMemoryContext(long memoryBudget);
+
+  public static native void copyGroupAggregatorCanonicalMemoryState(long source, long target);
+
+  public static native void copyOverCanonicalMemoryState(long source, long target);
+
+  public static native void copyFirstNCanonicalMemoryState(long source, long target);
+
+  public static native void copyTopNCanonicalMemoryState(long source, long target);
+
+  public static native void copyWindowAggregatorCanonicalMemoryState(long source, long target);
+
+  public static native void copySessionAggregatorCanonicalMemoryState(long source, long target);
+
+  public static native void copyUpdatingJoinCanonicalMemoryState(long source, long target);
+
+  public static native void copyWindowJoinCanonicalMemoryState(long source, long target);
+
+  public static native void copyIntervalJoinCanonicalMemoryState(long source, long target);
+
+  public static native void copyTemporalJoinCanonicalMemoryState(long source, long target);
+
+  public static native void copyTemporalSortCanonicalMemoryState(long source, long target);
+
+  public static native void copyWindowRankCanonicalMemoryState(long source, long target);
+
+  public static native void copyBufferedDeduplicatorCanonicalMemoryState(long source, long target);
+
+  public static native void copySinkMaterializerCanonicalMemoryState(long source, long target);
+
+  public static native void copyChangelogNormalizerCanonicalMemoryState(long source, long target);
+
+  public static native void copyEagerDeduplicatorCanonicalMemoryState(long source, long target);
+
+  public static native long withCanonicalDatabases(
+      long snapshot, java.util.function.LongSupplier factory);
+
+  public static native void closeCanonicalDatabases(long snapshot);
+
+  public static native void cancelCanonicalDatabases(long snapshot);
+
   public static native void exportFirstNCanonical(long handle, BatchReceiver receiver);
 
   public static native void importFirstNCanonical(
@@ -165,7 +227,9 @@ public final class Native {
 
   public static native void restoreWindowRankerCanonicalFrontier(long handle, long frontier);
 
-  /** Raw unbounded OVER folds; DISTINCT memberships, pending rows and timers transfer separately. */
+  /**
+   * Raw unbounded OVER folds; DISTINCT memberships, pending rows and timers transfer separately.
+   */
   public static native void exportOverFoldCanonical(long handle, BatchReceiver receiver);
 
   public static native void importOverFoldCanonical(
@@ -173,7 +237,6 @@ public final class Native {
 
   public static native void validateOverFoldCanonical(
       long handle, long arrayAddress, long schemaAddress);
-
 
   public static native void bindOverCanonicalDistinct(long handle, int aggregate);
 
@@ -190,14 +253,32 @@ public final class Native {
 
   public static native void exportOverCanonicalFrameInputs(long handle, BatchReceiver receiver);
 
-  /** Complete retained arithmetic frames, with original rows and raw folds; pending rows transfer separately. */
+  /**
+   * Complete retained arithmetic frames, with original rows and raw folds; pending rows transfer
+   * separately.
+   */
   public static native void exportOverCanonicalFrames(long handle, BatchReceiver receiver);
 
   public static native void importOverCanonicalFrames(
       long handle, long arrayAddress, long schemaAddress);
 
+  /** Bounded retained-input chunk; validate-only decodes without changing the target. */
+  public static native void importOverCanonicalFrameChunk(
+      long handle, long arrayAddress, long schemaAddress, boolean finalChunk, boolean validateOnly);
+
+  /** RANGE retained rows; the owner stays guarded until its separate metadata completes. */
+  public static native void importOverCanonicalFramePayloadChunk(
+      long handle, long arrayAddress, long schemaAddress, boolean finalChunk, boolean validateOnly);
+
   /** Event-time RANGE key protocol, including pending-only keys and empty callbacks. */
   public static native void exportOverCanonicalRange(long handle, BatchReceiver receiver);
+
+  /** Flat cleanup values, cutoffs and physical callbacks, bounded independently of owner size. */
+  public static native void exportOverCanonicalCallbacks(long handle, BatchReceiver receiver);
+
+  /** Flat event-time OVER metadata; unfinished/failed imports cannot run or snapshot. */
+  public static native void importOverCanonicalCallbacks(
+      long handle, long arrayAddress, long schemaAddress, boolean finalChunk, boolean validateOnly);
 
   /** Processing ROWS counters and bucket minima; transfer retained frames before importing it. */
   public static native void exportOverCanonicalProcessingRows(long handle, BatchReceiver receiver);
@@ -213,6 +294,8 @@ public final class Native {
   public static native void fireOverProcessingRowsCleanup(long handle, long timestamp);
 
   public static native void bindOverEventCleanupTimers(long handle);
+
+  public static native void bindOverEventPollingTimers(long handle);
 
   public static native long[] nextOverEventCleanup(long handle);
 
@@ -250,6 +333,8 @@ public final class Native {
 
   public static native void advanceSessionCanonicalAdmission(long handle, long watermark);
 
+  public static native void configureSessionCanonicalProcessingTime(long handle);
+
   public static native void bindSessionCanonicalDistinct(long handle, int aggregate);
 
   public static native void exportSessionCanonicalDistinct(
@@ -265,7 +350,10 @@ public final class Native {
 
   public static native void restoreTumblingCanonicalWatermark(long handle, long watermark);
 
-  public static native void configureSlicingWindowCanonical(long handle, int countStarAggregate);
+  public static native void configureLegacySlicingWindowCanonical(long handle, int countStar);
+
+  public static native void configureSlicingWindowCanonical(
+      long handle, int countStarAggregate, boolean restoresTimerWatermark);
 
   public static native void exportSlicingWindowCanonical(
       long handle, boolean timers, BatchReceiver receiver);
@@ -286,16 +374,17 @@ public final class Native {
   public static final int AGGREGATE_DISTINCT_TTL = 1 << 10;
   public static final int AGGREGATE_DISTINCT_APPEND = 1 << 11;
 
-  /** Synchronously imports a batch from borrowed C structs; imported buffers have independent ownership. */
+  /**
+   * Synchronously imports a batch from borrowed C structs; imported buffers have independent
+   * ownership.
+   */
   @FunctionalInterface
   public interface BatchReceiver {
     void accept(long arrayAddress, long schemaAddress);
   }
 
-
   private static final String LIBRARY_NAME = "streamfusion";
-  private static final String NATIVE_RESOURCE_PREFIX =
-      "/tech/streamfusion/native/";
+  private static final String NATIVE_RESOURCE_PREFIX = "/tech/streamfusion/native/";
 
   static {
     tech.streamfusion.arrow.ArrowRuntime.initialize();
@@ -304,19 +393,41 @@ public final class Native {
   }
 
   public static native long createFirstN(
-      int[] partitions, int[] precisions, int limit, boolean outputRank, long ttlMillis,
-      long nowMillis, byte[][] restoredPartitions, long memoryBudgetBytes);
+      int[] partitions,
+      int[] precisions,
+      int limit,
+      boolean outputRank,
+      long ttlMillis,
+      long nowMillis,
+      byte[][] restoredPartitions,
+      long memoryBudgetBytes);
 
   public static native long createRocksDBFirstN(
-      int[] partitions, int[] precisions, int limit, boolean outputRank, long ttlMillis,
-      long nowMillis, long memoryBudgetBytes, String tableDirectory, int maxParallelism,
-      String optionsJson, long sharedResources, String[] sourceDirectories,
-      String[] sourceSnapshotTokens, int keyGroupStart, int keyGroupEnd, boolean aligned,
+      int[] partitions,
+      int[] precisions,
+      int limit,
+      boolean outputRank,
+      long ttlMillis,
+      long nowMillis,
+      long memoryBudgetBytes,
+      String tableDirectory,
+      int maxParallelism,
+      String optionsJson,
+      long sharedResources,
+      String[] sourceDirectories,
+      String[] sourceSnapshotTokens,
+      int keyGroupStart,
+      int keyGroupEnd,
+      boolean aligned,
       byte[][] restoredPartitions);
 
   public static native void pushFirstN(
-      long handle, long inputArray, long inputSchema, long nowMillis,
-      long outputArray, long outputSchema);
+      long handle,
+      long inputArray,
+      long inputSchema,
+      long nowMillis,
+      long outputArray,
+      long outputSchema);
 
   public static native byte[][] snapshotFirstNPartitions(long handle, int maxParallelism);
 
@@ -327,16 +438,19 @@ public final class Native {
   public static native void closeFirstN(long handle);
 
   public static native void setWindowJoinerCalendar(long handle, Object calendar);
+
   public static native long nextWindowJoinerTimerDeadline(long handle);
+
   public static native void setWindowRankerCalendar(long handle, Object calendar);
+
   public static native long nextWindowRankerTimerDeadline(long handle);
 
   private Native() {}
 
   /**
-   * {@code System.loadLibrary} above searches java.library.path before the bundled JAR resource,
-   * so a leftover library from another StreamFusion release would silently win; its snapshot and
-   * plan wire formats may differ, which corrupts state instead of failing. Comparing the loaded
+   * {@code System.loadLibrary} above searches java.library.path before the bundled JAR resource, so
+   * a leftover library from another StreamFusion release would silently win; its snapshot and plan
+   * wire formats may differ, which corrupts state instead of failing. Comparing the loaded
    * library's build stamp against the JAR's turns that into an immediate, explained failure. In
    * development mode ({@code -Dstreamfusion.native.development=true}) a locally built library may
    * legitimately differ from the JAR stamp, so a mismatch only warns.
@@ -460,9 +574,9 @@ public final class Native {
   static native void panicForTest();
 
   /**
-   * The engine library's live-handle breakdown by type (e.g. {@code SessionAggregator=1}), empty once
-   * every engine handle has been closed. {@link NativeExtensionLoader#liveNativeHandles()} combines
-   * this with the loaded extensions' registries for the test harness's leak checks.
+   * The engine library's live-handle breakdown by type (e.g. {@code SessionAggregator=1}), empty
+   * once every engine handle has been closed. {@link NativeExtensionLoader#liveNativeHandles()}
+   * combines this with the loaded extensions' registries for the test harness's leak checks.
    */
   public static native String liveNativeHandles();
 
@@ -523,15 +637,26 @@ public final class Native {
 
   public static native void bindTemporalJoinCanonicalKeys(long handle, int[] precisions);
 
-  public static native void exportTemporalJoinCanonicalRows(long handle, boolean left, BatchReceiver receiver);
+  public static native void exportTemporalJoinCanonicalRows(
+      long handle, boolean left, BatchReceiver receiver);
 
-  public static native void importTemporalJoinCanonicalRows(long handle, boolean left, long array, long schema);
+  public static native void importTemporalJoinCanonicalRows(
+      long handle, boolean left, long array, long schema);
 
-  public static native void exportTemporalJoinCanonicalMetadata(long handle, BatchReceiver receiver);
+  /** Bounded temporal cursor, cleanup and physical callback records. */
+  public static native void exportTemporalJoinCanonicalRecords(long handle, BatchReceiver receiver);
 
-  public static native void importTemporalJoinCanonicalMetadata(long handle, long array, long schema);
+  public static native void validateTemporalJoinCanonicalRows(
+      long handle, boolean left, long array, long schema);
 
+  public static native void importTemporalJoinCanonicalRecords(
+      long handle, long array, long schema, boolean last, boolean validating);
 
+  public static native void exportTemporalJoinCanonicalMetadata(
+      long handle, BatchReceiver receiver);
+
+  public static native void importTemporalJoinCanonicalMetadata(
+      long handle, long array, long schema);
 
   public static native long updatingJoinerStateBytes(long handle);
 
@@ -573,10 +698,7 @@ public final class Native {
    * precision parameter; use {@code -1} for every non-timestamp key column.
    */
   public static native int[] flinkBinaryRowHashes(
-      long arrayAddress,
-      long schemaAddress,
-      int[] keyColumns,
-      int[] timestampPrecisions);
+      long arrayAddress, long schemaAddress, int[] keyColumns, int[] timestampPrecisions);
 
   /**
    * Imports an int32 column the JVM exported and exports an equal column back into the
@@ -626,14 +748,14 @@ public final class Native {
    * tree (pre-order parallel arrays — see the expression encoder): {@code kinds} tags each node
    * (0=input ref, 1=long literal, 2=double literal, 3=string literal, 4=bool literal, 6=call,
    * 7/8/9=int/smallint/tinyint literal — narrow integer literals whose value still rides in the
-   * long pool but keep their declared width so arithmetic matches the host), {@code payload} carries
-   * the column index / op code / literal-pool index, and {@code childCounts} the operand count of
-   * each call; literals are drawn from {@code longs}/{@code doubles}/{@code strings} by index. The
-   * handle compiles the plan once (against the first batch's schema) and reuses it, and must be
-   * released with {@link #closeFilterExpression(long)}.
+   * long pool but keep their declared width so arithmetic matches the host), {@code payload}
+   * carries the column index / op code / literal-pool index, and {@code childCounts} the operand
+   * count of each call; literals are drawn from {@code longs}/{@code doubles}/{@code strings} by
+   * index. The handle compiles the plan once (against the first batch's schema) and reuses it, and
+   * must be released with {@link #closeFilterExpression(long)}.
    *
-   * <p>Call op codes: 0=+, 1=-, 2=*, 10=&gt;, 11=&gt;=, 12=&lt;, 13=&lt;=, 14==, 15=&lt;&gt;, 20=AND,
-   * 21=OR, 22=NOT.
+   * <p>Call op codes: 0=+, 1=-, 2=*, 10=&gt;, 11=&gt;=, 12=&lt;, 13=&lt;=, 14==, 15=&lt;&gt;,
+   * 20=AND, 21=OR, 22=NOT.
    */
   public static native long createFilterExpression(
       int[] kinds,
@@ -644,9 +766,9 @@ public final class Native {
       String[] strings);
 
   /**
-   * Filters a batch the JVM exported through a compiled predicate handle, writing the surviving rows
-   * into the consumer-allocated output C structs. A null predicate result drops the row, as SQL
-   * {@code WHERE} requires.
+   * Filters a batch the JVM exported through a compiled predicate handle, writing the surviving
+   * rows into the consumer-allocated output C structs. A null predicate result drops the row, as
+   * SQL {@code WHERE} requires.
    *
    * @param handle a handle from {@link #createFilterExpression}
    * @param inArrayAddress address of the input {@code ArrowArray} C struct
@@ -666,6 +788,7 @@ public final class Native {
 
   /**
    * Assigns local calendar windows and converts their window-time properties using released Flink.
+   *
    * @param inArrayAddress input Arrow array
    * @param inSchemaAddress input Arrow schema
    * @param outArrayAddress output Arrow array
@@ -678,9 +801,18 @@ public final class Native {
    * @param nowMillis current processing time
    * @param calendar batched released-Flink local/epoch conversion
    */
-  public static native void assignCalendarWindows(long inArrayAddress, long inSchemaAddress,
-      long outArrayAddress, long outSchemaAddress, int timeColumn, long windowMillis,
-      long slideMillis, boolean cumulative, boolean proctime, long nowMillis, Object calendar);
+  public static native void assignCalendarWindows(
+      long inArrayAddress,
+      long inSchemaAddress,
+      long outArrayAddress,
+      long outSchemaAddress,
+      int timeColumn,
+      long windowMillis,
+      long slideMillis,
+      boolean cumulative,
+      boolean proctime,
+      long nowMillis,
+      Object calendar);
 
   /**
    * Runs a batch the JVM exported through the stateless windowing table function, writing the
@@ -721,10 +853,11 @@ public final class Native {
   /**
    * Stateless GROUPING SETS / CUBE / ROLLUP expansion: fans each input row out to {@code
    * numExpandRows} output rows, one per grouping set. For output column {@code c} and expand row
-   * {@code r}, {@code copyIndices[r*numOutCols + c]} is the input column to copy (an {@code InputRef}
-   * cell) or {@code -1} for a literal — the expand-id column ({@code expandIdIndex}) takes the per-row
-   * grouping id {@code expandIdValues[r]}, every other literal cell is a typed NULL (a grouped-out
-   * key). The {@code $row_kind$} tag rides through, so the expansion is changelog-transparent.
+   * {@code r}, {@code copyIndices[r*numOutCols + c]} is the input column to copy (an {@code
+   * InputRef} cell) or {@code -1} for a literal — the expand-id column ({@code expandIdIndex})
+   * takes the per-row grouping id {@code expandIdValues[r]}, every other literal cell is a typed
+   * NULL (a grouped-out key). The {@code $row_kind$} tag rides through, so the expansion is
+   * changelog-transparent.
    *
    * @param expandIdIsLong whether the expand-id column is BIGINT (Int64) rather than INT (Int32)
    */
@@ -741,10 +874,10 @@ public final class Native {
       long[] expandIdValues);
 
   /**
-   * Stateless INNER UNNEST of an ARRAY column: fans each input row out to one output row per element
-   * of {@code arrayCol}, the input columns repeated and the element appended ({@code [input cols..,
-   * element]}). A null/empty array yields no rows (INNER); a null element rides through as a null
-   * row. The {@code $row_kind$} tag rides through (repeated per element), so it is
+   * Stateless INNER UNNEST of an ARRAY column: fans each input row out to one output row per
+   * element of {@code arrayCol}, the input columns repeated and the element appended ({@code [input
+   * cols.., element]}). A null/empty array yields no rows (INNER); a null element rides through as
+   * a null row. The {@code $row_kind$} tag rides through (repeated per element), so it is
    * changelog-transparent.
    */
   public static native void unnest(
@@ -770,16 +903,16 @@ public final class Native {
       int[] projection);
 
   /**
-   * Creates a buffering local half of a two-phase non-windowed {@code GROUP BY} and returns an opaque
-   * handle. It accumulates rows by key across batches in memory (each aggregate folds its {@code
-   * valueColumns} entry, or {@code -1} for COUNT(*), read as {@code valueTypes}; SUM kind 0, MIN 1,
-   * MAX 2, COUNT 3, COUNT(DISTINCT) 7, SUM(DISTINCT) 9) and emits one partial row per key ({@code
-   * [key0.., partial0.., distinct-view0..]}, no {@code $row_kind$} — insert-only) when flushed. Each
-   * {@code distinctViewSources} entry names the aggregate whose per-bundle distinct set backs the
-   * corresponding trailing view column (the bundle's (value, count) entries as a list of structs, the
-   * wire form of Flink's serialized MapView partial). The buffer is transient (drained before each
-   * checkpoint by the operator), so there is no snapshot/restore — the global half keeps the durable
-   * state. Released with {@link #closeLocalGroupAggregator(long)}.
+   * Creates a buffering local half of a two-phase non-windowed {@code GROUP BY} and returns an
+   * opaque handle. It accumulates rows by key across batches in memory (each aggregate folds its
+   * {@code valueColumns} entry, or {@code -1} for COUNT(*), read as {@code valueTypes}; SUM kind 0,
+   * MIN 1, MAX 2, COUNT 3, COUNT(DISTINCT) 7, SUM(DISTINCT) 9) and emits one partial row per key
+   * ({@code [key0.., partial0.., distinct-view0..]}, no {@code $row_kind$} — insert-only) when
+   * flushed. Each {@code distinctViewSources} entry names the aggregate whose per-bundle distinct
+   * set backs the corresponding trailing view column (the bundle's (value, count) entries as a list
+   * of structs, the wire form of Flink's serialized MapView partial). The buffer is transient
+   * (drained before each checkpoint by the operator), so there is no snapshot/restore — the global
+   * half keeps the durable state. Released with {@link #closeLocalGroupAggregator(long)}.
    */
   public static native long createLocalGroupAggregator(
       int[] aggregateKinds,
@@ -792,7 +925,8 @@ public final class Native {
       long memoryBudgetBytes);
 
   /** Configures optional secondary argument columns before the local consumes its first batch. */
-  public static native void configureLocalGroupAggregateArguments(long handle, int[] auxiliaryColumns);
+  public static native void configureLocalGroupAggregateArguments(
+      long handle, int[] auxiliaryColumns);
 
   public static native void configureLocalGroupStockAppendCanonical(long handle);
 
@@ -810,8 +944,8 @@ public final class Native {
   public static native void closeLocalGroupAggregator(long handle);
 
   /**
-   * Compiles an encoded Calc — an optional condition tree plus the projection trees, sharing one set
-   * of pools, with each tree's root in {@code projectionRoots}/{@code conditionRoot} — into a
+   * Compiles an encoded Calc — an optional condition tree plus the projection trees, sharing one
+   * set of pools, with each tree's root in {@code projectionRoots}/{@code conditionRoot} — into a
    * reusable handle. Released with {@link #closeCalcExpression(long)}.
    *
    * @param projectionRoots the pre-order node index of each projection tree's root
@@ -832,10 +966,10 @@ public final class Native {
   /**
    * Compiles an encoded Calc against the Arrow schema of its input (exported by the JVM through the
    * C Data Interface) and writes the Arrow schema its projections would produce to {@code
-   * outputSchemaAddress}. Types only — no batch is evaluated — so the planner can compare the native
-   * result types with the plan's declared row type before the job runs. Returns null once the schema
-   * is written, else why none could be inferred: a tree DataFusion cannot compile, or a condition
-   * that is not boolean.
+   * outputSchemaAddress}. Types only — no batch is evaluated — so the planner can compare the
+   * native result types with the plan's declared row type before the job runs. Returns null once
+   * the schema is written, else why none could be inferred: a tree DataFusion cannot compile, or a
+   * condition that is not boolean.
    */
   public static native String inferCalcOutputSchema(
       int[] kinds,
@@ -897,7 +1031,8 @@ public final class Native {
    * @param inArrayAddress address of the input {@code ArrowArray} C struct
    * @param inSchemaAddress address of the input {@code ArrowSchema} C struct
    * @param keyColumns indices of the key columns to hash
-   * @param timestampPrecisions logical timestamp precision per key column ({@code -1} for non-timestamp keys)
+   * @param timestampPrecisions logical timestamp precision per key column ({@code -1} for
+   *     non-timestamp keys)
    * @param maxParallelism number of Flink key groups
    * @param parallelism number of downstream channels
    */
@@ -937,7 +1072,9 @@ public final class Native {
   /** Non-empty key groups in the current fragment's parent batch. */
   public static native int[] currentSplitKeyGroups(long handle);
 
-  /** Original parent-batch row positions for the fragment returned by the latest {@link #nextSplit}. */
+  /**
+   * Original parent-batch row positions for the fragment returned by the latest {@link #nextSplit}.
+   */
   public static native int[] currentSplitOrdinals(long handle);
 
   /** Releases a split handle. */
@@ -1140,6 +1277,7 @@ public final class Native {
 
   /**
    * Attaches released-Flink deadlines to local fixed-window bounds.
+   *
    * @param handle fixed-window handle, either heap or persistent
    * @param calendar batched local-end conversion
    */
@@ -1147,11 +1285,11 @@ public final class Native {
 
   /**
    * Reads the earliest remaining regional timer after a firing pass.
+   *
    * @param handle fixed-window handle, either heap or persistent
    * @return inclusive epoch deadline, or {@link Long#MIN_VALUE} when no window remains
    */
   public static native long fixedWindowNextTimerDeadline(long handle);
-
 
   /**
    * Creates a stateful tumbling-window aggregator and returns an opaque handle. The handle owns
@@ -1161,13 +1299,14 @@ public final class Native {
    * @param windowMillis window size in milliseconds
    * @param slideMillis window slide in milliseconds (equal to the size for a tumbling window)
    * @param valueTypes one value-column type per aggregate (0=bigint, 1=double, 2=int, 4=smallint,
-   *     5=tinyint, 6=float), positionally matching {@code aggregateKinds} so each aggregate reads its
-   *     own value column
-   * @param aggregateKinds one code per aggregate: 0=SUM, 1=MIN, 2=MAX, 3=COUNT, 4=AVG,
-   *     7=COUNT DISTINCT, 9=retracting integer SUM, 10=retracting COUNT,
-   *     11=visible live-row COUNT, 12=hidden live-row COUNT
+   *     5=tinyint, 6=float), positionally matching {@code aggregateKinds} so each aggregate reads
+   *     its own value column
+   * @param aggregateKinds one code per aggregate: 0=SUM, 1=MIN, 2=MAX, 3=COUNT, 4=AVG, 7=COUNT
+   *     DISTINCT, 9=retracting integer SUM, 10=retracting COUNT, 11=visible live-row COUNT,
+   *     12=hidden live-row COUNT
    * @param memoryBudgetBytes task off-heap budget bounding the open-window state (negative for
-   *     unaccounted); exceeding it throws {@link NativeMemoryLimitException} from the violating call
+   *     unaccounted); exceeding it throws {@link NativeMemoryLimitException} from the violating
+   *     call
    */
   public static native long createTumblingAggregator(
       long windowMillis,
@@ -1189,8 +1328,9 @@ public final class Native {
 
   /**
    * Window-attached local half: folds a batch whose rows carry explicit {@code window_start}/{@code
-   * window_end} columns (epoch millis) — an upstream window aggregate's output being re-aggregated per
-   * window (Nexmark q5) — into the open windows, folding each row into the single window it names.
+   * window_end} columns (epoch millis) — an upstream window aggregate's output being re-aggregated
+   * per window (Nexmark q5) — into the open windows, folding each row into the single window it
+   * names.
    */
   public static native void updateAttachedTumblingAggregator(
       long handle, long inArrayAddress, long inSchemaAddress);
@@ -1274,17 +1414,18 @@ public final class Native {
 
   /**
    * Creates a columnar OVER aggregator: event-time frames buffer input until a watermark, while
-   * proctime frames emit eagerly. Each output row appends its frame aggregates. Released with {@link #closeOverAggregator}.
+   * proctime frames emit eagerly. Each output row appends its frame aggregates. Released with
+   * {@link #closeOverAggregator}.
    *
-   * @param valueTypes value column type per aggregate (see {@link #createTumblingAggregator}); empty
-   *     for window-function OVER with no value argument
+   * @param valueTypes value column type per aggregate (see {@link #createTumblingAggregator});
+   *     empty for window-function OVER with no value argument
    * @param aggregateKinds aggregate codes (see {@link #createTumblingAggregator})
    * @param rtColumn rowtime column index in the input batch
    * @param valueColumns value column index per aggregate (each aggregate reads its own); empty for
    *     window-function OVER
    * @param keyColumns PARTITION BY column indices in the input batch (empty for no partition)
-   * @param frameKind frame shape: 0 = RANGE unbounded preceding, 1 = bounded ROWS, 2 = bounded RANGE,
-   *     3 = ROWS unbounded preceding
+   * @param frameKind frame shape: 0 = RANGE unbounded preceding, 1 = bounded ROWS, 2 = bounded
+   *     RANGE, 3 = ROWS unbounded preceding
    * @param frameOffset n preceding rows (ROWS) or the preceding interval in millis (RANGE); 0 when
    *     unbounded
    * @param proctime whether the order is processing time (arrival order, eager emit) vs a rowtime
@@ -1367,10 +1508,12 @@ public final class Native {
       long memoryBudgetBytes);
 
   /** Attaches the managed heap copy-on-write observer for decimal RANGE state. */
-  public static native void setOverAggregatorHeapSnapshotProbe(long handle, Object probe, int maxParallelism);
+  public static native void setOverAggregatorHeapSnapshotProbe(
+      long handle, Object probe, int maxParallelism);
 
   /** Applies heap RANGE map reconstruction for a canonical savepoint after raw OVER restore. */
-  public static native void restoreOverAggregatorCanonicalRangeOrder(long handle, byte[][] snapshots);
+  public static native void restoreOverAggregatorCanonicalRangeOrder(
+      long handle, byte[][] snapshots);
 
   /**
    * Creates an event-time sorter over the given rowtime column and returns an opaque handle. Each
@@ -1395,7 +1538,8 @@ public final class Native {
   public static native byte[] snapshotTemporalSorter(long handle);
 
   /** Binds independent cache clocks after the original processing-time row payload. */
-  public static native void bindIntervalJoinCanonicalClock(long handle, int leftArity, int rightArity);
+  public static native void bindIntervalJoinCanonicalClock(
+      long handle, int leftArity, int rightArity);
 
   /** Returns no deadline or the earliest actual native cleanup deadline. */
   public static native long[] intervalJoinCleanupDeadline(long handle);
@@ -1439,22 +1583,21 @@ public final class Native {
 
   public static native void importTemporalSortCanonicalRows(long handle, long array, long schema);
 
-
   /** Rebuilds an event-time sorter from a snapshot and returns a fresh handle. */
   public static native long restoreTemporalSorter(
       int rtColumn, byte[] snapshot, long memoryBudgetBytes);
 
   /**
-   * Creates a keep-first deduplicator over the partition-key columns and rowtime column, and returns
-   * an opaque handle. Each input batch is buffered; on a watermark the deduplicator emits each key's
-   * minimum-rowtime row (insert-only) once the watermark reaches that rowtime, and drops every later
-   * row for the key. Released with {@link #closeKeepFirstDeduplicator}.
+   * Creates a keep-first deduplicator over the partition-key columns and rowtime column, and
+   * returns an opaque handle. Each input batch is buffered; on a watermark the deduplicator emits
+   * each key's minimum-rowtime row (insert-only) once the watermark reaches that rowtime, and drops
+   * every later row for the key. Released with {@link #closeKeepFirstDeduplicator}.
    *
    * @param stateTtlMillis idle-state retention ({@code table.exec.state.ttl}); {@code 0} disables
    *     expiry. Only the emitted markers expire — the buffered candidates mirror Flink's
    *     deliberately un-TTL'd timer state. The marker is written once, when the key fires, and
-   *     never refreshed, so an emitted key expires a fixed retention after firing and can then
-   *     emit a second first row.
+   *     never refreshed, so an emitted key expires a fixed retention after firing and can then emit
+   *     a second first row.
    */
   public static native long createKeepFirstDeduplicator(
       int[] partitionColumns,
@@ -1471,12 +1614,15 @@ public final class Native {
       long handle, long inArrayAddress, long inSchemaAddress, long nowMillis);
 
   /**
-   * Exports each key's first (minimum-rowtime) row whose rowtime the watermark has reached.
-   * Firing stamps the key's emitted marker with {@code nowMillis} — the marker's single TTL'd
-   * write.
+   * Exports each key's first (minimum-rowtime) row whose rowtime the watermark has reached. Firing
+   * stamps the key's emitted marker with {@code nowMillis} — the marker's single TTL'd write.
    */
   public static native void flushKeepFirstDeduplicator(
-      long handle, long watermarkMillis, long nowMillis, long outArrayAddress, long outSchemaAddress);
+      long handle,
+      long watermarkMillis,
+      long nowMillis,
+      long outArrayAddress,
+      long outSchemaAddress);
 
   /**
    * Rows dropped as late (rowtime already below the watermark) over the handle's lifetime,
@@ -1488,7 +1634,9 @@ public final class Native {
   /** Releases the deduplicator and its per-key state. */
   public static native void closeKeepFirstDeduplicator(long handle);
 
-  /** Lists the non-empty Flink key groups in a keep-first deduplication raw keyed-state checkpoint. */
+  /**
+   * Lists the non-empty Flink key groups in a keep-first deduplication raw keyed-state checkpoint.
+   */
   public static native byte[][] snapshotKeepFirstDeduplicatorPartitions(
       long handle, int maxParallelism, int[] timestampPrecisions);
 
@@ -1508,12 +1656,13 @@ public final class Native {
       long memoryBudgetBytes);
 
   /**
-   * Creates an eager (push→emit) deduplicator and returns an opaque handle. Per partition key, keep-
-   * last keeps the winning row and emits a retract changelog eagerly per input row (first row {@code
-   * +I}; a replacement emits {@code -U}(previous, gated on {@code generateUpdateBefore})/{@code +U}
-   * (new)); keep-first emits the first row per key ({@code +I}, insert-only) and drops the rest. A
-   * rowtime order ({@code rowtimeOrdered}) reads the rowtime column and keeps the max-rowtime row;
-   * proctime uses arrival order (no rowtime read). Released with {@link #closeKeepLastDeduplicator}.
+   * Creates an eager (push→emit) deduplicator and returns an opaque handle. Per partition key,
+   * keep- last keeps the winning row and emits a retract changelog eagerly per input row (first row
+   * {@code +I}; a replacement emits {@code -U}(previous, gated on {@code
+   * generateUpdateBefore})/{@code +U} (new)); keep-first emits the first row per key ({@code +I},
+   * insert-only) and drops the rest. A rowtime order ({@code rowtimeOrdered}) reads the rowtime
+   * column and keeps the max-rowtime row; proctime uses arrival order (no rowtime read). Released
+   * with {@link #closeKeepLastDeduplicator}.
    *
    * @param generateInsert Flink's insert-sensitivity ({@code
    *     table.exec.deduplicate.insert-update-after-sensitive-enabled}, default true). With it and
@@ -1572,11 +1721,12 @@ public final class Native {
   public static native void validateBufferedDeduplicatorCanonical(
       long handle, long rowSchema, boolean markers, long array, long schema);
 
-
   /** Releases the deduplicator and its per-key state. */
   public static native void closeKeepLastDeduplicator(long handle);
 
-  /** Lists the non-empty Flink key groups in a keep-last deduplication raw keyed-state checkpoint. */
+  /**
+   * Lists the non-empty Flink key groups in a keep-last deduplication raw keyed-state checkpoint.
+   */
   public static native byte[][] snapshotKeepLastDeduplicatorPartitions(
       long handle, int maxParallelism, int[] timestampPrecisions);
 
@@ -1602,10 +1752,10 @@ public final class Native {
       long memoryBudgetBytes);
 
   /**
-   * Creates a window-rank ranker (window Top-N / window deduplication) over the attached
-   * {@code window_start}/{@code window_end} columns and returns an opaque handle. Within each window
-   * and partition key it keeps the {@code limit} rows ordered by the sort columns, emitting them
-   * (with the rank number appended when {@code outputRankNumber}) once a watermark closes the window.
+   * Creates a window-rank ranker (window Top-N / window deduplication) over the attached {@code
+   * window_start}/{@code window_end} columns and returns an opaque handle. Within each window and
+   * partition key it keeps the {@code limit} rows ordered by the sort columns, emitting them (with
+   * the rank number appended when {@code outputRankNumber}) once a watermark closes the window.
    * Released with {@link #closeWindowRanker}.
    */
   public static native long createWindowRanker(
@@ -1619,7 +1769,9 @@ public final class Native {
       boolean outputRankNumber,
       long memoryBudgetBytes);
 
-  /** Selects the window dedup keep-last tie rule before accepting input, including after restore. */
+  /**
+   * Selects the window dedup keep-last tie rule before accepting input, including after restore.
+   */
   public static native void setWindowRankerKeepLastOnTie(long handle, boolean keepLastOnTie);
 
   /** Buffers an input batch; each window's top-N rows are emitted when a watermark closes it. */
@@ -1664,9 +1816,8 @@ public final class Native {
    * @param keyTimestampPrecisions pre-order logical key type descriptors (timestamp precision or
    *     {@code -1}); this lets the native BinaryRow codec preserve nested timestamp layout
    * @param countColumns per-aggregate secondary input column ({@code -1} otherwise): a two-phase
-   *     numeric merge reads its count partial; LISTAGG reads its separator and JSON_OBJECTAGG
-   *     reads its key.
-   *     An empty array retains the historical single-phase encoding.
+   *     numeric merge reads its count partial; LISTAGG reads its separator and JSON_OBJECTAGG reads
+   *     its key. An empty array retains the historical single-phase encoding.
    * @param distinctViewColumns per-aggregate two-phase distinct-view column ({@code -1} otherwise):
    *     the column carries a local bundle's distinct (value, count) entries as a list of structs,
    *     folded into the per-key distinct set with multiplicities instead of one value per row
@@ -1727,9 +1878,9 @@ public final class Native {
       boolean emitUnchangedWithTtl);
 
   /**
-   * Folds an input batch into per-key state, exporting the changelog rows it produces (grouping keys,
-   * aggregate results, then the {@code $row_kind$} byte column) into the consumer-allocated C structs.
-   * {@code nowMillis} is the operator's processing-time reading — the state-TTL clock.
+   * Folds an input batch into per-key state, exporting the changelog rows it produces (grouping
+   * keys, aggregate results, then the {@code $row_kind$} byte column) into the consumer-allocated C
+   * structs. {@code nowMillis} is the operator's processing-time reading — the state-TTL clock.
    */
   public static native void updateGroupAggregator(
       long handle,
@@ -2071,10 +2222,9 @@ public final class Native {
   public static native boolean rocksdbKeepFirstDeduplicatorSupported(long schemaAddress);
 
   /**
-   * Creates a watermark-buffered keep-first deduplicator whose pending candidates and fired
-   * markers live directly in a Rust-owned RocksDB instance. The declared input schema builds the
-   * row codec the persisted rows are decoded with, so restored bytes parse before any batch
-   * arrives.
+   * Creates a watermark-buffered keep-first deduplicator whose pending candidates and fired markers
+   * live directly in a Rust-owned RocksDB instance. The declared input schema builds the row codec
+   * the persisted rows are decoded with, so restored bytes parse before any batch arrives.
    */
   public static native long createRocksDBKeepFirstDeduplicator(
       int[] partitionColumns,
@@ -2099,7 +2249,11 @@ public final class Native {
       long handle, long inArrayAddress, long inSchemaAddress, long nowMillis);
 
   public static native void flushRocksDBKeepFirstDeduplicator(
-      long handle, long watermarkMillis, long nowMillis, long outArrayAddress, long outSchemaAddress);
+      long handle,
+      long watermarkMillis,
+      long nowMillis,
+      long outArrayAddress,
+      long outSchemaAddress);
 
   public static native String[] checkpointRocksDBKeepFirstDeduplicator(
       long handle, String snapshotDirectory);
@@ -2161,8 +2315,7 @@ public final class Native {
       long nowMillis,
       BatchReceiver receiver);
 
-  public static native void flushRocksDBUpdatingJoiner(
-      long handle, BatchReceiver receiver);
+  public static native void flushRocksDBUpdatingJoiner(long handle, BatchReceiver receiver);
 
   public static native String[] checkpointRocksDBUpdatingJoiner(
       long handle, String snapshotDirectory);
@@ -2297,7 +2450,9 @@ public final class Native {
 
   public static native long rocksdbIntervalJoinerTimerDeadline(long handle);
 
-  /** Materializes direct RocksDB interval-join state as backend-independent key-group partitions. */
+  /**
+   * Materializes direct RocksDB interval-join state as backend-independent key-group partitions.
+   */
   public static native byte[][] snapshotRocksDBIntervalJoinerPartitions(long handle);
 
   public static native long rocksdbIntervalJoinerStateBytes(long handle);
@@ -2353,12 +2508,18 @@ public final class Native {
       long handle, long inArrayAddress, long inSchemaAddress, long nowMillis);
 
   public static native void advanceRocksDBTemporalJoiner(
-      long handle, long watermarkMillis, long nowMillis, long outArrayAddress, long outSchemaAddress);
+      long handle,
+      long watermarkMillis,
+      long nowMillis,
+      long outArrayAddress,
+      long outSchemaAddress);
 
   public static native String[] checkpointRocksDBTemporalJoiner(
       long handle, String snapshotDirectory);
 
-  /** Materializes direct RocksDB temporal-join state as backend-independent key-group partitions. */
+  /**
+   * Materializes direct RocksDB temporal-join state as backend-independent key-group partitions.
+   */
   public static native byte[][] snapshotRocksDBTemporalJoinerPartitions(long handle);
 
   public static native long rocksdbTemporalJoinerStateBytes(long handle);
@@ -2401,8 +2562,8 @@ public final class Native {
       long handle, String snapshotDirectory);
 
   /**
-   * Serializes the direct RocksDB sort buffer as the memory snapshot's own plain-IPC blob; the
-   * host frames it into the singleton key group exactly as it frames the memory snapshot.
+   * Serializes the direct RocksDB sort buffer as the memory snapshot's own plain-IPC blob; the host
+   * frames it into the singleton key group exactly as it frames the memory snapshot.
    */
   public static native byte[] snapshotRocksDBTemporalSorter(long handle);
 
@@ -2520,17 +2681,17 @@ public final class Native {
   /**
    * Whether an OVER aggregate's shape is admitted by the direct RocksDB store: an event-time
    * unbounded fold of non-distinct aggregates or pure window functions, with every input column
-   * encodable by the store's row codec. Proctime ordering, bounded frames, and distinct
-   * aggregates stay on the snapshot-store compat path.
+   * encodable by the store's row codec. Proctime ordering, bounded frames, and distinct aggregates
+   * stay on the snapshot-store compat path.
    */
   public static native boolean rocksdbOverAggregatorSupported(
       int[] valueTypes, int[] aggregateKinds, int frameKind, boolean proctime, long schemaAddress);
 
   /**
-   * Creates an event-time OVER aggregator whose pending rows and per-key running fold live
-   * directly in a Rust-owned RocksDB instance. The declared input schema builds the arrow-row
-   * converters the persisted state is decoded with, so restored bytes parse before any batch
-   * arrives; {@code nowMillis} is the restore clock the retention stamps migrate against.
+   * Creates an event-time OVER aggregator whose pending rows and per-key running fold live directly
+   * in a Rust-owned RocksDB instance. The declared input schema builds the arrow-row converters the
+   * persisted state is decoded with, so restored bytes parse before any batch arrives; {@code
+   * nowMillis} is the restore clock the retention stamps migrate against.
    */
   public static native long createRocksDBOverAggregator(
       int[] valueTypes,
@@ -2764,8 +2925,8 @@ public final class Native {
 
   /**
    * Folds an input changelog batch into per-key keep-last state, exporting the normalized changelog
-   * (the input columns then the {@code $row_kind$} byte column) into the consumer-allocated C structs.
-   * {@code nowMillis} is the operator's processing-time reading — the state-TTL clock.
+   * (the input columns then the {@code $row_kind$} byte column) into the consumer-allocated C
+   * structs. {@code nowMillis} is the operator's processing-time reading — the state-TTL clock.
    */
   public static native void pushChangelogNormalizer(
       long handle,
@@ -2883,9 +3044,9 @@ public final class Native {
   public static native void closeSinkMaterializer(long handle);
 
   /**
-   * Creates an event-time INNER interval joiner and returns an opaque handle. It buffers both inputs
-   * per equi-join key and emits a matched pair when the second of its two rows arrives. The JVM owns
-   * the handle across calls and must release it with {@link #closeIntervalJoiner}.
+   * Creates an event-time INNER interval joiner and returns an opaque handle. It buffers both
+   * inputs per equi-join key and emits a matched pair when the second of its two rows arrives. The
+   * JVM owns the handle across calls and must release it with {@link #closeIntervalJoiner}.
    *
    * @param leftKeys equi-join key column indices in the left input batch
    * @param rightKeys equi-join key column indices in the right input batch
@@ -2895,9 +3056,11 @@ public final class Native {
    * @param upperMillis inclusive upper bound on {@code left.rt - right.rt}
    * @param joinType 0=INNER, 1=LEFT, 2=RIGHT, 3=FULL (outer pads unmatched rows at eviction)
    * @param leftSchemaAddress C Data Interface address of the left input's (data-only) Arrow schema
-   * @param rightSchemaAddress C Data Interface address of the right input's (data-only) Arrow schema
-   * @param predKinds residual non-equi predicate over the joined {@code [left.., right..]} row (empty
-   *     ⇒ none), ANDed with the interval bounds; same encoding {@link #createFilterExpression} takes
+   * @param rightSchemaAddress C Data Interface address of the right input's (data-only) Arrow
+   *     schema
+   * @param predKinds residual non-equi predicate over the joined {@code [left.., right..]} row
+   *     (empty ⇒ none), ANDed with the interval bounds; same encoding {@link
+   *     #createFilterExpression} takes
    * @param memoryBudgetBytes task off-heap budget (see {@link #createTumblingAggregator})
    */
   public static native long createIntervalJoiner(
@@ -2978,24 +3141,27 @@ public final class Native {
 
   /**
    * Creates an event-time temporal-table joiner ({@code FOR SYSTEM_TIME AS OF probe.rowtime}) and
-   * returns an opaque handle. The right input is a versioned changelog keyed by the equi-join key; a
-   * probe row is buffered until the watermark passes its time, then joined against the build version
-   * valid at that time. The JVM owns the handle and must release it with {@link #closeTemporalJoiner}.
+   * returns an opaque handle. The right input is a versioned changelog keyed by the equi-join key;
+   * a probe row is buffered until the watermark passes its time, then joined against the build
+   * version valid at that time. The JVM owns the handle and must release it with {@link
+   * #closeTemporalJoiner}.
    *
    * @param leftKeys equi-join key column indices in the probe (left) input batch
    * @param rightKeys equi-join key column indices in the build (right) input batch
    * @param leftTime rowtime column index in the probe input batch
    * @param rightTime rowtime column index in the build input batch
-   * @param joinType 0=INNER or 1=LEFT (a LEFT join null-pads a probe row with no valid build version)
+   * @param joinType 0=INNER or 1=LEFT (a LEFT join null-pads a probe row with no valid build
+   *     version)
    * @param leftSchemaAddress C Data Interface address of the left input's (data-only) Arrow schema
-   * @param rightSchemaAddress C Data Interface address of the right input's (data-only) Arrow schema
-   * @param predKinds residual non-equi predicate over the joined {@code [left.., right..]} row (empty
-   *     ⇒ none); same encoding {@link #createFilterExpression} takes
+   * @param rightSchemaAddress C Data Interface address of the right input's (data-only) Arrow
+   *     schema
+   * @param predKinds residual non-equi predicate over the joined {@code [left.., right..]} row
+   *     (empty ⇒ none); same encoding {@link #createFilterExpression} takes
    * @param stateTtlMillis idle-state retention ({@code table.exec.state.ttl}); {@code <= 1}
    *     disables cleaning (Flink's literal {@code minRetentionTime > 1}). Flink's temporal join
-   *     keeps ONE per-key processing-time cleanup deadline at 1.5x the retention (the planner's
-   *     max idle retention, derived natively) and clears the key's entire state — both sides —
-   *     when it fires
+   *     keeps ONE per-key processing-time cleanup deadline at 1.5x the retention (the planner's max
+   *     idle retention, derived natively) and clears the key's entire state — both sides — when it
+   *     fires
    * @param memoryBudgetBytes task off-heap budget (see {@link #createTumblingAggregator})
    */
   public static native long createTemporalJoiner(
@@ -3022,7 +3188,10 @@ public final class Native {
   public static native void pushLeftTemporalJoiner(
       long handle, long inArrayAddress, long inSchemaAddress, long nowMillis);
 
-  /** Folds a build-side (right) changelog batch into the versioned state (no output until a watermark). */
+  /**
+   * Folds a build-side (right) changelog batch into the versioned state (no output until a
+   * watermark).
+   */
   public static native void pushRightTemporalJoiner(
       long handle, long inArrayAddress, long inSchemaAddress, long nowMillis);
 
@@ -3046,8 +3215,8 @@ public final class Native {
 
   /**
    * Restores a temporal joiner from raw keyed-state partitions assigned to this task. {@code
-   * nowMillis} stamps a full max-retention deadline onto keys restored from a snapshot that
-   * carries no deadlines (a pre-retention writer) — Flink's enable-TTL migration.
+   * nowMillis} stamps a full max-retention deadline onto keys restored from a snapshot that carries
+   * no deadlines (a pre-retention writer) — Flink's enable-TTL migration.
    */
   public static native long restoreTemporalJoinerPartitions(
       int[] leftKeys,
@@ -3070,8 +3239,8 @@ public final class Native {
 
   /**
    * Creates a regular (non-windowed) updating joiner and returns an opaque handle. It keeps a
-   * per-side keyed multiset of live rows and, on each input row, emits the join changelog against the
-   * other side (carrying the input row's kind from the trailing {@code $row_kind$} column). For
+   * per-side keyed multiset of live rows and, on each input row, emits the join changelog against
+   * the other side (carrying the input row's kind from the trailing {@code $row_kind$} column). For
    * LEFT/RIGHT/FULL outer and SEMI/ANTI it also tracks a per-row match-degree on the outer side to
    * emit/retract null-padded (outer) or bare (semi/anti) rows. The JVM owns the handle and must
    * release it with {@link #closeUpdatingJoiner}.
@@ -3080,10 +3249,11 @@ public final class Native {
    * @param rightKeys equi-join key column indices in the right input batch
    * @param joinType 0=INNER, 1=LEFT, 2=RIGHT, 3=FULL, 4=SEMI, 5=ANTI
    * @param leftSchemaAddress C Data Interface address of the left input's (data-only) Arrow schema
-   * @param rightSchemaAddress C Data Interface address of the right input's (data-only) Arrow schema
+   * @param rightSchemaAddress C Data Interface address of the right input's (data-only) Arrow
+   *     schema
    * @param predKinds residual non-equi predicate, encoded over the joined {@code [left.., right..]}
-   *     row (empty {@code predKinds} ⇒ no predicate); the {@code pred*} arrays are the same encoding
-   *     {@link #createFilterExpression} consumes
+   *     row (empty {@code predKinds} ⇒ no predicate); the {@code pred*} arrays are the same
+   *     encoding {@link #createFilterExpression} consumes
    * @param leftStateTtlMillis idle-state retention for the left side's rows ({@code
    *     table.exec.state.ttl}, or the per-side {@code STATE_TTL} hint); {@code 0} disables expiry.
    *     Each stored row expires independently {@code ttl} millis after its last write and then
@@ -3131,8 +3301,7 @@ public final class Native {
       long nowMillis,
       BatchReceiver receiver);
 
-  public static native void flushUpdatingJoiner(
-      long handle, BatchReceiver receiver);
+  public static native void flushUpdatingJoiner(long handle, BatchReceiver receiver);
 
   /** Releases an updating joiner handle. */
   public static native void closeUpdatingJoiner(long handle);
@@ -3143,9 +3312,8 @@ public final class Native {
 
   /**
    * Restores an updating joiner from raw keyed-state partitions assigned to this task. {@code
-   * nowMillis} stamps rows restored from a snapshot side that carries no TTL timestamps (a
-   * pre-TTL writer), granting them a full retention from the restore — Flink's enable-TTL
-   * migration.
+   * nowMillis} stamps rows restored from a snapshot side that carries no TTL timestamps (a pre-TTL
+   * writer), granting them a full retention from the restore — Flink's enable-TTL migration.
    */
   public static native long restoreUpdatingJoinerPartitions(
       int[] leftKeys,
@@ -3171,23 +3339,23 @@ public final class Native {
       long memoryBudgetBytes);
 
   /**
-   * Creates an append-only streaming Top-N ranker ({@code ROW_NUMBER() OVER (PARTITION BY … ORDER BY
-   * …) <= limit}, rank number not projected). Per partition it keeps the top {@code limit} rows by
-   * the order keys and emits an INSERT for a row entering the top-N and a DELETE for one displaced.
-   * The JVM owns the handle and must release it with {@link #closeTopNRanker}.
+   * Creates an append-only streaming Top-N ranker ({@code ROW_NUMBER() OVER (PARTITION BY … ORDER
+   * BY …) <= limit}, rank number not projected). Per partition it keeps the top {@code limit} rows
+   * by the order keys and emits an INSERT for a row entering the top-N and a DELETE for one
+   * displaced. The JVM owns the handle and must release it with {@link #closeTopNRanker}.
    *
    * @param partitionColumns PARTITION BY column indices (empty for a single global partition)
    * @param sortIndices ORDER BY column indices, in order
    * @param sortAscending per sort column, 1 if ascending else 0
    * @param sortNullsFirst per sort column, 1 if nulls sort first else 0
    * @param limit the rank bound N
-   * @param outputRankNumber whether the rank column is projected (the operator then emits the
-   *     shift cascade and appends the rank); false for the plain Top-N and the global LIMIT
+   * @param outputRankNumber whether the rank column is projected (the operator then emits the shift
+   *     cascade and appends the rank); false for the plain Top-N and the global LIMIT
    * @param retracting whether the input is a changelog (use the retracting ranker, which keeps the
    *     full buffer to promote on delete) rather than insert-only (the append-only bounded ranker)
-   * @param netDiff mini-batch mode (append-only ranker only): emit the net logical-bundle rank
-   *     diff — old top-N vs new top-N per touched partition — instead of the per-record shift
-   *     cascade; the collapsed changelog is unchanged (see divergences/20)
+   * @param netDiff mini-batch mode (append-only ranker only): emit the net logical-bundle rank diff
+   *     — old top-N vs new top-N per touched partition — instead of the per-record shift cascade;
+   *     the collapsed changelog is unchanged (see divergences/20)
    * @param stateTtlMillis idle-state retention ({@code table.exec.state.ttl}); {@code 0} disables
    *     expiry. Expired rank state reads as absent and expiry emits nothing — the append-only
    *     ranker expires per sort-key list, the retracting one per whole buffer (Flink's treemap
@@ -3281,8 +3449,7 @@ public final class Native {
   public static native int[] topNRankerSnapshotKeyGroups(long snapshotHandle);
 
   /** Encodes one key-group payload; called by Flink's async heap-state serializer. */
-  public static native byte[] encodeTopNRankerSnapshotPartition(
-      long snapshotHandle, int keyGroup);
+  public static native byte[] encodeTopNRankerSnapshotPartition(long snapshotHandle, int keyGroup);
 
   /** Releases an immutable Top-N checkpoint view. */
   public static native void closeTopNRankerSnapshot(long snapshotHandle);
@@ -3339,9 +3506,9 @@ public final class Native {
       long memoryBudgetBytes);
 
   /**
-   * Restores an update-fast Top-N ranker from raw keyed-state partitions assigned to this
-   * subtask; {@code nowMillis} stamps rows from a timestamp-less snapshot (see
-   * {@link #restoreTopNRankerPartitions}).
+   * Restores an update-fast Top-N ranker from raw keyed-state partitions assigned to this subtask;
+   * {@code nowMillis} stamps rows from a timestamp-less snapshot (see {@link
+   * #restoreTopNRankerPartitions}).
    */
   public static native long restoreUpdateFastTopNRankerPartitions(
       int[] partitionColumns,
@@ -3363,9 +3530,9 @@ public final class Native {
 
   /**
    * Creates an event-time INNER window joiner and returns an opaque handle. It buffers both inputs
-   * (whose rows carry matching {@code window_start}/{@code window_end} columns assigned upstream) and
-   * joins them per window when the watermark closes it. The JVM owns the handle across calls and must
-   * release it with {@link #closeWindowJoiner}.
+   * (whose rows carry matching {@code window_start}/{@code window_end} columns assigned upstream)
+   * and joins them per window when the watermark closes it. The JVM owns the handle across calls
+   * and must release it with {@link #closeWindowJoiner}.
    *
    * @param leftKeys equi-join key column indices in the left input batch
    * @param rightKeys equi-join key column indices in the right input batch
@@ -3436,10 +3603,10 @@ public final class Native {
       long memoryBudgetBytes);
 
   /**
-   * Creates a stateful cumulative-window aggregator and returns an opaque handle. Cumulative windows
-   * are nested windows of {@code stepMillis} growing up to {@code maxSizeMillis}, all sharing a
-   * start. It shares the aligned-window engine — {@link #updateTumblingAggregator}, {@link
-   * #flushTumblingAggregator}, {@link #snapshotTumblingAggregator}, {@link
+   * Creates a stateful cumulative-window aggregator and returns an opaque handle. Cumulative
+   * windows are nested windows of {@code stepMillis} growing up to {@code maxSizeMillis}, all
+   * sharing a start. It shares the aligned-window engine — {@link #updateTumblingAggregator},
+   * {@link #flushTumblingAggregator}, {@link #snapshotTumblingAggregator}, {@link
    * #closeTumblingAggregator} all apply to the returned handle; only the window assignment differs.
    *
    * @param maxSizeMillis the full (maximum) window size in milliseconds
@@ -3487,6 +3654,7 @@ public final class Native {
 
   /**
    * Uses released-Flink calendar deadlines for sessions stored with local bounds.
+   *
    * @param handle session handle, either heap or persistent
    * @param calendar batched local-end conversion
    */
@@ -3494,11 +3662,11 @@ public final class Native {
 
   /**
    * Returns the earliest open session timer after the latest firing pass.
+   *
    * @param handle session handle, either heap or persistent
    * @return inclusive epoch deadline, or {@link Long#MIN_VALUE} when no session remains
    */
   public static native long sessionAggregatorNextTimerDeadline(long handle);
-
 
   /**
    * Emits the sessions the watermark has closed as a batch (columns {@code key}, {@code
@@ -3523,7 +3691,11 @@ public final class Native {
    * @param memoryBudgetBytes task off-heap budget (see {@link #createTumblingAggregator})
    */
   public static native long restoreSessionAggregator(
-      long gapMillis, int[] valueTypes, int[] aggregateKinds, byte[] snapshot, long memoryBudgetBytes);
+      long gapMillis,
+      int[] valueTypes,
+      int[] aggregateKinds,
+      byte[] snapshot,
+      long memoryBudgetBytes);
 
   /** Serializes every non-empty session-window key group once, framed by key-group id. */
   public static native byte[][] snapshotSessionAggregatorPartitions(
@@ -3536,6 +3708,7 @@ public final class Native {
       int[] aggregateKinds,
       byte[][] snapshots,
       long memoryBudgetBytes);
+
   /** Native columnar table-partition routing shared by file formats. */
   public static native long splitByPartitionColumns(long array, long schema, int[] columns);
 

@@ -2,7 +2,6 @@ package tech.streamfusion.state;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.SortedMap;
@@ -16,6 +15,8 @@ import org.apache.flink.api.common.state.StateDescriptor;
 import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.api.common.typeutils.base.ListSerializer;
 import org.apache.flink.api.common.typeutils.base.LongSerializer;
+import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.api.java.typeutils.runtime.TupleSerializer;
 import org.apache.flink.core.memory.MemorySegmentFactory;
 import org.apache.flink.runtime.state.CheckpointableKeyedStateBackend;
 import org.apache.flink.runtime.state.VoidNamespace;
@@ -39,13 +40,12 @@ import org.apache.flink.types.RowKind;
 import tech.streamfusion.Native;
 import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.arrow.MapListRepresentation;
+import tech.streamfusion.compat.FlinkStateBackendCompat;
 import tech.streamfusion.operator.NativeAllocator;
-import tech.streamfusion.operator.RowDataArrowConverter;
 
 /** Independent released retracting row lists, counts and bounds, without rewriting their ages. */
 public final class StockRetractingTopNStateContract implements StockStateContract {
   private static final long serialVersionUID = 1L;
-  private static final int CHUNK_ROWS = 1024;
   private static final byte COUNTS = -1, COUNT = -2, LIST = -3, BOUND = -4;
   private static final String DATA = "data-state", SORTED = "sorted-map";
   private final TypeSerializer<RowData> keys;
@@ -140,35 +140,6 @@ public final class StockRetractingTopNStateContract implements StockStateContrac
     return new StockValueState<>(backend, "rankEnd", LongSerializer.INSTANCE, ttl);
   }
 
-  private List<RowData> owners(CheckpointableKeyedStateBackend<RowData> backend) throws Exception {
-    var owners = new LinkedHashSet<RowData>();
-    var serializer = new RowDataSerializer(keyType);
-    for (String descriptor : stateDescriptors().keySet()) {
-      try (var stream = backend.getKeys(descriptor, VoidNamespace.INSTANCE)) {
-        var iterator = stream.iterator();
-        while (iterator.hasNext()) {
-          var key = iterator.next();
-          validateKey(key, keyType);
-          owners.add(serializer.toBinaryRow(key).copy());
-        }
-      }
-    }
-    return new ArrayList<>(owners);
-  }
-
-  @Override
-  public void clear(CheckpointableKeyedStateBackend<RowData> backend) throws Exception {
-    var data = data(backend);
-    var counts = counts(backend);
-    var bound = variable ? bound(backend) : null;
-    for (var key : owners(backend)) {
-      backend.setCurrentKey(key);
-      data.clear();
-      counts.clear();
-      if (bound != null) bound.clear();
-    }
-  }
-
   private static void validateKey(RowData key, RowType type) {
     if (key == null || key.getArity() != type.getFieldCount() || key.getRowKind() != RowKind.INSERT)
       throw new IllegalStateException("Invalid retracting state key");
@@ -193,11 +164,6 @@ public final class StockRetractingTopNStateContract implements StockStateContrac
       throw new IllegalStateException("Retracting row differs from its partition or sort key");
   }
 
-  @SuppressWarnings("unchecked")
-  private TtlValue<List<RowData>> list(Object value) {
-    return ttl ? (TtlValue<List<RowData>>) value : new TtlValue<>((List<RowData>) value, 0);
-  }
-
   private RowData section(RowData bridge, int offset, RowType type) {
     var result = new GenericRowData(type.getFieldCount());
     for (int column = 0; column < type.getFieldCount(); column++)
@@ -220,74 +186,91 @@ public final class StockRetractingTopNStateContract implements StockStateContrac
     var rows = new RowDataSerializer(rowType);
     var sorts = new StockKeyProjection(sortType);
     int arity = rowType.getFieldCount();
-    export(
-        handle,
-        persistent,
-        (arrayAddress, schemaAddress) -> {
-          try (var array = ArrowArray.wrap(arrayAddress);
-              var schema = ArrowSchema.wrap(schemaAddress);
-              var root =
-                  Data.importVectorSchemaRoot(
-                      NativeAllocator.SHARED, array, schema, NativeAllocator.DICTIONARIES)) {
-            var reader = ArrowConversion.createArrowReader(root, bridgeType);
-            for (int index = 0; index < root.getRowCount(); index++) {
-              var row = reader.read(index);
-              var encoded = row.getBinary(arity);
-              var key = new BinaryRowData(keyType.getFieldCount());
-              key.pointTo(MemorySegmentFactory.wrap(encoded), 0, encoded.length);
-              validateKey(key, keyType);
-              backend.setCurrentKey(key);
-              byte tag = row.getByte(arity + 3);
-              long age = row.getLong(arity + 2);
-              long number = row.getLong(arity + 1);
-              if (!ttl && age != 0)
-                throw new IllegalStateException("Unexpected retracting TTL age");
-              if (tag == COUNTS) {
-                if (counts.value() != null)
-                  throw new IllegalStateException("Duplicate retracting count map");
-                counts.update(new TreeMap<>(comparator), age);
-              } else if (tag == BOUND) {
-                if (bound == null || bound.value() != null)
-                  throw new IllegalStateException("Unexpected retracting bound");
-                bound.update(number, age);
-              } else {
-                RowData sort = section(row, arity + 4, sortType);
-                validateKey(sort, sortType);
-                sort = sorts.project(sort);
-                if (tag == COUNT) {
-                  var stored = counts.value();
-                  if (stored == null
-                      || stored.getLastAccessTimestamp() != age
-                      || stored.getUserValue().containsKey(sort))
-                    throw new IllegalStateException(
-                        "Missing, inconsistent or duplicate retracting counter");
-                  var values = stored.getUserValue();
-                  values.put(sort, number);
-                  counts.update(values, age);
-                } else if (tag == LIST) {
-                  if (data.contains(sort))
-                    throw new IllegalStateException("Duplicate retracting data list");
-                  var values = new ArrayList<RowData>();
-                  data.put(sort, ttl ? new TtlValue<>(values, age) : values);
-                } else if (tag >= 0 && tag <= 3) {
-                  Object prior = data.get(sort);
-                  if (prior == null || list(prior).getLastAccessTimestamp() != age)
-                    throw new IllegalStateException(
-                        "Missing or inconsistent retracting list header");
-                  RowData payload = section(row, 0, rowType);
-                  validatePayload(key, sort, payload);
-                  payload = rows.copy(payload);
-                  payload.setRowKind(RowKind.fromByteValue(tag));
-                  var values = list(prior).getUserValue();
-                  values.add(payload);
-                  data.put(sort, ttl ? new TtlValue<>(values, age) : values);
-                } else throw new IllegalStateException("Invalid retracting transfer tag");
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    var counterSerializer =
+        new TupleSerializer<Tuple2<RowData, Long>>(
+            (Class) Tuple2.class,
+            new TypeSerializer<?>[] {new RowDataSerializer(sortType), LongSerializer.INSTANCE});
+    try (var staged =
+            new StockMapListSpool<RowData, RowData>(keys, new RowDataSerializer(sortType), rows);
+        var counters =
+            new StockMapListSpool<Long, Tuple2<RowData, Long>>(
+                keys, LongSerializer.INSTANCE, counterSerializer)) {
+      export(
+          handle,
+          persistent,
+          (arrayAddress, schemaAddress) -> {
+            try (var array = ArrowArray.wrap(arrayAddress);
+                var schema = ArrowSchema.wrap(schemaAddress);
+                var root =
+                    Data.importVectorSchemaRoot(
+                        NativeAllocator.SHARED, array, schema, NativeAllocator.DICTIONARIES)) {
+              var reader = ArrowConversion.createArrowReader(root, bridgeType);
+              for (int index = 0; index < root.getRowCount(); index++) {
+                var row = reader.read(index);
+                var encoded = row.getBinary(arity);
+                var key = new BinaryRowData(keyType.getFieldCount());
+                key.pointTo(MemorySegmentFactory.wrap(encoded), 0, encoded.length);
+                validateKey(key, keyType);
+                backend.setCurrentKey(key);
+                byte tag = row.getByte(arity + 3);
+                long age = row.getLong(arity + 2);
+                long number = row.getLong(arity + 1);
+                if (!ttl && age != 0)
+                  throw new IllegalStateException("Unexpected retracting TTL age");
+                if (tag == COUNTS) {
+                  if (!counters.start(key, 0L, age))
+                    throw new IllegalStateException("Duplicate retracting count map");
+                } else if (tag == BOUND) {
+                  if (bound == null || bound.value() != null)
+                    throw new IllegalStateException("Unexpected retracting bound");
+                  bound.update(number, age);
+                } else {
+                  RowData sort = section(row, arity + 4, sortType);
+                  validateKey(sort, sortType);
+                  sort = sorts.project(sort);
+                  if (tag == COUNT) {
+                    var stamp = counters.metadata(key, 0L);
+                    if (stamp == null || stamp != age)
+                      throw new IllegalStateException(
+                          "Missing, inconsistent or duplicate retracting counter");
+                    counters.append(key, 0L, Tuple2.of(sort, number));
+                  } else if (tag == LIST) {
+                    if (!staged.start(key, sort, age))
+                      throw new IllegalStateException("Duplicate retracting data list");
+                  } else if (tag >= 0 && tag <= 3) {
+                    var stamp = staged.metadata(key, sort);
+                    if (stamp == null || stamp != age)
+                      throw new IllegalStateException(
+                          "Missing or inconsistent retracting list header");
+                    RowData payload = section(row, 0, rowType);
+                    validatePayload(key, sort, payload);
+                    payload = rows.copy(payload);
+                    payload.setRowKind(RowKind.fromByteValue(tag));
+                    staged.append(key, sort, payload);
+                  } else throw new IllegalStateException("Invalid retracting transfer tag");
+                }
               }
+            } catch (Exception failure) {
+              throw new IllegalStateException("Cannot project released retracting state", failure);
             }
-          } catch (Exception failure) {
-            throw new IllegalStateException("Cannot project released retracting state", failure);
-          }
-        });
+          });
+      staged.visitWithMetadata(
+          backend,
+          (owner, sort, retained, age) -> {
+            backend.setCurrentKey(owner);
+            data.put(sort, ttl ? new TtlValue<>(retained, age) : retained);
+          });
+      counters.visitWithMetadata(
+          backend,
+          (owner, unused, entries, age) -> {
+            backend.setCurrentKey(owner);
+            SortedMap<RowData, Long> ordered = new StockSortedMap<>(entries, comparator);
+            if (!FlinkStateBackendCompat.serializesKeyedValues(backend))
+              ordered = new TreeMap<>(ordered);
+            counts.update(ordered, age);
+          });
+    }
   }
 
   private void export(long handle, boolean persistent, Native.BatchReceiver receiver)
@@ -336,85 +319,100 @@ public final class StockRetractingTopNStateContract implements StockStateContrac
       boolean persistent,
       boolean validating)
       throws Exception {
-    var data = data(backend);
-    var counts = counts(backend);
-    var bound = variable ? bound(backend) : null;
     var binary = new RowDataSerializer(keyType);
+    var sortRows = new RowDataSerializer(sortType);
     var sorts = new StockKeyProjection(sortType);
     var rows = new RowDataSerializer(rowType);
-    var pending = new ArrayList<RowData>(CHUNK_ROWS);
-    for (var key : owners(backend)) {
-      backend.setCurrentKey(key);
-      byte[] encoded = bytes(binary.toBinaryRow(key));
-      var countMap = counts.value();
-      if (countMap != null) {
-        if (countMap.getUserValue() == null)
-          throw new IllegalStateException("NULL retracting count map");
-        enqueue(
-            handle,
-            persistent,
-            pending,
-            transfer(encoded, null, null, COUNTS, 0, countMap.getLastAccessTimestamp()),
-            validating);
-        var seen = new java.util.HashSet<RowData>();
-        for (var entry : countMap.getUserValue().entrySet()) {
-          validateKey(entry.getKey(), sortType);
-          var sort = sorts.project(entry.getKey());
-          if (entry.getValue() == null || !seen.add(sort))
-            throw new IllegalStateException("Invalid retracting counter");
-          enqueue(
-              handle,
-              persistent,
-              pending,
-              transfer(
-                  encoded, sort, null, COUNT, entry.getValue(), countMap.getLastAccessTimestamp()),
-              validating);
+    var pending =
+        new StockRowBatch(
+            bridgeType,
+            true,
+            (transferred, array, schema) ->
+                batch(handle, persistent, transferred, validating, array, schema));
+    var ownerType =
+        new RowDataSerializer(RowType.of(keyType, new VarBinaryType(VarBinaryType.MAX_LENGTH)));
+    try (var inventory = new StockStateSpool(ownerType)) {
+      for (String name : stateDescriptors().keySet())
+        try (var stream = backend.getKeys(name, VoidNamespace.INSTANCE)) {
+          var iterator = stream.iterator();
+          while (iterator.hasNext()) validateKey(iterator.next(), keyType);
+        }
+      TypeSerializer<?> countType =
+          new SortedMapSerializer<>(comparator, sortRows, LongSerializer.INSTANCE);
+      if (ttl) countType = new TtlSerializer<>(LongSerializer.INSTANCE, countType);
+      StockMapListSnapshot.visitRaw(
+          backend,
+          SORTED,
+          keys,
+          VoidNamespaceSerializer.INSTANCE,
+          null,
+          countType,
+          (key, namespace, unused, value) -> {
+            validateKey(key, keyType);
+            if (!inventory.add(1, GenericRowData.of(key, new byte[0]), 0))
+              throw new IllegalStateException("Duplicate retracting count map");
+            byte[] owner = bytes(binary.toBinaryRow(key));
+            var counters = StockRankValues.counters(value, ttl, sortRows);
+            pending.append(transfer(owner, null, null, COUNTS, 0, counters.written));
+            for (var entry : counters) {
+              validateKey(entry.f0, sortType);
+              var sort = sorts.project(entry.f0);
+              if (entry.f1 == null || !inventory.add(2, GenericRowData.of(key, bytes(sort)), 0))
+                throw new IllegalStateException("Invalid retracting counter");
+              pending.append(transfer(owner, sort, null, COUNT, entry.f1, counters.written));
+            }
+          });
+      if (variable) {
+        var bound = bound(backend);
+        try (var stream = backend.getKeys("rankEnd", VoidNamespace.INSTANCE)) {
+          var iterator = stream.iterator();
+          while (iterator.hasNext()) {
+            var key = keys.copy(iterator.next());
+            validateKey(key, keyType);
+            backend.setCurrentKey(key);
+            var value = bound.value();
+            if (value == null || value.getUserValue() == null)
+              throw new IllegalStateException("NULL retracting bound");
+            if (!inventory.add(3, GenericRowData.of(key, new byte[0]), 0))
+              throw new IllegalStateException("Duplicate retracting bound");
+            pending.append(
+                transfer(
+                    bytes(binary.toBinaryRow(key)),
+                    null,
+                    null,
+                    BOUND,
+                    value.getUserValue(),
+                    value.getLastAccessTimestamp()));
+          }
         }
       }
-      if (bound != null && bound.value() != null) {
-        var value = bound.value();
-        if (value.getUserValue() == null) throw new IllegalStateException("NULL retracting bound");
-        enqueue(
-            handle,
-            persistent,
-            pending,
-            transfer(
-                encoded, null, null, BOUND, value.getUserValue(), value.getLastAccessTimestamp()),
-            validating);
-      }
-      var seen = new java.util.HashSet<RowData>();
-      for (var entry : data.entries()) {
-        validateKey(entry.getKey(), sortType);
-        var sort = sorts.project(entry.getKey());
-        if (entry.getValue() == null || !seen.add(sort))
-          throw new IllegalStateException("Invalid retracting data list");
-        var value = list(entry.getValue());
-        if (value.getUserValue() == null)
-          throw new IllegalStateException("NULL retracting retained rows");
-        enqueue(
-            handle,
-            persistent,
-            pending,
-            transfer(encoded, sort, null, LIST, 0, value.getLastAccessTimestamp()),
-            validating);
-        for (var row : value.getUserValue()) {
-          validatePayload(key, sort, row);
-          enqueue(
-              handle,
-              persistent,
-              pending,
-              transfer(
-                  encoded,
-                  sort,
-                  rows.copy(row),
-                  row.getRowKind().toByteValue(),
-                  0,
-                  value.getLastAccessTimestamp()),
-              validating);
-        }
-      }
+      TypeSerializer<?> listType = new ListSerializer<>(rows);
+      if (ttl) listType = new TtlSerializer<>(LongSerializer.INSTANCE, listType);
+      StockMapListSnapshot.visitRaw(
+          backend,
+          DATA,
+          keys,
+          VoidNamespaceSerializer.INSTANCE,
+          sortRows,
+          listType,
+          (key, namespace, sourceSort, value) -> {
+            validateKey(key, keyType);
+            validateKey(sourceSort, sortType);
+            var sort = sorts.project(sourceSort);
+            if (!inventory.add(4, GenericRowData.of(key, bytes(sort)), 0))
+              throw new IllegalStateException("Invalid retracting data list");
+            byte[] owner = bytes(binary.toBinaryRow(key));
+            var list = StockRankValues.list(value, ttl, rows);
+            pending.append(transfer(owner, sort, null, LIST, 0, list.written));
+            for (var payload : list) {
+              validatePayload(key, sort, payload);
+              pending.append(
+                  transfer(
+                      owner, sort, payload, payload.getRowKind().toByteValue(), 0, list.written));
+            }
+          });
+      pending.flush();
     }
-    if (!pending.isEmpty()) batch(handle, persistent, pending, validating);
   }
 
   private RowData transfer(
@@ -439,35 +437,18 @@ public final class StockRetractingTopNStateContract implements StockStateContrac
     return result;
   }
 
-  private void enqueue(
-      long handle, boolean persistent, List<RowData> pending, RowData row, boolean validating) {
-    pending.add(row);
-    if (pending.size() == CHUNK_ROWS) {
-      batch(handle, persistent, pending, validating);
-      pending.clear();
-    }
-  }
-
-  private void batch(long handle, boolean persistent, List<RowData> rows, boolean validating) {
-    try (var root = RowDataArrowConverter.write(rows, bridgeType, NativeAllocator.SHARED);
-        var array = ArrowArray.allocateNew(NativeAllocator.SHARED);
-        var schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
-      Data.exportVectorSchemaRoot(
-          NativeAllocator.SHARED,
-          MapListRepresentation.forExport(root),
-          NativeAllocator.DICTIONARIES,
-          array,
-          schema);
-      if (validating)
-        Native.validateRetractingTopNCanonical(
-            handle, persistent, array.memoryAddress(), schema.memoryAddress());
-      else
-        Native.importRetractingTopNCanonical(
-            handle, persistent, array.memoryAddress(), schema.memoryAddress());
-    }
-  }
-
   private static byte[] bytes(BinaryRowData row) {
     return BinarySegmentUtils.copyToBytes(row.getSegments(), row.getOffset(), row.getSizeInBytes());
+  }
+
+  private void batch(
+      long handle,
+      boolean persistent,
+      List<RowData> rows,
+      boolean validating,
+      long array,
+      long schema) {
+    if (validating) Native.validateRetractingTopNCanonical(handle, persistent, array, schema);
+    else Native.importRetractingTopNCanonical(handle, persistent, array, schema);
   }
 }

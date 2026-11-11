@@ -1,3 +1,4 @@
+use super::retained_rows::RetainedRows;
 use super::{
     checkpoint_files, copy_checkpoint_db, open_shared_db, re, FlinkWriteBatch, OpenedDb,
     PAIR_FIRST_TABLE, PAIR_SECOND_TABLE,
@@ -54,12 +55,12 @@ pub(crate) struct StoredRightVersion {
 /// path runs over its maps. The store key is `[key_group i32 BE][key arrow-row]` (the table byte
 /// stripped), so map order equals scan order.
 pub(crate) struct RocksTemporalJoinStore {
-    db: Arc<DB>,
+    db: StateDb,
     _cache: Option<Cache>,
     max_parallelism: usize,
     key_types: Vec<DataType>,
     key_converter: RowConverter,
-    converters: (RowConverter, RowConverter),
+    converters: (RetainedRows, RetainedRows),
     row_arities: [usize; 2],
     deadlines: HashMap<ByteKey, i64>,
     next_seq: u64,
@@ -72,6 +73,12 @@ pub(crate) struct RocksTemporalJoinStore {
 }
 
 impl RocksTemporalJoinStore {
+    pub(crate) fn legacy_snapshot_reader(
+        &self,
+    ) -> Result<Option<super::legacy_snapshot::LegacySnapshotReader>, DataFusionError> {
+        super::legacy_snapshot::LegacySnapshotReader::open(&self.db)
+    }
+
     pub(crate) fn create(
         config: RocksStoreConfig,
         left_schema: SchemaRef,
@@ -89,8 +96,9 @@ impl RocksTemporalJoinStore {
             .iter()
             .map(|&column| left_schema.field(column).data_type().clone())
             .collect();
-        if !rocks_row_supported(&row_types(&left_schema))
-            || !rocks_row_supported(&row_types(&right_schema))
+        if !RetainedRows::supported(&row_types(&left_schema))
+            || !RetainedRows::supported(&row_types(&right_schema))
+            || !rocks_row_supported(&key_types)
         {
             return Err(DataFusionError::Plan(
                 "temporal-join row shape not supported by RocksDB".into(),
@@ -156,7 +164,7 @@ impl RocksTemporalJoinStore {
                             .next_seq
                             .max(u64::from_be_bytes(value[..8].try_into().unwrap()));
                     }
-                } else if key.len() >= KEY_PREFIX_LEN {
+                } else if key.len() >= 4 {
                     let kg = i32::from_be_bytes(key[..4].try_into().expect("key group prefix"));
                     if key_groups.contains(&kg) {
                         writes.put(key, value)?;
@@ -196,8 +204,8 @@ impl RocksTemporalJoinStore {
             key_types,
             row_arities: [left_schema.fields().len(), right_schema.fields().len()],
             converters: (
-                converter(&row_types(&left_schema))?,
-                converter(&row_types(&right_schema))?,
+                RetainedRows::new(&row_types(&left_schema))?,
+                RetainedRows::new(&row_types(&right_schema))?,
             ),
             deadlines: HashMap::default(),
             next_seq: 0,
@@ -213,6 +221,9 @@ impl RocksTemporalJoinStore {
     }
 
     fn hydrate_deadlines(&mut self) -> Result<(), DataFusionError> {
+        if self.db.is_frozen() {
+            return Ok(());
+        }
         for row in self.db.iterator(IteratorMode::Start) {
             let (key, value) = row.map_err(re)?;
             if key.len() > KEY_PREFIX_LEN && key[4] == DEADLINE_TABLE && value.len() == 8 {
@@ -474,11 +485,7 @@ impl RocksTemporalJoinStore {
         } else {
             &self.converters.1
         };
-        let parser = converter.parser();
-        let parsed: Vec<_> = rows.map(|bytes| parser.parse(bytes)).collect();
-        let columns = converter
-            .convert_rows(parsed)
-            .map_err(|e| DataFusionError::External(Box::new(e)))?;
+        let columns = converter.decode(rows)?;
         Ok(RecordBatch::try_new(schema.clone(), columns)?)
     }
 

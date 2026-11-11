@@ -22,6 +22,10 @@ import tech.streamfusion.state.StockSinkMaterializerStateContract.Strategy;
 
 class CanonicalSinkMaterializerInteropTest {
   static Stream<Arguments> modes() {
+    return tech.streamfusion.CanonicalTestMatrix.select(allModes());
+  }
+
+  private static Stream<Arguments> allModes() {
     var values = new ArrayList<Arguments>();
     for (String strategy : List.of("LEGACY", "VALUE", "MAP", "ADAPTIVE_SMALL", "ADAPTIVE_LARGE"))
       for (boolean inputKey : new boolean[] {false, true})

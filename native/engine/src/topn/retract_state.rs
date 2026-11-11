@@ -568,12 +568,12 @@ fn write_blob(out: &mut Vec<u8>, bytes: &[u8]) -> Result<(), DataFusionError> {
     Ok(())
 }
 
-struct StateReader<'a> {
-    rest: &'a [u8],
+pub(super) struct StateReader<'a> {
+    pub(super) rest: &'a [u8],
 }
 
 impl<'a> StateReader<'a> {
-    fn take(&mut self, length: usize) -> Result<&'a [u8], DataFusionError> {
+    pub(super) fn take(&mut self, length: usize) -> Result<&'a [u8], DataFusionError> {
         if length > self.rest.len() {
             return Err(invalid("truncated state"));
         }
@@ -581,27 +581,27 @@ impl<'a> StateReader<'a> {
         self.rest = rest;
         Ok(value)
     }
-    fn u8(&mut self) -> Result<u8, DataFusionError> {
+    pub(super) fn u8(&mut self) -> Result<u8, DataFusionError> {
         Ok(self.take(1)?[0])
     }
-    fn present(&mut self) -> Result<bool, DataFusionError> {
+    pub(super) fn present(&mut self) -> Result<bool, DataFusionError> {
         match self.u8()? {
             0 => Ok(false),
             1 => Ok(true),
             _ => Err(invalid("invalid state presence")),
         }
     }
-    fn i64(&mut self) -> Result<i64, DataFusionError> {
+    pub(super) fn i64(&mut self) -> Result<i64, DataFusionError> {
         Ok(i64::from_le_bytes(self.take(8)?.try_into().unwrap()))
     }
-    fn count(&mut self, minimum_bytes: usize) -> Result<usize, DataFusionError> {
+    pub(super) fn count(&mut self, minimum_bytes: usize) -> Result<usize, DataFusionError> {
         let count = u32::from_le_bytes(self.take(4)?.try_into().unwrap()) as usize;
         if count > self.rest.len() / minimum_bytes {
             return Err(invalid("invalid state entry count"));
         }
         Ok(count)
     }
-    fn blob(&mut self) -> Result<&'a [u8], DataFusionError> {
+    pub(super) fn blob(&mut self) -> Result<&'a [u8], DataFusionError> {
         let length = u32::from_le_bytes(self.take(4)?.try_into().unwrap()) as usize;
         self.take(length)
     }
@@ -609,7 +609,38 @@ impl<'a> StateReader<'a> {
 
 impl RetractingState {
     pub(super) fn encode(&self) -> Result<Vec<u8>, DataFusionError> {
-        let mut out = Vec::new();
+        let mut out = Vec::with_capacity(self.encoded_bytes());
+        self.write_encoded(&mut out)?;
+        Ok(out)
+    }
+
+    pub(super) fn encoded_bytes(&self) -> usize {
+        8 + 1
+            + self.bound.map_or(0, |_| 16)
+            + 1
+            + self.counts.as_ref().map_or(0, |counts| {
+                12 + counts
+                    .entries
+                    .keys()
+                    .map(|sort| 12 + sort.row().data().len())
+                    .sum::<usize>()
+            })
+            + 4
+            + self
+                .lists
+                .iter()
+                .map(|(sort, list)| {
+                    16 + sort.row().data().len()
+                        + list
+                            .rows
+                            .iter()
+                            .map(|row| 5 + row.payload.row().data().len())
+                            .sum::<usize>()
+                })
+                .sum::<usize>()
+    }
+
+    pub(super) fn write_encoded(&self, out: &mut Vec<u8>) -> Result<(), DataFusionError> {
         out.extend_from_slice(STATE_VERSION);
         out.push(u8::from(self.bound.is_some()));
         if let Some(bound) = self.bound {
@@ -625,7 +656,7 @@ impl RetractingState {
                     .to_le_bytes(),
             );
             for (sort, count) in &counts.entries {
-                write_blob(&mut out, sort.row().as_ref())?;
+                write_blob(out, sort.row().as_ref())?;
                 out.extend_from_slice(&count.to_le_bytes());
             }
         }
@@ -635,7 +666,7 @@ impl RetractingState {
                 .to_le_bytes(),
         );
         for (sort, list) in &self.lists {
-            write_blob(&mut out, sort.row().as_ref())?;
+            write_blob(out, sort.row().as_ref())?;
             out.extend_from_slice(&list.written_at.to_le_bytes());
             out.extend_from_slice(
                 &u32::try_from(list.rows.len())
@@ -647,10 +678,10 @@ impl RetractingState {
                     return Err(invalid("invalid retained row kind"));
                 }
                 out.push(row.kind() as u8);
-                write_blob(&mut out, row.payload.row().as_ref())?;
+                write_blob(out, row.payload.row().as_ref())?;
             }
         }
-        Ok(out)
+        Ok(())
     }
 
     pub(super) fn decode(

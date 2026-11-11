@@ -1,10 +1,8 @@
 package tech.streamfusion.state;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.TreeMap;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
@@ -16,6 +14,7 @@ import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.api.common.typeutils.base.IntSerializer;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.typeutils.runtime.TupleSerializer;
+import org.apache.flink.core.memory.DataOutputSerializer;
 import org.apache.flink.core.memory.MemorySegmentFactory;
 import org.apache.flink.runtime.state.CheckpointableKeyedStateBackend;
 import org.apache.flink.runtime.state.VoidNamespace;
@@ -37,12 +36,10 @@ import tech.streamfusion.Native;
 import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.arrow.MapListRepresentation;
 import tech.streamfusion.operator.NativeAllocator;
-import tech.streamfusion.operator.RowDataArrowConverter;
 
 /** Released fixed UpdateFast row-key tuples, including the order within sort-key ties. */
 public final class StockUpdatingTopNStateContract implements StockStateContract {
   private static final long serialVersionUID = 1L;
-  private static final int CHUNK_ROWS = 1024;
   private static final String DATA = "data-state-with-update";
   private final TypeSerializer<RowData> keys;
   private final RowType keyType;
@@ -123,19 +120,6 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
   private StockValueState<RowData> winner(CheckpointableKeyedStateBackend<RowData> backend)
       throws Exception {
     return new StockValueState<>(backend, "Top1-Rank-State", new RowDataSerializer(rowType), false);
-  }
-
-  @Override
-  public void clear(CheckpointableKeyedStateBackend<RowData> backend) throws Exception {
-    var data = top1 ? null : data(backend);
-    var winner = top1 ? winner(backend) : null;
-    try (var stream = backend.getKeys(top1 ? "Top1-Rank-State" : DATA, VoidNamespace.INSTANCE)) {
-      for (var key : stream.map(keys::copy).collect(java.util.stream.Collectors.toList())) {
-        backend.setCurrentKey(key);
-        if (top1) winner.clear();
-        else data.clear();
-      }
-    }
   }
 
   @Override
@@ -277,69 +261,91 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
     var binaryKeys = new RowDataSerializer(keyType);
     var rowKeySerializer = new RowDataSerializer(rowKeyType);
     var sortSerializer = new RowDataSerializer(sortType);
-    var seen = new java.util.HashSet<RowData>();
-    List<RowData> pending = new ArrayList<>(CHUNK_ROWS);
-    try (var stream = backend.getKeys(top1 ? "Top1-Rank-State" : DATA, VoidNamespace.INSTANCE)) {
-      var iterator = stream.iterator();
-      while (iterator.hasNext()) {
-        RowData key = keySerializer.copy(iterator.next());
-        validateKey(key, keyType);
-        if (!seen.add(key)) throw new IllegalStateException("Duplicate update rank partition key");
-        backend.setCurrentKey(key);
-        byte[] encoded = bytes(binaryKeys.toBinaryRow(key));
-        if (top1) {
-          var value = winner.value();
-          if (value == null || value.getUserValue() == null)
-            throw new IllegalStateException("Update Top-1 has an empty winner");
-          validatePayload(key, null, value.getUserValue());
-          RowData row = serializer.copy(value.getUserValue());
-          pending.add(
-              transfer(
-                  row,
-                  encoded,
-                  bytes(rowKeySerializer.toBinaryRow(rowKeySelector.getKey(row))),
-                  1));
-        } else {
-          var groups =
-              new HashMap<BinaryRowData, TreeMap<Integer, Tuple2<BinaryRowData, RowData>>>();
-          var rowKeys = new java.util.HashSet<RowData>();
-          for (var entry : data.entries()) {
-            var value = entry.getValue();
-            if (value == null || value.f0 == null || value.f1 == null || value.f1 < 1)
-              throw new IllegalStateException("Invalid update rank tuple");
-            var rowKey = rowKeySerializer.toBinaryRow(entry.getKey()).copy();
-            validateKey(rowKey, rowKeyType);
-            if (!rowKeys.add(rowKey))
-              throw new IllegalStateException("Duplicate update rank row key");
-            validatePayload(key, rowKey, value.f0);
-            var sort = sortSerializer.toBinaryRow(sortSelector.getKey(value.f0)).copy();
-            validateKey(sort, sortType);
-            var ties = groups.computeIfAbsent(sort, ignored -> new TreeMap<>());
-            if (ties.put(value.f1, Tuple2.of(rowKey, serializer.copy(value.f0))) != null)
-              throw new IllegalStateException("Duplicate update rank inner position");
-          }
-          for (var ties : groups.values()) {
-            int next = 1;
-            for (var entry : ties.entrySet()) {
-              if (entry.getKey() != next++)
-                throw new IllegalStateException("Nonconsecutive update rank inner positions");
-              pending.add(
-                  transfer(
-                      entry.getValue().f1, encoded, bytes(entry.getValue().f0), entry.getKey()));
-              if (pending.size() == CHUNK_ROWS) {
-                importBatch(handle, persistent, pending, validateOnly);
-                pending.clear();
-              }
+    var batch =
+        new StockRowBatch(
+            bridgeType,
+            true,
+            (transferred, array, schema) ->
+                importBatch(handle, persistent, transferred, validateOnly, array, schema));
+    var ownerType =
+        new RowDataSerializer(RowType.of(keyType, new VarBinaryType(VarBinaryType.MAX_LENGTH)));
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    var tuple =
+        new TupleSerializer<Tuple2<RowData, RowData>>(
+            (Class) Tuple2.class, new TypeSerializer<?>[] {rowKeySerializer, serializer});
+    try (var inventory = new StockStateSpool(ownerType)) {
+      try (var stream = backend.getKeys(top1 ? "Top1-Rank-State" : DATA, VoidNamespace.INSTANCE)) {
+        var iterator = stream.iterator();
+        while (iterator.hasNext()) {
+          RowData key = keySerializer.copy(iterator.next());
+          validateKey(key, keyType);
+          if (!inventory.add(1, GenericRowData.of(key, new byte[0]), 0))
+            throw new IllegalStateException("Duplicate update rank partition key");
+          backend.setCurrentKey(key);
+          byte[] encoded = bytes(binaryKeys.toBinaryRow(key));
+          if (top1) {
+            var value = winner.value();
+            if (value == null || value.getUserValue() == null)
+              throw new IllegalStateException("Update Top-1 has an empty winner");
+            validatePayload(key, null, value.getUserValue());
+            RowData row = serializer.copy(value.getUserValue());
+            batch.append(
+                transfer(
+                    row,
+                    encoded,
+                    bytes(rowKeySerializer.toBinaryRow(rowKeySelector.getKey(row))),
+                    1));
+          } else {
+            for (var entry : data.entries()) {
+              var value = entry.getValue();
+              if (value == null || value.f0 == null || value.f1 == null || value.f1 < 1)
+                throw new IllegalStateException("Invalid update rank tuple");
+              var rowKey = rowKeySerializer.toBinaryRow(entry.getKey()).copy();
+              validateKey(rowKey, rowKeyType);
+              if (!inventory.add(2, GenericRowData.of(key, bytes(rowKey)), 0))
+                throw new IllegalStateException("Duplicate update rank row key");
+              validatePayload(key, rowKey, value.f0);
+              var sort = sortSerializer.toBinaryRow(sortSelector.getKey(value.f0)).copy();
+              validateKey(sort, sortType);
+              var group = GenericRowData.of(key, bytes(sort));
+              if (!inventory.add(3, group, value.f1))
+                throw new IllegalStateException("Duplicate update rank inner position");
+              var output = new DataOutputSerializer(64);
+              tuple.serialize(Tuple2.of(rowKey, value.f0), output);
+              inventory.put(4, group, value.f1, output.getCopyOfBuffer());
+              inventory.addOwner(group);
             }
           }
         }
-        if (pending.size() == CHUNK_ROWS) {
-          importBatch(handle, persistent, pending, validateOnly);
-          pending.clear();
-        }
       }
+      if (!top1)
+        try (var groups = inventory.owners()) {
+          while (groups.hasNext()) {
+            var group = groups.next();
+            byte[] encoded =
+                bytes(binaryKeys.toBinaryRow(group.getRow(0, keyType.getFieldCount())));
+            try (var positions = inventory.times(3, group);
+                var rows = inventory.values(4, group, tuple)) {
+              long next = 1;
+              while (positions.hasNext()) {
+                long position = positions.next();
+                if (position != next++)
+                  throw new IllegalStateException("Nonconsecutive update rank inner positions");
+                if (!rows.hasNext()) throw new IllegalStateException("Missing update rank tuple");
+                var row = rows.next();
+                batch.append(
+                    transfer(
+                        row.f1,
+                        encoded,
+                        bytes(rowKeySerializer.toBinaryRow(row.f0)),
+                        Math.toIntExact(position)));
+              }
+              if (rows.hasNext()) throw new IllegalStateException("Unexpected update rank tuple");
+            }
+          }
+        }
+      batch.flush();
     }
-    if (!pending.isEmpty()) importBatch(handle, persistent, pending, validateOnly);
   }
 
   private RowData transfer(RowData payload, byte[] key, byte[] rowKey, int inner) {
@@ -357,27 +363,6 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
     return row;
   }
 
-  private void importBatch(
-      long handle, boolean persistent, List<RowData> rows, boolean validateOnly) {
-    try (VectorSchemaRoot root =
-            RowDataArrowConverter.write(rows, bridgeType, NativeAllocator.SHARED);
-        ArrowArray array = ArrowArray.allocateNew(NativeAllocator.SHARED);
-        ArrowSchema schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
-      Data.exportVectorSchemaRoot(
-          NativeAllocator.SHARED,
-          MapListRepresentation.forExport(root),
-          NativeAllocator.DICTIONARIES,
-          array,
-          schema);
-      if (validateOnly)
-        Native.validateUpdatingTopNCanonical(
-            handle, persistent, array.memoryAddress(), schema.memoryAddress());
-      else
-        Native.importUpdatingTopNCanonical(
-            handle, persistent, array.memoryAddress(), schema.memoryAddress());
-    }
-  }
-
   private static BinaryRowData binary(byte[] bytes, int arity) {
     var row = new BinaryRowData(arity);
     row.pointTo(MemorySegmentFactory.wrap(bytes), 0, bytes.length);
@@ -386,5 +371,16 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
 
   private static byte[] bytes(BinaryRowData row) {
     return BinarySegmentUtils.copyToBytes(row.getSegments(), row.getOffset(), row.getSizeInBytes());
+  }
+
+  private void importBatch(
+      long handle,
+      boolean persistent,
+      List<RowData> rows,
+      boolean validateOnly,
+      long array,
+      long schema) {
+    if (validateOnly) Native.validateUpdatingTopNCanonical(handle, persistent, array, schema);
+    else Native.importUpdatingTopNCanonical(handle, persistent, array, schema);
   }
 }

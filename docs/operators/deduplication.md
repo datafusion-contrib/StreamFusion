@@ -89,6 +89,13 @@ list child name during Arrow row decoding must not invalidate the output schema.
 
 ## Canonical state adapter
 
+Eager value-state exports can use a pinned native RocksDB snapshot with asynchronous stock
+serialization. Memory exports capture independent native state and convert asynchronously through a
+temporary stock backend. Planner binding and focused state
+interchange controls also run on Flink 1.18.1. Buffered, window and other timer-bearing layouts
+retain separate projection and qualification requirements. This does not qualify every 1.18
+emission variant or cross-version upgrades.
+
 Direct Flink 2.2.1 eager-state conversion is partial. Processing-time keep-first transfers a
 Boolean presence marker; processing-time keep-last and eager event-time keep modes transfer
 the retained full row, stock serializers, actual key and original TTL age. The proctime
@@ -143,8 +150,17 @@ Ordinary SQL and stock compiled plans bind Flink 2.2.1 waiting rows, emitted Boo
 per-key event timers directly. Pending rows remain exempt from TTL; markers keep their original
 write ages. Memory/RocksDB conversion uses live state, without a native snapshot or input replay.
 Whole-view validation rejects inconsistent timers, keys, values and overlapping states before
-insertion; imported stock entries clear only after success. Arrow transport companions are
+insertion; imported stock entries clear only after success. Timer membership and visited-owner
+checks use the shared scoped disk index rather than global Java maps/sets. Both validation and
+apply passes close and delete scratch state, including on failure. Arrow transport companions are
 validated and removed before buffering, and keyless markers survive native checkpoint recovery.
+
+The shared complete-job fixture follows each release's stock owner: 1.18 keeps its eager rowtime
+winner and retracting changelog, while 2.2 uses buffered candidates, markers and timers. The 1.18
+oracle chooses the minimum timestamp from every consumed row, including rows behind the watermark;
+the 2.2 oracle retains its watermark-bound emission rules. Every handoff checks the winner bag at
+each cut and the complete signed changelog against a clean stock job. This does not introduce the
+newer buffered owner into 1.18.
 
 Buffered qualification includes 30 continued-state/recovery cases, 25 direct corruption/age
 controls, 12 ordinary/compiled binding checks and 96 complete jobs across partitioned cohorts.
@@ -161,9 +177,12 @@ Benchmarking remains deferred.
 Forty-eight actual-operator controls additionally retain nested payloads across twelve scalar,
 ROW, ARRAY and composite key layouts, including non-leading root key columns. Both TTL settings
 preserve an original pending winner through both switches and reject newer replacements.
-Continued serialized output matches stock byte for byte. These schemas test memory and
-RocksDB's snapshot-backed native state; they do not claim direct typed RocksDB coverage for
-nested payloads. Canonical conversion is guarded against intermediate native snapshots.
+Continued serialized output matches stock byte for byte. Buffered winners with ROW/ARRAY/MAP
+payloads now use direct native RocksDB records. Canonical capture pins those records and converts
+bounded frames on the asynchronous writer; it no longer copies the entire winner map at the
+barrier. The retained-row codec preserves original nested fields, entry order, NULLs and array
+offsets. Old snapshot-backed checkpoints migrate one key-group blob at a time through aligned
+or clipped restore. Canonical conversion is guarded against intermediate native snapshots.
 
 
 ## Window deduplication canonical interchange (partial)

@@ -41,6 +41,7 @@ import tech.streamfusion.operator.RowDataArrowConverter;
 
 class NativeIcebergKeyedTest {
   private static final int INITIAL_ROWS = 3;
+  private static final Map<Integer, Integer> EXPECTED_ROWS = Map.of(1, 11, 3, 30, 5, 50);
 
   @TempDir(cleanup = org.junit.jupiter.api.io.CleanupMode.ON_SUCCESS)
   Path temp;
@@ -87,10 +88,50 @@ class NativeIcebergKeyedTest {
   }
 
   private static boolean initialRowsCommitted(Table table) {
+    return recordsCommitted(table, INITIAL_ROWS);
+  }
+
+  private static boolean recordsCommitted(Table table, int records) {
     var snapshot = table.currentSnapshot();
     return snapshot != null
-        && Integer.toString(INITIAL_ROWS)
+        && Integer.toString(records)
             .equals(snapshot.summary().get(SnapshotSummary.TOTAL_RECORDS_PROP));
+  }
+
+  private static boolean updatesCommitted(Table table) throws java.io.IOException {
+    if (!recordsCommitted(table, INITIAL_ROWS + 3)) return false;
+    var remaining = new java.util.HashMap<>(EXPECTED_ROWS);
+    try (var rows = IcebergGenerics.read(table).build()) {
+      for (var row : rows) {
+        Integer expected = remaining.remove((Integer) row.getField("id"));
+        if (expected == null || !expected.equals(row.getField("value"))) return false;
+      }
+    }
+    return remaining.isEmpty();
+  }
+
+  @Test
+  void sourceCompletionRequiresAllUpdateFilesToCommit() {
+    var table =
+        new HadoopTables(new org.apache.hadoop.conf.Configuration())
+            .create(
+                new Schema(Types.NestedField.required(1, "id", Types.IntegerType.get())),
+                PartitionSpec.unpartitioned(),
+                Map.of(TableProperties.FORMAT_VERSION, "2"),
+                temp.resolve("complete-updates").toUri().toString());
+    int[] sizes = {INITIAL_ROWS, 1, 2};
+    for (int file = 0; file < sizes.length; file++) {
+      table
+          .newAppend()
+          .appendFile(
+              DataFiles.builder(table.spec())
+                  .withPath(temp.resolve("updates-" + file + ".parquet").toString())
+                  .withFileSizeInBytes(1)
+                  .withRecordCount(sizes[file])
+                  .build())
+          .commit();
+      assertEquals(file == 2, recordsCommitted(table, INITIAL_ROWS + 3));
+    }
   }
 
   @Test
@@ -295,7 +336,7 @@ class NativeIcebergKeyedTest {
             () -> "Duplicate row " + row + "; " + recoveryDiagnostics(table));
       }
     }
-    assertEquals(Map.of(1, 11, 3, 30, 5, 50), actual, () -> recoveryDiagnostics(table));
+    assertEquals(EXPECTED_ROWS, actual, () -> recoveryDiagnostics(table));
     assertTrue(
         java.util.stream.StreamSupport.stream(table.snapshots().spliterator(), false).count() >= 2);
     var deleteKinds = java.util.EnumSet.noneOf(org.apache.iceberg.FileContent.class);
@@ -438,6 +479,14 @@ class NativeIcebergKeyedTest {
       while (running && completed < 2) {
         if (System.nanoTime() > deadline) throw new IllegalStateException("checkpoint timed out");
         Thread.sleep(5);
+      }
+      var committed = new HadoopTables(new org.apache.hadoop.conf.Configuration()).load(location);
+      while (running && !updatesCommitted(committed)) {
+        if (System.nanoTime() > deadline)
+          throw new IllegalStateException(
+              "update files were not committed before source completion; " + EVENTS);
+        Thread.sleep(5);
+        committed.refresh();
       }
     }
 

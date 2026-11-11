@@ -272,6 +272,15 @@ The original design and reference implementations are recorded in
 [issue #373](https://github.com/datafusion-contrib/StreamFusion/issues/373).
 Batch overwrite remains outside scope. Data-file maintenance uses the separate API below.
 
+The keyed checkpoint fixture waits for all six physical inserted rows to appear in committed
+Iceberg metadata and for the final keyed rows to be visible before its synthetic streaming source
+returns. The row check also covers delete-only batches, which do not advance the inserted-row
+count. A completed source checkpoint can
+leave update batches in unaligned channel state; observing that source callback alone does not
+establish that every writer has committed. Partial update commits keep the fixture running, and a
+deadline fails with source events. Final logical rows, delete-file kinds and injected recovery
+assertions remain unchanged.
+
 ## Data-file maintenance
 
 `NativeIcebergMaintenance.append(env, maintenanceBuilder)` builds Iceberg's normal

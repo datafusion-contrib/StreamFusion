@@ -1,10 +1,11 @@
+use super::window_memberships::{persisted_key_group, WindowStateCodec};
 use super::{
     checkpoint_files, copy_checkpoint_db, merged_timer_deadline, multi_get_pinned, open_shared_db,
     re, stored_timer_deadline, write_timer_deadline, FlinkWriteBatch, OpenedDb, TIMER_DEADLINE_KEY,
 };
 use crate::*;
-use arrow::row::{RowConverter, SortField};
 use rocksdb::{Cache, Direction, IteratorMode, Options, ReadOptions, DB};
+#[cfg(test)]
 use std::sync::Arc;
 
 /// `[key_group i32 BE][window_end i64 BE, sign-flipped][group key arrow-row bytes]` — the layout of
@@ -33,6 +34,7 @@ fn window_end_from(bytes: &[u8]) -> i64 {
 /// arrow-row bytes (the aggregator's own key encoding), and the accumulator state scalars in
 /// snapshot order.
 pub(crate) struct StoredWindowGroup {
+    pub(crate) key_group: i32,
     pub(crate) end: i64,
     pub(crate) start: i64,
     pub(crate) key: Box<[u8]>,
@@ -45,11 +47,11 @@ pub(crate) struct StoredWindowGroup {
 /// the touched groups back at the bundle boundary, and a watermark firing range-scans each key
 /// group's closed prefix. Windows close by watermark, so values carry no TTL prefix.
 pub(crate) struct RocksWindowAggStore {
-    db: Arc<DB>,
+    db: StateDb,
     _cache: Option<Cache>,
     max_parallelism: usize,
     key_groups: std::ops::RangeInclusive<i32>,
-    state_converter: RowConverter,
+    state_codec: WindowStateCodec,
     watermark: i64,
     shared_slices: bool,
     next_exclusive_end: Option<i64>,
@@ -64,13 +66,16 @@ impl RocksWindowAggStore {
         state_types: &[DataType],
         key_groups: std::ops::RangeInclusive<i32>,
     ) -> Result<Self, DataFusionError> {
-        if !rocks_row_supported(state_types) {
-            return Err(DataFusionError::Plan(
-                "window state shape not supported by RocksDB".into(),
-            ));
-        }
+        Self::create_with_codec(config, WindowStateCodec::scalar(state_types)?, key_groups)
+    }
+
+    pub(crate) fn create_with_codec(
+        config: RocksStoreConfig,
+        state_codec: WindowStateCodec,
+        key_groups: std::ops::RangeInclusive<i32>,
+    ) -> Result<Self, DataFusionError> {
         let opened = open_shared_db(&config, &[(None, 0)])?;
-        Self::attach(opened, &config, state_types, key_groups)
+        Self::attach(opened, &config, state_codec, key_groups)
     }
 
     /// [`RocksWindowAggStore::create`] over restored checkpoint directories: an aligned single
@@ -83,9 +88,25 @@ impl RocksWindowAggStore {
         sources: &[(String, i64)],
         aligned: bool,
     ) -> Result<Self, DataFusionError> {
+        Self::open_merged_with_codec(
+            config,
+            WindowStateCodec::scalar(state_types)?,
+            key_groups,
+            sources,
+            aligned,
+        )
+    }
+
+    pub(crate) fn open_merged_with_codec(
+        config: RocksStoreConfig,
+        state_codec: WindowStateCodec,
+        key_groups: std::ops::RangeInclusive<i32>,
+        sources: &[(String, i64)],
+        aligned: bool,
+    ) -> Result<Self, DataFusionError> {
         if aligned && sources.len() == 1 {
             copy_checkpoint_db(&sources[0].0, &config.table_dir)?;
-            let mut store = Self::create(config, state_types, key_groups)?;
+            let mut store = Self::create_with_codec(config, state_codec, key_groups)?;
             store.generation = sources[0].1;
             store.watermark = store
                 .db
@@ -97,7 +118,7 @@ impl RocksWindowAggStore {
             store.timer_deadline = stored_timer_deadline(&store.db)?;
             return Ok(store);
         }
-        let mut store = Self::create(config, state_types, key_groups)?;
+        let mut store = Self::create_with_codec(config, state_codec, key_groups)?;
         let mut writes = FlinkWriteBatch::new(&store.db, store.write_batch_size);
         for (source, _) in sources {
             let source_db =
@@ -110,13 +131,14 @@ impl RocksWindowAggStore {
                             .watermark
                             .max(i64::from_be_bytes(value[..8].try_into().unwrap()));
                     }
-                } else if key.as_ref() == TIMER_DEADLINE_KEY {
+                } else if key.as_ref() == TIMER_DEADLINE_KEY
+                    || key.as_ref() == super::SNAPSHOT_TIMER_KEY
+                {
                     store.timer_deadline = merged_timer_deadline(store.timer_deadline, &value);
                 } else if key.as_ref() == SHARED_SLICES_KEY {
                     store.shared_slices = value.as_ref() == [1];
                 } else if key.len() >= 4 {
-                    let kg = i32::from_be_bytes(key[..4].try_into().expect("key group prefix"));
-                    if store.key_groups.contains(&kg) {
+                    if persisted_key_group(&key).is_some_and(|kg| store.key_groups.contains(&kg)) {
                         writes.put(key, value)?;
                     }
                 }
@@ -133,23 +155,16 @@ impl RocksWindowAggStore {
     fn attach(
         opened: OpenedDb,
         config: &RocksStoreConfig,
-        state_types: &[DataType],
+        state_codec: WindowStateCodec,
         key_groups: std::ops::RangeInclusive<i32>,
     ) -> Result<Self, DataFusionError> {
-        let state_converter = RowConverter::new(
-            state_types
-                .iter()
-                .map(|data_type| SortField::new(data_type.clone()))
-                .collect(),
-        )
-        .map_err(|e| DataFusionError::External(Box::new(e)))?;
         let shared_slices = opened.db.get(SHARED_SLICES_KEY).map_err(re)?.is_some();
         Ok(Self {
             db: opened.db,
             _cache: opened.cache,
             max_parallelism: config.max_parallelism,
             key_groups,
-            state_converter,
+            state_codec,
             watermark: i64::MIN,
             shared_slices,
             next_exclusive_end: None,
@@ -250,30 +265,47 @@ impl RocksWindowAggStore {
         key: &[u8],
     ) -> Result<(), DataFusionError> {
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
-        writes.delete(self.db_key(key_group, end, key))?;
+        let owner = self.db_key(key_group, end, key);
+        writes.delete(&owner)?;
+        self.state_codec.delete_owner_into(&mut writes, &owner)?;
         writes.finish()
     }
 
     pub(crate) fn slice_timers(&self) -> Result<Vec<(i32, i64, Box<[u8]>)>, DataFusionError> {
         let mut timers = Vec::new();
-        for row in self.db.iterator(IteratorMode::Start) {
-            let (key, _) = row.map_err(re)?;
-            if key.len() <= KEY_PREFIX_LEN
-                || key.as_ref() == WATERMARK_KEY
-                || key.as_ref() == TIMER_DEADLINE_KEY
-                || key.as_ref() == SHARED_SLICES_KEY
-            {
-                continue;
-            }
-            if key[KEY_PREFIX_LEN] == 1 {
-                timers.push((
-                    i32::from_be_bytes(key[..4].try_into().unwrap()),
-                    window_end_from(&key[4..KEY_PREFIX_LEN]),
-                    key[KEY_PREFIX_LEN + 1..].into(),
-                ));
-            }
-        }
+        self.visit_slice_timers(1024, |rows| {
+            timers.extend(rows);
+            Ok(())
+        })?;
         Ok(timers)
+    }
+
+    pub(crate) fn visit_slice_timers(
+        &self,
+        chunk_rows: usize,
+        mut accept: impl FnMut(Vec<(i32, i64, Box<[u8]>)>) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        self.db.visit_snapshot_batches(
+            chunk_rows,
+            |key| {
+                key.len() > KEY_PREFIX_LEN
+                    && i32::from_be_bytes(key[..4].try_into().unwrap()) >= 0
+                    && key[KEY_PREFIX_LEN] == 1
+            },
+            |rows| {
+                accept(
+                    rows.into_iter()
+                        .map(|(key, _)| {
+                            (
+                                i32::from_be_bytes(key[..4].try_into().unwrap()),
+                                window_end_from(&key[4..KEY_PREFIX_LEN]),
+                                key[KEY_PREFIX_LEN + 1..].into(),
+                            )
+                        })
+                        .collect(),
+                )
+            },
+        )
     }
 
     /// Batched point reads for a bundle's touched groups: one multi-get, one columnar decode.
@@ -288,7 +320,20 @@ impl RocksWindowAggStore {
             values.push(value.map_err(re)?);
         }
         let hits: Vec<&[u8]> = values.iter().flatten().map(|value| &value[8..]).collect();
-        let mut states = self.decode_states(&hits)?.into_iter();
+        let states = if self.state_codec.has_memberships() {
+            values
+                .iter()
+                .zip(db_keys)
+                .filter_map(|(value, key)| {
+                    value
+                        .as_ref()
+                        .map(|value| self.state_codec.decode_state(&self.db, key, &value[8..]))
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            self.decode_states(&hits)?
+        };
+        let mut states = states.into_iter();
         Ok(values
             .iter()
             .map(|value| {
@@ -320,26 +365,8 @@ impl RocksWindowAggStore {
         for (key_group, end, key) in timers {
             writes.put(self.timer_key(key_group, end, key), [])?;
         }
-        if state_columns.is_empty() {
-            for (db_key, start) in entries {
-                writes.put(db_key, start.to_le_bytes())?;
-            }
-            return writes.finish();
-        }
-        let rows = self
-            .state_converter
-            .convert_columns(state_columns)
-            .map_err(|e| DataFusionError::External(Box::new(e)))?;
-        let mut order: Vec<usize> = (0..entries.len()).collect();
-        order.sort_unstable_by(|&a, &b| entries[a].0.cmp(&entries[b].0));
-        for index in order {
-            let (db_key, start) = &entries[index];
-            let row = rows.row(index).data();
-            let mut value = Vec::with_capacity(8 + row.len());
-            value.extend_from_slice(&start.to_le_bytes());
-            value.extend_from_slice(row);
-            writes.put(db_key, value)?;
-        }
+        self.state_codec
+            .write_rows(&mut writes, entries, state_columns)?;
         writes.finish()
     }
 
@@ -363,7 +390,7 @@ impl RocksWindowAggStore {
         watermark: i64,
         calendar: Option<&crate::window_calendar::WindowCalendar>,
     ) -> Result<Vec<StoredWindowGroup>, DataFusionError> {
-        let mut closed: Vec<(i64, i64, Box<[u8]>, Box<[u8]>)> = Vec::new();
+        let mut closed: Vec<(Box<[u8]>, i64, Box<[u8]>)> = Vec::new();
         let mut candidates = Vec::new();
         self.next_exclusive_end = None;
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
@@ -392,8 +419,8 @@ impl RocksWindowAggStore {
                     break;
                 }
                 let start = i64::from_le_bytes(value[..8].try_into().expect("window start"));
-                closed.push((end, start, key[KEY_PREFIX_LEN..].into(), value[8..].into()));
-                writes.delete(key)?;
+                writes.delete(&key)?;
+                closed.push((key, start, value[8..].into()));
             }
         }
         let deadlines = calendar
@@ -409,79 +436,116 @@ impl RocksWindowAggStore {
                     continue;
                 }
                 let start = i64::from_le_bytes(value[..8].try_into().expect("window start"));
-                closed.push((end, start, key[KEY_PREFIX_LEN..].into(), value[8..].into()));
-                writes.delete(key)?;
+                writes.delete(&key)?;
+                closed.push((key, start, value[8..].into()));
             }
         }
-        writes.finish()?;
         closed.sort_unstable_by(|a, b| {
-            let left = deadlines.as_ref().map_or(a.0, |ends| ends[&a.0]);
-            let right = deadlines.as_ref().map_or(b.0, |ends| ends[&b.0]);
-            (left, a.0, a.2.as_ref()).cmp(&(right, b.0, b.2.as_ref()))
+            let a_end = window_end_from(&a.0[4..KEY_PREFIX_LEN]);
+            let b_end = window_end_from(&b.0[4..KEY_PREFIX_LEN]);
+            let left = deadlines.as_ref().map_or(a_end, |ends| ends[&a_end]);
+            let right = deadlines.as_ref().map_or(b_end, |ends| ends[&b_end]);
+            (left, a_end, &a.0[KEY_PREFIX_LEN..]).cmp(&(right, b_end, &b.0[KEY_PREFIX_LEN..]))
         });
-        self.into_groups(closed)
+        let owners = if self.state_codec.has_memberships() {
+            closed.iter().map(|row| row.0.clone()).collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        let groups = self.into_groups(closed, false)?;
+        for owner in owners {
+            self.state_codec.delete_owner_into(&mut writes, &owner)?;
+        }
+        writes.finish()?;
+        Ok(groups)
     }
 
     /// Every committed (window, key) group, for canonical savepoints.
     pub(crate) fn scan_all(&self) -> Result<Vec<StoredWindowGroup>, DataFusionError> {
-        let mut groups: Vec<(i64, i64, Box<[u8]>, Box<[u8]>)> = Vec::new();
+        let mut groups: Vec<(Box<[u8]>, i64, Box<[u8]>)> = Vec::new();
         for row in self.db.iterator(IteratorMode::Start) {
             let (key, value) = row.map_err(re)?;
-            if key.as_ref() == WATERMARK_KEY
-                || key.as_ref() == TIMER_DEADLINE_KEY
-                || key.as_ref() == SHARED_SLICES_KEY
-                || key.len() < KEY_PREFIX_LEN
-            {
+            if !self.is_group_key(&key) {
                 continue;
             }
-            if self.shared_slices && key[KEY_PREFIX_LEN] != 0 {
-                continue;
-            }
-            let key_offset = KEY_PREFIX_LEN + usize::from(self.shared_slices);
-            let end = window_end_from(&key[4..KEY_PREFIX_LEN]);
             let start = i64::from_le_bytes(value[..8].try_into().expect("window start"));
-            groups.push((end, start, key[key_offset..].into(), value[8..].into()));
+            groups.push((key, start, value[8..].into()));
         }
-        self.into_groups(groups)
+        self.into_groups(groups, false)
+    }
+
+    pub(crate) fn has_groups(&self) -> Result<bool, DataFusionError> {
+        let mut snapshot = super::RocksReadSnapshot::new(&self.db);
+        Ok(!snapshot
+            .next_batch_limited(1, 4 * 1024 * 1024, |key| self.is_group_key(key))?
+            .is_empty())
+    }
+
+    fn is_group_key(&self, key: &[u8]) -> bool {
+        key.len() >= 4
+            && i32::from_be_bytes(key[..4].try_into().unwrap()) >= 0
+            && (!self.shared_slices || key.len() <= KEY_PREFIX_LEN || key[KEY_PREFIX_LEN] == 0)
+    }
+
+    pub(crate) fn visit_groups(
+        &self,
+        chunk_rows: usize,
+        mut accept: impl FnMut(Vec<StoredWindowGroup>) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        self.db.visit_snapshot_batches(
+            chunk_rows,
+            |key| self.is_group_key(key),
+            |entries| {
+                let mut rows = Vec::with_capacity(entries.len());
+                for (key, value) in entries {
+                    if key.len() < KEY_PREFIX_LEN || value.len() < 8 {
+                        return Err(DataFusionError::Execution(
+                            "invalid persisted window group".into(),
+                        ));
+                    }
+                    rows.push((
+                        key,
+                        i64::from_le_bytes(value[..8].try_into().unwrap()),
+                        value[8..].into(),
+                    ));
+                }
+                accept(self.into_groups(rows, true)?)
+            },
+        )
     }
 
     fn into_groups(
         &self,
-        rows: Vec<(i64, i64, Box<[u8]>, Box<[u8]>)>,
+        rows: Vec<(Box<[u8]>, i64, Box<[u8]>)>,
+        headers: bool,
     ) -> Result<Vec<StoredWindowGroup>, DataFusionError> {
-        let states: Vec<&[u8]> = rows.iter().map(|(_, _, _, state)| state.as_ref()).collect();
-        let states = self.decode_states(&states)?;
+        let values = rows
+            .iter()
+            .map(|(_, _, state)| state.as_ref())
+            .collect::<Vec<_>>();
+        let states = if !headers && self.state_codec.has_memberships() {
+            rows.iter()
+                .map(|(key, _, state)| self.state_codec.decode_state(&self.db, key, state))
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            self.decode_states(&values)?
+        };
+        let offset = KEY_PREFIX_LEN + usize::from(self.shared_slices);
         Ok(rows
             .into_iter()
             .zip(states)
-            .map(|((end, start, key, _), state)| StoredWindowGroup {
-                end,
+            .map(|((owner, start, _), state)| StoredWindowGroup {
+                key_group: i32::from_be_bytes(owner[..4].try_into().unwrap()),
+                end: window_end_from(&owner[4..KEY_PREFIX_LEN]),
                 start,
-                key,
+                key: owner[offset..].into(),
                 state,
             })
             .collect())
     }
 
     fn decode_states(&self, values: &[&[u8]]) -> Result<Vec<Vec<ScalarValue>>, DataFusionError> {
-        if values.is_empty() {
-            return Ok(Vec::new());
-        }
-        let parser = self.state_converter.parser();
-        let rows: Vec<_> = values.iter().map(|value| parser.parse(value)).collect();
-        let columns = self
-            .state_converter
-            .convert_rows(rows)
-            .map_err(|e| DataFusionError::External(Box::new(e)))?;
-        let mut out = Vec::with_capacity(values.len());
-        for row in 0..values.len() {
-            let mut scalars = Vec::with_capacity(columns.len());
-            for column in &columns {
-                scalars.push(ScalarValue::try_from_array(column, row)?);
-            }
-            out.push(scalars);
-        }
-        Ok(out)
+        self.state_codec.decode_headers(values)
     }
 
     /// Persists the late-data watermark, then takes one native checkpoint — touched groups were
@@ -506,6 +570,12 @@ impl RocksWindowAggStore {
         }
         self.generation += 1;
         checkpoint_files(&self.db, snapshot_dir, self.generation)
+    }
+}
+
+impl super::window_memberships::WindowMembershipState for RocksWindowAggStore {
+    fn membership_state(&self) -> (&StateDb, &WindowStateCodec) {
+        (&self.db, &self.state_codec)
     }
 }
 
@@ -604,6 +674,39 @@ mod tests {
                 }
             })
             .collect()
+    }
+
+    #[test]
+    fn canonical_groups_are_streamed_in_bounded_chunks_and_retry_after_receiver_failure() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut config = test_config("bounded-canonical");
+        config.table_dir = directory.path().to_string_lossy().into_owned();
+        let mut store =
+            RocksWindowAggStore::create(config.clone(), &[DataType::Int64], 0..=127).unwrap();
+        let groups = (0..2051)
+            .map(|i| ((i % 128) as i32, 100, 0, i, i))
+            .collect::<Vec<_>>();
+        put_groups(&mut store, &groups);
+        assert!(store
+            .visit_groups(31, |_| Err(DataFusionError::Execution(
+                "receiver stopped".into()
+            )))
+            .is_err());
+        let mut count = 0;
+        let mut total = 0;
+        store
+            .visit_groups(31, |rows| {
+                assert!(rows.len() <= 31);
+                count += rows.len();
+                total += sums(&rows).iter().sum::<i64>();
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(count, groups.len());
+        assert_eq!(total, (0..2051).sum::<i64>());
+        drop(store);
+        let reopened = RocksWindowAggStore::create(config, &[DataType::Int64], 0..=127).unwrap();
+        assert_eq!(reopened.scan_all().unwrap().len(), groups.len());
     }
 
     #[test]

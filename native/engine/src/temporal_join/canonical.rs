@@ -1,4 +1,5 @@
 use super::*;
+use crate::state::canonical_context::check_cancelled;
 
 pub(super) const CHUNK_ROWS: usize = 1024;
 
@@ -45,6 +46,7 @@ impl TemporalJoiner {
         left: bool,
         mut accept: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
+        self.ensure_canonical_ready()?;
         let schema = self.canonical_schema(left);
         #[cfg(feature = "rocksdb-state")]
         if let Some(store) = &self.store {
@@ -122,6 +124,30 @@ impl TemporalJoiner {
         left: bool,
         batch: &RecordBatch,
     ) -> Result<(), DataFusionError> {
+        self.transfer_canonical_rows(left, batch, false)
+    }
+
+    pub(super) fn transfer_canonical_rows(
+        &mut self,
+        left: bool,
+        batch: &RecordBatch,
+        validating: bool,
+    ) -> Result<(), DataFusionError> {
+        let result = self.transfer_rows(left, batch, validating);
+        if result.is_err() {
+            self.fail_canonical_restore();
+        }
+        result
+    }
+
+    fn transfer_rows(
+        &mut self,
+        left: bool,
+        batch: &RecordBatch,
+        validating: bool,
+    ) -> Result<(), DataFusionError> {
+        check_cancelled()?;
+        self.check_canonical_restore_pass(validating)?;
         if !self.canonical_import_open {
             return Err(invalid(
                 "import requires an operator that has not started execution",
@@ -188,6 +214,9 @@ impl TemporalJoiner {
         if let Some(store) = &mut self.store {
             let keys = store.entry_keys(&data, columns, &self.key_timestamp_precisions);
             store.validate_canonical_row_keys(left, &keys, indices)?;
+            if validating {
+                return Ok(());
+            }
             if left {
                 store.import_left(&data, &keys, &times, Some(kinds), indices)?;
             } else {
@@ -208,6 +237,9 @@ impl TemporalJoiner {
             if exists {
                 return Err(invalid("retained row already imported"));
             }
+        }
+        if validating {
+            return Ok(());
         }
         let owned = data
             .columns()
@@ -315,8 +347,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_importTemporalJoinCanonical
 ) {
     crate::bridge::jni_guard(env, move |mut env| {
         let joiner = unsafe { &mut *(handle as *mut TemporalJoiner) };
-        let batch = import_record_batch(array, schema);
-        if let Err(error) = joiner.import_canonical_rows(left != 0, &batch) {
+        let result = joiner.import_canonical_rows(left != 0, &import_record_batch(array, schema));
+        if let Err(error) = result {
             if matches!(error, DataFusionError::ResourcesExhausted(_)) {
                 throw_memory_limit(&mut env, &error.to_string());
             } else {
@@ -326,4 +358,55 @@ pub extern "system" fn Java_tech_streamfusion_Native_importTemporalJoinCanonical
     });
 }
 
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_validateTemporalJoinCanonicalRows<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    left: jni::sys::jboolean,
+    array: jlong,
+    schema: jlong,
+) {
+    crate::bridge::jni_guard(env, |env| {
+        let joiner = unsafe { &mut *(handle as *mut TemporalJoiner) };
+        let result =
+            joiner.transfer_canonical_rows(left != 0, &import_record_batch(array, schema), true);
+        if let Err(error) = result {
+            if matches!(error, DataFusionError::ResourcesExhausted(_)) {
+                throw_memory_limit(env, &error.to_string());
+            } else {
+                let _ = env.throw_new("java/lang/IllegalArgumentException", error.to_string());
+            }
+        }
+    });
+}
+
 mod metadata;
+mod records;
+pub(super) use records::MetadataImport;
+
+impl crate::state::canonical_memory::CanonicalMemoryState for TemporalJoiner {
+    fn copy_state(&mut self, target: &mut Self) -> Result<(), DataFusionError> {
+        self.ensure_canonical_ready()?;
+        target.memory.set(self.memory.state_bytes);
+        target.memory.account()?;
+        target.left_state = self.left_state.clone();
+        target.right_state = self.right_state.clone();
+        target.metadata = self.metadata.clone();
+        target.cleanup_state = self.cleanup_state.clone();
+        target.last_sweep_ms = self.last_sweep_ms.clone();
+        Ok(())
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_copyTemporalJoinCanonicalMemoryState<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    source: jlong,
+    target: jlong,
+) {
+    crate::state::canonical_memory::copy::<TemporalJoiner>(env, source, target);
+}

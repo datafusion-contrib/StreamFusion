@@ -1,7 +1,6 @@
 package tech.streamfusion.state;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.apache.arrow.c.ArrowArray;
@@ -34,6 +33,7 @@ import tech.streamfusion.operator.RowDataArrowConverter;
 public final class StockBufferedDedupStateContract implements StockStateContract {
   private static final long serialVersionUID = 1L;
   private static final int CHUNK_ROWS = 1024;
+  private static final int EVENT_TIMES = 1, WAITING_OWNERS = 2, EMITTED_OWNERS = 3;
   private static final String WAITING = "waiting-to-emit-on-timer";
   private static final String EMITTED = "already-emitted-state-boolean";
   private static final String EVENT_TIMERS = "_timer_state/event_user-timers";
@@ -126,29 +126,12 @@ public final class StockBufferedDedupStateContract implements StockStateContract
   }
 
   @Override
-  public void clear(CheckpointableKeyedStateBackend<RowData> backend) throws Exception {
-    clearState(backend, WAITING, waiting(backend));
-    clearState(backend, EMITTED, emitted(backend));
-    var events = timers(backend, EVENT_TIMERS);
-    while (events.poll() != null) {}
-    var processing = timers(backend, PROCESSING_TIMERS);
-    while (processing.poll() != null) {}
-  }
-
-  private static void clearState(
-      CheckpointableKeyedStateBackend<RowData> backend, String name, StockValueState<?> state)
+  public void clearProjectionTimers(CheckpointableKeyedStateBackend<RowData> backend)
       throws Exception {
-    List<RowData> keys;
-    try (var stream = backend.getKeys(name, VoidNamespace.INSTANCE)) {
-      keys =
-          stream
-              .map(backend.getKeySerializer()::copy)
-              .collect(java.util.stream.Collectors.toList());
-    }
-    for (var key : keys) {
-      backend.setCurrentKey(key);
-      state.clear();
-    }
+    timers(backend, EVENT_TIMERS);
+    timers(backend, PROCESSING_TIMERS);
+    while (eventTimers.poll() != null) {}
+    while (processingTimers.poll() != null) {}
   }
 
   @Override
@@ -249,88 +232,91 @@ public final class StockBufferedDedupStateContract implements StockStateContract
       throws Exception {
     if (!timers(backend, PROCESSING_TIMERS).isEmpty())
       throw new IllegalStateException("Buffered dedup has unexpected processing-time timers");
-    var scheduled = new HashMap<RowData, Long>();
-    try (var iterator = timers(backend, EVENT_TIMERS).iterator()) {
-      while (iterator.hasNext()) {
-        var timer = iterator.next();
-        validateKey(timer.getKey());
-        if (!VoidNamespace.INSTANCE.equals(timer.getNamespace())
-            || scheduled.put(keySerializer.copy(timer.getKey()), timer.getTimestamp()) != null)
-          throw new IllegalStateException(
-              "Buffered dedup has duplicate timers or an unexpected namespace");
-      }
-    }
-    var visited = new java.util.HashSet<RowData>();
-    var waiting = waiting(backend);
-    var emitted = emitted(backend);
-    var rowSerializer = new RowDataSerializer(rowType);
-    var fields = new RowData.FieldGetter[rowType.getFieldCount()];
-    for (int i = 0; i < fields.length; i++)
-      fields[i] = RowData.createFieldGetter(rowType.getTypeAt(i), i);
-    var keyFields = new RowData.FieldGetter[keys.length];
-    for (int i = 0; i < keys.length; i++)
-      keyFields[i] = RowData.createFieldGetter(keyType.getTypeAt(i), i);
-    List<RowData> rows = new ArrayList<>(CHUNK_ROWS);
-    try (var stream = backend.getKeys(WAITING, VoidNamespace.INSTANCE)) {
-      var iterator = stream.iterator();
-      while (iterator.hasNext()) {
-        RowData key = keySerializer.copy(iterator.next());
-        validateKey(key);
-        if (!visited.add(key)) throw new IllegalStateException("Duplicate buffered dedup key");
-        backend.setCurrentKey(key);
-        var state = waiting.value();
-        if (state == null || state.getUserValue() == null)
-          throw new IllegalStateException("Buffered dedup has an empty pending entry");
-        RowData value = rowSerializer.copy(state.getUserValue());
-        if (value.getRowKind() != org.apache.flink.types.RowKind.INSERT
-            || !key.equals(keySelector.getKey(value)))
-          throw new IllegalStateException("Buffered dedup pending row and key disagree");
-        if (value.isNullAt(rowtimeColumn))
-          throw new IllegalStateException("Buffered dedup pending row has NULL time");
-        Long time = scheduled.remove(key);
-        if (time == null || time != rowtime(value))
-          throw new IllegalStateException("Buffered dedup pending row and event timer disagree");
-        var row = new GenericRowData(bridgeType.getFieldCount());
-        for (int i = 0; i < fields.length; i++) row.setField(i, fields[i].getFieldOrNull(value));
-        row.setField(fields.length, 0L);
-        rows.add(row);
-        if (rows.size() == CHUNK_ROWS) {
-          importBatch(handle, schema, false, rows, validateOnly);
-          rows.clear();
+    try (var inventory = new StockStateSpool(keySerializer)) {
+      var waiting = waiting(backend);
+      var emitted = emitted(backend);
+      try (var iterator =
+          StockTimerSnapshot.<RowData, VoidNamespace>iterator(backend, EVENT_TIMERS)) {
+        while (iterator.hasNext()) {
+          var timer = iterator.next();
+          validateKey(timer.getKey());
+          if (!VoidNamespace.INSTANCE.equals(timer.getNamespace())
+              || inventory.hasAny(EVENT_TIMES, timer.getKey()))
+            throw new IllegalStateException(
+                "Buffered dedup has duplicate timers or an unexpected namespace");
+          inventory.add(EVENT_TIMES, timer.getKey(), timer.getTimestamp());
+          backend.setCurrentKey(timer.getKey());
+          if (waiting.value() == null)
+            throw new IllegalStateException("Buffered dedup timer has no pending row");
         }
       }
-    }
-    if (!scheduled.isEmpty())
-      throw new IllegalStateException("Buffered dedup timer has no pending row");
-    if (!rows.isEmpty()) {
-      importBatch(handle, schema, false, rows, validateOnly);
-      rows.clear();
-    }
-    try (var stream = backend.getKeys(EMITTED, VoidNamespace.INSTANCE)) {
-      var iterator = stream.iterator();
-      while (iterator.hasNext()) {
-        RowData key = keySerializer.copy(iterator.next());
-        validateKey(key);
-        if (!visited.add(key))
-          throw new IllegalStateException("Buffered dedup pending and emitted states overlap");
-        backend.setCurrentKey(key);
-        var state = emitted.value();
-        if (state == null || !Boolean.TRUE.equals(state.getUserValue()))
-          throw new IllegalStateException("Buffered dedup has an invalid emitted marker");
-        var row = new GenericRowData(bridgeType.getFieldCount());
-        for (int i = 0; i < keys.length; i++)
-          row.setField(keys[i], keyFields[i].getFieldOrNull(key));
-        if (!key.equals(keySelector.getKey(row)))
-          throw new IllegalStateException("Buffered dedup marker has a non-canonical key");
-        row.setField(fields.length, state.getLastAccessTimestamp());
-        rows.add(row);
-        if (rows.size() == CHUNK_ROWS) {
-          importBatch(handle, schema, true, rows, validateOnly);
-          rows.clear();
+      var rowSerializer = new RowDataSerializer(rowType);
+      var fields = new RowData.FieldGetter[rowType.getFieldCount()];
+      for (int i = 0; i < fields.length; i++)
+        fields[i] = RowData.createFieldGetter(rowType.getTypeAt(i), i);
+      var keyFields = new RowData.FieldGetter[keys.length];
+      for (int i = 0; i < keys.length; i++)
+        keyFields[i] = RowData.createFieldGetter(keyType.getTypeAt(i), i);
+      List<RowData> rows = new ArrayList<>(CHUNK_ROWS);
+      try (var stream = backend.getKeys(WAITING, VoidNamespace.INSTANCE)) {
+        var iterator = stream.iterator();
+        while (iterator.hasNext()) {
+          RowData key = keySerializer.copy(iterator.next());
+          validateKey(key);
+          if (!inventory.add(WAITING_OWNERS, key, 0))
+            throw new IllegalStateException("Duplicate buffered dedup key");
+          backend.setCurrentKey(key);
+          var state = waiting.value();
+          if (state == null || state.getUserValue() == null)
+            throw new IllegalStateException("Buffered dedup has an empty pending entry");
+          RowData value = rowSerializer.copy(state.getUserValue());
+          if (value.getRowKind() != org.apache.flink.types.RowKind.INSERT
+              || !key.equals(keySelector.getKey(value)))
+            throw new IllegalStateException("Buffered dedup pending row and key disagree");
+          if (value.isNullAt(rowtimeColumn))
+            throw new IllegalStateException("Buffered dedup pending row has NULL time");
+          if (!inventory.contains(EVENT_TIMES, key, rowtime(value)))
+            throw new IllegalStateException("Buffered dedup pending row and event timer disagree");
+          var row = new GenericRowData(bridgeType.getFieldCount());
+          for (int i = 0; i < fields.length; i++) row.setField(i, fields[i].getFieldOrNull(value));
+          row.setField(fields.length, 0L);
+          rows.add(row);
+          if (rows.size() == CHUNK_ROWS) {
+            importBatch(handle, schema, false, rows, validateOnly);
+            rows.clear();
+          }
         }
       }
+      if (!rows.isEmpty()) {
+        importBatch(handle, schema, false, rows, validateOnly);
+        rows.clear();
+      }
+      try (var stream = backend.getKeys(EMITTED, VoidNamespace.INSTANCE)) {
+        var iterator = stream.iterator();
+        while (iterator.hasNext()) {
+          RowData key = keySerializer.copy(iterator.next());
+          validateKey(key);
+          if (inventory.contains(WAITING_OWNERS, key, 0) || !inventory.add(EMITTED_OWNERS, key, 0))
+            throw new IllegalStateException("Buffered dedup pending and emitted states overlap");
+          backend.setCurrentKey(key);
+          var state = emitted.value();
+          if (state == null || !Boolean.TRUE.equals(state.getUserValue()))
+            throw new IllegalStateException("Buffered dedup has an invalid emitted marker");
+          var row = new GenericRowData(bridgeType.getFieldCount());
+          for (int i = 0; i < keys.length; i++)
+            row.setField(keys[i], keyFields[i].getFieldOrNull(key));
+          if (!key.equals(keySelector.getKey(row)))
+            throw new IllegalStateException("Buffered dedup marker has a non-canonical key");
+          row.setField(fields.length, state.getLastAccessTimestamp());
+          rows.add(row);
+          if (rows.size() == CHUNK_ROWS) {
+            importBatch(handle, schema, true, rows, validateOnly);
+            rows.clear();
+          }
+        }
+      }
+      if (!rows.isEmpty()) importBatch(handle, schema, true, rows, validateOnly);
     }
-    if (!rows.isEmpty()) importBatch(handle, schema, true, rows, validateOnly);
   }
 
   private long rowtime(RowData row) {

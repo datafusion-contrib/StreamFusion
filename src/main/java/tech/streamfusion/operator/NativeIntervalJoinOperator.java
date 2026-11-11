@@ -231,8 +231,19 @@ public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<A
   }
 
   @Override
+  protected java.util.function.LongConsumer memoryStateCopier() {
+    final long source = handle;
+    return target -> Native.copyIntervalJoinCanonicalMemoryState(source, target);
+  }
+
+  @Override
   protected void closeHandle() {
-    if (directRocksDBState()) {
+    closeCapturedHandle(handle, directRocksDBState());
+  }
+
+  @Override
+  protected void closeCapturedHandle(long handle, boolean persistent) {
+    if (persistent) {
       Native.closeRocksDBIntervalJoiner(handle);
     } else {
       Native.closeIntervalJoiner(handle);

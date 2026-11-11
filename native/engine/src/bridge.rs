@@ -7,6 +7,7 @@ pub(crate) fn emit_record_batch(
     receiver: &jni::objects::JObject,
     batch: RecordBatch,
 ) -> Result<(), DataFusionError> {
+    crate::state::canonical_context::check_cancelled()?;
     if batch.num_rows() == 0 {
         return Ok(());
     }

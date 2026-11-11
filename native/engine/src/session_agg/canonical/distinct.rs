@@ -14,10 +14,19 @@ impl SessionAggregator {
             return Err(invalid("unqualified DISTINCT view factory"));
         }
         #[cfg(feature = "rocksdb-state")]
-        if self.store.is_some() {
-            return Err(invalid(
-                "DISTINCT requires membership-capable session state",
-            ));
+        if let Some(store) = &self.store {
+            let logical = self.aggregates[..index]
+                .iter()
+                .map(|agg| agg.state_fields().len())
+                .sum();
+            if store
+                .membership_state()
+                .1
+                .membership_field(logical)
+                .is_none()
+            {
+                return Err(invalid("session store has no matching membership layout"));
+            }
         }
         self.canonical_distinct.insert(index);
         Ok(())
@@ -35,27 +44,28 @@ impl SessionAggregator {
 
     pub(super) fn account_canonical_state(&mut self) -> Result<(), DataFusionError> {
         if self.memory.tracking() {
-            let state = self
-                .sessions
-                .iter()
-                .map(|(key, sessions)| {
-                    owned_row_bytes(key) + sessions.values().map(session_bytes).sum::<usize>()
-                })
-                .sum::<usize>();
-            let metadata = self
-                .canonical_distinct_counts
-                .keys()
-                .map(|(_, key, _)| {
-                    owned_row_bytes(key) + std::mem::size_of::<((i64, OwnedRow, usize), i64)>()
-                })
-                .sum::<usize>();
-            self.memory.set(state + metadata);
+            self.memory.set(self.computed_state_bytes());
             self.memory.account()?;
         }
         Ok(())
     }
 
     pub(super) fn validate_canonical_distinct_complete(&mut self) -> Result<(), DataFusionError> {
+        if self.canonical_distinct.is_empty() {
+            return Ok(());
+        }
+        #[cfg(feature = "rocksdb-state")]
+        if let Some(store) = &self.store {
+            return store.visit_sessions(CHUNK_ROWS, |sessions| {
+                for session in sessions {
+                    store.validate_membership_owner(
+                        &store.db_key(session.key_group, &session.key, session.start),
+                        &session.state,
+                    )?;
+                }
+                Ok(())
+            });
+        }
         for ((start, key, index), expected) in &self.canonical_distinct_counts {
             let accumulator = self
                 .sessions
@@ -72,6 +82,10 @@ impl SessionAggregator {
 
     fn finish_canonical_distinct(&mut self) -> Result<(), DataFusionError> {
         self.validate_canonical_distinct_complete()?;
+        #[cfg(feature = "rocksdb-state")]
+        if let Some(store) = &self.store {
+            store.finish_membership_import();
+        }
         self.canonical_distinct_counts = HashMap::default();
         self.account_canonical_state()
     }
@@ -81,15 +95,53 @@ impl SessionAggregator {
         index: usize,
         mut accept: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
+        self.require_complete_canonical_import()?;
         let value_type = self.canonical_distinct_type(index)?;
         let counted = matches!(self.aggregates[index], WindowAggregate::CountedDistinct(_));
         self.validate_canonical_distinct_complete()?;
+        #[cfg(feature = "rocksdb-state")]
+        if self.store.is_some() {
+            self.write_through_store()?;
+            let store = self.store.as_ref().unwrap();
+            let logical = self.aggregates[..index]
+                .iter()
+                .map(|agg| agg.state_fields().len())
+                .sum();
+            let parser = self.key_converter.as_ref().unwrap().parser();
+            return store.visit_sessions(CHUNK_ROWS, |sessions| {
+                for session in sessions {
+                    let owner = store.db_key(session.key_group, &session.key, session.start);
+                    let key = parser.parse(&session.key).owned();
+                    store.visit_membership_rows(&owner, logical, |entries| {
+                        let rows = entries
+                            .iter()
+                            .map(|(value, count)| ViewRow {
+                                end: session.end,
+                                key: key.clone(),
+                                value: value.clone(),
+                                count: *count,
+                            })
+                            .collect::<Vec<_>>();
+                        accept(view_batch(
+                            self.key_converter.as_ref(),
+                            &self.key_types,
+                            &value_type,
+                            counted,
+                            &rows,
+                        )?)
+                    })?;
+                }
+                Ok(())
+            });
+        }
         let result = (|| {
             let mut rows = Vec::with_capacity(CHUNK_ROWS);
             for (key, sessions) in &mut self.sessions {
                 for session in sessions.values_mut() {
                     let entries = if counted {
-                        (session.accumulators[index].as_ref() as &dyn std::any::Any)
+                        (crate::aggregates::raw_accumulator(session.accumulators[index].as_mut())
+                            .expect("captured accumulator")
+                            as &mut dyn std::any::Any)
                             .downcast_ref::<CountedDistinctAccumulator>()
                             .unwrap()
                             .entries()
@@ -199,6 +251,37 @@ impl SessionAggregator {
         let encoded =
             encode_group_keys(converter, &batch.columns()[1..1 + arity], batch.num_rows());
         let ends = column_i64(batch, "window_end");
+        #[cfg(feature = "rocksdb-state")]
+        if let Some(store) = &self.store {
+            let columns = (1..1 + arity).collect::<Vec<_>>();
+            let mut encoder =
+                BinaryRowBatchEncoder::new(batch, &columns, &self.key_timestamp_precisions);
+            let mut owners = HashMap::default();
+            let mut rows = Vec::with_capacity(batch.num_rows());
+            for row in 0..batch.num_rows() {
+                let key = encoded.row(row).owned();
+                let group = store.key_group(encoder.hash(row));
+                let identity = (group, key.clone(), ends.value(row));
+                if !owners.contains_key(&identity) {
+                    let owner = store
+                        .owner_for_end(group, key.row().data(), ends.value(row))?
+                        .ok_or_else(|| {
+                            invalid("DISTINCT view without its native session accumulator")
+                        })?;
+                    owners.insert(identity.clone(), owner);
+                }
+                rows.push((
+                    owners[&identity].clone(),
+                    ScalarValue::try_from_array(batch.column(1 + arity), row)?,
+                    counts.map_or(1, |counts| counts.value(row)),
+                ));
+            }
+            let logical = self.aggregates[..index]
+                .iter()
+                .map(|agg| agg.state_fields().len())
+                .sum();
+            return store.import_membership_rows(logical, &rows);
+        }
         let mut candidates: HashMap<(i64, OwnedRow), Box<dyn Accumulator>> = HashMap::default();
         for row in 0..batch.num_rows() {
             let key = encoded.row(row).owned();
@@ -234,7 +317,8 @@ impl SessionAggregator {
             }
             let candidate = candidates.get_mut(&entry).unwrap();
             if let Some(counts) = counts {
-                (candidate.as_mut() as &mut dyn std::any::Any)
+                (crate::aggregates::raw_accumulator(candidate.as_mut())
+                    .expect("captured accumulator") as &mut dyn std::any::Any)
                     .downcast_mut::<CountedDistinctAccumulator>()
                     .unwrap()
                     .import_entry(

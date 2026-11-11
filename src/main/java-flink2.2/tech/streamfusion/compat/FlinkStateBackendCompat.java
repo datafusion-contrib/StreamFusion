@@ -6,7 +6,34 @@ import org.apache.flink.state.rocksdb.EmbeddedRocksDBStateBackend;
 
 /** Adapts the host backend factory signature without owning native state or snapshot bytes. */
 public abstract class FlinkStateBackendCompat implements StateBackend {
+  public static StateBackend explicitStateBackend(
+      org.apache.flink.streaming.api.environment.StreamExecutionEnvironment environment) {
+    return null;
+  }
+
+  public static void explicitStateBackend(
+      org.apache.flink.streaming.api.environment.StreamExecutionEnvironment environment,
+      StateBackend backend) {
+    throw new UnsupportedOperationException(
+        "Flink 2.2 configures state backends through job configuration");
+  }
+
+  public static boolean serializesKeyedValues(CheckpointableKeyedStateBackend<?> backend) {
+    return backend instanceof org.apache.flink.state.rocksdb.RocksDBKeyedStateBackend;
+  }
+
+  public static int keyGroupPrefixBytes(CheckpointableKeyedStateBackend<?> backend) {
+    return org.apache.flink.runtime.state.CompositeKeySerializationUtils
+        .computeRequiredBytesInKeyGroupPrefix(
+            ((org.apache.flink.runtime.state.InternalKeyContext<?>) backend)
+                .getNumberOfKeyGroups());
+  }
+
   protected final StateBackend delegate;
+
+  public static org.apache.flink.configuration.Configuration configuration(ReadableConfig config) {
+    return org.apache.flink.configuration.Configuration.fromMap(config.toMap());
+  }
 
   public static String prepareNativeStateBackend(
       org.apache.flink.streaming.api.environment.StreamExecutionEnvironment environment,
@@ -60,7 +87,7 @@ public abstract class FlinkStateBackendCompat implements StateBackend {
                 null)
             .withStockBackendFactory(
                 (serializer, handles) ->
-                    new org.apache.flink.runtime.state.hashmap.HashMapStateBackend()
+                    stockProjectionBackend(parameters.getEnv())
                         .createKeyedStateBackend(
                             new KeyedStateBackendParametersImpl<>(
                                 parameters.getEnv(),
@@ -78,9 +105,26 @@ public abstract class FlinkStateBackendCompat implements StateBackend {
                                 parameters.getManagedMemoryFraction()))));
   }
 
+  private static EmbeddedRocksDBStateBackend stockProjectionBackend(
+      org.apache.flink.runtime.execution.Environment environment) {
+    var backend =
+        new EmbeddedRocksDBStateBackend()
+            .configure(
+                environment.getTaskManagerInfo().getConfiguration(),
+                environment.getUserCodeClassLoader().asClassLoader());
+    backend.setPriorityQueueStateType(EmbeddedRocksDBStateBackend.PriorityQueueStateType.ROCKSDB);
+    return backend;
+  }
+
+  protected OperatorStateBackend wrapOperatorStateBackend(
+      OperatorStateBackend backend, String operatorIdentifier) throws Exception {
+    return backend;
+  }
+
   @Override
   public final OperatorStateBackend createOperatorStateBackend(
       OperatorStateBackendParameters parameters) throws Exception {
-    return delegate.createOperatorStateBackend(parameters);
+    return wrapOperatorStateBackend(
+        delegate.createOperatorStateBackend(parameters), parameters.getOperatorIdentifier());
   }
 }

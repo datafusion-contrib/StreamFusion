@@ -1,9 +1,5 @@
 package tech.streamfusion.operator;
 
-import tech.streamfusion.Native;
-import tech.streamfusion.operator.MiniBatchMetrics.FlushReason;
-import tech.streamfusion.planner.NativeConfig;
-import tech.streamfusion.state.RocksDBNativeStateSupport;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
@@ -13,15 +9,19 @@ import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.table.types.logical.RowType;
+import tech.streamfusion.Native;
+import tech.streamfusion.operator.MiniBatchMetrics.FlushReason;
+import tech.streamfusion.state.RocksDBNativeStateSupport;
 
 /**
- * Changelog normalization (Flink's {@code ChangelogNormalize}), fed Arrow batches and emitting Arrow
- * batches. Keeps the last full row per unique key and turns an upsert/duplicate-bearing changelog
- * into a regular INSERT/UPDATE_BEFORE/UPDATE_AFTER/DELETE changelog (the row kind read and written on
- * the batch's {@code $row_kind$} column). With mini-batch disabled it emits synchronously per input
- * batch. With mini-batch enabled it emits the first-preimage/final-postimage transition at the
- * logical count/watermark/checkpoint/end boundary. Columnar in and out, so it pays no per-operator
- * transpose; the keyed shuffle stays columnar where the input is a columnar producer.
+ * Changelog normalization (Flink's {@code ChangelogNormalize}), fed Arrow batches and emitting
+ * Arrow batches. Keeps the last full row per unique key and turns an upsert/duplicate-bearing
+ * changelog into a regular INSERT/UPDATE_BEFORE/UPDATE_AFTER/DELETE changelog (the row kind read
+ * and written on the batch's {@code $row_kind$} column). With mini-batch disabled it emits
+ * synchronously per input batch. With mini-batch enabled it emits the
+ * first-preimage/final-postimage transition at the logical count/watermark/checkpoint/end boundary.
+ * Columnar in and out, so it pays no per-operator transpose; the keyed shuffle stays columnar where
+ * the input is a columnar producer.
  */
 public class NativeColumnarChangelogNormalizeOperator
     extends AbstractNativeStatefulOperator<ArrowBatch>
@@ -70,12 +70,23 @@ public class NativeColumnarChangelogNormalizeOperator
   protected long createRocksDBHandle(
       RocksDBNativeStateSupport rocksdb, byte[][] restoredPartitions) {
     return Native.createRocksDBChangelogNormalizer(
-        keyColumns, keyTimestampPrecisions(), generateUpdateBefore, miniBatch, stateTtlMillis,
-        getProcessingTimeService().getCurrentProcessingTime(), memoryBudgetBytes(),
-        rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
-        rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
-        rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
-        rocksdb.aligned(), restoredPartitions);
+        keyColumns,
+        keyTimestampPrecisions(),
+        generateUpdateBefore,
+        miniBatch,
+        stateTtlMillis,
+        getProcessingTimeService().getCurrentProcessingTime(),
+        memoryBudgetBytes(),
+        rocksdb.tableDirectory(),
+        maxParallelism(),
+        rocksdb.optionsJson(),
+        rocksdb.sharedResourcesHandle(),
+        rocksdb.sourceDirectories(),
+        rocksdb.sourceSnapshotTokens(),
+        rocksdb.keyGroupStart(),
+        rocksdb.keyGroupEnd(),
+        rocksdb.aligned(),
+        restoredPartitions);
   }
 
   @Override
@@ -83,6 +94,14 @@ public class NativeColumnarChangelogNormalizeOperator
     return directRocksDBState()
         ? Native.checkpointRocksDBChangelogNormalizer(handle, snapshotDirectory)
         : super.checkpointRocksDBHandle(snapshotDirectory);
+  }
+
+  @Override
+  protected void configureStateHandle() {
+    Native.configureChangelogNormalizerComparison(
+        handle,
+        directRocksDBState(),
+        tech.streamfusion.compat.StateCompat.normalizerComparesRowKind());
   }
 
   @Override
@@ -123,8 +142,19 @@ public class NativeColumnarChangelogNormalizeOperator
   }
 
   @Override
+  protected java.util.function.LongConsumer memoryStateCopier() {
+    final long source = handle;
+    return target -> Native.copyChangelogNormalizerCanonicalMemoryState(source, target);
+  }
+
+  @Override
   protected void closeHandle() {
-    if (directRocksDBState()) {
+    closeCapturedHandle(handle, directRocksDBState());
+  }
+
+  @Override
+  protected void closeCapturedHandle(long handle, boolean persistent) {
+    if (persistent) {
       Native.closeRocksDBChangelogNormalizer(handle);
     } else {
       Native.closeChangelogNormalizer(handle);

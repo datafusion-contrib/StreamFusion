@@ -131,7 +131,59 @@ impl GroupAggregator {
         }
         Ok(())
     }
+}
 
+type ImportedEntry = (usize, ByteKey, ScalarValue, i64, i64);
+
+pub(in crate::group_agg) trait ExtremaStore:
+    KeyedStateStore<GroupKeyState>
+{
+    fn transfer_entries(
+        &mut self,
+        _rows: &[ImportedEntry],
+        _validating: bool,
+    ) -> Option<Result<(), DataFusionError>> {
+        None
+    }
+}
+impl ExtremaStore for MemoryStateStore<GroupKeyState> {}
+
+#[cfg(feature = "rocksdb-state")]
+impl ExtremaStore for RocksGroupStore {
+    fn transfer_entries(
+        &mut self,
+        rows: &[ImportedEntry],
+        validating: bool,
+    ) -> Option<Result<(), DataFusionError>> {
+        Some((|| {
+            let mut tables = BTreeMap::<usize, Vec<(ByteKey, ScalarValue, i64, i64)>>::new();
+            for (aggregate, key, value, count, written) in rows {
+                let table = u8::try_from(aggregate + 1)
+                    .map_err(|_| invalid("aggregate exceeds companion table encoding"))?;
+                let position = self
+                    .canonical_multiset_position(table)
+                    .ok_or_else(|| invalid("missing mapped companion table"))?;
+                tables.entry(position).or_default().push((
+                    key.clone(),
+                    value.clone(),
+                    *count,
+                    *written,
+                ));
+            }
+            for (position, rows) in &tables {
+                self.validate_canonical_timed_multiset_batch(*position, rows, !validating)?;
+            }
+            if !validating {
+                for (position, rows) in tables {
+                    self.import_canonical_timed_multiset_batch(position, &rows)?;
+                }
+            }
+            Ok(())
+        })())
+    }
+}
+
+impl<S: ExtremaStore> GroupAggregator<S> {
     fn check_stock_transfer(&self) -> Result<(), DataFusionError> {
         if !self.stock_extrema || self.staged_keys() != 0 || !self.deferred_batches.is_empty() {
             return Err(invalid("unbound or pending group state"));
@@ -150,11 +202,19 @@ impl GroupAggregator {
         batch: &RecordBatch,
         validating: bool,
     ) -> Result<(), DataFusionError> {
-        self.check_stock_transfer()?;
-        match kind {
-            FrameKind::Headers => self.import_stock_headers(batch, validating),
-            FrameKind::Entries => self.import_stock_entries(batch, validating),
+        let result = (|| {
+            self.check_stock_transfer()?;
+            match kind {
+                FrameKind::Headers => self.import_stock_headers(batch, validating),
+                FrameKind::Entries => self.import_stock_entries(batch, validating),
+            }
+        })();
+        let cleanup = self.store.end_bundle();
+        self.memory.record(self.store.footprint_delta());
+        if let Some(bytes) = self.store.resident_bytes() {
+            self.memory.set(bytes);
         }
+        result.and(cleanup).and(self.memory.account())
     }
 
     fn import_stock_headers(
@@ -184,6 +244,7 @@ impl GroupAggregator {
                     .ok_or_else(|| invalid("invalid header scalar type"))
             })
             .collect::<Result<Vec<_>, _>>()?;
+        self.store.prepare_canonical_import(keys)?;
         let mut seen = std::collections::HashSet::with_capacity(batch.num_rows());
         for row in 0..batch.num_rows() {
             if keys.is_null(row)
@@ -224,6 +285,7 @@ impl GroupAggregator {
         }
         self.snapshot_cache = None;
         let value_types = self.value_types.clone();
+        let ttl = self.ttl_ms > 0;
         for row in 0..batch.num_rows() {
             let state = self.create(ByteKey::from(keys.value(row)));
             state.accumulator_present = present.value(row);
@@ -238,12 +300,17 @@ impl GroupAggregator {
                         agg.restore_value(&ScalarValue::Int64(value));
                         *non_null = count;
                     }
-                    GroupAggState::Mapped(mapped) => mapped.restore_header(
-                        value
-                            .map(|value| decode_key(value, &value_types[index]))
-                            .transpose()?,
-                        count,
-                    ),
+                    GroupAggState::Mapped(mapped) => {
+                        mapped.restore_header(
+                            value
+                                .map(|value| decode_key(value, &value_types[index]))
+                                .transpose()?,
+                            count,
+                        );
+                        if ttl {
+                            mapped.seed_clocks(fields[1].value(row));
+                        }
+                    }
                     _ => return Err(invalid("unexpected aggregate header state")),
                 }
             }
@@ -277,6 +344,7 @@ impl GroupAggregator {
                     .ok_or_else(|| invalid("invalid map scalar type"))
             })
             .collect::<Result<Vec<_>, _>>()?;
+        self.store.prepare_canonical_import(keys)?;
         let mut seen = std::collections::HashSet::with_capacity(batch.num_rows());
         for row in 0..batch.num_rows() {
             if keys.is_null(row)
@@ -305,6 +373,22 @@ impl GroupAggregator {
                 return Err(invalid("map entry has no imported group header"));
             }
         }
+        let imported = (0..batch.num_rows())
+            .map(|row| {
+                let index = fields[0].value(row) as usize;
+                Ok((
+                    index,
+                    ByteKey::from(keys.value(row)),
+                    decode_key(fields[1].value(row), &self.value_types[index])?
+                        .scalar(&self.value_types[index]),
+                    fields[2].value(row),
+                    fields[3].value(row),
+                ))
+            })
+            .collect::<Result<Vec<_>, DataFusionError>>()?;
+        if let Some(result) = self.store.transfer_entries(&imported, validating) {
+            return result;
+        }
         if validating {
             return Ok(());
         }
@@ -332,6 +416,52 @@ impl GroupAggregator {
             }
         }
         self.memory.account()
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+impl GroupAggregator<RocksGroupStore> {
+    pub(in crate::group_agg) fn visit_stock_extrema(
+        &mut self,
+        mut receiver: impl FnMut(FrameKind, RecordBatch) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        self.check_stock_transfer()?;
+        let kinds = &self.kinds;
+        let ttl = self.ttl_ms > 0;
+        self.store
+            .for_each_canonical_header_batch(CHUNK_ROWS, |rows| {
+                let rows = rows
+                    .iter()
+                    .map(|(key, state)| (key, state))
+                    .collect::<Vec<_>>();
+                receiver(FrameKind::Headers, headers(kinds, ttl, &rows)?)
+            })?;
+        for (aggregate, kind) in self.kinds.iter().enumerate() {
+            if !matches!(kind, 38 | 39) {
+                continue;
+            }
+            let position = self
+                .store
+                .canonical_multiset_position((aggregate + 1) as u8)
+                .ok_or_else(|| invalid("missing mapped companion table"))?;
+            self.store
+                .for_each_canonical_timed_multiset_batch(position, CHUNK_ROWS, |rows| {
+                    let entries = rows
+                        .iter()
+                        .map(|(key, value, count, written)| {
+                            Ok((
+                                key,
+                                aggregate as i64,
+                                encode_key(&MinMaxKey::from_scalar(value))?,
+                                *count,
+                                if ttl { *written } else { 0 },
+                            ))
+                        })
+                        .collect::<Result<Vec<_>, DataFusionError>>()?;
+                    receiver(FrameKind::Entries, entry_batch(&entries)?)
+                })?;
+        }
+        Ok(())
     }
 }
 

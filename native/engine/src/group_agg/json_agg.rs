@@ -3,7 +3,7 @@ use arrow::array::ArrayBuilder;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize, Clone)]
 struct JsonViewTimestamps {
     values: VecDeque<i64>,
     fields: HashMap<String, i64>,
@@ -32,6 +32,7 @@ pub(super) fn object_partial_type() -> DataType {
     )))
 }
 
+#[derive(Clone)]
 struct LocalObjectOrder {
     keys: Vec<(Option<String>, i32)>,
     payload: usize,
@@ -168,7 +169,7 @@ impl JsonAggregateError {
 
 /// Values have already passed through Flink's JSON_STRING expression. Keeping those
 /// lexemes preserves decimal scale and avoids parsing and re-encoding each value.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub(crate) struct JsonAggState {
     kind: i64,
     #[serde(skip)]

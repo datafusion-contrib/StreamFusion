@@ -3,10 +3,51 @@ use super::*;
 pub(crate) const RANGE_LAST: &str = "__over_last_triggering_ts";
 pub(crate) const RANGE_ARMED: &str = "__over_event_timers";
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(crate) struct RangeTimers {
     pub(crate) last: Option<i64>,
     pub(crate) armed: Vec<i64>,
+}
+
+#[cfg(feature = "rocksdb-state")]
+pub(super) struct RangeTimerView<'a> {
+    bytes: &'a [u8],
+    pub(super) last: Option<i64>,
+}
+
+#[cfg(feature = "rocksdb-state")]
+impl<'a> RangeTimerView<'a> {
+    pub(super) fn new(bytes: &'a [u8]) -> Result<Self, DataFusionError> {
+        if bytes.len() < 10 || (bytes.len() - 10) % 8 != 0 || bytes[0] != 1 || bytes[1] > 1 {
+            return Err(DataFusionError::Execution(
+                "invalid OVER RANGE timers".into(),
+            ));
+        }
+        Ok(Self {
+            bytes,
+            last: (bytes[1] == 1).then(|| i64::from_le_bytes(bytes[2..10].try_into().unwrap())),
+        })
+    }
+
+    pub(super) fn armed(&self) -> impl Iterator<Item = Result<i64, DataFusionError>> + '_ {
+        let mut previous = None;
+        self.bytes[10..]
+            .chunks_exact(8)
+            .enumerate()
+            .map(move |(index, bytes)| {
+                if index % 1024 == 0 {
+                    crate::state::canonical_context::check_cancelled()?;
+                }
+                let timer = i64::from_le_bytes(bytes.try_into().unwrap());
+                if previous.is_some_and(|previous| previous >= timer) {
+                    return Err(DataFusionError::Execution(
+                        "unordered OVER RANGE timers".into(),
+                    ));
+                }
+                previous = Some(timer);
+                Ok(timer)
+            })
+    }
 }
 
 impl RangeTimers {
@@ -15,8 +56,14 @@ impl RangeTimers {
     }
 
     #[cfg(feature = "rocksdb-state")]
+    pub(super) fn encoded_bytes(&self) -> usize {
+        10 + self.armed.len() * std::mem::size_of::<i64>()
+    }
+
+    #[cfg(feature = "rocksdb-state")]
     pub(crate) fn encode(&self) -> Vec<u8> {
-        let mut bytes = vec![1, self.last.is_some() as u8];
+        let mut bytes = Vec::with_capacity(self.encoded_bytes());
+        bytes.extend_from_slice(&[1, self.last.is_some() as u8]);
         bytes.extend_from_slice(&self.last.unwrap_or_default().to_le_bytes());
         for timer in &self.armed {
             bytes.extend_from_slice(&timer.to_le_bytes());
@@ -26,23 +73,11 @@ impl RangeTimers {
 
     #[cfg(feature = "rocksdb-state")]
     pub(crate) fn decode(bytes: &[u8]) -> Result<Self, DataFusionError> {
-        if bytes.len() < 10 || (bytes.len() - 10) % 8 != 0 || bytes[0] != 1 || bytes[1] > 1 {
-            return Err(DataFusionError::Execution(
-                "invalid OVER RANGE timers".into(),
-            ));
-        }
-        let last = (bytes[1] == 1).then(|| i64::from_le_bytes(bytes[2..10].try_into().unwrap()));
-        let mut armed = Vec::new();
-        for chunk in bytes[10..].chunks_exact(8) {
-            let timer = i64::from_le_bytes(chunk.try_into().unwrap());
-            if armed.last().is_some_and(|previous| *previous >= timer) {
-                return Err(DataFusionError::Execution(
-                    "unordered OVER RANGE timers".into(),
-                ));
-            }
-            armed.push(timer);
-        }
-        Ok(Self { last, armed })
+        let view = RangeTimerView::new(bytes)?;
+        Ok(Self {
+            last: view.last,
+            armed: view.armed().collect::<Result<Vec<_>, _>>()?,
+        })
     }
 }
 
@@ -144,15 +179,20 @@ impl OverWindowAggregator {
             let previous = timers.bytes();
             timers.armed.insert(position, timestamp);
             self.retention_bytes += timers.bytes() - previous;
+            self.mark_store_metadata(key);
         }
     }
 
     pub(super) fn fire_range_timers(&mut self, watermark: i64) {
-        for timers in self.range_timers.values_mut() {
+        for (key, timers) in &mut self.range_timers {
             let fired = timers.armed.partition_point(|time| *time <= watermark);
             if fired != 0 {
                 timers.last = Some(timers.armed[fired - 1]);
                 timers.armed.drain(..fired);
+                #[cfg(feature = "rocksdb-state")]
+                if self.store.is_some() {
+                    self.metadata_updates.mark(&key.0);
+                }
             }
         }
     }
@@ -177,25 +217,6 @@ impl OverWindowAggregator {
                 self.range_timers.insert(key.clone(), timers);
             }
         }
-    }
-
-    #[cfg(feature = "rocksdb-state")]
-    pub(super) fn sync_store_range_timers(&mut self) -> Result<(), DataFusionError> {
-        let store = self.store.as_ref().expect("OVER store");
-        let entries = self
-            .range_timers
-            .iter()
-            .map(|(key, timers)| {
-                (
-                    store.range_timer_key(self.store_fold_key_group(&key.0), &key.0),
-                    timers.encode(),
-                )
-            })
-            .collect::<Vec<_>>();
-        self.store
-            .as_mut()
-            .expect("OVER store")
-            .replace_range_timers(&entries)
     }
 }
 

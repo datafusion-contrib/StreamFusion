@@ -152,7 +152,9 @@ impl TumblingAggregator {
                     .map(|&end| {
                         Some((
                             end,
-                            (deadlines[&end] > self.current_watermark).then_some(end),
+                            (self.timer_watermark_uninitialized
+                                || deadlines[&end] > self.current_watermark)
+                                .then_some(end),
                         ))
                     })
                     .collect();

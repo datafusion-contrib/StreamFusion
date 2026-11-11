@@ -1,3 +1,4 @@
+use super::retained_rows::RetainedRows;
 use super::{
     checkpoint_files, copy_checkpoint_db, multi_get_pinned, open_shared_db, re, FlinkWriteBatch,
     OpenedDb, PAIR_FIRST_TABLE, PAIR_SECOND_TABLE,
@@ -5,6 +6,7 @@ use super::{
 use crate::*;
 use arrow::row::{RowConverter, SortField};
 use rocksdb::{Cache, IteratorMode, Options, DB};
+#[cfg(test)]
 use std::sync::Arc;
 
 /// Two tables share the keep-first deduplicator's DB, keyed `[key_group i32 BE][table u8][key
@@ -40,12 +42,12 @@ pub(crate) struct StoredCandidate {
 /// KVs written through on arrival, a push probes exactly the keys its batch touches with one
 /// multi_get per table, and a watermark firing range-reads the pending table.
 pub(crate) struct RocksKeepFirstDedupStore {
-    db: Arc<DB>,
+    db: StateDb,
     _cache: Option<Cache>,
     max_parallelism: usize,
     key_types: Vec<DataType>,
     key_converter: RowConverter,
-    payload_converter: RowConverter,
+    payload_converter: RetainedRows,
     schema: SchemaRef,
     watermark: i64,
     next_seq: u64,
@@ -54,6 +56,12 @@ pub(crate) struct RocksKeepFirstDedupStore {
 }
 
 impl RocksKeepFirstDedupStore {
+    pub(crate) fn legacy_snapshot_reader(
+        &self,
+    ) -> Result<Option<super::legacy_snapshot::LegacySnapshotReader>, DataFusionError> {
+        super::legacy_snapshot::LegacySnapshotReader::open(&self.db)
+    }
+
     pub(crate) fn create(
         config: RocksStoreConfig,
         schema: SchemaRef,
@@ -64,7 +72,7 @@ impl RocksKeepFirstDedupStore {
             .iter()
             .map(|field| field.data_type().clone())
             .collect();
-        if !rocks_row_supported(&row_types) {
+        if !RetainedRows::supported(&row_types) {
             return Err(DataFusionError::Plan(
                 "keep-first dedup row shape not supported by RocksDB".into(),
             ));
@@ -131,7 +139,7 @@ impl RocksKeepFirstDedupStore {
                             .watermark
                             .max(i64::from_be_bytes(value[..8].try_into().unwrap()));
                     }
-                } else if key.len() >= KEY_PREFIX_LEN {
+                } else if key.len() >= 4 {
                     let kg = i32::from_be_bytes(key[..4].try_into().expect("key group prefix"));
                     if key_groups.contains(&kg) {
                         writes.put(key, value)?;
@@ -168,7 +176,7 @@ impl RocksKeepFirstDedupStore {
                 converter(&key_types)?
             },
             key_types,
-            payload_converter: converter(&row_types)?,
+            payload_converter: RetainedRows::new(&row_types)?,
             schema,
             watermark: i64::MIN,
             next_seq: 0,
@@ -280,10 +288,7 @@ impl RocksKeepFirstDedupStore {
         batch: &RecordBatch,
         winners: &[(usize, ByteKey, i64)],
     ) -> Result<(), DataFusionError> {
-        let rows = self
-            .payload_converter
-            .convert_columns(batch.columns())
-            .map_err(|e| DataFusionError::External(Box::new(e)))?;
+        let rows = self.payload_converter.encode(batch.columns())?;
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         for (row, key, rowtime) in winners {
             let seq = self.next_seq;
@@ -339,32 +344,29 @@ impl RocksKeepFirstDedupStore {
         chunk_rows: usize,
         mut visitor: impl FnMut(&[StoredCandidate]) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
-        let mut chunk = Vec::with_capacity(chunk_rows);
-        for entry in self.db.iterator(IteratorMode::Start) {
-            let (key, value) = entry.map_err(re)?;
-            if key.len() < KEY_PREFIX_LEN || key[4] != PENDING_TABLE {
-                continue;
-            }
-            if value.len() < PENDING_VALUE_PREFIX_LEN {
-                return Err(DataFusionError::Execution(
-                    "truncated buffered dedup candidate".into(),
-                ));
-            }
-            chunk.push(StoredCandidate {
-                key: Self::store_key(&key),
-                seq: u64::from_be_bytes(value[8..16].try_into().unwrap()),
-                rowtime: i64::from_le_bytes(value[..8].try_into().unwrap()),
-                row: value[PENDING_VALUE_PREFIX_LEN..].into(),
-            });
-            if chunk.len() == chunk_rows {
-                visitor(&chunk)?;
-                chunk.clear();
-            }
-        }
-        if !chunk.is_empty() {
-            visitor(&chunk)?;
-        }
-        Ok(())
+        self.db.visit_snapshot_batches(
+            chunk_rows,
+            |key| key.len() >= KEY_PREFIX_LEN && key[4] == PENDING_TABLE,
+            |rows| {
+                let rows = rows
+                    .into_iter()
+                    .map(|(key, value)| {
+                        if value.len() < PENDING_VALUE_PREFIX_LEN {
+                            return Err(DataFusionError::Execution(
+                                "truncated buffered dedup candidate".into(),
+                            ));
+                        }
+                        Ok(StoredCandidate {
+                            key: Self::store_key(&key),
+                            seq: u64::from_be_bytes(value[8..16].try_into().unwrap()),
+                            rowtime: i64::from_le_bytes(value[..8].try_into().unwrap()),
+                            row: value[PENDING_VALUE_PREFIX_LEN..].into(),
+                        })
+                    })
+                    .collect::<Result<Vec<_>, DataFusionError>>()?;
+                visitor(&rows)
+            },
+        )
     }
 
     pub(crate) fn visit_canonical_markers(
@@ -372,29 +374,26 @@ impl RocksKeepFirstDedupStore {
         chunk_rows: usize,
         mut visitor: impl FnMut(&[(ByteKey, Option<i64>)]) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
-        let mut chunk = Vec::with_capacity(chunk_rows);
-        for entry in self.db.iterator(IteratorMode::Start) {
-            let (key, value) = entry.map_err(re)?;
-            if key.len() < KEY_PREFIX_LEN || key[4] != EMITTED_TABLE {
-                continue;
-            }
-            if !value.is_empty() && value.len() != 8 {
-                return Err(DataFusionError::Execution(
-                    "invalid buffered dedup marker stamp".into(),
-                ));
-            }
-            let stamp =
-                (value.len() == 8).then(|| i64::from_le_bytes(value[..8].try_into().unwrap()));
-            chunk.push((Self::store_key(&key), stamp));
-            if chunk.len() == chunk_rows {
-                visitor(&chunk)?;
-                chunk.clear();
-            }
-        }
-        if !chunk.is_empty() {
-            visitor(&chunk)?;
-        }
-        Ok(())
+        self.db.visit_snapshot_batches(
+            chunk_rows,
+            |key| key.len() >= KEY_PREFIX_LEN && key[4] == EMITTED_TABLE,
+            |rows| {
+                let rows = rows
+                    .into_iter()
+                    .map(|(key, value)| {
+                        if !value.is_empty() && value.len() != 8 {
+                            return Err(DataFusionError::Execution(
+                                "invalid buffered dedup marker stamp".into(),
+                            ));
+                        }
+                        let stamp = (value.len() == 8)
+                            .then(|| i64::from_le_bytes(value[..8].try_into().unwrap()));
+                        Ok((Self::store_key(&key), stamp))
+                    })
+                    .collect::<Result<Vec<_>, DataFusionError>>()?;
+                visitor(&rows)
+            },
+        )
     }
 
     /// Every pending candidate, keys in store order, for canonical savepoints.
@@ -469,12 +468,7 @@ impl RocksKeepFirstDedupStore {
         &self,
         rows: impl Iterator<Item = &'a [u8]>,
     ) -> Result<RecordBatch, DataFusionError> {
-        let parser = self.payload_converter.parser();
-        let parsed: Vec<_> = rows.map(|bytes| parser.parse(bytes)).collect();
-        let columns = self
-            .payload_converter
-            .convert_rows(parsed)
-            .map_err(|e| DataFusionError::External(Box::new(e)))?;
+        let columns = self.payload_converter.decode(rows)?;
         Ok(RecordBatch::try_new(self.schema.clone(), columns)?)
     }
 

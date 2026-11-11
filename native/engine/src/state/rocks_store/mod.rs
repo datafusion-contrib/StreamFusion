@@ -9,9 +9,17 @@
 
 #[cfg(test)]
 mod canonical_import_tests;
+mod canonical_snapshot;
+mod database;
+pub(crate) use database::{in_frozen_scope, FrozenDatabases, StateDb};
+use database::{StateClock, StateWrite};
 mod canonical_transfer;
+pub(crate) use canonical_snapshot::{RocksCanonicalSnapshot, RocksReadSnapshot};
 mod decoded_cache;
+pub(crate) mod legacy_snapshot;
 mod raw_store;
+pub(crate) mod retained_rows;
+pub(crate) mod window_memberships;
 pub(crate) use raw_store::RocksRawStore;
 pub(crate) mod interval_buffer;
 #[cfg(test)]
@@ -42,6 +50,7 @@ use rocksdb::{
     Cache, CompactionDecision, DBPinnableSlice, Direction, IteratorMode, Options, WriteBatch,
     WriteOptions, DB,
 };
+use std::path::Path;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 
@@ -53,7 +62,7 @@ const SNAPSHOT_TIMER_KEY: &[u8] = b"\xff\xff\xff\xffstreamfusion-timer";
 pub(super) const TIMER_DEADLINE_KEY: &[u8] = b"\xff\xff\xff\xffstreamfusion-timer-deadline";
 
 /// Reads a store's persisted timer deadline; `i64::MIN` when none was written.
-pub(super) fn stored_timer_deadline(db: &DB) -> Result<i64, DataFusionError> {
+pub(super) fn stored_timer_deadline(db: &StateDb) -> Result<i64, DataFusionError> {
     Ok(db
         .get(TIMER_DEADLINE_KEY)
         .map_err(re)?
@@ -107,6 +116,35 @@ pub(crate) trait RocksStateCodec {
     }
     fn stamp_write_ms(&self, _value: &mut Self::Value, _ts_ms: i64) {}
 
+    /// Independent map entries may outlive their accumulator's TTL.
+    fn preserve_expired_main(&self) -> bool {
+        false
+    }
+
+    fn multiset_has_timestamps(&self, _table: usize) -> bool {
+        false
+    }
+
+    fn multiset_write_ms(
+        &self,
+        _value: &Self::Value,
+        _table: usize,
+        _element: &ScalarValue,
+    ) -> i64 {
+        0
+    }
+
+    fn restore_multiset_entry_at(
+        &self,
+        value: &mut Self::Value,
+        table: usize,
+        element: ScalarValue,
+        count: i64,
+        _written: Option<i64>,
+    ) {
+        self.restore_multiset_entry(value, table, element, count);
+    }
+
     /// A codec whose value already carries a self-contained byte payload (an arrow-row the
     /// operator encoded) can persist its own layout directly, skipping the store's columnar
     /// conversion in both directions. A raw codec implements all three methods;
@@ -125,12 +163,13 @@ pub(crate) trait RocksStateCodec {
     /// A codec whose value keeps per-key multisets (a MIN/MAX retraction multiset, a DISTINCT
     /// value set) declares one companion element table per multiset: `(table byte, element type)`.
     /// The main row then keys as `[key_group][0][key]` and each element as
-    /// `[key_group][table][key][element arrow-row bytes]` → `[count i64 LE]`. The resident
+    /// `[key_group][table][key][element arrow-row bytes]` → `[count i64 LE, optional write age]`.
+    /// The resident
     /// multiset is a PARTIAL view: a bundle point-reads exactly the (key, element) pairs its
     /// batches name (never the whole set), the running value each emit needs travels in the main
     /// row, changes write through as element-level deltas via the value's armed change journal,
-    /// and only canonical savepoints materialize a full set. Companion values carry no TTL prefix;
-    /// their lifetime follows the main row.
+    /// and canonical readers stream the committed records. Untimestamped companions follow the
+    /// main row's lifetime; timestamped companions preserve their independent TTL ages.
     fn multiset_tables(&self) -> Vec<(u8, DataType)> {
         Vec::new()
     }
@@ -185,6 +224,45 @@ pub(crate) trait RocksStateCodec {
     }
 }
 
+#[derive(Clone, Copy)]
+struct CompanionValue {
+    bytes: [u8; 16],
+    len: usize,
+}
+
+impl AsRef<[u8]> for CompanionValue {
+    fn as_ref(&self) -> &[u8] {
+        &self.bytes[..self.len]
+    }
+}
+
+fn encode_companion_count(count: i64, written: Option<i64>) -> CompanionValue {
+    let mut value = CompanionValue {
+        bytes: [0; 16],
+        len: if written.is_some() { 16 } else { 8 },
+    };
+    value.bytes[..8].copy_from_slice(&count.to_le_bytes());
+    if let Some(written) = written {
+        value.bytes[8..].copy_from_slice(&written.to_le_bytes());
+    }
+    value
+}
+
+fn decode_companion_count(
+    bytes: &[u8],
+    timestamped: bool,
+) -> Result<(i64, Option<i64>), DataFusionError> {
+    if bytes.len() != if timestamped { 16 } else { 8 } {
+        return Err(DataFusionError::Execution(
+            "invalid persisted companion count".into(),
+        ));
+    }
+    Ok((
+        i64::from_le_bytes(bytes[..8].try_into().unwrap()),
+        timestamped.then(|| i64::from_le_bytes(bytes[8..].try_into().unwrap())),
+    ))
+}
+
 pub(crate) fn rocks_row_supported(types: &[DataType]) -> bool {
     types.iter().all(|data_type| {
         streamfusion_bridge::timestamp::is_component_timestamp(data_type)
@@ -216,9 +294,20 @@ pub(crate) fn rocks_group_supported(
     value_types: &[DataType],
     state_types: &[DataType],
 ) -> bool {
-    !kinds
-        .iter()
-        .any(|kind| matches!(kind, 12..=16 | 19..=21 | 38 | 39))
+    !kinds.iter().any(|kind| matches!(kind, 12..=16 | 19..=21))
+        && kinds.iter().zip(value_types).all(|(kind, ty)| {
+            !matches!(kind, 38 | 39)
+                || matches!(
+                    ty,
+                    DataType::Int64
+                        | DataType::Int32
+                        | DataType::Int16
+                        | DataType::Int8
+                        | DataType::Date32
+                        | DataType::Time32(arrow::datatypes::TimeUnit::Millisecond)
+                        | DataType::Boolean
+                )
+        })
         && rocks_row_supported(state_types)
         && kinds.iter().zip(value_types).all(|(&kind, value_type)| {
             !matches!(kind, 7 | 9 | 17 | 18 | 34)
@@ -269,14 +358,14 @@ enum Slot<V> {
 /// same cap while restoring or committing buffered native state, with WAL disabled on every
 /// physical write just like Flink's `RocksDBWriteBatchWrapper`.
 struct FlinkWriteBatch<'a> {
-    db: &'a DB,
+    db: &'a dyn StateWrite,
     options: WriteOptions,
     max_bytes: usize,
     batch: WriteBatch,
 }
 
 impl<'a> FlinkWriteBatch<'a> {
-    fn new(db: &'a DB, max_bytes: usize) -> Self {
+    fn new(db: &'a dyn StateWrite, max_bytes: usize) -> Self {
         Self {
             db,
             options: flink_write_options(),
@@ -290,16 +379,23 @@ impl<'a> FlinkWriteBatch<'a> {
         key: K,
         value: V,
     ) -> Result<(), DataFusionError> {
+        if !self.db.allow_put(key.as_ref(), value.as_ref())? {
+            return Ok(());
+        }
         self.batch.put(key, value);
         self.flush_if_full()
     }
 
     fn delete<K: AsRef<[u8]>>(&mut self, key: K) -> Result<(), DataFusionError> {
+        if !self.db.allow_delete(key.as_ref())? {
+            return Ok(());
+        }
         self.batch.delete(key);
         self.flush_if_full()
     }
 
     fn delete_range<K: AsRef<[u8]>>(&mut self, from: K, to: K) -> Result<(), DataFusionError> {
+        self.db.allow_delete_range()?;
         self.batch.delete_range(from, to);
         self.flush_if_full()
     }
@@ -318,7 +414,7 @@ impl<'a> FlinkWriteBatch<'a> {
     fn flush(&mut self) -> Result<(), DataFusionError> {
         if !self.batch.is_empty() {
             let batch = std::mem::take(&mut self.batch);
-            self.db.write_opt(batch, &self.options).map_err(re)?;
+            self.db.write_batch(batch, &self.options)?;
         }
         Ok(())
     }
@@ -359,7 +455,7 @@ fn prefix_successor(prefix: &[u8]) -> Vec<u8> {
 }
 
 pub(crate) struct RocksStore<C: RocksStateCodec> {
-    db: Arc<DB>,
+    db: StateDb,
     _cache: Option<Cache>,
     config: RocksStoreConfig,
     codec: C,
@@ -377,7 +473,7 @@ pub(crate) struct RocksStore<C: RocksStateCodec> {
     removed_multiset_keys: ahash::HashSet<ByteKey>,
     converter: RowConverter,
     now_ms: i64,
-    clock: Arc<AtomicI64>,
+    clock: Arc<StateClock>,
     generation: i64,
     write_batch_size: usize,
     working: ahash::HashMap<ByteKey, Slot<C::Value>>,
@@ -390,9 +486,9 @@ const PAIR_SECOND_TABLE: u8 = 1;
 const MULTISET_MAIN_TABLE: u8 = 0;
 
 struct OpenedDb {
-    db: Arc<DB>,
+    db: StateDb,
     cache: Option<Cache>,
-    clock: Arc<AtomicI64>,
+    clock: Arc<StateClock>,
     write_batch_size: usize,
 }
 
@@ -403,6 +499,9 @@ fn open_shared_db(
     config: &RocksStoreConfig,
     ttls: &[(Option<u8>, i64)],
 ) -> Result<OpenedDb, DataFusionError> {
+    if let Some(frozen) = database::frozen_open(Path::new(&config.table_dir))? {
+        return Ok(frozen);
+    }
     std::fs::create_dir_all(&config.table_dir).map_err(ioe)?;
     let resolved = crate::state::rocks_config::FlinkRocksOptions::from_json(&config.options_json)
         .map_err(DataFusionError::Plan)?;
@@ -410,7 +509,7 @@ fn open_shared_db(
         .build(config.shared())
         .map_err(DataFusionError::Plan)?;
     let write_batch_size = resolved.write_batch_size;
-    let clock = Arc::new(AtomicI64::new(0));
+    let clock = Arc::new(StateClock::new(0));
     if ttls.iter().any(|&(_, ttl)| ttl > 0) {
         let filter_clock = Arc::clone(&clock);
         let table_ttls: Vec<(Option<u8>, i64)> = ttls.to_vec();
@@ -420,6 +519,9 @@ fn open_shared_db(
         let mut remaining = 0u64;
         let mut now = 0i64;
         options.set_compaction_filter("streamfusion-state-ttl", move |_level, key, value| {
+            if filter_clock.pinned() {
+                return CompactionDecision::Keep;
+            }
             if remaining == 0 {
                 now = filter_clock.load(Ordering::Relaxed);
                 remaining = refresh_after;
@@ -447,6 +549,13 @@ fn open_shared_db(
         DB::open_cf_with_opts(&options, &config.table_dir, [("default", options.clone())])
             .map_err(re)?,
     );
+    let db = StateDb::live(
+        db,
+        cache.clone(),
+        Arc::clone(&clock),
+        write_batch_size,
+        Path::new(&config.table_dir),
+    );
     Ok(OpenedDb {
         db,
         cache,
@@ -460,18 +569,15 @@ fn open_shared_db(
 /// RocksDB can skip sorting through its virtual comparator and thread-local lookup context.
 /// Pins must not escape into the operator's resident state.
 fn multi_get_pinned<'db>(
-    db: &'db DB,
+    db: &'db StateDb,
     keys: &[Vec<u8>],
 ) -> Vec<Result<Option<DBPinnableSlice<'db>>, rocksdb::Error>> {
-    let cf = db
-        .cf_handle("default")
-        .expect("registered default column family");
     if keys.windows(2).all(|pair| pair[0] <= pair[1]) {
-        return db.batched_multi_get_cf(cf, keys, true);
+        return db.multi_get_pinned(keys, true);
     }
     let mut order: Vec<usize> = (0..keys.len()).collect();
     order.sort_unstable_by(|&a, &b| keys[a].cmp(&keys[b]));
-    let fetched = db.batched_multi_get_cf(cf, order.iter().map(|&i| &keys[i]), true);
+    let fetched = db.multi_get_pinned(order.iter().map(|&i| &keys[i]), true);
     let mut original_order: Vec<_> = (0..keys.len()).map(|_| None).collect();
     for (index, value) in order.into_iter().zip(fetched) {
         original_order[index] = Some(value);
@@ -483,6 +589,12 @@ fn multi_get_pinned<'db>(
 }
 
 impl<C: RocksStateCodec> RocksStore<C> {
+    pub(crate) fn legacy_snapshot_reader(
+        &self,
+    ) -> Result<Option<legacy_snapshot::LegacySnapshotReader>, DataFusionError> {
+        legacy_snapshot::LegacySnapshotReader::open(&self.db)
+    }
+
     pub(crate) fn decoded_cache_stats(&self) -> [i64; 4] {
         self.decoded_cache
             .as_ref()
@@ -642,7 +754,12 @@ impl<C: RocksStateCodec> RocksStore<C> {
         // reading an expired/absent main row) rather than any timestamp of its own.
         let multiset_tables = codec.multiset_tables();
         let table = (!multiset_tables.is_empty()).then_some(MULTISET_MAIN_TABLE);
-        let mut ttls = vec![(table, config.ttl_ms)];
+        let main_ttl = if codec.preserve_expired_main() {
+            0
+        } else {
+            config.ttl_ms
+        };
+        let mut ttls = vec![(table, main_ttl)];
         ttls.extend(multiset_tables.iter().map(|&(table, _)| (Some(table), 0)));
         let opened = open_shared_db(&config, &ttls)?;
         Self::attach(&opened, config, codec, table)
@@ -680,7 +797,7 @@ impl<C: RocksStateCodec> RocksStore<C> {
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
-            db: Arc::clone(&opened.db),
+            db: opened.db.clone(),
             _cache: opened.cache.clone(),
             config,
             codec,
@@ -749,6 +866,7 @@ impl<C: RocksStateCodec> RocksStore<C> {
             let table = &self.multisets[position];
             let mut owners: Vec<usize> = Vec::new();
             let mut counts: Vec<i64> = Vec::new();
+            let mut timestamps = Vec::new();
             let mut elements: Vec<Vec<u8>> = Vec::new();
             for (owner, key) in keys.iter().enumerate() {
                 let prefix = self.multiset_prefix(table.table, &key.0);
@@ -761,9 +879,12 @@ impl<C: RocksStateCodec> RocksStore<C> {
                         break;
                     }
                     owners.push(owner);
-                    counts.push(i64::from_le_bytes(
-                        value[..8].try_into().expect("multiset count"),
-                    ));
+                    let (count, written) = decode_companion_count(
+                        &value,
+                        self.codec.multiset_has_timestamps(position),
+                    )?;
+                    counts.push(count);
+                    timestamps.push(written);
                     elements.push(db_key[prefix.len()..].to_vec());
                 }
             }
@@ -779,8 +900,13 @@ impl<C: RocksStateCodec> RocksStore<C> {
             for (row, (&owner, &count)) in owners.iter().zip(&counts).enumerate() {
                 let element = ScalarValue::try_from_array(&columns[0], row)?;
                 if let Some(Slot::Present { state, .. }) = self.working.get_mut(&*keys[owner].0) {
-                    self.codec
-                        .restore_multiset_entry(state, position, element, count);
+                    self.codec.restore_multiset_entry_at(
+                        state,
+                        position,
+                        element,
+                        count,
+                        timestamps[row],
+                    );
                 }
             }
         }
@@ -859,12 +985,15 @@ impl<C: RocksStateCodec> RocksStore<C> {
             for (value, (index, key)) in fetched.into_iter().zip(&probe_meta) {
                 match value {
                     Ok(Some(bytes)) => {
-                        let count =
-                            i64::from_le_bytes(bytes[..8].try_into().expect("multiset count"));
+                        let (count, written) = decode_companion_count(
+                            &bytes,
+                            self.codec.multiset_has_timestamps(position),
+                        )?;
                         let element = ScalarValue::try_from_array(&elements, *index)?;
                         if let Some(Slot::Present { state, .. }) = self.working.get_mut(&*key.0) {
-                            self.codec
-                                .restore_multiset_entry(state, position, element, count);
+                            self.codec.restore_multiset_entry_at(
+                                state, position, element, count, written,
+                            );
                         }
                     }
                     Ok(None) => {}
@@ -877,19 +1006,26 @@ impl<C: RocksStateCodec> RocksStore<C> {
 
     /// Drains the bundle's journaled element changes into encoded companion keys (`None` count =
     /// delete), one columnar conversion per table.
-    fn drain_multiset_ops(&mut self) -> Result<Vec<(Vec<u8>, Option<i64>)>, DataFusionError> {
+    fn drain_multiset_ops(
+        &mut self,
+    ) -> Result<Vec<(Vec<u8>, Option<CompanionValue>)>, DataFusionError> {
         if self.multisets.is_empty() {
             return Ok(Vec::new());
         }
         let tables = self.multisets.len();
         let mut scalars: Vec<Vec<ScalarValue>> = vec![Vec::new(); tables];
-        let mut entries: Vec<Vec<(ByteKey, Option<i64>)>> = vec![Vec::new(); tables];
+        let mut entries: Vec<Vec<(ByteKey, Option<CompanionValue>)>> = vec![Vec::new(); tables];
         for (key, slot) in self.working.iter_mut() {
             if let Slot::Present { state, dirty: true } = slot {
                 for position in 0..tables {
                     for (element, count) in self.codec.drain_multiset_changes(state, position) {
+                        let written = self
+                            .codec
+                            .multiset_has_timestamps(position)
+                            .then(|| self.codec.multiset_write_ms(state, position, &element));
+                        let value = count.map(|count| encode_companion_count(count, written));
                         scalars[position].push(element);
-                        entries[position].push((key.clone(), count));
+                        entries[position].push((key.clone(), value));
                     }
                 }
             }
@@ -950,7 +1086,7 @@ impl<C: RocksStateCodec> RocksStore<C> {
         {
             return Ok(());
         }
-        let db = Arc::clone(&self.db);
+        let db = self.db.clone();
         let mut writes = FlinkWriteBatch::new(&db, self.write_batch_size);
         // A removed key's committed companion ranges go first, so a key re-created in the same
         // bundle keeps the element puts written below.
@@ -992,7 +1128,7 @@ impl<C: RocksStateCodec> RocksStore<C> {
         }
         for (db_key, count) in multiset_changes {
             match count {
-                Some(count) => writes.put(db_key, count.to_le_bytes())?,
+                Some(value) => writes.put(db_key, value)?,
                 None => writes.delete(db_key)?,
             }
         }
@@ -1015,7 +1151,13 @@ impl<C: RocksStateCodec> RocksStore<C> {
             let ts = (prefix > 0)
                 .then(|| i64::from_le_bytes(value[..8].try_into().expect("ttl prefix")));
             match ts {
-                Some(t) if expire && self.now_ms >= t.saturating_add(self.config.ttl_ms) => Err(()),
+                Some(t)
+                    if expire
+                        && !self.codec.preserve_expired_main()
+                        && self.now_ms >= t.saturating_add(self.config.ttl_ms) =>
+                {
+                    Err(())
+                }
                 other => Ok(other),
             }
         };
@@ -1085,6 +1227,7 @@ impl<C: RocksStateCodec> RocksStore<C> {
         let mut keys = std::collections::BTreeMap::<i32, Vec<ByteKey>>::new();
         let mut all_keys = Vec::new();
         for row in self.db.iterator(IteratorMode::Start) {
+            database::check_cancelled()?;
             let (db_key, value) = row.map_err(re)?;
             if db_key.len() < prefix || db_key.as_ref() == SNAPSHOT_TIMER_KEY {
                 continue;
@@ -1168,7 +1311,7 @@ impl<C: RocksStateCodec> KeyedStateStore<C::Value> for RocksStore<C> {
             .iter()
             .map(|key| self.db_key(&key.0))
             .collect::<Vec<_>>();
-        let db = Arc::clone(&self.db);
+        let db = self.db.clone();
         let fetched = multi_get_pinned(&db, &db_keys);
         let mut hit_keys = Vec::new();
         let mut hit_values = Vec::new();
@@ -1284,6 +1427,8 @@ impl<C: RocksStateCodec> KeyedStateStore<C::Value> for RocksStore<C> {
             let prefix = self.multiset_prefix(table.table, key);
             let upper = prefix_successor(&prefix);
             let is_min = self.codec.multiset_extreme_is_min(position);
+            let timestamped = self.codec.multiset_has_timestamps(position);
+            let ttl = StateTtl::new(self.config.ttl_ms, self.now_ms);
             let mut iterator = if is_min {
                 self.db
                     .iterator(IteratorMode::From(&prefix, Direction::Forward))
@@ -1293,12 +1438,17 @@ impl<C: RocksStateCodec> KeyedStateStore<C::Value> for RocksStore<C> {
             };
             let mut committed = || -> Result<Option<ScalarValue>, DataFusionError> {
                 for row in iterator.by_ref() {
-                    let (db_key, _) = row.map_err(re)?;
+                    database::check_cancelled()?;
+                    let (db_key, value) = row.map_err(re)?;
                     if !is_min && db_key.as_ref() >= upper.as_slice() {
                         continue;
                     }
                     if !db_key.starts_with(&prefix) {
                         return Ok(None);
+                    }
+                    let (_, written) = decode_companion_count(&value, timestamped)?;
+                    if written.is_some_and(|written| ttl.expired(written)) {
+                        continue;
                     }
                     return table.decode_element(&db_key[prefix.len()..]).map(Some);
                 }
@@ -1347,7 +1497,7 @@ impl<C: RocksStateCodec> KeyedStateStore<C::Value> for RocksStore<C> {
             return self.probe_multisets(batch, key_columns, precisions);
         }
         let db_keys: Vec<_> = missing.iter().map(|key| self.db_key(&key.0)).collect();
-        let db = Arc::clone(&self.db);
+        let db = self.db.clone();
         let fetched = multi_get_pinned(&db, &db_keys);
         let mut hit_keys = Vec::new();
         let mut hit_values = Vec::new();
@@ -1439,7 +1589,7 @@ impl<C: RocksStateCodec> KeyedStateStore<C::Value> for RocksStore<C> {
     }
 }
 
-fn re(error: rocksdb::Error) -> DataFusionError {
+fn re(error: impl std::error::Error + Send + Sync + 'static) -> DataFusionError {
     DataFusionError::External(Box::new(error))
 }
 fn ioe(error: std::io::Error) -> DataFusionError {
@@ -1596,6 +1746,9 @@ impl RocksSnapshotStore {
 }
 
 fn copy_checkpoint_db(source: &str, destination: &str) -> Result<(), DataFusionError> {
+    if database::in_frozen_scope() {
+        return Ok(());
+    }
     std::fs::create_dir_all(destination).map_err(ioe)?;
     for entry in std::fs::read_dir(source).map_err(ioe)? {
         let entry = entry.map_err(ioe)?;
@@ -1618,6 +1771,9 @@ fn checkpoint_files(
     snapshot_dir: &str,
     generation: i64,
 ) -> Result<RocksCheckpointManifest, DataFusionError> {
+    if snapshot_dir.is_empty() {
+        return Ok(RocksCheckpointManifest::absent());
+    }
     let snapshot_path = std::path::Path::new(snapshot_dir);
     if snapshot_path.exists() {
         std::fs::remove_dir_all(snapshot_path).map_err(ioe)?;
@@ -1681,8 +1837,15 @@ mod batch_read_tests {
             .map(<[u8]>::to_vec)
             .collect();
         for _ in 0..2 {
-            let db =
-                DB::open_cf_with_opts(&options, &path, [("default", options.clone())]).unwrap();
+            let db = StateDb::live(
+                Arc::new(
+                    DB::open_cf_with_opts(&options, &path, [("default", options.clone())]).unwrap(),
+                ),
+                None,
+                Arc::new(StateClock::new(0)),
+                1024,
+                &path,
+            );
             // Exercise both memtable and SST reads, with misses, duplicates and empty values.
             db.put(b"a", b"first").unwrap();
             for flush in [false, true] {

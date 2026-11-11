@@ -1,19 +1,19 @@
 package tech.streamfusion.state;
 
-import tech.streamfusion.Native;
 import java.util.List;
 import java.util.function.BooleanSupplier;
 import org.apache.flink.runtime.state.KeyedStateBackend;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import tech.streamfusion.Native;
 
 /**
- * The per-operator glue between a native stateful operator and the RocksDB keyed state backend:
- * the gate deciding whether the operator's state lives in a RocksDB table this run, plus the
+ * The per-operator glue between a native stateful operator and the RocksDB keyed state backend: the
+ * gate deciding whether the operator's state lives in a RocksDB table this run, plus the
  * restored-source marshalling and checkpoint-hook registration every RocksDB-backed operator
  * repeats verbatim. An operator supplies only its own pieces — the native supported-probe, the
- * native create call, and the native checkpoint method — and branches its hot paths on whether
- * this resolved.
+ * native create call, and the native checkpoint method — and branches its hot paths on whether this
+ * resolved.
  */
 public final class RocksDBNativeStateSupport implements AutoCloseable {
 
@@ -26,16 +26,24 @@ public final class RocksDBNativeStateSupport implements AutoCloseable {
   private final long stateTtlMillis;
   private final NativeRocksSharedResources.Lease sharedResources;
 
-  private RocksDBNativeStateSupport(RocksDBNativeKeyedStateBackend<?> backend, long stateTtlMillis) {
+  private RocksDBNativeStateSupport(
+      RocksDBNativeKeyedStateBackend<?> backend, long stateTtlMillis) {
+    this(backend, stateTtlMillis, false);
+  }
+
+  private RocksDBNativeStateSupport(
+      RocksDBNativeKeyedStateBackend<?> backend, long stateTtlMillis, boolean canonicalReader) {
     this.backend = backend;
     this.stateTtlMillis = stateTtlMillis;
-    List<RocksDBRestoredSource> sources = backend.restoredSources();
-    this.sourceDirectories = new String[sources.size()];
-    this.sourceSnapshotTokens = new String[sources.size()];
+    List<RocksDBRestoredSource> sources = canonicalReader ? List.of() : backend.restoredSources();
+    this.sourceDirectories =
+        canonicalReader ? new String[] {backend.tableDirectory()} : new String[sources.size()];
+    this.sourceSnapshotTokens = canonicalReader ? new String[] {"0"} : new String[sources.size()];
     this.aligned =
-        sources.size() == 1
-            && sources.get(0).keyGroupStart() == backend.getKeyGroupRange().getStartKeyGroup()
-            && sources.get(0).keyGroupEnd() == backend.getKeyGroupRange().getEndKeyGroup();
+        canonicalReader
+            || sources.size() == 1
+                && sources.get(0).keyGroupStart() == backend.getKeyGroupRange().getStartKeyGroup()
+                && sources.get(0).keyGroupEnd() == backend.getKeyGroupRange().getEndKeyGroup();
     for (int i = 0; i < sources.size(); i++) {
       sourceDirectories[i] = sources.get(i).directory();
       sourceSnapshotTokens[i] = sources.get(i).snapshotToken();
@@ -69,7 +77,8 @@ public final class RocksDBNativeStateSupport implements AutoCloseable {
     if (!(keyedStateBackend instanceof RocksDBNativeKeyedStateBackend)) {
       return null;
     }
-    RocksDBNativeKeyedStateBackend<?> backend = (RocksDBNativeKeyedStateBackend<?>) keyedStateBackend;
+    RocksDBNativeKeyedStateBackend<?> backend =
+        (RocksDBNativeKeyedStateBackend<?>) keyedStateBackend;
     if (Native.rocksdbStateAvailable() && operatorSupported.getAsBoolean()) {
       return new RocksDBNativeStateSupport(backend, stateTtlMillis);
     }
@@ -78,6 +87,19 @@ public final class RocksDBNativeStateSupport implements AutoCloseable {
             + "(unsupported state shape or missing native feature)",
         operatorLabel);
     return null;
+  }
+
+  /** Immutable constructor arguments and an independent shared-cache lease for a pinned reader. */
+  public RocksDBNativeStateSupport canonicalReader() {
+    return new RocksDBNativeStateSupport(backend, stateTtlMillis, true);
+  }
+
+  public AutoCloseable retainCanonicalReader() throws java.io.IOException {
+    return backend.retainCanonicalReader();
+  }
+
+  public void closeCanonicalReaders() {
+    backend.closeCanonicalReaders();
   }
 
   public String tableDirectory() {
@@ -109,8 +131,8 @@ public final class RocksDBNativeStateSupport implements AutoCloseable {
   }
 
   /**
-   * Whether the restore is a single source covering exactly this subtask's key-group range —
-   * the wholesale file-adoption fast path; anything else clips by key-group range at recovery.
+   * Whether the restore is a single source covering exactly this subtask's key-group range — the
+   * wholesale file-adoption fast path; anything else clips by key-group range at recovery.
    */
   public boolean aligned() {
     return aligned;

@@ -426,6 +426,20 @@ These are callback/schema checks, not additional UDF type admission or throughpu
 
 ## First-N canonical handoffs
 
+The shared First-N path also runs on Flink 1.18.1. Focused controls cover real operator snapshots,
+native checkpoints and isolated native/stock/native process handoffs with both native stores.
+RocksDB exports pin an MVCC read view and convert in Flink's asynchronous writer; memory exports
+capture independent native state and convert asynchronously through a temporary stock backend. Concurrent-capture and cancellation controls check reader
+ownership independently of the live operator. This qualification does not extend automatically to
+all rank algorithms or cross-version upgrades.
+
+Append rank has separate actual-operator controls on both releases: AppendFast and FastTop1,
+with/without rank output and TTL. Each imports nonempty released state, pins two native RocksDB
+views around winner changes, continues live input, closes the native handle and completes the
+views in reverse order on the writer. Stock continuation checks each saved winner/list and its
+original TTL age through expiry. These eight cases qualify this capture lifecycle for the
+exercised typed contract; broader rank type/algorithm qualification remains separate.
+
 The Flink 2.2.1 first-N counter now has automatic stock canonical binding in normal SQL and stock
 compiled-plan execution. It preserves `counterState`, the stock INT/TTL serializers, actual grouping
 keys, original write ages, stock identities and resolved maximum parallelism. Export reads live
@@ -492,6 +506,13 @@ winners/bounds fail without consuming source state. Failed validation leaves an 
 retry. Receiver errors retain the original Java exception and release moved Arrow buffers; native
 state remains exportable. Closing a failed memory-limited target releases its prior reservation.
 
+Append export stages each retained sort list once in the shared disk spool, carrying its last
+original write timestamp into the released TTL serializer. Restore reads raw canonical map/list
+values and decodes one row at a time, preserving TTL envelopes and stored row kinds. Duplicate
+partition/sort/bound inventories stay on disk. A shared sender bounds transfers by 1,024 rows
+and a four-MiB payload estimate, allowing an oversized entry. An encoded KV remains the
+working-memory floor; native checkpoint bytes and admission are unchanged.
+
 Stock-bound rank keeps per-record changes under table mini-batching, with pending transposes and
 coalescers flushed before the barrier. Append constructors and native restore honor the requested
 update-before policy: fast Top-1 emits UPDATE_BEFORE when requested, then UPDATE_AFTER, even with
@@ -549,7 +570,10 @@ The direct adapter writes `data-state-with-update` MAP: actual unique row key â†
 `Tuple2<RowData, Integer>`. The integer preserves ordering within equal sort values. Fast Top-1
 uses `Top1-Rank-State` VALUE. Export visits live memory or raw RocksDB partitions through at most
 1,024-row Arrow transfers, without an intermediate native snapshot. Hidden overflow rows and
-retained row kinds survive.
+retained row kinds survive. Restore stages typed unique rows and inner positions in the shared
+disk spool, validating duplicate keys and consecutive tie order without whole-job key sets or
+per-partition Java sort trees. The shared sender retains owned buffers and a four-MiB payload
+estimate as well as the row limit, including the existing nested map/list C Data representation.
 
 Import requires an empty native target and validates all source state before applying any transfer.
 Foreign descriptors, key/payload disagreements, duplicate unique keys or tied positions, invalid
@@ -616,7 +640,16 @@ clocks. Transient decoded state and Arrow batches reserve the task's memory budg
 
 Import checks the full descriptor inventory, an empty target, declared non-null fields, partition
 and sort selectors, retained values and all metadata before copying state. Source owner keys are
-the union of all three descriptors. A full validation pass precedes insertion; native frames also
+the union of all three descriptors, streamed repeatedly from the shared temporary disk inventory.
+The index closes and deletes on failure without adding descriptors to stock source state.
+Export stages each retained list once, including present empty headers and independent TTL
+stamps. Native counters already arrive in sort order; a read-only disk-backed sorted-map view
+validates strict comparator order while the released serializer streams entries once. Heap
+component receivers retain ordinary owned collections. Restore validates raw list/counter
+snapshot bytes and decodes individual entries, retaining original timestamps, signed counts,
+nullable-value rejection and row kinds. Duplicate inventories stay on disk, with bounded row/byte
+transfers. The largest encoded KV remains a working-memory floor.
+A full validation pass precedes insertion; native frames also
 check existing earlier chunks. Successful import consumes the projected source. A denied target
 must be closed; source state remains available for a fresh target. Receiver failure preserves the
 original Java exception and leaves native state available for another export.
@@ -648,9 +681,10 @@ classes denied. The complete native suite passes 1,261 tests with two existing i
 
 Another 56 cases exercise actual operator initialization and two successive stock/native switches
 in both orders, retaining exact continued changes under OFFSET, TTL and variable bounds. All 484
-shared ranking regressions pass on the same library. Shared Flink 1.18 compilation and 25 native
-operator regressions pass; this does not establish Flink 1.18 canonical interchange. The native
-library also checks successfully without RocksDB.
+shared ranking regressions pass on the same library. The disk-inventory cohort additionally
+passes all 84 direct state/continuation scenarios, 56 initialization checks and 16 malformed-state
+checks on Flink 1.18. This qualifies the exercised component layouts, rather than the wider typed,
+complete-job and rescaling matrices below. The native library also checks without RocksDB.
 
 Another 576 typed direct/lifecycle scenarios pass over INT/BIGINT/VARCHAR fields, Unicode, NULLs,
 composite/non-leading partition keys, colliding and reserved field names, ascending/descending
@@ -716,6 +750,20 @@ full version/failure/delivery matrix remain open in
 
 ## Window rank canonical interchange (partial)
 
+Window-rank canonical export borrows the encoded persisted bucket, reserves bounded decoding
+frames before construction and checks cancellation within the bucket. It does not copy the whole
+bucket into a Rust byte buffer first. Refused conversion releases its work without changing the
+live state; the native/stock encoded bucket itself remains a database working-memory floor.
+
+Existing window rank/dedup canonical bindings now retain ROW/ARRAY/MAP payloads in direct native
+RocksDB. The shared retained-row codec preserves declared nested fields, NULL/empty containers
+and map entry order; sorting still uses the existing qualified sort keys. Canonical savepoints
+pin the store and convert bounded rows asynchronously. Scalar checkpoint bytes remain compatible,
+and previous snapshot-backed checkpoints migrate one key-group blob at a time, preserving their
+processing deadline through aligned or clipped restore. This changes storage for existing
+contracts, without qualifying additional sort/key layouts.
+
+
 Normal SQL and portable stock compiled plans bind the released Flink 2.2.1 event-time
 window-rank processor for constant ROW_NUMBER ranges starting at one. TUMBLE, HOP and CUMULATE
 retain attached local start/end columns, including SQL offsets. Capture uses the actual stock key
@@ -730,7 +778,14 @@ MAP state, with Long window-end namespaces, full sort-key lists, released event 
 row/key/namespace/timer inventory before applying row batches and clears source entries only after
 success. Calendar and tie policies are installed before import; canonical and ordinary native
 checkpoints retain the input watermark, so immediate returns and older incoming watermarks cannot
-reopen closed windows. Native checkpoints retain their existing raw format.
+reopen closed windows. Export stages each sort-list entry once in the shared disk spool, keyed by
+owner, window-end namespace and typed sort key; the released serializer streams each bucket once.
+Restore reads raw canonical map/list bytes and decodes one row at a time, with complete serializer,
+namespace, sort-key and payload validation before native installation. Timer and observed-window
+membership use the disk spool instead of job-sized Java sets, including window deduplication.
+A shared sender caps row count and estimates four MiB per transfer, allowing an oversized row.
+An encoded stock KV remains the working-memory floor. These mechanisms are shared by both Flink
+lines and do not expand planner admission. Native checkpoints retain their existing raw format.
 
 The 425-check rank/dedup cohort includes 252 rank cases, 152 dedup cases and 21 shared bridge/operator
 regressions. It covers both native stores, keyed/global state, three shapes, four zones including

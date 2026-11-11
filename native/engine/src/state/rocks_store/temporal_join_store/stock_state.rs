@@ -17,6 +17,76 @@ fn footprint(key: &ByteKey, value: &StockTemporalMeta) -> usize {
 }
 
 impl RocksTemporalJoinStore {
+    pub(crate) fn visit_canonical_metadata(
+        &self,
+        chunk_rows: usize,
+        accept: impl FnMut(
+            Vec<(ByteKey, Option<Box<[u8]>>, Option<i64>)>,
+        ) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        self.visit_canonical_metadata_charged(chunk_rows, None, accept)
+    }
+
+    pub(crate) fn visit_canonical_metadata_charged(
+        &self,
+        chunk_rows: usize,
+        work: Option<datafusion::execution::memory_pool::MemoryReservation>,
+        mut accept: impl FnMut(
+            Vec<(ByteKey, Option<Box<[u8]>>, Option<i64>)>,
+        ) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        for table in [META_TABLE, DEADLINE_TABLE] {
+            self.db.visit_snapshot_batches_charged(
+                chunk_rows,
+                work.as_ref()
+                    .map(datafusion::execution::memory_pool::MemoryReservation::new_empty),
+                |key| key.len() > KEY_PREFIX_LEN && key[4] == table,
+                |rows| {
+                    let mut decoded = Vec::with_capacity(rows.len());
+                    for (db_key, value) in rows {
+                        let key = Self::store_key(&db_key, db_key.len());
+                        if table == DEADLINE_TABLE
+                            && self
+                                .db
+                                .get_pinned(Self::table_prefix(&key, META_TABLE))
+                                .map_err(re)?
+                                .is_some()
+                        {
+                            continue;
+                        }
+                        let deadline = if table == DEADLINE_TABLE {
+                            Some(value.as_ref())
+                        } else {
+                            None
+                        };
+                        let stored = if table == META_TABLE {
+                            self.db
+                                .get(Self::table_prefix(&key, DEADLINE_TABLE))
+                                .map_err(re)?
+                        } else {
+                            None
+                        };
+                        let deadline = deadline
+                            .or(stored.as_deref())
+                            .map(|bytes| {
+                                let bytes = bytes
+                                    .try_into()
+                                    .map_err(|_| invalid("invalid temporal cleanup deadline"))?;
+                                Ok::<_, DataFusionError>(i64::from_le_bytes(bytes))
+                            })
+                            .transpose()?;
+                        decoded.push((key, (table == META_TABLE).then_some(value), deadline));
+                    }
+                    if !decoded.is_empty() {
+                        accept(decoded)?;
+                    }
+                    Ok(())
+                },
+            )?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn metadata_bytes(&self) -> usize {
         self.metadata
             .iter()
@@ -141,6 +211,45 @@ impl RocksTemporalJoinStore {
         Ok(retained)
     }
 
+    pub(crate) fn import_metadata_owned_bytes(
+        &self,
+        key: &ByteKey,
+        value: &StockTemporalMeta,
+        cleanup: Option<i64>,
+    ) -> usize {
+        footprint(key, value)
+            + if cleanup.is_some() {
+                key.0.len() + GROUP_ENTRY_OVERHEAD
+            } else {
+                0
+            }
+    }
+
+    pub(crate) fn import_metadata_owned(
+        &mut self,
+        key: ByteKey,
+        value: StockTemporalMeta,
+        cleanup: Option<i64>,
+    ) -> Result<(), DataFusionError> {
+        self.metadata_delta += footprint(&key, &value) as isize;
+        self.metadata.insert(key.clone(), value);
+        if let Some(deadline) = cleanup {
+            self.deadlines.insert(key.clone(), deadline);
+        }
+        let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
+        writes.put(
+            Self::table_prefix(&key, META_TABLE),
+            self.metadata[&key].encode(),
+        )?;
+        if let Some(deadline) = cleanup {
+            writes.put(
+                Self::table_prefix(&key, DEADLINE_TABLE),
+                deadline.to_le_bytes(),
+            )?;
+        }
+        writes.finish()
+    }
+
     pub(crate) fn import_metadata(
         &mut self,
         batch: &RecordBatch,
@@ -250,8 +359,15 @@ impl RocksTemporalJoinStore {
                 return Err(invalid("invalid temporal metadata version"));
             }
             self.source_cleaning = Some(header[1] != 0);
-            self.load_metadata_rows()?;
+            if !self.db.is_frozen() {
+                self.load_metadata_rows()?;
+            }
         } else {
+            if self.db.is_frozen() {
+                return Err(invalid(
+                    "canonical reader requires initialized temporal metadata",
+                ));
+            }
             self.upgrade_legacy_metadata()?;
             self.db.put(META_FORMAT_KEY, [1, 0]).map_err(re)?;
         }
@@ -270,10 +386,7 @@ impl RocksTemporalJoinStore {
             .map(|values| values.values().to_vec())
             .unwrap_or_else(|| self.touch_metadata(keys, times, true));
         let arity = self.row_arities[0];
-        let rows = self
-            .converters
-            .0
-            .convert_columns(&batch.columns()[..arity])?;
+        let rows = self.converters.0.encode(&batch.columns()[..arity])?;
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         for (index, row) in rows.iter().enumerate() {
             let mut value = Vec::with_capacity(LEFT_VALUE_PREFIX_LEN + row.data().len());
@@ -308,10 +421,7 @@ impl RocksTemporalJoinStore {
             self.touch_metadata(keys, times, false);
         }
         let arity = self.row_arities[1];
-        let rows = self
-            .converters
-            .1
-            .convert_columns(&batch.columns()[..arity])?;
+        let rows = self.converters.1.encode(&batch.columns()[..arity])?;
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         for (index, row) in rows.iter().enumerate() {
             let mut value = Vec::with_capacity(RIGHT_VALUE_PREFIX_LEN + row.data().len());

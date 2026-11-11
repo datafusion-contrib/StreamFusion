@@ -111,8 +111,19 @@ public class NativeColumnarTemporalSortOperator extends AbstractNativeStatefulOp
   }
 
   @Override
+  protected java.util.function.LongConsumer memoryStateCopier() {
+    final long source = handle;
+    return target -> Native.copyTemporalSortCanonicalMemoryState(source, target);
+  }
+
+  @Override
   protected void closeHandle() {
-    if (directRocksDBState()) {
+    closeCapturedHandle(handle, directRocksDBState());
+  }
+
+  @Override
+  protected void closeCapturedHandle(long handle, boolean persistent) {
+    if (persistent) {
       Native.closeRocksDBTemporalSorter(handle);
     } else {
       Native.closeTemporalSorter(handle);

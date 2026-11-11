@@ -33,6 +33,18 @@ public class NativeColumnarLocalWindowAggregateOperator extends NativeWindowOper
   }
 
   @Override
+  protected boolean isStatelessAtBarrier() {
+    return stockLocalCheckpointing;
+  }
+
+  @Override
+  protected void beforeSnapshotState() {
+    super.beforeSnapshotState();
+    if (stockLocalCheckpointing && Native.localWindowBufferReady(handle, Long.MAX_VALUE))
+      throw new IllegalStateException("Local window partials were not drained before the barrier");
+  }
+
+  @Override
   protected org.apache.flink.streaming.api.operators.OperatorSnapshotFutures snapshotCanonicalState(
       long checkpointId,
       long timestamp,

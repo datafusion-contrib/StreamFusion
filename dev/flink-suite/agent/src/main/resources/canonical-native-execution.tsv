@@ -73,10 +73,10 @@ org.apache.flink.table.planner.plan.nodes.exec.stream.WindowRankRestoreTest#test
 org.apache.flink.table.planner.plan.nodes.exec.stream.IntervalJoinRestoreTest#testRestore	program=interval_join_event_time	NativeIntervalJoinOperator
 org.apache.flink.table.planner.plan.nodes.exec.stream.IntervalJoinRestoreTest#testRestore	program=interval_join_proc_time	NativeIntervalJoinOperator
 org.apache.flink.table.planner.plan.nodes.exec.stream.IntervalJoinRestoreTest#testRestore	program=interval_join_negative_interval	@elided:IntervalJoin
-org.apache.flink.table.planner.plan.nodes.exec.stream.TemporalJoinRestoreTest#testRestore	program=temporal_join_table_join	NativeTemporalJoinOperator
-org.apache.flink.table.planner.plan.nodes.exec.stream.TemporalJoinRestoreTest#testRestore	program=temporal_join_table_join_nested_key	NativeTemporalJoinOperator
-org.apache.flink.table.planner.plan.nodes.exec.stream.TemporalJoinRestoreTest#testRestore	program=temporal_join_table_join_key_from_map	NativeTemporalJoinOperator
-org.apache.flink.table.planner.plan.nodes.exec.stream.TemporalJoinRestoreTest#testRestore	program=temporal_join_temporal_function	NativeTemporalJoinOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.TemporalJoinRestoreTest#testRestore	program=temporal_join_table_join	@resume:NativeTemporalJoinOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.TemporalJoinRestoreTest#testRestore	program=temporal_join_table_join_nested_key	@resume:NativeTemporalJoinOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.TemporalJoinRestoreTest#testRestore	program=temporal_join_table_join_key_from_map	@resume:NativeTemporalJoinOperator
+org.apache.flink.table.planner.plan.nodes.exec.stream.TemporalJoinRestoreTest#testRestore	program=temporal_join_temporal_function	@resume:NativeTemporalJoinOperator
 org.apache.flink.table.planner.plan.nodes.exec.stream.OverAggregateRestoreTest#testRestore	*	NativeOverAggregateOperator
 org.apache.flink.table.planner.plan.nodes.exec.stream.ChangelogNormalizeRestoreTest#testRestore	program=changelog_normalize_source	NativeColumnarChangelogNormalizeOperator
 org.apache.flink.table.planner.plan.nodes.exec.stream.ChangelogNormalizeRestoreTest#testRestore	program=changelog_normalize_source_mini_batch	NativeColumnarChangelogNormalizeOperator
@@ -91,3 +91,5 @@ tech.streamfusion.canonical.EagerDedupRestoreTest#testRestore	program=deduplicat
 tech.streamfusion.canonical.AppendRankRestoreTest#testRestore	program=rank_test_append_fast_strategy	NativeColumnarTopNOperator
 tech.streamfusion.canonical.UpdateRankRestoreTest#testRestore	program=rank_test_update_fast_strategy	NativeColumnarTopNOperator
 tech.streamfusion.canonical.RetractRankRestoreTest#testRestore	program=rank_test_retract_strategy	@resume:NativeColumnarTopNOperator
+tech.streamfusion.canonical.TypedGroupRestoreTest#testRestore	program=group_aggregate_simple	@resume:NativeColumnarGroupAggregateOperator
+tech.streamfusion.canonical.TypedGroupRestoreTest#testRestore	program=group_aggregate_distinct	@resume:NativeColumnarGroupAggregateOperator

@@ -1,8 +1,5 @@
 package tech.streamfusion.operator;
 
-import tech.streamfusion.Native;
-import tech.streamfusion.planner.NativeConfig;
-import tech.streamfusion.state.RocksDBNativeStateSupport;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
@@ -11,13 +8,15 @@ import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.table.types.logical.RowType;
+import tech.streamfusion.Native;
+import tech.streamfusion.state.RocksDBNativeStateSupport;
 
 /**
  * Columnar global half of two-phase window aggregation: the same merge as {@link
  * NativeGlobalWindowAggregateOperator}, but fed the partial-state Arrow batches the columnar local
  * half emits directly — no row→Arrow rebuild — and emitting the final per-window results as Arrow
- * ({@code [key?, agg…, window_start, window_end]}). Arrow → Arrow; a rowwise sink is
- * reached through the dedicated {@code ArrowToRowDataOperator} at the island perimeter.
+ * ({@code [key?, agg…, window_start, window_end]}). Arrow → Arrow; a rowwise sink is reached
+ * through the dedicated {@code ArrowToRowDataOperator} at the island perimeter.
  */
 public class NativeColumnarGlobalWindowAggregateOperator extends NativeRowWindowOperatorCore
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
@@ -35,6 +34,12 @@ public class NativeColumnarGlobalWindowAggregateOperator extends NativeRowWindow
   }
 
   @Override
+  protected void configureCapturedHandle(long captured, boolean persistent) {
+    super.configureCapturedHandle(captured, persistent);
+    Native.setStockWindowPartialBuffer(captured, stockPartialBuffer);
+  }
+
+  @Override
   protected void configureStateHandle() {
     super.configureStateHandle();
     Native.setStockWindowPartialBuffer(handle, stockPartialBuffer);
@@ -46,8 +51,6 @@ public class NativeColumnarGlobalWindowAggregateOperator extends NativeRowWindow
     bufferProgress = canonicalWatermark();
     nextBufferProgress = Long.MIN_VALUE;
   }
-
-
 
   public NativeColumnarGlobalWindowAggregateOperator(
       long windowMillis,
@@ -61,8 +64,18 @@ public class NativeColumnarGlobalWindowAggregateOperator extends NativeRowWindow
       int[] keyTimestampPrecisions,
       int maxParallelism) {
     this(
-        windowMillis, slideMillis, cumulative, keyTypes, valueTypes, aggregateKinds, timeZoneId,
-        !"UTC".equals(timeZoneId), timeZoneId, outputType, keyTimestampPrecisions, maxParallelism);
+        windowMillis,
+        slideMillis,
+        cumulative,
+        keyTypes,
+        valueTypes,
+        aggregateKinds,
+        timeZoneId,
+        !"UTC".equals(timeZoneId),
+        timeZoneId,
+        outputType,
+        keyTimestampPrecisions,
+        maxParallelism);
   }
 
   public NativeColumnarGlobalWindowAggregateOperator(

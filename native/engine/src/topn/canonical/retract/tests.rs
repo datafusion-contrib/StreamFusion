@@ -107,17 +107,41 @@ fn independent_presence_counts_kinds_and_clocks_survive_transfer() {
     assert_eq!(retained.lists.len(), 2);
     assert_eq!(retained.bound.unwrap().value, -7);
     let mut emitted = Vec::new();
-    visit(true, state.groups.iter(), |rows| {
-        for row in rows {
-            emitted.push((
-                row.tag,
-                row.number,
-                row.stamp,
-                row.payload.map(|row| row.kind()),
-            ));
-        }
-        Ok(())
-    })
+    encoded::Emitter::new(
+        state.schema.as_ref().unwrap(),
+        state.converters.as_ref().unwrap(),
+        &state.sort_columns,
+        encoded::Layout::Retract,
+        None,
+        |batch| {
+            let numbers = batch
+                .column(4)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            let stamps = batch
+                .column(5)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            let tags = batch
+                .column(6)
+                .as_any()
+                .downcast_ref::<Int8Array>()
+                .unwrap();
+            for row in 0..batch.num_rows() {
+                let tag = tags.value(row);
+                emitted.push((
+                    tag,
+                    numbers.value(row),
+                    stamps.value(row),
+                    (tag >= 0).then_some(tag),
+                ));
+            }
+            Ok(())
+        },
+    )
+    .retract(true, state.groups.iter())
     .unwrap();
     assert_eq!(emitted.len(), 7);
     assert!(emitted.contains(&(COUNT, -3, 300, None)));
@@ -207,12 +231,36 @@ fn count_only_keys_and_zero_age_projection_do_not_mutate_native_clocks() {
     let partition = state.groups.iter().next().unwrap().1;
     assert!(partition.has_state());
     let mut sizes = Vec::new();
-    visit(false, state.groups.iter(), |rows| {
-        sizes.push(rows.len());
-        assert_eq!(rows[0].tag, COUNTS);
-        assert_eq!(rows[0].stamp, 0);
-        Ok(())
-    })
+    encoded::Emitter::new(
+        state.schema.as_ref().unwrap(),
+        state.converters.as_ref().unwrap(),
+        &state.sort_columns,
+        encoded::Layout::Retract,
+        None,
+        |batch| {
+            sizes.push(batch.num_rows());
+            assert_eq!(
+                batch
+                    .column(6)
+                    .as_any()
+                    .downcast_ref::<Int8Array>()
+                    .unwrap()
+                    .value(0),
+                COUNTS
+            );
+            assert_eq!(
+                batch
+                    .column(5)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap()
+                    .value(0),
+                0
+            );
+            Ok(())
+        },
+    )
+    .retract(false, state.groups.iter())
     .unwrap();
     assert_eq!(sizes, vec![1]);
     assert_eq!(

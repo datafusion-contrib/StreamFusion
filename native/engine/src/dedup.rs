@@ -755,6 +755,14 @@ impl KeepFirstDeduplicator {
 /// (`[watermark][framed pending ipc][emitted ipc]`), for backend-independent canonical savepoints.
 #[cfg(feature = "rocksdb-state")]
 impl KeepFirstDeduplicator {
+    pub(crate) fn migrate_legacy_snapshot_store(&mut self) -> Result<(), DataFusionError> {
+        let reader = self.store.as_ref().unwrap().legacy_snapshot_reader()?;
+        if let Some(reader) = reader {
+            reader.migrate(|partitions, _timer| self.import_partitions(partitions))?;
+        }
+        Ok(())
+    }
+
     /// Decodes restored blob key groups once at open and writes them through the typed store, so
     /// a canonical or raw restore continues on the direct persistent path. Candidates append in
     /// blob order (fresh sequences reproduce the memory path's emission order), fired markers keep
@@ -953,6 +961,7 @@ pub(crate) struct KeepLastDeduplicator<S: KeyedStateStore<DedupRow> = MemoryDedu
 /// The resident default backend for the dedup store (see `state/` for the seam).
 pub(crate) type MemoryDedupStore = MemoryStateStore<DedupRow>;
 
+#[derive(Clone)]
 pub(crate) struct DedupRow {
     rowtime: i64,
     payload: Arc<[u8]>,
@@ -1002,6 +1011,7 @@ pub(crate) type RocksDedupStore = crate::state::RocksStore<DedupStateCodec>;
 /// keyed-state snapshot carries, so the two persistence paths cannot drift). Every payload shape
 /// round-trips as opaque bytes, so every keep-last state shape is persistable.
 #[cfg(feature = "rocksdb-state")]
+#[derive(Clone)]
 pub(crate) struct DedupStateCodec;
 
 #[cfg(feature = "rocksdb-state")]

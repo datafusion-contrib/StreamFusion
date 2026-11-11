@@ -9,7 +9,7 @@ struct PreparedEventBatch {
 }
 
 impl OverWindowAggregator {
-    fn canonical_event(&self) -> Result<(), DataFusionError> {
+    pub(super) fn canonical_event(&self) -> Result<(), DataFusionError> {
         match &self.inner {
             OverInner::Bounded(_) => {
                 self.canonical_frame()?;
@@ -32,7 +32,7 @@ impl OverWindowAggregator {
         }
     }
 
-    fn event_key_types(&self) -> Result<Vec<DataType>, DataFusionError> {
+    pub(super) fn event_key_types(&self) -> Result<Vec<DataType>, DataFusionError> {
         if self.key_columns.is_empty() {
             return Ok(Vec::new());
         }
@@ -59,7 +59,7 @@ impl OverWindowAggregator {
         mut accept: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
         self.canonical_event()?;
-        self.ensure_canonical_distinct_ready()?;
+        self.ensure_canonical_ready()?;
         #[cfg(feature = "rocksdb-state")]
         if let Some(store) = &self.store {
             return store.visit_pending(CHUNK_ROWS, accept);
@@ -179,7 +179,7 @@ impl OverWindowAggregator {
                 &times,
             )?;
         }
-        if self.deadline_cleaning() {
+        if self.deadline_cleaning() || self.event_polling {
             for row in 0..batch.num_rows() {
                 let key = ByteKey::from(keys.row(row).data());
                 if !self.pending_rows.contains_key(&key) {
@@ -206,11 +206,37 @@ impl OverWindowAggregator {
         mut accept: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
         self.canonical_event()?;
-        self.ensure_canonical_distinct_ready()?;
+        self.ensure_canonical_ready()?;
+        if self.event_polling {
+            return self.visit_polling_metadata(accept);
+        }
         if self.range_offset().is_some() {
             return Err(invalid(
                 "RANGE cleanup belongs to the event-time frame protocol",
             ));
+        }
+        #[cfg(feature = "rocksdb-state")]
+        if let Some(store) = self.frozen_store() {
+            let types = self.event_key_types()?;
+            let converter = key_row_converter_from_types(&types);
+            let mut fields = key_fields(&types);
+            fields.push(Field::new(STAMP, DataType::Int64, false));
+            fields.push(Field::new(EVENT_CLEANUP_ARMED, DataType::Boolean, false));
+            let schema = Arc::new(Schema::new(fields));
+            return store.visit_cleanup_stamps(CHUNK_ROWS, |rows| {
+                let keys = rows
+                    .iter()
+                    .map(|(key, _, _)| key.as_ref())
+                    .collect::<Vec<_>>();
+                let mut columns = decode_byte_keys(Some(&converter), &keys, &types);
+                columns.push(Arc::new(Int64Array::from_iter_values(
+                    rows.iter().map(|(_, stamp, _)| *stamp),
+                )));
+                columns.push(Arc::new(BooleanArray::from_iter(
+                    rows.iter().map(|(_, _, armed)| Some(*armed)),
+                )));
+                accept(RecordBatch::try_new(schema.clone(), columns)?)
+            });
         }
         if self.cleanup_state.is_empty() {
             return Ok(());
@@ -322,6 +348,9 @@ impl OverWindowAggregator {
     }
 
     fn import_canonical_cleanup(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
+        if self.event_polling {
+            return self.transfer_polling_metadata(batch, false);
+        }
         let PreparedEventBatch {
             key_types: types,
             key_converter: converter,
@@ -329,12 +358,9 @@ impl OverWindowAggregator {
             times: stamps,
             timer_armed,
         } = self.prepare_canonical_cleanup(batch)?;
-        #[cfg(feature = "rocksdb-state")]
-        if self.store.is_some() {
-            self.write_store_cleanup(batch)?;
-        }
         for row in 0..batch.num_rows() {
             let key = ByteKey::from(keys.row(row).data());
+            self.mark_store_metadata(&key.0);
             if timer_armed.as_ref().is_some_and(|armed| !armed.value(row)) {
                 if self.event_cleanup_unarmed.insert(key.clone()) {
                     self.retention_bytes += byte_key_bytes(&key.0);
@@ -456,10 +482,14 @@ pub extern "system" fn Java_tech_streamfusion_Native_validateOverCleanupCanonica
     schema: jlong,
 ) {
     crate::bridge::jni_guard(env, move |mut env| {
-        let operator = unsafe { &*(handle as *const OverWindowAggregator) };
+        let operator = unsafe { &mut *(handle as *mut OverWindowAggregator) };
         let result = {
             let batch = import_record_batch(array, schema);
-            operator.prepare_canonical_cleanup(&batch).map(|_| ())
+            if operator.event_polling {
+                operator.transfer_polling_metadata(&batch, true)
+            } else {
+                operator.prepare_canonical_cleanup(&batch).map(|_| ())
+            }
         };
         if let Err(error) = result {
             report(&mut env, error);

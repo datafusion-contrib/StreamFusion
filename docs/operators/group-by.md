@@ -3122,6 +3122,14 @@ their existing verified representation contract.
 
 ## Stock arithmetic accumulator projection (partial)
 
+Canonical planner/state machinery is shared with Flink 1.18.1. Arithmetic and typed scalar
+accumulators without shared DISTINCT views can stream from a pinned native RocksDB snapshot into
+Flink's asynchronous canonical writer. Memory captures copy mutable native accumulator/view state
+and convert through an independent stock backend asynchronously. This capture visits resident state
+and can retain an additional copy; broader qualification of the new capture path is ongoing.
+Focused same-line operator restore controls pass; the wider complete-job matrix remains separate.
+DISTINCT views, managed UDFs and other layouts still use the disk-backed stock projection.
+
 A direct Flink 2.2.1 adapter now projects the qualified generated scalar `accState` value.
 It copies COUNT, SUM0, nullable SUM, append-only BIGINT MIN/MAX and raw AVG sums/counts, the independent input-record counter
 and the original TTL write age. A separate structured adapter preserves retracting BIGINT MIN/MAX
@@ -3195,10 +3203,11 @@ ExternalSerializer snapshots. Matching value bytes alone is insufficient for sto
 Import reads raw state in a fresh projection backend without applying a TTL API wrapper, validates
 the entire source before applying it, and clears source state only after success. Export visits
 live headers and map entries directly in bounded batches, including maps larger than a batch.
-Memory and RocksDB configurations are covered; mapped extrema use the existing memory aggregate
-with raw RocksDB snapshot backing, rather than the direct per-key RocksDB aggregate. Ordinary native
-checkpoints retain absent-header markers in an optional private frame when orphaned maps exist.
-Default and append-only snapshot layouts retain their existing format.
+Qualified per-record mapped extrema use the direct per-key RocksDB aggregate: fixed-size
+accumulator headers and timestamped companion map records. A canonical savepoint pins native
+RocksDB state and converts bounded frames on the asynchronous writer, including orphan maps.
+Mini-batch mapped execution retains memory aggregation with raw RocksDB snapshot backing.
+Legacy raw checkpoints remain readable; default and append-only layouts retain their format.
 
 The state/lifecycle qualification covers 420 Flink 2.2.1 cases: 32 independent generated-layout
 controls; 72 retracting, 92 append-only and 128 INT-key lifecycle/overflow/recovery cases; twenty
@@ -3279,6 +3288,14 @@ do not extend to the additional mixed-layout jobs.
 
 
 ## Typed scalar and shared DISTINCT canonical binding (partial)
+
+Canonical RocksDB header scans share the pinned row/byte-bounded reader, while companion visits
+also limit bytes and observe cancellation within a single owner. Conversion preserves signed
+membership counts and original TTL ages; it does not hydrate every owner's companion tables.
+Capture flushes pending metadata with an empty checkpoint path before pinning the database. That
+flush creates no native checkpoint files. Stock serializers and the qualified state layouts below
+remain unchanged. The released scalar/DISTINCT restore programs pass two stock and two native
+invocations, with audited native import and continued input and no expected fallback.
 
 A second Flink 2.2.1 binding extends the preceding BIGINT contract. Normal SQL and portable stock
 compiled plans capture the actual generated single-phase accumulator, original aggregate calls,
@@ -3386,16 +3403,29 @@ remain outside this structured binding.
 Each cached selection and map-size counter remains independent of the retained value-to-signed-
 count map. Negative and zero counts, independently written map entries, a cached selection hidden
 by a zero map size, and orphan views whose accumulator expired are preserved directly. Import does
-not derive one piece from another or replay input. The generated RAW placeholder retains its
+not derive one piece from another or replay input. Grouped extrema imports spool the union of
+accumulator and orphan-view owners into the shared temporary disk index, then stream that union
+for complete validation and apply passes. Scratch state closes and deletes on failure; individual
+stock values remain working-set limits. The generated RAW placeholder retains its
 non-null one-byte NullSerializer payload.
 
-Both native memory and raw keyed RocksDB use the existing bounded header/entry transfer. An
+Both native memory and direct keyed RocksDB use the bounded header/entry transfer. An
 internal signed-long carrier holds integral values, epoch days, millisecond times or BOOLEAN 0/1
 losslessly; it is not the savepoint's value type. The writer converts each carrier back to the
 actual boxed Flink value and uses the captured stock serializer. Native import rejects out-of-
 range narrow integers and invalid BOOLEAN carriers before mutation. Existing native checkpoint
-formats, C Data ownership and the stock canonical container remain unchanged. Export reads live
-state directly, without an intermediate native snapshot.
+formats remain readable; C Data ownership and the stock canonical container are unchanged.
+Direct RocksDB export streams a pinned view of headers and companion records without rebuilding
+execution maps. Continued live writes and closing the original owner preserve that frozen view.
+
+The direct RocksDB change passes four new native storage controls within the 1,514-test native
+suite (two existing ignores), plus memory-only compilation. Java qualification passes 1,265
+aggregate/snapshot checks and a separate 24-check cohort on Flink 2.2, and 734 selected checks
+on Flink 1.18. Both lines run all sixteen type/TTL cases that complete two pinned captures on a
+writer thread after live writes and native-owner close. Four compiled complete jobs per line
+cover BIGINT/BOOLEAN continuation on both native stores and require direct RocksDB execution
+when requested. The newer local pairwise selector reduces legacy cohort repetition; these
+selections do not establish exhaustive release-line or all-operator qualification.
 
 The consolidated 1,232-check cohort passes 128 repeated-switch cases with and without visible
 COUNT(value), sixteen native-checkpoint returns, 144 independent-cache/orphan-view cases, 384
@@ -3418,8 +3448,10 @@ output projection to BIGINT only serves the unchanged custom sink fixture. The f
 SQL/compiled submission, both stores and engine orders, no-input returns, ordinary native
 checkpoint recovery and 64-key rescaling through 1 → 3 → 2 tasks at maximum parallelism 128.
 These results use the independently built typed-extrema library; later string-library builds do
-not automatically requalify this cohort. These scenarios overlap the initial smoke cases and are not added cumulatively. Thirty-four shared Flink 1.18 processing/accounting/ownership checks
-pass; they do not establish canonical interchange there.
+not automatically requalify this cohort. These scenarios overlap the initial smoke cases and are
+not added cumulatively. The shared disk-inventory cohort passes 24 selected lifecycle/recovery
+checks, 96 initialization checks and 320 malformed-state checks on Flink 1.18. It exercises the
+same stock accumulator/view contracts on that line, without qualifying the full 196-job matrix.
 
 The preceding typed-extrema baseline passed all nine released stock GROUP BY controls but
 failed all nine native execution audits because the aggregates stayed stock-owned. The unchanged

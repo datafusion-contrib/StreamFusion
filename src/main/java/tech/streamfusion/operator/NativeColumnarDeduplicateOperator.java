@@ -14,15 +14,15 @@ import tech.streamfusion.Native;
 import tech.streamfusion.state.RocksDBNativeStateSupport;
 
 /**
- * Columnar append-only keep-first deduplication (`ROW_NUMBER() OVER (PARTITION BY … ORDER BY rowtime
- * ASC) = 1`): Arrow in, Arrow out. The Arrow-batch analog of the host's insert-only {@code
- * RowTimeDeduplicateKeepFirstRowFunction}. Each input batch is buffered natively; on a watermark the
- * deduplicator emits each key's minimum-rowtime row once the watermark reaches that rowtime, and
- * drops every later row for the key. Insert-only — the watermark guarantees no smaller-rowtime row
- * can still arrive once a key's row fires. Keys are co-located by the columnar shuffle; the per-key
- * candidate state and the late-data drop live in the native deduplicator, and this layer moves
- * batches across the bridge and owns the handle's checkpointed state. On the RocksDB backend the
- * candidates and fired markers live in the persistent store (write buffer + disk table) and the
+ * Columnar append-only keep-first deduplication (`ROW_NUMBER() OVER (PARTITION BY … ORDER BY
+ * rowtime ASC) = 1`): Arrow in, Arrow out. The Arrow-batch analog of the host's insert-only {@code
+ * RowTimeDeduplicateKeepFirstRowFunction}. Each input batch is buffered natively; on a watermark
+ * the deduplicator emits each key's minimum-rowtime row once the watermark reaches that rowtime,
+ * and drops every later row for the key. Insert-only — the watermark guarantees no smaller-rowtime
+ * row can still arrive once a key's row fires. Keys are co-located by the columnar shuffle; the
+ * per-key candidate state and the late-data drop live in the native deduplicator, and this layer
+ * moves batches across the bridge and owns the handle's checkpointed state. On the RocksDB backend
+ * the candidates and fired markers live in the persistent store (write buffer + disk table) and the
  * watermark firing is a range read over both; memory state travels as raw keyed-state blobs.
  */
 public class NativeColumnarDeduplicateOperator extends AbstractNativeStatefulOperator<ArrowBatch>
@@ -59,8 +59,7 @@ public class NativeColumnarDeduplicateOperator extends AbstractNativeStatefulOpe
   // the typed RocksDB data plane.
   @Override
   protected boolean usesDirectRocksDBState() {
-    return withRowSchema(
-            rowType, s -> Native.rocksdbKeepFirstDeduplicatorSupported(s) ? 1L : 0L)
+    return withRowSchema(rowType, s -> Native.rocksdbKeepFirstDeduplicatorSupported(s) ? 1L : 0L)
         != 0L;
   }
 
@@ -71,14 +70,23 @@ public class NativeColumnarDeduplicateOperator extends AbstractNativeStatefulOpe
         rowType,
         s ->
             Native.createRocksDBKeepFirstDeduplicator(
-                partitionColumns, keyTimestampPrecisions(), rowtimeColumn,
+                partitionColumns,
+                keyTimestampPrecisions(),
+                rowtimeColumn,
                 stateTtlMillis,
                 getProcessingTimeService().getCurrentProcessingTime(),
-                memoryBudgetBytes(), s,
-                rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
-                rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
-                rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
-                rocksdb.aligned(), restoredPartitions));
+                memoryBudgetBytes(),
+                s,
+                rocksdb.tableDirectory(),
+                maxParallelism(),
+                rocksdb.optionsJson(),
+                rocksdb.sharedResourcesHandle(),
+                rocksdb.sourceDirectories(),
+                rocksdb.sourceSnapshotTokens(),
+                rocksdb.keyGroupStart(),
+                rocksdb.keyGroupEnd(),
+                rocksdb.aligned(),
+                restoredPartitions));
   }
 
   @Override
@@ -124,8 +132,19 @@ public class NativeColumnarDeduplicateOperator extends AbstractNativeStatefulOpe
   }
 
   @Override
+  protected java.util.function.LongConsumer memoryStateCopier() {
+    final long source = handle;
+    return target -> Native.copyBufferedDeduplicatorCanonicalMemoryState(source, target);
+  }
+
+  @Override
   protected void closeHandle() {
-    if (directRocksDBState()) {
+    closeCapturedHandle(handle, directRocksDBState());
+  }
+
+  @Override
+  protected void closeCapturedHandle(long handle, boolean persistent) {
+    if (persistent) {
       Native.closeRocksDBKeepFirstDeduplicator(handle);
     } else {
       Native.closeKeepFirstDeduplicator(handle);
@@ -209,5 +228,4 @@ public class NativeColumnarDeduplicateOperator extends AbstractNativeStatefulOpe
     publishStateBytes();
     super.processWatermark(mark);
   }
-
 }

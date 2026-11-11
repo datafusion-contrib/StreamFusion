@@ -153,7 +153,20 @@ impl TumblingAggregator {
                     .entry((target - self.slide_millis, target, key))
                     .or_insert_with(Vec::new)
                     .push(row as u32);
-                timers.entry((timer, key)).or_insert(row);
+                if self.legacy_slices {
+                    let last = target + self.window_millis - self.slide_millis;
+                    let mut end = timer;
+                    while end <= last {
+                        timers.entry((end, key)).or_insert(row);
+                        end += self.slide_millis;
+                    }
+                } else {
+                    timers.entry((timer, key)).or_insert(row);
+                }
+                // Released 1.18 combiners see MIN until the first watermark after restore.
+                if self.timer_watermark_uninitialized {
+                    timers.entry((target, key)).or_insert(row);
+                }
             }
         }
         #[cfg(feature = "rocksdb-state")]
@@ -250,7 +263,11 @@ impl TumblingAggregator {
                 )?;
             }
             if let Some(timer) = timer {
-                self.add_slice_timer(timer, key, self.slice_key_group(batch, row))?;
+                let group = self.slice_key_group(batch, row);
+                if self.timer_watermark_uninitialized {
+                    self.add_slice_timer(target, key.clone(), group)?;
+                }
+                self.add_slice_timer(timer, key, group)?;
             }
         }
         self.memory.set(self.computed_state_bytes());
@@ -390,16 +407,21 @@ impl TumblingAggregator {
                     .zip(&self.aggregates)
                 {
                     if matches!(aggregate, WindowAggregate::Count) {
-                        let count = (source.as_mut() as &mut dyn std::any::Any)
+                        let count = (crate::aggregates::raw_accumulator(source.as_mut())
+                            .expect("captured accumulator")
+                            as &mut dyn std::any::Any)
                             .downcast_ref::<crate::aggregates::WindowCountAccumulator>()
                             .expect("window count factory")
                             .count();
-                        (target.as_mut() as &mut dyn std::any::Any)
+                        (crate::aggregates::raw_accumulator(target.as_mut())
+                            .expect("captured accumulator")
+                            as &mut dyn std::any::Any)
                             .downcast_mut::<crate::aggregates::WindowCountAccumulator>()
                             .expect("window count factory")
                             .merge_count(count);
                         continue;
                     }
+                    let before = self.memory.tracking().then(|| source.size());
                     let state = source.state()?;
                     let columns = state
                         .iter()
@@ -409,6 +431,9 @@ impl TumblingAggregator {
                         let mut restored = aggregate.create_accumulator();
                         restored.merge_batch(&columns)?;
                         *source = restored;
+                    }
+                    if let Some(before) = before {
+                        self.memory.record(source.size() as isize - before as isize);
                     }
                     target.merge_batch(&columns)?;
                 }
@@ -501,7 +526,7 @@ impl TumblingAggregator {
                 }
                 let next = end + self.slide_millis;
                 if (self.cumulative_prefix() && next <= self.shared_base(end) + self.window_millis)
-                    || (!self.cumulative && live)
+                    || (!self.cumulative && !self.legacy_slices && live)
                 {
                     let first_for_end = !self.slice_timers.contains_key(&next);
                     self.add_slice_timer(next, key.clone(), key_group)?;

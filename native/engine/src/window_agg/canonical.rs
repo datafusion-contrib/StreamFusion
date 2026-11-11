@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(feature = "rocksdb-state")]
+use crate::state::rocks_store::window_memberships::WindowMembershipState;
 use jni::objects::JObject;
 
 const CHUNK_ROWS: usize = 1024;
@@ -77,24 +79,23 @@ impl TumblingAggregator {
         }
         #[cfg(feature = "rocksdb-state")]
         if let Some(store) = &self.store {
-            let timers = store.slice_timers()?;
             let parser = self.key_converter.as_ref().map(RowConverter::parser);
-            for chunk in timers.chunks(CHUNK_ROWS) {
-                let rows = chunk
-                    .iter()
+            return store.visit_slice_timers(CHUNK_ROWS, |timers| {
+                let rows = timers
+                    .into_iter()
                     .map(|(_, end, key)| TimerRow {
-                        end: *end,
+                        end,
                         key: parser
                             .as_ref()
                             .expect("persisted timer key converter")
-                            .parse(key)
+                            .parse(&key)
                             .owned(),
                     })
                     .collect::<Vec<_>>();
-                accept(self.canonical_timers(&rows)?)?;
-            }
-            return Ok(());
+                accept(self.canonical_timers(&rows)?)
+            });
         }
+
         let mut rows = Vec::with_capacity(CHUNK_ROWS);
         for (&end, keys) in &self.slice_timers {
             for key in keys.keys() {
@@ -258,7 +259,7 @@ impl TumblingAggregator {
             || self.window_millis % self.slide_millis != 0
             || count_star < -1
             || count_star >= self.aggregates.len() as i32
-            || !self.cumulative && count_star < 0
+            || !self.cumulative && !self.legacy_slices && count_star < 0
         {
             return Err(invalid("invalid shared window or COUNT(*) contract"));
         }
@@ -281,7 +282,7 @@ impl TumblingAggregator {
         #[cfg(feature = "rocksdb-state")]
         if !self.shared_slices {
             if let Some(store) = &self.store {
-                if !store.scan_all()?.is_empty() {
+                if store.has_groups()? {
                     return Err(invalid(
                         "cannot reinterpret persisted final windows as panes",
                     ));
@@ -341,30 +342,33 @@ impl TumblingAggregator {
         &mut self,
         mut accept: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
+        self.require_complete_canonical_import()?;
         self.require_flushed_partial_buffer()?;
         self.validate_canonical_distinct_complete()?;
         #[cfg(feature = "rocksdb-state")]
         if self.store.is_some() {
             self.write_through_store()?;
-            let groups = self.store.as_ref().unwrap().scan_all()?;
             let parser = self.key_converter.as_ref().map(RowConverter::parser);
-            for chunk in groups.chunks(CHUNK_ROWS) {
-                let rows = chunk
-                    .iter()
-                    .map(|group| StateRow {
-                        start: group.start,
-                        end: group.end,
-                        key: parser
-                            .as_ref()
-                            .expect("persisted window key converter")
-                            .parse(&group.key)
-                            .owned(),
-                        state: group.state.clone(),
-                    })
-                    .collect::<Vec<_>>();
-                accept(self.canonical_rows(&rows)?)?;
-            }
-            return Ok(());
+            return self
+                .store
+                .as_ref()
+                .unwrap()
+                .visit_groups(CHUNK_ROWS, |chunk| {
+                    let rows = chunk
+                        .into_iter()
+                        .map(|group| StateRow {
+                            start: group.start,
+                            end: group.end,
+                            key: parser
+                                .as_ref()
+                                .expect("persisted window key converter")
+                                .parse(&group.key)
+                                .owned(),
+                            state: group.state,
+                        })
+                        .collect::<Vec<_>>();
+                    accept(self.canonical_rows(&rows)?)
+                });
         }
         let mut rows = Vec::with_capacity(CHUNK_ROWS);
         let key_types = self.key_types.clone();
@@ -501,14 +505,7 @@ impl TumblingAggregator {
                     )
                 })
                 .collect::<Vec<_>>();
-            let db_keys = entries
-                .iter()
-                .map(|(key, _)| key.clone())
-                .collect::<Vec<_>>();
-            if store.get(&db_keys)?.iter().any(Option::is_some) {
-                return Err(invalid("duplicate persisted keyed window"));
-            }
-            store.put(&entries, &batch.columns()[2 + arity..])?;
+            store.import_headers(&entries, &batch.columns()[2 + arity..])?;
             self.key_types = types;
             if let Some(converter) = converter {
                 self.key_converter = Some(converter);
@@ -533,7 +530,9 @@ impl TumblingAggregator {
                     if count < 0 && !matches!(aggregate, WindowAggregate::CountedDistinct(_)) {
                         return Err(invalid("negative DISTINCT cardinality"));
                     }
-                    if let Some(counted) = (accumulator.as_mut() as &mut dyn std::any::Any)
+                    if let Some(counted) = (crate::aggregates::raw_accumulator(accumulator.as_mut())
+                        .expect("captured accumulator")
+                        as &mut dyn std::any::Any)
                         .downcast_mut::<CountedDistinctAccumulator>()
                     {
                         counted.set_cardinality(count);
@@ -591,12 +590,35 @@ pub extern "system" fn Java_tech_streamfusion_Native_configureSlicingWindowCanon
     _class: JClass<'local>,
     handle: jlong,
     count_star: jint,
+    restores_timer_watermark: jni::sys::jboolean,
 ) {
     crate::bridge::jni_guard(env, move |mut env| {
-        if let Err(error) = unsafe { &mut *(handle as *mut TumblingAggregator) }
-            .enable_canonical_slicing(count_star)
-        {
+        let aggregator = unsafe { &mut *(handle as *mut TumblingAggregator) };
+        aggregator.timer_watermark_uninitialized = restores_timer_watermark == 0;
+        if let Err(error) = aggregator.enable_canonical_slicing(count_star) {
             report_error(&mut env, error);
+        }
+    });
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_configureLegacySlicingWindowCanonical<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    count_star: jint,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let aggregator = unsafe { &mut *(handle as *mut TumblingAggregator) };
+        let previous = aggregator.legacy_slices;
+        aggregator.legacy_slices = true;
+        if let Err(error) = aggregator.enable_canonical_slicing(count_star) {
+            aggregator.legacy_slices = previous;
+            report_error(&mut env, error);
+        } else {
+            aggregator.timer_watermark_uninitialized = false;
         }
     });
 }
@@ -757,4 +779,106 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreTumblingCanonicalWat
             store.adopt_restored(progress, i64::MIN);
         }
     });
+}
+
+impl crate::state::canonical_memory::CanonicalMemoryState for TumblingAggregator {
+    fn copy_state(&mut self, target: &mut Self) -> Result<(), DataFusionError> {
+        #[cfg(feature = "rocksdb-state")]
+        if self.store.is_some() || target.store.is_some() {
+            return Err(invalid("memory capture requires resident stores"));
+        }
+        self.require_flushed_partial_buffer()?;
+        self.require_complete_canonical_import()?;
+        let growth = self
+            .windows
+            .values()
+            .flat_map(|window| window.keys.values())
+            .flatten()
+            .map(|value| crate::aggregates::accumulator_capture_growth(value.as_ref()))
+            .sum::<usize>();
+        let captured_bytes = self.computed_state_bytes().saturating_add(growth);
+        crate::state::canonical_memory::reserve_capture(
+            &mut self.memory,
+            &mut target.memory,
+            captured_bytes,
+            growth,
+        )?;
+        target.key_types = self.key_types.clone();
+        target.key_converter = self
+            .key_converter
+            .as_ref()
+            .map(|_| key_row_converter_from_types(&self.key_types));
+        target.current_watermark = self.current_watermark;
+        target.timer_watermark_uninitialized = self.timer_watermark_uninitialized;
+        target.next_timer_deadline = self.next_timer_deadline;
+        target.canonical_distinct = self.canonical_distinct.clone();
+        let factories = self
+            .aggregates
+            .iter()
+            .cloned()
+            .map(Arc::new)
+            .collect::<Vec<_>>();
+        let codec = target.key_converter.as_ref();
+        let copy_key = |key: &OwnedRow| {
+            codec
+                .expect("captured key codec")
+                .parser()
+                .parse(key.row().data())
+                .owned()
+        };
+        target.canonical_distinct_counts = self
+            .canonical_distinct_counts
+            .iter()
+            .map(|((end, key, slot), count)| ((*end, copy_key(key), *slot), *count))
+            .collect();
+        target.shared_slices = self.shared_slices;
+        target.legacy_slices = self.legacy_slices;
+        target.exact_panes = self.exact_panes;
+        target.live_count = self.live_count;
+        target.slice_timers = self
+            .slice_timers
+            .iter()
+            .map(|(end, keys)| {
+                (
+                    *end,
+                    keys.iter()
+                        .map(|(key, group)| (copy_key(key), *group))
+                        .collect(),
+                )
+            })
+            .collect();
+        for (&end, window) in &mut self.windows {
+            let mut keys = HashMap::default();
+            for (key, values) in &mut window.keys {
+                let values = values
+                    .iter_mut()
+                    .zip(&factories)
+                    .map(|(value, aggregate)| {
+                        crate::aggregates::capture_accumulator(value, aggregate)
+                    })
+                    .collect();
+                keys.insert(copy_key(key), values);
+            }
+            target.windows.insert(
+                end,
+                AlignedWindow {
+                    start: window.start,
+                    keys,
+                },
+            );
+        }
+        Ok(())
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_copyWindowAggregatorCanonicalMemoryState<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    source: jlong,
+    target: jlong,
+) {
+    crate::state::canonical_memory::copy::<TumblingAggregator>(env, source, target);
 }

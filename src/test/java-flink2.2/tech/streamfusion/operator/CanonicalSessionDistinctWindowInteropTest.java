@@ -34,6 +34,15 @@ import tech.streamfusion.operator.CanonicalSharedWindowInteropTest.Input;
 import tech.streamfusion.operator.CanonicalSharedWindowInteropTest.StockPlan;
 
 class CanonicalSessionDistinctWindowInteropTest {
+  @org.junit.jupiter.api.BeforeAll
+  static void memoryAuthority() {
+    var config = new org.apache.flink.configuration.Configuration();
+    config.set(
+        org.apache.flink.configuration.TaskManagerOptions.TASK_OFF_HEAP_MEMORY,
+        org.apache.flink.configuration.MemorySize.parse("1g"));
+    TaskOffHeapMemory.initialize(config);
+  }
+
   @TempDir Path directory;
 
   static Stream<Arguments> cases() {

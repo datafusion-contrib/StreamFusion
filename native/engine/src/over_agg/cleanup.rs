@@ -17,6 +17,9 @@ impl OverWindowAggregator {
     }
 
     pub(super) fn snapshot_cleanup(&self) -> Vec<u8> {
+        if self.event_polling {
+            return self.snapshot_polling();
+        }
         if self.range_offset().is_some() {
             return self.snapshot_range_timers();
         }
@@ -72,10 +75,23 @@ impl OverWindowAggregator {
     }
 
     pub(super) fn restore_cleanup(&mut self, bytes: &[u8], stamps: &mut HashMap<ByteKey, i64>) {
-        if !self.deadline_cleaning() && self.range_offset().is_none() && !self.processing_rows() {
-            return;
-        }
         for batch in read_ipc_if_present(bytes) {
+            if batch
+                .column_by_name(event_polling::POLLING_TIMERS)
+                .is_some()
+            {
+                self.restore_polling(&batch);
+                stamps.extend(
+                    self.cleanup_state
+                        .iter()
+                        .map(|(key, stamp)| (key.clone(), *stamp)),
+                );
+                continue;
+            }
+            if !self.deadline_cleaning() && self.range_offset().is_none() && !self.processing_rows()
+            {
+                continue;
+            }
             let arity = self.key_columns.len();
             assert_eq!(batch.schema().field(arity).name(), CLEANUP_AT_COLUMN);
             let arrays = (0..arity)
@@ -133,6 +149,13 @@ impl OverWindowAggregator {
         &mut self,
         batch: &RecordBatch,
     ) -> Result<(), DataFusionError> {
+        if batch
+            .column_by_name(event_polling::POLLING_TIMERS)
+            .is_some()
+        {
+            self.restore_polling(batch);
+            return Ok(());
+        }
         let arity = self.key_columns.len();
         let arrays = (0..arity)
             .map(|column| batch.column(column))
@@ -192,43 +215,19 @@ impl OverWindowAggregator {
             .write_cleanup_stamps(&entries)?;
         if self.range_offset().is_some() {
             self.restore_range_timer_batch(batch, &keys);
-            self.sync_store_range_timers()?;
         }
         if self.processing_rows() {
             self.restore_proc_rows_batch(batch, &keys);
-            self.sync_store_proc_rows()?;
+        }
+        if self.range_offset().is_some() || self.processing_rows() {
+            self.persist_restored_protocol(&keys)?;
         }
         Ok(())
     }
 
     #[cfg(feature = "rocksdb-state")]
     pub(super) fn sync_store_cleanup(&mut self) -> Result<(), DataFusionError> {
-        if self.range_offset().is_some() {
-            self.sync_store_range_timers()?;
-        }
-        if self.processing_rows() {
-            self.sync_store_proc_rows()?;
-        }
-        if self.range_offset().is_none() && self.retention_scheme() != RetentionScheme::Deadline {
-            return Ok(());
-        }
         self.flush_tombstones()?;
-        let store = self.store.as_ref().expect("over rocksdb store");
-        let mut entries = store
-            .scan_stamps()?
-            .into_iter()
-            .filter(|(key, _)| !self.cleanup_state.contains_key(key.as_ref()))
-            .map(|(key, _)| (store.stamp_key(self.store_fold_key_group(&key), &key), None))
-            .collect::<Vec<_>>();
-        entries.extend(self.cleanup_state.iter().map(|(key, &deadline)| {
-            (
-                store.stamp_key(self.store_fold_key_group(&key.0), &key.0),
-                Some((deadline, !self.event_cleanup_unarmed.contains(key))),
-            )
-        }));
-        self.store
-            .as_mut()
-            .expect("over rocksdb store")
-            .write_cleanup_stamps(&entries)
+        self.flush_metadata_updates()
     }
 }

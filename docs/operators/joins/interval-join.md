@@ -48,6 +48,12 @@ case is defined against released RocksDB rather than heap state.
 
 ## Admission
 
+Retained ROW/ARRAY/MAP payloads use the shared native RocksDB row codec. Qualified canonical
+contracts pin their native read view and convert bounded frames asynchronously, without a whole
+heap projection. Legacy blob-backed checkpoints migrate one key-group partition at a time,
+preserving outer match flags and the processing deadline through aligned or clipped restore.
+Partition-key and residual-expression admission remain independent of the payload codec.
+
 Equi-keys use the [verified scalar whitelist](../window-aggregate.md#scalar-grouping-and-partition-keys):
 all integer widths, FLOAT/DOUBLE, character, BOOLEAN, DATE, TIME, TIMESTAMP/LTZ, DECIMAL, binary and intervals,
 including multiple scalar key columns. Collection/ROW/object key columns
@@ -122,7 +128,17 @@ the stock writer, without a native snapshot or input replay.
 Import validates the complete descriptor/namespace inventory, both cache serializers, keys, row
 timestamps/kinds, stored deadlines and callback ownership before mutating native rows. Unknown
 state or pending processing-time callbacks fail closed. The event-time contract cannot bind to a
-native processing-time operator. The original stock row/key/timer serializer snapshots load with
+native processing-time operator. Scheduled and observed cleanup relationships now use the shared
+scoped disk spool rather than job-sized Java sets, on both release lines and in export preflight.
+Both sides can share one physical callback; reverse scans still reject callbacks without an owned
+deadline. The configured spool write-buffer reservation and scratch files release on every exit.
+Export stages tuple entries in the shared disk spool and lets the released list serializer stream
+each timestamp bucket into the projection once, preserving peer order and match flags. Restore
+reads released map/list bytes directly from snapshot resources and decodes individual tuples in
+both validation and apply passes, without materializing a complete Java bucket list. Row and timer
+transfers share a 1,024-row and four-MiB payload estimate, allowing one oversized value. The largest
+encoded stock KV remains a working-memory floor. The same transport applies to event-time and
+processing-time contracts on both release lines. The original stock row/key/timer serializer snapshots load with
 StreamFusion and planner classes blocked.
 
 An isolated component passes 240 positive controls and 45 rejection/guard controls. These cover

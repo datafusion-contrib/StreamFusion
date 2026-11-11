@@ -1,6 +1,48 @@
 use super::*;
 use jni::objects::JObject;
 
+#[cfg(feature = "rocksdb-state")]
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_captureGroupTypedCanonicalSnapshot<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let owner = unsafe { &mut *(handle as *mut GroupAggregator<RocksGroupStore>) };
+        let result = (|| {
+            owner.typed_contract()?;
+            let kinds = owner.kinds.clone();
+            let types = owner.state_types.clone();
+            let ttl = owner.ttl_ms > 0;
+            let append_only = owner.stock_append_only == Some(true);
+            let mut memory = owner.memory.temporary_reservation();
+            let snapshot = owner
+                .store
+                .canonical_snapshot(owner.memory.temporary_reservation())?;
+            Ok::<_, DataFusionError>(crate::state::canonical_snapshot::cursor(
+                snapshot,
+                move |env, receiver, entries| {
+                    let rows: Vec<_> = entries.iter().map(|(key, value)| (key, value)).collect();
+                    canonical::emit(
+                        env,
+                        receiver,
+                        headers(&kinds, &types, ttl, append_only, &rows)?,
+                        &mut memory,
+                    )
+                },
+            ))
+        })();
+        match result {
+            Ok(handle) => handle,
+            Err(error) => {
+                canonical::throw_error(&mut env, error);
+                0
+            }
+        }
+    })
+}
+
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_configureGroupTypedGlobalCanonical<'local>(
     env: JNIEnv<'local>,

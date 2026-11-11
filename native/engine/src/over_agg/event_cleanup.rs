@@ -54,6 +54,7 @@ impl OverWindowAggregator {
             if self.pending_rows.contains_key(&key) {
                 if self.event_cleanup_unarmed.insert(key.clone()) {
                     self.retention_bytes += byte_key_bytes(&key.0);
+                    self.mark_store_metadata(&key.0);
                 }
                 self.register_cleanup(&key.0, now);
             } else {

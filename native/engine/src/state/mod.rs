@@ -1,8 +1,13 @@
+pub(crate) mod canonical_records;
 use crate::*;
 
+pub(crate) mod canonical_context;
+pub(crate) mod canonical_memory;
 pub(crate) mod ttl;
 pub(crate) use ttl::*;
 
+#[cfg(feature = "rocksdb-state")]
+pub(crate) mod canonical_snapshot;
 #[cfg(feature = "rocksdb-state")]
 pub(crate) mod rocks_config;
 #[cfg(all(feature = "rocksdb-io-uring", target_os = "linux"))]
@@ -99,6 +104,7 @@ pub(crate) trait KeyedStateStore<V> {
 
 /// Today's state backend: the whole working set resident in one hash map. This is the default
 /// store every operator runs on unless a job selects a persistent backend.
+#[derive(Clone)]
 pub(crate) struct MemoryStateStore<V> {
     map: ahash::HashMap<ByteKey, V>,
 }

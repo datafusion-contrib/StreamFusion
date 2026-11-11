@@ -32,6 +32,15 @@ mechanics shared across every operator TTL applies to.
 
 ## Canonical savepoint adapter
 
+The shared adapter also binds released Flink 1.18.1. Native RocksDB snapshots pin their read view
+at the barrier and convert retained rows asynchronously. Memory captures copy mutable retained state
+and share immutable payloads; stock conversion runs asynchronously through an independent backend.
+The older release's generated equality compares row kinds, so unchanged UPDATE_AFTER input retains
+its released emission behavior: an initial INSERT followed by an otherwise equal UPDATE_AFTER
+emits the update-before/update-after pair on 1.18, while 2.2 suppresses it. The shared exact-sequence
+control checks each release's expectation. The runtime comparison mode is set again after restore and does
+not change the stored row schema. Wider complete-job qualification remains separate.
+
 A direct Flink 2.2.1 state adapter preserves the full retained INSERT row and its original TTL
 write age in the released `deduplicate-state` VALUE descriptor. Native memory and typed RocksDB
 share this stock schema; export reads live state without a native snapshot intermediate.

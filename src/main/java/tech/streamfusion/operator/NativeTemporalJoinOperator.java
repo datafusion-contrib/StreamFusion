@@ -190,12 +190,23 @@ public class NativeTemporalJoinOperator extends AbstractNativeStatefulOperator<A
   }
 
   @Override
+  protected java.util.function.LongConsumer memoryStateCopier() {
+    final long source = handle;
+    return target -> Native.copyTemporalJoinCanonicalMemoryState(source, target);
+  }
+
+  @Override
   protected void closeHandle() {
     if (processingCleanup != null) {
       processingCleanup.cancel(false);
       processingCleanup = null;
     }
-    if (directRocksDBState()) {
+    closeCapturedHandle(handle, directRocksDBState());
+  }
+
+  @Override
+  protected void closeCapturedHandle(long handle, boolean persistent) {
+    if (persistent) {
       Native.closeRocksDBTemporalJoiner(handle);
     } else {
       Native.closeTemporalJoiner(handle);
@@ -216,6 +227,11 @@ public class NativeTemporalJoinOperator extends AbstractNativeStatefulOperator<A
    */
   private long withSchemas(LongBinaryOperator call) {
     return withRowSchemas(leftType, rightType, call);
+  }
+
+  @Override
+  protected void configureCapturedHandle(long captured, boolean persistent) {
+    Native.bindTemporalJoinCleanupTimers(captured);
   }
 
   @Override
@@ -306,7 +322,7 @@ public class NativeTemporalJoinOperator extends AbstractNativeStatefulOperator<A
 
   @Override
   public void finish() throws Exception {
-    advance(Long.MAX_VALUE); // end of input: resolve probes with a queued event callback
+    if (handle != 0) advance(Long.MAX_VALUE); // resolve probes with a queued event callback
     super.finish();
   }
 

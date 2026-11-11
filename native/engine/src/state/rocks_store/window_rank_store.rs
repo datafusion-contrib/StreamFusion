@@ -1,10 +1,13 @@
+use super::retained_rows::RetainedRows;
 use super::{
     checkpoint_files, copy_checkpoint_db, merged_timer_deadline, multi_get_pinned, open_shared_db,
     re, stored_timer_deadline, write_timer_deadline, FlinkWriteBatch, OpenedDb, TIMER_DEADLINE_KEY,
 };
 use crate::*;
+#[cfg(test)]
 use arrow::row::{RowConverter, SortField};
 use rocksdb::{Cache, Direction, IteratorMode, Options, DB};
+#[cfg(test)]
 use std::sync::Arc;
 
 /// `[key_group i32 BE][window_end i64 BE, sign-flipped][window_start i64 BE][partition key
@@ -43,11 +46,11 @@ pub(crate) struct StoredRankGroup {
 /// back at the bundle boundary, and a watermark firing range-scans each key group's closed prefix.
 /// Windows close by watermark, so values carry no TTL prefix.
 pub(crate) struct RocksWindowRankStore {
-    db: Arc<DB>,
+    db: StateDb,
     _cache: Option<Cache>,
     max_parallelism: usize,
     key_groups: std::ops::RangeInclusive<i32>,
-    row_converter: RowConverter,
+    row_converter: RetainedRows,
     row_types: Vec<DataType>,
     watermark: i64,
     next_exclusive_end: Option<i64>,
@@ -57,12 +60,18 @@ pub(crate) struct RocksWindowRankStore {
 }
 
 impl RocksWindowRankStore {
+    pub(crate) fn legacy_snapshot_reader(
+        &self,
+    ) -> Result<Option<super::legacy_snapshot::LegacySnapshotReader>, DataFusionError> {
+        super::legacy_snapshot::LegacySnapshotReader::open(&self.db)
+    }
+
     pub(crate) fn create(
         config: RocksStoreConfig,
         row_types: &[DataType],
         key_groups: std::ops::RangeInclusive<i32>,
     ) -> Result<Self, DataFusionError> {
-        if !rocks_row_supported(row_types) {
+        if !RetainedRows::supported(row_types) {
             return Err(DataFusionError::Plan(
                 "window-rank row shape not supported by RocksDB".into(),
             ));
@@ -108,7 +117,9 @@ impl RocksWindowRankStore {
                             .watermark
                             .max(i64::from_be_bytes(value[..8].try_into().unwrap()));
                     }
-                } else if key.as_ref() == TIMER_DEADLINE_KEY {
+                } else if key.as_ref() == TIMER_DEADLINE_KEY
+                    || key.as_ref() == super::SNAPSHOT_TIMER_KEY
+                {
                     store.timer_deadline = merged_timer_deadline(store.timer_deadline, &value);
                 } else if key.len() >= 4 {
                     let kg = i32::from_be_bytes(key[..4].try_into().expect("key group prefix"));
@@ -129,13 +140,7 @@ impl RocksWindowRankStore {
         row_types: &[DataType],
         key_groups: std::ops::RangeInclusive<i32>,
     ) -> Result<Self, DataFusionError> {
-        let row_converter = RowConverter::new(
-            row_types
-                .iter()
-                .map(|data_type| SortField::new(data_type.clone()))
-                .collect(),
-        )
-        .map_err(|e| DataFusionError::External(Box::new(e)))?;
+        let row_converter = RetainedRows::new(row_types)?;
         Ok(Self {
             db: opened.db,
             _cache: opened.cache,
@@ -237,10 +242,7 @@ impl RocksWindowRankStore {
                 )
             })
             .collect();
-        let rows = self
-            .row_converter
-            .convert_columns(&columns)
-            .map_err(|e| DataFusionError::External(Box::new(e)))?;
+        let rows = self.row_converter.encode(&columns)?;
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         let mut next = 0;
         for (db_key, buffer) in &entries {
@@ -409,11 +411,7 @@ impl RocksWindowRankStore {
         if rows.is_empty() {
             return Ok(Vec::new());
         }
-        let parser = self.row_converter.parser();
-        let columns = self
-            .row_converter
-            .convert_rows(rows.iter().map(|bytes| parser.parse(bytes)))
-            .map_err(|e| DataFusionError::External(Box::new(e)))?;
+        let columns = self.row_converter.decode(rows.iter().copied())?;
         let timestamps = columns
             .iter()
             .map(|column| {
@@ -458,27 +456,63 @@ impl RocksWindowRankStore {
         if chunk_rows == 0 {
             return Err(invalid());
         }
-        for entry in self.db.iterator(IteratorMode::Start) {
-            let (key, value) = entry.map_err(re)?;
-            if key.as_ref() == WATERMARK_KEY || key.as_ref() == TIMER_DEADLINE_KEY {
+        let db = self.db.read_snapshot();
+        let mut reader = db.raw_iterator();
+        reader.seek_to_first();
+        let mut work = crate::state::canonical_context::temporary_reservation();
+        while reader.valid() {
+            super::database::check_cancelled()?;
+            let key = reader.key().unwrap();
+            if key == WATERMARK_KEY || key == TIMER_DEADLINE_KEY {
+                reader.next();
                 continue;
             }
+            let value = reader.value().unwrap();
             if key.len() < KEY_PREFIX_LEN || value.len() < 4 {
                 return Err(invalid());
             }
-            let mut cursor = value.as_ref();
+            let mut cursor = value;
             let length = count(&mut cursor)?;
-            let mut rows = Vec::with_capacity(chunk_rows);
+            let mut rows = Vec::new();
+            let mut bytes = 0usize;
             for _ in 0..length {
+                super::database::check_cancelled()?;
                 let length = count(&mut cursor)?;
                 if length == 0 || length > cursor.len() {
                     return Err(invalid());
                 }
-                rows.push(&cursor[..length]);
-                cursor = &cursor[length..];
-                if rows.len() == chunk_rows {
+                if !rows.is_empty() && bytes.saturating_add(length) > 4 * 1024 * 1024 {
                     accept(self.decode_rows(&rows)?)?;
                     rows.clear();
+                    bytes = 0;
+                }
+                let capacity = if rows.len() == rows.capacity() {
+                    rows.capacity().saturating_mul(2).max(4).min(chunk_rows)
+                } else {
+                    rows.capacity()
+                };
+                if let Some(work) = &mut work {
+                    work.try_resize(
+                        bytes
+                            .saturating_add(length)
+                            .saturating_mul(4)
+                            .saturating_add(capacity.saturating_mul(std::mem::size_of::<&[u8]>()))
+                            .saturating_add((rows.len() + 1).saturating_mul(
+                                self.row_types.len() * 2 * std::mem::size_of::<ScalarValue>(),
+                            )),
+                    )?;
+                }
+                if capacity > rows.capacity() {
+                    rows.try_reserve_exact(capacity - rows.len())
+                        .map_err(|error| DataFusionError::ResourcesExhausted(error.to_string()))?;
+                }
+                rows.push(&cursor[..length]);
+                bytes = bytes.saturating_add(length);
+                cursor = &cursor[length..];
+                if rows.len() == chunk_rows || bytes >= 4 * 1024 * 1024 {
+                    accept(self.decode_rows(&rows)?)?;
+                    rows.clear();
+                    bytes = 0;
                 }
             }
             if !cursor.is_empty() {
@@ -487,8 +521,12 @@ impl RocksWindowRankStore {
             if !rows.is_empty() {
                 accept(self.decode_rows(&rows)?)?;
             }
+            if let Some(work) = &mut work {
+                work.resize(0);
+            }
+            reader.next();
         }
-        Ok(())
+        reader.status().map_err(re)
     }
 
     /// Persists the late-data watermark, then takes one native checkpoint — touched groups were
@@ -731,6 +769,49 @@ mod tests {
                 }
             })
             .collect()
+    }
+
+    #[test]
+    fn canonical_rank_rows_bound_wide_values_retry_and_cancel_inside_one_bucket() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut config = test_config("bounded-canonical");
+        config.table_dir = directory
+            .path()
+            .join("state")
+            .to_string_lossy()
+            .into_owned();
+        let mut store = RocksWindowRankStore::create(config, &[DataType::Utf8], 0..=127).unwrap();
+        let key = key_rows(&[7]).pop().unwrap();
+        let rows = (0..3)
+            .map(|_| vec![ScalarValue::Utf8(Some("x".repeat(2 * 1024 * 1024)))])
+            .collect();
+        store
+            .put(vec![(store.db_key(0, 100, 0, &key), rows)])
+            .unwrap();
+        assert!(store
+            .visit_rows(1024, |_| Err(DataFusionError::Execution(
+                "receiver failed".into()
+            )))
+            .is_err());
+        let mut sizes = Vec::new();
+        store
+            .visit_rows(1024, |rows| {
+                sizes.push(rows.len());
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(sizes, [1, 1, 1]);
+        let context = crate::state::canonical_context::CanonicalContext::new(Default::default());
+        let mut calls = 0;
+        let result = context.with(|| {
+            store.visit_rows(1, |_| {
+                calls += 1;
+                context.cancel();
+                Ok(())
+            })
+        });
+        assert!(result.is_err());
+        assert_eq!(calls, 1);
     }
 
     #[test]

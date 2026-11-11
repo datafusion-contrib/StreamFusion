@@ -2,15 +2,6 @@ use super::*;
 use jni::sys::jint;
 
 impl OverWindowAggregator {
-    pub(in crate::over_agg) fn ensure_canonical_distinct_ready(
-        &self,
-    ) -> Result<(), DataFusionError> {
-        if self.canonical_distinct_loading {
-            return Err(invalid("DISTINCT membership restore is not finalized"));
-        }
-        Ok(())
-    }
-
     fn bind_canonical_distinct(&mut self, index: usize) -> Result<(), DataFusionError> {
         let OverInner::Aggregates(inner) = &self.inner else {
             return Err(invalid("DISTINCT requires an unbounded fold"));
@@ -67,7 +58,7 @@ impl OverWindowAggregator {
         index: usize,
         mut accept: impl FnMut(RecordBatch) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
-        self.ensure_canonical_distinct_ready()?;
+        self.ensure_canonical_ready()?;
         self.canonical_distinct_type(index)?;
         #[cfg(feature = "rocksdb-state")]
         if let Some(store) = &self.store {

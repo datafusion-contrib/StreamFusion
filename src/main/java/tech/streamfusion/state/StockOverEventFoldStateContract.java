@@ -5,7 +5,6 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.TreeSet;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
@@ -41,7 +40,7 @@ import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.operator.NativeAllocator;
 import tech.streamfusion.operator.RowDataArrowConverter;
 
-/** Released V2 event-time unbounded folds, pending buckets and independent cleanup timers. */
+/** Released event-time unbounded folds, pending buckets and physical event/cleanup timers. */
 public final class StockOverEventFoldStateContract implements StockStateContract {
   private static final long serialVersionUID = 1L;
   private static final String INPUT = "inputState";
@@ -55,6 +54,8 @@ public final class StockOverEventFoldStateContract implements StockStateContract
   private final int[] keyColumns;
   private final int timeColumn;
   private final boolean cleanupEnabled;
+  private final boolean pollingTimers =
+      tech.streamfusion.compat.FlinkPlanCompat.unboundedOverVersion() == 1;
   private transient RowData constantRow;
   private transient CheckpointableKeyedStateBackend<RowData> timerBackend;
   private transient KeyGroupedInternalPriorityQueue<TimerHeapInternalTimer<RowData, VoidNamespace>>
@@ -105,8 +106,13 @@ public final class StockOverEventFoldStateContract implements StockStateContract
     var metadata = new ArrayList<RowType.RowField>();
     for (int i = 0; i < keyType.getFieldCount(); i++)
       metadata.add(new RowType.RowField("key" + i, keyType.getTypeAt(i).copy(true)));
-    metadata.add(new RowType.RowField("__over_retention_stamp", new BigIntType(false)));
+    metadata.add(new RowType.RowField("__over_retention_stamp", new BigIntType(pollingTimers)));
     metadata.add(new RowType.RowField("__sf_over_cleanup_armed", new BooleanType(false)));
+    if (pollingTimers)
+      metadata.add(
+          new RowType.RowField(
+              "__sf_over_polling_timers",
+              new org.apache.flink.table.types.logical.ArrayType(false, new BigIntType(false))));
     cleanupType = new RowType(metadata);
   }
 
@@ -137,6 +143,7 @@ public final class StockOverEventFoldStateContract implements StockStateContract
   @Override
   public void configureNativeState(long handle, boolean persistent) {
     if (cleanupEnabled) Native.bindOverEventCleanupTimers(handle);
+    if (pollingTimers) Native.bindOverEventPollingTimers(handle);
   }
 
   private void bind(CheckpointableKeyedStateBackend<RowData> backend) {
@@ -166,29 +173,21 @@ public final class StockOverEventFoldStateContract implements StockStateContract
         new ValueStateDescriptor<>(CLEANUP, LongSerializer.INSTANCE));
   }
 
-  private List<BinaryRowData> keys(CheckpointableKeyedStateBackend<RowData> backend, String name)
-      throws Exception {
-    var serializer = new RowDataSerializer(keyType);
-    var result = new ArrayList<BinaryRowData>();
-    try (var stream = backend.getKeys(name, VoidNamespace.INSTANCE)) {
-      var iterator = stream.iterator();
-      while (iterator.hasNext()) {
-        RowData key = iterator.next();
-        if (key == null
-            || key.getArity() != keyType.getFieldCount()
-            || key.getRowKind() != RowKind.INSERT)
-          throw new IllegalArgumentException("Invalid event OVER partition key");
-        for (int i = 0; i < keyType.getFieldCount(); i++)
-          if (!keyType.getTypeAt(i).isNullable() && key.isNullAt(i))
-            throw new IllegalArgumentException("NULL in required event OVER key");
-        result.add(serializer.toBinaryRow(key).copy());
-      }
-    }
-    return result;
+  private BinaryRowData checkedKey(RowData key) {
+    if (key == null
+        || key.getArity() != keyType.getFieldCount()
+        || key.getRowKind() != RowKind.INSERT)
+      throw new IllegalArgumentException("Invalid event OVER partition key");
+    for (int i = 0; i < keyType.getFieldCount(); i++)
+      if (!keyType.getTypeAt(i).isNullable() && key.isNullAt(i))
+        throw new IllegalArgumentException("NULL in required event OVER key");
+    return new RowDataSerializer(keyType).toBinaryRow(key).copy();
   }
 
   private static Object get(RowData row, RowType type, int index) {
-    return RowData.createFieldGetter(type.getTypeAt(index), index).getFieldOrNull(row);
+    return row.isNullAt(index)
+        ? null
+        : RowData.createFieldGetter(type.getTypeAt(index), index).getFieldOrNull(row);
   }
 
   private BinaryRowData key(RowData row) {
@@ -262,17 +261,8 @@ public final class StockOverEventFoldStateContract implements StockStateContract
   }
 
   @Override
-  public void clear(CheckpointableKeyedStateBackend<RowData> backend) throws Exception {
-    folds.clear(backend);
-    for (var key : keys(backend, INPUT)) {
-      backend.setCurrentKey(key);
-      inputs(backend).clear();
-    }
-    if (cleanupEnabled)
-      for (var key : keys(backend, CLEANUP)) {
-        backend.setCurrentKey(key);
-        cleanup(backend).clear();
-      }
+  public void clearProjectionTimers(CheckpointableKeyedStateBackend<RowData> backend)
+      throws Exception {
     bind(backend);
     while (events.poll() != null) {}
     while (processing.poll() != null) {}
@@ -284,71 +274,68 @@ public final class StockOverEventFoldStateContract implements StockStateContract
       throws Exception {
     clear(backend);
     folds.exportState(backend, handle, persistent);
-    var serializer = new RowDataSerializer(inputType);
-    visit(
-        Native::exportOverPendingCanonical,
-        handle,
-        root -> {
-          if (root.getFieldVectors().size() < nativeInputType.getFieldCount())
-            throw new IllegalArgumentException("Event OVER pending input is incomplete");
-          var reader = ArrowConversion.createArrowReader(root, nativeInputType);
-          for (int i = 0; i < root.getRowCount(); i++) {
-            var nativeRow = reader.read(i);
-            var row = new GenericRowData(inputType.getFieldCount());
-            for (int p = 0; p < inputType.getFieldCount(); p++)
-              row.setField(p, get(nativeRow, inputType, p));
-            var owner = key(row);
-            var timestamp = time(row);
-            backend.setCurrentKey(owner);
-            var state = inputs(backend);
-            var peers = state.get(timestamp);
-            if (peers == null) {
-              peers = new ArrayList<>();
-              events.add(new TimerHeapInternalTimer<>(timestamp, owner, VoidNamespace.INSTANCE));
+    try (var lists =
+        new StockMapListSpool<Long, RowData>(
+            keySerializer(), LongSerializer.INSTANCE, new RowDataSerializer(inputType))) {
+      visit(
+          Native::exportOverPendingCanonical,
+          handle,
+          root -> {
+            if (root.getFieldVectors().size() < nativeInputType.getFieldCount())
+              throw new IllegalArgumentException("Event OVER pending input is incomplete");
+            var reader = ArrowConversion.createArrowReader(root, nativeInputType);
+            for (int i = 0; i < root.getRowCount(); i++) {
+              var nativeRow = reader.read(i);
+              var row = new GenericRowData(inputType.getFieldCount());
+              for (int p = 0; p < inputType.getFieldCount(); p++)
+                row.setField(p, get(nativeRow, inputType, p));
+              var owner = key(row);
+              var timestamp = time(row);
+              if (lists.append(owner, timestamp, row) && !pollingTimers)
+                events.add(new TimerHeapInternalTimer<>(timestamp, owner, VoidNamespace.INSTANCE));
             }
-            peers.add(serializer.copy(row));
-            state.put(timestamp, peers);
-          }
-        });
-    visit(
-        Native::exportOverCleanupCanonical,
-        handle,
-        root -> {
-          if (!cleanupEnabled && root.getRowCount() != 0)
-            throw new IllegalArgumentException("Event OVER cleanup was not configured");
-          if (root.getFieldVectors().size() != cleanupType.getFieldCount())
-            throw new IllegalArgumentException("Event OVER cleanup ownership is missing");
-          var reader = ArrowConversion.createArrowReader(root, cleanupType);
-          for (int i = 0; i < root.getRowCount(); i++) {
-            var row = reader.read(i);
-            var owner = new GenericRowData(keyType.getFieldCount());
-            for (int p = 0; p < keyType.getFieldCount(); p++)
-              owner.setField(p, get(row, keyType, p));
-            var binary = new RowDataSerializer(keyType).toBinaryRow(owner).copy();
-            backend.setCurrentKey(binary);
-            long deadline = row.getLong(keyType.getFieldCount());
-            cleanup(backend).update(deadline);
-            if (row.getBoolean(keyType.getFieldCount() + 1))
-              processing.add(
-                  new TimerHeapInternalTimer<>(deadline, binary, VoidNamespace.INSTANCE));
-          }
-        });
-  }
-
-  private static final class Partition {
-    final BinaryRowData key;
-    final TreeSet<Long> pending = new TreeSet<>(),
-        events = new TreeSet<>(),
-        processing = new TreeSet<>();
-    Long cleanup;
-    boolean accumulator;
-
-    Partition(BinaryRowData key) {
-      this.key = key;
+          });
+      lists.visit(
+          backend,
+          (owner, timestamp, rows) -> {
+            backend.setCurrentKey(owner);
+            inputs(backend).put(timestamp, rows);
+          });
+      StockOverCallbacks.export(
+          backend,
+          handle,
+          keyType,
+          (owner, kind, timestamp) -> {
+            switch (kind) {
+              case StockOverCallbacks.CLEANUP:
+                if (!cleanupEnabled)
+                  throw new IllegalArgumentException("Unconfigured event OVER cleanup");
+                cleanup(backend).update(timestamp);
+                break;
+              case StockOverCallbacks.PROCESSING:
+                if (!cleanupEnabled || !Long.valueOf(timestamp).equals(cleanup(backend).value()))
+                  throw new IllegalArgumentException("Cleanup timer has no deadline");
+                processing.add(
+                    new TimerHeapInternalTimer<>(timestamp, owner, VoidNamespace.INSTANCE));
+                break;
+              case StockOverCallbacks.EVENT:
+                if (!pollingTimers)
+                  throw new IllegalArgumentException("Unexpected V2 event callback");
+                events.add(new TimerHeapInternalTimer<>(timestamp, owner, VoidNamespace.INSTANCE));
+                break;
+              default:
+                throw new IllegalArgumentException("Unexpected event OVER cutoff");
+            }
+          });
     }
   }
 
-  private Map<BinaryRowData, Partition> preflight(CheckpointableKeyedStateBackend<RowData> backend)
+  private static final int EVENT_TIMES = 1, PROCESSING_TIMES = 2, PENDING_TIMES = 3, FOLDS = 4;
+
+  private void preflight(
+      CheckpointableKeyedStateBackend<RowData> backend,
+      StockStateSpool partitions,
+      StockMapListSnapshot lists)
       throws Exception {
     var inventory = new HashMap<String, StockStateInventory.State>();
     stateDescriptors()
@@ -357,91 +344,119 @@ public final class StockOverEventFoldStateContract implements StockStateContract
                 inventory.put(
                     name, new StockStateInventory.State(kind, VoidNamespaceSerializer.INSTANCE)));
     StockStateInventory.validate(backend, inventory, timerSchema(), keySerializer());
+    lists.capture(backend, INPUT, keySerializer());
     bind(backend);
-    var partitions = new LinkedHashMap<BinaryRowData, Partition>();
     for (String name : stateDescriptors().keySet())
-      for (var key : keys(backend, name)) {
-        var partition = partitions.computeIfAbsent(key, Partition::new);
-        if (name.equals("accState")) partition.accumulator = true;
+      try (var source = backend.getKeys(name, VoidNamespace.INSTANCE)) {
+        var keys = source.iterator();
+        while (keys.hasNext()) {
+          var key = checkedKey(keys.next());
+          partitions.addOwner(key);
+          if (name.equals("accState")) partitions.add(FOLDS, key, 0);
+        }
       }
-    var serializer = new RowDataSerializer(keyType);
     for (boolean clock : new boolean[] {false, true})
-      try (var timers = (clock ? processing : events).iterator()) {
+      try (var timers =
+          StockTimerSnapshot.<RowData, VoidNamespace>iterator(
+              backend, clock ? PROCESSING : EVENTS)) {
         while (timers.hasNext()) {
           var timer = timers.next();
           if (timer.getNamespace() != VoidNamespace.INSTANCE)
             throw new IllegalArgumentException("Unknown event OVER timer namespace");
-          var owner = serializer.toBinaryRow(timer.getKey()).copy();
-          var partition = partitions.computeIfAbsent(owner, Partition::new);
-          if (!(clock ? partition.processing : partition.events).add(timer.getTimestamp()))
+          var owner = checkedKey(timer.getKey());
+          partitions.addOwner(owner);
+          if (!partitions.add(clock ? PROCESSING_TIMES : EVENT_TIMES, owner, timer.getTimestamp()))
             throw new IllegalArgumentException("Duplicate event OVER timer");
         }
       }
-    for (var partition : partitions.values()) {
-      backend.setCurrentKey(partition.key);
-      partition.cleanup = cleanupEnabled ? cleanup(backend).value() : null;
-      var entries = inputs(backend).entries();
-      if (entries != null)
-        for (var entry : entries) {
-          Long timestamp = entry.getKey();
-          var peers = entry.getValue();
-          if (timestamp == null || timestamp == Long.MIN_VALUE || peers == null || peers.isEmpty())
-            throw new IllegalArgumentException("Empty or invalid event OVER timestamp bucket");
-          for (var row : peers) {
-            if (row == null
-                || row.getArity() != inputType.getFieldCount()
-                || row.getRowKind() != RowKind.INSERT
-                || !key(row).equals(partition.key)
-                || time(row) != timestamp)
-              throw new IllegalArgumentException("Event OVER input disagrees with key/time/kind");
-            for (int p = 0; p < inputType.getFieldCount(); p++)
-              if (!inputType.getTypeAt(p).isNullable()
-                  && !LogicalTypeChecks.isProctimeAttribute(inputType.getTypeAt(p))
-                  && row.isNullAt(p))
-                throw new IllegalArgumentException("NULL in required event OVER input");
+    try (var owners = partitions.owners()) {
+      while (owners.hasNext()) {
+        var owner = owners.next();
+        backend.setCurrentKey(owner);
+        Long deadline = cleanupEnabled ? cleanup(backend).value() : null;
+        boolean pending = false;
+        try (var timestamps = lists.timestamps(owner)) {
+          while (timestamps.hasNext()) {
+            long timestamp = timestamps.next();
+            if (timestamp == Long.MIN_VALUE || lists.size(owner, timestamp) <= 0)
+              throw new IllegalArgumentException("Empty or invalid event OVER timestamp bucket");
+            for (var row : lists.rows(owner, timestamp)) {
+              if (row == null
+                  || row.getArity() != inputType.getFieldCount()
+                  || row.getRowKind() != RowKind.INSERT
+                  || !key(row).equals(owner)
+                  || time(row) != timestamp)
+                throw new IllegalArgumentException("Event OVER input disagrees with key/time/kind");
+              for (int p = 0; p < inputType.getFieldCount(); p++)
+                if (!inputType.getTypeAt(p).isNullable()
+                    && !LogicalTypeChecks.isProctimeAttribute(inputType.getTypeAt(p))
+                    && row.isNullAt(p))
+                  throw new IllegalArgumentException("NULL in required event OVER input");
+            }
+            pending = true;
+            partitions.add(PENDING_TIMES, owner, timestamp);
+            if (!pollingTimers && !partitions.contains(EVENT_TIMES, owner, timestamp))
+              throw new IllegalArgumentException(
+                  "Event OVER pending buckets and event timers differ");
           }
-          partition.pending.add(timestamp);
         }
-      if (!partition.pending.equals(partition.events))
-        throw new IllegalArgumentException("Event OVER pending buckets and event timers differ");
-      if (cleanupEnabled
-          && partition.cleanup == null
-          && (partition.accumulator || !partition.pending.isEmpty()))
-        throw new IllegalArgumentException("Event OVER state has no cleanup deadline");
-      if (!partition.processing.isEmpty()
-          && (!cleanupEnabled
-              || partition.cleanup == null
-              || partition.processing.size() != 1
-              || !partition.processing.contains(partition.cleanup)))
-        throw new IllegalArgumentException(
-            "Event OVER processing timer has no matching cleanup value");
+        if (pollingTimers) {
+          if (pending && !partitions.hasAny(EVENT_TIMES, owner))
+            throw new IllegalArgumentException(
+                "Event OVER pending buckets and event timers differ");
+        } else
+          try (var timers = partitions.times(EVENT_TIMES, owner)) {
+            while (timers.hasNext())
+              if (!partitions.contains(PENDING_TIMES, owner, timers.next()))
+                throw new IllegalArgumentException(
+                    "Event OVER pending buckets and event timers differ");
+          }
+        if (cleanupEnabled && deadline == null && (pending || partitions.contains(FOLDS, owner, 0)))
+          throw new IllegalArgumentException("Event OVER state has no cleanup deadline");
+        try (var timers = partitions.times(PROCESSING_TIMES, owner)) {
+          if (timers.hasNext()
+              && (!cleanupEnabled
+                  || deadline == null
+                  || timers.next().longValue() != deadline
+                  || timers.hasNext()))
+            throw new IllegalArgumentException(
+                "Event OVER processing timer has no matching cleanup value");
+        }
+      }
     }
-    return partitions;
   }
 
   private void transferPending(
-      CheckpointableKeyedStateBackend<RowData> backend,
-      long handle,
-      Map<BinaryRowData, Partition> partitions,
-      boolean validating)
+      StockMapListSnapshot lists, long handle, StockStateSpool partitions, boolean validating)
       throws Exception {
     var rows = new ArrayList<RowData>(CHUNK_ROWS);
-    for (var partition : partitions.values()) {
-      backend.setCurrentKey(partition.key);
-      for (long timestamp : partition.pending)
-        for (var row : inputs(backend).get(timestamp)) {
-          rows.add(nativeRow(row));
-          if (rows.size() == CHUNK_ROWS) {
-            send(
-                validating
-                    ? Native::validateOverPendingCanonical
-                    : Native::importOverPendingCanonical,
-                handle,
-                nativeInputType,
-                rows);
-            rows.clear();
-          }
+    var serializer = new RowDataSerializer(nativeInputType);
+    long bytes = 0;
+    try (var owners = partitions.owners()) {
+      while (owners.hasNext()) {
+        var owner = owners.next();
+        try (var timestamps = partitions.times(PENDING_TIMES, owner)) {
+          while (timestamps.hasNext())
+            for (var row : lists.rows(owner, timestamps.next())) {
+              var input = nativeRow(row);
+              long size = serializer.toBinaryRow(input).getSizeInBytes();
+              if (!rows.isEmpty()
+                  && (rows.size() == CHUNK_ROWS || bytes + size > 4L * 1024 * 1024)) {
+                send(
+                    validating
+                        ? Native::validateOverPendingCanonical
+                        : Native::importOverPendingCanonical,
+                    handle,
+                    nativeInputType,
+                    rows);
+                rows.clear();
+                bytes = 0;
+              }
+              rows.add(input);
+              bytes += size;
+            }
         }
+      }
     }
     if (!rows.isEmpty())
       send(
@@ -452,57 +467,58 @@ public final class StockOverEventFoldStateContract implements StockStateContract
   }
 
   private void transferCleanup(
-      long handle, Map<BinaryRowData, Partition> partitions, boolean validating) {
-    var rows = new ArrayList<RowData>(CHUNK_ROWS);
-    for (var partition : partitions.values()) {
-      if (partition.cleanup == null) continue;
-      var row = new GenericRowData(cleanupType.getFieldCount());
-      for (int p = 0; p < keyType.getFieldCount(); p++)
-        row.setField(p, get(partition.key, keyType, p));
-      row.setField(keyType.getFieldCount(), partition.cleanup);
-      row.setField(keyType.getFieldCount() + 1, !partition.processing.isEmpty());
-      rows.add(row);
-      if (rows.size() == CHUNK_ROWS) {
-        send(
-            validating ? Native::validateOverCleanupCanonical : Native::importOverCleanupCanonical,
-            handle,
-            cleanupType,
-            rows);
-        rows.clear();
+      CheckpointableKeyedStateBackend<RowData> backend,
+      long handle,
+      StockStateSpool partitions,
+      boolean validating)
+      throws Exception {
+    var writer = new StockOverCallbacks.Writer(handle, keyType, validating);
+    try (var owners = partitions.owners()) {
+      while (owners.hasNext()) {
+        var owner = owners.next();
+        backend.setCurrentKey(owner);
+        Long deadline = cleanupEnabled ? cleanup(backend).value() : null;
+        if (deadline != null) {
+          writer.append(owner, StockOverCallbacks.CLEANUP, deadline);
+          if (partitions.hasAny(PROCESSING_TIMES, owner))
+            writer.append(owner, StockOverCallbacks.PROCESSING, deadline);
+        }
+        if (pollingTimers)
+          try (var times = partitions.times(EVENT_TIMES, owner)) {
+            while (times.hasNext()) writer.append(owner, StockOverCallbacks.EVENT, times.next());
+          }
       }
     }
-    if (!rows.isEmpty())
-      send(
-          validating ? Native::validateOverCleanupCanonical : Native::importOverCleanupCanonical,
-          handle,
-          cleanupType,
-          rows);
+    writer.finish();
   }
 
   @Override
   public void importState(
       CheckpointableKeyedStateBackend<RowData> backend, long handle, boolean persistent)
       throws Exception {
-    var partitions = preflight(backend);
-    folds.requireEmpty(handle);
-    visit(
-        Native::exportOverPendingCanonical,
-        handle,
-        root -> {
-          if (root.getRowCount() != 0)
-            throw new IllegalStateException("Event OVER import requires an empty pending target");
-        });
-    visit(
-        Native::exportOverCleanupCanonical,
-        handle,
-        root -> {
-          if (root.getRowCount() != 0)
-            throw new IllegalStateException("Event OVER import requires an empty cleanup target");
-        });
-    for (boolean validating : new boolean[] {true, false}) {
-      folds.transferState(backend, handle, validating);
-      transferPending(backend, handle, partitions, validating);
-      transferCleanup(handle, partitions, validating);
+    try (var partitions = new StockStateSpool(new RowDataSerializer(keyType))) {
+      var lists = new StockMapListSnapshot(partitions, new RowDataSerializer(inputType), 5);
+      preflight(backend, partitions, lists);
+      folds.requireEmpty(handle);
+      visit(
+          Native::exportOverPendingCanonical,
+          handle,
+          root -> {
+            if (root.getRowCount() != 0)
+              throw new IllegalStateException("Event OVER import requires an empty pending target");
+          });
+      visit(
+          Native::exportOverCleanupCanonical,
+          handle,
+          root -> {
+            if (root.getRowCount() != 0)
+              throw new IllegalStateException("Event OVER import requires an empty cleanup target");
+          });
+      for (boolean validating : new boolean[] {true, false}) {
+        folds.transferState(backend, handle, validating);
+        transferPending(lists, handle, partitions, validating);
+        transferCleanup(backend, handle, partitions, validating);
+      }
     }
     clear(backend);
   }

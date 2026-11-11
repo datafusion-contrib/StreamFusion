@@ -9,6 +9,10 @@ import tech.streamfusion.state.RocksDBNativeKeyedStateBackend;
 public final class StateCompat {
   private StateCompat() {}
 
+  public static boolean normalizerComparesRowKind() {
+    return true;
+  }
+
   public static <K> void setCurrentKeyAndGroup(
       CheckpointableKeyedStateBackend<K> backend, K key, int group) {
     if (backend instanceof RocksDBNativeKeyedStateBackend<?>) {

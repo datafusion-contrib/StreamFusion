@@ -29,12 +29,14 @@ public final class FlinkCompat {
 
   public static long miniBatchSize(org.apache.flink.configuration.ReadableConfig config) {
     org.apache.flink.table.planner.plan.utils.AggregateUtil.createMiniBatchTrigger(config);
-    return config.get(org.apache.flink.table.api.config.ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_SIZE);
+    return config.get(
+        org.apache.flink.table.api.config.ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_SIZE);
   }
 
   public static long joinMiniBatchSize(org.apache.flink.configuration.ReadableConfig config) {
     // Released 1.18 joins do not construct a mini-batch trigger.
-    return config.get(org.apache.flink.table.api.config.ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_SIZE);
+    return config.get(
+        org.apache.flink.table.api.config.ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_SIZE);
   }
 
   public static int timestampToTimeTruncationFactor(int precision) {
@@ -46,7 +48,8 @@ public final class FlinkCompat {
   }
 
   public static boolean isBuiltinEpochTimestamp(org.apache.calcite.sql.SqlOperator operator) {
-    return operator == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TO_TIMESTAMP_LTZ;
+    return operator
+        == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TO_TIMESTAMP_LTZ;
   }
 
   public static org.apache.flink.table.functions.ScalarFunction scalarFunction(
@@ -201,10 +204,16 @@ public final class FlinkCompat {
   public static java.util.List<org.apache.flink.table.planner.plan.abilities.sink.SinkAbilitySpec>
       sinkAbilities(
           org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink sink) {
-    return ((org.apache.flink.table.planner.plan.nodes.exec.common.CommonExecSink)
-            sink.translateToExecNode())
-        .getTableSinkSpec()
-        .getSinkAbilities();
+    try {
+      var field =
+          org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink.class
+              .getDeclaredField("abilitySpecs");
+      field.setAccessible(true);
+      return java.util.Arrays.asList(
+          (org.apache.flink.table.planner.plan.abilities.sink.SinkAbilitySpec[]) field.get(sink));
+    } catch (ReflectiveOperationException failure) {
+      throw new IllegalStateException("Cannot read released Flink sink abilities", failure);
+    }
   }
 
   public static String expressionClassName(

@@ -268,3 +268,55 @@ fn imported_session_memory_is_reserved_and_released_even_on_budget_failure() {
         assert_eq!(pool.reserved(), 0);
     }
 }
+
+#[test]
+fn memory_session_capture_accounts_untracked_sources_and_shared_wrapper_lifetimes() {
+    use crate::state::canonical_memory::CanonicalMemoryState;
+    let factory =
+        || SessionAggregator::new(1000, vec![0], vec![7]).with_key_timestamp_precisions(vec![-1]);
+    let input = |time, value| {
+        RecordBatch::try_from_iter(vec![
+            ("key0", Arc::new(Int64Array::from(vec![1])) as ArrayRef),
+            (
+                "value0",
+                Arc::new(Int64Array::from(vec![value])) as ArrayRef,
+            ),
+            ("ts", Arc::new(Int64Array::from(vec![time])) as ArrayRef),
+        ])
+        .unwrap()
+    };
+    for tracked in [false, true] {
+        let mut source = factory();
+        if tracked {
+            source = source.with_memory_budget(1 << 20).unwrap();
+        }
+        source.update(&input(100, 1)).unwrap();
+        let original = source.computed_state_bytes();
+        let mut denied = factory().with_memory_budget(1).unwrap();
+        assert!(matches!(
+            source.copy_state(&mut denied),
+            Err(DataFusionError::ResourcesExhausted(_))
+        ));
+        assert_eq!(original, source.computed_state_bytes());
+        if tracked {
+            assert_eq!(original, source.memory.state_bytes);
+        }
+        let mut frozen = factory().with_memory_budget(1 << 20).unwrap();
+        source.copy_state(&mut frozen).unwrap();
+        assert!(frozen.memory.state_bytes > original);
+        assert_eq!(frozen.computed_state_bytes(), frozen.memory.state_bytes);
+        source.update(&input(500, 2)).unwrap();
+        if tracked {
+            assert_eq!(source.computed_state_bytes(), source.memory.state_bytes);
+        }
+        assert_eq!(
+            column_i64(&source.flush(i64::MAX).unwrap(), "result0").value(0),
+            2
+        );
+        assert_eq!(
+            column_i64(&frozen.flush(i64::MAX).unwrap(), "result0").value(0),
+            1
+        );
+        assert_eq!(frozen.memory.state_bytes, 0);
+    }
+}

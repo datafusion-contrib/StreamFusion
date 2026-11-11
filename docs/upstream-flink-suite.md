@@ -1691,6 +1691,65 @@ with automatic state and identity binding. Its separate 46-case job matrix cover
 orders and repeated switches. Ordinary SQL identities and the rest of the full #569 matrix
 remain separate requirements. Benchmarking of canonical handoff remains deferred.
 
+## Shared asynchronous capture restore controls
+
+The asynchronous capture implementation is checked with the released First-N, append-rank,
+update-rank, retract-rank and eager-deduplication programs on Flink 2.2.1. The existing wrappers
+select released programs and retain their inherited restore assertions. Stock and native runs each
+pass six invocations. The native audit additionally requires positive canonical import and
+subsequent input in the expected owner: all six routes are native, with no expected fallback.
+These controls qualify those selected programs, not every variant of the five operator families
+or a cross-version upgrade. Broader operator checks retain their separate coverage boundaries.
+
+```sh
+CANONICAL_UPSTREAM_TESTS='tech.streamfusion.canonical.FirstNRestoreTest#testRestore,tech.streamfusion.canonical.AppendRankRestoreTest#testRestore,tech.streamfusion.canonical.UpdateRankRestoreTest#testRestore,tech.streamfusion.canonical.RetractRankRestoreTest#testRestore,tech.streamfusion.canonical.EagerDedupRestoreTest#testRestore' \
+  bin/canonical-savepoints.sh sql -Dnative.build.skip=true
+```
+
+The additional `TypedGroupRestoreTest` selector inherits the released group-aggregate restore
+assertions and chooses the scalar and shared DISTINCT programs. Both stock and native runs pass
+two invocations. The execution audit requires canonical import and subsequent input in the native
+group owner; both routes are native with no expected fallback. The released fixtures and assertions
+are unchanged, and the selector does not expand operator admission.
+
+```sh
+CANONICAL_UPSTREAM_TESTS='tech.streamfusion.canonical.TypedGroupRestoreTest#testRestore' \
+  bin/canonical-savepoints.sh sql -Dnative.build.skip=true
+```
+
+## Released Flink 1.18 canonical protocol controls
+
+The canonical fixture module also accepts `-Pflink-1.18,canonical-stock`. Flink 1.18 predates
+the newer released SQL `RestoreTest` framework, so the module excludes those wrapper sources and
+selects the unchanged released `HeapSavepointStateBackendSwitchTest` and
+`RocksSavepointStateBackendSwitchTest` controls. They come from the canonical Maven release test
+artifact; no sibling Flink build or copied implementation is needed.
+
+Run the stock protocol reference with:
+
+```sh
+mvn -Pflink-1.18,canonical-savepoints,canonical-stock -pl dev/canonical-savepoints -am test \
+  -Dsf.runtime.tests.skip=true
+```
+
+These are upstream backend-format controls. Native execution and actual stock/native continuation
+are established separately by StreamFusion's shared operator and isolated complete-job tests.
+The `bin/canonical-savepoints.sh` SQL/native evidence workflow retains its separately qualified
+2.2 restore programs; this profile does not claim that absent framework exists on 1.18.
+
+## Rank streaming and shared transfer audit
+
+The rank/list streaming cohort reuses the unchanged released append, update and retract rank
+programs, plus interval/temporal/window joins and window rank/dedup restore programs. Stock and
+native each pass 32 invocations with no skips. The native audit confirms 29 native routes, two
+expected stock window-join fallbacks and one interval elision. Thin contract import entry points
+retain the owned row list for instrumentation while the shared sender owns batching and C Data;
+retracting metadata headers and validation passes cannot count as imported rows. All four temporal
+programs now require canonical import and later input in the actual native temporal owner; new
+negative controls reject validation-only and input-only evidence. All 202 canonical execution-audit
+controls pass. These are released fixture
+proofs, not exhaustive operator/layout or cross-release upgrade qualification.
+
 ## Released canonical savepoint runner
 
 Run the opt-in Flink 2.2.1 canonical lane with JDK 17:
@@ -1967,6 +2026,7 @@ released execution-node metadata declares the graph nonserializable. Canonical s
 binding must not force these programs through JSON serialization. Unchanged upstream aggregate,
 nested-table Calc and OVER assertions still run with their original native-execution contracts;
 this boundary does not add DataStream-bridge canonical interchange coverage.
+
 
 Bounded join coverage adds the unchanged
 `OuterJoinITCase#testLeftUpperAndLowerWithAgg` fixture on both lines. Its four

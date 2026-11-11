@@ -175,16 +175,33 @@ public class NativeWindowJoinOperator extends AbstractNativeStatefulOperator<Arr
     return withSchemas(
         (l, r) ->
             Native.createRocksDBWindowJoiner(
-                leftKeys, rightKeys, keyTimestampPrecisions(),
-                leftWindowStart, leftWindowEnd, rightWindowStart, rightWindowEnd,
-                joinType, l, r,
-                predicate.kinds, predicate.payload, predicate.childCounts,
-                predicate.boundLongs(), predicate.doubles, predicate.strings,
+                leftKeys,
+                rightKeys,
+                keyTimestampPrecisions(),
+                leftWindowStart,
+                leftWindowEnd,
+                rightWindowStart,
+                rightWindowEnd,
+                joinType,
+                l,
+                r,
+                predicate.kinds,
+                predicate.payload,
+                predicate.childCounts,
+                predicate.boundLongs(),
+                predicate.doubles,
+                predicate.strings,
                 memoryBudgetBytes(),
-                rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
-                rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
-                rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
-                rocksdb.aligned(), restoredPartitions,
+                rocksdb.tableDirectory(),
+                maxParallelism(),
+                rocksdb.optionsJson(),
+                rocksdb.sharedResourcesHandle(),
+                rocksdb.sourceDirectories(),
+                rocksdb.sourceSnapshotTokens(),
+                rocksdb.keyGroupStart(),
+                rocksdb.keyGroupEnd(),
+                rocksdb.aligned(),
+                restoredPartitions,
                 restoredProcessingTimeTimerDeadline()));
   }
 
@@ -262,8 +279,19 @@ public class NativeWindowJoinOperator extends AbstractNativeStatefulOperator<Arr
   }
 
   @Override
+  protected java.util.function.LongConsumer memoryStateCopier() {
+    final long source = handle;
+    return target -> Native.copyWindowJoinCanonicalMemoryState(source, target);
+  }
+
+  @Override
   protected void closeHandle() {
-    if (directRocksDBState()) {
+    closeCapturedHandle(handle, directRocksDBState());
+  }
+
+  @Override
+  protected void closeCapturedHandle(long handle, boolean persistent) {
+    if (persistent) {
       Native.closeRocksDBWindowJoiner(handle);
     } else {
       Native.closeWindowJoiner(handle);

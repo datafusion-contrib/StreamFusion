@@ -30,6 +30,7 @@ impl FirstNStore for RocksStore<FirstNCodec> {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct ArrivalCount {
     rank: i32,
     write_ms: i64,
@@ -250,6 +251,7 @@ impl FirstN {
 }
 
 #[cfg(feature = "rocksdb-state")]
+#[derive(Clone)]
 pub(crate) struct FirstNCodec;
 
 #[cfg(feature = "rocksdb-state")]

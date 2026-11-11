@@ -94,7 +94,11 @@ pub extern "system" fn Java_tech_streamfusion_Native_exportTemporalSortCanonical
         if let Err(error) = sorter.visit_canonical_rows(|batch| {
             crate::bridge::emit_record_batch(&mut env, &receiver, batch)
         }) {
-            let _ = env.throw_new("java/lang/IllegalStateException", error.to_string());
+            if matches!(error, DataFusionError::ResourcesExhausted(_)) {
+                throw_memory_limit(&mut env, &error.to_string());
+            } else {
+                let _ = env.throw_new("java/lang/IllegalStateException", error.to_string());
+            }
         }
     });
 }
@@ -321,4 +325,27 @@ mod tests {
             retry.flush(i64::MAX).unwrap()
         );
     }
+}
+
+impl crate::state::canonical_memory::CanonicalMemoryState for TemporalSorter {
+    fn copy_state(&mut self, target: &mut Self) -> Result<(), DataFusionError> {
+        target.memory.set(self.memory.state_bytes);
+        target.memory.account()?;
+        target.buffered = self.buffered.clone();
+        target.input_schema = self.input_schema.clone();
+        target.last_emitted = self.last_emitted.clone();
+        Ok(())
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_copyTemporalSortCanonicalMemoryState<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    source: jlong,
+    target: jlong,
+) {
+    crate::state::canonical_memory::copy::<TemporalSorter>(env, source, target);
 }

@@ -6,6 +6,7 @@ use super::{
 use crate::*;
 use arrow::row::{RowConverter, SortField};
 use rocksdb::{Cache, IteratorMode, Options, DB};
+#[cfg(test)]
 use std::sync::Arc;
 
 /// `[key_group i32 BE][table u8][arrival_seq u64 BE]` — the fixed layout of every buffered row's
@@ -29,7 +30,7 @@ mod canonical;
 /// bytes]` so firing splits closed from pending without decoding payloads. On restore new
 /// sequences start above the persisted high-water marks, so restored and new keys never collide.
 pub(crate) struct RocksWindowBuffer {
-    db: Arc<DB>,
+    db: StateDb,
     _cache: Option<Cache>,
     max_parallelism: usize,
     converters: (RowConverter, RowConverter),

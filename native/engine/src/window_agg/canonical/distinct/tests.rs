@@ -652,3 +652,207 @@ fn transient_counts_and_live_memberships_are_reserved_until_finalize_and_close()
     }
     assert_eq!(pool.reserved(), 0);
 }
+
+#[cfg(feature = "rocksdb-state")]
+fn persistent(
+    shape: &str,
+    counted: bool,
+    keyless: bool,
+    path: &std::path::Path,
+) -> TumblingAggregator {
+    use crate::state::rocks_store::window_memberships::WindowStateCodec;
+    let base = if counted {
+        counted_aggregator(shape, 0)
+    } else {
+        aggregator(shape, 0)
+    };
+    let mut store = crate::state::RocksWindowAggStore::create_with_codec(
+        crate::state::RocksStoreConfig {
+            table_dir: path.to_string_lossy().into_owned(),
+            max_parallelism: 128,
+            options_json: include_str!("../../../../benches/fixtures/rocks-options.json").into(),
+            ttl_ms: 0,
+            shared_resources: 0,
+        },
+        WindowStateCodec::new(&base.aggregates).unwrap(),
+        0..=127,
+    )
+    .unwrap();
+    store.set_shared_slices(shape != "TUMBLE");
+    base.with_key_timestamp_precisions(if keyless {
+        vec![i32::MIN]
+    } else {
+        vec![i32::MIN, -1]
+    })
+    .with_store(
+        store,
+        if keyless {
+            vec![]
+        } else {
+            vec![DataType::Int64]
+        },
+    )
+    .with_read_through_budget(64 * 1024 * 1024)
+    .unwrap()
+}
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
+fn persistent_views_transfer_both_directions_without_resident_membership_maps() {
+    for shape in ["TUMBLE", "HOP", "CUMULATE"] {
+        for counted in [false, true] {
+            for keyless in [false, true] {
+                let temp = tempfile::tempdir().unwrap();
+                let mut source = if counted {
+                    counted_aggregator(shape, 0)
+                } else {
+                    aggregator(shape, 0)
+                };
+                let mut target = persistent(shape, counted, keyless, &temp.path().join("target"));
+                let values = Arc::new(Int64Array::from_iter_values(0..2051)) as ArrayRef;
+                source.update(&input(values.clone(), keyless, 100)).unwrap();
+                for batch in state(&mut source) {
+                    target
+                        .import_canonical_state(&batch, usize::from(!keyless), 1000)
+                        .unwrap();
+                }
+                let suffix = input(Arc::new(Int64Array::from(vec![10, 20, 3000])), keyless, 500);
+                assert!(
+                    target.update(&suffix).is_err(),
+                    "unfinished restore must reject input"
+                );
+                assert!(target.visit_canonical_state(|_| Ok(())).is_err());
+                for batch in views(&mut source) {
+                    target.import_canonical_distinct(0, &batch).unwrap();
+                }
+                target.finish_canonical_distinct().unwrap();
+                if shape != "TUMBLE" {
+                    source
+                        .visit_canonical_timers(|batch| {
+                            target.import_canonical_timers(&batch, usize::from(!keyless))
+                        })
+                        .unwrap();
+                }
+                assert!(
+                    target.windows.is_empty(),
+                    "persistent canonical import must keep sets on disk"
+                );
+                let normalize = |batches: Vec<RecordBatch>| {
+                    let mut rows = batches.iter().flat_map(render).collect::<Vec<_>>();
+                    rows.sort();
+                    rows
+                };
+                assert_eq!(normalize(state(&mut source)), normalize(state(&mut target)));
+                assert_eq!(normalize(views(&mut source)), normalize(views(&mut target)));
+                let mut returned = if counted {
+                    counted_aggregator(shape, 0)
+                } else {
+                    aggregator(shape, 0)
+                };
+                for batch in state(&mut target) {
+                    returned
+                        .import_canonical_state(&batch, usize::from(!keyless), 1000)
+                        .unwrap();
+                }
+                for batch in views(&mut target) {
+                    returned.import_canonical_distinct(0, &batch).unwrap();
+                }
+                returned.finish_canonical_distinct().unwrap();
+                if shape != "TUMBLE" {
+                    target
+                        .visit_canonical_timers(|batch| {
+                            returned.import_canonical_timers(&batch, usize::from(!keyless))
+                        })
+                        .unwrap();
+                }
+                for owner in [&mut source, &mut target, &mut returned] {
+                    owner.update(&suffix).unwrap();
+                }
+                for watermark in [1000, 2000, 4000] {
+                    let expected = render(&source.flush(watermark).unwrap());
+                    assert_eq!(
+                        expected,
+                        render(&target.flush(watermark).unwrap()),
+                        "{shape}, counted={counted}, keyless={keyless}"
+                    );
+                    assert_eq!(expected, render(&returned.flush(watermark).unwrap()));
+                }
+            }
+        }
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
+fn previous_snapshot_backed_checkpoints_migrate_one_partition_at_a_time() {
+    use crate::state::rocks_store::window_memberships::WindowStateCodec;
+    use crate::state::{RocksSnapshotStore, RocksStoreConfig, RocksWindowAggStore};
+    for shape in ["TUMBLE", "HOP", "CUMULATE"] {
+        for aligned in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            let mut source = counted_aggregator(shape, 0);
+            source
+                .update(&input(
+                    Arc::new(Int64Array::from(vec![1, 1, 5])),
+                    false,
+                    100,
+                ))
+                .unwrap();
+            let parts = source
+                .snapshot_partitions(128, &[i32::MIN, -1])
+                .into_iter()
+                .map(|(group, payload)| {
+                    let mut part = group.to_be_bytes().to_vec();
+                    part.extend_from_slice(&payload);
+                    part
+                })
+                .collect::<Vec<_>>();
+            let config = |name: &str| RocksStoreConfig {
+                table_dir: temp.path().join(name).to_string_lossy().into_owned(),
+                max_parallelism: 128,
+                options_json: include_str!("../../../../benches/fixtures/rocks-options.json")
+                    .into(),
+                ttl_ms: 0,
+                shared_resources: 0,
+            };
+            let mut old =
+                RocksSnapshotStore::open_merged(config("old"), &[], 0..=127, false).unwrap();
+            let saved = temp.path().join("checkpoint");
+            let manifest = old
+                .checkpoint(&parts, 4567, saved.to_str().unwrap())
+                .unwrap();
+            drop(old);
+            let base = counted_aggregator(shape, 0);
+            let store = RocksWindowAggStore::open_merged_with_codec(
+                config("typed"),
+                WindowStateCodec::new(&base.aggregates).unwrap(),
+                0..=127,
+                &[(saved.to_string_lossy().into_owned(), manifest.snapshot_id)],
+                aligned,
+            )
+            .unwrap();
+            let mut target = base
+                .with_key_timestamp_precisions(vec![i32::MIN, -1])
+                .with_store(store, vec![DataType::Int64]);
+            target.migrate_legacy_snapshot_store().unwrap();
+            assert_eq!(target.store_timer_deadline(), 4567);
+            let suffix = input(Arc::new(Int64Array::from(vec![1, 7])), false, 500);
+            source.update(&suffix).unwrap();
+            target.update(&suffix).unwrap();
+            for watermark in [1000, 2000, 4000] {
+                assert_eq!(
+                    render(&source.flush(watermark).unwrap()),
+                    render(&target.flush(watermark).unwrap())
+                );
+            }
+            use crate::state::rocks_store::window_memberships::WindowMembershipState;
+            assert!(target
+                .store
+                .as_ref()
+                .unwrap()
+                .legacy_snapshot_reader()
+                .unwrap()
+                .is_none());
+        }
+    }
+}

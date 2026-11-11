@@ -1276,6 +1276,21 @@ canonical memory/RocksDB transitions and aligned RocksDB recovery preserve these
 
 ## Stock canonical state transfer groundwork
 
+Canonical RocksDB capture pins the database at the barrier and creates the reader on Flink's
+asynchronous writer thread on both supported releases. Readers fetch cleanup stamps, processing-
+ROWS counters and RANGE timer metadata from the captured tables without populating maps for every
+key. Fold, pending and cleanup scans share row/byte bounds; processing-ROWS ownership checks use
+streamed partition keys and point reads. Captured RocksDB retained frames stream in chunks within
+each partition. Global positions carry the total retained count, and only the final chunk installs
+raw accumulators and counters. RANGE conversion skips heap-map reordering for the RocksDB stock
+projection, whose encoded-key iteration determines canonical order. Import validation still retains
+its inventories and individual stock list/map values can be large, so fully bounded conversion
+remains unfinished. These changes preserve the existing stock-layout coverage below.
+Native DISTINCT membership visitors likewise bound rows and bytes and observe cancellation within
+one partition; captured readers use the table normalization already performed during live open.
+These are transfer primitives and do not add an automatic stock DISTINCT binding.
+
+
 The raw unbounded-fold transfer interface visits resident or typed-RocksDB accumulators directly
 in batches of at most 1,024 keys, with original retention stamps. It preserves raw floating sums,
 independent AVG counts and nullable extrema; import never reconstructs them by replaying input.
@@ -1766,11 +1781,179 @@ oracle. Rescaling redistributes 64 keys through 1→3→2/maxP128; global operat
 The one-hour cleanup configuration in complete jobs does not establish exact wall-clock expiry;
 controlled callback tests qualify idle, overdue, overflow and unarmed-deadline behavior.
 
-A separate released Flink 1.18 build passes all 212 shared callback/checkpoint and Arrow controls,
-including compilation of the common operator/contract code. This is a shared-code regression,
-not stock canonical compatibility on 1.18. Earlier component/smoke cohorts overlap the current
-proof and are not added cumulatively.
+Earlier Flink 1.18 validation covered 212 shared callback/checkpoint and Arrow controls,
+including compilation of the common operator/contract code. That run established shared-code
+regression coverage. The V1 canonical qualification below adds actual stock/native handoffs;
+overlapping cohorts are not added cumulatively.
 
-Legacy event-time V1, unbounded DECIMAL, DISTINCT/views, wider keys/payloads, bounded event-ROWS
+Flink 2.2 explicitly configured for legacy V1, unbounded DECIMAL, DISTINCT/views, wider keys/payloads, bounded event-ROWS
 processing cleanup and the wider rescale/version/failure/connector matrix remain unfinished in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking stays deferred.
+
+## Canonical capture on both Flink lines
+
+Canonical-capable OVER operators retain ROW/ARRAY/MAP payload fields in direct native RocksDB
+through the shared retained-row codec. Canonical savepoints pin those rows and convert them on
+the asynchronous writer, including pending input and original bounded-frame inputs. This does
+not widen aggregate-state, partition-key or ordering contracts. Existing snapshot-backed native
+checkpoints migrate one key-group partition at a time; empty accumulator batches do not replace
+the configured key schema when only pending input was saved. Scalar checkpoint row bytes remain
+compatible.
+
+Processing-time unbounded scalar folds on native RocksDB now pin the existing database at the
+savepoint barrier. Flink's asynchronous canonical writer reads bounded frames and serializes them
+with the released stock accumulator/key serializers. Memory folds capture independent native
+counters, frames and retention metadata, then convert through an independent stock backend
+asynchronously. This visits resident state and can retain an additional copy; broader qualification
+of the new capture path is ongoing. Ordinary checkpoints keep their native format. Shared
+Flink 1.18 component controls cover the processing-time fold and the V1 event-time scalar contract
+below. The wider historical complete-job matrices above qualify Flink 2.2 only.
+Benchmarking is deferred.
+
+Compiled-plan admission controls require the released 1.18 V1 ROWS/RANGE owners to carry the
+shared stock event-fold contract, while explicit V1 mode on 2.2 retains stock execution. The
+remaining unsupported type/key/view and async/unaligned cases still require stock owners. These
+are release-aware expectations for existing bindings, not additional admission.
+
+Native RocksDB OVER construction uses the same nullable-key entry-list schema as its actual
+COUNT input batches. This reuses the existing map-list schema helper; retaining the raw Java MAP
+schema would incorrectly reject NULL MULTISET elements during persistent payload encoding.
+Existing repeated-recovery SQL controls cover all frames and both native stores without changing
+logical types, input values or the stock oracle.
+
+### Flink 1.18 unbounded event-time polling timers
+
+The same BIGINT/FLOAT/DOUBLE scalar layouts and BIGINT/global keys bind the released Flink 1.18
+ROWS/RANGE owners. Their state serializers remain shared with the 2.2 binding, while a narrow
+native policy preserves the V1 physical timer lifecycle. V1 registers a per-key polling callback
+at zero before its first nonnegative watermark, then at the current watermark plus one. A callback
+processes all eligible timestamp buckets, creates a neutral accumulator for future-only input,
+re-arms while input remains, and refreshes processing cleanup even for orphan callbacks.
+
+Canonical import retains these physical timers independently of pending timestamps. A restored
+positive polling timer can coexist with a newly registered zero timer before the first watermark;
+export preserves both. Native RocksDB stores polling updates during input/watermark processing,
+rather than rebuilding that ledger at the savepoint barrier. Captured readers stream the pinned
+ledger and cleanup table with point reads and bounded raw batches; they do not hydrate timer,
+cleanup or pending-key maps. Memory capture and ordinary private checkpoints retain the same
+logical metadata. The private checkpoint's existing optional metadata footer carries the new
+polling columns; older private checkpoints without a ledger re-arm their pending keys at zero.
+This migration cannot reconstruct physical callbacks that older writers did not record. Pending
+input also seeds the restored key codec when no accumulator has fired yet, on both policies.
+
+The shared controlled matrices compare released stock and native outputs, exact managed-state
+bytes and both timer domains across handoffs and ordinary native checkpoints. Dedicated V1 cases
+cover negative watermarks, future-only neutral folds and overlapping restored callbacks; cold
+RocksDB controls retain 2,051 keys through live changes, receiver failure/retry and cancellation.
+Four isolated 1.18 engine-switch jobs pass for ROWS with cleanup and RANGE without cleanup,
+including ordinary native-checkpoint recovery. The earlier metadata foundation native suite
+passes 1,477 tests and the memory-only build. Selected state/restore controls pass 779 checks on
+1.18 and 751 on 2.2, with
+32 V1-specific invocations skipped on 2.2; the four complete jobs per line are included in those
+counts. These selected controls do not qualify the entire historical 192-job matrix on 1.18 or
+cross-release upgrades. Very large individual stock values,
+restore inventories and broader operator/layout coverage remain open. Cleanup, counters and both
+event-time timer policies now share one incremental metadata journal. It persists deduplicated key
+updates in bounded row/byte batches during processing, retains failed writes for retry, and avoids
+full metadata scans or rewrites at normal capture. Native restore reconciles legacy metadata once.
+Controls cover seven OVER variants with 2,051 keys each, asserting no state scan and only the
+reserved watermark/sequence batch at capture, followed by live updates and unchanged pinned reads.
+Polling metadata is tagged within the native table namespace so multiple DISTINCT memberships and
+floating-key normalization remain independent. Earlier scalar polling ledgers migrate in bounded
+batches; this does not extend automatic stock DISTINCT admission. Benchmarking stays deferred.
+
+
+Restore validation uses the shared temporary disk inventory for owner unions, physical callbacks
+and pending timestamp membership on both Flink lines. Event OVER checks timer relationships by
+point reads and scans, then rereads source buckets for separate native validation and apply passes.
+Bounded OVER scans staged timestamps and timer membership, keeping only scalar bucket/row/timer
+counts and cutoff maxima per owner. It does not reconstruct per-owner Java maps or sets. Retained and pending inputs transfer in batches of at most 1,024 rows with a four-MiB
+payload estimate, allowing an oversized individual row and final protocol metadata. Preflight
+checks the complete source and decodes its native frame/pending batches before any apply pass.
+Each encoded stock timestamp value is staged intact, then decoded one row at a time with the
+released row serializer.
+
+The native frame importer accepts contiguous global positions across chunks, preserves original
+input clocks and installs the raw accumulator only on the final row. RocksDB writes each chunk
+directly; heap targets append to their normal retained state. Incomplete or failed imports cannot
+process rows or produce snapshots; failed targets must close while the source stays available
+for a fresh attempt. Temporary decode reservations transfer into retained-state accounting, and
+failed writes keep retained memory charged until close. RANGE final metadata also checks prior
+frame timestamps through a key-only prefix scan on RocksDB.
+
+The native suite passes 1,482 tests with two existing ignores, and the memory-only build passes.
+Chunk controls retain 2,051 rows across all three shapes and both native stores, preserve raw
+floating accumulators, reject broken continuations and missing prior RANGE timestamps, and cover
+memory denial, exact-budget transfer and write failure. RANGE restore now transfers metadata
+through the same flat bridge used by unbounded event-time OVER. Large individual encoded stock
+values remain an intrinsic working set. The shared Flink 1.18 cohort passes 537 checks. The corrected 2.2 cohort
+passes 311 runtime/accounting checks, alongside 229 frame-bridge controls. Twelve 2,051-row
+handoffs per release cover all three bounded shapes and both stock/native stores. These selected
+cohorts overlap and do not replace exhaustive CI. Scratch indexes close and delete on failure;
+stock source entries clear only
+after successful conversion and scratch close. Benchmarking remains deferred.
+
+
+OVER map-list export now stages original rows in the shared scoped disk spool and writes each
+stock timestamp bucket once. Released list/row serializers iterate the staged rows directly into
+the RocksDB projection. This removes repeated full-bucket get/add/put and Java list accumulation
+from both bounded and unbounded event-time export. Arrival order within each bucket, processing
+clocks, raw accumulators and physical timers remain independent. Heap component backends receive
+owned lists before the spool closes. The largest encoded stock KV remains an intrinsic writer
+working set. Restore now stages canonical encoded map values in the same scoped disk storage
+and decodes individual rows with the released serializer. This covers bounded processing ROWS,
+bounded event-time ROWS/RANGE and unbounded event-time pending inputs on both release lines;
+it preserves original per-owner map order and peer order without allocating a complete Java list.
+Pending rows transfer with both row and byte limits. Both bounded ROWS shapes use disk scans and
+scalar inventory summaries even for a hot partition. RANGE restore streams its callbacks and
+map membership separately from frame payloads, without per-owner transfer arrays. V1 polling
+restore streams physical callbacks directly
+from the disk index through bounded flat batches into its normal native timer ledger. Broader
+operator/layout admission remains separate work.
+A four-store-combination control creates 2,051 distinct processing clocks in stock Flink, verifies
+exact canonical bytes after a native round trip and continues output. Stock fixture construction
+avoids thousands of unrelated one-row native RocksDB frame updates in the correctness runner. Shared spool controls cover interleaved owners/timestamps, 8,195 rows, a two-MiB row, multiple
+readers and failure cleanup without changing stock serializer metadata.
+
+
+Canonical OVER callback export uses one flat bridge for cleanup values, RANGE last-trigger
+cutoffs and physical event/processing callbacks. This removes per-owner timer vectors/lists from
+frozen RocksDB conversion and serves resident metadata without cloning its timer lists. A checked
+borrowed iterator preserves the existing encoded ledger, including tagged V1 namespaces. Batches
+use 1,024-record and four-MiB payload-estimate bounds, plus an oversized key. Both raw database
+batches and converted Arrow buffers are charged; denied memory, receiver failure and mid-owner
+cancellation release the work and leave the source available for retry. The largest encoded entry
+remains a working set. The stock projection still uses released value/map/timer serializers.
+Heap component RANGE projection retains the old map-order reconstruction. Unbounded event-time
+restore uses the same flat protocol for V1 physical events and V2 cleanup metadata, with no
+per-owner Java callback array. Validation and apply each retain an active-owner cursor, including
+when a chunk separates cleanup from arming. Validation installs no execution state. The importer
+checks cleanup/arming/event order across chunks,
+reserves decode and timer-vector growth before mutation, and blocks processing, export and
+checkpointing until completion. Failed partial targets must close before retrying on a fresh
+target. Native ledger writes occur only at owner boundaries and final completion, avoiding
+repeated serialization of a growing hot-owner ledger. RANGE restores use bounded payload chunks
+and the same flat metadata transport, keeping each frame owner guarded until its cleanup,
+cutoff, callbacks and timestamp membership complete. Heap targets reconstruct their normal
+execution map incrementally. RocksDB targets require sorted membership and check retained
+timestamps using keys only; peer rows spanning chunks count once. Pending-only and timer-only
+owners share this path. Native checkpoint formats, legacy list-based APIs and operator admission
+do not change. Native metadata writes also reserve encoded keys/values and batch-copy work before
+allocating them, retaining the dirty journal on denial or write failure.
+
+Native controls cover 2,051 callbacks for one owner, keyless records, two-MiB keys, signed timer
+extrema, malformed headers/order, independent pinned versions, empty and mid-owner cancellation,
+denied raw/decoded memory, failure/retry and cold reader caches. Java controls round-trip a hot
+RANGE owner and V1 physical callbacks through both source/target stores, compare exact canonical
+bytes, continue output and check C Data release after a receiver exception.
+
+The RANGE/memory cohort passes 1,499 native tests with two existing ignores, plus the memory-only
+build. Four new RANGE controls cover split frame/metadata completion, 2,051-entry chunks, peer
+rows sharing one timestamp across chunks, omitted membership, denied memory, cancellation,
+failed writes and fresh-target retry. Two metadata controls cover denial before database writes
+and 2,051 owners with a bounded work allowance. Existing Java raw-COUNT corruption checks verify
+that C Data releases before reporting a Java error; cleanup must not clear that error. Selected
+OVER controls pass 572 checks on 1.18 and 540 on a clean 2.2 build, with 36 expected V1-only skips.
+Each release includes six complete-job continued handoffs across three bounded shapes and both
+native stores. These overlap earlier cohorts; exhaustive CI and broader operator/layout
+qualification remain separate.

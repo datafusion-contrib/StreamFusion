@@ -145,27 +145,53 @@ public final class StockOverFoldStateContract implements StockStateContract {
   }
 
   @Override
+  public org.apache.flink.runtime.state.SavepointResources<RowData> snapshot(
+      StockSnapshotContext context, long handle, boolean persistent) throws Exception {
+    if (persistent)
+      return context.nativeValue(
+          STATE,
+          new RowDataSerializer(accumulatorType),
+          ttl,
+          () -> Native.captureOverFoldCanonicalSnapshot(handle),
+          bridge,
+          decoder());
+    return null;
+  }
+
+  @Override
   public void exportState(
       CheckpointableKeyedStateBackend<RowData> backend, long handle, boolean persistent)
       throws Exception {
     clear(backend);
     var state = state(backend);
+    visit(
+        handle,
+        persistent,
+        (key, value, written) -> {
+          backend.setCurrentKey(key);
+          state.update(value, written);
+        });
+  }
+
+  private void visit(
+      long handle, boolean persistent, StockNativeValueSnapshot.Entry<RowData> receiver)
+      throws Exception {
+    var decoder = decoder();
+    Native.exportOverFoldCanonical(
+        handle, (array, schema) -> receive(array, schema, row -> decoder.decode(row, receiver)));
+  }
+
+  private StockNativeValueSnapshot.Decoder<RowData> decoder() {
     var keyRows = new RowDataSerializer(keyType);
     var getters = getters(accumulatorType, keyType.getFieldCount());
-    Native.exportOverFoldCanonical(
-        handle,
-        (array, schema) ->
-            receive(
-                array,
-                schema,
-                row -> {
-                  var key = copy(row, keyGetters);
-                  var accumulator = copy(row, getters);
-                  validateKey(key);
-                  validateAccumulator(accumulator);
-                  backend.setCurrentKey(keyRows.toBinaryRow(key).copy());
-                  state.update(accumulator, row.getLong(bridge.getFieldCount() - 1));
-                }));
+    return (row, receiver) -> {
+      var key = copy(row, keyGetters);
+      var accumulator = copy(row, getters);
+      validateKey(key);
+      validateAccumulator(accumulator);
+      receiver.write(
+          keyRows.toBinaryRow(key).copy(), accumulator, row.getLong(bridge.getFieldCount() - 1));
+    };
   }
 
   @Override
@@ -231,20 +257,6 @@ public final class StockOverFoldStateContract implements StockStateContract {
       if (validating)
         Native.validateOverFoldCanonical(handle, array.memoryAddress(), schema.memoryAddress());
       else Native.importOverFoldCanonical(handle, array.memoryAddress(), schema.memoryAddress());
-    }
-  }
-
-  @Override
-  public void clear(CheckpointableKeyedStateBackend<RowData> backend) throws Exception {
-    var state = state(backend);
-    var copier = new RowDataSerializer(keyType);
-    List<RowData> savedKeys;
-    try (var stream = backend.getKeys(STATE, VoidNamespace.INSTANCE)) {
-      savedKeys = stream.map(copier::copy).collect(java.util.stream.Collectors.toList());
-    }
-    for (var key : savedKeys) {
-      backend.setCurrentKey(key);
-      state.clear();
     }
   }
 

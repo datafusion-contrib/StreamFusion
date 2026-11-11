@@ -87,8 +87,29 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
   }
 
   @Override
+  protected java.util.function.LongConsumer memoryStateCopier() {
+    final long source = handle;
+    return target -> Native.copyOverCanonicalMemoryState(source, target);
+  }
+
+  @Override
+  protected void configureCapturedHandle(long captured, boolean persistent) {
+    if (eventCleanupTimers) Native.bindOverEventCleanupTimers(captured);
+    configureEventPolling(captured);
+  }
+
+  @Override
   protected void configureStateHandle() {
     if (eventCleanupTimers) Native.bindOverEventCleanupTimers(handle);
+    configureEventPolling(handle);
+  }
+
+  private void configureEventPolling(long stateHandle) {
+    if (!proctime
+        && (frameKind == 0 || frameKind == 3)
+        && java.util.Arrays.stream(aggregateKinds).noneMatch(kind -> kind >= 10 && kind <= 12)
+        && tech.streamfusion.compat.FlinkPlanCompat.unboundedOverVersion() == 1)
+      Native.bindOverEventPollingTimers(stateHandle);
   }
 
   public NativeOverAggregateOperator withConstantArguments(RowType type, byte[] values) {
@@ -161,8 +182,7 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
 
   @Override
   protected boolean usesDirectRocksDBState() {
-    return withRowSchema(
-            nativeRowType(),
+    return withInputSchema(
             schemaAddress ->
                 Native.rocksdbOverAggregatorSupported(
                         valueTypes, aggregateKinds, frameKind, proctime, schemaAddress)
@@ -175,8 +195,7 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
   protected long createRocksDBHandle(
       RocksDBNativeStateSupport rocksdb, byte[][] restoredPartitions) {
     long now = getProcessingTimeService().getCurrentProcessingTime();
-    return withRowSchema(
-        nativeRowType(),
+    return withInputSchema(
         schemaAddress ->
             Native.createRocksDBOverAggregator(
                 valueTypes,
@@ -202,6 +221,12 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
                 rocksdb.keyGroupEnd(),
                 rocksdb.aligned(),
                 restoredPartitions));
+  }
+
+  private long withInputSchema(java.util.function.LongUnaryOperator call) {
+    return mapListInput
+        ? withMapListSchema(nativeRowType(), call)
+        : withRowSchema(nativeRowType(), call);
   }
 
   @Override
@@ -283,7 +308,12 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
       processingCleanup.cancel(false);
       processingCleanup = null;
     }
-    if (directRocksDBState()) {
+    closeCapturedHandle(handle, directRocksDBState());
+  }
+
+  @Override
+  protected void closeCapturedHandle(long handle, boolean persistent) {
+    if (persistent) {
       Native.closeRocksDBOverAggregator(handle);
     } else {
       Native.closeOverAggregator(handle);

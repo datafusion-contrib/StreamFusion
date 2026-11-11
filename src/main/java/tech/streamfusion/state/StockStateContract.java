@@ -44,6 +44,11 @@ public interface StockStateContract extends Serializable {
 
   default void configureNativeState(long nativeHandle, boolean persistent) throws Exception {}
 
+  default org.apache.flink.runtime.state.SavepointResources<RowData> snapshot(
+      StockSnapshotContext context, long nativeHandle, boolean persistent) throws Exception {
+    return null;
+  }
+
   void exportState(
       CheckpointableKeyedStateBackend<RowData> backend, long nativeHandle, boolean persistent)
       throws Exception;
@@ -52,5 +57,11 @@ public interface StockStateContract extends Serializable {
       CheckpointableKeyedStateBackend<RowData> backend, long nativeHandle, boolean persistent)
       throws Exception;
 
-  void clear(CheckpointableKeyedStateBackend<RowData> backend) throws Exception;
+  default void clearProjectionTimers(CheckpointableKeyedStateBackend<RowData> backend)
+      throws Exception {}
+
+  default void clear(CheckpointableKeyedStateBackend<RowData> backend) throws Exception {
+    clearProjectionTimers(backend);
+    StockStateCleanup.clear(backend, stateDescriptors());
+  }
 }

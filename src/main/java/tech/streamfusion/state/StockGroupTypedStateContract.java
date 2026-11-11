@@ -204,24 +204,42 @@ public final class StockGroupTypedStateContract implements StockStateContract {
   }
 
   @Override
-  public void clear(CheckpointableKeyedStateBackend<RowData> backend) throws Exception {
-    var state = state(backend);
-    try (var stream = backend.getKeys(STATE, VoidNamespace.INSTANCE)) {
-      for (var key : stream.map(keys::copy).collect(java.util.stream.Collectors.toList())) {
-        backend.setCurrentKey(key);
-        state.clear();
-      }
+  public org.apache.flink.runtime.state.SavepointResources<RowData> snapshot(
+      StockSnapshotContext context, long handle, boolean persistent) throws Exception {
+    if (!views.isEmpty()) return null;
+    if (persistent) {
+      configureNativeState(handle, true);
+      return context.nativeValue(
+          STATE,
+          new RowDataSerializer(accumulatorType),
+          ttl,
+          () -> Native.captureGroupTypedCanonicalSnapshot(handle),
+          bridgeType,
+          this::decode);
     }
-    for (var view : views) view.clear(backend, keyType);
+    return null;
   }
 
   @Override
   public void exportState(
       CheckpointableKeyedStateBackend<RowData> backend, long handle, boolean persistent)
       throws Exception {
-    configureNativeState(handle, persistent);
     clear(backend);
     var state = state(backend);
+    visit(
+        handle,
+        persistent,
+        (key, value, written) -> {
+          backend.setCurrentKey(key);
+          state.update(value, written);
+        });
+    for (var view : views) view.exportState(backend, keyType, handle, persistent);
+  }
+
+  private void visit(
+      long handle, boolean persistent, StockNativeValueSnapshot.Entry<RowData> receiver)
+      throws Exception {
+    configureNativeState(handle, persistent);
     Native.exportGroupTypedCanonical(
         handle,
         persistent,
@@ -234,36 +252,12 @@ public final class StockGroupTypedStateContract implements StockStateContract {
                       NativeAllocator.SHARED, array, schema, NativeAllocator.DICTIONARIES)) {
             var reader = ArrowConversion.createArrowReader(root, bridgeType);
             for (int index = 0; index < root.getRowCount(); index++) {
-              RowData row = reader.read(index);
-              byte[] encoded = row.getBinary(0);
-              var key = new BinaryRowData(keyType.getFieldCount());
-              key.pointTo(MemorySegmentFactory.wrap(encoded), 0, encoded.length);
-              validateKey(key);
-              var accumulator = new GenericRowData(accumulatorType.getFieldCount());
-              boolean[] assigned = new boolean[accumulator.getArity()];
-              if (recordCountField >= 0)
-                assign(accumulator, assigned, recordCountField, row.getLong(1));
-              for (int i = 0; i < kinds.length; i++) {
-                var getter = RowData.createFieldGetter(bridgeType.getTypeAt(3 + 2 * i), 3 + 2 * i);
-                assign(accumulator, assigned, scalarFields[i], getter.getFieldOrNull(row));
-                if (countFields[i] >= 0)
-                  assign(accumulator, assigned, countFields[i], row.getLong(4 + 2 * i));
-              }
-              for (int field = 0; field < assigned.length; field++)
-                if (!assigned[field])
-                  accumulator.setField(
-                      field,
-                      org.apache.flink.table.data.binary.BinaryRawValueData.fromBytes(
-                          new byte[] {0}));
-              validateAccumulator(accumulator);
-              backend.setCurrentKey(key);
-              state.update(accumulator, row.getLong(2));
+              decode(reader.read(index), receiver);
             }
           } catch (Exception failure) {
             throw new IllegalStateException("Cannot project stock group accumulators", failure);
           }
         });
-    for (var view : views) view.exportState(backend, keyType, handle, persistent);
   }
 
   private static void assign(GenericRowData row, boolean[] assigned, int field, Object value) {
@@ -299,6 +293,29 @@ public final class StockGroupTypedStateContract implements StockStateContract {
       if (countFields[i] >= 0 && row.isNullAt(countFields[i]))
         throw new IllegalStateException("NULL in a required accumulator count");
     }
+  }
+
+  private void decode(RowData row, StockNativeValueSnapshot.Entry<RowData> receiver)
+      throws Exception {
+    byte[] encoded = row.getBinary(0);
+    var key = new BinaryRowData(keyType.getFieldCount());
+    key.pointTo(MemorySegmentFactory.wrap(encoded), 0, encoded.length);
+    validateKey(key);
+    var accumulator = new GenericRowData(accumulatorType.getFieldCount());
+    boolean[] assigned = new boolean[accumulator.getArity()];
+    if (recordCountField >= 0) assign(accumulator, assigned, recordCountField, row.getLong(1));
+    for (int i = 0; i < kinds.length; i++) {
+      var getter = RowData.createFieldGetter(bridgeType.getTypeAt(3 + 2 * i), 3 + 2 * i);
+      assign(accumulator, assigned, scalarFields[i], getter.getFieldOrNull(row));
+      if (countFields[i] >= 0)
+        assign(accumulator, assigned, countFields[i], row.getLong(4 + 2 * i));
+    }
+    for (int field = 0; field < assigned.length; field++)
+      if (!assigned[field])
+        accumulator.setField(
+            field, org.apache.flink.table.data.binary.BinaryRawValueData.fromBytes(new byte[] {0}));
+    validateAccumulator(accumulator);
+    receiver.write(key, accumulator, row.getLong(2));
   }
 
   @Override

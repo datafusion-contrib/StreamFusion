@@ -21,7 +21,7 @@ pub(super) fn encode_key(key: &MinMaxKey) -> Result<i64, DataFusionError> {
     }
 }
 
-fn decode_key(value: i64, ty: &DataType) -> Result<MinMaxKey, DataFusionError> {
+pub(super) fn decode_key(value: i64, ty: &DataType) -> Result<MinMaxKey, DataFusionError> {
     let invalid =
         || DataFusionError::Execution("stock extrema key outside its logical type".into());
     Ok(match ty {
@@ -53,7 +53,7 @@ impl GroupKeyState {
         self.last_output_bytes = 0;
         self.last_write_ms = 0;
         self.distinct_retention = None;
-        self.aggs.iter().any(|aggregate| matches!(aggregate, GroupAggState::Mapped(mapped) if !mapped.counts.is_empty()))
+        self.aggs.iter().any(|aggregate| matches!(aggregate, GroupAggState::Mapped(mapped) if !mapped.counts.is_empty() || mapped.has_external_entries()))
     }
 }
 
@@ -338,3 +338,6 @@ mod tests {
         assert_eq!(owner.store.iter().count(), 2);
     }
 }
+
+#[cfg(all(test, feature = "rocksdb-state"))]
+mod rocks_tests;

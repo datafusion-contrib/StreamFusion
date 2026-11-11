@@ -14,22 +14,59 @@ import org.apache.flink.runtime.state.ttl.TtlTimeProvider;
 
 /** Adapts the host backend factory signature without owning native state or snapshot bytes. */
 public abstract class FlinkStateBackendCompat implements StateBackend {
+  public static StateBackend explicitStateBackend(
+      org.apache.flink.streaming.api.environment.StreamExecutionEnvironment environment) {
+    return environment.getStateBackend();
+  }
+
+  public static void explicitStateBackend(
+      org.apache.flink.streaming.api.environment.StreamExecutionEnvironment environment,
+      StateBackend backend) {
+    environment.setStateBackend(backend);
+  }
+
+  public static boolean serializesKeyedValues(CheckpointableKeyedStateBackend<?> backend) {
+    return backend instanceof org.apache.flink.contrib.streaming.state.RocksDBKeyedStateBackend;
+  }
+
+  public static int keyGroupPrefixBytes(CheckpointableKeyedStateBackend<?> backend) {
+    return org.apache.flink.runtime.state.CompositeKeySerializationUtils
+        .computeRequiredBytesInKeyGroupPrefix(
+            ((org.apache.flink.runtime.state.heap.InternalKeyContext<?>) backend)
+                .getNumberOfKeyGroups());
+  }
+
   protected final StateBackend delegate;
+
+  public static org.apache.flink.configuration.Configuration configuration(ReadableConfig config) {
+    if (config instanceof org.apache.flink.table.api.TableConfig) {
+      var table = (org.apache.flink.table.api.TableConfig) config;
+      var merged = configuration(table.getRootConfiguration());
+      merged.addAll(table.getConfiguration());
+      return merged;
+    }
+    return new org.apache.flink.configuration.Configuration(
+        (org.apache.flink.configuration.Configuration) config);
+  }
 
   public static String prepareNativeStateBackend(
       org.apache.flink.streaming.api.environment.StreamExecutionEnvironment environment,
       ReadableConfig tableConfig) {
     boolean configuredChangelog =
         tableConfig
-            .getOptional(org.apache.flink.configuration.StateChangelogOptions.ENABLE_STATE_CHANGE_LOG)
+            .getOptional(
+                org.apache.flink.configuration.StateChangelogOptions.ENABLE_STATE_CHANGE_LOG)
             .orElse(false);
     boolean changelog =
-        environment == null
-            ? configuredChangelog
-            : environment.isChangelogStateBackendEnabled().getOrDefault(configuredChangelog);
+        configuredChangelog
+            || (environment != null
+                && environment.isChangelogStateBackendEnabled().getOrDefault(false));
     if (environment != null && environment.getStateBackend() != null) {
       changelog |=
-          environment.getStateBackend().getClass().getName()
+          environment
+              .getStateBackend()
+              .getClass()
+              .getName()
               .equals("org.apache.flink.state.changelog.ChangelogStateBackend");
     }
     if (changelog) {
@@ -37,7 +74,10 @@ public abstract class FlinkStateBackendCompat implements StateBackend {
     }
     String replacementFailure = RocksDBBackendSelection.install(environment, tableConfig);
     if (replacementFailure != null) return replacementFailure;
-    StateBackend backend = environment == null ? null : environment.getStateBackend();
+    StateBackend backend =
+        environment == null
+            ? null
+            : tech.streamfusion.state.CanonicalStateBackend.unwrap(environment.getStateBackend());
     if (backend instanceof org.apache.flink.runtime.state.hashmap.HashMapStateBackend
         || backend instanceof org.apache.flink.runtime.state.memory.MemoryStateBackend
         || backend instanceof org.apache.flink.runtime.state.filesystem.FsStateBackend
@@ -63,6 +103,7 @@ public abstract class FlinkStateBackendCompat implements StateBackend {
                 "jobmanager",
                 "filesystem",
                 "memory",
+                "tech.streamfusion.state.CanonicalStateBackendFactory",
                 "tech.streamfusion.state.RocksDBNativeStateBackendFactory")
             .contains(configured)) {
       return null;
@@ -133,31 +174,16 @@ public abstract class FlinkStateBackendCompat implements StateBackend {
       throws Exception {
     return createNativeKeyedBackend(
         new KeyedBackendContext<>(
-            env,
-            jobId,
-            operatorIdentifier,
-            keySerializer,
-            numberOfKeyGroups,
-            keyGroupRange,
-            stateHandles,
-            managedMemoryFraction,
-            handles ->
-                delegate.createKeyedStateBackend(
-                    env,
-                    jobId,
-                    operatorIdentifier,
-                    keySerializer,
-                    numberOfKeyGroups,
-                    keyGroupRange,
-                    kvStateRegistry,
-                    ttlTimeProvider,
-                    metricGroup,
-                    handles,
-                    cancelStreamRegistry,
-                    managedMemoryFraction),
-            handles ->
-                new org.apache.flink.runtime.state.hashmap.HashMapStateBackend()
-                    .createKeyedStateBackend(
+                env,
+                jobId,
+                operatorIdentifier,
+                keySerializer,
+                numberOfKeyGroups,
+                keyGroupRange,
+                stateHandles,
+                managedMemoryFraction,
+                handles ->
+                    delegate.createKeyedStateBackend(
                         env,
                         jobId,
                         operatorIdentifier,
@@ -168,7 +194,53 @@ public abstract class FlinkStateBackendCompat implements StateBackend {
                         ttlTimeProvider,
                         metricGroup,
                         handles,
-                        cancelStreamRegistry)));
+                        cancelStreamRegistry,
+                        managedMemoryFraction),
+                handles ->
+                    new org.apache.flink.runtime.state.hashmap.HashMapStateBackend()
+                        .createKeyedStateBackend(
+                            env,
+                            jobId,
+                            operatorIdentifier,
+                            keySerializer,
+                            numberOfKeyGroups,
+                            keyGroupRange,
+                            kvStateRegistry,
+                            ttlTimeProvider,
+                            metricGroup,
+                            handles,
+                            cancelStreamRegistry))
+            .withStockBackendFactory(
+                (serializer, handles) ->
+                    stockProjectionBackend(env)
+                        .createKeyedStateBackend(
+                            env,
+                            jobId,
+                            operatorIdentifier,
+                            serializer,
+                            numberOfKeyGroups,
+                            keyGroupRange,
+                            kvStateRegistry,
+                            ttlTimeProvider,
+                            metricGroup,
+                            handles,
+                            cancelStreamRegistry,
+                            managedMemoryFraction)));
+  }
+
+  private static EmbeddedRocksDBStateBackend stockProjectionBackend(Environment environment) {
+    var backend =
+        new EmbeddedRocksDBStateBackend()
+            .configure(
+                environment.getTaskManagerInfo().getConfiguration(),
+                environment.getUserCodeClassLoader().asClassLoader());
+    backend.setPriorityQueueStateType(EmbeddedRocksDBStateBackend.PriorityQueueStateType.ROCKSDB);
+    return backend;
+  }
+
+  protected OperatorStateBackend wrapOperatorStateBackend(
+      OperatorStateBackend backend, String operatorIdentifier) throws Exception {
+    return backend;
   }
 
   @Override
@@ -178,7 +250,9 @@ public abstract class FlinkStateBackendCompat implements StateBackend {
       Collection<OperatorStateHandle> stateHandles,
       CloseableRegistry cancelStreamRegistry)
       throws Exception {
-    return delegate.createOperatorStateBackend(
-        env, operatorIdentifier, stateHandles, cancelStreamRegistry);
+    return wrapOperatorStateBackend(
+        delegate.createOperatorStateBackend(
+            env, operatorIdentifier, stateHandles, cancelStreamRegistry),
+        operatorIdentifier);
   }
 }

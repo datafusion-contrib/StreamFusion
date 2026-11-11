@@ -16,7 +16,8 @@ mod tests;
 impl ProcRowsState {
     #[cfg(feature = "rocksdb-state")]
     pub(super) fn encode(&self) -> Vec<u8> {
-        let mut bytes = vec![1];
+        let mut bytes = Vec::with_capacity(17);
+        bytes.push(1);
         bytes.extend_from_slice(&self.count.to_le_bytes());
         bytes.extend_from_slice(&self.smallest.to_le_bytes());
         bytes
@@ -216,22 +217,6 @@ impl OverWindowAggregator {
             }
         }
         self.retention_bytes = self.retention_bytes - before + self.proc_rows_bytes();
-    }
-
-    #[cfg(feature = "rocksdb-state")]
-    pub(super) fn sync_store_proc_rows(&mut self) -> Result<(), DataFusionError> {
-        let store = self.store.as_ref().expect("OVER store");
-        let entries = self
-            .proc_rows
-            .iter()
-            .map(|(key, state)| {
-                (
-                    store.proc_rows_key(self.store_fold_key_group(&key.0), &key.0),
-                    state.encode(),
-                )
-            })
-            .collect::<Vec<_>>();
-        self.store.as_mut().unwrap().replace_proc_rows(&entries)
     }
 }
 

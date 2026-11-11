@@ -3,8 +3,6 @@ package tech.streamfusion.state;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.TreeMap;
-import java.util.TreeSet;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
@@ -43,6 +41,7 @@ public final class StockTemporalSortStateContract implements StockStateContract 
   private static final String EVENTS = "_timer_state/event_user-timers";
   private static final String PROCESSING = "_timer_state/processing_user-timers";
   private static final RowType EMPTY = RowType.of();
+  private static final int TIMER_TIMES = 4;
   private final TypeSerializer<RowData> keys;
   private final RowType input;
   private final int timeColumn;
@@ -132,12 +131,12 @@ public final class StockTemporalSortStateContract implements StockStateContract 
   }
 
   @Override
-  public void clear(CheckpointableKeyedStateBackend<RowData> backend) throws Exception {
+  public void clearProjectionTimers(CheckpointableKeyedStateBackend<RowData> backend)
+      throws Exception {
     own(backend);
-    rows(backend).clear();
-    last(backend).clear();
-    var timers = events(backend);
-    while (timers.poll() != null) {}
+    events(backend);
+    var queue = events(backend);
+    while (queue.poll() != null) {}
   }
 
   @Override
@@ -145,38 +144,45 @@ public final class StockTemporalSortStateContract implements StockStateContract 
       CheckpointableKeyedStateBackend<RowData> backend, long handle, boolean persistent)
       throws Exception {
     clear(backend);
-    var state = rows(backend);
-    var timers = events(backend);
-    Native.exportTemporalSortCanonicalRows(
-        handle,
-        (a, s) -> {
-          try (var array = ArrowArray.wrap(a);
-              var schema = ArrowSchema.wrap(s);
-              var root =
-                  Data.importVectorSchemaRoot(
-                      NativeAllocator.SHARED, array, schema, NativeAllocator.DICTIONARIES)) {
-            var reader = ArrowConversion.createArrowReader(root, input);
-            var serializer = new RowDataSerializer(input);
-            for (int i = 0; i < root.getRowCount(); i++) {
-              var row = serializer.copy(reader.read(i));
-              if (row.getRowKind() != RowKind.INSERT)
-                throw new IllegalArgumentException(
-                    "Temporal sort pending rows must be INSERT records");
-              long timestamp = time(row);
-              var peers = state.get(timestamp);
-              peers = peers == null ? new ArrayList<>() : new ArrayList<>(peers);
-              peers.add(row);
-              state.put(timestamp, peers);
-              timers.add(
-                  new TimerHeapInternalTimer<>(timestamp, emptyKey(), VoidNamespace.INSTANCE));
+    try (var lists =
+        new StockMapListSpool<Long, RowData>(
+            keys, LongSerializer.INSTANCE, new RowDataSerializer(input))) {
+      var state = rows(backend);
+      var timers = events(backend);
+      Native.exportTemporalSortCanonicalRows(
+          handle,
+          (a, s) -> {
+            try (var array = ArrowArray.wrap(a);
+                var schema = ArrowSchema.wrap(s);
+                var root =
+                    Data.importVectorSchemaRoot(
+                        NativeAllocator.SHARED, array, schema, NativeAllocator.DICTIONARIES)) {
+              var reader = ArrowConversion.createArrowReader(root, input);
+              for (int i = 0; i < root.getRowCount(); i++) {
+                var row = reader.read(i);
+                if (row.getRowKind() != RowKind.INSERT)
+                  throw new IllegalArgumentException(
+                      "Temporal sort pending rows must be INSERT records");
+                long timestamp = time(row);
+                lists.append(emptyKey(), timestamp, row);
+                timers.add(
+                    new TimerHeapInternalTimer<>(timestamp, emptyKey(), VoidNamespace.INSTANCE));
+              }
+            } catch (Exception error) {
+              throw new IllegalStateException("Cannot project temporal sort state", error);
             }
-          } catch (Exception error) {
-            throw new IllegalStateException("Cannot project temporal sort state", error);
-          }
-        });
-    long[] cutoff = Native.temporalSortCanonicalCutoff(handle);
-    if (cutoff.length == 1) last(backend).update(cutoff[0]);
-    else if (cutoff.length != 0) throw new IllegalArgumentException("Invalid temporal sort cutoff");
+          });
+      lists.visit(
+          backend,
+          (owner, timestamp, values) -> {
+            backend.setCurrentKey(owner);
+            state.put(timestamp, values);
+          });
+      long[] cutoff = Native.temporalSortCanonicalCutoff(handle);
+      if (cutoff.length == 1) last(backend).update(cutoff[0]);
+      else if (cutoff.length != 0)
+        throw new IllegalArgumentException("Invalid temporal sort cutoff");
+    }
   }
 
   @Override
@@ -198,63 +204,77 @@ public final class StockTemporalSortStateContract implements StockStateContract 
       }
     own(backend);
     Long cutoff = last(backend).value();
-    var saved = new TreeMap<Long, List<RowData>>();
-    var entries = rows(backend).entries();
-    var serializer = new RowDataSerializer(input);
-    if (entries != null)
-      for (var entry : entries) {
-        var timestamp = entry.getKey();
-        if (timestamp == null
-            || entry.getValue() == null
-            || entry.getValue().isEmpty()
-            || (cutoff != null && timestamp <= cutoff))
-          throw new IllegalArgumentException("Temporal sort bucket is empty or already emitted");
-        var peers = new ArrayList<RowData>();
-        for (var row : entry.getValue()) {
-          if (row == null || row.getRowKind() != RowKind.INSERT || time(row) != timestamp)
-            throw new IllegalArgumentException("Temporal sort row/time/kind changed");
-          peers.add(serializer.copy(row));
+    try (var spool = new StockStateSpool(keys)) {
+      var saved = new StockMapListSnapshot(spool, new RowDataSerializer(input), 1);
+      saved.capture(backend, ROWS, keys);
+      try (var owners = spool.owners()) {
+        while (owners.hasNext()) checkKey(owners.next());
+      }
+      var owner = emptyKey();
+      try (var timestamps = saved.timestamps(owner)) {
+        while (timestamps.hasNext()) {
+          long timestamp = timestamps.next();
+          if (saved.size(owner, timestamp) <= 0 || (cutoff != null && timestamp <= cutoff))
+            throw new IllegalArgumentException("Temporal sort bucket is empty or already emitted");
+          for (var row : saved.rows(owner, timestamp))
+            if (row == null || row.getRowKind() != RowKind.INSERT || time(row) != timestamp)
+              throw new IllegalArgumentException("Temporal sort row/time/kind changed");
         }
-        saved.put(timestamp, peers);
       }
-    var armed = new TreeSet<Long>();
-    try (var iterator = events(backend).iterator()) {
-      while (iterator.hasNext()) {
-        var timer = iterator.next();
-        checkKey(timer.getKey());
-        if (timer.getNamespace() != VoidNamespace.INSTANCE || !armed.add(timer.getTimestamp()))
-          throw new IllegalArgumentException("Temporal sort timer identity changed");
+      try (var iterator = StockTimerSnapshot.<RowData, VoidNamespace>iterator(backend, EVENTS)) {
+        while (iterator.hasNext()) {
+          var timer = iterator.next();
+          checkKey(timer.getKey());
+          if (timer.getNamespace() != VoidNamespace.INSTANCE
+              || !spool.add(TIMER_TIMES, owner, timer.getTimestamp()))
+            throw new IllegalArgumentException("Temporal sort timer identity changed");
+        }
       }
-    }
-    if (!armed.equals(saved.keySet()))
-      throw new IllegalArgumentException(
-          "Temporal sort pending timers disagree with input buckets");
-    if (Native.temporalSortCanonicalCutoff(handle).length != 0)
-      throw new IllegalStateException("Temporal sort import requires an empty target");
-    Native.exportTemporalSortCanonicalRows(
-        handle,
-        (arrayAddress, schemaAddress) -> {
-          try (var array = ArrowArray.wrap(arrayAddress);
-              var schema = ArrowSchema.wrap(schemaAddress);
-              var root =
-                  Data.importVectorSchemaRoot(
-                      NativeAllocator.SHARED, array, schema, NativeAllocator.DICTIONARIES)) {
-            if (root.getRowCount() != 0)
-              throw new IllegalStateException("Temporal sort import requires an empty target");
+      try (var timestamps = saved.sortedTimestamps(owner);
+          var timers = spool.times(TIMER_TIMES, owner)) {
+        while (timestamps.hasNext() && timers.hasNext()) {
+          if (!timestamps.next().equals(timers.next()))
+            throw new IllegalArgumentException(
+                "Temporal sort pending timers disagree with input buckets");
+        }
+        if (timestamps.hasNext() || timers.hasNext())
+          throw new IllegalArgumentException(
+              "Temporal sort pending timers disagree with input buckets");
+      }
+      if (Native.temporalSortCanonicalCutoff(handle).length != 0)
+        throw new IllegalStateException("Temporal sort import requires an empty target");
+      Native.exportTemporalSortCanonicalRows(
+          handle,
+          (arrayAddress, schemaAddress) -> {
+            try (var array = ArrowArray.wrap(arrayAddress);
+                var schema = ArrowSchema.wrap(schemaAddress);
+                var root =
+                    Data.importVectorSchemaRoot(
+                        NativeAllocator.SHARED, array, schema, NativeAllocator.DICTIONARIES)) {
+              if (root.getRowCount() != 0)
+                throw new IllegalStateException("Temporal sort import requires an empty target");
+            }
+          });
+      Native.importTemporalSortCanonicalCutoff(
+          handle, cutoff == null ? new long[0] : new long[] {cutoff});
+      var chunk = new ArrayList<RowData>(1024);
+      long bytes = 0;
+      var serializer = new RowDataSerializer(input);
+      try (var timestamps = saved.sortedTimestamps(owner)) {
+        while (timestamps.hasNext())
+          for (var row : saved.rows(owner, timestamps.next())) {
+            long size = serializer.toBinaryRow(row).getSizeInBytes();
+            if (!chunk.isEmpty() && (chunk.size() == 1024 || bytes + size > 4L * 1024 * 1024)) {
+              send(handle, chunk);
+              chunk.clear();
+              bytes = 0;
+            }
+            chunk.add(row);
+            bytes += size;
           }
-        });
-    Native.importTemporalSortCanonicalCutoff(
-        handle, cutoff == null ? new long[0] : new long[] {cutoff});
-    var chunk = new ArrayList<RowData>(1024);
-    for (var peers : saved.values())
-      for (var row : peers) {
-        chunk.add(row);
-        if (chunk.size() == 1024) {
-          send(handle, chunk);
-          chunk.clear();
-        }
       }
-    if (!chunk.isEmpty()) send(handle, chunk);
+      if (!chunk.isEmpty()) send(handle, chunk);
+    }
     clear(backend);
   }
 

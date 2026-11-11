@@ -874,8 +874,12 @@ public final class StreamFusionSuiteAgent {
 
   public static final class RecordCanonicalTemporalJoinImport {
     @Advice.OnMethodExit
-    static void exit(@Advice.Argument(1) int side, @Advice.Argument(2) java.util.List<?> rows) {
-      if (side >= 0) NativeExecution.restored("NativeTemporalJoinOperator", rows.size());
+    static void exit(
+        @Advice.Argument(1) int side,
+        @Advice.Argument(2) java.util.List<?> rows,
+        @Advice.Argument(3) boolean validating) {
+      if (!validating && side >= 0)
+        NativeExecution.restored("NativeTemporalJoinOperator", rows.size());
     }
   }
 

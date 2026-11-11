@@ -8,6 +8,10 @@ import org.apache.flink.streaming.api.operators.OperatorSnapshotFutures;
 public abstract class FlinkCanonicalStreamOperator<OUT> extends FlinkStreamOperator<OUT> {
   private static final long serialVersionUID = 1L;
 
+  protected final boolean usesBackendCanonicalSnapshot() {
+    return false;
+  }
+
   protected OperatorSnapshotFutures snapshotCanonicalState(
       long checkpointId, long timestamp, CheckpointOptions options, CheckpointStreamFactory streams)
       throws Exception {

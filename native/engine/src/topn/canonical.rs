@@ -1,3 +1,4 @@
+mod encoded;
 mod retract;
 mod update;
 
@@ -16,140 +17,6 @@ fn throw_error(env: &mut JNIEnv, error: DataFusionError) {
     } else {
         let _ = env.throw_new("tech/streamfusion/NativeException", error.to_string());
     }
-}
-
-// A -1 kind is the independent variable-bound value, including keys with no retained rows.
-struct TransferRow<'a> {
-    key: &'a ByteKey,
-    row: Option<&'a TopNRow>,
-    bound: Option<FirstRankEnd>,
-}
-
-fn emit_rows(
-    env: &mut JNIEnv,
-    receiver: &JObject,
-    schema: &SchemaRef,
-    converter: &RowConverter,
-    rows: &[TransferRow<'_>],
-) -> Result<(), DataFusionError> {
-    let real = rows.iter().filter_map(|row| row.row).collect::<Vec<_>>();
-    let mut columns = if real.is_empty() {
-        schema
-            .fields()
-            .iter()
-            .map(|field| arrow::array::new_null_array(field.data_type(), rows.len()))
-            .collect::<Vec<_>>()
-    } else {
-        let mut index = 0;
-        let indices = UInt32Array::from(
-            rows.iter()
-                .map(|row| {
-                    row.row.map(|_| {
-                        let current = index;
-                        index += 1;
-                        current
-                    })
-                })
-                .collect::<Vec<_>>(),
-        );
-        converter
-            .convert_rows(real.iter().map(|row| row.payload.row()))?
-            .iter()
-            .zip(schema.fields())
-            .map(|(array, field)| {
-                let array = streamfusion_bridge::timestamp::cast_array(array, field.data_type())?;
-                arrow::compute::take(array.as_ref(), &indices, None)
-            })
-            .collect::<Result<Vec<_>, _>>()?
-    };
-    let mut fields = schema
-        .fields()
-        .iter()
-        .map(|field| field.as_ref().clone().with_nullable(true))
-        .collect::<Vec<_>>();
-    fields.extend([
-        Field::new("binary_key", DataType::Binary, false),
-        Field::new("__rank_end__", DataType::Int64, false),
-        Field::new("__ttl_ts__", DataType::Int64, false),
-        Field::new("__stored_kind__", DataType::Int8, false),
-    ]);
-    columns.extend([
-        Arc::new(BinaryArray::from_iter_values(
-            rows.iter().map(|row| row.key.0.as_ref()),
-        )) as ArrayRef,
-        Arc::new(Int64Array::from_iter_values(
-            rows.iter()
-                .map(|row| row.bound.map_or(0, |bound| bound.value)),
-        )),
-        Arc::new(Int64Array::from_iter_values(rows.iter().map(|row| {
-            row.row
-                .map_or_else(|| row.bound.unwrap().written_at, |entry| entry.ts_ms)
-        }))),
-        Arc::new(Int8Array::from_iter_values(
-            rows.iter()
-                .map(|row| row.row.map_or(-1, |entry| entry.stored_kind)),
-        )),
-    ]);
-    crate::bridge::emit_record_batch(
-        env,
-        receiver,
-        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)?,
-    )
-}
-
-fn emit_partitions<'a>(
-    env: &mut JNIEnv,
-    receiver: &JObject,
-    schema: &SchemaRef,
-    converter: &RowConverter,
-    partitions: impl Iterator<Item = (&'a ByteKey, &'a TopNPartition)>,
-) -> Result<(), DataFusionError> {
-    emit_partitions_with_empty(env, receiver, schema, converter, partitions, false)
-}
-
-fn emit_partitions_with_empty<'a>(
-    env: &mut JNIEnv,
-    receiver: &JObject,
-    schema: &SchemaRef,
-    converter: &RowConverter,
-    partitions: impl Iterator<Item = (&'a ByteKey, &'a TopNPartition)>,
-    preserve_empty: bool,
-) -> Result<(), DataFusionError> {
-    let mut rows = Vec::with_capacity(CHUNK_ROWS);
-    for (key, partition) in partitions {
-        let header = partition.first_rank_end.or_else(|| {
-            (preserve_empty && partition.is_empty()).then_some(FirstRankEnd {
-                value: 0,
-                written_at: 0,
-            })
-        });
-        if let Some(bound) = header {
-            rows.push(TransferRow {
-                key,
-                row: None,
-                bound: Some(bound),
-            });
-            if rows.len() == CHUNK_ROWS {
-                emit_rows(env, receiver, schema, converter, &rows)?;
-                rows.clear();
-            }
-        }
-        for row in &partition.rows {
-            rows.push(TransferRow {
-                key,
-                row: Some(row),
-                bound: None,
-            });
-            if rows.len() == CHUNK_ROWS {
-                emit_rows(env, receiver, schema, converter, &rows)?;
-                rows.clear();
-            }
-        }
-    }
-    if !rows.is_empty() {
-        emit_rows(env, receiver, schema, converter, &rows)?;
-    }
-    Ok(())
 }
 
 struct CanonicalColumns<'a> {
@@ -378,13 +245,15 @@ pub extern "system" fn Java_tech_streamfusion_Native_exportAppendTopNCanonical<'
                     return Err(invalid("requires append handle"));
                 };
                 ranker.canonical_schema(schema)?;
-                emit_partitions(
-                    &mut env,
-                    &receiver,
+                encoded::Emitter::new(
                     ranker.schema.as_ref().unwrap(),
-                    &ranker.converters.as_ref().unwrap().payload,
-                    ranker.groups.iter(),
+                    ranker.converters.as_ref().unwrap(),
+                    &ranker.sort_columns,
+                    encoded::Layout::Append,
+                    ranker.memory.temporary_reservation(),
+                    |batch| crate::bridge::emit_record_batch(&mut env, &receiver, batch),
                 )
+                .append(ranker.groups.iter())
             } else {
                 #[cfg(feature = "rocksdb-state")]
                 {
@@ -394,17 +263,20 @@ pub extern "system" fn Java_tech_streamfusion_Native_exportAppendTopNCanonical<'
                         return Err(invalid("requires append RocksDB handle"));
                     };
                     ranker.canonical_schema(schema)?;
-                    let schema = ranker.schema.as_ref().unwrap();
-                    let converter = &ranker.converters.as_ref().unwrap().payload;
-                    ranker.groups.for_each_canonical_batch(1, |partitions| {
-                        emit_partitions(
-                            &mut env,
-                            &receiver,
-                            schema,
-                            converter,
-                            partitions.iter().map(|(key, partition)| (key, partition)),
-                        )
-                    })
+                    let raw_memory = ranker.memory.temporary_reservation();
+                    let mut emitter = encoded::Emitter::new(
+                        ranker.schema.as_ref().unwrap(),
+                        ranker.converters.as_ref().unwrap(),
+                        &ranker.sort_columns,
+                        encoded::Layout::Append,
+                        ranker.memory.temporary_reservation(),
+                        |batch| crate::bridge::emit_record_batch(&mut env, &receiver, batch),
+                    );
+                    ranker
+                        .groups
+                        .for_each_canonical_raw(raw_memory, |key, bytes| {
+                            emitter.encoded(key, bytes, ranker.ttl_ms > 0)
+                        })
                 }
                 #[cfg(not(feature = "rocksdb-state"))]
                 Err(invalid("native RocksDB is unavailable"))
@@ -846,4 +718,61 @@ mod tests {
         }
         assert_eq!(pool.reserved(), 0);
     }
+}
+
+fn captured_converters(
+    source: &Option<TopNConverters>,
+    schema: &Option<SchemaRef>,
+    partitions: &[usize],
+    sort: &[SortColumn],
+) -> Option<TopNConverters> {
+    source.as_ref().map(|source| {
+        let schema = schema.as_ref().expect("captured rank schema");
+        let mut captured = TopNConverters::build(
+            &RecordBatch::new_empty(Arc::clone(schema)),
+            schema.fields().len(),
+            partitions,
+            sort,
+        );
+        captured.sort = Arc::clone(&source.sort);
+        captured.payload = Arc::clone(&source.payload);
+        captured
+    })
+}
+
+impl crate::state::canonical_memory::CanonicalMemoryState for TopNHandle {
+    fn copy_state(&mut self, target: &mut Self) -> Result<(), DataFusionError> {
+        macro_rules! copy {
+            ($source:expr, $target:expr) => {{
+                $target.memory.set($source.memory.state_bytes);
+                $target.memory.account()?;
+                $target.groups = $source.groups.clone();
+                $target.schema = $source.schema.clone();
+                $target.converters = captured_converters(
+                    &$source.converters,
+                    &$source.schema,
+                    &$source.partition_columns,
+                    &$source.sort_columns,
+                );
+                $target.last_sweep_ms = $source.last_sweep_ms;
+                Ok(())
+            }};
+        }
+        match (self, target) {
+            (Self::Append(source), Self::Append(target)) => copy!(source, target),
+            (Self::Retract(source), Self::Retract(target)) => copy!(source, target),
+            (Self::UpdateFast(source), Self::UpdateFast(target)) => copy!(source, target),
+            _ => Err(invalid("memory rank algorithm changed during capture")),
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_copyTopNCanonicalMemoryState<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    source: jlong,
+    target: jlong,
+) {
+    crate::state::canonical_memory::copy::<TopNHandle>(env, source, target);
 }

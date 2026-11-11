@@ -607,3 +607,33 @@ pub extern "system" fn Java_tech_streamfusion_Native_finishSinkMaterializerCanon
 
 #[cfg(test)]
 mod tests;
+
+impl crate::state::canonical_memory::CanonicalMemoryState for SinkMaterializer {
+    fn copy_state(&mut self, target: &mut Self) -> Result<(), DataFusionError> {
+        target.memory.set(self.memory.state_bytes);
+        target.memory.account()?;
+        target.groups = self.groups.clone();
+        target.last_sweep = self.last_sweep.clone();
+        target.codec = self.codec.as_ref().map(|codec| {
+            RowsCodec::new(
+                Arc::clone(&codec.schema),
+                &target.upsert_columns,
+                target.strategy,
+                &target.match_precisions,
+            )
+        });
+        Ok(())
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_copySinkMaterializerCanonicalMemoryState<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    source: jlong,
+    target: jlong,
+) {
+    crate::state::canonical_memory::copy::<SinkMaterializer>(env, source, target);
+}

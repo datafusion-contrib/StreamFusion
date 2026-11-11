@@ -818,3 +818,172 @@ fn buffered_partial_namespaces_survive_late_barriers_and_dormant_state_handoffs(
         }
     }
 }
+
+#[test]
+fn legacy_timer_watermark_replays_only_before_the_first_post_restore_watermark() {
+    for cumulative in [false, true] {
+        for persistent in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("state");
+            let mut source = shared(
+                persistent.then_some(path.as_path()),
+                false,
+                cumulative,
+                true,
+            );
+            let batch = |time| {
+                RecordBatch::try_from_iter(vec![
+                    ("key0", Arc::new(Int64Array::from(vec![1])) as ArrayRef),
+                    ("value0", Arc::new(Int64Array::from(vec![1])) as ArrayRef),
+                    ("ts", Arc::new(Int64Array::from(vec![time])) as ArrayRef),
+                ])
+                .unwrap()
+            };
+            source.update(&batch(100)).unwrap();
+            assert_eq!(source.flush(1000).unwrap().num_rows(), 1);
+            let mut target = shared(None, false, cumulative, true);
+            copy_shared(&mut source, &mut target, false);
+            target.timer_watermark_uninitialized = true;
+            let mut captured = shared(None, false, cumulative, true);
+            crate::state::canonical_memory::CanonicalMemoryState::copy_state(
+                &mut target,
+                &mut captured,
+            )
+            .unwrap();
+            for value in [&mut target, &mut captured] {
+                value.update(&batch(500)).unwrap();
+                let output = value.flush(2000).unwrap();
+                let ends = output
+                    .column_by_name("window_end")
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap();
+                assert_eq!(ends.values().as_ref(), &[1000, 2000]);
+                value.update(&batch(500)).unwrap();
+                let output = value.flush(3000).unwrap();
+                let ends = output
+                    .column_by_name("window_end")
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap();
+                assert_eq!(ends.values().as_ref(), &[3000]);
+            }
+        }
+    }
+}
+
+#[test]
+fn memory_capture_reserves_actual_state_and_wrappers_then_keeps_live_accounting() {
+    use crate::state::canonical_memory::CanonicalMemoryState;
+    for cumulative in [false, true] {
+        for tracked in [false, true] {
+            let factory = || {
+                TumblingAggregator::new(3000, 1000, cumulative, vec![0], vec![7])
+                    .with_key_timestamp_precisions(vec![-1])
+            };
+            let input = |value| {
+                RecordBatch::try_from_iter(vec![
+                    ("key0", Arc::new(Int64Array::from(vec![1])) as ArrayRef),
+                    (
+                        "value0",
+                        Arc::new(Int64Array::from(vec![value])) as ArrayRef,
+                    ),
+                    ("ts", Arc::new(Int64Array::from(vec![100])) as ArrayRef),
+                ])
+                .unwrap()
+            };
+            let mut source = factory();
+            if tracked {
+                source = source.with_memory_budget(1 << 20).unwrap();
+            }
+            source.update(&input(1)).unwrap();
+            let original = source.computed_state_bytes();
+            let mut denied = factory().with_memory_budget(1).unwrap();
+            assert!(matches!(
+                source.copy_state(&mut denied),
+                Err(DataFusionError::ResourcesExhausted(_))
+            ));
+            assert_eq!(
+                original,
+                source.computed_state_bytes(),
+                "denial must not wrap live state"
+            );
+            if tracked {
+                assert_eq!(original, source.memory.state_bytes);
+            }
+            let mut frozen = factory().with_memory_budget(1 << 20).unwrap();
+            source.copy_state(&mut frozen).unwrap();
+            assert!(
+                frozen.memory.state_bytes > original,
+                "shared wrappers need reservation"
+            );
+            assert_eq!(frozen.computed_state_bytes(), frozen.memory.state_bytes);
+            if tracked {
+                assert_eq!(source.computed_state_bytes(), source.memory.state_bytes);
+            }
+            let reserved = frozen.memory.state_bytes;
+            let mut second = factory().with_memory_budget(1 << 20).unwrap();
+            source.copy_state(&mut second).unwrap();
+            assert_eq!(
+                reserved, second.memory.state_bytes,
+                "recapture must not add wrappers twice"
+            );
+            source.update(&input(2)).unwrap();
+            if tracked {
+                assert_eq!(source.computed_state_bytes(), source.memory.state_bytes);
+            }
+            assert_eq!(source.flush(i64::MAX).unwrap().num_rows(), 3);
+            let first = frozen.flush(i64::MAX).unwrap();
+            let second = second.flush(i64::MAX).unwrap();
+            assert_eq!(first, second);
+            assert!(column_i64(&first, "result0")
+                .values()
+                .iter()
+                .all(|count| *count == 1));
+        }
+    }
+}
+
+#[test]
+fn legacy_hop_registers_all_windows_and_does_not_schedule_an_empty_tail() {
+    use crate::state::canonical_memory::CanonicalMemoryState;
+    let factory = || TumblingAggregator::new(6000, 2000, false, vec![0], vec![3]);
+    let mut source = factory();
+    source.legacy_slices = true;
+    source.enable_canonical_slicing(-1).unwrap();
+    let batch = RecordBatch::try_from_iter(vec![
+        ("key0", Arc::new(Int64Array::from(vec![1])) as ArrayRef),
+        ("value0", Arc::new(Int64Array::from(vec![None])) as ArrayRef),
+        ("ts", Arc::new(Int64Array::from(vec![1000])) as ArrayRef),
+    ])
+    .unwrap();
+    source.update(&batch).unwrap();
+    assert_eq!(
+        source.slice_timers.keys().copied().collect::<Vec<_>>(),
+        vec![2000, 4000, 6000]
+    );
+    let mut captured = factory();
+    source.copy_state(&mut captured).unwrap();
+    assert!(captured.legacy_slices);
+    for value in [&mut source, &mut captured] {
+        let first = value.flush(2000).unwrap();
+        assert_eq!(first.num_rows(), 1);
+        assert_eq!(
+            column_i64(&first, "result0").value(0),
+            0,
+            "NULL-only windows remain live without COUNT(*)"
+        );
+        assert_eq!(
+            value.slice_timers.keys().copied().collect::<Vec<_>>(),
+            vec![4000, 6000]
+        );
+        assert_eq!(value.flush(6000).unwrap().num_rows(), 2);
+        assert!(
+            value.slice_timers.is_empty(),
+            "legacy timers must not schedule an orphan tail"
+        );
+        assert!(value.windows.is_empty());
+    }
+}

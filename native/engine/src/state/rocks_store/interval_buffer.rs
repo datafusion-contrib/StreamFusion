@@ -1,12 +1,13 @@
+use super::retained_rows::RetainedRows;
 use super::{
     checkpoint_files, copy_checkpoint_db, merged_timer_deadline, open_shared_db, re,
     stored_timer_deadline, write_timer_deadline, FlinkWriteBatch, OpenedDb, PAIR_FIRST_TABLE,
     PAIR_SECOND_TABLE, TIMER_DEADLINE_KEY,
 };
 use crate::*;
-use arrow::row::{RowConverter, SortField};
 use rocksdb::Cache;
 use rocksdb::{Direction, IteratorMode, Options, DB};
+#[cfg(test)]
 use std::sync::Arc;
 
 mod canonical;
@@ -52,10 +53,10 @@ pub(crate) struct BufferedIntervalRow {
 /// rows were eagerly removed. On restore new sequences start above the persisted high-water marks,
 /// so restored and new row ids never collide.
 pub(crate) struct RocksIntervalBuffer {
-    db: Arc<DB>,
+    db: StateDb,
     _cache: Option<Cache>,
     max_parallelism: usize,
-    converters: (RowConverter, RowConverter),
+    converters: (RetainedRows, RetainedRows),
     next_seq: [u64; 2],
     timer_deadline: i64,
     generation: i64,
@@ -63,13 +64,19 @@ pub(crate) struct RocksIntervalBuffer {
 }
 
 impl RocksIntervalBuffer {
+    pub(crate) fn legacy_snapshot_reader(
+        &self,
+    ) -> Result<Option<super::legacy_snapshot::LegacySnapshotReader>, DataFusionError> {
+        super::legacy_snapshot::LegacySnapshotReader::open(&self.db)
+    }
+
     pub(crate) fn create(
         config: RocksStoreConfig,
         left_schema: SchemaRef,
         right_schema: SchemaRef,
     ) -> Result<Self, DataFusionError> {
         let supported = |schema: &SchemaRef| {
-            rocks_row_supported(
+            RetainedRows::supported(
                 &schema
                     .fields()
                     .iter()
@@ -127,15 +134,19 @@ impl RocksIntervalBuffer {
                 DB::open_for_read_only(&Options::default(), source, false).map_err(re)?;
             for row in source_db.iterator(IteratorMode::Start) {
                 let (key, value) = row.map_err(re)?;
-                if key.as_ref() == TIMER_DEADLINE_KEY {
+                if key.as_ref() == TIMER_DEADLINE_KEY || key.as_ref() == super::SNAPSHOT_TIMER_KEY {
                     buffer.timer_deadline = merged_timer_deadline(buffer.timer_deadline, &value);
                     continue;
                 }
-                if key.len() < 5 {
+                if key.len() < 4 {
                     continue;
                 }
                 let kg = i32::from_be_bytes(key[..4].try_into().expect("key group prefix"));
                 if !key_groups.contains(&kg) {
+                    continue;
+                }
+                if key.len() == 4 {
+                    writes.put(key, value)?;
                     continue;
                 }
                 let table = key[4];
@@ -167,14 +178,13 @@ impl RocksIntervalBuffer {
         right_schema: SchemaRef,
     ) -> Result<Self, DataFusionError> {
         let converter = |schema: &SchemaRef| {
-            RowConverter::new(
-                schema
+            RetainedRows::new(
+                &schema
                     .fields()
                     .iter()
-                    .map(|field| SortField::new(field.data_type().clone()))
-                    .collect(),
+                    .map(|field| field.data_type().clone())
+                    .collect::<Vec<_>>(),
             )
-            .map_err(|e| DataFusionError::External(Box::new(e)))
         };
         Ok(Self {
             db: opened.db,
@@ -213,9 +223,7 @@ impl RocksIntervalBuffer {
     ) -> Result<(), DataFusionError> {
         let table = Self::table(left);
         let converter = self.converter(left);
-        let rows = converter
-            .convert_columns(batch.columns())
-            .map_err(|e| DataFusionError::External(Box::new(e)))?;
+        let rows = converter.encode(batch.columns())?;
         let mut encoder = BinaryRowBatchEncoder::new(batch, key_columns, key_timestamp_precisions);
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         for (index, row) in rows.iter().enumerate() {
@@ -422,11 +430,7 @@ impl RocksIntervalBuffer {
         rows: &[&BufferedIntervalRow],
     ) -> Result<RecordBatch, DataFusionError> {
         let converter = self.converter(left);
-        let parser = converter.parser();
-        let parsed: Vec<_> = rows.iter().map(|row| parser.parse(&row.row)).collect();
-        let columns = converter
-            .convert_rows(parsed)
-            .map_err(|e| DataFusionError::External(Box::new(e)))?;
+        let columns = converter.decode(rows.iter().map(|row| row.row.as_ref()))?;
         Ok(RecordBatch::try_new(schema.clone(), columns)?)
     }
 
@@ -480,7 +484,7 @@ impl RocksIntervalBuffer {
         key
     }
 
-    fn converter(&self, left: bool) -> &RowConverter {
+    fn converter(&self, left: bool) -> &RetainedRows {
         if left {
             &self.converters.0
         } else {

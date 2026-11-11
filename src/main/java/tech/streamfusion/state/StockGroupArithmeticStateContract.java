@@ -123,23 +123,40 @@ public final class StockGroupArithmeticStateContract implements StockStateContra
   }
 
   @Override
-  public void clear(CheckpointableKeyedStateBackend<RowData> backend) throws Exception {
-    var state = state(backend);
-    try (var stream = backend.getKeys(STATE, VoidNamespace.INSTANCE)) {
-      for (var key : stream.map(keys::copy).collect(java.util.stream.Collectors.toList())) {
-        backend.setCurrentKey(key);
-        state.clear();
-      }
+  public org.apache.flink.runtime.state.SavepointResources<RowData> snapshot(
+      StockSnapshotContext context, long handle, boolean persistent) throws Exception {
+    if (persistent) {
+      configureNativeState(handle, true);
+      return context.nativeValue(
+          STATE,
+          new RowDataSerializer(accumulatorType),
+          ttl,
+          () -> Native.captureGroupArithmeticCanonicalSnapshot(handle),
+          bridgeType,
+          this::decode);
     }
+    return null;
   }
 
   @Override
   public void exportState(
       CheckpointableKeyedStateBackend<RowData> backend, long handle, boolean persistent)
       throws Exception {
-    configureNativeState(handle, persistent);
     clear(backend);
     var state = state(backend);
+    visit(
+        handle,
+        persistent,
+        (key, value, written) -> {
+          backend.setCurrentKey(key);
+          state.update(value, written);
+        });
+  }
+
+  private void visit(
+      long handle, boolean persistent, StockNativeValueSnapshot.Entry<RowData> receiver)
+      throws Exception {
+    configureNativeState(handle, persistent);
     Native.exportGroupArithmeticCanonical(
         handle,
         persistent,
@@ -151,27 +168,7 @@ public final class StockGroupArithmeticStateContract implements StockStateContra
                       NativeAllocator.SHARED, array, schema, NativeAllocator.DICTIONARIES)) {
             var reader = ArrowConversion.createArrowReader(root, bridgeType);
             for (int index = 0; index < root.getRowCount(); index++) {
-              RowData row = reader.read(index);
-              byte[] encoded = row.getBinary(0);
-              var key = new BinaryRowData(keyType.getFieldCount());
-              key.pointTo(MemorySegmentFactory.wrap(encoded), 0, encoded.length);
-              validateKey(key);
-              var accumulator = new GenericRowData(accumulatorType.getFieldCount());
-              boolean[] assigned = new boolean[accumulator.getArity()];
-              if (recordCountField >= 0)
-                assign(accumulator, assigned, recordCountField, row.getLong(1));
-              for (int i = 0; i < kinds.length; i++) {
-                assign(
-                    accumulator,
-                    assigned,
-                    scalarFields[i],
-                    row.isNullAt(3 + 2 * i) ? null : row.getLong(3 + 2 * i));
-                if (countFields[i] >= 0)
-                  assign(accumulator, assigned, countFields[i], row.getLong(4 + 2 * i));
-              }
-              validateAccumulator(accumulator);
-              backend.setCurrentKey(key);
-              state.update(accumulator, row.getLong(2));
+              decode(reader.read(index), receiver);
             }
           } catch (Exception failure) {
             throw new IllegalStateException("Cannot project stock group accumulators", failure);
@@ -212,6 +209,28 @@ public final class StockGroupArithmeticStateContract implements StockStateContra
       if (countFields[i] >= 0 && row.isNullAt(countFields[i]))
         throw new IllegalStateException("NULL in a required accumulator count");
     }
+  }
+
+  private void decode(RowData row, StockNativeValueSnapshot.Entry<RowData> receiver)
+      throws Exception {
+    byte[] encoded = row.getBinary(0);
+    var key = new BinaryRowData(keyType.getFieldCount());
+    key.pointTo(MemorySegmentFactory.wrap(encoded), 0, encoded.length);
+    validateKey(key);
+    var accumulator = new GenericRowData(accumulatorType.getFieldCount());
+    boolean[] assigned = new boolean[accumulator.getArity()];
+    if (recordCountField >= 0) assign(accumulator, assigned, recordCountField, row.getLong(1));
+    for (int i = 0; i < kinds.length; i++) {
+      assign(
+          accumulator,
+          assigned,
+          scalarFields[i],
+          row.isNullAt(3 + 2 * i) ? null : row.getLong(3 + 2 * i));
+      if (countFields[i] >= 0)
+        assign(accumulator, assigned, countFields[i], row.getLong(4 + 2 * i));
+    }
+    validateAccumulator(accumulator);
+    receiver.write(key, accumulator, row.getLong(2));
   }
 
   @Override

@@ -15,6 +15,80 @@ immediately. Sixteen ordinary-checkpoint controls cover TIMESTAMP/TIMESTAMP_LTZ 
 
 ## Stock canonical savepoint interoperability
 
+Fixed windows and sessions use a shared native persistent-state codec for scalar headers and
+record-level DISTINCT memberships. Existing canonical COUNT DISTINCT bindings now select native
+RocksDB when that backend is configured. A savepoint pins its read view at the barrier and converts
+bounded header/member frames on Flink's asynchronous writer thread, without loading the complete
+membership map into heap. Live input and concurrent captures use independent views. This covers
+admitted TUMBLE/HOP/CUMULATE bindings on 1.18 and 2.2, admitted SESSION TVFs on 2.2 and legacy
+event/processing-time SESSION/TUMBLE/HOP group windows on both lines.
+Flink 1.18 has no SESSION TVF.
+
+Legacy SESSION reuses the released `window-aggs`, `session-window-mapping` and window timer
+serializers. Ordinary SQL and compiled plans bind the original owner and key-group maximum,
+including a singleton maximum for global sessions. The binding checks the actual assigner,
+accumulator serializer, trigger/update mode and lateness before replacing the owner. Scalar and
+COUNT DISTINCT layouts use the same converter and persistent records as the TVF binding.
+Legacy recovery resets watermark admission and writes no operator watermark state, while TVFs
+retain their existing UNION watermark state. Legacy processing-time SESSION shares the same
+converter and pinned RocksDB capture. Its admission ignores event watermarks and uses the
+processing clock, matching the released legacy merging function; the existing 2.2 TVF watermark
+admission behavior remains separate. Existing aggregate/key/view restrictions still apply;
+early/late emission and retracting input retain stock canonical owners.
+
+Legacy TUMBLE/HOP uses the same slicing converter with the released TimeWindow serializer instead
+of TVF Long namespaces. HOP accumulators occupy panes, while timer namespaces describe complete
+windows. Native legacy HOP registers all containing window deadlines as input arrives, matching
+Flink's legacy trigger lifecycle without requiring a hidden COUNT(*) accumulator. Nullable COUNT
+and DISTINCT can therefore retain NULL-only windows without scheduling an empty tail. The binding
+requires zero offset, final-only emission and a positive size that is an integral multiple of the
+slide; other legacy fixed-window contracts retain stock owners. Event and processing clocks,
+watermark reset and original key-group ownership use the existing state/capture machinery.
+
+The shared legacy fixture selects fourteen pair-covering cases plus all regional HOP combinations
+(44 distinct local cases) per release from a 288-combination
+default/hosted provider spanning event/processing SESSION/TUMBLE/HOP, native memory/RocksDB,
+keyed/global, scalar/DISTINCT, TIMESTAMP/LTZ, UTC/Berlin and ordinary/compiled submission.
+Each imports stock state, finishes two overlapping captures on the writer after live input and
+native-owner close, resumes nonempty stock output and returns through an ordinary native
+checkpoint. An older event-time window admitted after recovery verifies the watermark reset;
+processing-time controls advance both engines through the same deadlines and send event
+watermarks ahead of all deadlines before merging and ordinary native recovery. These component controls
+do not establish exhaustive job, rescale, failure or historical native-layout qualification. Heap
+restores additionally compare every released timer before firing and continued output against a
+stock reference re-exported through RocksDB, matching the projection's canonical timer ordering.
+The RocksDB continuation matrix compares against a direct stock restore. At a spring DST gap,
+several legacy HOP windows share an epoch deadline, and stock heap/RocksDB timer ordering alone can change when shared panes are
+cleared. A stock-only 2.2.1 restore reproduces different COUNT/SUM results from identical saved
+state. State interchange preserves the timer entries and both backend continuation checks remain active;
+identical output across different stock timer orderings at that upstream boundary is not qualified.
+The combined legacy/TVF/DISTINCT/processing-time/planner regression selection passes 170 checks on
+2.2 and 141 on a clean 1.18 build, with 25 expected absent-SESSION-TVF skips on 1.18. All 44
+legacy cases pass on each release. Native checks pass 1,544 tests with two existing ignores;
+memory-only compilation and the JNI build pass. Java-only follow-ups do not repeat native suites.
+
+DataFusion's byte-backed COUNT DISTINCT state can include a NULL marker even though its result
+counts only non-NULL values. Record-level persistence omits that marker from both membership
+records and cached cardinality/inventory counts. An all-NULL partial still retains its window
+owner and independent scalar state; later non-NULL partials merge normally. Counted DISTINCT
+continues to reject NULL members. The regression covers TUMBLE/HOP/CUMULATE, repeated local
+partials and native restore after an all-NULL prefix. This repairs the existing two-phase RocksDB
+path exercised by the unchanged upstream window-join queries; admission and state layout do not
+change.
+
+Scalar-only checkpoint row bytes remain compatible. Old snapshot-backed checkpoints migrate one
+key-group blob at a time, preserving processing deadlines through aligned/clipped restore and
+empty timer-only checkpoints. That legacy migration retains a one-partition memory floor.
+Cached counted cardinalities and signed map frequencies remain independent; set imports keep a
+per-owner disk inventory for completion checks. Processing and snapshots reject unfinished
+membership imports. Ordinary execution may reconstruct the touched window/session; canonical
+conversion streams the separate records directly.
+
+Fixed/session DISTINCT membership readers borrow encoded entries from a pinned iterator and
+reserve prefixes and bounded value/owner frames before parsing them. The capture's conversion
+budget follows work onto the asynchronous writer thread. Refused frames and failed receivers
+release that work; the persisted memberships and live operator remain available for retry.
+
 The native transfer foundation can explicitly bind COUNT(DISTINCT) slots, project each scalar
 cardinality and visit its retained values as flat, namespaced rows. Import validates every
 namespace/key/slot against the scalar state. Set-based imports validate the cardinality against
@@ -51,7 +125,13 @@ Fixed-window and SESSION restore installs calendar, SQL offset and final-window 
 import. Input-watermark progress survives canonical and native recovery; stale watermarks cannot
 reopen closed event-time windows. Processing-time fixed windows reconstruct their pending timers
 from imported state, including timers that are already overdue. SESSION recovery retains the
-watermark admission rules used by the stock merging processor.
+watermark admission rules used by the stock merging processor. SESSION restore stages timer
+membership, historical aliases, sorted actual-window bounds and accumulator ownership in the
+shared disk spool. Lookup retains both state-window bounds, ordered scans reject overlapping
+mappings, and DISTINCT resolves aliases without a job-sized Java map. Scalar transfers obey
+1,024-row and four-MiB payload-estimate limits, plus one oversized row. The spool closes and
+releases its configured budget on success or failure; stock entries clear only after successful
+conversion and scratch close. This changes conversion working memory, not window admission.
 
 Local/global fixed-window plans drain local partials at snapshot barriers. Global processing keeps
 the released slice/final distinction and flushes partial buffers before forwarding a watermark.
@@ -91,7 +171,8 @@ phase and invocation association; open-only or unrelated work cannot stand in fo
 Three unpartitioned SESSION programs now execute typed native GROUP BY after the stock session
 table function. Their grouped savepoint state is empty, so they receive processing credit only;
 separate nonempty GROUP BY jobs establish that adapter's interchange scope. Native unpartitioned
-session assignment remains unqualified. Partitioned sessions use the separate window contract. Retracting window inputs, asynchronous state,
+SESSION TVF assignment remains unqualified; legacy global SESSION uses the direct session binding
+described above. Partitioned sessions use the separate window contract. Retracting window inputs, asynchronous state,
 unaligned checkpoints, unsupported aggregate/view schemas, session FILTER and processing-time
 partial-window plans retain stock owners. Wider schemas, filtered/value-type combinations,
 connector transactions, writer rescaling and failure/version matrices remain tracked in
@@ -1850,3 +1931,41 @@ Other aggregate arguments and grouping keys retain their verified type requireme
 The capability check uses the window runtime's own COUNT kinds, including signed
 retract-count and live-count state. Those codes differ from ordinary group aggregate
 kinds; their validity-only input contract is shared without conflating the two encodings.
+
+## Flink 1.18 canonical binding
+
+The shared canonical planner and state contracts cover fixed TUMBLE/HOP/CUMULATE state and the
+stateless local barrier on released Flink 1.18.1, using both native stores. Released 1.18 leaves the
+window timer service's watermark at MIN after restore, even though it restores the processor's
+progress. Before the first new watermark, its combiner can register an already-fired slice again.
+The native shared-window contract retains this release behavior; 2.2 initializes timer progress
+from the savepoint. Checkpoint comparisons restore the stock reference at the same boundary as
+the tested owner, including stock-to-stock controls, rather than comparing different lifecycles.
+
+The 1.18 cohort passes 295 runtime checks and 408 planner checks. It includes late input, regional
+zones, SQL offsets, DISTINCT views, timer-only captures, canonical returns and native recovery.
+Six isolated complete-job controls additionally switch engines through TUMBLE, two-phase TUMBLE
+and DISTINCT TUMBLE on both native stores; the same job fixtures are shared between both releases.
+The 54 SESSION TVF cases are skipped because that SQL feature is unavailable in released 1.18.
+Processing-time controls avoid the older stock operator's overflow/stalled-buffer behavior under
+extreme future watermarks. These controls do not qualify every aggregate layout or cross-line
+upgrades; the broader complete-job matrices above remain separate qualification.
+
+The shared SESSION complete-job fixture uses the legacy group-window SQL on 1.18 and the TVF
+on 2.2. Explicit legacy scalar and COUNT DISTINCT job fixtures also run on both lines. Ten selected
+legacy round trips per release cover ordinary SQL and compiled plans, both initial engine orders
+and both native stores. Two additional SESSION round trips exercise the release-default SQL form.
+Stock and native legs restore at the same source offsets; the independent oracle models the
+legacy owner's watermark reset at each cut. This matters for a row that becomes admissible again
+after recovery. Stock workers run without StreamFusion, and native legs require consumed input,
+original identities and the requested backend. Canonical DISTINCT jobs require direct native
+RocksDB rather than accepting snapshot-backed heap execution. These checks extend qualification
+of existing contracts; operator and type admission are unchanged.
+
+## Canonical transfer working memory
+
+Slicing-window restore validates timer/namespace and shared-key ownership in the shared scoped
+disk spool. Past shared slices retain their released semantics; expired unshared accumulators
+remain excluded from native installation. Accumulator and shared-timer transfers share a
+1,024-row and four-MiB payload estimate, allowing an oversized value. No whole-job timer or
+owner set is retained in Java heap. Native checkpoint formats and operator admission are unchanged.

@@ -1,9 +1,5 @@
 package tech.streamfusion.operator;
 
-import tech.streamfusion.Native;
-import tech.streamfusion.operator.MiniBatchMetrics.FlushReason;
-import tech.streamfusion.planner.NativeConfig;
-import tech.streamfusion.state.RocksDBNativeStateSupport;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
@@ -13,6 +9,9 @@ import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.table.types.logical.RowType;
+import tech.streamfusion.Native;
+import tech.streamfusion.operator.MiniBatchMetrics.FlushReason;
+import tech.streamfusion.state.RocksDBNativeStateSupport;
 
 /**
  * Columnar eager (push→emit) deduplication: Arrow in, Arrow out. Serves the non-buffered dedup
@@ -22,13 +21,13 @@ import org.apache.flink.table.types.logical.RowType;
  * bundled {@code RowTimeMiniBatchDeduplicateFunction} with {@code keepLastRow=false} — keep-last's
  * retracting machinery with the comparator flipped). Keep-last keeps the winning row per key and
  * emits a retract changelog eagerly on each input batch ({@code +I} for a key's first row, {@code
- * -U}(previous)/{@code +U}(new) on replacement — the kind rides the {@code $row_kind$} column;
- * with {@code generateUpdateBefore} and {@code generateInsert} both false every emission is a bare
- * {@code +U}, Flink's insert-sensitivity option off under an only-update-after consumer);
- * proctime keep-first emits each key's first row ({@code +I}, insert-only) and drops the rest. A
- * rowtime order keeps the max-rowtime (keep-last) or min-rowtime (keep-first) row; proctime uses
- * arrival order. Insert-only input. Keys are co-located by the columnar shuffle; the per-key stored
- * row and the checkpointed handle state live here. (Rowtime keep-first without mini-batch is
+ * -U}(previous)/{@code +U}(new) on replacement — the kind rides the {@code $row_kind$} column; with
+ * {@code generateUpdateBefore} and {@code generateInsert} both false every emission is a bare
+ * {@code +U}, Flink's insert-sensitivity option off under an only-update-after consumer); proctime
+ * keep-first emits each key's first row ({@code +I}, insert-only) and drops the rest. A rowtime
+ * order keeps the max-rowtime (keep-last) or min-rowtime (keep-first) row; proctime uses arrival
+ * order. Insert-only input. Keys are co-located by the columnar shuffle; the per-key stored row and
+ * the checkpointed handle state live here. (Rowtime keep-first without mini-batch is
  * watermark-buffered — see {@link NativeColumnarDeduplicateOperator}.)
  */
 public class NativeColumnarKeepLastDeduplicateOperator
@@ -95,13 +94,28 @@ public class NativeColumnarKeepLastDeduplicateOperator
   protected long createRocksDBHandle(
       RocksDBNativeStateSupport rocksdb, byte[][] restoredPartitions) {
     return Native.createRocksDBKeepLastDeduplicator(
-        partitionColumns, keyTimestampPrecisions(), rowtimeColumn, generateUpdateBefore,
-        generateInsert, rowtimeOrdered, keepFirst, miniBatch, compactChanges, stateTtlMillis,
-        getProcessingTimeService().getCurrentProcessingTime(), memoryBudgetBytes(),
-        rocksdb.tableDirectory(), maxParallelism(), rocksdb.optionsJson(),
-        rocksdb.sharedResourcesHandle(), rocksdb.sourceDirectories(),
-        rocksdb.sourceSnapshotTokens(), rocksdb.keyGroupStart(), rocksdb.keyGroupEnd(),
-        rocksdb.aligned(), restoredPartitions);
+        partitionColumns,
+        keyTimestampPrecisions(),
+        rowtimeColumn,
+        generateUpdateBefore,
+        generateInsert,
+        rowtimeOrdered,
+        keepFirst,
+        miniBatch,
+        compactChanges,
+        stateTtlMillis,
+        getProcessingTimeService().getCurrentProcessingTime(),
+        memoryBudgetBytes(),
+        rocksdb.tableDirectory(),
+        maxParallelism(),
+        rocksdb.optionsJson(),
+        rocksdb.sharedResourcesHandle(),
+        rocksdb.sourceDirectories(),
+        rocksdb.sourceSnapshotTokens(),
+        rocksdb.keyGroupStart(),
+        rocksdb.keyGroupEnd(),
+        rocksdb.aligned(),
+        restoredPartitions);
   }
 
   @Override
@@ -159,8 +173,19 @@ public class NativeColumnarKeepLastDeduplicateOperator
   }
 
   @Override
+  protected java.util.function.LongConsumer memoryStateCopier() {
+    final long source = handle;
+    return target -> Native.copyEagerDeduplicatorCanonicalMemoryState(source, target);
+  }
+
+  @Override
   protected void closeHandle() {
-    if (directRocksDBState()) {
+    closeCapturedHandle(handle, directRocksDBState());
+  }
+
+  @Override
+  protected void closeCapturedHandle(long handle, boolean persistent) {
+    if (persistent) {
       Native.closeRocksDBKeepLastDeduplicator(handle);
     } else {
       Native.closeKeepLastDeduplicator(handle);

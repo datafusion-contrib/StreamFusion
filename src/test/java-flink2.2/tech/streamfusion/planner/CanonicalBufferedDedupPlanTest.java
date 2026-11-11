@@ -82,7 +82,9 @@ class CanonicalBufferedDedupPlanTest {
             .collect(java.util.stream.Collectors.toList());
     assertEquals(1, owners.size(), graph.getStreamingPlanAsJSON());
     var owner = owners.get(0);
-    assertEquals(shape.equals("keyless") ? 1 : 257, owner.getMaxParallelism());
+    assertEquals(
+        shape.equals("keyless") ? 1 : 257,
+        tech.streamfusion.compat.FlinkPlanCompat.maximumParallelism(owner));
     assertNull(owner.getTransformationUID());
     var operator = ((SimpleOperatorFactory<?>) owner.getOperatorFactory()).getOperator();
     var ttlField = NativeColumnarDeduplicateOperator.class.getDeclaredField("stateTtlMillis");

@@ -3,6 +3,9 @@ use crate::*;
 mod canonical;
 mod cleanup;
 mod event_cleanup;
+mod event_polling;
+#[cfg(feature = "rocksdb-state")]
+mod metadata_updates;
 use event_cleanup::EVENT_CLEANUP_ARMED;
 mod proc_rows;
 mod range_flush;
@@ -288,6 +291,7 @@ fn over_buffer_value(kind: i64, scalar: &ScalarValue) -> Option<Num> {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct OverAggState {
     agg: RunningAgg,
     retracting_sum: bool,
@@ -2021,6 +2025,7 @@ pub(crate) fn is_window_function_kind(kind: i64) -> bool {
 /// DataFusion accumulators (DataFusion's window evaluators expose no serializable state); we own the
 /// small running state so it checkpoints, computing it incrementally in rowtime order like Flink's
 /// own `OverAggregate` (see divergences/11).
+#[derive(Clone)]
 pub(crate) enum WindowFnState {
     /// `ROW_NUMBER()` over `ROWS UNBOUNDED PRECEDING` — a per-partition counter (1-based).
     RowNumber(i64),
@@ -2708,6 +2713,8 @@ pub(crate) struct OverWindowAggregator {
     proc_rows: HashMap<ByteKey, ProcRowsState>,
     processing_rows_external_timers: bool,
     event_cleanup_external_timers: bool,
+    event_polling: bool,
+    polling_bound: bool,
     event_cleanup_unarmed: ahash::HashSet<ByteKey>,
     /// Per-key last-write wall clock for the proctime unbounded shape's per-value TTL
     /// (`StateTtlConfig`, OnCreateAndWrite / NeverReturnExpired — stamped on every processed row).
@@ -2731,6 +2738,8 @@ pub(crate) struct OverWindowAggregator {
     /// map stay empty between bundles.
     #[cfg(feature = "rocksdb-state")]
     store: Option<crate::state::RocksOverAggStore>,
+    #[cfg(feature = "rocksdb-state")]
+    metadata_updates: metadata_updates::MetadataUpdates,
     /// Point deletes a cleanup staged this call (an expired key clearing its fold or stamp row
     /// silently), written with the call's other store writes so a restore cannot resurrect the
     /// cleared state.
@@ -2749,6 +2758,8 @@ pub(crate) struct OverWindowAggregator {
     key_timestamp_precisions: Vec<i32>,
     canonical_distinct: ahash::HashSet<usize>,
     canonical_distinct_loading: bool,
+    canonical_frame_import: Option<canonical::FrameImport>,
+    canonical_callbacks_import: Option<canonical::CallbackImport>,
     frame_clock: i64,
 }
 
@@ -2783,6 +2794,8 @@ impl OverWindowAggregator {
             proc_rows: HashMap::default(),
             processing_rows_external_timers: false,
             event_cleanup_external_timers: false,
+            event_polling: false,
+            polling_bound: false,
             event_cleanup_unarmed: ahash::HashSet::default(),
             last_write_ms: HashMap::default(),
             pending_rows: HashMap::default(),
@@ -2792,6 +2805,8 @@ impl OverWindowAggregator {
             memory: OperatorMemory::unaccounted(),
             #[cfg(feature = "rocksdb-state")]
             store: None,
+            #[cfg(feature = "rocksdb-state")]
+            metadata_updates: metadata_updates::MetadataUpdates::default(),
             #[cfg(feature = "rocksdb-state")]
             store_tombstones: Vec::new(),
             #[cfg(feature = "rocksdb-state")]
@@ -2805,6 +2820,8 @@ impl OverWindowAggregator {
             key_timestamp_precisions: vec![-1; key_arity],
             canonical_distinct: ahash::HashSet::default(),
             canonical_distinct_loading: false,
+            canonical_frame_import: None,
+            canonical_callbacks_import: None,
             frame_clock: i64::MIN,
         }
     }
@@ -2899,6 +2916,10 @@ impl OverWindowAggregator {
             Some(deadline) => {
                 if minimum > *deadline {
                     *deadline = armed;
+                    #[cfg(feature = "rocksdb-state")]
+                    if self.store.is_some() {
+                        self.metadata_updates.mark(key);
+                    }
                     if self.event_cleanup_unarmed.remove(key) {
                         self.retention_bytes -= byte_key_bytes(key);
                     }
@@ -2907,12 +2928,16 @@ impl OverWindowAggregator {
             None => {
                 self.retention_bytes += byte_key_bytes(key);
                 self.cleanup_state.insert(ByteKey::from(key), armed);
+                self.mark_store_metadata(key);
                 if self.event_cleanup_unarmed.remove(key) {
                     self.retention_bytes -= byte_key_bytes(key);
                 }
             }
         }
     }
+
+    #[cfg(not(feature = "rocksdb-state"))]
+    fn mark_store_metadata(&mut self, _key: &[u8]) {}
 
     /// Flink's `cleanupState`: drops the key's fold/frame state and its retention stamp, silently
     /// (emitting nothing). On the persistent store the fold row tombstones with the call's other
@@ -2945,8 +2970,8 @@ impl OverWindowAggregator {
         if self.event_cleanup_unarmed.remove(key) {
             self.retention_bytes -= byte_key_bytes(key);
         }
-        if let Some(timers) = self.range_timers.remove(key) {
-            self.retention_bytes -= byte_key_bytes(key) + timers.bytes();
+        if !self.event_polling {
+            self.remove_event_ledger(key);
         }
         if self.proc_rows.remove(key).is_some() {
             self.retention_bytes -= byte_key_bytes(key) + std::mem::size_of::<ProcRowsState>();
@@ -2954,6 +2979,7 @@ impl OverWindowAggregator {
         if self.last_write_ms.remove(key).is_some() {
             self.retention_bytes -= byte_key_bytes(key);
         }
+        self.mark_store_metadata(key);
     }
 
     /// Lazy stand-in for the fired cleanup timer at a key touch (divergences/28): a timer
@@ -2999,6 +3025,7 @@ impl OverWindowAggregator {
             for key in due {
                 if self.pending_rows.contains_key(&key) {
                     let armed = now_ms.saturating_add(self.max_retention_ms);
+                    self.mark_store_metadata(&key.0);
                     self.cleanup_state.insert(key, armed);
                 } else {
                     self.clear_key(&key.0);
@@ -3029,7 +3056,9 @@ impl OverWindowAggregator {
         for row in 0..batch.num_rows() {
             let key = keys_encoded.row(row).data();
             self.expire_if_due(key, now_ms);
-            self.register_cleanup(key, now_ms);
+            if self.deadline_cleaning() {
+                self.register_cleanup(key, now_ms);
+            }
             match self.pending_rows.get_mut(key) {
                 Some(count) => *count += 1,
                 None => {
@@ -3058,7 +3087,9 @@ impl OverWindowAggregator {
                     self.retention_bytes -= byte_key_bytes(key);
                 }
             }
-            self.register_cleanup(key, now_ms);
+            if self.deadline_cleaning() {
+                self.register_cleanup(key, now_ms);
+            }
         }
     }
 
@@ -3172,6 +3203,19 @@ impl OverWindowAggregator {
         &mut self,
         restored_at_ms: i64,
     ) -> Result<(), DataFusionError> {
+        self.hydrate_store_retention(restored_at_ms)?;
+        self.reconcile_store_metadata()
+    }
+
+    #[cfg(feature = "rocksdb-state")]
+    fn hydrate_store_retention(&mut self, restored_at_ms: i64) -> Result<(), DataFusionError> {
+        if self.event_polling {
+            self.polling_bound = false;
+            self.cleanup_state.clear();
+            self.event_cleanup_unarmed.clear();
+            self.range_timers.clear();
+            self.retention_bytes = 0;
+        }
         if self.processing_rows() {
             let before = self.proc_rows_bytes();
             for (key, bytes) in self.store.as_ref().unwrap().scan_proc_rows()? {
@@ -3338,6 +3382,9 @@ impl OverWindowAggregator {
                 if self.deadline_cleaning()
                     || self.range_offset().is_some()
                     || self.processing_rows()
+                    || batch
+                        .column_by_name(event_polling::POLLING_TIMERS)
+                        .is_some()
                 {
                     self.write_store_cleanup(&batch)?;
                 }
@@ -3382,6 +3429,14 @@ impl OverWindowAggregator {
         Ok(())
     }
 
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn migrate_legacy_snapshot_store(&mut self) -> Result<(), DataFusionError> {
+        if let Some(reader) = self.store.as_ref().unwrap().legacy_snapshot_reader()? {
+            reader.migrate(|partitions, _timer| self.import_partitions(partitions))?;
+        }
+        Ok(())
+    }
+
     /// One restored unbounded-fold batch (`[key0.., state0.., distinct lists.., stamp?]`) into
     /// the folds and distinct tables.
     #[cfg(feature = "rocksdb-state")]
@@ -3390,6 +3445,9 @@ impl OverWindowAggregator {
         batch: &RecordBatch,
         state_count: usize,
     ) -> Result<(), DataFusionError> {
+        if batch.num_rows() == 0 {
+            return Ok(());
+        }
         let stamps = retention_stamps(batch);
         let arity = batch.num_columns()
             - state_count
@@ -3573,7 +3631,7 @@ impl OverWindowAggregator {
         &mut self,
         snapshot_dir: &str,
     ) -> Result<crate::state::RocksCheckpointManifest, DataFusionError> {
-        self.ensure_canonical_distinct_ready()?;
+        self.ensure_canonical_ready()?;
         let watermark = self.watermark;
         self.sync_store_cleanup()?;
         self.store
@@ -3669,15 +3727,17 @@ impl OverWindowAggregator {
         Ok(self)
     }
 
+    fn retained_state_bytes(&self) -> usize {
+        buffered_batches_bytes(&self.buffered) + self.inner.state_bytes() + self.retention_bytes
+    }
+
     /// Re-accounts after a state change: the buffered batches are recounted (cheap, per batch not
     /// per row) and the inner fold state and retention maps report their tracked bytes.
     fn account(&mut self) -> Result<(), DataFusionError> {
+        #[cfg(feature = "rocksdb-state")]
+        self.flush_metadata_updates()?;
         if self.memory.tracking() {
-            self.memory.set(
-                buffered_batches_bytes(&self.buffered)
-                    + self.inner.state_bytes()
-                    + self.retention_bytes,
-            );
+            self.memory.set(self.retained_state_bytes());
             self.memory.account()?;
         }
         Ok(())
@@ -3689,7 +3749,7 @@ impl OverWindowAggregator {
     /// resident — nothing folds here; emission and the per-key fold are watermark-driven
     /// (`flush`) — while the deadline bookkeeping runs exactly as on memory state.
     pub(crate) fn push(&mut self, batch: RecordBatch, now_ms: i64) -> Result<(), DataFusionError> {
-        self.ensure_canonical_distinct_ready()?;
+        self.ensure_canonical_ready()?;
         #[cfg(feature = "rocksdb-state")]
         let batch = if self.store.is_some() {
             strip_string_caches(&Self::normalize_interval_columns(&batch))
@@ -3702,11 +3762,12 @@ impl OverWindowAggregator {
         let input_rows = batch.num_rows();
         let batch = filter_record_batch(&batch, &on_time)?;
         self.late_drops += (input_rows - batch.num_rows()) as u64;
-        if self.deadline_cleaning() {
+        if self.deadline_cleaning() || self.event_polling {
             self.register_batch(&batch, now_ms);
         }
         self.observe_heap_snapshot(&batch, false);
         self.register_range_batch(&batch);
+        self.register_polling_batch(&batch);
         #[cfg(feature = "rocksdb-state")]
         if self.store.is_some() {
             self.persist_range_stamps(&batch)?;
@@ -3823,6 +3884,7 @@ impl OverWindowAggregator {
             }
         };
         if registered {
+            self.mark_store_metadata(key);
             self.register_range_timer(key, maximum);
         }
     }
@@ -4333,6 +4395,11 @@ impl OverWindowAggregator {
             _ => self.inner.update(&projected),
         };
         self.retention_bytes = self.retention_bytes - proc_bytes + self.proc_rows_bytes();
+        if proc_enabled {
+            for (key, _) in &touched {
+                self.mark_store_metadata(&key.0);
+            }
+        }
 
         let OverInner::Bounded(inner) = &self.inner else {
             unreachable!("bounded store fold on a non-bounded shape");
@@ -4501,7 +4568,12 @@ impl OverWindowAggregator {
     /// anyway — its pending rows deferred the cleanup, exactly as memory mode — and re-arms
     /// through the post-fire settle.
     #[cfg(feature = "rocksdb-state")]
-    fn flush_store(&mut self, watermark: i64, now_ms: i64) -> Result<RecordBatch, DataFusionError> {
+    fn flush_store(
+        &mut self,
+        watermark: i64,
+        now_ms: i64,
+        due: Option<&ahash::HashSet<ByteKey>>,
+    ) -> Result<RecordBatch, DataFusionError> {
         // A sweep may have cleared idle keys this call; their deletes must land before hydration.
         self.flush_tombstones()?;
         let schema = self.input_schema.clone().unwrap_or_else(|| {
@@ -4510,11 +4582,28 @@ impl OverWindowAggregator {
                 .expect("over rocksdb store")
                 .payload_schema()
         });
-        let complete = self
-            .store
-            .as_mut()
-            .expect("over rocksdb store")
-            .take_complete(watermark, &schema)?;
+        let complete = if let Some(due) = due {
+            let mut converter = Some(key_row_converter_from_types(&self.store_key_types));
+            let key_columns = &self.key_columns;
+            self.store
+                .as_mut()
+                .expect("over rocksdb store")
+                .take_complete_matching(watermark, &schema, |batch| {
+                    let arrays = key_columns
+                        .iter()
+                        .map(|&column| batch.column(column))
+                        .collect::<Vec<_>>();
+                    let keys = encode_keys(&mut converter, &arrays, batch.num_rows());
+                    (0..batch.num_rows())
+                        .map(|row| due.contains(keys.row(row).data()))
+                        .collect()
+                })?
+        } else {
+            self.store
+                .as_mut()
+                .expect("over rocksdb store")
+                .take_complete(watermark, &schema)?
+        };
         let Some(complete) = complete else {
             self.expire_range(watermark);
             self.flush_tombstones()?;
@@ -4531,7 +4620,7 @@ impl OverWindowAggregator {
             self.write_bounded_stamps(&touched)?;
             Self::append_aggregates(&complete, &aggregates)
         } else {
-            let settle = self.deadline_cleaning().then_some(now_ms);
+            let settle = (self.deadline_cleaning() || self.event_polling).then_some(now_ms);
             let aggregates = self.fold_unbounded_on_store(&complete, Arc::new(rt), settle)?;
             Self::append_aggregates(&complete, &aggregates)
         };
@@ -4554,7 +4643,7 @@ impl OverWindowAggregator {
         batch: RecordBatch,
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
-        self.ensure_canonical_distinct_ready()?;
+        self.ensure_canonical_ready()?;
         self.frame_clock = now_ms;
         #[cfg(feature = "rocksdb-state")]
         let batch = if self.store.is_some() {
@@ -4636,14 +4725,26 @@ impl OverWindowAggregator {
     /// rest buffered. Returns an empty batch when nothing is complete. `now_ms` is the host's
     /// processing-time reading — the cleanup-deadline clock.
     fn flush_inner(&mut self, watermark: i64, now_ms: i64) -> Result<RecordBatch, DataFusionError> {
-        self.ensure_canonical_distinct_ready()?;
+        let due = self.begin_polling(watermark)?;
+        let output = self.flush_rows_inner(watermark, now_ms, due.as_ref())?;
+        self.finish_polling(watermark, now_ms, due)?;
+        Ok(output)
+    }
+
+    fn flush_rows_inner(
+        &mut self,
+        watermark: i64,
+        now_ms: i64,
+        due: Option<&ahash::HashSet<ByteKey>>,
+    ) -> Result<RecordBatch, DataFusionError> {
+        self.ensure_canonical_ready()?;
         self.watermark = self.watermark.max(watermark);
         if self.deadline_cleaning() {
             self.maybe_sweep(now_ms);
         }
         #[cfg(feature = "rocksdb-state")]
         if self.store.is_some() {
-            return self.flush_store(watermark, now_ms);
+            return self.flush_store(watermark, now_ms, due);
         }
         let schema = match &self.input_schema {
             Some(schema) => schema.clone(),
@@ -4655,10 +4756,26 @@ impl OverWindowAggregator {
         };
         let all = concat_batches(&schema, &self.buffered).expect("failed to concat over buffer");
         let rt_millis = rt_to_millis(all.column(self.rt_column));
-        let complete_mask: BooleanArray = rt_millis
-            .iter()
-            .map(|v| Some(v.unwrap() <= watermark))
-            .collect();
+        let complete_mask: BooleanArray = if let Some(due) = due {
+            let key_arrays = self
+                .key_columns
+                .iter()
+                .map(|&column| all.column(column))
+                .collect::<Vec<_>>();
+            let keys = encode_keys(&mut self.key_converter, &key_arrays, all.num_rows());
+            rt_millis
+                .iter()
+                .enumerate()
+                .map(|(row, time)| {
+                    Some(time.unwrap() <= watermark && due.contains(keys.row(row).data()))
+                })
+                .collect()
+        } else {
+            rt_millis
+                .iter()
+                .map(|time| Some(time.unwrap() <= watermark))
+                .collect()
+        };
         let complete =
             filter_record_batch(&all, &complete_mask).expect("failed to filter complete");
         let pending_mask = arrow::compute::not(&complete_mask).expect("failed to negate mask");
@@ -4680,7 +4797,7 @@ impl OverWindowAggregator {
         // The inner fold grows here (completed rows enter the per-key state), so even a flush can
         // exceed the budget.
         let aggregates = self.inner.update(&self.keyed_subbatch(&complete, rt));
-        if self.deadline_cleaning() {
+        if self.deadline_cleaning() || self.event_polling {
             self.settle_fired(&complete, now_ms);
         }
         self.expire_range(watermark);
@@ -4724,7 +4841,7 @@ impl OverWindowAggregator {
 
     #[cfg(test)]
     pub(crate) fn snapshot(&mut self) -> Vec<u8> {
-        self.ensure_canonical_distinct_ready()
+        self.ensure_canonical_ready()
             .expect("incomplete DISTINCT restore");
         let accumulators = self.snapshot_accumulators();
         let buffer = self.snapshot_buffer();
@@ -4963,7 +5080,7 @@ impl OverWindowAggregator {
         max_parallelism: usize,
         timestamp_precisions: &[i32],
     ) -> Result<BTreeMap<i32, Vec<u8>>, DataFusionError> {
-        self.ensure_canonical_distinct_ready()?;
+        self.ensure_canonical_ready()?;
         let store = self.store.as_ref().expect("over rocksdb store");
         self.next_seq = store.next_seq() as i64;
         if matches!(self.inner, OverInner::Bounded(_)) {
@@ -5063,7 +5180,7 @@ impl OverWindowAggregator {
         max_parallelism: usize,
         timestamp_precisions: &[i32],
     ) -> BTreeMap<i32, Vec<u8>> {
-        self.ensure_canonical_distinct_ready()
+        self.ensure_canonical_ready()
             .expect("incomplete DISTINCT restore");
         // The retention stamp is one more trailing state column; it partitions with its row.
         let state_columns = self.inner.snapshot_state_columns()
@@ -5090,7 +5207,7 @@ impl OverWindowAggregator {
         );
         let cleanup = Self::partition_snapshot(
             &self.snapshot_cleanup(),
-            if self.range_offset().is_some() || self.processing_rows() {
+            if self.range_offset().is_some() || self.processing_rows() || self.event_polling {
                 3
             } else if self.event_cleanup_external_timers || !self.event_cleanup_unarmed.is_empty() {
                 2
@@ -5285,6 +5402,8 @@ impl OverWindowAggregator {
             proc_rows: HashMap::default(),
             processing_rows_external_timers: false,
             event_cleanup_external_timers: false,
+            event_polling: false,
+            polling_bound: false,
             event_cleanup_unarmed: ahash::HashSet::default(),
             last_write_ms: HashMap::default(),
             pending_rows: HashMap::default(),
@@ -5294,6 +5413,8 @@ impl OverWindowAggregator {
             memory: OperatorMemory::unaccounted(),
             #[cfg(feature = "rocksdb-state")]
             store: None,
+            #[cfg(feature = "rocksdb-state")]
+            metadata_updates: metadata_updates::MetadataUpdates::default(),
             #[cfg(feature = "rocksdb-state")]
             store_tombstones: Vec::new(),
             #[cfg(feature = "rocksdb-state")]
@@ -5307,6 +5428,8 @@ impl OverWindowAggregator {
             key_timestamp_precisions: vec![-1; key_arity],
             canonical_distinct: ahash::HashSet::default(),
             canonical_distinct_loading: false,
+            canonical_frame_import: None,
+            canonical_callbacks_import: None,
             frame_clock: i64::MIN,
         }
         .with_state_retention(min_retention_ms);
@@ -5323,6 +5446,14 @@ impl OverWindowAggregator {
         aggregator.restore_cleanup(cleanup, &mut stamps);
         aggregator.adopt_restored_stamps(stamps, restored_at_ms, has_ttl_column);
         aggregator.restore_range_order(range_order);
+        if let Some(schema) = &aggregator.input_schema {
+            let types = aggregator
+                .key_columns
+                .iter()
+                .map(|&column| schema.field(column).data_type().clone())
+                .collect::<Vec<_>>();
+            aggregator.inner.seed_key_codec(&types);
+        }
         aggregator
     }
 
@@ -5391,6 +5522,20 @@ impl OverWindowAggregator {
                 .keys()
                 .map(|key| byte_key_bytes(&key.0))
                 .sum();
+        }
+        if self.event_polling {
+            self.retention_bytes = self
+                .cleanup_state
+                .keys()
+                .chain(self.pending_rows.keys())
+                .chain(self.event_cleanup_unarmed.iter())
+                .map(|key| byte_key_bytes(&key.0))
+                .sum::<usize>()
+                + self
+                    .range_timers
+                    .iter()
+                    .map(|(key, timers)| byte_key_bytes(&key.0) + timers.bytes())
+                    .sum::<usize>();
         }
     }
 

@@ -1313,3 +1313,335 @@ fn unarmed_cleanup_value_survives_actual_native_database_checkpoint() {
         }
     }
 }
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
+fn frozen_cleanup_readers_stream_without_hydrating_keys_and_retry_receiver_failure() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("state");
+    let mut source = operator(false, false, 1000, true, &path);
+    source.proctime = false;
+    source.bind_event_cleanup_timers().unwrap();
+    let keys = (0..2051).map(Some).collect::<Vec<_>>();
+    source
+        .push(
+            timed(&keys, &vec![Some(1.0); keys.len()], &vec![10; keys.len()]),
+            100,
+        )
+        .unwrap();
+    source.checkpoint_store("").unwrap();
+    let expected = rows_of(&cleanup(&source));
+    let expected_pending = rows_of(&pending(&source));
+    let snapshot = crate::state::rocks_store::FrozenDatabases::capture(&path).unwrap();
+    source
+        .push(timed(&[Some(0)], &[Some(99.0)], &[11]), 900)
+        .unwrap();
+    source.checkpoint_store("").unwrap();
+    snapshot.with(|| {
+        let mut reader = operator(false, false, 1000, true, &path);
+        reader.proctime = false;
+        reader.bind_event_cleanup_timers().unwrap();
+        assert!(reader.cleanup_state.is_empty());
+        assert!(reader.event_cleanup_unarmed.is_empty());
+        assert!(reader
+            .visit_canonical_cleanup(|_| Err(invalid("receiver failed")))
+            .is_err());
+        let batches = cleanup(&reader);
+        assert_eq!(batches.len(), 3);
+        assert!(batches.iter().all(|batch| batch.num_rows() <= CHUNK_ROWS));
+        assert_eq!(rows_of(&batches), expected);
+        assert_eq!(rows_of(&pending(&reader)), expected_pending);
+        assert!(reader.cleanup_state.is_empty());
+        assert!(reader.event_cleanup_unarmed.is_empty());
+        assert_eq!(reader.retention_bytes, 0);
+        snapshot.cancel();
+        assert!(reader.visit_canonical_cleanup(|_| Ok(())).is_err());
+    });
+}
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
+fn polling_timers_preserve_negative_watermarks_future_only_folds_and_restored_overlaps() {
+    for rows in [false, true] {
+        for ttl in [0, 1000] {
+            for persistent in [false, true] {
+                let directory = tempfile::tempdir().unwrap();
+                let mut source = operator(
+                    false,
+                    rows,
+                    ttl,
+                    persistent,
+                    &directory.path().join("source"),
+                );
+                source.proctime = false;
+                if ttl > 1 {
+                    source.bind_event_cleanup_timers().unwrap();
+                }
+                source.bind_event_polling().unwrap();
+                source
+                    .push(timed(&[Some(1)], &[Some(2.0)], &[-10]), 100)
+                    .unwrap();
+                assert_eq!(source.flush(-1, 200).unwrap().num_rows(), 0);
+                assert_eq!(source.flush(0, 200).unwrap().num_rows(), 1);
+                source
+                    .push(
+                        timed(&[Some(1), Some(2)], &[Some(3.0), Some(4.0)], &[10, 20]),
+                        300,
+                    )
+                    .unwrap();
+                assert_eq!(source.flush(5, 800).unwrap().num_rows(), 0);
+                // A polling callback creates an empty accumulator even if all rows are future rows.
+                let mut folds = Vec::new();
+                source
+                    .visit_canonical_folds(|batch| {
+                        folds.push(batch);
+                        Ok(())
+                    })
+                    .unwrap();
+                assert_eq!(folds.iter().map(RecordBatch::num_rows).sum::<usize>(), 2);
+                let mut restored = operator(
+                    false,
+                    rows,
+                    ttl,
+                    persistent,
+                    &directory.path().join("restored"),
+                );
+                restored.proctime = false;
+                if ttl > 1 {
+                    restored.bind_event_cleanup_timers().unwrap();
+                }
+                restored.bind_event_polling().unwrap();
+                for fold in folds {
+                    restored.import_canonical_folds(&fold).unwrap();
+                }
+                source
+                    .visit_canonical_pending(|batch| restored.import_canonical_pending(batch))
+                    .unwrap();
+                source
+                    .visit_canonical_cleanup(|batch| restored.import_canonical_cleanup(&batch))
+                    .unwrap();
+                assert_eq!(rows_of(&cleanup(&source)), rows_of(&cleanup(&restored)));
+                restored
+                    .push(timed(&[Some(1)], &[Some(7.0)], &[4]), 900)
+                    .unwrap();
+                assert_eq!(restored.flush(-1, 900).unwrap().num_rows(), 0);
+                assert_eq!(restored.flush(4, 900).unwrap().num_rows(), 1);
+                let key = restored
+                    .range_timers
+                    .keys()
+                    .find(|key| restored.range_timers[*key].armed == vec![5, 6])
+                    .unwrap()
+                    .clone();
+                assert_eq!(restored.flush(5, 901).unwrap().num_rows(), 0);
+                assert_eq!(restored.range_timers[&key].armed, vec![6]);
+                assert_eq!(restored.flush(20, 902).unwrap().num_rows(), 2);
+                assert!(restored.range_timers.is_empty());
+                assert!(restored.pending_rows.is_empty());
+            }
+        }
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
+fn polling_private_partitions_preserve_orphan_callbacks_and_cleanup_ownership() {
+    for rows in [false, true] {
+        for ttl in [0, 1000] {
+            for from_store in [false, true] {
+                for to_store in [false, true] {
+                    let directory = tempfile::tempdir().unwrap();
+                    let mut source = operator(
+                        false,
+                        rows,
+                        ttl,
+                        from_store,
+                        &directory.path().join("source"),
+                    );
+                    source.proctime = false;
+                    if ttl > 1 {
+                        source.bind_event_cleanup_timers().unwrap();
+                    }
+                    source.bind_event_polling().unwrap();
+                    source
+                        .push(timed(&[Some(1)], &[Some(3.0)], &[10]), 100)
+                        .unwrap();
+                    source.flush(5, 800).unwrap();
+                    let key = source.range_timers.keys().next().unwrap().clone();
+                    source.register_range_timer(&key.0, 100);
+                    let snapshots = if from_store {
+                        source.canonical_partitions(128, &[i32::MIN, -1]).unwrap()
+                    } else {
+                        source.snapshot_partitions(128, &[i32::MIN, -1])
+                    }
+                    .into_values()
+                    .collect::<Vec<_>>();
+                    let mut target = if to_store {
+                        let mut target =
+                            operator(false, rows, ttl, true, &directory.path().join("target"));
+                        target.proctime = false;
+                        target.import_partitions(&snapshots).unwrap();
+                        target.adopt_store_retention(900).unwrap();
+                        target
+                    } else {
+                        OverWindowAggregator::restore_partitions(
+                            vec![1; 5],
+                            vec![0, 3, 4, 1, 2],
+                            2,
+                            vec![1; 5],
+                            vec![0],
+                            if rows { 3 } else { 0 },
+                            0,
+                            false,
+                            &snapshots,
+                            ttl,
+                            900,
+                        )
+                    };
+                    if ttl > 1 {
+                        target.bind_event_cleanup_timers().unwrap();
+                    }
+                    target.bind_event_polling().unwrap();
+                    assert_eq!(rows_of(&cleanup(&source)), rows_of(&cleanup(&target)));
+                    assert_eq!(target.flush(10, 901).unwrap().num_rows(), 1);
+                    assert_eq!(target.range_timers[&key].armed, vec![100]);
+                    target.clear_key(&key.0);
+                    assert_eq!(
+                        target.range_timers[&key].armed,
+                        vec![100],
+                        "cleanup preserves orphan event timers"
+                    );
+                    assert_eq!(target.flush(100, 902).unwrap().num_rows(), 0);
+                    assert!(target.range_timers.is_empty());
+                    assert_eq!(target.cleanup_state.contains_key(&key), ttl > 1);
+                    if ttl > 1 {
+                        let deadline = target.next_event_cleanup().unwrap().unwrap();
+                        target.fire_event_cleanup(deadline, deadline).unwrap();
+                    }
+                    assert_eq!(
+                        target.retention_bytes, 0,
+                        "clearing restored state releases every metadata charge"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
+fn frozen_polling_readers_keep_physical_callbacks_on_disk_through_live_changes() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("state");
+    let mut source = operator(false, true, 1000, true, &path);
+    source.proctime = false;
+    source.bind_event_cleanup_timers().unwrap();
+    source.bind_event_polling().unwrap();
+    let keys = (0..2051).map(Some).collect::<Vec<_>>();
+    source
+        .push(
+            timed(&keys, &vec![Some(1.0); keys.len()], &vec![10; keys.len()]),
+            100,
+        )
+        .unwrap();
+    source.flush(5, 800).unwrap();
+    source.checkpoint_store("").unwrap();
+    let expected = rows_of(&cleanup(&source));
+    let snapshot = crate::state::rocks_store::FrozenDatabases::capture(&path).unwrap();
+    source.flush(10, 900).unwrap();
+    source.checkpoint_store("").unwrap();
+    snapshot.with(|| {
+        let mut reader = operator(false, true, 1000, true, &path);
+        reader.proctime = false;
+        reader.bind_event_cleanup_timers().unwrap();
+        reader.bind_event_polling().unwrap();
+        assert!(reader.range_timers.is_empty());
+        assert!(reader.cleanup_state.is_empty());
+        assert!(reader.pending_rows.is_empty());
+        assert!(reader
+            .visit_canonical_cleanup(|_| Err(invalid("receiver failed")))
+            .is_err());
+        assert_eq!(rows_of(&cleanup(&reader)), expected);
+        assert_eq!(reader.retention_bytes, 0);
+        snapshot.cancel();
+        assert!(reader.visit_canonical_cleanup(|_| Ok(())).is_err());
+    });
+}
+
+#[test]
+fn polling_private_restore_can_disable_cleanup_without_discarding_event_callbacks() {
+    for rows in [false, true] {
+        let mut source = memory(false, rows, 1000);
+        source.proctime = false;
+        source.bind_event_cleanup_timers().unwrap();
+        source.bind_event_polling().unwrap();
+        source
+            .push(timed(&[Some(1)], &[Some(3.0)], &[10]), 100)
+            .unwrap();
+        let snapshots = source
+            .snapshot_partitions(128, &[i32::MIN, -1])
+            .into_values()
+            .collect::<Vec<_>>();
+        let mut restored = OverWindowAggregator::restore_partitions(
+            vec![1; 5],
+            vec![0, 3, 4, 1, 2],
+            2,
+            vec![1; 5],
+            vec![0],
+            if rows { 3 } else { 0 },
+            0,
+            false,
+            &snapshots,
+            0,
+            900,
+        );
+        restored.bind_event_polling().unwrap();
+        assert!(restored.cleanup_state.is_empty());
+        assert_eq!(restored.range_timers.len(), 1);
+        assert_eq!(restored.flush(-1, 900).unwrap().num_rows(), 0);
+        assert_eq!(restored.flush(0, 900).unwrap().num_rows(), 0);
+        assert_eq!(restored.flush(10, 901).unwrap().num_rows(), 1);
+        assert!(restored.cleanup_state.is_empty());
+        assert_eq!(restored.retention_bytes, 0);
+    }
+}
+
+#[test]
+fn pre_polling_private_checkpoints_recover_pending_rows_under_both_released_policies() {
+    for rows in [false, true] {
+        for global in [false, true] {
+            for ttl in [0, 1000] {
+                for polling in [false, true] {
+                    let mut old = memory(global, rows, ttl);
+                    old.proctime = false;
+                    old.push(timed(&[Some(1)], &[Some(3.0)], &[10]), 100)
+                        .unwrap();
+                    let bytes = old.snapshot();
+                    let mut restored = OverWindowAggregator::restore(
+                        vec![1; 5],
+                        vec![0, 3, 4, 1, 2],
+                        2,
+                        vec![1; 5],
+                        if global { vec![] } else { vec![0] },
+                        if rows { 3 } else { 0 },
+                        0,
+                        false,
+                        &bytes,
+                        ttl,
+                        900,
+                    );
+                    if polling {
+                        if ttl > 1 {
+                            restored.bind_event_cleanup_timers().unwrap();
+                        }
+                        restored.bind_event_polling().unwrap();
+                    }
+                    let expected = old.flush(10, 901).unwrap();
+                    let actual = restored.flush(10, 901).unwrap();
+                    assert_eq!(actual.num_rows(), 1);
+                    assert_eq!(rows_of(&[expected]), rows_of(&[actual]));
+                    assert!(restored.pending_rows.is_empty());
+                }
+            }
+        }
+    }
+}

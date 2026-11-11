@@ -49,8 +49,8 @@ import org.apache.flink.util.function.SupplierWithException;
  * snapshot or savepoint without a native hook) creates it and replays the buffered key context.
  * Restored JVM state forces eager materialization so it is re-snapshotted even when untouched.
  *
- * <p>The two channels are exclusive by construction: an operator that registered a native hook
- * must not also create JVM keyed state (there is exactly one keyed-state handle per operator per
+ * <p>The two channels are exclusive by construction: an operator that registered a native hook must
+ * not also create JVM keyed state (there is exactly one keyed-state handle per operator per
  * checkpoint), and this backend fails fast if both are used.
  */
 public final class RocksDBNativeKeyedStateBackend<K>
@@ -77,6 +77,16 @@ public final class RocksDBNativeKeyedStateBackend<K>
 
   private boolean delegateStateUsed;
   private boolean sharedResourcesReleased;
+  private final org.apache.flink.util.ResourceGuard canonicalReaders =
+      new org.apache.flink.util.ResourceGuard();
+
+  public AutoCloseable retainCanonicalReader() throws IOException {
+    return canonicalReaders.acquireResource();
+  }
+
+  public void closeCanonicalReaders() {
+    canonicalReaders.close();
+  }
 
   RocksDBNativeKeyedStateBackend(
       SupplierWithException<CheckpointableKeyedStateBackend<K>, Exception> delegateSupplier,
@@ -190,9 +200,9 @@ public final class RocksDBNativeKeyedStateBackend<K>
   }
 
   /**
-   * Registers the operator's native checkpoint hook; snapshots then go through RocksDB commits.
-   * The operator's idle-state retention (0 = off) rides along so table maintenance can
-   * physically drop rows the read path already treats as expired.
+   * Registers the operator's native checkpoint hook; snapshots then go through RocksDB commits. The
+   * operator's idle-state retention (0 = off) rides along so table maintenance can physically drop
+   * rows the read path already treats as expired.
    */
   public void registerNativeState(RocksDBNativeState nativeState, long stateTtlMillis) {
     if (snapshotStrategy.hasNativeState()) {
@@ -305,6 +315,7 @@ public final class RocksDBNativeKeyedStateBackend<K>
     if (delegate != null) {
       delegate.dispose();
     }
+    canonicalReaders.close();
     deleteWorkingDirectory();
     releaseSharedResources();
   }
@@ -316,6 +327,7 @@ public final class RocksDBNativeKeyedStateBackend<K>
     if (delegate != null) {
       delegate.close();
     }
+    canonicalReaders.close();
     deleteWorkingDirectory();
     releaseSharedResources();
   }
@@ -466,8 +478,8 @@ public final class RocksDBNativeKeyedStateBackend<K>
       @Nonnull StateSnapshotTransformFactory<SEV> snapshotTransformFactory)
       throws Exception {
     delegateStateUsed = true;
-    return delegate().createOrUpdateInternalState(
-        namespaceSerializer, stateDesc, snapshotTransformFactory);
+    return delegate()
+        .createOrUpdateInternalState(namespaceSerializer, stateDesc, snapshotTransformFactory);
   }
 
   @Nonnull

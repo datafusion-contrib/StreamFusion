@@ -6,7 +6,7 @@ impl OverWindowAggregator {
         watermark: i64,
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
-        self.ensure_canonical_distinct_ready()?;
+        self.ensure_canonical_ready()?;
         let Some(offset) = self.range_offset() else {
             let output = self.flush_inner(watermark, now_ms)?;
             return if !self.proctime

@@ -476,3 +476,70 @@ fn fold_validation_rejects_duplicate_targets_without_changing_retained_state() {
         .unwrap();
     assert_eq!(rows_of(&frames), rows_of(&retained));
 }
+
+#[test]
+fn memory_captures_keep_raw_float_folds_and_expired_ttl_ages_after_live_updates() {
+    use crate::state::canonical_memory::CanonicalMemoryState;
+    let rows = |op: &OverWindowAggregator| {
+        let mut batches = Vec::new();
+        op.visit_canonical_folds(|batch| {
+            batches.push(batch);
+            Ok(())
+        })
+        .unwrap();
+        rows_of(&batches)
+    };
+    for keyless in [false, true] {
+        for rows_frame in [false, true] {
+            let mut live = memory(keyless, rows_frame, 1000);
+            live.push_proctime(
+                batch(
+                    &[Some(1), Some(1), Some(1), None],
+                    &[Some(1e16), Some(1.0), Some(-1e16), None],
+                ),
+                100,
+            )
+            .unwrap();
+            let expected_first = rows(&live);
+            // A stock restore can provide key state before any native input establishes its schema.
+            live.input_schema = None;
+            let mut first = memory(keyless, rows_frame, 1000);
+            live.copy_state(&mut first).unwrap();
+            live.push_proctime(batch(&[Some(1), None], &[Some(5.0), Some(7.0)]), 500)
+                .unwrap();
+            let expected_second = rows(&live);
+            let mut second = memory(keyless, rows_frame, 1000);
+            live.copy_state(&mut second).unwrap();
+            live.push_proctime(batch(&[Some(1), None], &[Some(9.0), Some(11.0)]), 2500)
+                .unwrap();
+            drop(live);
+            assert_eq!(rows(&second), expected_second);
+            assert_eq!(rows(&first), expected_first);
+        }
+    }
+}
+
+#[test]
+fn memory_capture_preserves_pending_event_rows_before_the_first_fold() {
+    use crate::state::canonical_memory::CanonicalMemoryState;
+    for keyless in [false, true] {
+        let mut live = memory(keyless, false, 1000);
+        live.proctime = false;
+        let mut captured = memory(keyless, false, 1000);
+        captured.proctime = false;
+        live.push(
+            batch(&[Some(1), None, Some(2)], &[Some(5.0), Some(7.0), None]),
+            100,
+        )
+        .unwrap();
+        let OverInner::Aggregates(inner) = &live.inner else {
+            unreachable!()
+        };
+        assert!(
+            inner.key_types.is_empty(),
+            "no completed input has established fold key types"
+        );
+        live.copy_state(&mut captured).unwrap();
+        assert_eq!(live.flush(0, 200).unwrap(), captured.flush(0, 200).unwrap());
+    }
+}

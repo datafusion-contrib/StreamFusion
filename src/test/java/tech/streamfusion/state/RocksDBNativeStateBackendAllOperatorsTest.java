@@ -75,8 +75,7 @@ import tech.streamfusion.operator.TaskOffHeapMemory;
  * (incremental), and a fresh operator restored from the handle continues the changelog exactly.
  *
  * <p>Direct-state cases let Rust read and write its RocksDB instance while Java coordinates
- * checkpoint handles and uploads. Variable-sized window distinct sets explicitly verify the
- * snapshot fallback instead.
+ * checkpoint handles and uploads. Window DISTINCT sets retain membership records directly.
  *
  * <p>State-transition cases run through an ordinary RocksDB checkpoint and through canonical
  * savepoints in both backend directions. This keeps the incremental lifecycle assertions while
@@ -139,8 +138,9 @@ class RocksDBNativeStateBackendAllOperatorsTest {
       harness.setup(new ArrowBatchSerializer());
       harness.initializeState(snapshot);
       harness.open();
-      // Variable-sized value sets retain the existing snapshot-state fallback on RocksDB.
-      assertFalse(NativeStateRouteProbe.directRocksDBState(operator));
+      assertEquals(
+          transition != StateTransition.ROCKSDB_TO_MEMORY,
+          NativeStateRouteProbe.directRocksDBState(operator));
       feedDistinctWindowPartial(harness, 1L, 2L, null);
       harness.processWatermark(new Watermark(10000));
       List<List<Long>> actual = new ArrayList<>();

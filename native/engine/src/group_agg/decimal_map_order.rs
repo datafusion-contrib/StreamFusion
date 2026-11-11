@@ -2,6 +2,7 @@
 
 use super::java_map_order::JavaMapOrder;
 
+#[derive(Clone)]
 pub(super) struct DecimalMapOrder {
     scale: i8,
     order: JavaMapOrder<Option<i128>>,

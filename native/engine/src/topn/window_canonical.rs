@@ -161,3 +161,25 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreWindowRankerCanonica
 
 #[cfg(test)]
 mod tests;
+
+impl crate::state::canonical_memory::CanonicalMemoryState for WindowRanker {
+    fn copy_state(&mut self, target: &mut Self) -> Result<(), DataFusionError> {
+        target.memory.set(self.memory.state_bytes);
+        target.memory.account()?;
+        target.groups = self.groups.clone();
+        target.schema = self.schema.clone();
+        target.current_watermark = self.current_watermark.clone();
+        target.next_timer_deadline = self.next_timer_deadline.clone();
+        Ok(())
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_copyWindowRankCanonicalMemoryState<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    source: jlong,
+    target: jlong,
+) {
+    crate::state::canonical_memory::copy::<WindowRanker>(env, source, target);
+}

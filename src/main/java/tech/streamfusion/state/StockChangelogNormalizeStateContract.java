@@ -75,19 +75,6 @@ public final class StockChangelogNormalizeStateContract implements StockStateCon
     return new StockValueState<>(backend, STATE, new RowDataSerializer(rowType), ttl);
   }
 
-  @Override
-  public void clear(CheckpointableKeyedStateBackend<RowData> backend) throws Exception {
-    var state = state(backend);
-    try (var keys = backend.getKeys(STATE, VoidNamespace.INSTANCE)) {
-      for (var key :
-          keys.map(backend.getKeySerializer()::copy)
-              .collect(java.util.stream.Collectors.toList())) {
-        backend.setCurrentKey(key);
-        state.clear();
-      }
-    }
-  }
-
   private org.apache.arrow.vector.types.pojo.Schema arrowSchema(RowType type) {
     return keyType.getChildren().stream()
             .anyMatch(StockChangelogNormalizeStateContract::containsRow)
@@ -113,17 +100,47 @@ public final class StockChangelogNormalizeStateContract implements StockStateCon
     }
   }
 
+  @Override
+  public void configureNativeState(long handle, boolean persistent) {
+    Native.configureChangelogNormalizerComparison(
+        handle, persistent, tech.streamfusion.compat.StateCompat.normalizerComparesRowKind());
+  }
+
   private void exportNative(long handle, boolean persistent, Native.BatchReceiver receiver) {
+    configureNativeState(handle, persistent);
+    withNativeSchema(
+        schema -> {
+          Native.exportChangelogNormalizerCanonical(handle, persistent, schema, receiver);
+          return null;
+        });
+  }
+
+  private <T> T withNativeSchema(java.util.function.LongFunction<T> action) {
     try (ArrowSchema schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
       try {
         Data.exportSchema(
             NativeAllocator.SHARED, arrowSchema(rowType), NativeAllocator.DICTIONARIES, schema);
-        Native.exportChangelogNormalizerCanonical(
-            handle, persistent, schema.memoryAddress(), receiver);
+        return action.apply(schema.memoryAddress());
       } finally {
         if (schema.snapshot().release != 0) schema.release();
       }
     }
+  }
+
+  @Override
+  public org.apache.flink.runtime.state.SavepointResources<RowData> snapshot(
+      StockSnapshotContext context, long handle, boolean persistent) throws Exception {
+    if (persistent)
+      return context.nativeValue(
+          STATE,
+          new RowDataSerializer(rowType),
+          ttl,
+          () ->
+              withNativeSchema(
+                  schema -> Native.captureChangelogNormalizerCanonicalSnapshot(handle, schema)),
+          bridgeType,
+          decoder());
+    return null;
   }
 
   @Override
@@ -132,8 +149,19 @@ public final class StockChangelogNormalizeStateContract implements StockStateCon
       throws Exception {
     clear(backend);
     var state = state(backend);
-    int arity = rowType.getFieldCount();
-    var serializer = new RowDataSerializer(rowType);
+    visit(
+        handle,
+        persistent,
+        (key, value, written) -> {
+          backend.setCurrentKey(key);
+          state.update(value, written);
+        });
+  }
+
+  private void visit(
+      long handle, boolean persistent, StockNativeValueSnapshot.Entry<RowData> receiver)
+      throws Exception {
+    var decode = decoder();
     exportNative(
         handle,
         persistent,
@@ -144,22 +172,28 @@ public final class StockChangelogNormalizeStateContract implements StockStateCon
                   Data.importVectorSchemaRoot(
                       NativeAllocator.SHARED, array, schema, NativeAllocator.DICTIONARIES)) {
             var reader = ArrowConversion.createArrowReader(root, bridgeType);
-            var getters = getters();
             for (int index = 0; index < root.getRowCount(); index++) {
-              var row = reader.read(index);
-              byte[] encoded = row.getBinary(arity);
-              var key = new BinaryRowData(keyType.getFieldCount());
-              key.pointTo(MemorySegmentFactory.wrap(encoded), 0, encoded.length);
-              backend.setCurrentKey(key);
-              var payload = new GenericRowData(arity);
-              for (int field = 0; field < arity; field++)
-                payload.setField(field, getters[field].getFieldOrNull(row));
-              state.update(serializer.copy(payload), row.getLong(arity + 2));
+              decode.decode(reader.read(index), receiver);
             }
           } catch (Exception failure) {
             throw new IllegalStateException("Cannot project stock normalizer rows", failure);
           }
         });
+  }
+
+  private StockNativeValueSnapshot.Decoder<RowData> decoder() {
+    int arity = rowType.getFieldCount();
+    var serializer = new RowDataSerializer(rowType);
+    var fields = getters();
+    return (row, receiver) -> {
+      byte[] encoded = row.getBinary(arity);
+      var key = new BinaryRowData(keyType.getFieldCount());
+      key.pointTo(MemorySegmentFactory.wrap(encoded), 0, encoded.length);
+      var payload = new GenericRowData(arity);
+      for (int field = 0; field < arity; field++)
+        payload.setField(field, fields[field].getFieldOrNull(row));
+      receiver.write(key, serializer.copy(payload), row.getLong(arity + 2));
+    };
   }
 
   @Override

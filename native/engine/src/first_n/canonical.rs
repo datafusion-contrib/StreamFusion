@@ -130,6 +130,35 @@ fn throw_error(env: &mut JNIEnv, error: DataFusionError) {
     }
 }
 
+#[cfg(feature = "rocksdb-state")]
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_captureFirstNCanonicalSnapshot<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let ranker = unsafe { &mut *(handle as *mut FirstNHandle) };
+        let result = match ranker {
+            FirstNHandle::Rocks(ranker) => ranker
+                .rows
+                .canonical_snapshot(ranker.memory.temporary_reservation()),
+            FirstNHandle::Memory(_) => Err(invalid("MVCC capture requires RocksDB state")),
+        };
+        match result {
+            Ok(snapshot) => {
+                crate::state::canonical_snapshot::cursor(snapshot, |env, receiver, rows| {
+                    emit_counts(env, receiver, rows.iter().map(|(key, count)| (key, count)))
+                })
+            }
+            Err(error) => {
+                throw_error(&mut env, error);
+                0
+            }
+        }
+    })
+}
+
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_exportFirstNCanonical<'local>(
     env: JNIEnv<'local>,
@@ -389,4 +418,27 @@ mod tests {
         }
         assert_eq!(pool.reserved(), 0);
     }
+}
+
+impl crate::state::canonical_memory::CanonicalMemoryState for FirstNHandle {
+    fn copy_state(&mut self, target: &mut Self) -> Result<(), DataFusionError> {
+        let (Self::Memory(source), Self::Memory(target)) = (self, target) else {
+            return Err(invalid("memory capture requires two memory handles"));
+        };
+        target.memory.set(source.memory.state_bytes);
+        target.memory.account()?;
+        target.rows = source.rows.clone();
+        target.last_sweep_ms = source.last_sweep_ms;
+        Ok(())
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_copyFirstNCanonicalMemoryState<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    source: jlong,
+    target: jlong,
+) {
+    crate::state::canonical_memory::copy::<FirstNHandle>(env, source, target);
 }

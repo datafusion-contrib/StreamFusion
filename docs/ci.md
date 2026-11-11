@@ -5,6 +5,18 @@ quota instead of the shared `datafusion-contrib` quota. Opening or updating a PR
 the test matrix in the canonical repository. Source-changing canonical `main` pushes still run
 the complete post-merge checks, the upstream Flink weekly run remains available, and publishing stays upstream.
 
+Runtime shards finish independently after a sibling failure, preserving complete diagnostic reports
+from the cohort. Every required shard must still pass the aggregate gate. Superseded branch pushes
+retain workflow cancellation.
+
+Image smoke failures include current TaskManager/JobManager container state, logs and any JVM fatal-error report before the
+containers close. Failed smoke reports are retained for three days, so heartbeat timeouts can be
+distinguished from JVM/native crashes or container OOM without weakening the submission assertion.
+
+Canonical-job dependency preparation includes the selected runtime module's reactor dependencies.
+The Kafka canonical profile references the matching JSON module; a cold runner must resolve that
+module inside the reactor rather than depend on an installed copy of an unpublished project JAR.
+
 ## Contributing from a personal fork
 
 1. Fork `datafusion-contrib/StreamFusion` into your personal account. If that name is already
@@ -618,30 +630,97 @@ can flush at different boundaries and emit different valid intermediate updates.
 deterministic bundle boundaries retain their stricter raw-changelog assertions. The global
 fixture also checks every retraction against the current result and rejects a second live result.
 
-Flink 2.2 canonical handoff jobs run in 16 additional required shards on each of JDK 11 and 17.
-Canonical jobs use the same duration-based balancing as runtime shards, with complete-job
-timings retained in `dev/ci/runtime-durations.json`. All 116 runnable canonical classes have
-recorded timings; the two abstract bases have zero cost. New classes use the same one-second
-default as ordinary runtime classes until measured.
-The existing three runtime shards retain all other default Surefire classes on both Flink lines.
-Both selections are computed from the compiled test inventory: their union is the original
-selection and their intersection is empty. Balancing changes only class placement; test
-methods, inherited parameterized cases, nested classes and ORC tag handling are unchanged.
-Every canonical shard is required by `All CI tests`.
+Both Flink lines run complete canonical handoff jobs in 16 required shards on each of JDK 11
+and 17. Every shard uses the same shared debug native artifact, startup compiler settings and
+scoped class-data cache. Flink 1.18 combines its release profile with `canonical-kafka`; dependency
+resolution, compilation and execution use the same profiles. Artifacts include the Flink line,
+JDK and shard, and selection manifests record the line. The former five-family smoke step in
+1.18's runtime shard is replaced by this exhaustive compiled-inventory selection.
+
+Each line selects from its own compiled test inventory and duration estimates, preserving every
+method and inherited parameterized invocation. Canonical job fixtures and their typed-state
+bases now live in shared test sources for joins, sort, normalization, deduplication, rank,
+window and grouped aggregates and managed UDFs. Kafka source, partition-discovery and all twelve
+sink/pipeline job classes are shared as well. Both release lines now compile the same 118-class
+canonical job inventory. Narrow fixture adapters inspect each released connector's recovery
+format: 1.18's legacy writer prefix and committer collector, or 2.2's explicit writer ownership
+and precommitted transactions. The 1.18 connector uses its released incrementing transaction
+scheme; 2.2 retains both incrementing and pooling providers. Local fixture selection can sample
+scenarios across all twelve classes while hosted CI retains every release-supported provider.
+Release adapters retain version-specific runtime behavior. Compilation and selection parity do not establish
+that all handoffs pass: the complete required matrix remains the qualification gate. Adding a
+shared fixture automatically includes it in both lines' required canonical matrix. The existing
+three runtime shards retain the other default Surefire classes on both lines: the two selections
+have a complete union and empty intersection within each compiled inventory. Nested classes and ORC tag handling are unchanged. Every line/JDK/shard is required
+by `All CI tests`; no local smoke flag is set in hosted canonical CI.
+
+Local qualification includes all four temporal native-checkpoint-to-canonical continuations on
+1.18 (compiled plans and ordinary SQL, both native stores). Fifteen focused cache, managed-UDF
+failure and mini-batch ordering controls also pass on 1.18. A clean 2.2 build retains all 118
+canonical job classes and passes the same controls plus its transient-factory restoration test
+(16 checks). These selections do not qualify the
+remaining inherited job providers or the newly shared Kafka source cases; hosted CI runs their
+full providers. The Kafka parity cohort additionally passes 24 selected real-broker scenarios
+on 1.18 across all twelve sink/pipeline classes and source checkpoint recovery, plus 22 admission
+controls. Four full continuation combinations subsequently cover SQL/compiled submissions and
+both initial engine orders with the corrected metadata cache. Six shared cache controls pass,
+including actual archive reuse across stage directories. Twelve real continuation workers reuse
+two metadata archives; their application state and runtime directories remain independent.
+A clean 2.2 build compiles the same 118-class inventory and passes the equivalent 24 selected
+broker scenarios, 22 admission checks and six cache controls without skips. Across the two release
+classpaths, these runs retain six worker metadata archives instead of generating one per stage.
 Canonical scheduling now uses that complete matrix's class times with startup compilation
 and metadata sharing enabled, replacing estimates from the earlier JVM settings. For the
 same 118 classes, including two abstract bases, the largest modeled shard falls from 7,417.10
 to 6,110.50 class-seconds while average work stays 5,995.60. This rebalances existing work;
 the complete hosted matrix establishes its actual effect on job and workflow time.
-Canonical jobs set `JAVA_TOOL_OPTIONS=-XX:TieredStopAtLevel=1`, inherited by Maven, Surefire
-and the isolated stock/native workers. These short-lived workers repeatedly pay for HotSpot
+Canonical jobs set `JAVA_TOOL_OPTIONS="-XX:TieredStopAtLevel=1 -XX:ReservedCodeCacheSize=512m"`,
+inherited by Maven, Surefire and the isolated stock/native workers. These short-lived workers repeatedly pay for HotSpot
 optimizing compilation and exit before amortizing it. First-tier compilation reduces that
 startup CPU cost while preserving fresh processes, both backends, both directions, every
 parameterized invocation, native execution evidence, checkpoints and rescaling assertions.
 The ordinary runtime test step also uses first-tier compilation after its separate paired
-qualification. Upstream, JVM-boundary and release/benchmark jobs retain usual compilation.
+qualification. First-tier test runs reserve a 512 MiB compiler cache: the local canonical
+operator matrix exhausted the default 48 MiB cache and HotSpot stopped compilation. The larger
+reservation prevents that limit from forcing the remaining test code into the interpreter; it
+is a capacity correction, with no new throughput or hosted CI timing claim. Upstream, JVM-boundary and release/benchmark jobs retain usual compilation.
 This is a CI scheduling optimization, not a SQL throughput result. See the
 [CI profile](benchmarks/ci-profile-20261107.json) for measurements and their limits.
+
+For local canonical iteration, `-Dstreamfusion.test.canonicalSmoke=true` selects deterministic
+representatives from the largest canonical matrices, including typed grouped-state
+lifecycles, numeric/string/temporal extrema, extrema orphan/cache and late-corruption checks,
+temporal-sort precision, interval typed-key and
+processing-clock matrices, window-deduplication, shared-pane offsets/DISTINCT, processing-clock
+windows, typed append/update/retract rank matrices, and unbounded event-time OVER state/planner
+matrices. Every individual parameter value and
+every pair of values present in the original provider remains represented. The interval
+operator selections reduce 171 event-time invocations to 63 and 208 processing-time invocations
+to 69 locally; default/CI retain the original providers and every invocation. Existing release
+assumptions still apply; a skipped case does not qualify a native path. Named corruption and
+regression providers remain exhaustive except the extrema corruption combinations named above.
+This is an iteration check, not full matrix qualification;
+omitting the flag retains every invocation in its original order. CI does not set this flag and
+continues to run the complete matrices. Batch operators and release lines in these short checks,
+then use the complete matrix for the final qualification. The 2,500-key window-deduplication
+continuation sends three native Arrow batches while retaining every stock input and result
+assertion, avoiding 2,500 individual input conversions per invocation.
+
+The local fixed-window job selector `streamfusion.test.groupArithmeticJobSmoke=true` keeps
+continued-input jobs and one no-input RocksDB recovery control, so both parameterized methods
+receive executable cases. Default and hosted providers remain exhaustive.
+
+The canonical unbounded event-time OVER state, planner and full-job fixtures are shared between
+released Flink 1.18 and 2.2. The release adapters choose the actual V1 polling or V2 timestamp
+owner; V1-specific callback cases run on 1.18 and are explicitly skipped on 2.2. Existing full-job
+providers remain exhaustive by default; `sf.canonical.eventOver.job.smoke=true` keeps the established
+local ROWS-cleanup/RANGE selection for fast complete-job iteration. This selection is not the
+full 1.18 job-matrix qualification.
+
+Unopened fixture definitions use the same scoped cache on both releases. Flink 1.18 StreamNode
+graphs are not serializable, so managed-UDF and mini-batch graph fixtures construct independent graphs there;
+2.2 retains serialized graph definitions and restores transient operator factories. Neither path
+shares running operators, user-function instances or state between cases.
 
 Canonical workers also use class-data sharing through `SF_CANONICAL_CDS_DIR`, set only for
 their test step. The first successful worker on each classpath records loaded classes, then
@@ -655,11 +734,16 @@ so the harness snapshots compiled class directories into deterministic JARs whil
 classpath order and resource paths. Compiled directories remain immutable for each Surefire
 fork. Snapshot names derive from their contents; an existing snapshot is checked for corruption
 and retained without changing its timestamp. Changed compiled bytes produce a new snapshot.
-Archive keys include the JDK, VM arguments, classpath, worker class and engine role. Caches live
+Archive keys include the JDK, VM arguments, classpath, worker class and engine role. A stage's
+`java.io.tmpdir` is excluded from the metadata key: it remains a fresh runtime argument, not a
+reason to rebuild an identical archive. A real child-JVM control reuses one archive across two
+stage directories and checks actual temporary-file placement; changed roles and other VM
+settings still select different archives. Caches live
 under the current runner's temporary directory and are removed after outcomes and failed
 archive diagnostics are uploaded. Default local Maven runs do not enable this cache.
-Each runner uses two fresh 2 GiB Surefire JVMs, with process reuse disabled. This preserves all
-118 canonical classes on each JDK while reducing canonical runner jobs from 64 to 32. The stock
+Each runner uses four fresh 1 GiB Surefire JVMs, with process reuse disabled. The earlier 2.2-only
+change preserved its 118 classes on each JDK while reducing that line's runner jobs from 64 to 32.
+The required two-line matrix now has 64 jobs, preserving each line's compiled inventory. The stock
 and native worker processes retain their separate 1 GiB heaps; native memory and containers
 also need headroom. The complete 32-shard hosted canonical matrix passed on both JDKs;
 the full CI and upstream aggregates remain required for source changes.
@@ -1198,3 +1282,8 @@ Recent failure diagnoses:
 - [Paimon compatibility 41951091666](https://github.com/jordepic/StreamFusion-contrib/actions/runs/41951091666):
   generated legacy sources referenced coordinator APIs absent from released Paimon 1.0.
   Subsequent compatibility runs, including the latest completed branch run, passed.
+
+The runtime Java CI command bounds each Surefire fork at 30 minutes. A fork that hangs after
+reporting its test results fails the gate instead of occupying a runner until the full job timeout;
+the test selection and assertions remain the same. Canonical child-worker timeouts embed their
+logs and thread dumps in the failure report for diagnosis.

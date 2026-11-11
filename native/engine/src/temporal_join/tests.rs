@@ -1069,3 +1069,231 @@ fn direct_import_rejects_duplicates_bad_callbacks_and_import_after_execution() {
             .contains("has not started execution"));
     }
 }
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
+fn captured_temporal_readers_stream_metadata_without_hydrating_live_caches() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("state");
+    let mut source = operator(Some(&path));
+    source.push_left(&batch((0..2051).collect()), 10).unwrap();
+    let orphan = source
+        .store_mut()
+        .entry_keys(&batch(vec![9999]), &[0], &[-1])
+        .pop()
+        .unwrap();
+    source.store_mut().set_deadline(&orphan, 100000).unwrap();
+    source.store_mut().checkpoint("").unwrap();
+    let collect = |value: &TemporalJoiner| {
+        let mut rows = Vec::new();
+        value
+            .visit_canonical_metadata(|batch| {
+                assert!(batch.num_rows() <= 1024);
+                for row in 0..batch.num_rows() {
+                    rows.push(
+                        batch
+                            .columns()
+                            .iter()
+                            .map(|column| {
+                                format!("{:?}", ScalarValue::try_from_array(column, row).unwrap())
+                            })
+                            .collect::<Vec<_>>()
+                            .join("|"),
+                    );
+                }
+                Ok(())
+            })
+            .unwrap();
+        rows.sort();
+        rows
+    };
+    let expected = collect(&source);
+    let expected_records = flat_batches(&source);
+    assert_eq!(expected.len(), 2052);
+    let snapshot = crate::state::rocks_store::FrozenDatabases::capture(&path).unwrap();
+    source.push_left(&batch(vec![0]), 20).unwrap();
+    source.store_mut().set_deadline(&orphan, 200000).unwrap();
+    source.store_mut().checkpoint("").unwrap();
+    snapshot.with(|| {
+        let store = crate::state::RocksTemporalJoinStore::open_merged(
+            disk_config(&path),
+            schema(),
+            schema(),
+            &[0],
+            &[(path.to_string_lossy().into_owned(), 0)],
+            0..=127,
+            true,
+        )
+        .unwrap();
+        assert!(store.all_metadata().is_empty());
+        assert!(store.all_deadlines().is_empty());
+        assert_eq!(store.metadata_bytes(), 0);
+        let reader = operator(None).with_store(store);
+        assert!(reader
+            .visit_canonical_metadata(|_| Err(DataFusionError::Execution("receiver failed".into())))
+            .is_err());
+        assert_eq!(collect(&reader), expected);
+        assert_eq!(flat_batches(&reader), expected_records);
+        assert!(reader.store.as_ref().unwrap().all_metadata().is_empty());
+        assert!(reader.store.as_ref().unwrap().all_deadlines().is_empty());
+        snapshot.cancel();
+        assert!(reader.visit_canonical_metadata(|_| Ok(())).is_err());
+        assert!(reader.visit_canonical_records(|_| Ok(())).is_err());
+    });
+}
+
+fn flat_metadata(rows: &[(i64, i8, i64)]) -> RecordBatch {
+    RecordBatch::try_from_iter(vec![
+        (
+            "key0",
+            Arc::new(Int64Array::from_iter_values(rows.iter().map(|r| r.0))) as ArrayRef,
+        ),
+        (
+            "__temporal_metadata_kind",
+            Arc::new(Int8Array::from_iter_values(rows.iter().map(|r| r.1))) as ArrayRef,
+        ),
+        (
+            "__temporal_metadata_value",
+            Arc::new(Int64Array::from_iter_values(rows.iter().map(|r| r.2))) as ArrayRef,
+        ),
+    ])
+    .unwrap()
+}
+
+fn flat_batches(op: &TemporalJoiner) -> Vec<RecordBatch> {
+    let mut batches = Vec::new();
+    op.visit_canonical_records(|batch| {
+        assert!(batch.num_rows() <= 1024);
+        batches.push(batch);
+        Ok(())
+    })
+    .unwrap();
+    batches
+}
+
+#[test]
+fn flat_temporal_metadata_restores_hot_callbacks_and_independent_scalars() {
+    for persistent in [false, true] {
+        #[cfg(not(feature = "rocksdb-state"))]
+        if persistent {
+            continue;
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let mut target = operator(persistent.then_some(directory.path()))
+            .with_memory_budget(8 << 20)
+            .unwrap();
+        let mut rows = vec![(7, 0, 0), (7, 1, i64::MIN), (7, 2, 1024), (7, 3, 42)];
+        rows.extend((0..2051).map(|time| (7, 4, time)));
+        rows.extend([
+            (8, 0, 0),
+            (8, 3, 77),
+            (9, 0, 0),
+            (9, 4, i64::MIN),
+            (9, 4, i64::MAX),
+        ]);
+        for validating in [true, false] {
+            target
+                .transfer_canonical_records(&flat_metadata(&[]), false, validating)
+                .unwrap();
+            for chunk in rows.chunks(1024) {
+                target
+                    .transfer_canonical_records(&flat_metadata(chunk), false, validating)
+                    .unwrap();
+                assert!(target.ensure_canonical_ready().is_err());
+                assert!(target.visit_canonical_rows(true, |_| Ok(())).is_err());
+                assert!(target.expire_processing_time(1000).is_err());
+                assert!(target.push_left(&batch(vec![7]), 0).is_err());
+            }
+            target
+                .transfer_canonical_records(&flat_metadata(&[]), true, validating)
+                .unwrap();
+            assert!(target.ensure_canonical_ready().is_ok());
+            if validating {
+                assert!(flat_batches(&target).is_empty());
+            }
+        }
+        let exported = flat_batches(&target);
+        assert!(exported.len() >= 3);
+        let mut actual = exported
+            .iter()
+            .flat_map(|batch| {
+                let keys = batch
+                    .column(0)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap();
+                let kinds = batch
+                    .column(1)
+                    .as_any()
+                    .downcast_ref::<Int8Array>()
+                    .unwrap();
+                let values = batch
+                    .column(2)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap();
+                (0..batch.num_rows())
+                    .map(move |row| (keys.value(row), kinds.value(row), values.value(row)))
+            })
+            .collect::<Vec<_>>();
+        actual.sort();
+        rows.sort();
+        assert_eq!(actual, rows);
+    }
+}
+
+#[test]
+fn flat_temporal_metadata_rejects_corruption_and_keeps_failed_restore_guarded() {
+    for rows in [
+        vec![(7, 0, 1)],
+        vec![(7, 0, 0)],
+        vec![(7, 4, 1)],
+        vec![(7, 0, 0), (7, 1, 1), (7, 1, 2)],
+        vec![(7, 0, 0), (7, 2, 5), (7, 4, 6)],
+        vec![(7, 0, 0), (8, 4, 6)],
+        vec![(7, 0, 0), (7, 4, 6), (7, 4, 6)],
+        vec![(7, 0, 0), (7, 4, 6), (7, 4, 5)],
+        vec![(7, 0, 0), (7, 4, 6), (7, 3, 5)],
+    ] {
+        for validating in [true, false] {
+            let mut target = operator(None);
+            assert!(
+                target
+                    .transfer_canonical_records(&flat_metadata(&rows), true, validating)
+                    .is_err(),
+                "{rows:?}"
+            );
+            assert!(target.ensure_canonical_ready().is_err(), "{rows:?}");
+            assert!(target
+                .transfer_canonical_records(&flat_metadata(&[]), true, validating)
+                .is_err());
+        }
+    }
+    let mut target = operator(None);
+    target
+        .transfer_canonical_records(&flat_metadata(&[]), false, true)
+        .unwrap();
+    assert!(target
+        .transfer_canonical_records(&flat_metadata(&[]), true, false)
+        .is_err());
+    assert!(target.ensure_canonical_ready().is_err());
+}
+
+#[test]
+fn flat_temporal_metadata_denial_releases_reservations_on_drop() {
+    use datafusion::execution::memory_pool::{GreedyMemoryPool, MemoryPool};
+    let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(1024));
+    let mut target = operator(None);
+    target
+        .memory
+        .attach_pool("temporal metadata denial", &pool, 0)
+        .unwrap();
+    let result =
+        target.transfer_canonical_records(&flat_metadata(&[(7, 0, 0), (7, 4, 6)]), false, false);
+    assert!(matches!(
+        result,
+        Err(DataFusionError::ResourcesExhausted(_))
+    ));
+    drop(target);
+    assert_eq!(pool.reserved(), 0);
+}

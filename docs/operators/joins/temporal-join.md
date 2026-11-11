@@ -17,6 +17,14 @@ is applied natively, same as the other join shapes.
 
 ## Admission
 
+Retained ROW/ARRAY/MAP probe and build payloads use the shared native RocksDB row codec. Qualified
+canonical contracts pin both sides and convert bounded frames asynchronously, retaining version
+order and independent cursor/timer metadata. Legacy blob-backed checkpoints migrate one key-group
+partition at a time through aligned or clipped restore. Partition-key and residual-expression
+admission remain independent of the payload codec.
+End-of-input cleanup skips probe resolution after the native handle has already closed, so
+releasing an asynchronous capture's source cannot enter JNI with an absent owner.
+
 Equi-keys use the [verified scalar whitelist](../window-aggregate.md#scalar-grouping-and-partition-keys),
 including narrow integers, FLOAT/DOUBLE, TIME, binary and both interval families.
 Collection/ROW/object key columns retain fallback. Keys must drop NULLs (LEFT is the only
@@ -106,18 +114,43 @@ until the callback fires.
 
 ## Canonical interchange: partial
 
+Restore callback membership lives in the shared scoped disk spool. The metadata bridge shares
+OVER's bounded key/kind/long-value transport. It streams owner markers, signed probe cursors,
+registered values, cleanup clocks and individual physical callbacks instead of collecting a
+per-owner Java timer array or native Arrow list. Export borrows encoded callback values from the
+captured database; restore builds only the active owner's normal execution callback tree and
+moves it into state once. The largest encoded database value remains a working-memory floor.
+This changes transport, not operator admission.
+
+Canonical RocksDB readers capture immutable database views and leave their live metadata/deadline
+caches empty. Metadata export streams persisted cursors, physical callbacks and deadline-only keys
+in bounded batches, using point reads to join the two tables. Capture-time versions survive live
+updates; cancellation and receiver failure release the reader without consuming live state. The
+same state contract and reader architecture apply on released 1.18 and 2.2. This removes a whole
+key-inventory export working set; oversized individual values remain a working-memory floor.
+
 The released 2.2.1 adapter reads live native rows and bookkeeping directly into stock map/value
 states and Void timer queues, with original key/row serializers and signed probe-map indices.
 It creates no intermediate native snapshot. Preflight validates the complete stock inventory,
-serializers, row keys/timestamps and callback ownership before native mutation.
+serializers, row keys/timestamps and callback ownership before native mutation. Owner unions
+and callback membership live in the shared temporary disk inventory instead of global Java maps.
+The adapter validates native row and metadata transfers in a first pass, then rereads the
+unchanged source to apply them. Row batches obey a 1,024-row and four-MiB payload estimate,
+allowing an oversized row. An open native restore guard blocks processing, cleanup, export and
+checkpointing until all rows and metadata finish; malformed transfers leave that guard failed.
+Native metadata reservations cover callback-tree growth and encoding before installation. The
+scratch index closes and deletes on failure without changing stock state or registering temporary
+source descriptors. These shared contracts run on both released Flink lines.
 
 Eighty positive operator cases cover INNER/LEFT, both stock/native stores, the shared metadata
 trace, unchanged-state handoff, ordinary native recovery, NULL payloads, all four row kinds,
 version overwrites and continued execution in both engines. Thirty-two malformed-state controls
 verify rejection without partial native import. Serializer snapshots restore with StreamFusion
 and planner classes blocked; Arrow allocation checks remain strict. The independent clean build
-passes 1,184 native tests (two existing ignores) and 185 Java controls. Shared 1.18 runtime checks
-also pass, but do not qualify canonical temporal transfer on that version.
+passes 1,184 native tests (two existing ignores) and 185 Java controls. The shared disk-inventory
+cohort additionally passes 26 selected actual-operator interchange cases, 32 malformed-state cases
+and 18 released metadata-trace controls on Flink 1.18. These qualify the exercised BIGINT
+component layouts; the complete 2.2 job and wider-schema matrices are not qualified on 1.18.
 
 The operator fixtures use BIGINT keys/payloads and compact time fields. The compiled-plan loader
 also passes all four unchanged released 2.2.1 temporal restore programs, including scalar string

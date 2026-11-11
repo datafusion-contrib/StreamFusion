@@ -65,6 +65,7 @@ impl Hash for ValueKey {
     }
 }
 
+#[derive(Clone)]
 struct TimedOrders {
     orders: VecDeque<i64>,
     written: i64,
@@ -75,6 +76,7 @@ impl TimedOrders {
     }
 }
 
+#[derive(Clone)]
 struct TimedValues {
     values: VecDeque<ScalarValue>,
     written: i64,
@@ -87,6 +89,7 @@ impl TimedValues {
     }
 }
 
+#[derive(Clone)]
 pub(super) struct RetainedOrderedValues {
     selected_order: Option<i64>,
     value_orders: HashMap<ValueKey, TimedOrders>,

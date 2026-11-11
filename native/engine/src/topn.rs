@@ -544,7 +544,7 @@ impl crate::state::RocksStateCodec for TopNStateCodec {
     }
     fn value_bytes(&self, value: &TopNPartition) -> usize {
         if let Some(state) = &value.retract {
-            return state.encode().expect("valid retracting state").len();
+            return state.encoded_bytes();
         }
         4 + if value.first_rank_end.is_some() {
             24
@@ -580,7 +580,7 @@ impl crate::state::RocksStateCodec for TopNStateCodec {
     fn raw_write(&self, value: &TopNPartition, out: &mut Vec<u8>) {
         if let Some(state) = &value.retract {
             assert!(value.rows.is_empty() && value.first_rank_end.is_none());
-            out.extend_from_slice(&state.encode().expect("valid retracting state"));
+            state.write_encoded(out).expect("valid retracting state");
             return;
         }
         out.extend_from_slice(&(value.len() as u32).to_le_bytes());
@@ -3125,6 +3125,7 @@ fn diff_top(
 /// a record that does not strictly improve on the current top-1 is dropped without touching state or output, so
 /// a same-sort-key update keeps the stale payload. Matching Flink's materialized result means
 /// reproducing exactly that.
+#[derive(Clone)]
 pub(crate) struct UpdatableRow {
     pub(crate) sort: OwnedRow,
     pub(crate) payload: Arc<OwnedRow>,
@@ -4508,6 +4509,15 @@ impl WindowRanker {
             .as_ref()
             .expect("window-rank rocksdb store")
             .timer_deadline()
+    }
+
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn migrate_legacy_snapshot_store(&mut self) -> Result<(), DataFusionError> {
+        let reader = self.store.as_ref().unwrap().legacy_snapshot_reader()?;
+        if let Some(reader) = reader {
+            reader.migrate(|partitions, timer| self.import_partitions(partitions, timer))?;
+        }
+        Ok(())
     }
 
     /// Decodes restored blob key groups once at open and replays them through the store-backed
