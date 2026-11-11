@@ -32,6 +32,7 @@ import tech.streamfusion.paimon.NativePaimonAppendSink;
 import tech.streamfusion.paimon.NativePaimonBucketAssigner;
 import tech.streamfusion.paimon.NativePaimonBucketSink;
 import tech.streamfusion.paimon.NativePaimonLocalMergeOperator;
+import tech.streamfusion.planner.common.NativePlanDetails;
 
 /**
  * Builds the columnar Paimon sink topology: batches are split natively per (partition, bucket),
