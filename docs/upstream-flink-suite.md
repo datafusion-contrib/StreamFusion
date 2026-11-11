@@ -10,7 +10,7 @@ inventory records with the earlier planner package remain readable.
 Streaming observation similarly targets `planner.stream.StreamPlanScan` and the
 mode-specific `planner.stream.StockCompiledPlanLowering`; it does not instrument
 the inherited root `PhysicalPlanScan` facade as another scan. Both Flink source
-sets use `planner.stream.NativeStreamPlanner`, while public installation and
+lines use the shared `planner.stream.NativeStreamPlanner`, while public installation and
 ServiceLoader entries retain their established names. Positive native-consumption
 and existing route expectations remain required after package moves.
 Path-selected compatibility and JVM aggregate workflows also cover planner mode

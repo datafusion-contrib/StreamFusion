@@ -28,8 +28,10 @@ JNI entry points and serializer snapshots intact; runtime helpers are organized
 by the responsibilities described below.
 
 Streaming scan, rewrite context, matchers and physical/exec implementations live
-in `planner.stream`, with the same mode package in both Flink compatibility source
-sets and optional connector modules. Root `PhysicalPlanScan` remains the public
+in `planner.stream`. Both Flink lines use the shared stream planner and canonical
+graph binding implementation; released API differences remain in compatibility
+adapters, and version-specific sink nodes retain the same mode package. Optional
+connector modules use that package too. Root `PhysicalPlanScan` remains the public
 installation return type; it inherits the one `stream.StreamPlanScan` implementation.
 Historical public stateless mode-marker entries and connector service-provider
 names remain compatibility entry points. Source-sharing identity prefixes, node
@@ -83,8 +85,11 @@ EOF/input-demand adapters and streaming timer/checkpoint adapters. Arrow transpo
 allocator authority, JNI callback classes, state descriptors and serializer
 snapshots keep their shared identities. The layout does not duplicate kernels,
 introduce extra calls or alter the stream/batch lifecycle. The compatibility test
-compares all 73 pre-refactor operator serialization descriptors, and existing
-SQL, ownership and recovery tests exercise their runtime behavior.
+compares all 73 pre-refactor operator serialization descriptors captured from
+upstream `e1d71357c`, before moving runtime helpers. The descriptor inventory must
+match that baseline on both released Flink lines, including upstream canonical-state
+changes merged before this reorganization. Existing SQL, ownership and recovery
+tests exercise their runtime behavior.
 
 One bounded DataFusion execution owns persistent input/output streams for the task.
 The Rust `engine::batch` module owns bounded execution, task scheduling, sort,

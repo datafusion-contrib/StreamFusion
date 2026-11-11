@@ -1,4 +1,4 @@
-package tech.streamfusion.planner;
+package tech.streamfusion.planner.stream;
 
 import java.io.Serializable;
 import java.util.ArrayList;
