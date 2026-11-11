@@ -387,6 +387,7 @@ public final class Native {
   private static final String NATIVE_RESOURCE_PREFIX = "/tech/streamfusion/native/";
 
   static {
+    tech.streamfusion.arrow.ArrowRuntime.initialize();
     loadLibrary();
     verifyLoadedVersion();
   }

@@ -7,6 +7,9 @@ import statistics
 from pathlib import Path
 
 root = Path(__file__).resolve().parent
+import subprocess, sys
+subprocess.run([sys.executable, str(root.parents[2] / 'dev/benchmark_artifacts.py'),
+                'docs/benchmarks/q23-mini-batch-fix-2026-10-08'], check=True)
 trials, summaries = [], []
 pattern = re.compile(
     r'\[fluss\] (q23) rows=(\d+) parallelism=(\d+) stock=(\[[^\]]*\]) '

@@ -19,25 +19,63 @@ public final class ByteStringConcatBenchmarkFunctions {
   private static FlinkExpressionFunction stock;
   private static RowData[] rows;
   private static volatile long consumed;
+  private static boolean integerOutput;
 
   private ByteStringConcatBenchmarkFunctions() {}
 
   public static void prepare(
       int width, boolean unicode, boolean nullable, int invalidEvery, int count) throws Exception {
+    prepare(width, unicode, nullable, invalidEvery, count, "concat");
+  }
+
+  public static void prepare(
+      int width, boolean unicode, boolean nullable, int invalidEvery, int count, String function)
+      throws Exception {
     var loader = ByteStringConcatBenchmarkFunctions.class.getClassLoader();
     Thread.currentThread().setContextClassLoader(loader);
     var table = TableEnvironment.create(EnvironmentSettings.inStreamingMode());
     table.executeSql("CREATE TABLE src(s STRING) WITH ('connector'='datagen')");
+    String expression;
+    switch (function) {
+      case "concat":
+        expression = "CONCAT(s, '!')";
+        break;
+      case "concat_ws":
+        expression = "CONCAT_WS(',', s, '!')";
+        break;
+      case "concat_ws_separator":
+        expression = "CONCAT_WS(s, 'x', '!')";
+        break;
+      case "sha2_224":
+      case "sha2_256":
+      case "sha2_384":
+      case "sha2_512":
+        expression = "SHA2(s, " + function.substring(5) + ")";
+        break;
+      case "md5":
+      case "sha1":
+      case "sha224":
+      case "sha256":
+      case "sha384":
+      case "sha512":
+      case "to_base64":
+      case "ascii":
+        expression = function.toUpperCase(java.util.Locale.ROOT) + "(s)";
+        break;
+      default:
+        throw new IllegalArgumentException("Unknown byte-string benchmark: " + function);
+    }
     var operation =
-        ((TableImpl) table.sqlQuery("SELECT CONCAT(s, '!') FROM src")).getQueryOperation();
+        ((TableImpl) table.sqlQuery("SELECT " + expression + " FROM src")).getQueryOperation();
     var project = (Project) ((PlannerQueryOperation) operation).getCalciteTree();
     var type = new VarCharType(VarCharType.MAX_LENGTH);
+    integerOutput = function.equals("ascii");
     stock =
         FlinkExpressionGenerator.generate(
             project.getProjects(),
             null,
             new LogicalType[] {type},
-            RowType.of(type),
+            RowType.of(integerOutput ? new org.apache.flink.table.types.logical.IntType() : type),
             TableConfig.getDefault(),
             loader);
     stock.open(
@@ -66,10 +104,12 @@ public final class ByteStringConcatBenchmarkFunctions {
       for (RowData input : rows) {
         RowData result = (RowData) stock.evalRow(input);
         if (result.isNullAt(0)) sum--;
+        else if (integerOutput) sum += result.getInt(0);
         else {
           var value = (BinaryStringData) result.getString(0);
           int length = value.getSizeInBytes();
-          sum += length + (value.byteAt(0) & 255) + (value.byteAt(length - 1) & 255);
+          sum += length;
+          if (length > 0) sum += (value.byteAt(0) & 255) + (value.byteAt(length - 1) & 255);
         }
       }
     }

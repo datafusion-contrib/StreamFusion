@@ -109,6 +109,31 @@ exhaustion behavior, sizing, and metrics.
   native stores' shared block cache and write-buffer manager under the RocksDB backend; there are
   no StreamFusion-specific state memory settings. See [RocksDB backend](backends/rocksdb.md).
 
+### Arrow Java access checks
+
+StreamFusion applies the following defaults before Arrow schema conversion, runtime allocation,
+or native library initialization. These are Arrow JVM settings, not Flink table options:
+
+| JVM property | StreamFusion default | Effect |
+| --- | --- | --- |
+| `arrow.enable_unsafe_memory_access` | `true` | Skip per-access buffer bounds and liveness checks. |
+| `arrow.enable_null_check_for_get` | `false` | Skip primitive-getter NULL checks; callers still check validity. |
+
+Explicit system properties take precedence over environment variables. For unsafe access, Arrow's
+legacy `drill.enable_unsafe_memory_access` property takes precedence over
+`ARROW_ENABLE_UNSAFE_MEMORY_ACCESS` when the current property is absent. The NULL-check environment
+variable is `ARROW_ENABLE_NULL_CHECK_FOR_GET`. StreamFusion leaves these explicit settings intact,
+including Arrow's case-sensitive interpretation of `true` and `false`.
+
+To diagnose invalid accesses, set `-Darrow.enable_unsafe_memory_access=false` and
+`-Darrow.enable_null_check_for_get=true` at JVM startup. No StreamFusion-specific switch is needed.
+The properties are process-wide and may affect other Arrow users in the same JVM; each Arrow
+classloader fixes its effective values at class initialization. StreamFusion logs the effective
+checks and warns if earlier Arrow initialization prevents the requested settings from taking effect.
+Later SQL or system-property changes do not reconfigure initialized classes. Memory budgeting,
+reference-counted ownership, NULL bitmaps and safe vector growth remain unchanged. See
+[Arrow access optimization](optimizations/arrow-unsafe-memory-checks.md).
+
 ### Off-heap sizing
 
 Size `taskmanager.memory.task.off-heap.size` for the peak aggregate of all StreamFusion consumers in

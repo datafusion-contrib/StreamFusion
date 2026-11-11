@@ -635,6 +635,21 @@ fn build_typed_call(
     args: Vec<datafusion::prelude::Expr>,
 ) -> datafusion::prelude::Expr {
     use datafusion::logical_expr::ExprSchemable;
+    if matches!(op, 67 | 94 | 107) {
+        let schema = DFSchema::try_from(Arc::clone(schema)).expect("byte-string input schema");
+        if args
+            .iter()
+            .any(|arg| arg.get_type(&schema).expect("operand type") == DataType::Binary)
+        {
+            let function = match op {
+                67 => crate::flink_functions::byte_ascii::function(),
+                94 => crate::flink_functions::byte_concat_ws::function(),
+                107 => crate::flink_functions::function(151, args.len()).expect("binary TO_BASE64"),
+                _ => unreachable!("matched byte-string function"),
+            };
+            return function.call(args);
+        }
+    }
     if op == 3 || (10..=15).contains(&op) {
         let schema = DFSchema::try_from(Arc::clone(schema)).expect("comparison input schema");
         let types: Vec<_> = args
@@ -997,8 +1012,8 @@ impl FlinkHash {
     fn new(algorithm: HashAlgorithm) -> Self {
         Self {
             algorithm,
-            signature: datafusion::logical_expr::Signature::exact(
-                vec![DataType::Utf8],
+            signature: datafusion::logical_expr::Signature::any(
+                1,
                 datafusion::logical_expr::Volatility::Immutable,
             ),
         }
@@ -1022,8 +1037,11 @@ impl datafusion::logical_expr::ScalarUDFImpl for FlinkHash {
     }
 
     fn return_type(&self, arg_types: &[DataType]) -> datafusion::common::Result<DataType> {
-        if arg_types.len() != 1 {
-            return datafusion::common::plan_err!("{} expects exactly one argument", self.name());
+        if !matches!(
+            arg_types,
+            [DataType::Utf8 | DataType::Binary | DataType::Null]
+        ) {
+            return datafusion::common::plan_err!("{} expects one character argument", self.name());
         }
         Ok(DataType::Utf8)
     }
@@ -1036,36 +1054,56 @@ impl datafusion::logical_expr::ScalarUDFImpl for FlinkHash {
             return datafusion::common::exec_err!("{} expects exactly one argument", self.name());
         };
         match self.algorithm {
-            HashAlgorithm::Md5 => hash_utf8::<md5::Md5>(input),
-            HashAlgorithm::Sha1 => hash_utf8::<sha1::Sha1>(input),
-            HashAlgorithm::Sha224 => hash_utf8::<sha2::Sha224>(input),
-            HashAlgorithm::Sha256 => hash_utf8::<sha2::Sha256>(input),
-            HashAlgorithm::Sha384 => hash_utf8::<sha2::Sha384>(input),
-            HashAlgorithm::Sha512 => hash_utf8::<sha2::Sha512>(input),
+            HashAlgorithm::Md5 => hash_string::<md5::Md5>(input),
+            HashAlgorithm::Sha1 => hash_string::<sha1::Sha1>(input),
+            HashAlgorithm::Sha224 => hash_string::<sha2::Sha224>(input),
+            HashAlgorithm::Sha256 => hash_string::<sha2::Sha256>(input),
+            HashAlgorithm::Sha384 => hash_string::<sha2::Sha384>(input),
+            HashAlgorithm::Sha512 => hash_string::<sha2::Sha512>(input),
         }
     }
 }
 
-fn hash_utf8<D: sha2::Digest>(
+fn hash_string<D: sha2::Digest>(
     input: &datafusion::logical_expr::ColumnarValue,
 ) -> datafusion::common::Result<datafusion::logical_expr::ColumnarValue> {
+    use arrow::array::BinaryArray;
     use arrow::buffer::OffsetBuffer;
-    use datafusion::common::{cast::as_string_array, exec_datafusion_err, exec_err};
+    use datafusion::common::{cast::as_binary_array, exec_datafusion_err, exec_err};
     use datafusion::logical_expr::ColumnarValue;
 
     let width = <D as sha2::Digest>::output_size() * 2;
     match input {
-        ColumnarValue::Scalar(ScalarValue::Utf8(None) | ScalarValue::Null) => {
-            Ok(ColumnarValue::Scalar(ScalarValue::Utf8(None)))
-        }
+        ColumnarValue::Scalar(
+            ScalarValue::Utf8(None) | ScalarValue::Binary(None) | ScalarValue::Null,
+        ) => Ok(ColumnarValue::Scalar(ScalarValue::Utf8(None))),
         ColumnarValue::Scalar(ScalarValue::Utf8(Some(value))) => {
             let mut hex = Vec::with_capacity(width);
             append_digest_hex::<D>(value, &mut hex);
             let hex = String::from_utf8(hex).map_err(|e| exec_datafusion_err!("{e}"))?;
             Ok(ColumnarValue::Scalar(ScalarValue::Utf8(Some(hex))))
         }
+        ColumnarValue::Scalar(ScalarValue::Binary(Some(value))) => {
+            let mut hex = Vec::with_capacity(width);
+            append_digest_hex::<D>(value, &mut hex);
+            let hex = String::from_utf8(hex).map_err(|e| exec_datafusion_err!("{e}"))?;
+            Ok(ColumnarValue::Scalar(ScalarValue::Utf8(Some(hex))))
+        }
+        ColumnarValue::Array(array) if array.data_type() == &DataType::Null => Ok(
+            ColumnarValue::Array(arrow::array::new_null_array(&DataType::Utf8, array.len())),
+        ),
         ColumnarValue::Array(array) => {
-            let strings = as_string_array(array)?;
+            let binary;
+            let strings = if let Some(strings) = array.as_any().downcast_ref::<StringArray>() {
+                binary = BinaryArray::new(
+                    strings.offsets().clone(),
+                    strings.values().clone(),
+                    strings.nulls().cloned(),
+                );
+                &binary
+            } else {
+                as_binary_array(array)?
+            };
             let capacity = (strings.len() - strings.null_count())
                 .checked_mul(width)
                 .filter(|size| *size <= i32::MAX as usize)
@@ -1092,13 +1130,13 @@ fn hash_utf8<D: sha2::Digest>(
             };
             Ok(ColumnarValue::Array(Arc::new(result)))
         }
-        _ => exec_err!("Hash input must be a UTF-8 string"),
+        _ => exec_err!("Hash input must be a character string"),
     }
 }
 
-pub(crate) fn append_digest_hex<D: sha2::Digest>(value: &str, output: &mut Vec<u8>) {
+pub(crate) fn append_digest_hex<D: sha2::Digest>(value: impl AsRef<[u8]>, output: &mut Vec<u8>) {
     const HEX: &[u8; 16] = b"0123456789abcdef";
-    for byte in D::digest(value.as_bytes()) {
+    for byte in D::digest(value.as_ref()) {
         output.push(HEX[(byte >> 4) as usize]);
         output.push(HEX[(byte & 0xf) as usize]);
     }

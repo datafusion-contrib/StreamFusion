@@ -997,7 +997,7 @@ character-string admission.
 `CONCAT` computes Flink's strict NULL propagation from the input validity bitmaps, without
 re-evaluating its arguments. Batches without NULL results use DataFusion's kernel directly; batches
 with NULL results append only surviving rows. The masked path builds from whole valid strings;
-the delegated path retains DataFusion's output validation. `CONCAT_WS` delegates to DataFusion.
+the delegated path retains DataFusion's output validation. The Utf8 `CONCAT_WS` path delegates to DataFusion.
 Hashes use the released RustCrypto libraries used by
 DataFusion and Comet, writing lowercase hex directly into presized UTF-8 Arrow buffers without intermediate
 binary or string-view columns or per-row heap allocations. See [string copy reduction](../optimizations/string-copy-reduction.md).
@@ -1006,20 +1006,33 @@ calls, filters, valid BIGINT widths, runtime/NULL widths, conditional and empty-
 and oversized bit-length fallback. The runtime kernel has a compiled-Calc no-callback witness;
 see [release measurements](../benchmarks/scalar-functions.md#runtime-sha2-widths).
 
-### Byte-preserving CONCAT input
+### Byte-preserving string input
 
 A final native Calc immediately above a row-to-Arrow transpose can carry STRING inputs as Arrow
-Binary when every character input is consumed exclusively by `CONCAT` / `||`, including nested
-concatenations. Character constants and independent numeric projections/filters are supported.
+Binary when every character input consumer has a verified byte contract: `CONCAT` / `||`,
+`CONCAT_WS`, `MD5`, `SHA1`, `SHA224`, `SHA256`, `SHA384`, `SHA512`, `TO_BASE64`, or `ASCII`.
+Nested concatenations, runtime separators, character constants and simple
+independent numeric projections/filters are supported. These hashes consume the original bytes and return
+valid ASCII hex. Untyped NULL arrays and literals also produce typed STRING NULL results, including
+empty batches. TO_BASE64 also consumes the original bytes and returns valid ASCII. These results
+can feed text predicates or another expression within the Calc.
+ASCII reads only the first byte and sign-extends it like Flink's Java byte; empty strings yield zero
+and NULL remains NULL. Its integer output can also be used in a native filter over malformed input.
+SHA2 with a literal width of 224, 256, 384 or 512 lowers to the matching digest and has the same byte
+contract. Runtime, NULL and invalid SHA2 widths retain their existing representation and error path;
+they are not included in this arbitrary-byte admission.
+Raw concatenation output still requires a byte-capable parent or the final row exit.
 The planner selects this representation before execution; the schema does not change between
 batches. `EXPLAIN` identifies the input columns with `byteStrings=[...]`. There is no new setting.
 
 The SQL type remains STRING. The transpose copies the original `StringData` bytes into a Binary
-vector marked `streamfusion.logical_string=1`; the native kernel concatenates bytes directly,
-propagates NULLs, and returns Binary to the final row exit. No UTF-8 validation, replacement decode,
+vector marked `streamfusion.logical_string=1`; the native concatenation kernels consume bytes directly,
+preserve their NULL rules, and return Binary to the final row exit. No UTF-8 validation, replacement decode,
 or JVM callback is needed. The exit can borrow Binary-backed string bytes for synchronous consumers,
 with the same ownership rule as Utf8. CONCAT output is byte-backed without a Java string cache,
-matching Flink's concatenation helper.
+matching Flink's concatenation helpers. `CONCAT_WS` returns NULL only when its separator is NULL;
+it skips NULL values but retains empty values and their separators. A separator alone, or only
+NULL values after it, produces an empty string for a non-NULL separator.
 
 For example, a runtime STRING containing `FF` produces `FF21` for `CONCAT(s, '!')`.
 Truncated `41E4` produces `41E421`; neither is replaced with `EFBFBD`.
@@ -1028,7 +1041,7 @@ multiple batches, NULLs, embedded zeros, Unicode, nested CONCAT and all-filtered
 
 This first admission requires a final row exit, a direct entry transpose, scalar input fields,
 and no JVM expressions. Character comparisons, direct character passthrough projections,
-other character consumers (including `CONCAT_WS`), nested input types, native columnar producers,
+other character consumers, nested input types, native columnar producers,
 native sinks, and downstream stateful/relational consumers retain their existing representation.
 Those paths are **not yet certified for arbitrary bytes**; this is not a claim that all STRING
 consumers safely handle malformed UTF-8. They remain tracked in

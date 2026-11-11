@@ -8,6 +8,9 @@ use streamfusion::bench::CalcProgram;
 
 fn checksum(batch: &RecordBatch) -> i64 {
     let column = batch.column(0);
+    if let Some(values) = column.as_any().downcast_ref::<arrow::array::Int32Array>() {
+        return values.iter().map(|value| value.map_or(-1, i64::from)).sum();
+    }
     let bytes;
     let values = if let Some(values) = column.as_any().downcast_ref::<BinaryArray>() {
         values
@@ -24,7 +27,9 @@ fn checksum(batch: &RecordBatch) -> i64 {
         .iter()
         .map(|value| {
             value.map_or(-1, |v| {
-                (v.len() + v[0] as usize + v[v.len() - 1] as usize) as i64
+                (v.len()
+                    + v.first().copied().unwrap_or(0) as usize
+                    + v.last().copied().unwrap_or(0) as usize) as i64
             })
         })
         .sum()
@@ -36,6 +41,7 @@ fn main() {
     let unicode = args.get(2).is_some_and(|s| s == "true");
     let nullable = args.get(3).is_some_and(|s| s == "true");
     let invalid_every: usize = args.get(4).map_or(0, |s| s.parse().unwrap());
+    let function = args.get(5).map_or("concat", String::as_str);
     let rows = 4096;
     let loops = 256;
     let warmups = 12;
@@ -55,16 +61,18 @@ fn main() {
     streamfusion_bridge::capture_jvm_raw(vm.get_java_vm_pointer());
     let mut env = vm.attach_current_thread().unwrap();
     let class = "tech/streamfusion/planner/ByteStringConcatBenchmarkFunctions";
+    let java_function = env.new_string(function).unwrap();
     env.call_static_method(
         class,
         "prepare",
-        "(IZZII)V",
+        "(IZZIILjava/lang/String;)V",
         &[
             JValue::Int(width as i32),
             JValue::Bool(unicode.into()),
             JValue::Bool(nullable.into()),
             JValue::Int(invalid_every as i32),
             JValue::Int(rows as i32),
+            JValue::Object(&java_function),
         ],
     )
     .unwrap_or_else(|error| {
@@ -89,18 +97,55 @@ fn main() {
     let mut inputs: Vec<ArrayRef> = vec![Arc::new(binary.clone())];
     if invalid_every == 0 {
         inputs.push(Arc::new(StringArray::try_from_binary(binary).unwrap()));
+        if function.starts_with("sha2_") {
+            inputs.push(inputs[1].clone());
+        }
     }
     let mut calcs: Vec<_> = inputs
         .iter()
-        .map(|_| {
-            CalcProgram::new(
-                vec![6, 0, 3],
-                vec![93, 0, 0],
-                vec![2, 0, 0],
-                vec![],
-                vec![],
-                vec![Some("!".into())],
-            )
+        .enumerate()
+        .map(|(index, _)| {
+            if index == 2 {
+                let bits: i64 = function.strip_prefix("sha2_").unwrap().parse().unwrap();
+                return CalcProgram::new(
+                    vec![44, 0, 7],
+                    vec![0, 0, 3],
+                    vec![2, 0, 0],
+                    vec![-1, 0, 12, bits],
+                    vec![],
+                    vec![],
+                );
+            }
+            let (kinds, payload, children, strings) = match function {
+                "concat" => (
+                    vec![6, 0, 3],
+                    vec![93, 0, 0],
+                    vec![2, 0, 0],
+                    vec![Some("!".into())],
+                ),
+                "concat_ws" => (
+                    vec![6, 3, 0, 3],
+                    vec![94, 0, 0, 1],
+                    vec![3, 0, 0, 0],
+                    vec![Some(",".into()), Some("!".into())],
+                ),
+                "concat_ws_separator" => (
+                    vec![6, 0, 3, 3],
+                    vec![94, 0, 0, 1],
+                    vec![3, 0, 0, 0],
+                    vec![Some("x".into()), Some("!".into())],
+                ),
+                "md5" => (vec![6, 0], vec![95, 0], vec![1, 0], vec![]),
+                "sha1" => (vec![6, 0], vec![143, 0], vec![1, 0], vec![]),
+                "sha224" | "sha2_224" => (vec![6, 0], vec![96, 0], vec![1, 0], vec![]),
+                "sha256" | "sha2_256" => (vec![6, 0], vec![97, 0], vec![1, 0], vec![]),
+                "sha384" | "sha2_384" => (vec![6, 0], vec![98, 0], vec![1, 0], vec![]),
+                "sha512" | "sha2_512" => (vec![6, 0], vec![99, 0], vec![1, 0], vec![]),
+                "to_base64" => (vec![6, 0], vec![107, 0], vec![1, 0], vec![]),
+                "ascii" => (vec![6, 0], vec![67, 0], vec![1, 0], vec![]),
+                _ => panic!("Unknown byte-string benchmark: {function}"),
+            };
+            CalcProgram::new(kinds, payload, children, vec![], vec![], strings)
         })
         .collect();
     let batches: Vec<_> = inputs
@@ -144,13 +189,18 @@ fn main() {
                     digest += checksum(&black_box(calc.run(black_box(batch.clone()))));
                 }
                 (
-                    if engine == 1 { "binary" } else { "utf8" },
+                    match engine {
+                        1 => "binary",
+                        2 => "utf8",
+                        3 => "previous",
+                        _ => unreachable!(),
+                    },
                     start.elapsed().as_nanos(),
                     black_box(digest),
                 )
             };
             assert_eq!(digest, expected);
-            println!("byte_concat,{width},{unicode},{nullable},{invalid_every},{trial},{},{name},{nanos}", trial < warmups);
+            println!("byte_{function},{width},{unicode},{nullable},{invalid_every},{trial},{},{name},{nanos}", trial < warmups);
         }
     }
     env.call_static_method(class, "close", "()V", &[]).unwrap();

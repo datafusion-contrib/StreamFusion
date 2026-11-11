@@ -152,6 +152,15 @@ and deploys, with Pages/OIDC permissions confined to deployment. Forks build wit
 Fork docs pushes cancel obsolete builds; canonical main deployments remain serialized. Release
 tag validation and all dependent release publishing jobs are also restricted to the canonical repo.
 
+Documentation uses MkDocs 1.6's generated-file hook to render SQL inventory downloads
+from the checked-in snapshots and retrieve hash-pinned historical benchmark artifacts.
+Both are staged under `target/`, keeping generated exports and historical run outputs
+out of the maintained source tree. Existing published paths remain unchanged; an
+unavailable or corrupt artifact fails the docs build. See the
+[evidence policy](benchmarks/evidence.md#source-repository-and-archived-run-outputs)
+for retrieval and retention. The docs workflow tests snapshot rendering and evidence
+retrieval before building; ordinary source/test jobs do not fetch these archives.
+
 The ordinary CI and upstream Flink aggregate gates run after successful or failed jobs,
 but skip canceled workflows (`always() && !cancelled()`). An unconditional `always()`
 gate can wait for another runner after the obsolete test jobs have been canceled,
@@ -205,6 +214,10 @@ The nested-scalar release comparison pins a historical runtime whose Calc metric
 rows under that historical name. Candidate checks retain the detailed `NativeCalc(...)`
 name, and fallback controls require zero native operators. This compatibility changes
 only metric-name recognition; workloads, timing and the pinned baseline stay unchanged.
+
+Previous-runtime diagnostics copy the current benchmark fixtures together with their test-only
+timing helper. The recorded fixture hashes include that helper, so the immutable baseline can
+compile the current instrumentation without copying any production implementation from the candidate.
 
 ## Shared debug native libraries
 
@@ -606,6 +619,17 @@ yet available as a released CI fixture.
 
 ## Complete canonical job matrix
 
+Kafka checkpoint handoffs wait for the fixture sink's external commit before cancelling the
+completed checkpoint leg. The coordinator's checkpoint future can complete before the committer
+receives its completion notification. The boundary still requires the exact row count and the
+subsequent engine switches check for loss, duplicates and replay; a missing commit times out.
+
+Floating DISTINCT local/global fixtures with processing-time mini-batch markers compare the
+materialized changelog, result types and consumed work in both native stages. Independent runs
+can flush at different boundaries and emit different valid intermediate updates. Tests with
+deterministic bundle boundaries retain their stricter raw-changelog assertions. The global
+fixture also checks every retraction against the current result and rejects a second live result.
+
 Both Flink lines run complete canonical handoff jobs in 16 required shards on each of JDK 11
 and 17. Every shard uses the same shared debug native artifact, startup compiler settings and
 scoped class-data cache. Flink 1.18 combines its release profile with `canonical-kafka`; dependency
@@ -645,7 +669,6 @@ two metadata archives; their application state and runtime directories remain in
 A clean 2.2 build compiles the same 118-class inventory and passes the equivalent 24 selected
 broker scenarios, 22 admission checks and six cache controls without skips. Across the two release
 classpaths, these runs retain six worker metadata archives instead of generating one per stage.
-
 Canonical scheduling now uses that complete matrix's class times with startup compilation
 and metadata sharing enabled, replacing estimates from the earlier JVM settings. For the
 same 118 classes, including two abstract bases, the largest modeled shard falls from 7,417.10

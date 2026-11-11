@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.ServiceLoader;
 import java.util.concurrent.TimeUnit;
@@ -18,6 +19,33 @@ import org.junit.jupiter.api.Test;
 /** Proves each deployable extension JAR can load the matching native library it packages. */
 class NativeExtensionJarIT {
   private static final Duration LOAD_TIMEOUT = Duration.ofSeconds(30);
+
+  @Test
+  void packagedRuntimeInitializesArrowWithoutTheApplicationClasspath() throws Exception {
+    Path core =
+        ExtensionProbe.artifact(
+            Path.of(requiredProperty("streamfusion.project.dir")),
+            "streamfusion-core",
+            requiredProperty("streamfusion.version"),
+            "-runtime");
+    URL logging = org.slf4j.LoggerFactory.class.getProtectionDomain().getCodeSource().getLocation();
+    try (var loader =
+        new URLClassLoader(
+            new URL[] {core.toUri().toURL(), logging}, ClassLoader.getPlatformClassLoader())) {
+      Class.forName("tech.streamfusion.arrow.ArrowRuntime", true, loader)
+          .getMethod("initialize")
+          .invoke(null);
+      for (String type :
+          List.of(
+              "tech.streamfusion.arrow.ArrowRuntime",
+              "org.apache.arrow.memory.BoundsChecking",
+              "org.apache.arrow.vector.NullCheckingForGet")) {
+        assertEquals(
+            core.toUri().toURL(),
+            Class.forName(type, false, loader).getProtectionDomain().getCodeSource().getLocation());
+      }
+    }
+  }
 
   @Test
   void extensionJarsLoadTheirNativeLibraries() throws Exception {
@@ -68,7 +96,7 @@ class NativeExtensionJarIT {
       String version = args[1];
       String extension = args[2];
       System.setProperty("streamfusion.artifact.suffix", args[3]);
-      Path core = artifact(projectDirectory, "streamfusion-core", version);
+      Path core = artifact(projectDirectory, "streamfusion-core", version, "-runtime");
       Path extensionJar = artifact(projectDirectory, "streamfusion-" + extension, version);
       URL[] classpath =
           extensionClasspath(projectDirectory, version, extension, core, extensionJar);
@@ -90,9 +118,15 @@ class NativeExtensionJarIT {
     private static URL[] extensionClasspath(
         Path projectDirectory, String version, String extension, Path core, Path extensionJar)
         throws IOException {
+      var classpath = new ArrayList<URL>();
+      classpath.add(core.toUri().toURL());
+      classpath.add(extensionJar.toUri().toURL());
+      // Arrow ships in the runtime payload; Flink supplies its logging API at deployment.
+      classpath.add(
+          org.slf4j.LoggerFactory.class.getProtectionDomain().getCodeSource().getLocation());
       if ("avro-confluent-registry".equals(extension)) {
         Path avro = artifact(projectDirectory, "streamfusion-avro", version);
-        return new URL[] {core.toUri().toURL(), avro.toUri().toURL(), extensionJar.toUri().toURL()};
+        classpath.add(avro.toUri().toURL());
       }
       if ("parquet".equals(extension)) {
         URL flinkCore =
@@ -100,12 +134,17 @@ class NativeExtensionJarIT {
                 .getProtectionDomain()
                 .getCodeSource()
                 .getLocation();
-        return new URL[] {core.toUri().toURL(), extensionJar.toUri().toURL(), flinkCore};
+        classpath.add(flinkCore);
       }
-      return new URL[] {core.toUri().toURL(), extensionJar.toUri().toURL()};
+      return classpath.toArray(new URL[0]);
     }
 
     private static Path artifact(Path projectDirectory, String module, String version) {
+      return artifact(projectDirectory, module, version, "");
+    }
+
+    private static Path artifact(
+        Path projectDirectory, String module, String version, String classifier) {
       Path artifact =
           projectDirectory
               .resolve(module)
@@ -115,6 +154,7 @@ class NativeExtensionJarIT {
                       + System.getProperty("streamfusion.artifact.suffix", "")
                       + "-"
                       + version
+                      + classifier
                       + ".jar");
       if (!Files.isRegularFile(artifact)) {
         throw new IllegalStateException("Missing packaged extension artifact: " + artifact);
