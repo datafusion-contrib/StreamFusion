@@ -5,6 +5,13 @@ state in a RocksDB instance owned and accessed directly by Rust. Java coordinate
 handles and file upload, but native state reads, writes, flushes, and compactions do not cross JNI.
 Host-side fallback state and timers use Flink's `EmbeddedRocksDBStateBackend` delegate.
 
+Native builds enable `rocksdb-state` by default. Tests that transfer window
+partials between stores exercise memory-to-memory and all RocksDB combinations
+in that build. A `--no-default-features` build exercises only the memory-store
+combination; it has no RocksDB implementation or JNI entries. Use the default
+feature build for RocksDB recovery validation rather than treating a memory-only
+test run as persistent-backend evidence.
+
 Select the backend with the normal Flink setting:
 
 ```properties

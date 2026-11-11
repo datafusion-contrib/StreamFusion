@@ -632,9 +632,14 @@ fn sql_offsets_survive_raw_checkpoint_partitions_and_reject_mixed_grids() {
 
 #[test]
 fn final_window_partials_merge_once_and_handoff_variable_prefix_bounds() {
+    let backends = if cfg!(feature = "rocksdb-state") {
+        &[false, true][..]
+    } else {
+        &[false][..]
+    };
     for cumulative in [false, true] {
-        for source_rocks in [false, true] {
-            for target_rocks in [false, true] {
+        for &source_rocks in backends {
+            for &target_rocks in backends {
                 let directory = tempfile::tempdir().unwrap();
                 let source_path = directory.path().join("source");
                 let target_path = directory.path().join("target");
