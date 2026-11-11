@@ -17,14 +17,18 @@ the original copied source and delegates the resulting enumerator and serializer
 This avoids copying Hudi's file-planning implementation. Unknown versions and
 unsupported source contracts retain the stock connector at planning time.
 
-MOR merge algorithms are deliberately left upstream. The published hudi-rs reader
-does not accept caller-supplied storage through its public facade. A prototype
-instead supplies a local view populated from Java-selected files and Java-loaded
-bytes, using the public table factory to resolve the schema. It matches stock
-Hudi on real version-9 MOR fixtures without copying merge logic. Cache-inclusive
-performance and checkpoint ordering still require validation before admission.
-Current native coverage and validation are recorded on the
-[connector page](../docs/connectors/hudi.md).
+MOR sources use released Java Hudi's public file-group reader and reader context.
+The context decodes Parquet into Arrow and presents stable row-reference controls
+to the original Java merger. Its spill codec retains batch/row locations, keys,
+versions and operation tags. Final projection and winner gathering operate on
+Arrow batches. Java-generated key-delete metadata becomes nullable Arrow columns.
+Hudi's original fetcher prepares bounded Arrow batches, sharing the COW emitter
+and logical-row checkpoint offsets. Recovery repeats the Java merge and skips
+previously emitted rows using the released source's contract. Log payloads stay
+resident within the configured Arrow budget while Hudi can spill
+its controls. The earlier hudi-rs local-view prototype remains historical research.
+Coverage and measurements are recorded on the connector page.
+[Hudi connector](../docs/connectors/hudi.md)
 
 The immutable COW append adapter follows Iceberg's released-graph decoration. It
 retains Hudi's append function and coordinator and gives Java only borrowed Arrow
@@ -41,8 +45,8 @@ they can produce a different range contract; only the verified version-9 exact
 instant-set path is admitted.
 
 The MOR sink also keeps the released Java bucket index, row conversion control,
-log framing, key-delete blocks and coordinator. Existing Rust routing and append
-buffers retain payloads; the Java log serializer borrows those vectors and adds
+log framing, key-delete blocks and coordinator. Java buckets retain shared Arrow
+batch references and selected-row bitsets. The log serializer borrows those vectors and adds
 only generated metadata before Rust Parquet encoding. Hudi's real buffer pool
 and Flink's paged serializer still determine flush/preemption boundaries. A
 version-pinned serializer hook skips payload writes while reserving identical

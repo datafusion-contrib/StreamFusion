@@ -338,8 +338,7 @@ class NativeHudiSourceTest {
             + times.get(2));
   }
 
-  private static void awaitStopped(org.apache.flink.table.api.TableResult running)
-      throws Exception {
+  static void awaitStopped(org.apache.flink.table.api.TableResult running) throws Exception {
     running
         .getJobClient()
         .orElseThrow()
@@ -348,7 +347,7 @@ class NativeHudiSourceTest {
         .get(30, TimeUnit.SECONDS);
   }
 
-  private static final class ContinuousDiscovery implements AutoCloseable {
+  static final class ContinuousDiscovery implements AutoCloseable {
     final org.apache.flink.api.connector.source.SplitEnumerator<
             HoodieSourceSplit, org.apache.hudi.source.enumerator.HoodieSplitEnumeratorState>
         enumerator;

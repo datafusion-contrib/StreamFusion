@@ -17,6 +17,11 @@ final class HudiSourceMatcher {
   static RelNode substitute(StreamPhysicalTableSourceScan scan, PlanContext context) {
     var table = scan.getTable().unwrap(TableSourceTable.class);
     for (var ability : table.abilitySpecs()) {
+      if (ability
+              instanceof org.apache.flink.table.planner.plan.abilities.source.ReadingMetadataSpec
+          && ((org.apache.flink.table.planner.plan.abilities.source.ReadingMetadataSpec) ability)
+              .getMetadataKeys()
+              .isEmpty()) continue;
       if (!Set.of("ProjectPushDownSpec").contains(ability.getClass().getSimpleName())) {
         context.decline(
             "Hudi source ability is not admitted: " + ability.getClass().getSimpleName());

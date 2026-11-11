@@ -2,10 +2,13 @@ package tech.streamfusion.hudi;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.function.BooleanSupplier;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.configuration.ConfigurationUtils;
+import org.apache.flink.configuration.CoreOptions;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.hudi.configuration.HadoopConfigurations;
 import org.apache.hudi.source.reader.BatchRecords;
@@ -21,24 +24,51 @@ final class HudiSplitReader implements SplitReaderFunction<ArrowBatch>, AutoClos
   private final RowType output;
   private final int rows;
   private final HudiReadBatches batches;
+  private final String morSchema;
+  private final Configuration task;
   private transient HudiParquetReader reader;
+  private transient HudiMorFileGroup merged;
   private transient tech.streamfusion.planner.HudiCommitFilter filter;
   private long skip;
 
   HudiSplitReader(Configuration conf, RowType output, int rows, HudiReadBatches batches) {
+    this(conf, output, rows, batches, null, null);
+  }
+
+  HudiSplitReader(
+      Configuration conf,
+      RowType output,
+      int rows,
+      HudiReadBatches batches,
+      String morSchema,
+      Configuration task) {
     this.conf = conf;
     this.output = output;
     this.rows = rows;
     this.batches = batches;
+    this.morSchema = morSchema;
+    this.task = task;
   }
 
   @Override
   public void open(HoodieSourceSplit split) {
     closeCurrentSplit();
-    if (!split.getBasePath().isPresent()
-        || (split.getLogPaths().isPresent() && !split.getLogPaths().get().isEmpty()))
-      throw new IllegalArgumentException("Hudi native COW reads require a base-file-only split");
     try {
+      skip = split.getConsumed();
+      if (morSchema != null) {
+        merged =
+            new HudiMorFileGroup(
+                conf,
+                split,
+                morSchema,
+                output,
+                Path.of(ConfigurationUtils.splitPaths(task.get(CoreOptions.TMP_DIRS))[0]),
+                rows);
+        return;
+      }
+      if (!split.getBasePath().isPresent()
+          || (split.getLogPaths().isPresent() && !split.getLogPaths().get().isEmpty()))
+        throw new IllegalArgumentException("Hudi native COW reads require a base-file-only split");
       var meta = StreamerUtil.metaClientForReader(conf, HadoopConfigurations.getHadoopConf(conf));
       RowType physical = output;
       if (split.getInstantRange().isPresent()) {
@@ -55,7 +85,6 @@ final class HudiSplitReader implements SplitReaderFunction<ArrowBatch>, AutoClos
       reader =
           new HudiParquetReader(
               meta.getStorage(), new StoragePath(split.getBasePath().get()), physical, rows);
-      skip = split.getConsumed();
     } catch (Throwable failure) {
       try {
         closeCurrentSplit();
@@ -73,7 +102,7 @@ final class HudiSplitReader implements SplitReaderFunction<ArrowBatch>, AutoClos
       HoodieSourceSplit split, int batchSize, BooleanSupplier wakeup) {
     try {
       while (!wakeup.getAsBoolean()) {
-        VectorSchemaRoot root = reader.next();
+        VectorSchemaRoot root = merged == null ? reader.next() : merged.next();
         if (root == null) {
           if (skip != 0)
             throw new IOException("Invalid restored Hudi row offset " + split.getConsumed());
@@ -108,11 +137,13 @@ final class HudiSplitReader implements SplitReaderFunction<ArrowBatch>, AutoClos
   @Override
   public void closeCurrentSplit() {
     try {
-      if (reader != null) reader.close();
-    } catch (IOException failure) {
-      throw new UncheckedIOException(failure);
+      org.apache.flink.util.IOUtils.closeAll(reader, merged);
+    } catch (Exception failure) {
+      throw new org.apache.hudi.exception.HoodieException(
+          "Cannot close Hudi split reader", failure);
     } finally {
       reader = null;
+      merged = null;
       if (filter != null) {
         filter.close();
         filter = null;

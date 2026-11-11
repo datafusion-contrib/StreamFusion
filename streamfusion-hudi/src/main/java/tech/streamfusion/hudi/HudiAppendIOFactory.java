@@ -81,6 +81,7 @@ public final class HudiAppendIOFactory extends HoodieFlinkIOFactory {
     private static final RowData EMPTY = new org.apache.flink.table.data.GenericRowData(0);
     final Batch batch;
     final ColumnarRowData view;
+    final int[] projection;
     int rowId;
 
     Cursor(Batch batch, VectorizedColumnBatch vectors) {
@@ -88,14 +89,36 @@ public final class HudiAppendIOFactory extends HoodieFlinkIOFactory {
     }
 
     private Cursor(Batch batch, ColumnarRowData view) {
-      super(EMPTY, view);
+      this(batch, view, null);
+    }
+
+    private Cursor(Batch batch, ColumnarRowData view, int[] projection) {
+      super(
+          EMPTY,
+          projection == null
+              ? view
+              : org.apache.flink.table.data.utils.ProjectedRowData.from(projection)
+                  .replaceRow(view));
       this.batch = batch;
       this.view = view;
+      this.projection = projection;
     }
 
     void setRowId(int index) {
       rowId = index;
       view.setRowId(index);
+    }
+
+    Cursor project(int[] fields) {
+      var mapped = fields;
+      if (projection != null) {
+        mapped = new int[fields.length];
+        for (int i = 0; i < fields.length; i++) mapped[i] = projection[fields[i]];
+      }
+      var result = new Cursor(batch, new ColumnarRowData(batch.vectors), mapped);
+      result.setRowId(rowId);
+      result.setRowKind(getRowKind());
+      return result;
     }
   }
 

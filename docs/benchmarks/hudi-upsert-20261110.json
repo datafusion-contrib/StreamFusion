@@ -1,6 +1,6 @@
 {
   "date": "2026-11-10",
-  "status": "Complete-job speedup gate passed at 200k and 1m rows versus stock Flink and previous StreamFusion. Earlier contended timings remain excluded.",
+  "status": "Java-held Arrow writer passed complete-job comparisons versus stock and previous SF at 200k and 1m. Earlier contended and shifted-load timings remain excluded from final claims.",
   "platform": "Apple M4 (10 cores), macOS 15.3.1, Temurin 17",
   "libraries": "Release engine and Parquet; canonical Hudi 1.2.1 Flink 1.18 bundle",
   "query": "INSERT INTO target SELECT id,name,n,active,ts+1 FROM seed",
@@ -202,6 +202,162 @@
           "max": 1771.370166
         }
       }
+    },
+    {
+      "date": "2026-11-11",
+      "rows": 200000,
+      "keys": 100000,
+      "phase": "Java-held Arrow batches and per-bucket selection bitsets; original Hudi admission; Rust Parquet encoding",
+      "qualification": "Excluded from final speedup claims. Mid-run host load changed: stock shifted from 4.2-5.3 seconds to 1.3 seconds and previous SF from 4.1-4.8 seconds to 1.2 seconds. Contemporaneous process sampling showed mediaanalysisd at 125.5% CPU and mds_stores at 39.4%. All correctness and encoding checks passed. A fresh matched 200k run follows.",
+      "trial_ms": {
+        "stock": [
+          4241.144417,
+          4361.478208,
+          5296.629041,
+          4609.721125,
+          1286.711125
+        ],
+        "previous_sf": [
+          4112.623708,
+          4819.140083,
+          4194.960417,
+          1906.94825,
+          1192.56875
+        ],
+        "native": [
+          3833.809666,
+          3648.454417,
+          3436.624584,
+          752.344042,
+          1179.708917
+        ]
+      },
+      "summary_ms": {
+        "stock": {
+          "median": 4361.478208,
+          "min": 1286.711125,
+          "max": 5296.629041
+        },
+        "previous_sf": {
+          "median": 4112.623708,
+          "min": 1192.56875,
+          "max": 4819.140083
+        },
+        "native": {
+          "median": 3436.624584,
+          "min": 752.344042,
+          "max": 3833.809666
+        }
+      },
+      "host": {
+        "exit_code": 0,
+        "samples": 170,
+        "external_build_processes": []
+      }
+    },
+    {
+      "date": "2026-11-11",
+      "rows": 1000000,
+      "keys": 500000,
+      "phase": "Java-held Arrow batches and per-bucket selection bitsets; original Hudi admission; Rust Parquet encoding",
+      "qualification": "Complete-job comparison passed against stock and previous SF, with all nine stock aggregates and actual Parquet footers verified.",
+      "trial_ms": {
+        "stock": [
+          3246.445792,
+          3363.505292,
+          2990.014917,
+          2584.256708,
+          2985.666833
+        ],
+        "previous_sf": [
+          3278.130125,
+          3019.019083,
+          2515.676791,
+          2515.320708,
+          2605.62175
+        ],
+        "native": [
+          1891.970125,
+          2078.339542,
+          2283.849375,
+          1631.031375,
+          1846.931625
+        ]
+      },
+      "summary_ms": {
+        "stock": {
+          "median": 2990.014917,
+          "min": 2584.256708,
+          "max": 3363.505292
+        },
+        "previous_sf": {
+          "median": 2605.62175,
+          "min": 2515.320708,
+          "max": 3278.130125
+        },
+        "native": {
+          "median": 1891.970125,
+          "min": 1631.031375,
+          "max": 2283.849375
+        }
+      },
+      "host": {
+        "exit_code": 0,
+        "samples": 114,
+        "external_build_processes": []
+      }
+    },
+    {
+      "date": "2026-11-11",
+      "rows": 200000,
+      "keys": 100000,
+      "phase": "Java-held Arrow batches and per-bucket selection bitsets; original Hudi admission; Rust Parquet encoding",
+      "qualification": "Fresh complete-job comparison after the earlier host-load shift. All 21 warmup/trial comparisons passed nine stock aggregates and actual encoding checks. Native median improves both matched baselines.",
+      "trial_ms": {
+        "stock": [
+          1036.51925,
+          983.866625,
+          1223.38125,
+          944.44875,
+          982.350292
+        ],
+        "previous_sf": [
+          1017.27225,
+          918.885542,
+          926.789541,
+          990.47075,
+          1016.17225
+        ],
+        "native": [
+          737.8215,
+          767.03175,
+          833.310625,
+          812.116792,
+          830.305042
+        ]
+      },
+      "summary_ms": {
+        "stock": {
+          "median": 983.866625,
+          "min": 944.44875,
+          "max": 1223.38125
+        },
+        "previous_sf": {
+          "median": 990.47075,
+          "min": 918.885542,
+          "max": 1017.27225
+        },
+        "native": {
+          "median": 812.116792,
+          "min": 737.8215,
+          "max": 833.310625
+        }
+      },
+      "host": {
+        "exit_code": 0,
+        "samples": 50,
+        "external_build_processes": []
+      }
     }
   ],
   "next": "Run exact-head CI after consolidating the independent Java/Parquet MOR sink; retain stock MOR source pending its distinct performance/API limitations.",
@@ -212,5 +368,6 @@
       "failure": "Verification returned no aggregate row before per-engine/trial diagnostics were added. No usable timings; failing fixture auto-cleaned.",
       "follow_up": "Instrumented repeat verified all 21 comparisons across three engines. Earlier empty collection is not reproduced and its cause is unresolved."
     }
-  ]
+  ],
+  "current_buffer": "Java Hudi buckets retain shared Arrow batches with selected-row bitsets. Rust Parquet encoding consumes the selected payloads. Original Hudi page geometry and admission order are preserved."
 }

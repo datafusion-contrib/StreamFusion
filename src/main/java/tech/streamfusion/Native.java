@@ -1232,6 +1232,15 @@ public final class Native {
       long outArrayAddress,
       long outSchemaAddress);
 
+  /** Gathers Arrow rows from several batches in the supplied batch/row order. */
+  public static native void interleaveBatches(
+      long[] inArrayAddresses,
+      long[] inSchemaAddresses,
+      int[] batchIndices,
+      int[] rowIndices,
+      long outArrayAddress,
+      long outSchemaAddress);
+
   /**
    * Imports a whole multi-column batch the JVM exported and exports an equal batch back into the
    * consumer-allocated C structs, exercising batch transfer beyond a single column.
