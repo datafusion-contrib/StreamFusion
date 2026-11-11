@@ -51,6 +51,11 @@ public class CommonArrowToRowDataExecNode extends ExecNodeBase<RowData>
   }
 
   @Override
+  protected String getSimplifiedName() {
+    return "ArrowToRowDataExecNode";
+  }
+
+  @Override
   @SuppressWarnings("unchecked")
   protected Transformation<RowData> translateToPlanInternal(
       PlannerBase planner, ExecNodeConfig config) {

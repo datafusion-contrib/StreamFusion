@@ -29,6 +29,8 @@ import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.calcite.sql.type.SqlTypeName;
 import tech.streamfusion.operator.EncodedPredicate;
 import tech.streamfusion.operator.WatermarkExpression;
+import tech.streamfusion.planner.common.CalcOutputTypeCheck;
+import tech.streamfusion.planner.common.EncodedExpression;
 
 /**
  * Encodes a {@link RexNode} into the compact pre-order form the native engine decodes (see {@link
@@ -38,7 +40,7 @@ import tech.streamfusion.operator.WatermarkExpression;
  * parity; an unsupported node makes the whole encode fail (returning null), so the containing
  * operator falls back to Flink.
  */
-final class RexExpression {
+final class RexExpression implements EncodedExpression {
   // UnicodeDecoder replaced U+FFFE on JDK 11; newer JDKs preserve it as a character.
   private static final boolean REPLACE_REVERSED_UTF16_BOM =
       new String(new byte[] {(byte) 0xff, (byte) 0xfe}, java.nio.charset.StandardCharsets.UTF_16BE)
@@ -205,23 +207,28 @@ final class RexExpression {
 
   private RexExpression() {}
 
-  boolean requiresWholeStructInputs() {
+  @Override
+  public boolean requiresWholeStructInputs() {
     return rowFusion;
   }
 
-  int jvmExpressionCount() {
+  @Override
+  public int jvmExpressionCount() {
     return udfs.size();
   }
 
-  List<String> jvmExpressionDetails() {
+  @Override
+  public List<String> jvmExpressionDetails() {
     return List.copyOf(jvmExpressionDetails);
   }
 
-  boolean requiresCollectionRepresentation() {
+  @Override
+  public boolean requiresCollectionRepresentation() {
     return preserveCollections;
   }
 
-  boolean requiresOriginalStringInputs() {
+  @Override
+  public boolean requiresOriginalStringInputs() {
     return kinds.contains(KIND_CERTIFIED_BUILTIN);
   }
 
@@ -285,17 +292,7 @@ final class RexExpression {
    * operator, or {@link EncodedPredicate#NONE} when there is no predicate.
    */
   static EncodedPredicate toEncodedPredicate(RexExpression predicate) {
-    if (predicate == null) {
-      return EncodedPredicate.NONE;
-    }
-    return new EncodedPredicate(
-        predicate.kinds(),
-        predicate.payload(),
-        predicate.childCounts(),
-        predicate.longs(),
-        predicate.doubles(),
-        predicate.strings(),
-        predicate.udfBinding());
+    return ExpressionPlanning.predicate(predicate);
   }
 
   /**
@@ -1371,15 +1368,18 @@ final class RexExpression {
     return reason != null ? reason : "unsupported Calc expression";
   }
 
-  List<String> nativeFunctionCalls() {
+  @Override
+  public List<String> nativeFunctionCalls() {
     return List.copyOf(nativeFunctionCalls);
   }
 
-  List<String> jvmFunctionCalls() {
+  @Override
+  public List<String> jvmFunctionCalls() {
     return List.copyOf(jvmFunctionCalls);
   }
 
-  String jvmExecutionReason() {
+  @Override
+  public String jvmExecutionReason() {
     return jvmExecutionReason != null
         ? jvmExecutionReason
         : "host-exact or scalar-UDF implementation selected";
@@ -1430,25 +1430,30 @@ final class RexExpression {
   }
 
   /** The pre-order node index of each projection tree's root. */
-  int[] projectionRoots() {
+  @Override
+  public int[] projectionRoots() {
     return toIntArray(projectionRoots);
   }
 
-  boolean isVariableBinaryProjection(int index) {
+  @Override
+  public boolean isVariableBinaryProjection(int index) {
     return variableBinaryProjections.contains(index);
   }
 
-  boolean isBinaryStringProjection(int index) {
+  @Override
+  public boolean isBinaryStringProjection(int index) {
     return binaryStringProjections.contains(index);
   }
 
   /** The condition tree's root node index, or -1 if the Calc has no condition. */
-  int conditionRoot() {
+  @Override
+  public int conditionRoot() {
     return conditionRoot;
   }
 
   /** The Calc's output column names, in order. */
-  String[] outputNames() {
+  @Override
+  public String[] outputNames() {
     return outputNames;
   }
 
@@ -1468,15 +1473,18 @@ final class RexExpression {
     return this;
   }
 
-  int[] kinds() {
+  @Override
+  public int[] kinds() {
     return toIntArray(kinds);
   }
 
-  int[] payload() {
+  @Override
+  public int[] payload() {
     return toIntArray(payload);
   }
 
-  boolean exceedsTreeDepth(int limit) {
+  @Override
+  public boolean exceedsTreeDepth(int limit) {
     int[] pending = new int[limit];
     int depth = 0;
     for (int children : childCounts) {
@@ -1488,11 +1496,13 @@ final class RexExpression {
     return false;
   }
 
-  int[] childCounts() {
+  @Override
+  public int[] childCounts() {
     return toIntArray(childCounts);
   }
 
-  long[] longs() {
+  @Override
+  public long[] longs() {
     long[] out = new long[longs.size()];
     for (int i = 0; i < out.length; i++) {
       out[i] = longs.get(i);
@@ -1500,7 +1510,8 @@ final class RexExpression {
     return out;
   }
 
-  double[] doubles() {
+  @Override
+  public double[] doubles() {
     double[] out = new double[doubles.size()];
     for (int i = 0; i < out.length; i++) {
       out[i] = doubles.get(i);
@@ -1508,7 +1519,8 @@ final class RexExpression {
     return out;
   }
 
-  String[] strings() {
+  @Override
+  public String[] strings() {
     return strings.toArray(new String[0]);
   }
 
@@ -1526,7 +1538,8 @@ final class RexExpression {
   }
 
   /** The UDF registrations this encoded expression needs, to carry into the operator. */
-  tech.streamfusion.operator.NativeUdf.Binding udfBinding() {
+  @Override
+  public tech.streamfusion.operator.NativeUdf.Binding udfBinding() {
     return new tech.streamfusion.operator.NativeUdf.Binding(
         udfs.toArray(new tech.streamfusion.operator.NativeUdf.Descriptor[0]),
         toIntArray(udfIdSlots),

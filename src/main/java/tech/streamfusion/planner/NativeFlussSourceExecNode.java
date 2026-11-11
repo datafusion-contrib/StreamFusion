@@ -15,6 +15,7 @@ import org.apache.fluss.metadata.TablePath;
 import org.apache.fluss.predicate.Predicate;
 import tech.streamfusion.fluss.FlussArrowSource;
 import tech.streamfusion.operator.*;
+import tech.streamfusion.planner.common.NativePlanDetails;
 
 public final class NativeFlussSourceExecNode extends ExecNodeBase<ArrowBatch>
     implements StreamExecNode<ArrowBatch> {

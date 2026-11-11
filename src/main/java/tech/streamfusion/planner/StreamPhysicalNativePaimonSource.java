@@ -12,8 +12,10 @@ import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNode;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalRel;
 import org.apache.flink.table.planner.utils.ShortcutUtils;
-import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.predicate.Predicate;
+import org.apache.paimon.table.FileStoreTable;
+import tech.streamfusion.planner.common.NativePlanDetails;
+import tech.streamfusion.planner.common.NativeRelDigests;
 
 /** Streaming Paimon scan with native file reads and admitted native snapshot merging. */
 public final class StreamPhysicalNativePaimonSource extends AbstractRelNode

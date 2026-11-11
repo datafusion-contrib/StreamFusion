@@ -14,6 +14,8 @@ import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNode;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalRel;
 import org.apache.flink.table.planner.utils.ShortcutUtils;
+import tech.streamfusion.planner.common.NativePlanDetails;
+import tech.streamfusion.planner.common.NativeRelDigests;
 
 /**
  * Leaf physical node for the native-decode Kafka path: Flink owns enumeration, split assignment,

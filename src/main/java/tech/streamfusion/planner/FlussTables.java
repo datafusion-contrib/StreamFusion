@@ -23,6 +23,7 @@ import org.apache.fluss.flink.utils.FlinkConversions;
 import org.apache.fluss.metadata.LogFormat;
 import org.apache.fluss.metadata.TablePath;
 import tech.streamfusion.operator.RowDataArrowConverter;
+import tech.streamfusion.planner.common.NativePlanDetails;
 
 /** Whitelist around the released Fluss 1.0 Java connector's internal batch-level contracts. */
 final class FlussTables {

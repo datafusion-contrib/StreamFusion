@@ -10,6 +10,7 @@ import org.apache.flink.table.planner.utils.ShortcutUtils;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.fluss.config.Configuration;
 import org.apache.fluss.metadata.TablePath;
+import tech.streamfusion.planner.common.NativePlanDetails;
 
 public final class StreamPhysicalNativeFlussSink extends StreamPhysicalNativeSingleRel
     implements ColumnarInput {

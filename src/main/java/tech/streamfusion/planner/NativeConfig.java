@@ -23,7 +23,7 @@ public final class NativeConfig {
   private NativeConfig() {}
 
   /** Scopes planner option reads to one job without leaking configuration across concurrent jobs. */
-  static Scope usePlannerConfig(ReadableConfig config) {
+  public static Scope usePlannerConfig(ReadableConfig config) {
     ReadableConfig previous = PLANNER_CONFIG.get();
     PLANNER_CONFIG.set(config);
     return () -> {
@@ -36,7 +36,7 @@ public final class NativeConfig {
   }
 
   @FunctionalInterface
-  interface Scope extends AutoCloseable {
+  public interface Scope extends AutoCloseable {
     @Override
     void close();
   }
@@ -173,7 +173,7 @@ public final class NativeConfig {
   }
 
   /** Bounded pipelines favor throughput; explicit table/JVM settings still take precedence. */
-  static int boundedBatchRows(ReadableConfig config) {
+  public static int boundedBatchRows(ReadableConfig config) {
     return transposeBatchRows(config, 8192);
   }
 

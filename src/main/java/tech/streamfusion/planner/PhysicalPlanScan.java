@@ -46,6 +46,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import tech.streamfusion.compat.FlinkCompat;
 import tech.streamfusion.compat.ListCollectors;
+import tech.streamfusion.planner.common.NativeRelDigests;
 
 /**
  * Rewrites the host engine's optimized physical plan, replacing supported operators with native

@@ -1,11 +1,5 @@
 package tech.streamfusion.planner;
 
-import tech.streamfusion.format.FormatCodes;
-import tech.streamfusion.format.NativeFormatContext;
-import tech.streamfusion.format.NativeFormatOptions;
-import tech.streamfusion.format.NativeFormatProvider;
-import tech.streamfusion.format.NativeFormatProviders;
-import tech.streamfusion.kafka.KeyedKafkaBytesDeserialization;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Locale;
@@ -24,6 +18,13 @@ import org.apache.flink.util.TimeUtils;
 import org.apache.kafka.clients.consumer.OffsetResetStrategy;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
+import tech.streamfusion.format.FormatCodes;
+import tech.streamfusion.format.NativeFormatContext;
+import tech.streamfusion.format.NativeFormatOptions;
+import tech.streamfusion.format.NativeFormatProvider;
+import tech.streamfusion.format.NativeFormatProviders;
+import tech.streamfusion.kafka.KeyedKafkaBytesDeserialization;
+import tech.streamfusion.planner.common.NativePlanDetails;
 
 /**
  * Maps a Flink Kafka SQL table to a byte-oriented Flink source followed by native format decoding.

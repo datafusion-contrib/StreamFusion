@@ -16,6 +16,16 @@ admission. Batch-specific file-source lowering is injected at the conversion bou
 after the complete batch reuse graph is known. Both modes use the same source-reuse
 configuration policy, without calling the other mode's scan.
 
+The batch planner, scan, physical/exec nodes, graph boundary rewrites and operator
+specifications live in `planner.batch`. The public `NativePlanner.installBatch`
+return type and root-package `BatchPlanScan` remain as compatibility entry points.
+Expression encoding stays shared: `ExpressionPlanning` exposes admission and
+predicate construction through `common.EncodedExpression`, while the mutable
+encoder stays internal. Common type probes, explain metadata and the single
+reuse-barrier counter serve both modes. Runtime mode remains independent of source
+boundedness; this package split does not relocate streaming mini-batch helpers,
+runtime operators, JNI entry points or serializer snapshots.
+
 One bounded DataFusion execution owns persistent input/output streams for the task.
 Each input has one pending Arrow batch, explicit EOF, producer backpressure and
 separate reader/driver wakeups. An empty input slot means pending, not completion.

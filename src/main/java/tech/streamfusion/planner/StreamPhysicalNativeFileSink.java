@@ -8,6 +8,7 @@ import org.apache.calcite.rel.type.RelDataType;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.InputProperty;
 import org.apache.flink.table.planner.utils.ShortcutUtils;
+import tech.streamfusion.planner.common.NativePlanDetails;
 
 /**
  * Physical node standing in for a filesystem columnar sink the native writer runs. It keeps the

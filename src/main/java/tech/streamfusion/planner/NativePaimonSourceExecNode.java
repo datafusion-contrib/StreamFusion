@@ -13,12 +13,13 @@ import org.apache.flink.table.types.logical.RowType;
 import org.apache.paimon.CoreOptions;
 import org.apache.paimon.flink.FlinkConnectorOptions;
 import org.apache.paimon.options.Options;
-import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.predicate.Predicate;
+import org.apache.paimon.table.FileStoreTable;
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.ArrowBatchTypeInformation;
 import tech.streamfusion.operator.NativeSourceWatermarks;
 import tech.streamfusion.paimon.NativePaimonSource;
+import tech.streamfusion.planner.common.NativePlanDetails;
 
 final class NativePaimonSourceExecNode extends ExecNodeBase<ArrowBatch>
     implements StreamExecNode<ArrowBatch> {

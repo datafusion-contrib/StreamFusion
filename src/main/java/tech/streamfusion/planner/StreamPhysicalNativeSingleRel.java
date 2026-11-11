@@ -7,6 +7,8 @@ import org.apache.calcite.rel.RelWriter;
 import org.apache.calcite.rel.SingleRel;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalRel;
+import tech.streamfusion.planner.common.NativePlanDetails;
+import tech.streamfusion.planner.common.NativeRelDigests;
 
 /**
  * Base of the single-input physical rels of the native island. Centralizes the two contracts every

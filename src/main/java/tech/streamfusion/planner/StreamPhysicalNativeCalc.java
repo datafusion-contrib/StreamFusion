@@ -13,6 +13,7 @@ import org.apache.flink.table.planner.plan.nodes.exec.ExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.InputProperty;
 import org.apache.flink.table.planner.utils.ShortcutUtils;
 import tech.streamfusion.operator.NativeUdf;
+import tech.streamfusion.planner.common.NativePlanDetails;
 
 /**
  * Physical node standing in for a {@link org.apache.calcite.rel.core.Calc} the native operator runs:

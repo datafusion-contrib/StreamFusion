@@ -1,24 +1,25 @@
 package tech.streamfusion.planner;
 
-import java.util.Set;
 import java.util.ArrayList;
-import org.apache.flink.table.planner.plan.abilities.source.FilterPushDownSpec;
-import org.apache.flink.table.types.logical.RowType;
-import org.apache.paimon.predicate.Predicate;
-import org.apache.paimon.predicate.PredicateBuilder;
+import java.util.Set;
 import java.util.TreeMap;
 import org.apache.calcite.rel.RelNode;
 import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
+import org.apache.flink.table.planner.plan.abilities.source.FilterPushDownSpec;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalTableSourceScan;
 import org.apache.flink.table.planner.plan.schema.TableSourceTable;
 import org.apache.flink.table.planner.plan.utils.FlinkRelOptUtil;
+import org.apache.flink.table.types.logical.RowType;
 import org.apache.paimon.CoreOptions;
 import org.apache.paimon.flink.LogicalTypeConversion;
 import org.apache.paimon.flink.source.DataTableSource;
+import org.apache.paimon.predicate.Predicate;
+import org.apache.paimon.predicate.PredicateBuilder;
 import org.apache.paimon.table.FileStoreTable;
 import tech.streamfusion.operator.RowDataArrowConverter;
 import tech.streamfusion.paimon.NativePaimonSource;
 import tech.streamfusion.paimon.PaimonCodecs;
+import tech.streamfusion.planner.common.NativePlanDetails;
 
 /** Admission for the hybrid streaming source; all pushed predicates remain Flink residuals. */
 final class PaimonSourceMatcher {

@@ -14,6 +14,7 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalR
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink;
 import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
 import org.apache.flink.table.types.logical.RowType;
+import tech.streamfusion.planner.common.NativePlanDetails;
 
 /**
  * Recognizes a filesystem + columnar format sink and decides whether the native writer can run it

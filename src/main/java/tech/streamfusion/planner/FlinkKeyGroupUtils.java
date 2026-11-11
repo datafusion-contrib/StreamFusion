@@ -1,7 +1,5 @@
 package tech.streamfusion.planner;
 
-import tech.streamfusion.operator.ArrowBatch;
-import tech.streamfusion.operator.ArrowBatchSubtaskKeySelector;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.calcite.rel.type.RelDataType;
@@ -12,6 +10,8 @@ import org.apache.flink.runtime.state.KeyGroupRangeAssignment;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.transformations.OneInputTransformation;
 import org.apache.flink.streaming.api.transformations.TwoInputTransformation;
+import tech.streamfusion.operator.ArrowBatch;
+import tech.streamfusion.operator.ArrowBatchSubtaskKeySelector;
 
 /** Small planning-time helpers shared by the native exchange and raw keyed-state operators. */
 public final class FlinkKeyGroupUtils {
@@ -19,7 +19,7 @@ public final class FlinkKeyGroupUtils {
   private FlinkKeyGroupUtils() {}
 
   /** Logical timestamp precision per projected key, with {@code -1} for every other type. */
-  static int[] timestampPrecisions(RelDataType inputType, int[] keyColumns) {
+  public static int[] timestampPrecisions(RelDataType inputType, int[] keyColumns) {
     List<Integer> precisions = new ArrayList<>();
     for (int keyColumn : keyColumns) {
       appendTimestampPrecisions(
@@ -28,7 +28,7 @@ public final class FlinkKeyGroupUtils {
     return precisions.stream().mapToInt(Integer::intValue).toArray();
   }
 
-  static int[] timestampPrecisions(
+  public static int[] timestampPrecisions(
       org.apache.flink.table.types.logical.RowType inputType, int[] keys) {
     List<Integer> result = new ArrayList<>();
     for (int key : keys) appendTimestampPrecisions(inputType.getTypeAt(key), result);
@@ -88,7 +88,7 @@ public final class FlinkKeyGroupUtils {
   }
 
   /** The same default Flink uses for an unset keyed transformation's maximum parallelism. */
-  static int defaultMaxParallelism(int parallelism) {
+  public static int defaultMaxParallelism(int parallelism) {
     return KeyGroupRangeAssignment.computeDefaultMaxParallelism(parallelism);
   }
 

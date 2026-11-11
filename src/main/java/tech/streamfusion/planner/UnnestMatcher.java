@@ -17,6 +17,7 @@ import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalCorrelate;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalCorrelateBase;
+import tech.streamfusion.planner.common.CalcOutputTypeCheck;
 
 /**
  * Recognizes the INNER {@code UNNEST} of an array the native operator reproduces: a {@link

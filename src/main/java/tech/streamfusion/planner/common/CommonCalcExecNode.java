@@ -71,6 +71,11 @@ public class CommonCalcExecNode extends ExecNodeBase<ArrowBatch>
   }
 
   @Override
+  protected String getSimplifiedName() {
+    return "NativeCalcExecNode";
+  }
+
+  @Override
   @SuppressWarnings("unchecked")
   protected Transformation<ArrowBatch> translateToPlanInternal(
       PlannerBase planner, ExecNodeConfig config) {

@@ -7,6 +7,7 @@ import org.apache.calcite.rex.RexLocalRef;
 import org.apache.calcite.rex.RexProgram;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalRel;
 import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
+import tech.streamfusion.planner.common.CalcOutputTypeCheck;
 
 /**
  * Recognizes a general {@link Calc} the native engine can run — an optional condition plus
