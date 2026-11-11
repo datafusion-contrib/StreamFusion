@@ -1,5 +1,5 @@
-use crate::bounded_exec::BoundedInput;
-use crate::bounded_task::{bounded_context, copyable, throw_error, BoundedTask};
+use crate::batch::exec::BoundedInput;
+use crate::batch::task::{bounded_context, copyable, throw_error, BoundedTask};
 use crate::*;
 use datafusion::common::{JoinSide, JoinType, NullEquality};
 use datafusion::physical_plan::joins::utils::{ColumnIndex, JoinFilter};
@@ -606,7 +606,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_createBoundedMergeJoin<'loc
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bounded_exec::ExecutionEvent;
+    use crate::batch::exec::ExecutionEvent;
     use datafusion::execution::config::SessionConfig;
 
     #[test]

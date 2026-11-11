@@ -1,4 +1,4 @@
-use crate::bounded_exec::{BoundedExecution, BoundedInput, ExecutionEvent};
+use crate::batch::exec::{BoundedExecution, BoundedInput, ExecutionEvent};
 use crate::*;
 use datafusion::execution::config::SessionConfig;
 use datafusion::execution::disk_manager::{DiskManagerBuilder, DiskManagerMode};

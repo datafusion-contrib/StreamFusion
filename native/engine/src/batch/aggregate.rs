@@ -1,5 +1,5 @@
-use crate::bounded_exec::BoundedInput;
-use crate::bounded_task::{copyable, BoundedTask, ExpressionWorkspace};
+use crate::batch::exec::BoundedInput;
+use crate::batch::task::{copyable, BoundedTask, ExpressionWorkspace};
 use crate::*;
 use arrow::datatypes::TimeUnit;
 use datafusion::common::config::ConfigOptions;
@@ -957,7 +957,7 @@ fn create_aggregate<'local>(
                 "bounded aggregate needs host spill directories and a positive batch size"
             );
         }
-        let context = crate::bounded_task::bounded_context(
+        let context = crate::batch::task::bounded_context(
             directories,
             &task_name,
             batch_rows as usize,
@@ -969,7 +969,7 @@ fn create_aggregate<'local>(
     match result {
         Ok(task) => into_handle(task),
         Err(error) => {
-            crate::bounded_task::throw_error(env, error);
+            crate::batch::task::throw_error(env, error);
             0
         }
     }
@@ -1074,7 +1074,7 @@ mod tests {
             task.push(batch).unwrap();
             loop {
                 match task.next_event().await.unwrap() {
-                    Some(crate::bounded_exec::ExecutionEvent::InputNeeded(_)) => break,
+                    Some(crate::batch::exec::ExecutionEvent::InputNeeded(_)) => break,
                     None => {}
                     _ => panic!("global aggregate emitted before EOF"),
                 }
@@ -1084,7 +1084,7 @@ mod tests {
         let mut values = Vec::new();
         loop {
             match task.next_event().await.unwrap() {
-                Some(crate::bounded_exec::ExecutionEvent::Output(batch)) => {
+                Some(crate::batch::exec::ExecutionEvent::Output(batch)) => {
                     for row in 0..batch.num_rows() {
                         values.push(
                             batch
@@ -1097,7 +1097,7 @@ mod tests {
                     drop(batch);
                     task.output_memory.free();
                 }
-                Some(crate::bounded_exec::ExecutionEvent::Finished) => break,
+                Some(crate::batch::exec::ExecutionEvent::Finished) => break,
                 None => {}
                 _ => panic!("input demand after EOF"),
             }

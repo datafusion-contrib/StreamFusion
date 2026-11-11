@@ -66,6 +66,12 @@ transpose count and historical simplified task names. The packaged loader tests
 exercise both planning modes through the isolated deployment payload.
 
 One bounded DataFusion execution owns persistent input/output streams for the task.
+The Rust `engine::batch` module owns bounded execution, task scheduling, sort,
+aggregate and join plans. Its sibling modules retain shared expression semantics,
+Arrow/JNI transport, memory authority and streaming state. The batch module keeps
+the existing JNI exports and native library boundary; this organization does not
+change execution algorithms, admission or add a scheduler.
+
 Each input has one pending Arrow batch, explicit EOF, producer backpressure and
 separate reader/driver wakeups. An empty input slot means pending, not completion.
 Offering another batch into an occupied slot fails rather than extending a queue.

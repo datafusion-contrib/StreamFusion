@@ -1,5 +1,5 @@
-use crate::bounded_exec::{BoundedInput, ExecutionEvent};
-use crate::bounded_task::{bounded_context, compact_copy, copyable, throw_error, BoundedTask};
+use crate::batch::exec::{BoundedInput, ExecutionEvent};
+use crate::batch::task::{bounded_context, compact_copy, copyable, throw_error, BoundedTask};
 use crate::*;
 use datafusion::execution::config::SessionConfig;
 use datafusion::physical_expr::{LexOrdering, PhysicalSortExpr};
