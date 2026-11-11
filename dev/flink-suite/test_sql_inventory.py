@@ -28,10 +28,14 @@ class SqlInventoryTest(unittest.TestCase):
         event = plan(1)
         event['roots'][0]['operators'] = ['BatchPhysicalSink', 'BatchPhysicalArrowToRowData',
             'BatchPhysicalNativeCalc', 'BatchPhysicalRowDataToArrow', 'BatchPhysicalTableSourceScan']
-        observation = record([event], ['tech.streamfusion.planner.NativeBatchPlanner'])
-        self.assertEqual('accelerated', inventory.classify(observation, 'passed')[0])
-        event['roots'][0]['operators'].append('BatchPhysicalHashAggregate')
-        self.assertEqual('all-or-nothing-violation', inventory.classify(observation, 'passed')[1])
+        for planner in ('tech.streamfusion.planner.NativeBatchPlanner',
+                        'tech.streamfusion.planner.batch.NativeBatchPlanner'):
+            with self.subTest(planner=planner):
+                observation = record([event], [planner])
+                self.assertEqual('accelerated', inventory.classify(observation, 'passed')[0])
+                event['roots'][0]['operators'].append('BatchPhysicalHashAggregate')
+                self.assertEqual('all-or-nothing-violation', inventory.classify(observation, 'passed')[1])
+                event['roots'][0]['operators'].pop()
 
     def test_execution_and_explain_are_distinct(self):
         self.assertEqual('accelerated', inventory.classify(record([plan(1)]), 'passed')[0])

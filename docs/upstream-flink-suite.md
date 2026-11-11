@@ -3,6 +3,10 @@
 ## Batch SQL development
 
 The planner factory and suite agent now install a mode-specific batch adapter.
+The observer instruments `tech.streamfusion.planner.batch.BatchPlanScan`, where
+`optimizeRoots` is declared. The root-package compatibility facade is not observed
+separately, so one completed rewrite produces one inventory event. Historical
+inventory records with the earlier planner package remain readable.
 [Batch SQL](operators/batch.md) documents its current narrow admission. The published
 planner test JAR can be scanned directly with the runtime module's `batch-upstream`
 Maven profile, avoiding another source checkout or Maven repository for focused
