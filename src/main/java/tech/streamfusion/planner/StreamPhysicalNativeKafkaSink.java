@@ -8,6 +8,7 @@ import org.apache.calcite.rel.type.RelDataType;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.InputProperty;
 import org.apache.flink.table.planner.utils.ShortcutUtils;
+import tech.streamfusion.planner.common.NativePlanDetails;
 
 /** Columnar Kafka sink whose native boundary serializes batches before Flink publishes them. */
 public final class StreamPhysicalNativeKafkaSink extends StreamPhysicalNativeSingleRel

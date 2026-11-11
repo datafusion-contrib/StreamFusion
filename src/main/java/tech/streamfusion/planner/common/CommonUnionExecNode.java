@@ -51,6 +51,11 @@ public class CommonUnionExecNode extends ExecNodeBase<ArrowBatch>
   }
 
   @Override
+  protected String getSimplifiedName() {
+    return "NativeUnionExecNode";
+  }
+
+  @Override
   @SuppressWarnings("unchecked")
   protected Transformation<ArrowBatch> translateToPlanInternal(
       PlannerBase planner, ExecNodeConfig config) {

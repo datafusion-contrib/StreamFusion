@@ -23,6 +23,7 @@ import tech.streamfusion.kafka.NativeKafkaSource;
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.ArrowBatchTypeInformation;
 import tech.streamfusion.operator.NativeSourceWatermarks;
+import tech.streamfusion.planner.common.NativePlanDetails;
 
 /**
  * Zero-input exec node for the native-decode Kafka path. Flink's Kafka enumerator and split state

@@ -16,6 +16,7 @@ import tech.streamfusion.fluss.FlussPartitionSplitOperator;
 import tech.streamfusion.fluss.FlussPartitionedArrowSink;
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.PartitionedArrowBatchTypeInformation;
+import tech.streamfusion.planner.common.NativePlanDetails;
 
 public final class NativeFlussSinkExecNode extends ExecNodeBase<Object>
     implements StreamExecNode<Object> {

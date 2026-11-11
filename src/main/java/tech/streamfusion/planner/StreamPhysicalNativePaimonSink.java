@@ -9,6 +9,7 @@ import org.apache.flink.table.planner.calcite.FlinkTypeFactory;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.InputProperty;
 import org.apache.flink.table.planner.utils.ShortcutUtils;
+import tech.streamfusion.planner.common.NativePlanDetails;
 
 /** Columnar physical Paimon sink; Paimon retains its manifests, compaction, and commits. */
 public final class StreamPhysicalNativePaimonSink extends StreamPhysicalNativeSingleRel

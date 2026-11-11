@@ -23,6 +23,7 @@ import tech.streamfusion.kafka.NativeKafkaSerializationOperator;
 import tech.streamfusion.kafka.PreSerializedKafkaRecord;
 import tech.streamfusion.kafka.PreSerializedKafkaRecordSchema;
 import tech.streamfusion.operator.ArrowBatch;
+import tech.streamfusion.planner.common.NativePlanDetails;
 
 /** Builds native batch serialization followed by Flink's unmodified Kafka sink. */
 public final class NativeKafkaSinkExecNode extends ExecNodeBase<Object>

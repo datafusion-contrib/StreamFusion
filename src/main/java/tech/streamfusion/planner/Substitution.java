@@ -4,6 +4,7 @@ import java.util.function.BiPredicate;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import org.apache.calcite.rel.RelNode;
+import tech.streamfusion.planner.common.NativeProbeFailure;
 
 /**
  * One host operator shape the scan can replace with a native one.

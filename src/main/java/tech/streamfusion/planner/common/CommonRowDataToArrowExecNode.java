@@ -171,6 +171,11 @@ public class CommonRowDataToArrowExecNode extends ExecNodeBase<ArrowBatch>
   }
 
   @Override
+  protected String getSimplifiedName() {
+    return "RowDataToArrowExecNode";
+  }
+
+  @Override
   @SuppressWarnings("unchecked")
   protected Transformation<ArrowBatch> translateToPlanInternal(
       PlannerBase planner, ExecNodeConfig config) {

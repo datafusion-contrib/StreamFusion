@@ -69,64 +69,12 @@ final class FilterCalcMatcher {
     return columns;
   }
 
-  /**
-   * Whether every input column has a type the Arrow boundary can carry. Nested ARRAY/MAP/ROW values
-   * are admitted recursively because the boundary preserves their complete binary representation.
-   */
-  static boolean convertibleRow(RelDataType inputType) {
-    return convertibleRow(inputType, false);
+  static boolean convertibleRow(RelDataType type) {
+    return tech.streamfusion.planner.common.ArrowBoundaryTypes.convertibleRow(type);
   }
 
-  static boolean convertibleRow(RelDataType inputType, boolean allowStructured) {
-    return inputType.getFieldList().stream()
-        .allMatch(f -> isConvertibleType(f.getType(), allowStructured));
-  }
-
-  private static boolean isConvertibleType(RelDataType type, boolean allowStructured) {
-    switch (type.getSqlTypeName()) {
-      case TINYINT:
-      case SMALLINT:
-      case INTEGER:
-      case BIGINT:
-      case FLOAT:
-      case DOUBLE:
-      case BOOLEAN:
-      case CHAR:
-      case VARCHAR:
-      case BINARY:
-      case VARBINARY:
-      case TIMESTAMP:
-      case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
-      case DATE:
-      case TIME:
-      case INTERVAL_YEAR:
-      case INTERVAL_YEAR_MONTH:
-      case INTERVAL_MONTH:
-      case INTERVAL_DAY:
-      case INTERVAL_DAY_HOUR:
-      case INTERVAL_DAY_MINUTE:
-      case INTERVAL_DAY_SECOND:
-      case INTERVAL_HOUR:
-      case INTERVAL_HOUR_MINUTE:
-      case INTERVAL_HOUR_SECOND:
-      case INTERVAL_MINUTE:
-      case INTERVAL_MINUTE_SECOND:
-      case INTERVAL_SECOND:
-      case DECIMAL:
-        return true;
-      case ARRAY:
-      case MULTISET:
-        return isConvertibleType(type.getComponentType(), allowStructured);
-      case MAP:
-        return isConvertibleType(type.getKeyType(), allowStructured)
-            && isConvertibleType(type.getValueType(), allowStructured);
-      case STRUCTURED:
-        if (!allowStructured) return false;
-      case ROW:
-        return convertibleRow(type, allowStructured);
-      default:
-        return false;
-    }
+  static boolean convertibleRow(RelDataType type, boolean allowStructured) {
+    return tech.streamfusion.planner.common.ArrowBoundaryTypes.convertibleRow(type, allowStructured);
   }
 
   static RelNode substitute(Calc calc, PlanContext ctx) {

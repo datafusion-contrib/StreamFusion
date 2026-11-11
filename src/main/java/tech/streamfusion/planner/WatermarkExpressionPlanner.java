@@ -5,6 +5,7 @@ import org.apache.calcite.rex.RexNode;
 import org.apache.flink.table.types.logical.BigIntType;
 import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.operator.WatermarkExpression;
+import tech.streamfusion.planner.common.CalcOutputTypeCheck;
 
 /** Shared watermark admission and native type validation for assigners and source pushdown. */
 final class WatermarkExpressionPlanner {

@@ -7,6 +7,7 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelWriter;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalRel;
+import tech.streamfusion.planner.common.NativeRelDigests;
 
 /**
  * Two-input counterpart of {@link StreamPhysicalNativeSingleRel} for the native joins: the fixed

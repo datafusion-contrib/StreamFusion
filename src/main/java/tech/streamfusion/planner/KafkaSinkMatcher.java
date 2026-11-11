@@ -23,6 +23,7 @@ import tech.streamfusion.format.EncodeFormat;
 import tech.streamfusion.format.FormatCodes;
 import tech.streamfusion.kafka.JdkFloatSpelling;
 import tech.streamfusion.kafka.NativeKafka;
+import tech.streamfusion.planner.common.NativePlanDetails;
 
 /** Conservative match boundary for native JSON serialization into Flink's Kafka sink. */
 final class KafkaSinkMatcher {

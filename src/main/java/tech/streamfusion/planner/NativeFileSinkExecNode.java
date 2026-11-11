@@ -28,6 +28,7 @@ import tech.streamfusion.operator.FilePartitionSplitOperator;
 import tech.streamfusion.operator.NativeFileBulkWriterFactory;
 import tech.streamfusion.operator.PartitionedArrowBatch;
 import tech.streamfusion.operator.PartitionedArrowBatchTypeInformation;
+import tech.streamfusion.planner.common.NativePlanDetails;
 
 /**
  * Builds the native columnar sink's operator chain, mirroring the host's own streaming filesystem

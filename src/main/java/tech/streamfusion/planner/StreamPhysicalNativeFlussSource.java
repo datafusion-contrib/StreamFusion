@@ -14,6 +14,8 @@ import org.apache.fluss.config.Configuration;
 import org.apache.fluss.flink.source.FlinkSource;
 import org.apache.fluss.metadata.TablePath;
 import org.apache.fluss.predicate.Predicate;
+import tech.streamfusion.planner.common.NativePlanDetails;
+import tech.streamfusion.planner.common.NativeRelDigests;
 
 /** Fluss log scan whose task boundary emits Arrow and aligned CDC kinds. */
 public final class StreamPhysicalNativeFlussSource extends AbstractRelNode
