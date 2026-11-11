@@ -1185,6 +1185,13 @@ original rewriter is closed once. Task counters `nativeRewriteGroups`, `stockRew
 `nativeRewriteRows`, `nativeRewriteFiles`, `nativeRewriteBytes` and `nativeRewriteErrors` distinguish
 successful payload work from worker adaptation. Counters are shared across buckets and refreshes.
 Files and bytes count selected inputs; rows count written winners.
+
+An interrupted primary-key compaction worker stops before rewrite preflight or a metadata
+upgrade, even if its owner has already closed the rewriter. Paimon's cancelled future can
+outlive that close; such attempts report `InterruptedIOException` without clearing the
+interrupt flag, opening output, or retrying in Java. Work on a closed rewriter without an
+interruption remains an error.
+
 Append buffer spilling and primary-key level-0 buffering retain their existing native paths.
 
 Append rewrites likewise delegate before output for unavailable writer factories/codecs, unsupported
@@ -1909,7 +1916,7 @@ the released source. Queries, per-row checks, final assertions, and timeout rema
 
 The [portable proof artifact](../benchmarks/results/paimon-terminal-coverage.json) records schema,
 configuration, snapshot IDs, all counters, replay boundary and limitations; its
-[sanitized stock trace](../benchmarks/results/paimon-terminal-coverage-stock-replay.log) includes
+[sanitized stock trace](https://streamfusion.tech/benchmarks/results/paimon-terminal-coverage-stock-replay.log) includes
 the cutoff assertion and representative duplicate terminal images. The finite replay starts at
 snapshot 1 and does not reconstruct live scheduling. Warehouse capture is diagnostic evidence,
 not an atomic backup. This proof does not establish the cause of every separate legacy timeout.

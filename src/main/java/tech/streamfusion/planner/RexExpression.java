@@ -4043,17 +4043,7 @@ final class RexExpression {
     if (args.size() != 2) {
       return reject("SHA2: only the two-argument UTF-8 form is admitted");
     }
-    RexNode bitLength = args.get(1);
-    if (!(bitLength instanceof RexLiteral) || ((RexLiteral) bitLength).isNull()) {
-      return reject("SHA2 requires a literal bit length of 224, 256, 384, or 512");
-    }
-    int bits;
-    try {
-      bits = ((RexLiteral) bitLength).getValueAs(BigDecimal.class).intValueExact();
-    } catch (ArithmeticException e) {
-      return reject("SHA2 requires a literal bit length of 224, 256, 384, or 512");
-    }
-    int op = hashOpCode("SHA" + bits);
+    int op = literalSha2Op(call);
     if (op < 0) {
       return reject("SHA2 requires a literal bit length of 224, 256, 384, or 512");
     }
@@ -4063,6 +4053,20 @@ final class RexExpression {
     }
     add(KIND_CALL, op, 1);
     return emit(args.get(0));
+  }
+
+  private static int literalSha2Op(RexCall call) {
+    if (call.getOperands().size() != 2) return -1;
+    RexNode bitLength = call.getOperands().get(1);
+    if (!(bitLength instanceof RexLiteral) || ((RexLiteral) bitLength).isNull()) return -1;
+    try {
+      int bits = ((RexLiteral) bitLength).getValueAs(BigDecimal.class).intValueExact();
+      return bits == 224 || bits == 256 || bits == 384 || bits == 512
+          ? hashOpCode("SHA" + bits)
+          : -1;
+    } catch (ArithmeticException e) {
+      return -1;
+    }
   }
 
   private static int arithmeticNarrowResult(RexCall call) {
@@ -6209,7 +6213,8 @@ final class RexExpression {
       case "PRINTF":
         return 10;
       case "SHA2":
-        return call.getOperands().size() == 2
+        return literalSha2Op(call) < 0
+                && call.getOperands().size() == 2
                 && isCharacter(call.getOperands().get(0))
                 && call.getOperands().get(1).getType().getSqlTypeName() == SqlTypeName.INTEGER
             ? 12

@@ -1344,7 +1344,7 @@ coverage, mixed built-in/string DISTINCT shared windows, joins, ranks and late-s
 The release fixture suites contain 1,496 cases, including persistent timestamp payloads. Complete-job comparisons use
 `CalendarWindowBenchmark` with a row source, row blackhole sink, both transposes, Arrow IPC and
 production state. Stock and the previous fallback are separate controls; all warmups and measured
-trials are retained in [the calendar artifact](../benchmarks/results/calendar-windows-2026-10-14.json).
+trials are retained in [the calendar artifact](https://streamfusion.tech/benchmarks/results/calendar-windows-2026-10-14.json).
 The original 36-profile matrix, SESSION jobs, all nine wide-key profiles and the
 additional persistent consumers are retained by revision. The final regional TVF
 recheck averages about 1.07× stock for TUMBLE, HOP and CUMULATE. Persistent HOP/CUMULATE
@@ -1439,7 +1439,7 @@ subsequently reduced the 1M high-cardinality memory HOP native median from 0.812
 that profile still lost its paired stock control. Complete-job measurements retain those
 limits and all initial/revised unfavorable trials. The
 [trial artifact](../benchmarks/results/attached-windows-2026-10-14.json) and
-[CPU capture](../benchmarks/results/attached-windows-2026-10-14-cpu.collapsed.gz) retain the evidence.
+[CPU capture](https://streamfusion.tech/benchmarks/results/attached-windows-2026-10-14-cpu.collapsed.gz) retain the evidence.
 That revision's final release DSO SHA256 is
 `d09c0f6c60b1cc9aaae634af63b154dfbb33c130aeba54cd2550de6f94a7b3db`.
 

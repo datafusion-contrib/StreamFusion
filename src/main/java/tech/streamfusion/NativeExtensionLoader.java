@@ -15,6 +15,10 @@ import org.slf4j.LoggerFactory;
 /** Loads an optional StreamFusion native extension from the JAR that declares its Java API. */
 public final class NativeExtensionLoader {
 
+  static {
+    tech.streamfusion.arrow.ArrowRuntime.initialize();
+  }
+
   private static final String RESOURCE_PREFIX = "/tech/streamfusion/native/";
 
   private static final Map<String, Supplier<String>> HANDLE_PROBES = new ConcurrentHashMap<>();

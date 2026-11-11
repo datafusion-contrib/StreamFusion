@@ -75,7 +75,7 @@ All eight final pairs including warmups pass committed-output parity. Native
 witnesses require Arrow sources/writers, native Parquet tasks, no stock task
 fallbacks, no row transposes and no query operator fallbacks. Plans, graphs,
 metadata and checkpoint file sizes are in the
-[final evidence archive](nexmark-routing-after/evidence.tar.gz), with
+[final evidence archive](https://streamfusion.tech/benchmarks/iceberg-boundary-20261017/nexmark-routing-after/evidence.tar.gz), with
 [observations](nexmark-routing-after/observations.jsonl) and
 [audit](nexmark-routing-after/audit.json). The
 [previous cohort](before/results.md) used stock medians 1.032 / 1.138 seconds.
@@ -129,8 +129,8 @@ The separate original allocation diagnostic has 17,720 native sample weight,
 including 5,980 under routing, 4,238 under partition-path creation, 1,269 under
 key-group range calculation and 465 under sink C Data export. These are profiler
 sample weights, not allocated object counts or bytes. [Counts](allocation-samples.json)
-and the original [CPU](before-cpu/evidence.tar.gz) /
-[allocation](before-alloc/evidence.tar.gz) stacks are retained.
+and the original [CPU](https://streamfusion.tech/benchmarks/iceberg-boundary-20261017/before-cpu/evidence.tar.gz) /
+[allocation](https://streamfusion.tech/benchmarks/iceberg-boundary-20261017/before-alloc/evidence.tar.gz) stacks are retained.
 
 The implemented response is bounded and task-local: cache exact Java-selected
 key groups for immutable integer partition tuples, precompute writer ranges,
@@ -156,7 +156,7 @@ nullable partition groups across cache eviction. Six release Rust unit tests pas
 Criterion smoke passes 72 C Data fixtures (54 new fanout cases) and all 126 Iceberg
 fixtures. The handoff allocation CSV also contains 24 existing transformation
 probes. [Summary and library hashes](validation/summary.json),
-[JUnit reports](validation/reports.tar.gz), compressed logs and
+[JUnit reports](https://streamfusion.tech/benchmarks/iceberg-boundary-20261017/validation/reports.tar.gz), compressed logs and
 [allocation/buffer-sharing probes](validation/handoffs/allocations.csv) retain the
 checks. Those probes measure requests and sharing, not copied bytes or job speedups.
 

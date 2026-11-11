@@ -298,6 +298,7 @@ public final class Native {
       "/tech/streamfusion/native/";
 
   static {
+    tech.streamfusion.arrow.ArrowRuntime.initialize();
     loadLibrary();
     verifyLoadedVersion();
   }

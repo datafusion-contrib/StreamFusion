@@ -7,8 +7,34 @@ import java.util.List;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.types.Row;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class FlinkRuntimeSha2SqlHarnessTest {
+  @ParameterizedTest
+  @ValueSource(ints = {1, 128})
+  void invalidLiteralWidthKeepsTheInitializationFailure(int bits) throws Exception {
+    NativeFailureParity.run(() -> invalid("abc"), "SELECT SHA2(s, " + bits + ") FROM src")
+        .assertFailure(
+            RuntimeException.class,
+            "Unsupported algorithm",
+            NativeFailureParity.Phase.INITIALIZATION,
+            NativeFailureParity.Route.NATIVE);
+    NativeFailureParity.run(() -> invalid(null), "SELECT SHA2(s, " + bits + ") FROM src")
+        .assertFailure(
+            RuntimeException.class,
+            "Unsupported algorithm",
+            NativeFailureParity.Phase.INITIALIZATION,
+            NativeFailureParity.Route.NATIVE);
+    NativeFailureParity.run(
+            () -> invalid("abc"), "SELECT SHA2(s, " + bits + ") FROM src WHERE bits <> 128")
+        .assertFailure(
+            RuntimeException.class,
+            "Unsupported algorithm",
+            NativeFailureParity.Phase.INITIALIZATION,
+            NativeFailureParity.Route.NATIVE);
+  }
+
   @Test
   void runtimeWidthsAndNullLiteralMatchReleasedFlink() throws Exception {
     BuiltinFunctionParity.assertParity(

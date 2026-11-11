@@ -2,6 +2,10 @@
 import collections,json,math,pathlib,statistics
 paimon=pathlib.Path(__file__).resolve().parent
 iceberg=paimon.parent/'kafka-iceberg-final-20261017'
+import subprocess, sys
+subprocess.run([sys.executable, str(paimon.parents[2] / 'dev/benchmark_artifacts.py'),
+                'docs/benchmarks/kafka-paimon-final-20261017',
+                'docs/benchmarks/kafka-iceberg-final-20261017'], check=True)
 def load(root):
  groups=collections.defaultdict(lambda:collections.defaultdict(list))
  for r in map(json.loads,(root/'observations.jsonl').read_text().splitlines()):

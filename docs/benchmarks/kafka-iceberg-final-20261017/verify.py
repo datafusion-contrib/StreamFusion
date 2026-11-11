@@ -1,5 +1,8 @@
 import collections, gzip, json, math, pathlib, statistics, tarfile
 root=pathlib.Path(__file__).resolve().parent
+import subprocess, sys
+subprocess.run([sys.executable, str(root.parents[2] / 'dev/benchmark_artifacts.py'),
+                'docs/benchmarks/kafka-iceberg-final-20261017'], check=True)
 method=json.loads((root/'method.json').read_text())
 rows=[json.loads(l) for l in (root/'observations.jsonl').read_text().splitlines()]
 measurements=[r for r in rows if r['kind']=='measurement']

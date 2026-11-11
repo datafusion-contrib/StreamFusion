@@ -11269,6 +11269,137 @@ SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime -am test \
   -Dsurefire.failIfNoSpecifiedTests=false
 ```
 
-The [coverage contract](../operators/calc-filter.md#byte-preserving-concat-input) lists the limited
+The [coverage contract](../operators/calc-filter.md#byte-preserving-string-input) lists the limited
 plan shape admitted by these measurements; broader representation work remains in
 [#622](https://github.com/datafusion-contrib/StreamFusion/issues/622).
+
+### Byte-preserving CONCAT_WS
+
+The same prepared-input fixture also compares `CONCAT_WS(',', s, '!')` and a runtime separator
+`CONCAT_WS(s, 'x', '!')`. Measurements on the same host/toolchain use 4096 rows, 256 iterations,
+12 warmups and nine retained trials, with rotating engine order and matching output checksums.
+The existing Utf8 implementation is unchanged and runs in the same release binary. Times are
+median milliseconds (min-max); these exclude perimeter transposes and do not establish whole-job
+throughput. Both released Flink lines also pass raw-byte SQL and native-execution regression cases.
+
+| CONCAT_WS input | Stock Flink | Existing Utf8 | Binary |
+|---|---:|---:|---:|
+| 16-byte ASCII | 37.161 (36.942-37.867) | 16.486 (15.355-16.839) | 12.068 (11.869-13.077) |
+| 16 three-byte characters | 42.157 (40.786-47.199) | 40.005 (39.559-41.089) | 13.520 (13.028-14.259) |
+| 16-byte ASCII, every seventh value NULL | 39.416 (38.966-40.679) | 15.658 (15.194-16.146) | 12.960 (12.747-14.049) |
+| 16 bytes, first byte FF in every row | 37.272 (36.668-37.702) | not applicable | 12.118 (12.085-12.965) |
+| 16-byte runtime separator, every seventh separator NULL | 35.641 (35.034-37.462) | 15.376 (15.195-16.228) | 13.728 (13.313-13.972) |
+| 64-byte ASCII | 42.808 (42.203-48.289) | 16.163 (15.575-16.937) | 12.156 (11.759-13.153) |
+
+Append `concat_ws` or `concat_ws_separator` as the example's optional fifth argument; the default
+remains `concat`. For example, with the released Flink test classpath configured as above:
+
+```sh
+cargo run -p streamfusion --release --no-default-features --example byte_string_concat -- 16 false true 0 concat_ws
+```
+
+### Byte-preserving digest functions
+
+Digest measurements use the same prepared-input methodology, release build, host and JDK 17 /
+released Flink 2.2.1 baseline. The Utf8 control uses the shared digest implementation in the same
+library; it is a physical-input control, not a separately rebuilt historical native library.
+Only Binary carries malformed inputs. Both native paths hash slices directly and write ASCII hex;
+the Binary change does not require a faster digest algorithm or add a text decode. Times are
+median milliseconds (min-max), with 12 warmups and nine retained trials over 1,048,576 rows.
+These measurements exclude perimeter conversions and are not complete-job throughput claims.
+
+| Function / input | Stock Flink | Utf8 control | Binary |
+|---|---:|---:|---:|
+| MD5 / 16-byte ASCII | 142.125 (140.288-144.328) | 100.219 (99.414-102.289) | 99.744 (98.823-102.406) |
+| MD5 / 64-byte ASCII | 214.757 (213.239-218.880) | 158.851 (157.379-160.303) | 158.983 (157.764-163.708) |
+| MD5 / 16 three-byte characters, every seventh row NULL | 124.280 (122.569-139.306) | 80.385 (79.720-83.036) | 80.928 (79.789-87.255) |
+| MD5 / 16 bytes, first byte FF every 1000 rows | 140.061 (138.178-140.446) | not applicable | 99.184 (98.692-100.480) |
+| SHA1 / 16-byte ASCII | 227.107 (217.566-232.026) | 51.824 (51.021-57.554) | 51.780 (50.584-58.086) |
+| SHA1 / 64-byte ASCII | 402.564 (399.945-403.784) | 66.687 (65.993-67.618) | 66.897 (66.328-67.864) |
+| SHA1 / 16 three-byte characters, every seventh row NULL | 226.049 (224.862-226.681) | 43.298 (42.891-43.784) | 43.310 (43.020-43.898) |
+| SHA1 / 16 bytes, first byte FF every 1000 rows | 216.588 (215.762-222.181) | not applicable | 51.453 (50.733-55.020) |
+| SHA224 / 16-byte ASCII | 277.532 (273.514-281.558) | 65.747 (64.647-67.995) | 65.027 (59.379-68.244) |
+| SHA224 / 64-byte ASCII | 454.228 (450.826-483.856) | 80.992 (79.750-84.927) | 81.129 (79.260-84.351) |
+| SHA224 / 16 three-byte characters, every seventh row NULL | 250.720 (247.997-252.590) | 52.705 (52.191-52.884) | 52.535 (51.946-52.896) |
+| SHA224 / 16 bytes, first byte FF every 1000 rows | 272.086 (271.529-272.948) | not applicable | 61.953 (60.624-65.954) |
+| SHA256 / 16-byte ASCII | 269.703 (266.459-279.051) | 70.883 (68.966-72.328) | 70.896 (68.735-80.806) |
+| SHA256 / 64-byte ASCII | 450.879 (446.939-476.584) | 88.444 (87.225-89.654) | 87.916 (86.227-89.757) |
+| SHA256 / 16 three-byte characters, every seventh row NULL | 238.066 (237.045-240.322) | 55.380 (54.881-55.740) | 55.315 (54.906-55.663) |
+| SHA256 / 16 bytes, first byte FF every 1000 rows | 281.690 (273.910-298.308) | not applicable | 72.929 (70.544-78.957) |
+| SHA384 / 16-byte ASCII | 345.439 (343.361-356.431) | 128.910 (128.231-144.637) | 128.981 (127.749-136.228) |
+| SHA384 / 64-byte ASCII | 349.841 (345.483-355.210) | 137.260 (135.284-141.566) | 137.031 (135.481-139.822) |
+| SHA384 / 16 three-byte characters, every seventh row NULL | 301.758 (298.975-339.238) | 112.866 (111.615-113.385) | 113.615 (111.772-120.467) |
+| SHA384 / 16 bytes, first byte FF every 1000 rows | 344.420 (335.709-352.626) | not applicable | 130.765 (126.323-133.883) |
+| SHA512 / 16-byte ASCII | 359.354 (356.755-366.973) | 144.464 (143.812-147.107) | 144.679 (143.481-147.590) |
+| SHA512 / 64-byte ASCII | 363.800 (360.321-368.657) | 147.665 (147.099-153.321) | 148.605 (146.798-154.250) |
+| SHA512 / 16 three-byte characters, every seventh row NULL | 330.875 (327.549-340.789) | 126.535 (124.588-138.229) | 126.188 (124.534-139.890) |
+| SHA512 / 16 bytes, first byte FF every 1000 rows | 363.619 (360.899-383.855) | not applicable | 146.437 (143.182-147.750) |
+
+Select the function using the example's optional fifth argument, for example:
+
+```sh
+cargo run -p streamfusion --release --no-default-features --example byte_string_concat -- 16 false false 0 md5
+```
+
+### Byte-preserving TO_BASE64
+
+The same release prepared-input fixture uses Flink 2.2.1 and JDK 17, prebuilt RowData versus
+Arrow, 4096 rows per batch, 256 iterations, 12 warmups and nine measured trials. Engine order
+rotates and every trial checks matching output consumption. Times are median milliseconds
+(min-max); no perimeter transposes are timed. These are not complete-job throughput claims.
+
+| Input | Stock Flink | Existing Utf8 | Binary |
+|---|---:|---:|---:|
+| 16-byte ASCII | 57.639 (57.301-63.955) | 5.933 (5.885-6.279) | 5.902 (5.847-6.453) |
+| 64-byte ASCII | 80.099 (79.674-80.862) | 10.592 (10.411-10.686) | 10.623 (10.318-10.712) |
+| 16 three-byte characters, every seventh row NULL | 59.131 (58.780-60.191) | 8.668 (8.622-8.784) | 8.677 (8.560-8.745) |
+| 16 bytes, first byte FF every 1000 rows | 57.025 (56.669-57.436) | not applicable | 5.921 (5.765-5.956) |
+| Empty strings, every seventh row NULL | 30.259 (30.032-30.680) | 4.498 (4.469-4.697) | 4.471 (4.386-4.519) |
+
+Both physical input paths reuse the existing SIMD Base64 encoder. Their measured times are
+effectively tied; admitting arbitrary STRING bytes requires no new encoding algorithm.
+Select `to_base64` as the example's fifth argument.
+
+### Byte-preserving ASCII
+
+The same release prepared-input fixture uses Flink 2.2.1 and JDK 17, prebuilt RowData versus
+Arrow, 4096 rows per batch, 256 iterations, 12 warmups and nine measured trials. Engine order
+rotates and every trial checks matching output consumption. Times are median milliseconds
+(min-max); no perimeter transposes are timed. These are not complete-job throughput claims.
+
+| Input | Stock Flink | Existing Utf8 | Binary |
+|---|---:|---:|---:|
+| 16-byte ASCII | 15.901 (14.275-16.055) | 0.729 (0.726-0.732) | 0.739 (0.720-0.769) |
+| 64-byte ASCII | 18.799 (18.568-19.159) | 0.878 (0.865-0.890) | 0.899 (0.879-0.917) |
+| 16 three-byte characters, every seventh row NULL | 17.877 (15.132-18.371) | 1.150 (1.137-1.167) | 1.163 (1.131-1.173) |
+| 16 bytes, first byte FF every 1000 rows | 15.791 (13.240-16.667) | not applicable | 0.739 (0.725-0.800) |
+| Empty strings, every seventh row NULL | 13.917 (12.392-14.200) | 1.106 (1.089-1.127) | 1.109 (1.065-1.113) |
+
+ASCII reads the first byte as a signed Java byte and shares the input validity mask with its
+integer result. Its small difference from the existing Utf8 path is within or near observed
+variability; both outperform the measured Flink control. Select `ascii` as the fifth argument.
+
+### Literal-width SHA2 over original bytes
+
+Legal literal SHA2 widths lower to the corresponding fixed digest kernel. The prior generic
+native SHA2 control uses its existing opcode with the same literal width and Utf8 input; this
+isolates expression execution and excludes its planner-side JVM binding and string-cache setup.
+It is not a rebuilt historical binary or a whole-job comparison. Binary and Utf8 fixed-kernel
+controls use the same release library. Methodology, host, data sizes, rotating order and warmups
+match the prepared digest measurements above. Times are median milliseconds (min-max).
+
+| Function / input | Stock Flink | Previous generic native | Fixed Utf8 | Fixed Binary |
+|---|---:|---:|---:|---:|
+| SHA2(s, 224) / 16-byte ASCII | 271.744 (268.600-293.026) | 65.465 (63.105-68.147) | 63.642 (60.904-67.334) | 62.735 (59.663-68.498) |
+| SHA2(s, 256) / 16-byte ASCII | 273.117 (269.786-274.151) | 72.315 (69.879-72.941) | 70.035 (69.422-71.931) | 70.456 (69.902-71.741) |
+| SHA2(s, 384) / 16-byte ASCII | 346.470 (344.195-355.980) | 129.831 (127.923-146.387) | 130.295 (127.954-135.686) | 128.494 (123.834-133.306) |
+| SHA2(s, 512) / 16-byte ASCII | 363.501 (362.569-380.429) | 148.684 (148.249-153.441) | 146.882 (145.765-148.326) | 148.269 (145.622-148.966) |
+| SHA2(s, 256) / 64-byte ASCII | 448.885 (443.249-474.302) | 89.023 (87.767-91.299) | 87.690 (86.314-89.025) | 88.449 (86.888-89.513) |
+| SHA2(s, 256) / 16 three-byte characters, every seventh row NULL | 240.275 (238.613-252.558) | 58.100 (57.652-61.340) | 55.630 (54.911-57.897) | 55.381 (54.787-56.131) |
+| SHA2(s, 256) / 16 bytes, first byte FF every 1000 rows | 273.397 (272.490-273.798) | not applicable | not applicable | 73.244 (70.468-74.635) |
+
+All measured Binary cases exceed the Flink control. Differences from the previous native path
+are small, with overlapping ranges in most cases; the change establishes byte preservation
+without a material measured execution regression. Select `sha2_224`, `sha2_256`, `sha2_384` or
+`sha2_512` as the example's fifth argument. Runtime, NULL and illegal widths keep their prior
+routing; SQL regressions cover both row-evaluation and initialization failures.

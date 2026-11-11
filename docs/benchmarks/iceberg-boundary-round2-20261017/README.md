@@ -93,7 +93,7 @@ counts are not copied-byte measurements or an end-to-end speedup.
 The full serial release Java/upstream suite passes **303 tests**, with **13 batch
 exclusions**, across 37 classes. All 12 captured-channel recovery/rescaling cases,
 four source recovery cases, SQL and normal/dynamic/range controls pass.
-[Summary/library hashes](validation/summary.json), [reports](validation/reports.tar.gz)
+[Summary/library hashes](validation/summary.json), [reports](https://streamfusion.tech/benchmarks/iceberg-boundary-round2-20261017/validation/reports.tar.gz)
 and compressed logs retain the evidence. The complete
 [Iceberg Nexmark rerun](../iceberg-optimized-20261017/README.md) passes all
 120 cells / 480 paired validations after this validation, retaining mixed gains
