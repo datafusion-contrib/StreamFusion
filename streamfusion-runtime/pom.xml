@@ -117,25 +117,6 @@
         </testResources>
         <plugins>
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.13.0</version>
-                <configuration>
-                    <excludes>
-                        <exclude>tech/streamfusion/kafka/**</exclude>
-                        <exclude>tech/streamfusion/planner/KafkaPlannerExtension.java</exclude>
-                        <exclude>tech/streamfusion/planner/KafkaSinkMatcher.java</exclude>
-                        <exclude>tech/streamfusion/planner/KafkaSinkTranslator.java</exclude>
-                        <exclude>tech/streamfusion/planner/KafkaTables.java</exclude>
-                        <exclude>tech/streamfusion/planner/KeyedDecodeSpec.java</exclude>
-                        <exclude>tech/streamfusion/planner/NativeKafkaDecodeExecNode.java</exclude>
-                        <exclude>tech/streamfusion/planner/NativeKafkaSinkExecNode.java</exclude>
-                        <exclude>tech/streamfusion/planner/StreamPhysicalNativeKafkaDecode.java</exclude>
-                        <exclude>tech/streamfusion/planner/StreamPhysicalNativeKafkaSink.java</exclude>
-                    </excludes>
-                </configuration>
-            </plugin>
-            <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>flatten-maven-plugin</artifactId>
                 <configuration><flattenMode>ossrh</flattenMode></configuration>

@@ -338,11 +338,14 @@ Paimon 1.0 retains filtered source generation and its legacy overrides, consumin
 and Flink 1.18 sources from `streamfusion-paimon` rather than the root tree.
 
 This ownership boundary preserves Java packages, service names, JNI symbols, native
-resources and deployment coordinates. It adds no native libraries.
-`streamfusion-parquet`, `streamfusion-orc`, `streamfusion-json`, `streamfusion-csv`, `streamfusion-raw`, `streamfusion-avro`, `streamfusion-avro-confluent-registry`, `streamfusion-protobuf` also own their production sources and selected host adapters.
-`streamfusion-kafka` still use shared sources pending migration.
-Runtime tests
-now depend on the actual Kafka and format modules instead of compiling duplicate
+resources and deployment coordinates. It adds no native libraries. Kafka and the JSON,
+CSV, RAW, Avro, Avro Confluent Registry, Protobuf, Parquet and ORC formats also own their
+production sources. Kafka and Avro select host adapters from their own
+`src/main/java-flink${flink.line}` directories; the common-only modules do not add the root
+compatibility tree. The registry HTTP client retains its existing Kafka package for
+compatibility but belongs to the Avro Confluent Registry module, not Kafka.
+
+Runtime tests depend on the actual Kafka and format modules instead of compiling duplicate
 implementations or carrying duplicate provider registrations. Module-local SPI files
 provide the same installed providers in the test classpath. Cross-module SQL and recovery
 tests remain in runtime, including its separate ORC execution with protobuf 2.5; ordinary
@@ -353,7 +356,7 @@ Shared Java sources also require explicit module ownership during compilation. R
 JAR timestamps can precede a fresh checkout's source timestamps; javac then prefers the newer
 source of a referenced core class and can implicitly emit that class into a connector's output.
 The compiler configuration inherited by every module uses `-implicit:none`: javac may resolve
-shared source symbols, but emits classes only for the module's explicit source includes. This
+shared source symbols, but emits classes only for the module's selected source inputs. This
 keeps the core runtime and optional connector/format JARs separate without hiding duplicate
 classes from artifact validation. Clean rebuilds remove classes emitted by an older configuration.
 
