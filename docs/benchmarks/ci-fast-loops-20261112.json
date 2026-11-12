@@ -2893,5 +2893,50 @@
       "current_sha2_compress_leaf_samples": 25
     },
     "limits": "Separate instrumented runs on hosted Linux, identical eight selected recovery/Kafka invocations and four parent recordings. Sample reductions support removal of redundant packing/hash work, not exact CPU or elapsed speedup. Full required CI and upstream coverage remain separate."
+  },
+  "jdk11_metadata_generator_crash": {
+    "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43284069894",
+    "commit": "87f22de65008ead9f81a6b4d282d4be635368e95",
+    "job": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43284069894/job/131413966522",
+    "jdk": "Temurin 11.0.32+9",
+    "cohort": "flink2.2-jdk11-shard16",
+    "class": "CanonicalGroupArithmeticAppendJobTest",
+    "invocation": "generatedArithmeticStateContinuesAcrossIsolatedEngines[1]",
+    "phase": "separate CDS generator JVM after a completed native middle-stage worker",
+    "fatal_frame": "AdjustPointerClosure::do_oop(oopDesc**)+0x13",
+    "stack": [
+      "SymbolPropertyTable::oops_do",
+      "GenMarkSweep::mark_sweep_phase3",
+      "VM_CollectForMetadataAllocation::doit"
+    ],
+    "collector": "Serial",
+    "rss_kib": 325156,
+    "limits": "Observed HotSpot SIGSEGV, not a successful qualification. Collector-specific G1 metadata generation is a proposed repair; worker Serial settings remain separate. No full-CI improvement claim from this failed run.",
+    "failed_run_timing": {
+      "elapsed_seconds": 11079.0,
+      "runner_seconds": 177062.0,
+      "groups": {
+        "other": {
+          "jobs": 16,
+          "runner_seconds": 10665.0,
+          "max_job_seconds": 1865.0
+        },
+        "canonical preparation": {
+          "jobs": 4,
+          "runner_seconds": 382.0,
+          "max_job_seconds": 121.0
+        },
+        "java": {
+          "jobs": 12,
+          "runner_seconds": 34689.0,
+          "max_job_seconds": 3434.0
+        },
+        "canonical": {
+          "jobs": 64,
+          "runner_seconds": 131326.0,
+          "max_job_seconds": 2979.0
+        }
+      }
+    }
   }
 }

@@ -23,6 +23,8 @@ It also covers demand-started test clusters, pure Java preparation alongside nat
 and smaller test-only native payloads while retaining full-symbol diagnostics.
 Canonical worker metadata snapshots also omit the bundled native copies already loaded through
 the worker's explicit library path, avoiding repeated packing and hashing in every parent fork.
+Archive generation uses G1 independently of the workers' measured collector settings to avoid
+the observed JDK 11 Serial full-GC crash during metadata relocation.
 Compatible Paimon format checks share compilation while keeping separate test processes
 and report sets, reducing required lake jobs from thirteen to nine with the same configurations.
 CI build reuse and runner scheduling are documented in the

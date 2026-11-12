@@ -192,6 +192,9 @@ final class CanonicalWorkerCache {
     void trained() throws Exception {
       if (lock == null) return;
       Path temporary = Path.of(archive + ".tmp");
+      // A JDK 11 Serial full GC crashed while relocating CDS metadata; keep worker tuning separate.
+      dump.add("-XX:-UseSerialGC");
+      dump.add("-XX:+UseG1GC");
       dump.add("-Xshare:dump");
       dump.add("-XX:SharedClassListFile=" + classes);
       dump.add("-XX:SharedArchiveFile=" + temporary);

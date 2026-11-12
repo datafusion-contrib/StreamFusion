@@ -15,6 +15,9 @@ on:
       parent_jfr:
         type: boolean
         default: false
+      metadata_regression:
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       line:
@@ -35,13 +38,17 @@ on:
         type: boolean
         default: false
         description: 'Record parent test JVMs for attribution'
+      metadata_regression:
+        type: boolean
+        default: false
+        description: 'Run collector isolation and the complete append-arithmetic regression'
 
 permissions:
   contents: read
   actions: read
 
 concurrency:
-  group: canonical-setup-${{ github.ref }}-${{ inputs.line }}-${{ inputs.jdk }}-${{ inputs.parent_jfr && 'jfr' || 'plain' }}
+  group: canonical-setup-${{ github.ref }}-${{ inputs.line }}-${{ inputs.jdk }}-${{ inputs.parent_jfr && 'jfr' || 'plain' }}-${{ inputs.metadata_regression }}
   cancel-in-progress: true
 
 env:
@@ -143,8 +150,13 @@ jobs:
         env:
           SF_CANONICAL_CDS_DIR: ${{ runner.temp }}/canonical-cds
           PARENT_JFR: ${{ inputs.parent_jfr }}
+          METADATA_REGRESSION: ${{ inputs.metadata_regression }}
         run: |
           extra='-Xmx1g'
+          selection='CanonicalRegularJoinJobTest#regularStateContinuesAcrossCleanEngineProcesses+nativeRegularCheckpointResumesBeforeCanonicalSwitch,CanonicalManagedUdfDecimalKeyJobTest,CanonicalKafkaSourceJobTest,CanonicalKafkaSinkJobTest'
+          if [[ "$METADATA_REGRESSION" == 'true' ]]; then
+            selection='CanonicalWorkerCacheTest,CanonicalGroupArithmeticAppendJobTest'
+          fi
           if [[ "$PARENT_JFR" == 'true' ]]; then
             mkdir -p "$RUNNER_TEMP/parent-jfr"
             python3 - <<'PY'
@@ -159,7 +171,7 @@ jobs:
           mvn -B -ntp -P"$FLINK_PROFILES" -pl streamfusion-runtime -am test \
             -Dnative.build.skip=true -Dsf.ci.precompiledJava=true -Dsf.protobuf.checkStaleness=true \
             -DskipTests=true -Dsf.runtime.tests.skip=false \
-            '-Dtest=CanonicalRegularJoinJobTest#regularStateContinuesAcrossCleanEngineProcesses+nativeRegularCheckpointResumesBeforeCanonicalSwitch,CanonicalManagedUdfDecimalKeyJobTest,CanonicalKafkaSourceJobTest,CanonicalKafkaSinkJobTest' \
+            "-Dtest=$selection" \
             -Dstreamfusion.test.regularJoinJobSmoke=true -Dsf.canonical.wideKeys.job.smoke=true \
             -Dsf.canonical.kafka.mode=checkpoint -Dsf.canonical.kafka.sink.mode=checkpoint \
             -Dsf.canonical.kafka.fixture.smoke=true \
@@ -167,14 +179,16 @@ jobs:
           python3 - <<'PY'
           from collections import Counter
           from pathlib import Path
+          import os
           import xml.etree.ElementTree as ET
           counts = Counter()
           for report in Path('streamfusion-runtime/target/surefire-reports').glob('TEST-*.xml'):
               suite = ET.parse(report).getroot()
               counts.update({key: int(suite.get(key, 0)) for key in ('tests', 'failures', 'errors', 'skipped')})
-          if counts != dict(tests=8, failures=0, errors=0, skipped=0):
+          expected = 36 if os.environ['METADATA_REGRESSION'] == 'true' else 8
+          if counts != dict(tests=expected, failures=0, errors=0, skipped=0):
               raise SystemExit(f'Incomplete canonical setup probe: {counts}')
-          print('All 8 canonical recovery and real-broker checks passed')
+          print(f'All {expected} selected canonical setup checks passed')
           PY
       - name: Summarize actual parent JVM CPU, allocation and wait samples
         if: inputs.parent_jfr
@@ -185,8 +199,9 @@ jobs:
           sys.path.insert(0, 'bin')
           import ci_jfr
           temporary = Path(os.environ['RUNNER_TEMP'])
+          expected = 2 if '${{ inputs.metadata_regression }}' == 'true' else 4
           summary = ci_jfr.summarize(list((temporary / 'parent-jfr').glob('*.jfr')),
-                                     Path(os.environ['JAVA_HOME']), 4)
+                                     Path(os.environ['JAVA_HOME']), expected)
           (temporary / 'parent-profile.json').write_text(json.dumps(summary, indent=2) + '\n')
           PY
       - uses: actions/upload-artifact@v4

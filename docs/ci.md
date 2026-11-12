@@ -778,11 +778,21 @@ variation and competing diagnostics; they establish no whole-CI speedup from com
 reuse alone. The combined candidate must qualify the collector and cache changes below.
 
 JDK 11 canonical jobs use Serial GC for Maven, fresh Surefire parents and their fresh engine
-workers. JDK 17 keeps its usual collector. The shared compiler preparations retain their
+workers. The separate CDS generator uses G1: the first combined candidate crashed inside
+Temurin 11.0.32+9's Serial full GC while relocating metadata (`AdjustPointerClosure::do_oop`).
+The collector override applies only to archive generation. A Linux child-JVM control records
+the actual collectors and checks that a G1-generated archive is reused by fresh Serial workers.
+JDK 17 keeps its usual worker collector. The shared compiler preparations retain their
 existing settings. Artifact identity reads the complete JDK version without inherited runtime
 option variables, so changing the test collector cannot turn an option-pickup banner into
 a false compiler-version mismatch. This affects only CI test JVMs and preserves every
 provider, checkpoint, rescale and native-work assertion.
+
+Combined candidate 43284069894 finished in 184.7 minutes and used 49.18 runner-hours, but
+one canonical invocation failed during that metadata-generator crash; its aggregate gate failed.
+Its full upstream suite 43284074933 passed all 19 jobs. These observations preserve the failed
+qualification and do not establish a successful whole-CI speedup. The repaired candidate still
+requires both complete merge gates and full canonical invocation/outcome comparison.
 
 Kafka checkpoint handoffs wait for the fixture sink's external commit before cancelling the
 completed checkpoint leg. The coordinator's checkpoint future can complete before the committer
@@ -994,6 +1004,10 @@ compiler activity, allocations and waits, then removes the recordings. Instrumen
 times remain attribution evidence. The `lake-setup` suite separately runs both complete Paimon
 format configurations for one chosen line/JDK and retains compilation, per-format elapsed/CPU
 times and JUnit outcomes. These small workflows remain separate from merge-gate qualification.
+The setup probe's `metadata_regression` input instead runs all eight worker-cache controls plus
+the complete 28-case append-arithmetic class that exposed the JDK 11 crash. It requires all 36
+checks to pass, including actual collector isolation and unchanged native/stock continuation,
+checkpoint and rescale checks. This mode records two parent JVMs when `parent_jfr` is enabled.
 
 Native-source verification reads producer jobs in 20-row pages and retries transient
 HTTP 429/5xx responses with bounded delays. The first cluster-startup diagnostic encountered
