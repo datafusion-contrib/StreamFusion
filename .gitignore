@@ -10,6 +10,17 @@ target/
 /docs/benchmarks/**/*.collapsed
 /docs/benchmarks/**/*.jfr
 /docs/benchmarks/**/*.hprof
+# Retrieved historical evidence; hashes and source revisions live in artifacts.json.
+/docs/benchmarks/**/*.allocation.gz
+/docs/benchmarks/**/*.xml.gz
+/docs/benchmarks/**/*.txt.gz
+/docs/benchmarks/**/*.log-*.gz
+/docs/benchmarks/**/*-command.json.gz
+/docs/benchmarks/**/*-activity.json.gz
+/docs/benchmarks/**/plans/*.txt
+/docs/benchmarks/**/*-plan.txt
+/docs/benchmarks/**/*.plan.txt
+/docs/benchmarks/results/native-boundaries-248-evidence-2026-10-23.json.gz
 /docs/benchmarks/results/calendar-windows-2026-10-14.json
 /docs/benchmarks/results/generated-processing-time-2026-10-14.json
 .flink-suite/

@@ -86,12 +86,17 @@ Historical execution logs, full plan/report archives and profiler dumps belong i
 durable public artifact storage. A `.gz` suffix alone does not distinguish a test
 fixture or canonical data source from a disposable generated export.
 
-The [artifact manifest](artifacts.json) records the original paths, source revision,
-byte sizes and SHA-256 hashes of 1,426 historical files migrated from `87d6edbf0`.
-Their exact bytes are retained in the
-[versioned evidence release](https://github.com/datafusion-contrib/StreamFusion/releases/tag/benchmark-evidence-2026-11-10-87d6edbf0),
-including superseded runs and failed experiments. This is an evidence archive,
-not a runtime release or a measurement of current main.
+The [artifact manifest](artifacts.json) records paths, byte sizes and SHA-256 hashes
+for 1,766 historical evidence files. Each bundle records its source revision:
+
+| Source revision | Evidence release | Files | Scope |
+| --- | --- | ---: | --- |
+| `87d6edbf0` | [Initial archive](https://github.com/datafusion-contrib/StreamFusion/releases/tag/benchmark-evidence-2026-11-10-87d6edbf0) | 1,426 | Historical logs, plans and profiler outputs |
+| `97f7b08de` | [Remaining run outputs](https://github.com/datafusion-contrib/StreamFusion/releases/tag/benchmark-evidence-2026-11-12-97f7b08de) | 340 | 335 original plans, test reports, allocation stacks, command/activity snapshots and evidence files; five distinct inline log bodies |
+
+Both releases preserve exact bytes, including superseded runs and failed
+experiments. They are evidence archives, not runtime releases or measurements of
+current main. Published bundle assets are never overwritten.
 
 From the repository root, restore a particular report's evidence before inspecting it:
 
@@ -104,8 +109,24 @@ cached under `target/benchmark-artifacts`; restored run outputs are ignored by G
 The tool checks the bundle and individual file hashes, rejects unsafe archive paths,
 and refuses to replace conflicting local evidence. Historical verifiers and log
 summarizers retrieve their required evidence automatically. The first retrieval
-downloads the shared archive (about 147 MiB); subsequent retrievals reuse its verified
-cache, including offline. It never executes the archived SQL or contacts its sources.
+downloads the bundles needed by the requested paths (about 147 MiB and 4.3 MiB);
+subsequent retrievals reuse their verified caches, including offline. It never
+executes the archived SQL or contacts its sources.
+
+The [shared-stateful scalar report](results/shared-stateful-scalar-2026-10-14.json)
+retains every structured observation. Its `profiles[].raw_log` fields now name
+archived UTF-8 files, rather than embedding their contents. Identical bodies share
+a content-addressed path; each manifest entry's `source` records the original
+JSON path, encoding and every JSON pointer. Restore those logs with:
+
+```sh
+python3 dev/benchmark_artifacts.py docs/benchmarks/results/shared-stateful-scalar-2026-10-14
+```
+
+The native-boundary evidence gzip is likewise archived intact; restoring its
+original path does not decompress or reinterpret the historical report. SQL
+inventory snapshots, compatibility fixtures, reproduction patches, structured
+measurements and research/rejected decisions remain maintained Git inputs.
 
 MkDocs retrieves the same evidence into `target/docs-generated/evidence` and publishes
 the original download paths. Report links use the published downloads so they also
