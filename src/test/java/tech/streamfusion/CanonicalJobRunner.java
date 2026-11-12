@@ -125,6 +125,15 @@ class CanonicalJobRunner {
     command.add(2, "-Djava.io.tmpdir=" + workerTemporary);
     Path log = root.resolve(stage + ".log");
     try (var archive = cache == null ? null : cache.archive(command)) {
+      String profileDirectory = System.getenv("SF_CANONICAL_PROFILE_DIR");
+      if (profileDirectory != null && !profileDirectory.isEmpty()) {
+        Path profiles = Path.of(profileDirectory);
+        Files.createDirectories(profiles);
+        Path recording =
+            Files.createTempFile(profiles, (nativeRun ? "native-" : "stock-") + stage + "-", ".jfr");
+        command.add(
+            1, "-XX:StartFlightRecording=settings=profile,dumponexit=true,filename=" + recording);
+      }
       Process process =
           new ProcessBuilder(command)
               .redirectErrorStream(true)

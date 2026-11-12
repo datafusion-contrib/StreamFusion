@@ -54,7 +54,6 @@ def pack(root, line, archive):
     for module in MODULES:
         target = root / module / "target"
         entries.extend(path for path in (target / "classes", target / "test-classes") if path.is_dir())
-        entries.extend(sorted(target.glob("*.jar")))
     metadata["entries"] = [path.relative_to(root).as_posix() for path in entries]
     with tarfile.open(archive, "w:gz", compresslevel=1) as output:
         content = json.dumps(metadata).encode()
@@ -65,7 +64,11 @@ def pack(root, line, archive):
             paths = [entry, *entry.rglob("*")] if entry.is_dir() else [entry]
             if any(path.is_symlink() for path in paths):
                 raise ValueError(f"Shared Java build cannot contain symbolic links: {entry}")
-            output.add(entry, arcname=entry.relative_to(root).as_posix())
+            def shared_resource(member):
+                path = PurePosixPath(member.name)
+                native_resource = path.parts[3:6] == ("tech", "streamfusion", "native")
+                return None if native_resource and path.suffix in (".so", ".dylib", ".dll") else member
+            output.add(entry, arcname=entry.relative_to(root).as_posix(), filter=shared_resource)
     archive.with_name(archive.name + ".sha256").write_text(digest(archive) + "\n")
 
 
@@ -81,12 +84,13 @@ def restore(root, line, archive):
         metadata = json.load(source.extractfile("shared-java-build.json"))
         for key, value in current.items():
             if metadata.get(key) != value:
-                raise ValueError(f"Shared Java build {key} mismatch")
+                raise ValueError(f"Shared Java build {key} mismatch: built with {metadata.get(key)!r}, "
+                                 f"runner has {value!r}")
         allowed = [PurePosixPath(entry) for entry in metadata["entries"]]
         for entry in allowed:
             if (entry.parts[:1] not in [(module,) for module in MODULES]
                     or len(entry.parts) != 3 or entry.parts[1] != "target"
-                    or entry.name not in ("classes", "test-classes") and entry.suffix != ".jar"):
+                    or entry.name not in ("classes", "test-classes")):
                 raise ValueError(f"Invalid build output: {entry}")
         with tempfile.TemporaryDirectory(prefix="shared-java-", dir=archive.parent) as directory:
             staged = Path(directory)

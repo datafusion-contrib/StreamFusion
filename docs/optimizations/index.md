@@ -17,7 +17,8 @@ technique and its measured limits.
 
 CI JVM startup settings, repeated-check elimination and profiling are documented in the
 [CI guide](../ci.md#profiling-ci-latency-and-cost); its [canonical job matrix](../ci.md#complete-canonical-job-matrix)
-also documents sharing exact-commit Java compilation across savepoint shards.
+also documents sharing exact-commit Java compilation across savepoint shards while
+transferring native libraries separately, avoiding duplicate payloads in each Java archive.
 CI build reuse and runner scheduling are documented in the
 [upstream-suite guide](../upstream-flink-suite.md#shared-builds-and-runtime-shards): compiled Flink
 caching, shared build artifacts, grouped connector suites and combined coverage verification.
