@@ -12,6 +12,9 @@ on:
       native_run:
         type: string
         required: true
+      parent_jfr:
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       line:
@@ -28,13 +31,17 @@ on:
         type: string
         required: true
         description: 'Existing successful native producer with unchanged build inputs'
+      parent_jfr:
+        type: boolean
+        default: false
+        description: 'Record parent test JVMs for attribution'
 
 permissions:
   contents: read
   actions: read
 
 concurrency:
-  group: canonical-setup-${{ github.ref }}-${{ inputs.line }}-${{ inputs.jdk }}
+  group: canonical-setup-${{ github.ref }}-${{ inputs.line }}-${{ inputs.jdk }}-${{ inputs.parent_jfr && 'jfr' || 'plain' }}
   cancel-in-progress: true
 
 env:
@@ -134,7 +141,20 @@ jobs:
       - name: Run isolated recovery and real-broker source/sink checks
         env:
           SF_CANONICAL_CDS_DIR: ${{ runner.temp }}/canonical-cds
+          PARENT_JFR: ${{ inputs.parent_jfr }}
         run: |
+          extra='-Xmx1g'
+          if [[ "$PARENT_JFR" == 'true' ]]; then
+            mkdir -p "$RUNNER_TEMP/parent-jfr"
+            python3 - <<'PY'
+          import os, sys
+          from pathlib import Path
+          sys.path.insert(0, 'bin')
+          import ci_jfr
+          ci_jfr.configuration(Path(os.environ['JAVA_HOME']), Path(os.environ['RUNNER_TEMP']) / 'parent.jfc')
+          PY
+            extra+=" -XX:StartFlightRecording=settings=$RUNNER_TEMP/parent.jfc,filename=$RUNNER_TEMP/parent-jfr,dumponexit=true"
+          fi
           mvn -B -ntp -P"$FLINK_PROFILES" -pl streamfusion-runtime -am test \
             -Dnative.build.skip=true -Dsf.ci.precompiledJava=true -Dsf.protobuf.checkStaleness=true \
             -DskipTests=true -Dsf.runtime.tests.skip=false \
@@ -142,7 +162,7 @@ jobs:
             -Dstreamfusion.test.regularJoinJobSmoke=true -Dsf.canonical.wideKeys.job.smoke=true \
             -Dsf.canonical.kafka.mode=checkpoint -Dsf.canonical.kafka.sink.mode=checkpoint \
             -Dsf.canonical.kafka.fixture.smoke=true \
-            -Dsf.testForks=4 -Dsf.testReuseForks=false '-Dsf.extraJvmArgs=-Xmx1g'
+            -Dsf.testForks=4 -Dsf.testReuseForks=false "-Dsf.extraJvmArgs=$extra"
           python3 - <<'PY'
           from collections import Counter
           from pathlib import Path
@@ -155,6 +175,19 @@ jobs:
               raise SystemExit(f'Incomplete canonical setup probe: {counts}')
           print('All 8 canonical recovery and real-broker checks passed')
           PY
+      - name: Summarize actual parent JVM CPU, allocation and wait samples
+        if: inputs.parent_jfr
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          from pathlib import Path
+          sys.path.insert(0, 'bin')
+          import ci_jfr
+          temporary = Path(os.environ['RUNNER_TEMP'])
+          summary = ci_jfr.summarize(list((temporary / 'parent-jfr').glob('*.jfr')),
+                                     Path(os.environ['JAVA_HOME']), 4)
+          (temporary / 'parent-profile.json').write_text(json.dumps(summary, indent=2) + '\n')
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -162,6 +195,7 @@ jobs:
           path: |
             streamfusion-runtime/target/surefire-reports/*
             native/target/debug/manifest.json
+            ${{ runner.temp }}/parent-profile.json
           if-no-files-found: warn
           retention-days: 7
       - name: Remove probe libraries and worker metadata
@@ -173,6 +207,7 @@ jobs:
           import shutil
           for directory in (Path(os.environ['RUNNER_TEMP']) / 'original-native',
                             Path(os.environ['RUNNER_TEMP']) / 'canonical-cds',
+                            Path(os.environ['RUNNER_TEMP']) / 'parent-jfr',
                             Path('native/target/debug')):
               if directory.exists():
                   shutil.rmtree(directory)

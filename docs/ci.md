@@ -335,6 +335,18 @@ compiler-option, target and actual project-toolchain changes still affect the ca
 
 ## Connector and format test coverage
 
+Lake coverage uses nine jobs for the same thirteen module/format configurations. Each
+Paimon Flink/JDK pair resolves dependencies and compiles once, then runs the complete
+Parquet and ORC suites in separate Maven/Surefire processes with distinct report suffixes.
+The precompiled profile skips repeat Java compilation and javadoc while preserving resources,
+test discovery and every assertion. Both formats execute even if one fails; either failure
+fails the job. A failed preparation stops before either format. Outcome validation rejects
+empty, wholly skipped or malformed reports and clears only prior reports with its own suffix.
+The Flink 2.2/JDK 17 upstream compaction checks remain required after the paired formats.
+Other lake configurations retain their existing commands. Real Maven regressions exercise
+both formats and prove a failed first format does not suppress the second; a matrix contract
+compares all thirteen expanded configurations with the original coverage.
+
 The full Java suite includes every connector and format tag on both Flink lines and both
 JDKs. Its default Surefire execution runs untagged tests and every tag except ORC; a second
 execution runs ORC with its isolated protobuf classpath. These same tests do not need six
@@ -950,6 +962,18 @@ selected recovery and real-broker source/sink cases. Positive native work and ex
 stock isolation assertions remain active. Smoke flags are confined to this diagnostic;
 the ordinary CI matrix retains every provider. This probe checks setup quickly and cannot
 satisfy the full CI merge gate.
+The first successful run, 43240390726, prepares Java in 170 runner-seconds and completes
+the fresh consumer in 333 runner-seconds, including dependency resolution and all eight
+checks. Its Java transfer is 10,391,513 ZIP bytes. This validates the setup and smaller
+native subset; it does not qualify the remaining canonical inventory or establish net CI
+timing. The structured evidence retains every selected class outcome and phase boundary.
+
+Set the setup suite's `parent_jfr` input to record the four fresh parent test JVMs separately
+from their isolated engine workers. The diagnostic summarizes execution/native samples,
+compiler activity, allocations and waits, then removes the recordings. Instrumented elapsed
+times remain attribution evidence. The `lake-setup` suite separately runs both complete Paimon
+format configurations for one chosen line/JDK and retains compilation, per-format elapsed/CPU
+times and JUnit outcomes. These small workflows remain separate from merge-gate qualification.
 
 Native-source verification reads producer jobs in 20-row pages and retries transient
 HTTP 429/5xx responses with bounded delays. The first cluster-startup diagnostic encountered

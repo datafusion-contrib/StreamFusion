@@ -2108,5 +2108,84 @@
       "tool": "GNU binutils 2.39, Linux amd64, Python 3.10",
       "status": "offline staging validated; hosted JNI validation pending"
     }
+  },
+  "canonical_setup_probe": {
+    "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43240390726",
+    "sha": "521d8c5b3ff8c028b33d9721436e7a9e9d8d09c0",
+    "line": "2.2",
+    "jdk": "11.0.32+1",
+    "conclusion": "success",
+    "java_artifact_zip_bytes": 10391513,
+    "outcomes": {
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "classes": {
+      "tech.streamfusion.CanonicalKafkaSinkJobTest": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "tech.streamfusion.CanonicalRegularJoinJobTest": {
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "tech.streamfusion.CanonicalKafkaSourceJobTest": {
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    "phases": [
+      {
+        "name": "canonical-setup / prepare",
+        "execution_seconds": 170.0,
+        "steps": {
+          "Set up job": 1.0,
+          "Run actions/checkout@v6": 4.0,
+          "Run python3 bin/ci-free-disk.py": 0.0,
+          "Run actions/setup-java@v4": 1.0,
+          "Compile and pack without a native build or library download": 157.0,
+          "Run actions/upload-artifact@v4": 1.0,
+          "Post Run actions/setup-java@v4": 3.0,
+          "Post Run actions/checkout@v6": 0.0,
+          "Complete job": 0.0
+        }
+      },
+      {
+        "name": "canonical-setup / consume",
+        "execution_seconds": 333.0,
+        "steps": {
+          "Set up job": 2.0,
+          "Run actions/checkout@v6": 7.0,
+          "Run python3 bin/ci-free-disk.py": 0.0,
+          "Run actions/setup-java@v4": 6.0,
+          "Run actions/download-artifact@v5": 12.0,
+          "Restore on a fresh runner with the same pinned JDK": 2.0,
+          "Verify the existing native producer": 4.0,
+          "Exercise the smaller canonical native payload": 2.0,
+          "Resolve the restored reactor dependencies": 20.0,
+          "Run isolated recovery and real-broker source/sink checks": 273.0,
+          "Run actions/upload-artifact@v4": 1.0,
+          "Remove probe libraries and worker metadata": 1.0,
+          "Post Run actions/setup-java@v4": 0.0,
+          "Post Run actions/checkout@v6": 0.0,
+          "Complete job": 0.0
+        }
+      }
+    ],
+    "scope": "Two fresh runners. Java preparation had no native library. Consumer verifies exact pinned JDK and archive identity, then loads only stripped core/JSON/Kafka libraries. All selected stock/native recovery and real-broker checkpoint checks pass with positive native evidence. Complete CI parity and net savings remain required."
   }
 }

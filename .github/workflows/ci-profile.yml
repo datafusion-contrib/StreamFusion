@@ -6,16 +6,20 @@ on:
       suite:
         description: 'Paired JVM comparison to run'
         type: choice
-        options: [runtime, runtime-parallel, runtime-jfr, canonical, native-only, runtime-hotspots, canonical-setup]
+        options: [runtime, runtime-parallel, runtime-jfr, canonical, native-only, runtime-hotspots, canonical-setup, lake-setup]
         default: runtime
       native_run:
-        description: 'Existing native-producing run for runtime-hotspots'
+        description: 'Existing native producer for focused diagnostics'
         type: string
       jdk:
-        description: 'JDK for the two-runner canonical setup probe'
+        description: 'JDK for a focused setup diagnostic'
         type: choice
         options: ['11', '17']
         default: '11'
+      parent_jfr:
+        description: 'Record the canonical setup probe parent JVMs for attribution'
+        type: boolean
+        default: false
       flink_line:
         description: 'Flink line for multi-release diagnostics'
         type: choice
@@ -37,10 +41,71 @@ env:
   CANONICAL_JAVA_17: '17.0.21+9'
 
 concurrency:
-  group: ci-startup-profile-${{ github.ref }}-${{ inputs.suite }}-${{ inputs.hotspot_mode }}-${{ inputs.flink_line || 'all' }}-${{ inputs.jdk || 'all' }}
+  group: ci-startup-profile-${{ github.ref }}-${{ inputs.suite }}-${{ inputs.hotspot_mode }}-${{ inputs.flink_line || 'all' }}-${{ inputs.jdk || 'all' }}-${{ inputs.parent_jfr && 'jfr' || 'plain' }}
   cancel-in-progress: true
 
 jobs:
+  lake-setup:
+    if: inputs.suite == 'lake-setup' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      FLINK_PROFILES: ${{ inputs.flink_line == '1.18' && 'paimon,flink-1.18' || 'paimon' }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          filter: blob:none
+      - run: python3 bin/ci-free-disk.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.jdk == '11' && env.CANONICAL_JAVA_11 || env.CANONICAL_JAVA_17 }}
+          cache: maven
+      - name: Verify the existing native producer
+        id: native
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NATIVE_RUN: ${{ inputs.native_run }}
+        run: python3 bin/ci_native_source.py --run "$NATIVE_RUN"
+      - uses: actions/download-artifact@v5
+        with:
+          name: ${{ steps.native.outputs.artifact }}
+          run-id: ${{ inputs.native_run }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/original-native
+      - name: Stage smaller libraries with identical runtime sections
+        run: |
+          python3 bin/ci_native_test_artifact.py --input "$RUNNER_TEMP/original-native" \
+            --output native/target/debug
+      - name: Resolve the complete module dependencies
+        run: python3 bin/ci-maven-dependencies.py --profile "$FLINK_PROFILES" --projects streamfusion-paimon --also-make
+      - name: Run both complete format configurations
+        run: >-
+          python3 bin/ci_lake_tests.py --profile "$FLINK_PROFILES" --module streamfusion-paimon
+          --summary "$RUNNER_TEMP/lake-test-phases.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lake-setup-${{ inputs.flink_line == '1.18' && '1.18' || '2.2' }}-jdk${{ inputs.jdk }}
+          path: |
+            ${{ runner.temp }}/lake-test-phases.json
+            streamfusion-paimon/target/surefire-reports/*paimon-parquet*
+            streamfusion-paimon/target/surefire-reports/*paimon-orc*
+            native/target/debug/manifest.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Remove probe libraries
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import shutil
+          for directory in (Path(os.environ['RUNNER_TEMP']) / 'original-native', Path('native/target/debug')):
+              if directory.exists():
+                  shutil.rmtree(directory)
+          PY
+
   canonical-setup:
     if: inputs.suite == 'canonical-setup'
     uses: ./.github/workflows/ci-canonical-setup.yml
@@ -48,9 +113,10 @@ jobs:
       line: ${{ inputs.flink_line == '1.18' && '1.18' || '2.2' }}
       jdk: ${{ inputs.jdk }}
       native_run: ${{ inputs.native_run }}
+      parent_jfr: ${{ inputs.parent_jfr }}
 
   native:
-    if: ${{ inputs.suite != 'runtime-hotspots' && inputs.suite != 'canonical-setup' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
+    if: ${{ inputs.suite != 'runtime-hotspots' && inputs.suite != 'canonical-setup' && inputs.suite != 'lake-setup' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -121,7 +187,7 @@ jobs:
 
   runtime:
     needs: native
-    if: inputs.suite != 'canonical' && inputs.suite != 'native-only' && inputs.suite != 'runtime-hotspots' && inputs.suite != 'canonical-setup'
+    if: inputs.suite != 'canonical' && inputs.suite != 'native-only' && inputs.suite != 'runtime-hotspots' && inputs.suite != 'canonical-setup' && inputs.suite != 'lake-setup'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:

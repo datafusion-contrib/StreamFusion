@@ -21,6 +21,8 @@ also documents sharing exact-commit Java compilation across savepoint shards whi
 transferring native libraries separately, avoiding duplicate payloads in each Java archive.
 It also covers demand-started test clusters, pure Java preparation alongside native work,
 and smaller test-only native payloads while retaining full-symbol diagnostics.
+Compatible Paimon format checks share compilation while keeping separate test processes
+and report sets, reducing required lake jobs from thirteen to nine with the same configurations.
 CI build reuse and runner scheduling are documented in the
 [upstream-suite guide](../upstream-flink-suite.md#shared-builds-and-runtime-shards): compiled Flink
 caching, shared build artifacts, grouped connector suites and combined coverage verification.

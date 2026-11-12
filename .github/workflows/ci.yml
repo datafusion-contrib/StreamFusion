@@ -199,6 +199,7 @@ jobs:
           python3 -m unittest discover -s bin -p 'test_check_native_tls.py'
           python3 -m unittest discover -s bin -p 'test_ci_free_disk.py'
           python3 -m unittest discover -s bin -p 'test_ci_module_groups.py'
+          python3 -m unittest discover -s bin -p 'test_ci_lake_tests.py'
           python3 -m unittest discover -s bin -p 'test_ci_runtime_test_shards.py'
           python3 -m unittest discover -s bin -p 'test_ci_java_build.py'
           python3 -m unittest discover -s bin -p 'test_ci_native_source.py'
@@ -474,26 +475,14 @@ jobs:
             jdk: '17'
             profile: hudi,flink-1.18
             module: streamfusion-hudi
-          - name: Paimon Parquet
+          - name: Paimon formats
             jdk: '17'
             profile: paimon
             module: streamfusion-paimon
-            format: parquet
-          - name: Paimon ORC
-            jdk: '17'
-            profile: paimon
-            module: streamfusion-paimon
-            format: orc
-          - name: Paimon Parquet (Flink 1.18)
+          - name: Paimon formats (Flink 1.18)
             jdk: '17'
             profile: paimon,flink-1.18
             module: streamfusion-paimon
-            format: parquet
-          - name: Paimon ORC (Flink 1.18)
-            jdk: '17'
-            profile: paimon,flink-1.18
-            module: streamfusion-paimon
-            format: orc
           - name: Delta
             jdk: '11'
             profile: delta
@@ -502,26 +491,14 @@ jobs:
             jdk: '11'
             profile: hudi,flink-1.18
             module: streamfusion-hudi
-          - name: Paimon Parquet
+          - name: Paimon formats
             jdk: '11'
             profile: paimon
             module: streamfusion-paimon
-            format: parquet
-          - name: Paimon ORC
-            jdk: '11'
-            profile: paimon
-            module: streamfusion-paimon
-            format: orc
-          - name: Paimon Parquet (Flink 1.18)
+          - name: Paimon formats (Flink 1.18)
             jdk: '11'
             profile: paimon,flink-1.18
             module: streamfusion-paimon
-            format: parquet
-          - name: Paimon ORC (Flink 1.18)
-            jdk: '11'
-            profile: paimon,flink-1.18
-            module: streamfusion-paimon
-            format: orc
     steps:
       - uses: actions/checkout@v6
 
@@ -542,22 +519,33 @@ jobs:
       - name: Resolve lake module dependencies before tests
         run: python3 bin/ci-maven-dependencies.py --profile "${{ matrix.profile }}" --projects "${{ matrix.module }}" --also-make
 
-      - name: Run optional lake module suite
-        env:
-          SF_PAIMON_FILE_FORMAT: ${{ matrix.format || 'parquet' }}
-        run: >
-          mvn -B -ntp -P${{ matrix.profile }}
-          -pl ${{ matrix.module }} -am test -Dsf.runtime.tests.skip=true -Dnative.build.skip=true
+      - name: Run every lake module configuration
+        run: >-
+          python3 bin/ci_lake_tests.py --profile '${{ matrix.profile }}'
+          --module '${{ matrix.module }}'
+          --summary "$RUNNER_TEMP/lake-test-phases.json"
+
+      - name: Retain per-format outcomes and phase costs
+        if: always() && matrix.module == 'streamfusion-paimon'
+        uses: actions/upload-artifact@v4
+        with:
+          name: paimon-format-results-${{ matrix.jdk }}-${{ contains(matrix.profile, 'flink-1.18') && '1.18' || '2.2' }}
+          path: |
+            ${{ runner.temp }}/lake-test-phases.json
+            streamfusion-paimon/target/surefire-reports/*paimon-parquet*
+            streamfusion-paimon/target/surefire-reports/*paimon-orc*
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Run unchanged Paimon compaction fixtures with stock and native work evidence
-        if: matrix.name == 'Paimon Parquet' && matrix.jdk == '17'
+        if: matrix.name == 'Paimon formats' && matrix.jdk == '17'
         run: |
           python3 bin/ci-maven-dependencies.py --profile paimon,upstream-paimon-compaction --projects streamfusion-paimon --also-make
           python3 bin/ci-maven-dependencies.py --pom dev/flink-suite/agent/pom.xml
           python3 bin/paimon-compaction-suite.py --skip-native-build
 
       - name: Retain Paimon compaction results and invocation evidence
-        if: always() && matrix.name == 'Paimon Parquet' && matrix.jdk == '17'
+        if: always() && matrix.name == 'Paimon formats' && matrix.jdk == '17'
         uses: actions/upload-artifact@v4
         with:
           name: paimon-compaction-upstream

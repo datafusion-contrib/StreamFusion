@@ -29,6 +29,25 @@ def plain(element):
 
 
 class ModuleGroupsTest(unittest.TestCase):
+    def test_grouping_retains_all_original_lake_configurations(self):
+        workflow = WORKFLOW.read_text().split('  lake-module-tests:', 1)[1].split('    steps:', 1)[0]
+        observed = set()
+        jobs = re.findall(r'          - name: [^\n]+\n((?:            [^\n]+\n)+)', workflow)
+        self.assertEqual(9, len(jobs))
+        for job in jobs:
+            fields = {key: value.strip().strip("'\"")
+                      for key, value in re.findall(r'            (\w+): (.+)', job)}
+            formats = ('parquet', 'orc') if fields['module'] == 'streamfusion-paimon' else (None,)
+            observed.update((fields['module'], fields['jdk'], fields['profile'], format) for format in formats)
+        expected = {('streamfusion-delta', jdk, 'delta', None) for jdk in ('11', '17')}
+        expected.update(('streamfusion-hudi', jdk, 'hudi,flink-1.18', None) for jdk in ('11', '17'))
+        expected.add(('streamfusion-iceberg', '17', 'iceberg,iceberg-upstream', None))
+        expected.update(('streamfusion-paimon', jdk, profile, format)
+                        for jdk in ('11', '17') for profile in ('paimon', 'paimon,flink-1.18')
+                        for format in ('parquet', 'orc'))
+        self.assertEqual(13, len(observed))
+        self.assertEqual(expected, observed)
+
     def test_only_first_shard_runs_deployment_modules_and_every_shard_runs_runtime(self):
         runtime = ET.parse(ROOT / 'streamfusion-runtime/pom.xml')
         plugin = next(p for p in runtime.findall('m:build/m:plugins/m:plugin', NS)
