@@ -112,6 +112,12 @@ for suffix in $modules; do
     exit 1
   fi
   assert_flink_identity "$jar_file" "$artifact"
+  case "$suffix" in
+    delta|fluss|paimon)
+      python3 "$script_dir/check-connector-ownership.py" "$repo_root/$module" "$jar_file" \
+        --flink-line "$flink_line"
+      ;;
+  esac
   if jar tf "$jar_file" | grep -q '^org/slf4j/'; then
     echo "$artifact must use Flink's logging API instead of bundling SLF4J" >&2
     exit 1

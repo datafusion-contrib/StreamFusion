@@ -328,7 +328,19 @@ Set `-Dstreamfusion.fluss.enabled=false` to retain the stock endpoints; see
 the experimental coverage described in [Fluss](connectors/fluss.md).
 Primary-key writes remain on Flink's normal Fluss connector.
 
-## Shared source ownership
+## Production source ownership
+
+Delta, Fluss and Paimon own their implementation and connector-specific planner classes
+under each module's `src/main/java`, beside its SPI registrations and tests. Paimon's
+`src/main/java-flink1.18` and `src/main/java-flink2.2` contain the selected host adapters.
+Delta requires Flink 2.2; it and Fluss do not add the root compatibility source tree.
+Paimon 1.0 retains filtered source generation and its legacy overrides, consuming common
+and Flink 1.18 sources from `streamfusion-paimon` rather than the root tree.
+
+This ownership boundary preserves Java packages, service names, JNI symbols, native
+resources and deployment coordinates. It adds no native libraries. Kafka and formats
+still use the existing shared sources and runtime test assembly; their migration is a
+separate phase.
 
 Shared Java sources also require explicit module ownership during compilation. Reproducible
 JAR timestamps can precede a fresh checkout's source timestamps; javac then prefers the newer
@@ -342,7 +354,16 @@ classes from artifact validation. Clean rebuilds remove classes emitted by an ol
 newer shared source. Its negative control demonstrates implicit duplication; the configured
 compiler flag preserves only the connector's explicit class. A runtime probe executes the
 connector and verifies its dependency resolves from the core JAR. Image CI runs the regression
-before packaging, and the unchanged artifact checker verifies ownership in the real bundle.
+before packaging, and the artifact checker verifies ownership in the real bundle.
+
+`bin/check-artifacts.sh` also runs `bin/check-connector-ownership.py` on the actual Delta,
+Fluss and Paimon deployment JARs. It requires every module-local production type for the
+selected host, rejects foreign and wrong-version classes, and compares SPI resources with
+their maintained module files. Nested classes retain their enclosing source owner.
+`python3 bin/test_connector_ownership.py` exercises missing types, leaked core or other-host
+types, conflicting source sets and changed/missing SPI registrations as negative controls.
+The existing bundle checks still require exact native resources, consumer POM identities,
+no duplicate deployable classes and the loader's exact embedded core payload.
 
 ## Portable plans, ordinary SQL and canonical handoff
 

@@ -1135,9 +1135,10 @@ remains stock. Exact output parity passes for every pair:
 ### CI packaging and offset alignment
 
 The optional Fluss artifact resolves its published coordinates with the same `ossrh`
-POM flattening as the other connectors. Flink 1.18's overridden Javadoc dependency
-list includes the released Fluss connector so the shared source path remains resolvable;
-this does not add Fluss to the runtime or core consumer dependencies.
+POM flattening as the other connectors. Its module-local sources and declared released
+connector dependency also supply Javadoc on both host lines; the parent no longer adds
+Fluss dependencies to document the shared source tree. Runtime and core consumer
+dependencies remain independent of Fluss.
 
 Borrowed uncompressed string/binary offset buffers may start at an unaligned RPC address.
 The decoder copies only an offset buffer whose address is not aligned to four bytes,
