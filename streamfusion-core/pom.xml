@@ -34,8 +34,6 @@
                         <exclude>tech/streamfusion/kafka/**</exclude>
                         <exclude>tech/streamfusion/parquet/**</exclude>
                         <exclude>tech/streamfusion/orc/**</exclude>
-                        <exclude>tech/streamfusion/format/avro/**</exclude>
-                        <exclude>tech/streamfusion/format/avroconfluent/**</exclude>
                         <exclude>tech/streamfusion/format/protobuf/**</exclude>
                         <exclude>tech/streamfusion/planner/KafkaPlannerExtension.java</exclude>
                         <exclude>tech/streamfusion/planner/KafkaSinkMatcher.java</exclude>
