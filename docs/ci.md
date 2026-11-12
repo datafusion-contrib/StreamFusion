@@ -799,6 +799,17 @@ Canonical shards have a 180-minute limit; no test is removed to make a shard pas
 
 ## Profiling CI latency and cost
 
+The `runtime-hotspots` dispatch also accepts `hotspot_mode=canonical-gc`. It compares
+G1 and Serial GC on the same runner using the existing five canonical handoff cases,
+on both JDK 11 and 17. Both collectors use first-tier compilation, the current 512 MiB
+code-cache reservation and four fresh 1 GiB Surefire forks. Each collector prepares
+its own job-local metadata archives before three alternating measurement pairs; archive
+construction is reported separately. Exact invocation identities, successful outcomes,
+and at least two worker archives remain mandatory. The probe retains clean stock/native
+processes and their checkpoint assertions. It does not change the merge-gate JVM settings
+or establish complete-matrix savings. Use an existing successful native-producing CI run
+with identical native sources through `native_run`, as for the other hotspot diagnostics.
+
 Use `python3 bin/profile-ci.py --repo OWNER/REPO --run RUN_ID` with an authenticated `gh`
 CLI. Add `--json` for reusable evidence. The profiler reads the latest run attempt, paginates
 all jobs, totals actual completed execution intervals and identifies failed steps. It separates

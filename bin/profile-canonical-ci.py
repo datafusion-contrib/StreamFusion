@@ -25,21 +25,23 @@ PARALLEL_CLASSES = (
 )
 
 
-def profile(output, repetitions, cds=False, parallel=False):
+def profile(output, repetitions, cds=False, parallel=False, gc=False):
     if "TieredStopAtLevel" in os.environ.get("JAVA_TOOL_OPTIONS", ""):
         raise ValueError("Remove inherited TieredStopAtLevel so the default trial uses normal compilation")
     if os.environ.get("SF_CANONICAL_CDS_DIR"):
         raise ValueError("Remove inherited SF_CANONICAL_CDS_DIR so the default trial has no worker archive")
+    if gc and "GC" in os.environ.get("JAVA_TOOL_OPTIONS", ""):
+        raise ValueError("Remove inherited garbage-collector settings before comparing collectors")
     output.mkdir(parents=True, exist_ok=False)
     temporary = output / "tmp"
     temporary.mkdir()
     reports = ROOT / "streamfusion-runtime/target/surefire-reports"
     trials = []
     expected = None
-    preparation = "cds-two" if parallel else "cds"
-    schedule = [(preparation, -1, "preparation")] if cds else []
+    preparations = ("gc-g1", "gc-serial") if gc else ("cds-two" if parallel else "cds",)
+    schedule = [(mode, -1, "preparation") for mode in preparations] if cds else []
     for index in range(repetitions):
-        modes = (("cds-two", "cds-four") if parallel else
+        modes = (("gc-g1", "gc-serial") if gc else ("cds-two", "cds-four") if parallel else
                  ("default", "startup", "cds") if cds else ("default", "startup"))
         if index % 2:
             modes = tuple(reversed(modes))
@@ -50,14 +52,17 @@ def profile(output, repetitions, cds=False, parallel=False):
             options = os.environ.get("JAVA_TOOL_OPTIONS", "")
             options += f' -Djava.io.tmpdir="{temporary}"'
             if mode != "default":
-                options += " -XX:TieredStopAtLevel=1"
+                options += " -XX:TieredStopAtLevel=1 -XX:ReservedCodeCacheSize=512m"
+            if gc:
+                options += " -XX:+UseSerialGC" if mode == "gc-serial" else " -XX:+UseG1GC"
             environment = {**os.environ, "JAVA_TOOL_OPTIONS": options}
-            use_archive = mode in ("cds", "cds-two", "cds-four")
+            use_archive = gc or mode in ("cds", "cds-two", "cds-four")
             if use_archive:
-                environment["SF_CANONICAL_CDS_DIR"] = str(temporary / "archives")
+                environment["SF_CANONICAL_CDS_DIR"] = str(
+                    temporary / (mode if gc else "archives"))
             if parallel:
                 environment["SF_KAFKA_INTEGRATION"] = "true"
-            forks, heap = (4, "1g") if mode == "cds-four" else (2, "2g")
+            forks, heap = (4, "1g") if gc or mode == "cds-four" else (2, "2g")
             selection = ",".join(PARALLEL_CLASSES) if parallel else SELECTION
             command = ["mvn", "-B", "-ntp", "-pl", "streamfusion-runtime",
                        f"-Dtest={selection}", f"-Dsf.testForks={forks}",
@@ -126,9 +131,11 @@ def main():
     parser.add_argument("--output", type=Path, required=True, help="New directory for concise trial evidence")
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--cds", action="store_true", help="Also measure job-local class metadata archives")
-    parser.add_argument("--parallel", action="store_true", help="Compare two vs four fresh forks with prepared worker metadata")
+    comparison = parser.add_mutually_exclusive_group()
+    comparison.add_argument("--parallel", action="store_true", help="Compare two vs four fresh forks with prepared worker metadata")
+    comparison.add_argument("--gc", action="store_true", help="Compare G1 and Serial GC with current startup settings and separate prepared archives")
     args = parser.parse_args()
-    if args.parallel:
+    if args.parallel or args.gc:
         args.cds = True
     if args.repetitions < 2:
         parser.error("Use at least two pairs to alternate execution order")
@@ -147,7 +154,7 @@ def main():
                 capture_output=True, text=True, timeout=120)
         if supported.returncode:
             parser.error("This JVM cannot use class-data sharing; omit --cds to measure default/first-tier compilation")
-    profile(args.output.resolve(), args.repetitions, args.cds, args.parallel)
+    profile(args.output.resolve(), args.repetitions, args.cds, args.parallel, args.gc)
 
 
 if __name__ == "__main__":
