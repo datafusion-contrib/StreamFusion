@@ -43,6 +43,34 @@ class CanonicalWorkerCacheTest {
   }
 
   @Test
+  void metadataSnapshotsOmitBundledNativeCopiesButPreserveOtherResources() throws Exception {
+    Path source = directory.resolve("classes");
+    Path resources = source.resolve("tech/streamfusion/native");
+    Files.createDirectories(resources.resolve("json"));
+    Files.writeString(resources.resolve("libstreamfusion.so"), "core");
+    Files.writeString(resources.resolve("json/libstreamfusion_json.dylib"), "json");
+    Files.writeString(resources.resolve("streamfusion.dll"), "windows");
+    Files.writeString(resources.resolve("metadata.json"), "metadata");
+    Files.writeString(source.resolve("Example.class"), "compiled bytes");
+    Files.writeString(source.resolve("fixture.so"), "unrelated test resource");
+    for (boolean includeNative : List.of(false, true)) {
+      var cache =
+          new CanonicalWorkerCache(directory.resolve("cache-" + includeNative), includeNative);
+      Path snapshot = Path.of(cache.classpath(List.of(source.toString())).get(0));
+      try (var jar = new JarFile(snapshot.toFile())) {
+        for (String name :
+            List.of("libstreamfusion.so", "json/libstreamfusion_json.dylib", "streamfusion.dll")) {
+          assertEquals(includeNative, jar.getJarEntry("tech/streamfusion/native/" + name) != null);
+        }
+        assertNotNull(jar.getJarEntry("Example.class"));
+        assertNotNull(jar.getJarEntry("fixture.so"));
+        assertNotNull(jar.getJarEntry("tech/streamfusion/native/metadata.json"));
+      }
+    }
+    assertEquals("core", Files.readString(resources.resolve("libstreamfusion.so")));
+  }
+
+  @Test
   void changedCompiledBytesProduceADifferentSnapshotForTheNextFork() throws Exception {
     Path source = directory.resolve("classes");
     Files.createDirectories(source);

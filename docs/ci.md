@@ -896,7 +896,18 @@ checkpoints and results; the archive stores class metadata rather than a running
 
 [AppCDS requires JAR classpaths](https://docs.oracle.com/en/java/javase/11/tools/java.html),
 so the harness snapshots compiled class directories into deterministic JARs while preserving
-classpath order and resource paths. Compiled directories remain immutable for each Surefire
+classpath order and non-native resource paths. These test-only metadata JARs omit bundled
+`.so`, `.dylib` and `.dll` copies under `tech/streamfusion/native/`: native workers already
+receive the current libraries through their explicit `java.library.path`. Original compiled
+resources and deployable JARs remain intact. `-Dsf.canonical.packNativeResources=true` restores
+the previous snapshot contents for a controlled comparison. A hosted four-parent JDK 11 JFR
+profile found packing in 1,543 of 1,771 Java execution samples, predominantly SHA-256; these
+samples attribute work and are not an end-to-end speedup measurement.
+A local synthetic 323 MB packing loop with four fresh cache instances, repeated in three
+alternating pairs, reduced elapsed medians from 13.57 to 0.042 seconds on JDK 11 and from
+13.91 to 0.027 seconds on JDK 17. This isolates redundant packing and hashing; it does not
+measure engine throughput or full CI. The structured short-loop evidence records every trial.
+Compiled directories remain immutable for each Surefire
 fork. Snapshot names derive from their contents; an existing snapshot is checked for corruption
 and retained without changing its timestamp. Changed compiled bytes produce a new snapshot.
 Archive keys include the JDK, VM arguments, classpath, worker class and engine role. A stage's
