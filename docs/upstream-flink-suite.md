@@ -3,6 +3,30 @@
 ## Batch SQL development
 
 The planner factory and suite agent now install a mode-specific batch adapter.
+The observer instruments `tech.streamfusion.planner.batch.BatchPlanScan`, where
+`optimizeRoots` is declared. The root-package compatibility facade is not observed
+separately, so one completed rewrite produces one inventory event. Historical
+inventory records with the earlier planner package remain readable.
+Streaming observation similarly targets `planner.stream.StreamPlanScan` and the
+mode-specific `planner.stream.StockCompiledPlanLowering`; it does not instrument
+the inherited root `PhysicalPlanScan` facade as another scan. Both Flink source
+lines use the shared `planner.stream.NativeStreamPlanner`, while public installation and
+ServiceLoader entries retain their established names. Positive native-consumption
+and existing route expectations remain required after package moves.
+Path-selected compatibility and JVM aggregate workflows also cover planner mode
+subpackages, so later edits to migrated implementations still select their checks.
+
+The released Paimon 2.1.0 partition-scan fixture
+`testScanWithSpecifiedPartitionsWithLevelMaxPt` randomly chooses a batch join or
+a lookup join, but asserts a fixed sequence without `ORDER BY`. Repeated local
+controls reproduce reversed batch-join output with the same exact rows, including
+before the streaming planner/runtime reorganization. This ordering assumption is
+tracked in [#639](https://github.com/datafusion-contrib/StreamFusion/issues/639).
+The narrowly guarded assertion adapter described in the Paimon section compares
+the complete result as a bag, retaining duplicate counts, row kinds and values.
+The randomized SQL and native execution remain unchanged. Ordered queries retain
+their ordering checks, and all native-consumption checks remain required.
+
 [Batch SQL](operators/batch.md) documents its current narrow admission. The published
 planner test JAR can be scanned directly with the runtime module's `batch-upstream`
 Maven profile, avoiding another source checkout or Maven repository for focused

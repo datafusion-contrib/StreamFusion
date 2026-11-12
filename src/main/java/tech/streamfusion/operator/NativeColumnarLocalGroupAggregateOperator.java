@@ -11,7 +11,9 @@ import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import tech.streamfusion.Native;
 import tech.streamfusion.compat.FlinkStreamOperator;
-import tech.streamfusion.operator.MiniBatchMetrics.FlushReason;
+import tech.streamfusion.operator.stream.MiniBatchBoundary;
+import tech.streamfusion.operator.stream.MiniBatchMetrics;
+import tech.streamfusion.operator.stream.MiniBatchMetrics.FlushReason;
 
 /**
  * Local half of a two-phase non-windowed {@code GROUP BY}, columnar in and out — the Arrow analog

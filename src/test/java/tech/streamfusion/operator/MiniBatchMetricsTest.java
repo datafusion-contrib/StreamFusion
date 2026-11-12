@@ -2,7 +2,6 @@ package tech.streamfusion.operator;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import tech.streamfusion.operator.MiniBatchMetrics.FlushReason;
 import java.util.HashMap;
 import java.util.Map;
 import org.apache.flink.metrics.Counter;
@@ -10,6 +9,8 @@ import org.apache.flink.metrics.Gauge;
 import org.apache.flink.metrics.SimpleCounter;
 import org.apache.flink.metrics.groups.UnregisteredMetricsGroup;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.operator.stream.MiniBatchMetrics;
+import tech.streamfusion.operator.stream.MiniBatchMetrics.FlushReason;
 
 class MiniBatchMetricsTest {
 

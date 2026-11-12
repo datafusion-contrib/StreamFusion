@@ -1,0 +1,1159 @@
+package tech.streamfusion.planner.stream;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.RelVisitor;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalCalc;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalChangelogNormalize;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalCorrelate;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalDropUpdateBefore;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalExpand;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalGlobalGroupAggregate;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalGlobalWindowAggregate;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalGroupAggregate;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalGroupWindowAggregate;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalIntervalJoin;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalJoin;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalLimit;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalLocalGroupAggregate;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalLocalWindowAggregate;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalLookupJoin;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalMiniBatchAssigner;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalOverAggregate;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalRank;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalRel;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSortLimit;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalTemporalJoin;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalTemporalSort;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalUnion;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalWatermarkAssigner;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalWindowAggregate;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalWindowDeduplicate;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalWindowJoin;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalWindowRank;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalWindowTableFunction;
+import org.apache.flink.table.planner.plan.optimize.program.FlinkOptimizeProgram;
+import org.apache.flink.table.planner.plan.optimize.program.StreamOptimizeContext;
+import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
+import org.apache.flink.table.planner.utils.ShortcutUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import tech.streamfusion.compat.FlinkCompat;
+import tech.streamfusion.compat.ListCollectors;
+import tech.streamfusion.planner.ColumnarInput;
+import tech.streamfusion.planner.ColumnarOutput;
+import tech.streamfusion.planner.JsonStringIdentity;
+import tech.streamfusion.planner.LegacyBinaryResults;
+import tech.streamfusion.planner.NativeConfig;
+import tech.streamfusion.planner.NativePlannerExtension;
+import tech.streamfusion.planner.NativePlannerExtensions;
+import tech.streamfusion.planner.RequiresRowKind;
+import tech.streamfusion.planner.common.EncodedExpression;
+import tech.streamfusion.planner.common.NativeRelDigests;
+
+/**
+ * Rewrites the host engine's optimized physical plan, replacing supported operators with native
+ * ones and leaving everything else for the host engine to execute. The deployed planner supplies
+ * all expanded sink roots together; the program hook supports an already constructed stock planner.
+ *
+ * <p>Only operators the native side reproduces exactly are substituted, so results are unchanged
+ * and unsupported plans fall back cleanly.
+ *
+ * <p>Which operators those are is declared by {@link #REGISTRY}, one {@link Substitution} per host
+ * shape in the order they are offered a node. Order is still semantic — two entries can share a
+ * shape, and the entries split around the insert-only guard — but each entry now carries its own
+ * config gate, changelog-safety and fallback reason rather than encoding them in its position.
+ */
+public class StreamPlanScan implements FlinkOptimizeProgram<StreamOptimizeContext> {
+  private static final Logger LOG =
+      LoggerFactory.getLogger("tech.streamfusion.planner.PhysicalPlanScan");
+
+  private final List<String> operatorTypes = new ArrayList<>();
+  private final List<String> fallbackReasons = new ArrayList<>();
+  private final List<String> functionExecutions = new ArrayList<>();
+  private int substitutions;
+  private int jvmFunctionOperators;
+  private boolean completePlan;
+  private org.apache.flink.streaming.api.environment.StreamExecutionEnvironment
+      executionEnvironment;
+  private String keyedStateUnsupportedReason;
+
+  public void executionEnvironment(
+      org.apache.flink.streaming.api.environment.StreamExecutionEnvironment environment) {
+    executionEnvironment = environment;
+  }
+
+  String keyedStateUnsupportedReason() {
+    return keyedStateUnsupportedReason;
+  }
+
+  private static final NativePlannerExtensions EXTENSIONS =
+      NativePlannerExtensions.load(StreamPlanScan.class.getClassLoader());
+  private static final List<Substitution<?>> REGISTRY = buildRegistry();
+
+  private final List<Substitution<?>> registry;
+
+  public StreamPlanScan() {
+    this(REGISTRY);
+  }
+
+  StreamPlanScan(List<Substitution<?>> registry) {
+    this.registry = List.copyOf(registry);
+  }
+
+  @Override
+  public RelNode optimize(RelNode root, StreamOptimizeContext context) {
+    if (completePlan) {
+      return root;
+    }
+    return optimizeRoots(
+            List.of(root), context != null && context.needFinalTimeIndicatorConversion())
+        .get(0);
+  }
+
+  void deferToCompletePlan() {
+    completePlan = true;
+  }
+
+  List<RelNode> optimizeRoots(List<RelNode> roots) {
+    return optimizeRoots(roots, true);
+  }
+
+  private List<RelNode> optimizeRoots(List<RelNode> roots, boolean finalOutput) {
+    try (NativeConfig.Scope ignored =
+        NativeConfig.usePlannerConfig(
+            ShortcutUtils.unwrapTableConfig(roots.get(0)).getConfiguration())) {
+      List<RelNode> optimized = optimizeConfigured(roots, finalOutput);
+      PlannerDiagnostics.logOccurrences(LOG, "StreamFusion falls back to host: ", fallbackReasons);
+      PlannerDiagnostics.logOccurrences(LOG, "", functionExecutions);
+      return optimized;
+    }
+  }
+
+  private List<RelNode> optimizeConfigured(List<RelNode> roots, boolean finalOutput) {
+    roots = FlinkPlannerCompat.prepareTimestampComparisons(roots);
+    operatorTypes.clear();
+    fallbackReasons.clear();
+    functionExecutions.clear();
+    substitutions = 0;
+    jvmFunctionOperators = 0;
+    keyedStateUnsupportedReason = null;
+    roots.forEach(this::record);
+    // Master switch: with native acceleration off, substitute nothing — the query runs on the host.
+    if (!NativeConfig.nativeEnabled()) {
+      LOG.info("StreamFusion native acceleration is disabled; the plan runs on Flink");
+      return roots;
+    }
+    keyedStateUnsupportedReason =
+        tech.streamfusion.compat.FlinkStateBackendCompat.prepareNativeStateBackend(
+            executionEnvironment, ShortcutUtils.unwrapTableConfig(roots.get(0)));
+    if (roots.stream().anyMatch(StreamPlanScan::deltaJoinForceWouldReject)) {
+      recordFallback(
+          "delta join: table.optimizer.delta-join.strategy is FORCE but this optimizer block"
+              + " contains a regular join and no delta join");
+      LOG.info(
+          "StreamFusion declined the optimizer block so Flink can enforce its FORCE delta-join"
+              + " strategy");
+      return roots;
+    }
+    Set<String> repeatedSources =
+        sourceSharingEnabled(roots.get(0)) ? repeatedSourceKeys(roots) : Set.of();
+    List<RelNode> optimized = new ArrayList<>();
+    for (RelNode root : roots) {
+      optimized.add(substitute(root, repeatedSources, finalOutput));
+    }
+    optimized = shareIdenticalSources(optimized);
+    LOG.info(
+        "StreamFusion substituted {} of {} plan operators natively ({} operator fallback reason(s)"
+            + " recorded; {} Calc/filter node(s) use JVM functions)",
+        substitutions,
+        operatorTypes.size(),
+        fallbackReasons.size(),
+        jvmFunctionOperators);
+    return optimized;
+  }
+
+  private RelNode substitute(RelNode root, Set<String> repeatedSources, boolean finalOutput) {
+    if (CollectionValueIdentity.observesCollectionKeyOrder(root)) {
+      recordFallback(
+          "COLLECT formatting over binary or nested elements requires Flink's JVM key order");
+      return root;
+    }
+    if (JvmGroupAggregateMatcher.unverifiedCollectionInputMaterialization(root)) {
+      recordFallback(
+          "collection input materialization of NOT NULL hints requires Flink physical getters");
+      return root;
+    }
+    if (CollectionValueIdentity.crossesBoundary(root, finalOutput)) {
+      recordFallback(
+          "collection value representation requires a final projection or fused consumer");
+      return root;
+    }
+    if (LegacyBinaryResults.crossesBoundary(root, finalOutput)) {
+      recordFallback(
+          "legacy binary variable bytes require a final projection or fused scalar consumer");
+      return root;
+    }
+    Set<RelNode> javaJsonInputs = JsonStringIdentity.finalUnionJsonInputs(root, finalOutput);
+    if (javaJsonInputs == null) {
+      recordFallback("JSON string identity requires a final projection or a fused scalar consumer");
+      return root;
+    }
+    // Pass 1 substitutes native (columnar) operators.
+    int previousSubstitutions = substitutions;
+    int previousFunctionExecutions = functionExecutions.size();
+    int previousJvmFunctionOperators = jvmFunctionOperators;
+    RelNode substituted = rewrite(root, new PlanContext(this, repeatedSources, javaJsonInputs));
+    if (!javaJsonInputs.isEmpty() && substituted instanceof ColumnarInput) {
+      substitutions = previousSubstitutions;
+      rollbackFunctionExecutions(previousFunctionExecutions, previousJvmFunctionOperators);
+      recordFallback("JSON string identity across UNION requires a row sink");
+      return root;
+    }
+    if (root instanceof org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink
+        && substituted instanceof ColumnarInput
+        && (JsonStringIdentity.projectsBinaryString(root)
+            || LegacyBinaryResults.reachesSink(root)
+            || CollectionValueIdentity.requiresRowSink(substituted)
+                && !((ColumnarInput) substituted).acceptsCollectionRepresentation())) {
+      substitutions = previousSubstitutions;
+      rollbackFunctionExecutions(previousFunctionExecutions, previousJvmFunctionOperators);
+      recordFallback(
+          LegacyBinaryResults.reachesSink(root)
+              ? "legacy binary variable bytes require a row sink"
+              : JsonStringIdentity.projectsBinaryString(root)
+                  ? "binary-backed STRING requires a row sink"
+                  : "collection value representation requires a row sink");
+      return root;
+    }
+    if (CollectionValueIdentity.generatedCollectionCrossesBoundary(substituted, finalOutput)) {
+      substitutions = previousSubstitutions;
+      rollbackFunctionExecutions(previousFunctionExecutions, previousJvmFunctionOperators);
+      recordFallback(
+          "generated collection representation requires a final projection or fused" + " consumer");
+      return root;
+    }
+    // Whole-query all-or-nothing: every native operator but a source/sink is Arrow → Arrow.
+    // If any operator other than a source (a leaf) or the sink (the plan root) is still row-wise,
+    // the
+    // query cannot run as one columnar island, so accelerate nothing — it runs as stock Flink. The
+    // only
+    // row-wise operator allowed is a rowwise source/sink, bridged by a transpose at the perimeter.
+    if (substitutions > previousSubstitutions && !fullyColumnar(substituted, true)) {
+      substitutions = previousSubstitutions; // retain counts from other admitted roots
+      rollbackFunctionExecutions(previousFunctionExecutions, previousJvmFunctionOperators);
+      return root;
+    }
+    if (substitutions == previousSubstitutions + 1
+        && !NativeConfig.standaloneDropUpdateBeforeEnabled()
+        && standaloneDropUpdateBefore(substituted)) {
+      substitutions = previousSubstitutions;
+      rollbackFunctionExecutions(previousFunctionExecutions, previousJvmFunctionOperators);
+      recordFallback("dropUpdateBefore: standalone row-source filtering is explicitly disabled");
+      return root;
+    }
+    if (unconsumedColumnarOutput(substituted, false)) {
+      substitutions = previousSubstitutions;
+      rollbackFunctionExecutions(previousFunctionExecutions, previousJvmFunctionOperators);
+      recordFallback("columnar source requires a columnar consumer");
+      return root;
+    }
+    // Pass 2 inserts a row↔columnar transpose at each perimeter edge (rowwise source/sink ↔
+    // island).
+    // Source sharing follows over every admitted root, after per-root fallbacks are settled.
+    return ByteStringInputs.prepare(insertTransitions(substituted), finalOutput);
+  }
+
+  private static boolean unconsumedColumnarOutput(RelNode node, boolean columnarConsumer) {
+    if (node instanceof ColumnarOutput
+        && ((ColumnarOutput) node).requiresColumnarConsumer()
+        && !columnarConsumer) return true;
+    for (RelNode input : node.getInputs()) {
+      if (unconsumedColumnarOutput(input, node instanceof ColumnarInput)) return true;
+    }
+    return false;
+  }
+
+  private static Set<String> repeatedSourceKeys(List<RelNode> roots) {
+    Map<String, Integer> counts = new LinkedHashMap<>();
+    roots.forEach(root -> collectSourceKeys(root, counts));
+    Set<String> repeated = new HashSet<>();
+    counts.forEach(
+        (key, count) -> {
+          if (count > 1) {
+            repeated.add(key);
+          }
+        });
+    return repeated;
+  }
+
+  private static void collectSourceKeys(RelNode node, Map<String, Integer> counts) {
+    for (NativePlannerExtension extension : EXTENSIONS.extensions()) {
+      String key = extension.sourceSharingKey(node);
+      if (key != null) {
+        counts.merge(extension.getClass().getName() + '|' + key, 1, Integer::sum);
+        return;
+      }
+    }
+    for (RelNode input : node.getInputs()) {
+      collectSourceKeys(input, counts);
+    }
+  }
+
+  // ---------------------------------------------------------------------------- substitution chain
+
+  /**
+   * Every substitution the scan can make, in the order a node is offered to them. Entries marked
+   * {@link Substitution#changelogSafe()} sit before the insert-only guard; the rest are only
+   * offered insert-only nodes. Two entries sharing a shape are tried in list order (a rank is
+   * deduplication before Top-N; a Calc is filter-only before general).
+   *
+   * <p>An optional connector's entries are built only when its extension is linked: naming those
+   * matchers from an unconditional initializer would resolve them at class load, turning a Flink
+   * distribution without the connector into a linkage error instead of a clean fallback.
+   */
+  private static List<Substitution<?>> buildRegistry() {
+    List<Substitution<?>> entries = new ArrayList<>();
+
+    // A non-windowed GROUP BY both emits and consumes a changelog, so it is exempt from the
+    // insert-only guard — its input may be insert-only or itself a changelog.
+    entries.add(
+        Substitution.of(
+                StreamPhysicalGroupAggregate.class,
+                "groupAggregate",
+                GroupAggregateMatcher::substitute)
+            .shaped(
+                node ->
+                    GroupAggregateMatcher.rustCollectionsEnabled()
+                        && GroupAggregateMatcher.hasCollections(node))
+            .keyedState()
+            .matching(GroupAggregateMatcher::matches)
+            .reason(
+                node ->
+                    JvmGroupAggregateMatcher.matches(node)
+                        ? GroupAggregateMatcher.unsupportedReason(node)
+                        : JvmGroupAggregateMatcher.unsupportedReason(node))
+            .changelogSafe());
+
+    entries.add(
+        Substitution.of(
+                StreamPhysicalGroupAggregate.class,
+                "jvmGroupAggregate",
+                JvmGroupAggregateMatcher::substitute)
+            .shaped(JvmGroupAggregateMatcher::enabledAggregate)
+            .matching(JvmGroupAggregateMatcher::matches)
+            .reason(JvmGroupAggregateMatcher::unsupportedReason)
+            .keyedState()
+            .changelogSafe());
+
+    entries.add(
+        Substitution.of(
+                StreamPhysicalGroupAggregate.class,
+                "groupAggregate",
+                GroupAggregateMatcher::substitute)
+            .keyedState()
+            .matching(GroupAggregateMatcher::matches)
+            .reason(GroupAggregateMatcher::unsupportedReason)
+            .changelogSafe());
+
+    entries.add(
+        Substitution.of(
+                StreamPhysicalLocalGroupAggregate.class,
+                "jvmGroupAggregate",
+                JvmTwoPhaseAggregateMatcher::substitute)
+            .shaped(node -> JvmTwoPhaseAggregateMatcher.enabled(node.aggCalls()))
+            .matchingWithContext(
+                (node, context) ->
+                    context.globalGroupForLocal(node) != null
+                        && JvmTwoPhaseAggregateMatcher.matches(node))
+            .reason(JvmTwoPhaseAggregateMatcher::unsupportedReason)
+            .changelogSafe());
+    entries.add(
+        Substitution.of(
+                StreamPhysicalGlobalGroupAggregate.class,
+                "jvmGroupAggregate",
+                JvmTwoPhaseAggregateMatcher::substitute)
+            .shaped(node -> JvmTwoPhaseAggregateMatcher.enabled(node.aggCalls()))
+            .matching(JvmTwoPhaseAggregateMatcher::matches)
+            .reason(JvmTwoPhaseAggregateMatcher::unsupportedReason)
+            .keyedState()
+            .changelogSafe());
+
+    // The global half of a two-phase non-windowed GROUP BY. It merges the local half's partials
+    // into
+    // the final per-key result and emits a changelog exactly like the single-phase GROUP BY above —
+    // so it reuses the same native group-aggregate operator, fed positional partial columns (COUNT
+    // merges as a SUM over its partial counts). Exempt from the insert-only guard for the same
+    // reason.
+    entries.add(
+        Substitution.of(
+                StreamPhysicalGlobalGroupAggregate.class,
+                "groupAggregate",
+                GlobalGroupAggregateMatcher::substitute)
+            .keyedState()
+            .matching(GlobalGroupAggregateMatcher::matches)
+            .reason(GlobalGroupAggregateMatcher::unsupportedReason)
+            .changelogSafe());
+
+    entries.add(
+        Substitution.of(
+                StreamPhysicalDropUpdateBefore.class,
+                "dropUpdateBefore",
+                (node, ctx) ->
+                    new StreamPhysicalNativeDropUpdateBefore(
+                        node.getCluster(), node.getTraitSet(), node.getInput()))
+            .matching(node -> FilterCalcMatcher.convertibleRow(node.getRowType()))
+            .changelogSafe());
+
+    // The MiniBatchAssigner emits the mini-batch marker that drives the local aggregate's bundle
+    // flush. Substitute a native columnar assigner that forwards Arrow and emits the same marker
+    // watermark, so the whole island shares one mini-batch cadence — matching Flink's
+    // ProcTimeMiniBatchAssignerOperator (proc-time: markers generated from the clock) or
+    // RowTimeMiniBatchAssginerOperator (row-time: upstream event-time watermarks filtered to the
+    // interval) + MapBundleOperator wiring.
+    entries.add(
+        Substitution.of(StreamPhysicalMiniBatchAssigner.class, MiniBatchAssignerMatcher::substitute)
+            .changelogSafe());
+
+    // A regular (non-windowed) join emits a changelog and consumes one on either side, so it is
+    // exempt from the insert-only guard (like the GROUP BY above).
+    entries.add(
+        Substitution.of(StreamPhysicalJoin.class, "updatingJoin", RegularJoinMatcher::substitute)
+            .keyedState()
+            .matching(RegularJoinMatcher::matches)
+            .reason(RegularJoinMatcher::unsupportedReason)
+            .changelogSafe());
+
+    // Row-time deduplication is a rowtime-ordered rank-1 the host plans as a row-time deduplicate:
+    // keep-first (ASC — insert-only and watermark-released, except under mini-batch where Flink
+    // plans it as its bundled retracting function) or keep-last (DESC, retracting, emits eagerly).
+    // Either way it requires an insert-only input. Offered before Top-N — both are
+    // StreamPhysicalRank, but a rowtime-ordered rank is deduplication, which TopNMatcher declines.
+    entries.add(
+        Substitution.of(StreamPhysicalRank.class, "deduplicate", DeduplicateMatcher::substitute)
+            .shaped(DeduplicateMatcher::hasDeduplicationShape)
+            .keyedState()
+            .matching(
+                rank ->
+                    DeduplicateMatcher.matches(rank)
+                        && ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) rank.getInput()))
+            .explaining(DeduplicateMatcher::isTimeOrder)
+            .reason(DeduplicateMatcher::unsupportedReason)
+            .changelogSafe());
+
+    entries.add(
+        Substitution.of(StreamPhysicalRank.class, "topN", FirstNMatcher::substitute)
+            .keyedState()
+            .matching(FirstNMatcher::matches)
+            .changelogSafe());
+
+    // A streaming Top-N emits a changelog (it deletes a row when one is displaced), so it is exempt
+    // from the insert-only guard. An insert-only input uses the append-only ranker; a changelog
+    // input uses the retracting ranker (Flink's RetractableTopNFunction), which keeps the full
+    // buffer
+    // so a deleted top-N row can be replaced by promoting rank N+1.
+    entries.add(
+        Substitution.of(StreamPhysicalRank.class, "topN", TopNMatcher::substitute)
+            .keyedState()
+            .matching(TopNMatcher::matches)
+            .reason(TopNMatcher::unsupportedReason)
+            .changelogSafe());
+
+    // A global FETCH/LIMIT — ORDER BY … LIMIT n (StreamPhysicalSortLimit) or plain LIMIT n
+    // (StreamPhysicalLimit). Both lower to a global (no-partition) ROW_NUMBER rank, so they reuse
+    // the
+    // native columnar Top-N operator with an empty partition key: the sort-limit carries the order
+    // keys and emits a changelog as the top set changes; the plain limit has no sort keys, so the
+    // ranker keeps the first n rows by arrival. Updating inputs use Flink's selected replacement or
+    // retract strategy; unsupported OFFSET shapes stay on the host. It always reports:
+    // a sort-limit emits a changelog, so it would otherwise slip past the insert-only guard
+    // unreported, leaving a non-accelerating query unable to explain itself (ticket 29).
+    entries.add(
+        Substitution.of(StreamPhysicalSortLimit.class, LimitMatcher::substitute)
+            .keyedState()
+            .changelogSafe());
+    entries.add(
+        Substitution.of(StreamPhysicalLimit.class, LimitMatcher::substitute)
+            .keyedState()
+            .changelogSafe());
+
+    // A Calc transforms each row independently — a per-row projection plus an optional
+    // deterministic
+    // filter — and the native operator carries the `$row_kind$` tag through unchanged, so it is
+    // changelog-safe and (like the GROUP BY/join/Top-N/CDC above) exempt from the insert-only
+    // guard:
+    // it matches the host's Calc over a retracting stream row for row.
+    entries.add(
+        Substitution.of(StreamPhysicalCalc.class, "filter", FilterCalcMatcher::substitute)
+            .shaped(FilterCalcMatcher::hasFilterShape)
+            .matching(FilterCalcMatcher::matches)
+            .reason(CalcMatcher::unsupportedReason)
+            .changelogSafe());
+    entries.add(
+        Substitution.of(StreamPhysicalCalc.class, "calc", CalcMatcher::substitute)
+            .matchingWithContext(
+                (calc, ctx) -> CalcMatcher.matches(calc, ctx.requiresJavaJsonInput(calc)))
+            .reason(CalcMatcher::unsupportedReason)
+            .changelogSafe());
+
+    // Changelog normalization (upsert / duplicate-bearing source → regular changelog): keep the
+    // last
+    // row per unique key, emitting INSERT/UPDATE_BEFORE/UPDATE_AFTER/DELETE. Both consumes and
+    // emits a
+    // changelog, so (like the GROUP BY) it is exempt from the insert-only guard. The keyed
+    // shuffle (by the unique key) stays columnar where the input sits on a columnar producer.
+    entries.add(
+        Substitution.of(
+                StreamPhysicalChangelogNormalize.class,
+                "changelogNormalize",
+                ChangelogNormalizeMatcher::substitute)
+            .keyedState()
+            .matching(ChangelogNormalizeMatcher::matches)
+            .reason(ChangelogNormalizeMatcher::unsupportedReason)
+            .changelogSafe());
+
+    // INNER UNNEST of an array (Flink's Correlate over $UNNEST_ROWS$): fan each row out to one row
+    // per element of its array column, appending the element. Stateless and changelog-transparent
+    // (the `$row_kind$` tag rides through), so — like Expand — it is exempt from the insert-only
+    // guard.
+    entries.add(
+        Substitution.of(
+                StreamPhysicalCorrelate.class, "tableFunction", TableFunctionMatcher::substitute)
+            .shaped(TableFunctionMatcher::isUserTableFunction)
+            .matching(TableFunctionMatcher::matches)
+            .reason(TableFunctionMatcher::unsupportedReason)
+            .changelogSafe());
+
+    entries.add(
+        Substitution.of(StreamPhysicalCorrelate.class, "unnest", UnnestMatcher::substitute)
+            .matching(UnnestMatcher::matches)
+            .reason(UnnestMatcher::unsupportedReason)
+            .changelogSafe());
+
+    entries.add(
+        Substitution.of(StreamPhysicalCorrelate.class, "unnest", GeneratedUnnestMatcher::substitute)
+            .shaped(GeneratedUnnestMatcher::hasShape)
+            .matching(GeneratedUnnestMatcher::matches)
+            .reason(GeneratedUnnestMatcher::unsupportedReason)
+            .changelogSafe());
+
+    // GROUPING SETS / CUBE / ROLLUP expansion: fan each row out to one row per grouping set (copy
+    // grouped-in columns, null grouped-out ones, stamp the expand id), feeding the downstream
+    // native
+    // GROUP BY over the keys plus the expand-id column. Stateless and changelog-transparent (the
+    // `$row_kind$` tag rides through), so — like the Calc/union — it is exempt from the insert-only
+    // guard and runs over either insert-only or changelog input.
+    entries.add(
+        Substitution.of(StreamPhysicalExpand.class, "expand", ExpandMatcher::substitute)
+            .matching(ExpandMatcher::matches)
+            .reason(ExpandMatcher::unsupportedReason)
+            .changelogSafe());
+
+    // A UNION ALL is a pure stream merge — every input record flows through unchanged, with no
+    // per-row work and no shuffle. It never touches the `$row_kind$` tag, so (like the Calc/GROUP
+    // BY/join above) it is changelog-transparent and exempt from the insert-only guard: it
+    // matches the host's union row for row over either insert-only or retracting inputs. The native
+    // node carries no operator — it lowers to a UnionTransformation over the inputs' Arrow streams.
+    entries.add(
+        Substitution.of(StreamPhysicalUnion.class, "union", UnionMatcher::substitute)
+            .matching(UnionMatcher::matches)
+            .reason(UnionMatcher::unsupportedReason)
+            .changelogSafe());
+
+    // ---- everything below the insert-only guard: native operators here emit insert-only rows ----
+
+    // A watermark assigner is the first native operator above a rowwise source after the generic
+    // source-edge transpose. It therefore has to be eligible before the transition pass inserts
+    // that transpose; requiring its already-rewritten input to be columnar would make every
+    // event-time native island depend on a connector-specific columnar source.
+    entries.add(
+        Substitution.of(
+                StreamPhysicalWatermarkAssigner.class,
+                "watermark",
+                WatermarkAssignerMatcher::substitute)
+            .matching(
+                wm ->
+                    (wm.getInputs().get(0) instanceof ColumnarOutput
+                            || wm.getInputs().get(0).getInputs().isEmpty())
+                        && WatermarkAssignerMatcher.matches(wm)));
+
+    // Event-time sort (ORDER BY rowtime): buffer rows, release them in rowtime order as the
+    // watermark
+    // advances. Insert-only. Its single (gather) exchange becomes a native columnar exchange with
+    // no
+    // key (an empty key list, like the non-partitioned OVER), so the whole thing stays columnar.
+    entries.add(
+        Substitution.of(
+                StreamPhysicalTemporalSort.class, "temporalSort", TemporalSortMatcher::substitute)
+            .keyedState()
+            .matching(TemporalSortMatcher::matches)
+            .reason(TemporalSortMatcher::unsupportedReason));
+
+    // A windowing table function assigns each row to its window(s) and appends
+    // window_start/window_end/window_time — a stateless per-row map, so it is columnar in and out
+    // and
+    // never appears fused into a window aggregate (Flink collapses TVF + windowed GROUP BY into one
+    // node); it survives standalone only feeding a window join/Top-N. Its rewritten input is
+    // wrapped
+    // by the transition pass at the perimeter (the TVF does not shuffle, so no keyed exchange
+    // here).
+    entries.add(
+        Substitution.of(
+                StreamPhysicalWindowTableFunction.class,
+                "windowTableFunction",
+                WindowTableFunctionMatcher::substitute)
+            .matching(WindowTableFunctionMatcher::matches)
+            .reason(WindowTableFunctionMatcher::unsupportedReason));
+
+    // Window Top-N over a windowing-TVF input: per window and partition key, keep the top-N rows by
+    // the order key and emit them when a watermark closes the window. Append-only; the keyed
+    // shuffle
+    // (or single gather when there is no partition key) stays columnar via columnarInput.
+    entries.add(
+        Substitution.of(StreamPhysicalWindowRank.class, "windowRank", WindowRankMatcher::substitute)
+            .keyedState()
+            .matching(WindowRankMatcher::matches)
+            .reason(WindowRankMatcher::unsupportedReason));
+
+    // Window deduplication: the limit=1 case of window Top-N (keep-first/last by rowtime per window
+    // and key), reusing the same native window-rank operator with a single rowtime sort column.
+    entries.add(
+        Substitution.of(
+                StreamPhysicalWindowDeduplicate.class,
+                "windowRank",
+                WindowDeduplicateMatcher::substitute)
+            .keyedState()
+            .matching(WindowDeduplicateMatcher::matches)
+            .reason(WindowDeduplicateMatcher::unsupportedReason));
+
+    entries.add(
+        Substitution.of(
+                StreamPhysicalWindowAggregate.class,
+                "windowAggregate",
+                WindowAggregateMatcher::substitute)
+            .keyedState()
+            .matching(
+                agg ->
+                    WindowAggregateMatcher.matches(
+                        agg,
+                        agg.windowing(),
+                        agg.grouping(),
+                        agg.aggCalls(),
+                        agg.getInput().getRowType()))
+            .reason(agg -> WindowAggregateMatcher.unsupportedReason(agg, agg.windowing())));
+    // A session is a window aggregate too, so it answers to the same kill switch — the way window
+    // Top-N and window deduplication share `windowRank`, and the two GROUP BY halves share
+    // `groupAggregate`.
+    entries.add(
+        Substitution.of(
+                StreamPhysicalWindowAggregate.class,
+                "windowAggregate",
+                WindowAggregateMatcher::substituteSession)
+            .keyedState()
+            .matching(
+                agg ->
+                    WindowAggregateMatcher.matchesSession(
+                        agg,
+                        agg.windowing(),
+                        agg.grouping(),
+                        agg.aggCalls(),
+                        agg.getInput().getRowType())));
+
+    // Legacy GROUP BY TUMBLE/HOP/SESSION plans as a different Flink operator from a windowing TVF,
+    // but the supported shapes share the native fixed/session operators and the same kill switch.
+    entries.add(
+        Substitution.of(
+                StreamPhysicalGroupWindowAggregate.class,
+                "windowAggregate",
+                GroupWindowAggregateMatcher::substitute)
+            .keyedState()
+            .matching(GroupWindowAggregateMatcher::matches)
+            .reason(GroupWindowAggregateMatcher::unsupportedReason));
+
+    // The local half of a two-phase non-windowed GROUP BY: a stateless per-batch pre-aggregate that
+    // emits partials for the global half to merge. Insert-only (append-only partials), so it sits
+    // after the guard. Its input feeds directly (no shuffle precedes a local — the keyed exchange
+    // sits
+    // between the local and the global); the transition pass transposes below only if rowwise.
+    entries.add(
+        Substitution.of(
+                StreamPhysicalLocalGroupAggregate.class,
+                "localGroupAggregate",
+                LocalGroupAggregateMatcher::substitute)
+            .matching(LocalGroupAggregateMatcher::matches)
+            .reason(LocalGroupAggregateMatcher::unsupportedReason));
+
+    entries.add(
+        Substitution.of(
+                StreamPhysicalLocalWindowAggregate.class,
+                "localWindowAggregate",
+                WindowAggregateMatcher::substituteLocal)
+            .keyedState()
+            .matching(agg -> WindowAggregateMatcher.localWindowVariant(agg) != null)
+            .reason(agg -> WindowAggregateMatcher.unsupportedReason(agg, agg.windowing()))
+            .changelogSafe());
+
+    entries.add(
+        Substitution.of(
+                StreamPhysicalOverAggregate.class, "over", NonTimeRowNumberMatcher::substitute)
+            .shaped(NonTimeRowNumberMatcher::hasShape)
+            .keyedState()
+            .matching(NonTimeRowNumberMatcher::matches)
+            .reason(NonTimeRowNumberMatcher::unsupportedReason)
+            .changelogSafe());
+
+    entries.add(
+        Substitution.of(
+                StreamPhysicalOverAggregate.class, "jvmOver", JvmOverAggregateMatcher::substitute)
+            .shaped(JvmOverAggregateMatcher::enabled)
+            .matching(JvmOverAggregateMatcher::matches)
+            .reason(JvmOverAggregateMatcher::unsupportedReason)
+            .keyedState()
+            .changelogSafe());
+
+    // OVER preserves an append-only input, but Flink's packaged planner reports bounded OVER nodes
+    // as updating even though their input and emitted rows are append-only. Gate on the input
+    // explicitly and offer the node before the output-changelog guard so source and packaged
+    // planners route the same physical shape.
+    entries.add(
+        Substitution.of(StreamPhysicalOverAggregate.class, "over", OverAggregateMatcher::substitute)
+            .keyedState()
+            .matching(OverAggregateMatcher::matches)
+            .reason(OverAggregateMatcher::unsupportedReason)
+            .changelogSafe());
+
+    entries.add(
+        Substitution.of(
+                StreamPhysicalIntervalJoin.class, "intervalJoin", IntervalJoinMatcher::substitute)
+            .keyedState()
+            .matching(IntervalJoinMatcher::matches)
+            .reason(IntervalJoinMatcher::unsupportedReason));
+
+    entries.add(
+        Substitution.of(StreamPhysicalWindowJoin.class, "windowJoin", WindowJoinMatcher::substitute)
+            .keyedState()
+            .matching(WindowJoinMatcher::matches)
+            .reason(WindowJoinMatcher::unsupportedReason));
+
+    entries.add(
+        Substitution.of(
+                StreamPhysicalTemporalJoin.class, "temporalJoin", TemporalJoinMatcher::substitute)
+            .keyedState()
+            .matching(TemporalJoinMatcher::matches)
+            .reason(TemporalJoinMatcher::unsupportedReason));
+
+    entries.add(
+        Substitution.of(StreamPhysicalLookupJoin.class, "lookupJoin", LookupJoinMatcher::substitute)
+            .matching(LookupJoinMatcher::matches)
+            .reason(LookupJoinMatcher::unsupportedReason));
+
+    entries.add(
+        Substitution.of(
+                StreamPhysicalGlobalWindowAggregate.class,
+                "globalWindowAggregate",
+                GlobalWindowAggregateMatcher::substitute)
+            .keyedState()
+            .matching(GlobalWindowAggregateMatcher::matches)
+            .reason(GlobalWindowAggregateMatcher::unsupportedReason));
+
+    FlinkPlannerCompat.addSubstitutions(entries);
+    for (var rule : EXTENSIONS.substitutions()) entries.add(Substitution.from(rule));
+    return List.copyOf(entries);
+  }
+
+  private RelNode rewrite(RelNode node, PlanContext ctx) {
+    node = FlinkPlannerCompat.prepareForRewrite(node);
+    if (node instanceof StreamPhysicalGlobalGroupAggregate)
+      ctx.rememberGlobalGroup((StreamPhysicalGlobalGroupAggregate) node);
+    List<RelNode> inputs = new ArrayList<>(node.getInputs().size());
+    boolean changed = false;
+    for (RelNode input : node.getInputs()) {
+      RelNode rewritten = rewrite(input, ctx);
+      inputs.add(rewritten);
+      changed |= rewritten != input;
+    }
+    RelNode current = changed ? node.copy(node.getTraitSet(), inputs) : node;
+    ctx.rememberOriginal(current, node);
+
+    RelNode changelogSafe = apply(current, ctx, true);
+    if (changelogSafe != null) {
+      return changelogSafe;
+    }
+    // Native operators emit insert-only rows; substituting into a retracting or updating stream
+    // would drop changelog semantics, so only insert-only nodes are eligible. A changelog-emitting
+    // candidate reaching this point was declined by its matcher above — record why before bailing,
+    // or its reason (unlike an insert-only candidate's, noted at the end) would be lost.
+    if (!(current instanceof StreamPhysicalRel)
+        || !ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) current)) {
+      noteFallback(current, ctx);
+      return current;
+    }
+    RelNode insertOnly = apply(current, ctx, false);
+    if (insertOnly != null) {
+      return insertOnly;
+    }
+    // A recognized operator shape we reached here is one its matcher declined — record why, so a
+    // query that does not accelerate can explain itself (ticket 29) instead of falling back
+    // silently.
+    noteFallback(current, ctx);
+    return current;
+  }
+
+  /**
+   * Offers {@code current} to every entry on one side of the insert-only guard, returning the first
+   * outcome that settles it — a native replacement, or the node itself where an entry owned it and
+   * reported why it declined. Null means no entry claimed it.
+   */
+  private RelNode apply(RelNode current, PlanContext ctx, boolean changelogSafe) {
+    for (Substitution<?> substitution : registry) {
+      if (substitution.isChangelogSafe() != changelogSafe) {
+        continue;
+      }
+      RelNode outcome = substitution.apply(current, ctx);
+      if (outcome != null) {
+        return outcome;
+      }
+    }
+    return null;
+  }
+
+  // ---------------------------------------------------------------------------- island composition
+
+  static boolean sourceSharingEnabled(RelNode root) {
+    return tech.streamfusion.planner.common.SourceReusePolicy.enabled(root);
+  }
+
+  /**
+   * Groups identical source/decode boundaries under a share node carrying the final branch count.
+   * Like Arroyo's named source nodes, every branch receives its own retained Arrow view.
+   */
+  private List<RelNode> shareIdenticalSources(List<RelNode> roots) {
+    // The DAG this pass builds only survives translation through Flink's digest-based sub-plan
+    // reuse (SameRelObjectShuttle splits shared instances; SubplanReuseUtil re-merges them by
+    // digest). With reuse disabled the clones would each keep an over-declared consumer count, so
+    // leave the branches reading independently.
+    if (!sourceSharingEnabled(roots.get(0))) {
+      return roots;
+    }
+    Map<String, List<RelNode>> groups = new LinkedHashMap<>();
+    roots.forEach(root -> collectShareableScans(root, groups));
+    Map<RelNode, RelNode> replacements = new IdentityHashMap<>();
+    for (List<RelNode> group : groups.values()) {
+      if (group.size() < 2) {
+        continue;
+      }
+      long token = NativeRelDigests.nextId();
+      RelNode shared = ((ShareableScan) group.get(0)).withShareToken(token);
+      RelNode share =
+          new StreamPhysicalNativeShare(
+              shared.getCluster(), shared.getTraitSet(), shared, group.size(), token);
+      for (RelNode member : group) {
+        replacements.put(member, share);
+      }
+    }
+    return replacements.isEmpty()
+        ? roots
+        : roots.stream()
+            .map(root -> replaceInputs(root, replacements))
+            .collect(ListCollectors.toList());
+  }
+
+  private static void collectShareableScans(RelNode node, Map<String, List<RelNode>> groups) {
+    if (node instanceof ShareableScan) {
+      // Class-qualified so two different source kinds can never group, whatever their keys.
+      String key = node.getClass().getName() + '|' + ((ShareableScan) node).sharingKey();
+      groups.computeIfAbsent(key, k -> new ArrayList<>()).add(node);
+      return;
+    }
+    for (RelNode input : node.getInputs()) {
+      collectShareableScans(input, groups);
+    }
+  }
+
+  /** Rebuilds the tree with each replaced node swapped for its (shared) replacement instance. */
+  private static RelNode replaceInputs(RelNode node, Map<RelNode, RelNode> replacements) {
+    RelNode replacement = replacements.get(node);
+    if (replacement != null) {
+      return replacement;
+    }
+    List<RelNode> inputs = new ArrayList<>(node.getInputs().size());
+    boolean changed = false;
+    for (RelNode input : node.getInputs()) {
+      RelNode rebuilt = replaceInputs(input, replacements);
+      inputs.add(rebuilt);
+      changed |= rebuilt != input;
+    }
+    return changed ? node.copy(node.getTraitSet(), inputs) : node;
+  }
+
+  /**
+   * Whether the substituted tree is one fully-columnar island: every operator is native except a
+   * row-wise source (a leaf) or the sink (the plan root). Any other row-wise operator means the
+   * query cannot be a single columnar island, so the whole thing falls back to stock Flink.
+   */
+  private static boolean fullyColumnar(RelNode node, boolean isRoot) {
+    boolean allowed =
+        node instanceof ColumnarInput
+            || node instanceof ColumnarOutput
+            || node.getInputs().isEmpty() // source / leaf
+            || isRoot; // sink (terminal)
+    if (!allowed) {
+      return false;
+    }
+    for (RelNode input : node.getInputs()) {
+      if (!fullyColumnar(input, false)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** Inserts transpose rels at every columnar↔rowwise edge of the (already substituted) tree. */
+  private RelNode insertTransitions(RelNode node) {
+    return insertTransitions(node, false, 1024, false);
+  }
+
+  private RelNode insertTransitions(
+      RelNode node,
+      boolean preserveCollections,
+      int inheritedBatchRows,
+      boolean inheritedStringCaches) {
+    boolean stringCaches =
+        node instanceof StreamPhysicalNativeCalc
+                && ((StreamPhysicalNativeCalc) node).requiresOriginalStringInputs()
+            || inheritedStringCaches
+                && (node instanceof StreamPhysicalNativeMiniBatchAssigner
+                    || node instanceof StreamPhysicalNativeDropUpdateBefore
+                    || node instanceof StreamPhysicalNativeWatermarkAssigner);
+    int preferredBatchRows =
+        node instanceof StreamPhysicalNativeOverAggregate
+            ? Math.max(
+                inheritedBatchRows,
+                ((StreamPhysicalNativeOverAggregate) node).preferredInputBatchRows())
+            : consumesColumnar(node) && emitsColumnar(node) ? inheritedBatchRows : 1024;
+    boolean preserve =
+        node instanceof StreamPhysicalNativeGeneratedUnnest
+            || node instanceof StreamPhysicalNativeTableFunction
+                && ((StreamPhysicalNativeTableFunction) node).preservesCollections()
+            || node instanceof StreamPhysicalNativeJvmGroup
+                && ((StreamPhysicalNativeJvmGroup) node).requiresCollectionInputs()
+            || node instanceof StreamPhysicalNativeColumnarGroupAggregate
+                && ((StreamPhysicalNativeColumnarGroupAggregate) node).requiresCollectionInputs()
+            || node instanceof StreamPhysicalNativeColumnarLocalGroupAggregate
+                && ((StreamPhysicalNativeColumnarLocalGroupAggregate) node).preservesCollections()
+            || node instanceof StreamPhysicalNativeCalc
+                && ((StreamPhysicalNativeCalc) node).preservesCollections()
+            || preserveCollections
+                && (node instanceof StreamPhysicalNativeUnion
+                    || node instanceof StreamPhysicalNativeMiniBatchAssigner
+                    || node instanceof StreamPhysicalNativeColumnarExchange
+                    || node instanceof StreamPhysicalNativeCalc
+                    || node instanceof StreamPhysicalNativeDropUpdateBefore
+                    || node instanceof StreamPhysicalNativeWatermarkAssigner);
+    List<RelNode> inputs = new ArrayList<>(node.getInputs().size());
+    boolean changed = false;
+    for (RelNode input : node.getInputs()) {
+      RelNode transitioned = insertTransitions(input, preserve, preferredBatchRows, stringCaches);
+      RelNode adapted = adapt(node, transitioned, preserve);
+      if (adapted instanceof StreamPhysicalRowDataToArrow) {
+        adapted =
+            ((StreamPhysicalRowDataToArrow) adapted).withPreferredBatchRows(preferredBatchRows);
+        if (stringCaches) adapted = ((StreamPhysicalRowDataToArrow) adapted).withStringCaches();
+        if (node instanceof StreamPhysicalNativeCalc
+            && ((StreamPhysicalNativeCalc) node).usesJavaJsonInput())
+          adapted = ((StreamPhysicalRowDataToArrow) adapted).withJsonDocuments();
+      }
+      inputs.add(adapted);
+      changed |= adapted != input;
+    }
+    RelNode result = changed ? node.copy(node.getTraitSet(), inputs) : node;
+    if (result instanceof StreamPhysicalRowDataToArrow) {
+      result = ((StreamPhysicalRowDataToArrow) result).withPreferredBatchRows(inheritedBatchRows);
+      if (preserveCollections)
+        result = ((StreamPhysicalRowDataToArrow) result).withCollectionRepresentation();
+      if (inheritedStringCaches)
+        result = ((StreamPhysicalRowDataToArrow) result).withStringCaches();
+    }
+    return result;
+  }
+
+  /**
+   * Wraps {@code producer} in a transpose if its output carrier differs from what {@code consumer}
+   * expects.
+   */
+  private RelNode adapt(RelNode consumer, RelNode producer, boolean preserveCollections) {
+    boolean consumerWantsColumnar = consumesColumnar(consumer);
+    boolean producerEmitsColumnar = emitsColumnar(producer);
+    if (consumerWantsColumnar && !producerEmitsColumnar) {
+      // Carry RowKind across the transpose only on a changelog edge; an insert-only producer needs
+      // no per-row tag (the native consumer reads an absent column as all-INSERT).
+      boolean carryRowKind =
+          (consumer instanceof RequiresRowKind && ((RequiresRowKind) consumer).requiresRowKind())
+              || (producer instanceof StreamPhysicalRel
+                  && !ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) producer));
+      return new StreamPhysicalRowDataToArrow(
+          producer.getCluster(),
+          producer.getTraitSet(),
+          producer,
+          carryRowKind,
+          null,
+          preserveCollections);
+    }
+    if (!consumerWantsColumnar && producerEmitsColumnar) {
+      return new StreamPhysicalArrowToRowData(
+          producer.getCluster(), producer.getTraitSet(), producer);
+    }
+    return producer;
+  }
+
+  private static boolean standaloneDropUpdateBefore(RelNode node) {
+    if (node instanceof StreamPhysicalNativeDropUpdateBefore) {
+      return !emitsColumnar(node.getInput(0));
+    }
+    return !consumesColumnar(node)
+        && node.getInputs().size() == 1
+        && standaloneDropUpdateBefore(node.getInput(0));
+  }
+
+  /**
+   * Whether a rel produces Arrow batches (a native columnar operator, a columnar source, or a
+   * transpose).
+   */
+  private static boolean emitsColumnar(RelNode node) {
+    return node instanceof ColumnarOutput;
+  }
+
+  /**
+   * Whether a rel consumes Arrow batches (a native columnar operator, a columnar sink, or a
+   * transpose).
+   */
+  private static boolean consumesColumnar(RelNode node) {
+    return node instanceof ColumnarInput;
+  }
+
+  // ------------------------------------------------------------------------------------- reporting
+
+  /**
+   * Records why a candidate node fell back, from the first registry entry that explains its shape.
+   * The reason lives on the entry, so a matcher's decline and its explanation cannot drift apart.
+   */
+  private void noteFallback(RelNode node, PlanContext ctx) {
+    for (Substitution<?> substitution : registry) {
+      String reason = substitution.reasonFor(node, ctx);
+      if (reason != null) {
+        recordFallback(reason);
+        return;
+      }
+    }
+  }
+
+  void countSubstitution() {
+    substitutions++;
+  }
+
+  void recordFallback(String reason) {
+    fallbackReasons.add(reason);
+  }
+
+  void recordFunctionExecution(String operator, EncodedExpression expression) {
+    if (!expression.jvmFunctionCalls().isEmpty()) jvmFunctionOperators++;
+    functionExecutions.add(PlannerDiagnostics.functionExecution(operator, expression));
+  }
+
+  private void rollbackFunctionExecutions(int previousSize, int previousJvmCount) {
+    functionExecutions.subList(previousSize, functionExecutions.size()).clear();
+    jvmFunctionOperators = previousJvmCount;
+  }
+
+  private void record(RelNode node) {
+    operatorTypes.add(node.getClass().getSimpleName());
+    for (RelNode input : node.getInputs()) {
+      record(input);
+    }
+  }
+
+  // Unlike Flink's statement-wide validation, this guard is conservative per optimizer block.
+  static boolean deltaJoinForceWouldReject(RelNode root) {
+    if (!FlinkCompat.forceDeltaJoin(root)) {
+      return false;
+    }
+    class JoinFinder extends RelVisitor {
+      boolean regularJoinExists;
+      boolean deltaJoinExists;
+
+      @Override
+      public void visit(RelNode node, int ordinal, RelNode parent) {
+        if (deltaJoinExists) {
+          return;
+        }
+        if (FlinkCompat.isDeltaJoin(node)) {
+          deltaJoinExists = true;
+          return;
+        }
+        if (node instanceof StreamPhysicalJoin) {
+          regularJoinExists = true;
+        }
+        super.visit(node, ordinal, parent);
+      }
+    }
+    JoinFinder finder = new JoinFinder();
+    finder.go(root);
+    return finder.regularJoinExists && !finder.deltaJoinExists;
+  }
+
+  /** Operator types seen in the optimized physical plans, in traversal order. */
+  public List<String> operatorTypes() {
+    return List.copyOf(operatorTypes);
+  }
+
+  /** Number of plan nodes replaced with native operators across optimization passes. */
+  public int substitutions() {
+    return substitutions;
+  }
+
+  /**
+   * Why candidate nodes fell back to the host (e.g. {@code "Calc: unsupported function/operator:
+   * ABS"}), in traversal order. Collected for visibility into a query that did not accelerate, the
+   * way Comet surfaces fallback reasons in extended explain (ticket 29).
+   */
+  public List<String> fallbackReasons() {
+    return List.copyOf(fallbackReasons);
+  }
+
+  /** Final function-engine assignments for admitted Calc/filter nodes, in traversal order. */
+  public List<String> functionExecutions() {
+    return List.copyOf(functionExecutions);
+  }
+
+  /**
+   * A native-acceleration section for appending to Flink's {@code explainSql} output: how many
+   * operators ran natively and, for those that did not, why — Comet's flat "fallback reasons"
+   * explain format, followed by the final Calc/filter function-engine assignments. Reflects the
+   * most recently optimized plan.
+   */
+  public String explainSummary() {
+    StringBuilder out = new StringBuilder("== Native acceleration (StreamFusion) ==\n");
+    out.append(substitutions).append(" operator(s) ran natively.\n");
+    if (fallbackReasons.isEmpty()) {
+      out.append("No operators fell back to Flink.\n");
+    } else {
+      out.append(fallbackReasons.size()).append(" operator(s) fell back to Flink:\n");
+      for (String reason : fallbackReasons) {
+        out.append("  - ").append(reason).append('\n');
+      }
+    }
+    if (!functionExecutions.isEmpty()) {
+      out.append("Function execution:\n");
+      for (String execution : functionExecutions) {
+        out.append("  - ").append(execution).append('\n');
+      }
+    }
+    return out.toString();
+  }
+}

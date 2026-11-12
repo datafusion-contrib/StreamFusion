@@ -73,7 +73,7 @@
         <configuration>
           <sourceFileIncludes>
             <sourceFileInclude>tech/streamfusion/fluss/**/*.java</sourceFileInclude>
-            <sourceFileInclude>tech/streamfusion/planner/*Fluss*.java</sourceFileInclude>
+            <sourceFileInclude>tech/streamfusion/planner/**/*Fluss*.java</sourceFileInclude>
           </sourceFileIncludes>
           <sourceFileExcludes combine.self="override">
             <sourceFileExclude>tech/streamfusion/paimon/**</sourceFileExclude>
@@ -87,7 +87,7 @@
         <configuration>
           <includes>
             <include>tech/streamfusion/fluss/**/*.java</include>
-            <include>tech/streamfusion/planner/*Fluss*.java</include>
+            <include>tech/streamfusion/planner/**/*Fluss*.java</include>
           </includes>
         </configuration>
       </plugin>

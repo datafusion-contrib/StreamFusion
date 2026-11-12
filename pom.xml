@@ -485,16 +485,16 @@
                          shared sourcepath, so their connector dependencies must be resolvable. -->
                     <sourceFileExcludes>
                         <sourceFileExclude>tech/streamfusion/fluss/**</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/planner/*Fluss*.java</sourceFileExclude>
+                        <sourceFileExclude>tech/streamfusion/planner/**/*Fluss*.java</sourceFileExclude>
                         <sourceFileExclude>tech/streamfusion/delta/**</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/planner/DeltaPlannerExtension.java</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/planner/DeltaSinkMatcher.java</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/planner/NativeDeltaSinkExecNode.java</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/planner/StreamPhysicalNativeDeltaSink.java</sourceFileExclude>
+                        <sourceFileExclude>tech/streamfusion/planner/**/DeltaPlannerExtension.java</sourceFileExclude>
+                        <sourceFileExclude>tech/streamfusion/planner/**/DeltaSinkMatcher.java</sourceFileExclude>
+                        <sourceFileExclude>tech/streamfusion/planner/**/NativeDeltaSinkExecNode.java</sourceFileExclude>
+                        <sourceFileExclude>tech/streamfusion/planner/**/StreamPhysicalNativeDeltaSink.java</sourceFileExclude>
                         <sourceFileExclude>tech/streamfusion/paimon/**</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/planner/Paimon*.java</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/planner/NativePaimon*.java</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/planner/StreamPhysicalNativePaimon*.java</sourceFileExclude>
+                        <sourceFileExclude>tech/streamfusion/planner/**/Paimon*.java</sourceFileExclude>
+                        <sourceFileExclude>tech/streamfusion/planner/**/NativePaimon*.java</sourceFileExclude>
+                        <sourceFileExclude>tech/streamfusion/planner/**/StreamPhysicalNativePaimon*.java</sourceFileExclude>
                     </sourceFileExcludes>
                     <additionalDependencies>
                         <additionalDependency>

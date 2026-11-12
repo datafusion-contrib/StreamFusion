@@ -163,9 +163,9 @@
                 <configuration><includes>
                     <include>org/apache/paimon/flink/sink/StreamFusionStoreSinkWrite.java</include>
                     <include>tech/streamfusion/paimon/**/*.java</include>
-                    <include>tech/streamfusion/planner/Paimon*.java</include>
-                    <include>tech/streamfusion/planner/NativePaimon*.java</include>
-                    <include>tech/streamfusion/planner/StreamPhysicalNativePaimon*.java</include>
+                    <include>tech/streamfusion/planner/**/Paimon*.java</include>
+                    <include>tech/streamfusion/planner/**/NativePaimon*.java</include>
+                    <include>tech/streamfusion/planner/**/StreamPhysicalNativePaimon*.java</include>
                 </includes></configuration>
             </plugin>
         </plugins>

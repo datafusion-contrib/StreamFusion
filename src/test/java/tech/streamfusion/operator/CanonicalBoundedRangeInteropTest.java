@@ -526,7 +526,7 @@ class CanonicalBoundedRangeInteropTest {
     final int offset;
     final long ttl;
     final RowDataKeySelector selector;
-    final tech.streamfusion.planner.OverConstantArguments constants;
+    final tech.streamfusion.planner.stream.OverConstantArguments constants;
 
     Plan(String type, boolean keyless) throws Exception {
       this(type, keyless, false, 32, 0);
@@ -656,7 +656,7 @@ class CanonicalBoundedRangeInteropTest {
       var calls = spec.getGroups().get(0).getAggCalls();
       timeColumn = spec.getGroups().get(0).getSort().getFieldIndices()[0];
       constants =
-          tech.streamfusion.planner.OverConstantArguments.create(
+          tech.streamfusion.planner.stream.OverConstantArguments.create(
                   spec.getConstants(),
                   starAndLiteral,
                   calls.stream()

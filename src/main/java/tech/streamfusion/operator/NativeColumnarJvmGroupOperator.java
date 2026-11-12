@@ -23,6 +23,8 @@ import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.arrow.ArrowWriter;
 import tech.streamfusion.compat.FlinkStreamOperator;
 import tech.streamfusion.compat.JvmAggregateCompat;
+import tech.streamfusion.operator.aggregate.stream.JvmAccumulatorCache;
+import tech.streamfusion.operator.aggregate.stream.JvmMiniBatchGroup;
 
 /** JVM accumulators use released Flink managed state behind Arrow batch boundaries. */
 public class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<ArrowBatch>

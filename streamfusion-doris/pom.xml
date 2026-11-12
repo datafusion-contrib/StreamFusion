@@ -50,7 +50,7 @@
         <artifactId>maven-source-plugin</artifactId>
         <configuration><includes>
           <include>tech/streamfusion/doris/**/*.java</include>
-          <include>tech/streamfusion/planner/*Doris*.java</include>
+          <include>tech/streamfusion/planner/**/*Doris*.java</include>
         </includes></configuration>
       </plugin>
       <plugin>
@@ -58,7 +58,7 @@
         <artifactId>maven-javadoc-plugin</artifactId>
         <configuration><sourceFileIncludes>
           <sourceFileInclude>tech/streamfusion/doris/**/*.java</sourceFileInclude>
-          <sourceFileInclude>tech/streamfusion/planner/*Doris*.java</sourceFileInclude>
+          <sourceFileInclude>tech/streamfusion/planner/**/*Doris*.java</sourceFileInclude>
         </sourceFileIncludes></configuration>
       </plugin>
       <plugin>
@@ -83,7 +83,7 @@
         <artifactId>maven-compiler-plugin</artifactId>
         <configuration><includes>
           <include>tech/streamfusion/doris/**/*.java</include>
-          <include>tech/streamfusion/planner/*Doris*.java</include>
+          <include>tech/streamfusion/planner/**/*Doris*.java</include>
         </includes></configuration>
       </plugin>
     </plugins>
@@ -137,7 +137,7 @@
           <groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId>
           <configuration><testIncludes>
             <testInclude>tech/streamfusion/doris/**/*.java</testInclude>
-            <testInclude>tech/streamfusion/planner/*Doris*Test.java</testInclude>
+            <testInclude>tech/streamfusion/planner/**/*Doris*Test.java</testInclude>
             <testInclude>org/apache/doris/flink/source/DorisSourceITCase.java</testInclude>
             <testInclude>org/apache/doris/flink/source/*DorisIncremental*.java</testInclude>
             <testInclude>org/apache/doris/flink/sink/DorisSinkITCase.java</testInclude>

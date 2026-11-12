@@ -9,7 +9,7 @@ import tech.streamfusion.format.NativeFormatProvider;
 import tech.streamfusion.format.NativeMessageDecoder;
 import tech.streamfusion.format.NativeMessageDecoderFactory;
 import tech.streamfusion.format.NativeSchemaMessageDecoder;
-import tech.streamfusion.planner.ProtobufDescriptors;
+import tech.streamfusion.planner.stream.ProtobufDescriptors;
 
 /** Native provider for Flink's protobuf value format. */
 public final class ProtobufFormatProvider implements NativeFormatProvider {

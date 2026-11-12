@@ -1,74 +1,26 @@
 package tech.streamfusion.planner;
 
-import java.util.ArrayList;
 import java.util.List;
-import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.configuration.ReadableConfig;
-import org.apache.flink.streaming.api.transformations.UnionTransformation;
-import org.apache.flink.table.planner.delegation.PlannerBase;
-import org.apache.flink.table.planner.plan.nodes.exec.ExecEdge;
-import org.apache.flink.table.planner.plan.nodes.exec.ExecNodeBase;
-import org.apache.flink.table.planner.plan.nodes.exec.ExecNodeConfig;
-import org.apache.flink.table.planner.plan.nodes.exec.ExecNodeContext;
 import org.apache.flink.table.planner.plan.nodes.exec.InputProperty;
-import org.apache.flink.table.planner.plan.nodes.exec.SingleTransformationTranslator;
 import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecNode;
 import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.operator.ArrowBatch;
+import tech.streamfusion.planner.common.CommonUnionExecNode;
 
-/**
- * Lowers the native union into the plan. Like Flink's own {@code CommonExecUnion} this is not a
- * physical operator — it merges the inputs' transformations into a single {@link
- * UnionTransformation}, which forwards every input record (here, every Arrow batch) downstream
- * unchanged and aligns watermarks across the inputs. Batch inputs normalize their Arrow headers
- * before the union.
- */
-public class NativeUnionExecNode extends ExecNodeBase<ArrowBatch>
-    implements StreamExecNode<ArrowBatch>, SingleTransformationTranslator<ArrowBatch> {
-  private final List<String> commonBatchNames;
+/** Streaming mode marker for the shared union implementation. */
+public class NativeUnionExecNode extends CommonUnionExecNode implements StreamExecNode<ArrowBatch> {
+  public NativeUnionExecNode(
+      ReadableConfig config, List<InputProperty> inputs, RowType output, String description) {
+    super(config, inputs, output, description);
+  }
 
   public NativeUnionExecNode(
-      ReadableConfig tableConfig,
-      List<InputProperty> inputProperties,
-      RowType outputType,
-      String description) {
-    this(tableConfig, inputProperties, outputType, description, false);
-  }
-
-  NativeUnionExecNode(
-      ReadableConfig tableConfig,
-      List<InputProperty> inputProperties,
-      RowType outputType,
+      ReadableConfig config,
+      List<InputProperty> inputs,
+      RowType output,
       String description,
       boolean normalizeBatch) {
-    super(
-        ExecNodeContext.newNodeId(),
-        new ExecNodeContext("stream-exec-native-union_1"),
-        tableConfig,
-        inputProperties,
-        outputType,
-        description);
-    commonBatchNames = normalizeBatch ? outputType.getFieldNames() : null;
-  }
-
-  @Override
-  @SuppressWarnings("unchecked")
-  protected Transformation<ArrowBatch> translateToPlanInternal(
-      PlannerBase planner, ExecNodeConfig config) {
-    List<Transformation<ArrowBatch>> inputTransforms = new ArrayList<>();
-    for (ExecEdge inputEdge : getInputEdges()) {
-      var input = (Transformation<ArrowBatch>) inputEdge.translateToPlan(planner);
-      if (commonBatchNames != null) {
-        input =
-            new org.apache.flink.streaming.api.transformations.OneInputTransformation<>(
-                input,
-                "NativeBatchUnionSchema",
-                new tech.streamfusion.operator.BatchUnionSchemaOperator(commonBatchNames),
-                tech.streamfusion.operator.ArrowBatchTypeInformation.INSTANCE,
-                input.getParallelism());
-      }
-      inputTransforms.add(input);
-    }
-    return new UnionTransformation<>(inputTransforms);
+    super(config, inputs, output, description, normalizeBatch);
   }
 }

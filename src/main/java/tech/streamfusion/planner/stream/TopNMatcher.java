@@ -1,0 +1,335 @@
+package tech.streamfusion.planner.stream;
+
+import java.util.HashSet;
+import java.util.Set;
+import org.apache.calcite.rel.RelFieldCollation;
+import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.core.Calc;
+import org.apache.calcite.rel.core.Exchange;
+import org.apache.calcite.rex.RexCall;
+import org.apache.calcite.rex.RexInputRef;
+import org.apache.calcite.rex.RexLiteral;
+import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.util.ImmutableBitSet;
+import org.apache.flink.table.api.config.ExecutionConfigOptions;
+import org.apache.flink.table.functions.BuiltInFunctionDefinitions;
+import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
+import org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalMiniBatchAssigner;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalRank;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalRel;
+import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
+import org.apache.flink.table.planner.plan.utils.RankProcessStrategy;
+import org.apache.flink.table.planner.utils.ShortcutUtils;
+import org.apache.flink.table.runtime.operators.rank.ConstantRankRange;
+import org.apache.flink.table.runtime.operators.rank.RankType;
+import org.apache.flink.table.runtime.operators.rank.VariableRankRange;
+import tech.streamfusion.operator.RowDataArrowConverter;
+import tech.streamfusion.planner.ArrowRowTypeSupport;
+
+/**
+ * Recognizes the streaming Top-N the native ranker implements: {@code ROW_NUMBER() OVER (PARTITION
+ * BY … ORDER BY …) BETWEEN rankStart AND rankEnd}, with or without the rank number projected.
+ * Requires {@code ROW_NUMBER} (Flink rejects streaming RANK/DENSE_RANK), a constant or supported
+ * variable rank range, and column types the conversion supports. Independently changing variable
+ * bounds require preserved proposal order; update-fast input also requires disabled state TTL.
+ * The caller picks the ranker: the
+ * append-only one for an insert-only, no-offset query, or the retracting one (full buffer, rank
+ * window {@code [offset+1, rankEnd]}) for a changelog input or an {@code OFFSET} (rank start > 1).
+ */
+final class TopNMatcher {
+  private TopNMatcher() {}
+
+  static boolean matches(StreamPhysicalRank rank) {
+    return unsupportedReason(rank) == null;
+  }
+
+  /** The specific reason this rank is not accelerable, or null if it is. */
+  static String unsupportedReason(StreamPhysicalRank rank) {
+    if (rank.rankType() != RankType.ROW_NUMBER) {
+      return "Top-N: only ROW_NUMBER ranks (RANK/DENSE_RANK fall back)";
+    }
+    Object variableCandidate;
+    if ((variableCandidate = rank.rankRange()) instanceof VariableRankRange) {
+      VariableRankRange variable = ((VariableRankRange) variableCandidate);
+
+      var type = rank.getInput().getRowType().getFieldList().get(variable.getRankEndIndex()).getType();
+      if (type.isNullable()) {
+        return "Top-N: nullable variable rank bounds require Flink's row-access semantics";
+      }
+      switch (type.getSqlTypeName()) {
+        case SMALLINT:
+        case INTEGER:
+        case BIGINT:
+          {
+            {
+            }
+            break;
+          }
+        default:
+          {
+            {
+              return "Top-N: variable rank bounds require SMALLINT, INT or BIGINT";
+            }
+          }
+      }
+      if (!partitionInvariant(rank.getInput(), variable.getRankEndIndex(), rank.partitionKey())) {
+        if (rank.rankStrategy() instanceof RankProcessStrategy.UpdateFastStrategy
+            && ShortcutUtils.unwrapTableConfig(rank).getIdleStateRetention().toMillis() > 0) {
+          return "Top-N: changing update-fast bounds require disabled state TTL";
+        }
+        if (mayReorderMiniBatchChangelog(rank.getInput())) {
+          return "Top-N: changing bounds require unchanged upstream mini-batch changelog order";
+        }
+      }
+    } else if (!(rank.rankRange() instanceof ConstantRankRange)) {
+      return "Top-N: unsupported rank range";
+    }
+    if (DeduplicateMatcher.isTimeOrder(rank)) {
+      // A time-ordered rank is deduplication (DeduplicateMatcher), not a value Top-N.
+      return "Top-N: a time-ordered rank is deduplication, not a value Top-N";
+    }
+    if (offset(rank) > 0 && !rank.outputRankNumber()
+        && !(rank.rankStrategy() instanceof RankProcessStrategy.UpdateFastStrategy)) {
+      String reason = retractingOffsetInputReason(rank.getInput());
+      if (reason != null) return reason;
+    }
+    // The whole row crosses the boundary unchanged, so every column (incl. partition/order keys)
+    // must be a type the conversion handles.
+    var inputType = FlinkTypeFactory$.MODULE$.toLogicalRowType(rank.getInput().getRowType());
+    if (!RowDataArrowConverter.supports(inputType)) return "Top-N: unsupported input carriage";
+    if (tech.streamfusion.arrow.MapListRepresentation.containsMap(inputType)
+        && !ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) rank.getInput())) {
+      return "Top-N: updating MAP/MULTISET payload equality requires retained-row representation";
+    }
+    if (!ArrowRowTypeSupport.supportsFields(inputType, partitionColumns(rank))
+        || !ArrowRowTypeSupport.supportsFields(inputType, sortIndices(rank))
+        || rank.rankStrategy() instanceof RankProcessStrategy.UpdateFastStrategy
+            && !ArrowRowTypeSupport.supportsFields(
+                inputType,
+                ((RankProcessStrategy.UpdateFastStrategy) rank.rankStrategy()).getPrimaryKeys())) {
+      return "Top-N: MAP/MULTISET key or order fields require a separate contract";
+    }
+    if (!RowDataArrowConverter.supports(
+        FlinkTypeFactory$.MODULE$.toLogicalRowType(rank.getRowType()))) {
+      return "Top-N: a column type the boundary cannot carry";
+    }
+    return null;
+  }
+
+  static String retractingOffsetInputReason(RelNode input) {
+    if (mayReorderMiniBatchChangelog(input)) {
+      return "retracting OFFSET requires unchanged upstream mini-batch changelog order";
+    }
+    return null;
+  }
+
+  private static boolean mayReorderMiniBatchChangelog(RelNode input) {
+    return !ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) input)
+        && ShortcutUtils.unwrapTableConfig(input)
+            .get(ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_ENABLED)
+        && !preservesMiniBatchChangelog(input);
+  }
+
+  private static boolean preservesMiniBatchChangelog(RelNode input) {
+    if (input.getInputs().isEmpty()) return true;
+    // First bounds and retained row kinds depend on input order, not just the final materialization.
+    // Admit source changes through row-local projections, filters, exchanges and batch markers.
+    if (!(input instanceof Calc || input instanceof Exchange
+        || input instanceof StreamPhysicalNativeCalc
+        || input instanceof StreamPhysicalNativeFilter
+        || input instanceof StreamPhysicalNativeColumnarExchange
+        || input instanceof StreamPhysicalNativeMiniBatchAssigner
+        || input instanceof StreamPhysicalMiniBatchAssigner)) {
+      return false;
+    }
+    return input.getInputs().stream().allMatch(TopNMatcher::preservesMiniBatchChangelog);
+  }
+
+  static int[] partitionColumns(StreamPhysicalRank rank) {
+    return rank.partitionKey().toArray();
+  }
+
+  /** The rank window upper bound (rankEnd): the operator emits ranks {@code [offset+1, limit]}. */
+  static long limit(StreamPhysicalRank rank) {
+    Object rankRangeCandidate;
+    return (rankRangeCandidate = rank.rankRange()) instanceof ConstantRankRange
+        ? ((ConstantRankRange) rankRangeCandidate).getRankEnd()
+        : Long.MAX_VALUE;
+  }
+
+  /** The 0-based offset (rankStart - 1); > 0 for an {@code OFFSET} (range not starting at rank 1). */
+  static long offset(StreamPhysicalRank rank) {
+    Object rankRangeCandidate;
+    return (rankRangeCandidate = rank.rankRange()) instanceof ConstantRankRange
+        ? ((ConstantRankRange) rankRangeCandidate).getRankStart() - 1
+        : 0;
+  }
+
+  static int rankEndColumn(StreamPhysicalRank rank) {
+    Object rankRangeCandidate;
+    return (rankRangeCandidate = rank.rankRange()) instanceof VariableRankRange
+        ? ((VariableRankRange) rankRangeCandidate).getRankEndIndex()
+        : -1;
+  }
+
+  private static boolean partitionInvariant(RelNode input, int bound, ImmutableBitSet partitions) {
+    if (partitions.get(bound)) return true;
+    if (input instanceof Exchange) {
+      Exchange exchange = ((Exchange) input);
+
+      return partitionInvariant(exchange.getInput(), bound, partitions);
+    }
+    var program =
+        input instanceof Calc
+            ? ((Calc) input).getProgram()
+            : input instanceof StreamPhysicalNativeCalc
+                ? ((StreamPhysicalNativeCalc) input).sourceProgram()
+                : null;
+    if (program == null) return false;
+    // A computed key is invariant as a whole; MOD(k, 3) does not make k itself invariant.
+    Set<RexNode> keys = new HashSet<>();
+    for (int key : partitions) {
+      RexNode expression = program.expandLocalRef(program.getProjectList().get(key));
+      if (purePartitionExpression(expression)) keys.add(expression);
+    }
+    RexNode expression = program.expandLocalRef(program.getProjectList().get(bound));
+    return partitionExpression(expression, keys);
+  }
+
+  private static boolean partitionExpression(RexNode expression, Set<RexNode> keys) {
+    if (expression instanceof RexLiteral || keys.contains(expression)) return true;
+    if (!(expression instanceof RexCall)) return false;
+    RexCall call = ((RexCall) expression);
+
+    return partitionArithmetic(call)
+        && call.getOperands().stream().allMatch(operand -> partitionExpression(operand, keys));
+  }
+
+  private static boolean purePartitionExpression(RexNode expression) {
+    if (expression instanceof RexLiteral || expression instanceof RexInputRef) return true;
+    return expression instanceof RexCall
+        && partitionArithmetic(((RexCall) expression))
+        && ((RexCall) expression)
+            .getOperands().stream().allMatch(TopNMatcher::purePartitionExpression);
+  }
+
+  private static boolean partitionArithmetic(RexCall call) {
+    // Restrict the proof to pure numeric expressions; an arbitrary UDF's declaration is not proof
+    // that repeated calls for the same partition return the same bound.
+    if (call.getOperator() == org.apache.calcite.sql.fun.SqlStdOperatorTable.MOD) return true;
+    Object functionCandidate;
+    if ((functionCandidate = call.getOperator()) instanceof BridgingSqlFunction
+        && ((BridgingSqlFunction) functionCandidate).getDefinition()
+            == BuiltInFunctionDefinitions.COALESCE) {
+      return true;
+    }
+    switch (call.getKind()) {
+      case PLUS:
+      case MINUS:
+      case TIMES:
+      case DIVIDE:
+      case MOD:
+      case MINUS_PREFIX:
+      case CAST:
+      case COALESCE:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  static boolean outputRankNumber(StreamPhysicalRank rank) {
+    return rank.outputRankNumber();
+  }
+
+  static int[] sortIndices(StreamPhysicalRank rank) {
+    return rank.orderKey().getFieldCollations().stream()
+        .mapToInt(RelFieldCollation::getFieldIndex)
+        .toArray();
+  }
+
+  static int[] sortAscending(StreamPhysicalRank rank) {
+    return rank.orderKey().getFieldCollations().stream()
+        .mapToInt(fc -> fc.getDirection().isDescending() ? 0 : 1)
+        .toArray();
+  }
+
+  static int[] sortNullsFirst(StreamPhysicalRank rank) {
+    return rank.orderKey().getFieldCollations().stream()
+        .mapToInt(fc -> nullsFirst(fc) ? 1 : 0)
+        .toArray();
+  }
+
+  /** Whether nulls sort first for this column, resolving the unspecified case from the direction. */
+  private static boolean nullsFirst(RelFieldCollation fc) {
+    RelFieldCollation.NullDirection effective =
+        fc.nullDirection == RelFieldCollation.NullDirection.UNSPECIFIED
+            ? fc.getDirection().defaultNullDirection()
+            : fc.nullDirection;
+    return effective == RelFieldCollation.NullDirection.FIRST;
+  }
+
+  static RelNode substitute(StreamPhysicalRank rank, PlanContext ctx) {
+    // An update-fast rank (unique-keyed input with a monotonic sort key) receives a changelog
+    // WITHOUT retractions — the upstream is planned to emit only +I/+U, and rank rows are
+    // replaced by their unique key (the retracting ranker's full-row retraction model would
+    // accumulate every version). It routes to the update-fast ranker, which mirrors Flink's
+    // UpdatableTopNFunction/FastTop1Function state shape.
+    if (rank.rankStrategy() instanceof RankProcessStrategy.UpdateFastStrategy) {
+      int[] updateFastPartitions = TopNMatcher.partitionColumns(rank);
+      Object rankRangeCandidate;
+      return new StreamPhysicalNativeColumnarTopN(
+          rank.getCluster(),
+          rank.getTraitSet(),
+          ctx.columnarInput(rank.getInput(), updateFastPartitions),
+          rank.getRowType(),
+          updateFastPartitions,
+          TopNMatcher.sortIndices(rank),
+          TopNMatcher.sortAscending(rank),
+          TopNMatcher.sortNullsFirst(rank),
+          TopNMatcher.offset(rank),
+          TopNMatcher.limit(rank),
+          TopNMatcher.rankEndColumn(rank),
+          TopNMatcher.outputRankNumber(rank),
+          false,
+          ((RankProcessStrategy.UpdateFastStrategy) rank.rankStrategy()).getPrimaryKeys(),
+          ChangelogPlanUtils.generateUpdateBefore(rank),
+          (rankRangeCandidate = rank.rankRange()) instanceof VariableRankRange
+              && !partitionInvariant(
+                  rank.getInput(),
+                  ((VariableRankRange) rankRangeCandidate).getRankEndIndex(),
+                  rank.partitionKey()));
+    }
+    int[] partitionColumns = TopNMatcher.partitionColumns(rank);
+    long offset = TopNMatcher.offset(rank);
+    // A changelog input or an OFFSET routes to the retracting ranker (full buffer + rank window);
+    // the append-only bounded ranker handles only the insert-only, no-offset case.
+    boolean retracting =
+        offset > 0 || !ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) rank.getInput());
+    // Columnar (Arrow in/out); keep the partitioned shuffle columnar where the input sits on a
+    // columnar producer, else the transition pass transposes at the boundary.
+    Object rankRangeCandidate;
+    return new StreamPhysicalNativeColumnarTopN(
+        rank.getCluster(),
+        rank.getTraitSet(),
+        ctx.columnarInput(rank.getInput(), partitionColumns),
+        rank.getRowType(),
+        partitionColumns,
+        TopNMatcher.sortIndices(rank),
+        TopNMatcher.sortAscending(rank),
+        TopNMatcher.sortNullsFirst(rank),
+        offset,
+        TopNMatcher.limit(rank),
+        TopNMatcher.rankEndColumn(rank),
+        TopNMatcher.outputRankNumber(rank),
+        retracting,
+        null,
+        ChangelogPlanUtils.generateUpdateBefore(rank),
+        (rankRangeCandidate = rank.rankRange()) instanceof VariableRankRange
+            && !partitionInvariant(
+                rank.getInput(),
+                ((VariableRankRange) rankRangeCandidate).getRankEndIndex(),
+                rank.partitionKey()));
+  }
+}

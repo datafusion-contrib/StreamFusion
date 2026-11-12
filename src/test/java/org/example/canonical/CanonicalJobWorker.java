@@ -28,12 +28,18 @@ public final class CanonicalJobWorker {
   private CanonicalJobWorker() {}
 
   public static void main(String[] arguments) throws Exception {
+    runAndExit(() -> run(arguments));
+  }
+
+  public static void runAndExit(org.apache.flink.util.function.ThrowingRunnable<Exception> job) {
     try {
-      run(arguments);
+      job.run();
     } catch (Throwable failure) {
       failure.printStackTrace(System.err);
       System.exit(1);
     }
+    // All job checks and cluster cleanup have completed; Pekko may leave a non-daemon thread.
+    System.exit(0);
   }
 
   private static void run(String[] arguments) throws Exception {

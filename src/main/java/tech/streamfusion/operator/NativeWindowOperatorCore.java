@@ -34,6 +34,7 @@ import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.utils.LogicalTypeChecks;
 import tech.streamfusion.Native;
 import tech.streamfusion.arrow.TimestampAccessor;
+import tech.streamfusion.operator.window.stream.WindowTimeDomain;
 import tech.streamfusion.state.RocksDBNativeStateSupport;
 
 /**
