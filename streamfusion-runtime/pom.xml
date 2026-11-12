@@ -125,7 +125,6 @@
                         <exclude>tech/streamfusion/kafka/**</exclude>
                         <exclude>tech/streamfusion/parquet/**</exclude>
                         <exclude>tech/streamfusion/orc/**</exclude>
-                        <exclude>tech/streamfusion/format/protobuf/**</exclude>
                         <exclude>tech/streamfusion/planner/KafkaPlannerExtension.java</exclude>
                         <exclude>tech/streamfusion/planner/KafkaSinkMatcher.java</exclude>
                         <exclude>tech/streamfusion/planner/KafkaSinkTranslator.java</exclude>
@@ -137,7 +136,6 @@
                         <exclude>tech/streamfusion/planner/OrcPlannerExtension.java</exclude>
                         <exclude>tech/streamfusion/planner/OrcSinkTranslator.java</exclude>
                         <exclude>tech/streamfusion/planner/ParquetSinkTranslator.java</exclude>
-                        <exclude>tech/streamfusion/planner/ProtobufDescriptors.java</exclude>
                         <exclude>tech/streamfusion/planner/StreamPhysicalNativeKafkaDecode.java</exclude>
                         <exclude>tech/streamfusion/planner/StreamPhysicalNativeKafkaSink.java</exclude>
                     </excludes>
