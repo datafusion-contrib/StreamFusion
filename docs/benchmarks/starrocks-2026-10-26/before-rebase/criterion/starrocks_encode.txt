@@ -1,0 +1,64 @@
+starrocks/encode/csv/append/1024
+                        time:   [280.26 µs 286.32 µs 299.28 µs]
+                        thrpt:  [3.4215 Melem/s 3.5764 Melem/s 3.6538 Melem/s]
+                 change:
+                        time:   [+0.4006% +1.4574% +3.4777%] (p = 0.05 > 0.05)
+                        thrpt:  [-3.3609% -1.4364% -0.3990%]
+                        No change in performance detected.
+Found 7 outliers among 100 measurements (7.00%)
+starrocks/encode/csv/upsert/1024
+                        time:   [214.28 µs 215.80 µs 218.27 µs]
+                        thrpt:  [4.6914 Melem/s 4.7452 Melem/s 4.7788 Melem/s]
+                 change:
+                        time:   [+0.9634% +3.4835% +9.0065%] (p = 0.03 < 0.05)
+                        thrpt:  [-8.2624% -3.3662% -0.9542%]
+                        Change within noise threshold.
+Found 9 outliers among 100 measurements (9.00%)
+starrocks/encode/json/append/1024
+                        time:   [364.11 µs 372.39 µs 389.23 µs]
+                        thrpt:  [2.6308 Melem/s 2.7498 Melem/s 2.8123 Melem/s]
+                 change:
+                        time:   [-4.9339% -1.9345% +0.6338%] (p = 0.21 > 0.05)
+                        thrpt:  [-0.6298% +1.9727% +5.1899%]
+                        No change in performance detected.
+Found 10 outliers among 100 measurements (10.00%)
+starrocks/encode/json/upsert/1024
+                        time:   [282.92 µs 286.17 µs 291.71 µs]
+                        thrpt:  [3.5104 Melem/s 3.5783 Melem/s 3.6194 Melem/s]
+                 change:
+                        time:   [-2.3221% -0.1531% +3.3119%] (p = 0.93 > 0.05)
+                        thrpt:  [-3.2057% +0.1533% +2.3773%]
+                        No change in performance detected.
+Found 9 outliers among 100 measurements (9.00%)
+starrocks/encode/csv/append/8192
+                        time:   [2.3471 ms 2.4000 ms 2.4913 ms]
+                        thrpt:  [3.2883 Melem/s 3.4133 Melem/s 3.4902 Melem/s]
+                 change:
+                        time:   [-3.0791% +0.9468% +5.5404%] (p = 0.73 > 0.05)
+                        thrpt:  [-5.2496% -0.9380% +3.1769%]
+                        No change in performance detected.
+Found 11 outliers among 100 measurements (11.00%)
+starrocks/encode/csv/upsert/8192
+                        time:   [1.7988 ms 1.8397 ms 1.9054 ms]
+                        thrpt:  [4.2995 Melem/s 4.4529 Melem/s 4.5541 Melem/s]
+                 change:
+                        time:   [-1.6373% +0.2442% +2.6614%] (p = 0.82 > 0.05)
+                        thrpt:  [-2.5924% -0.2436% +1.6646%]
+                        No change in performance detected.
+Found 7 outliers among 100 measurements (7.00%)
+starrocks/encode/json/append/8192
+                        time:   [2.9999 ms 3.0542 ms 3.1560 ms]
+                        thrpt:  [2.5957 Melem/s 2.6822 Melem/s 2.7308 Melem/s]
+                 change:
+                        time:   [-1.8030% +0.5949% +4.2977%] (p = 0.82 > 0.05)
+                        thrpt:  [-4.1206% -0.5914% +1.8361%]
+                        No change in performance detected.
+Found 3 outliers among 100 measurements (3.00%)
+starrocks/encode/json/upsert/8192
+                        time:   [2.3087 ms 2.3134 ms 2.3187 ms]
+                        thrpt:  [3.5329 Melem/s 3.5411 Melem/s 3.5483 Melem/s]
+                 change:
+                        time:   [-1.9756% -1.6604% -1.3456%] (p = 0.00 < 0.05)
+                        thrpt:  [+1.3639% +1.6884% +2.0155%]
+                        Performance has improved.
+Found 8 outliers among 100 measurements (8.00%)

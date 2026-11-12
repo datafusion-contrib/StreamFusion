@@ -1,0 +1,36 @@
+{
+  "timestamp_utc": "20261026T033630.164912Z",
+  "commit": "15e7031dbf087d392bcca881d5ae17a09eab330a",
+  "dirty": true,
+  "rustc": "rustc 1.94.0 (4a4ef493e 2026-03-02)\nbinary: rustc\ncommit-hash: 4a4ef493e3a1488c6e321570238084b38948f6db\ncommit-date: 2026-03-02\nhost: aarch64-apple-darwin\nrelease: 1.94.0\nLLVM version: 21.1.8\n",
+  "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "cpu_count": 10,
+  "mode": "timing",
+  "suites": [
+    [
+      "streamfusion-starrocks",
+      "starrocks_encode"
+    ]
+  ],
+  "filter": null,
+  "features": [],
+  "save_baseline": null,
+  "baseline": null,
+  "commands": [
+    [
+      "cargo",
+      "bench",
+      "--manifest-path",
+      "<repository>/native/Cargo.toml",
+      "--locked",
+      "-p",
+      "streamfusion-starrocks",
+      "--bench",
+      "starrocks_encode",
+      "--"
+    ]
+  ],
+  "environment": {
+    "JAVA_HOME": "/opt/homebrew/opt/openjdk@17"
+  }
+}

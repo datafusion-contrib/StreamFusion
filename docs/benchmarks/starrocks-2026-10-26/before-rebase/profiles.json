@@ -1,0 +1,171 @@
+{
+  "method": "JFR profile settings (jdk.ExecutionSample and jdk.NativeMethodSample), one warmup and one measured trial per mode of the 5M-row CSV job; samples of each mode's sink task threads, grouped by inclusive stack membership. Counts compare categories within a mode; JFR caps threads sampled per period, so totals do not compare modes.",
+  "before_shared_table_key": {
+    "stock": {
+      "samples": 254,
+      "inclusive_samples": {
+        "sdk_write": 19,
+        "sdk_region_lookup": 14,
+        "sdk_block_if_cache_full": 3,
+        "stock_transform": 76,
+        "stock_serialize": 44
+      },
+      "inclusive_percent": {
+        "sdk_write": 7.5,
+        "sdk_region_lookup": 5.5,
+        "sdk_block_if_cache_full": 1.2,
+        "stock_transform": 29.9,
+        "stock_serialize": 17.3
+      }
+    },
+    "previous": {
+      "samples": 1002,
+      "inclusive_samples": {
+        "sdk_write": 98,
+        "sdk_region_lookup": 62,
+        "sdk_block_if_cache_full": 35,
+        "stock_transform": 409,
+        "stock_serialize": 226
+      },
+      "inclusive_percent": {
+        "sdk_write": 9.8,
+        "sdk_region_lookup": 6.2,
+        "sdk_block_if_cache_full": 3.5,
+        "stock_transform": 40.8,
+        "stock_serialize": 22.6
+      }
+    },
+    "native": {
+      "samples": 190,
+      "inclusive_samples": {
+        "native_encode": 38,
+        "native_begin": 4,
+        "row_string": 5,
+        "sdk_write": 80,
+        "sdk_region_lookup": 46,
+        "sdk_block_if_cache_full": 34,
+        "stock_transform": 2
+      },
+      "inclusive_percent": {
+        "native_encode": 20.0,
+        "native_begin": 2.1,
+        "row_string": 2.6,
+        "sdk_write": 42.1,
+        "sdk_region_lookup": 24.2,
+        "sdk_block_if_cache_full": 17.9,
+        "stock_transform": 1.1
+      }
+    }
+  },
+  "with_shared_table_key": {
+    "stock": {
+      "samples": 196,
+      "inclusive_samples": {
+        "sdk_write": 6,
+        "sdk_region_lookup": 2,
+        "sdk_block_if_cache_full": 2,
+        "stock_transform": 43,
+        "stock_serialize": 22
+      },
+      "inclusive_percent": {
+        "sdk_write": 3.1,
+        "sdk_region_lookup": 1.0,
+        "sdk_block_if_cache_full": 1.0,
+        "stock_transform": 21.9,
+        "stock_serialize": 11.2
+      }
+    },
+    "previous": {
+      "samples": 1059,
+      "inclusive_samples": {
+        "sdk_write": 124,
+        "sdk_region_lookup": 87,
+        "sdk_block_if_cache_full": 36,
+        "stock_transform": 429,
+        "stock_serialize": 210
+      },
+      "inclusive_percent": {
+        "sdk_write": 11.7,
+        "sdk_region_lookup": 8.2,
+        "sdk_block_if_cache_full": 3.4,
+        "stock_transform": 40.5,
+        "stock_serialize": 19.8
+      }
+    },
+    "native": {
+      "samples": 153,
+      "inclusive_samples": {
+        "native_encode": 46,
+        "native_begin": 5,
+        "row_string": 2,
+        "sdk_write": 19,
+        "sdk_region_lookup": 6,
+        "sdk_block_if_cache_full": 13
+      },
+      "inclusive_percent": {
+        "native_encode": 30.1,
+        "native_begin": 3.3,
+        "row_string": 1.3,
+        "sdk_write": 12.4,
+        "sdk_region_lookup": 3.9,
+        "sdk_block_if_cache_full": 8.5
+      }
+    }
+  },
+  "sdk_back_pressure": {
+    "method": "Total jdk.ThreadPark duration under the stream-load SDK's blockIfCacheFull per sink subtask, current code, JFR profile settings. The SDK parks a writer while its buffered rows wait for loads to drain to StarRocks.",
+    "csv_5m": {
+      "jobs_per_mode": 2,
+      "job_seconds": {
+        "stock": [
+          13.155,
+          10.915
+        ],
+        "previous": [
+          11.704,
+          11.205
+        ],
+        "native": [
+          10.242,
+          10.372
+        ]
+      },
+      "parked_seconds_per_subtask_all_jobs": {
+        "stock": [
+          1.23,
+          1.03
+        ],
+        "previous": [
+          0.25,
+          0.42
+        ],
+        "native": [
+          3.26,
+          3.27
+        ]
+      }
+    },
+    "json_5m": {
+      "jobs_per_mode": 1,
+      "job_seconds": {
+        "stock": 16.349,
+        "previous": 16.243,
+        "native": 13.461
+      },
+      "parked_seconds_per_subtask": {
+        "stock": [
+          3.27,
+          3.19
+        ],
+        "previous": [
+          2.67,
+          2.88
+        ],
+        "native": [
+          5.11,
+          5.13
+        ]
+      }
+    }
+  }
+}

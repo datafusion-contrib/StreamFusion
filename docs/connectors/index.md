@@ -18,6 +18,10 @@ as experimental.
 immutable append/MOR primary-key sinks on Flink 1.18,
 retaining Hudi's Java file planning and storage I/O while emitting Arrow batches.
 
+[StarRocks](starrocks.md) has an optional adapter on the Flink 1.18 line: Rust encodes the
+released connector's exact CSV/JSON Stream Load rows from Arrow batches, while the connector keeps
+transactions, labels, retries and recovery.
+
 [Apache Fluss](fluss.md) is an experimental Java Arrow transport for append-only and primary-key
 log reads and append-only production, enabled by default when installed. Its connector-owned Rust
 helper handles scalar bucket-key routing and batch statistics. Primary-key writes stay on Flink.

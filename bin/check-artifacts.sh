@@ -41,6 +41,9 @@ native_modules="kafka fluss json csv raw avro protobuf parquet orc paimon"
 if [ "$flink_line" = 2.2 ]; then
   modules="$modules delta iceberg doris"
   native_modules="$native_modules iceberg"
+else
+  modules="$modules starrocks"
+  native_modules="$native_modules starrocks"
 fi
 entries=$(mktemp)
 native_entries=$(mktemp)
@@ -130,7 +133,7 @@ core_main_jar="$repo_root/streamfusion-core/target/streamfusion-core${artifact_s
 assert_flink_identity "$core_main_jar" "streamfusion-core${artifact_suffix}"
 assert_native_payload "$core_main_jar" streamfusion-core libstreamfusion ""
 assert_native_payload "$core_jar" streamfusion-core libstreamfusion ""
-if jar tf "$core_jar" | grep -Eq '^tech/streamfusion/(kafka|fluss|parquet|orc|delta|paimon|iceberg|doris|format/(json|csv|raw|avro|avroconfluent|protobuf))/'; then
+if jar tf "$core_jar" | grep -Eq '^tech/streamfusion/(kafka|fluss|parquet|orc|delta|paimon|iceberg|doris|starrocks|format/(json|csv|raw|avro|avroconfluent|protobuf))/'; then
   echo "streamfusion-core contains optional connector or format classes" >&2
   exit 1
 fi
