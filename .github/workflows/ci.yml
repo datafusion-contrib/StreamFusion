@@ -337,7 +337,9 @@ jobs:
     env:
       SF_KAFKA_INTEGRATION: 'true'
       # Each handoff starts a fresh worker; optimizing compilation cannot amortize here.
-      JAVA_TOOL_OPTIONS: '-XX:TieredStopAtLevel=1 -XX:ReservedCodeCacheSize=512m'
+      JAVA_TOOL_OPTIONS: >-
+        -XX:TieredStopAtLevel=1 -XX:ReservedCodeCacheSize=512m
+        ${{ matrix.jdk == '11' && '-XX:+UseSerialGC' || '' }}
     steps:
       - uses: actions/checkout@v6
       - name: Free disk space

@@ -352,7 +352,7 @@ operators, embedded clusters and the Maven process on hosted runners.
 Savepoint CI uses four fresh 1 GiB parent forks per job, each retaining its existing fresh
 1 GiB engine worker for a handoff stage. The configured parent heaps total 4 GiB, with
 8 GiB of combined parent/worker heaps when all four workers run. The required matrix
-remains 32 jobs; first-tier compilation, immutable metadata sharing and fresh engine
+contains 64 jobs across both Flink lines and JDKs; first-tier compilation, immutable metadata sharing and fresh engine
 process boundaries remain in place. The test step records processors, memory and `vmstat`.
 
 Released Flink MiniClusters keep completed execution graphs and serialized results in an
@@ -694,6 +694,24 @@ spent 128.6 runner-minutes on the initial compile/partition step across 64 canon
 Sharing compilation replaces 64 preparations with four; archive preparation, transfer and
 remaining lifecycle costs still require hosted measurement before claiming elapsed-time savings.
 
+The [complete shared-compilation candidate](benchmarks/ci-profile-20261112.json) passed all
+100 CI jobs and all 19 upstream checks. Every canonical cohort retained its 120 selected
+classes, 118 reported suites, exact invocation identities and outcomes: 3,592 cases on
+Flink 1.18 and 3,676 on 2.2 per JDK, with no skips or failures. Initial compilation and
+packing used 8.6 runner-minutes instead of the reference's 128.6-minute compile/partition
+phase, with another 13.7 minutes for consumer extraction. Whole CI used 57.64 runner-hours
+versus 56.92 (1.3% more) and took 236.9 minutes versus 217.2. Higher JDK 11 test execution
+time offset setup savings. These cross-run observations include cold native setup, runner
+variation and competing diagnostics; they establish no whole-CI speedup from compilation
+reuse alone. The combined candidate must qualify the collector and cache changes below.
+
+JDK 11 canonical jobs use Serial GC for Maven, fresh Surefire parents and their fresh engine
+workers. JDK 17 keeps its usual collector. The shared compiler preparations retain their
+existing settings. Artifact identity reads the complete JDK version without inherited runtime
+option variables, so changing the test collector cannot turn an option-pickup banner into
+a false compiler-version mismatch. This affects only CI test JVMs and preserves every
+provider, checkpoint, rescale and native-work assertion.
+
 Kafka checkpoint handoffs wait for the fixture sink's external commit before cancelling the
 completed checkpoint leg. The coordinator's checkpoint future can complete before the committer
 receives its completion notification. The boundary still requires the exact row count and the
@@ -843,6 +861,13 @@ Canonical shards have a 180-minute limit; no test is removed to make a shard pas
 
 ## Profiling CI latency and cost
 
+The handoff-readiness polling experiment retained the existing one-second fallback:
+a 100 ms probe showed no consistent elapsed benefit and slightly higher CPU on both
+JDKs. The [decision record](https://github.com/datafusion-contrib/StreamFusion/blob/main/.claude/wontdos/ci-handoff-polling.md)
+and [structured trials](benchmarks/ci-profile-20261112.json) preserve the result.
+Hotspot jobs use a shallow partial checkout and fetch only the native-producing
+commit needed for their unchanged source comparison, avoiding a complete history clone.
+
 To compare a canonical matrix with a previous complete run, download that candidate's
 `canonical-job-results-*` artifacts into one directory. Pass it to `bin/profile-ci.py`
 with `--canonical-reports DIRECTORY --canonical-baseline BASELINE.json` alongside the
@@ -862,14 +887,26 @@ invocations on Flink 2.2, including separate archive preparation. Serial GC redu
 the five-case JDK 11 elapsed median from 112.40 to 102.25 seconds (9.0%) and CPU median
 from 228.31 to 179.45 seconds (21.4%). On JDK 17, elapsed medians were 58.61 and 59.09
 seconds, respectively: no elapsed improvement. These are within-run probe results, not
-whole-matrix savings, and the required jobs retain their existing collector settings.
+whole-matrix savings. JDK 17 retains its default collector; the broader comparison qualifies
+the JDK 11 choice.
 
 The optional `canonical-gc-matrix` hotspot dispatch extends the small collector probe to
 both Flink lines on JDK 11. It runs the eight complete canonical classes already used for
 the worker-count comparison: 64 invocations per phase, separate preparation for each
 collector, then two alternating G1/Serial pairs with four fresh 1 GiB parent forks.
-Each line must retain all class outcomes and invocation identities. This broader probe
-tests the JDK 11 result under four busy forks; it changes no merge-gate defaults.
+Each line must retain all class outcomes and invocation identities. The completed broader
+probe passed all 768 invocations, including both collectors' separate archive preparation.
+Each measurement runs the same 64 cases with four busy forks. Medians from two alternating pairs:
+
+| Flink / JDK | G1 elapsed | Serial elapsed | Elapsed reduction | CPU reduction |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18 / 11 | 734.42 s | 595.56 s | 18.9% | 21.2% |
+| 2.2 / 11 | 786.30 s | 627.81 s | 20.2% | 22.7% |
+
+The [retained trials](benchmarks/ci-profile-20261112.json) include preparation separately,
+both successful runs and their source commits. These results select Serial GC for JDK 11
+canonical jobs. They are measured worker-throughput gains, not whole-workflow savings;
+the final combined CI matrix remains required.
 The complete worker mixes use Maven's normal test lifecycle with precompiled Java and
 runtime tests explicitly enabled, matching canonical CI. This resolves the JSON module
 through the current reactor rather than depending on an installed project artifact.

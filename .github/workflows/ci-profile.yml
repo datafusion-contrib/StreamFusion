@@ -175,7 +175,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0
+          filter: blob:none
       - run: python3 bin/ci-free-disk.py
       - uses: actions/setup-java@v4
         with:
@@ -201,6 +201,7 @@ jobs:
           jobs = api(f'repos/{repo}/actions/runs/{run_id}/jobs?per_page=100')['jobs']
           if not any(j['name'] == 'Shared debug native libraries' and j['conclusion'] == 'success' for j in jobs):
               raise SystemExit('Native producer has not succeeded')
+          subprocess.run(['git', 'fetch', '--no-tags', '--filter=blob:none', '--depth=1', 'origin', sha], check=True)
           subprocess.run(['git', 'diff', '--exit-code', sha, 'HEAD', '--',
                           'native', 'rust-toolchain.toml', '.cargo', '.github/actions/setup-rust'], check=True)
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:

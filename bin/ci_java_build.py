@@ -19,10 +19,13 @@ MODULES = ("streamfusion-core", "streamfusion-json", "streamfusion-runtime")
 def identity(root, line):
     subprocess.run(["git", "-C", str(root), "diff", "--exit-code", "HEAD", "--"], check=True)
     java = str(Path(os.environ["JAVA_HOME"]) / "bin/java") if os.environ.get("JAVA_HOME") else "java"
+    environment = {key: value for key, value in os.environ.items()
+                   if key not in ("JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS")}
     return {
         "commit": subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip(),
         "flink_line": line,
-        "java": subprocess.check_output([java, "-fullversion"], stderr=subprocess.STDOUT, text=True).strip(),
+        "java": subprocess.check_output([java, "-fullversion"], stderr=subprocess.STDOUT,
+                                         env=environment, text=True).strip(),
         "platform": platform.system(),
         "architecture": platform.machine(),
     }

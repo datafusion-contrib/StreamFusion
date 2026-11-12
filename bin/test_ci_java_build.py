@@ -2,6 +2,7 @@
 
 import io
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -15,6 +16,24 @@ import ci_java_build as build
 
 
 class SharedJavaBuildTest(unittest.TestCase):
+    def test_runtime_collector_options_do_not_change_the_compiler_identity(self):
+        original_run = subprocess.run
+        def run(command, **kwargs):
+            if command[0] == "git":
+                return subprocess.CompletedProcess(command, 0, stdout="source\n")
+            return original_run(command, **kwargs)
+        versions = []
+        for collector in ("UseG1GC", "UseSerialGC"):
+            options = "-XX:+" + collector
+            with patch.dict(os.environ, {"JAVA_TOOL_OPTIONS": options,
+                                        "JDK_JAVA_OPTIONS": "-Dfixture.jdk.option=true",
+                                        "_JAVA_OPTIONS": "-Dfixture.legacy.option=true"}), \
+                    patch.object(build.subprocess, "run", side_effect=run):
+                versions.append(build.identity(Path("."), "2.2")["java"])
+                self.assertEqual(options, os.environ["JAVA_TOOL_OPTIONS"])
+        self.assertEqual(versions[0], versions[1])
+        self.assertNotIn("Picked up", versions[0])
+
     def fixture(self, root):
         for module in build.MODULES:
             classes = root / module / "target/classes/example"
