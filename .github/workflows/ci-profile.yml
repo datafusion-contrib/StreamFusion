@@ -12,14 +12,14 @@ on:
         description: 'Existing native-producing run for runtime-hotspots'
         type: string
       flink_line:
-        description: 'Flink line for the canonical-gc-matrix diagnostic'
+        description: 'Flink line for multi-release diagnostics'
         type: choice
         options: [all, '2.2', '1.18']
         default: all
       hotspot_mode:
         description: 'Attribute slow classes or compare their worker counts'
         type: choice
-        options: [attribution, parallel, plan-cache, canonical-parallel, canonical-gc, canonical-gc-matrix, deeper-runtime, fluss-details, recursive-completion, recovery-diagnostics, recovery-transport, fluss-close, runtime-regressions]
+        options: [attribution, parallel, plan-cache, canonical-parallel, canonical-gc, canonical-gc-matrix, cluster-startup, deeper-runtime, fluss-details, recursive-completion, recovery-diagnostics, recovery-transport, fluss-close, runtime-regressions]
         default: attribution
 
 permissions:
@@ -28,6 +28,8 @@ permissions:
 
 env:
   RUST_BACKTRACE: '1'
+  CANONICAL_JAVA_11: '11.0.32+1'
+  CANONICAL_JAVA_17: '17.0.21+9'
 
 concurrency:
   group: ci-startup-profile-${{ github.ref }}-${{ inputs.suite }}-${{ inputs.hotspot_mode }}-${{ inputs.flink_line || 'all' }}
@@ -171,7 +173,7 @@ jobs:
       fail-fast: false
       matrix:
         jdk: ${{ fromJSON((inputs.hotspot_mode == 'parallel' || inputs.hotspot_mode == 'canonical-gc-matrix') && '["11"]' || (inputs.hotspot_mode == 'deeper-runtime' || inputs.hotspot_mode == 'fluss-details' || inputs.hotspot_mode == 'fluss-close' || inputs.hotspot_mode == 'recursive-completion' || inputs.hotspot_mode == 'runtime-regressions' || inputs.hotspot_mode == 'recovery-diagnostics' || inputs.hotspot_mode == 'recovery-transport') && '["17"]' || '["11", "17"]') }}
-        line: ${{ fromJSON(inputs.hotspot_mode == 'canonical-gc-matrix' && (inputs.flink_line == '1.18' && '["1.18"]' || inputs.flink_line == '2.2' && '["2.2"]' || '["2.2", "1.18"]') || '["2.2"]') }}
+        line: ${{ fromJSON((inputs.hotspot_mode == 'canonical-gc-matrix' || inputs.hotspot_mode == 'cluster-startup') && (inputs.flink_line == '1.18' && '["1.18"]' || inputs.flink_line == '2.2' && '["2.2"]' || '["2.2", "1.18"]') || '["2.2"]') }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -180,7 +182,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: ${{ matrix.jdk }}
+          java-version: ${{ inputs.hotspot_mode == 'cluster-startup' && (matrix.jdk == '11' && env.CANONICAL_JAVA_11 || env.CANONICAL_JAVA_17) || matrix.jdk }}
           cache: maven
       - name: Verify native artifact source and completed producer
         id: native
@@ -231,6 +233,9 @@ jobs:
               profile=(-Pflink-1.18,canonical-kafka)
               profile_name='flink-1.18,canonical-kafka'
             fi
+          elif [[ "$HOTSPOT_MODE" == 'cluster-startup' && "$FLINK_LINE" == '1.18' ]]; then
+            profile=(-Pflink-1.18)
+            profile_name='flink-1.18'
           elif [[ "$HOTSPOT_MODE" == 'deeper-runtime' || "$HOTSPOT_MODE" == 'fluss-details' || "$HOTSPOT_MODE" == 'fluss-close' ]]; then
             projects='streamfusion-fluss'
             goal='test'
@@ -294,6 +299,8 @@ jobs:
             python3 bin/profile-ci-details.py --line 1.18 --suite recovery --output "$RUNNER_TEMP/runtime-hotspots/recovery"
           elif [[ "$HOTSPOT_MODE" == 'recovery-transport' ]]; then
             python3 bin/profile-ci-details.py --line 1.18 --suite recovery --compare-transport --output "$RUNNER_TEMP/runtime-hotspots/recovery-transport"
+          elif [[ "$HOTSPOT_MODE" == 'cluster-startup' ]]; then
+            python3 bin/profile-runtime-ci.py --cluster-startup --line "$FLINK_LINE" --repetitions 3 --output "$RUNNER_TEMP/runtime-hotspots"
           elif [[ "$HOTSPOT_MODE" == 'canonical-parallel' ]]; then
             python3 bin/profile-canonical-ci.py --parallel --repetitions 2 --output "$RUNNER_TEMP/runtime-hotspots"
           elif [[ "$HOTSPOT_MODE" == 'canonical-gc' ]]; then
@@ -303,13 +310,44 @@ jobs:
           else
             python3 bin/profile-runtime-ci.py "${args[@]}" --output "$RUNNER_TEMP/runtime-hotspots"
           fi
+      - name: Verify deferred cluster lifecycle and native cleanup
+        if: inputs.hotspot_mode == 'cluster-startup'
+        env:
+          FLINK_LINE: ${{ matrix.line }}
+          JAVA_TOOL_OPTIONS: '-XX:TieredStopAtLevel=1 -XX:ReservedCodeCacheSize=512m'
+        run: |
+          profile=()
+          selection='SharedFlinkClusterLifecycleTest,CanonicalWorkerCacheTest,NativeAllocatorTest,NativeParityValueTest,Utf8WriterReuseTest,TransposeOperatorsTest,FlinkJvmAggregateSqlHarnessTest'
+          if [[ "$FLINK_LINE" == '1.18' ]]; then
+            profile=(-Pflink-1.18)
+            selection+=',FlinkBatchTestContextLifecycleTest'
+          fi
+          mvn -B -ntp "${profile[@]}" -pl streamfusion-runtime \
+            "-Dtest=$selection" -Dsf.testForks=4 -Dsf.testReuseForks=false \
+            '-Dsf.extraJvmArgs=-Xmx2g' -Dsurefire.reportNameSuffix=ci-cluster-controls \
+            surefire:test@default-test
+          python3 - <<'PY'
+          from collections import Counter
+          import os
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          counts = Counter()
+          for report in Path('streamfusion-runtime/target/surefire-reports').glob('TEST-*-ci-cluster-controls.xml'):
+              suite = ET.parse(report).getroot()
+              counts.update({key: int(suite.get(key, 0)) for key in ('tests', 'failures', 'errors', 'skipped')})
+          expected = 81 if os.environ['FLINK_LINE'] == '1.18' else 79
+          if counts != dict(tests=expected, failures=0, errors=0, skipped=0):
+              raise SystemExit(f'Incomplete lifecycle controls: {counts}')
+          print(f'All {expected} lifecycle, native cleanup and SQL controls passed')
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: runtime-hotspots-${{ inputs.hotspot_mode }}-${{ inputs.hotspot_mode == 'canonical-gc-matrix' && format('flink{0}-', matrix.line) || '' }}jdk${{ matrix.jdk }}
+          name: runtime-hotspots-${{ inputs.hotspot_mode }}-${{ (inputs.hotspot_mode == 'canonical-gc-matrix' || inputs.hotspot_mode == 'cluster-startup') && format('flink{0}-', matrix.line) || '' }}jdk${{ matrix.jdk }}
           path: |
             ${{ runner.temp }}/runtime-hotspots/
             ${{ runner.temp }}/runtime-hotspots-vmstat.txt
             ${{ runner.temp }}/runtime-hotspots-containers.txt
             streamfusion-runtime/target/surefire-reports/*runtime-profile*
+            streamfusion-runtime/target/surefire-reports/*ci-cluster-controls*
           retention-days: 7

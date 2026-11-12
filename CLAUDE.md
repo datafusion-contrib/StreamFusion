@@ -14,6 +14,30 @@ maintainer authorization.
 Conserve runner capacity by testing changed functionality locally and reusing compatible build
 caches while iterating.
 
+Use short feedback loops before broad qualification. Reproduce a measured bottleneck with the
+smallest unchanged test selection that exercises it, profile the actual worker processes, and
+compare repeated alternating trials with identical invocation identities and outcomes. Prefer
+local loops lasting seconds or a few minutes; use a focused hosted diagnostic when the local
+platform cannot exercise the relevant JVM, native library or service. Batch independent fixes
+before the full matrices. Report component gains separately from whole-workflow improvements.
+
+Before dispatching hosted work, inspect queued and running workflows across the personal fork,
+including other branches. Keep one full qualification campaign for the candidate; run optional
+profiling campaigns separately so they do not compete with its merge gates or contaminate timing.
+Use the smallest diagnostic matrix needed for the question. Reuse existing successful native
+artifacts after verifying their source and producer. Cancel only this task's superseded work;
+leave other contributors' or sessions' runs alone. If a shared setup failure guarantees that this
+task's full campaign cannot pass, retain its failure evidence and stop its remaining work while
+fixing the setup in a short loop.
+
+Treat runner queueing as a scheduling problem. Measure dependency completion, actual job starts,
+active-run overlap and peak concurrent execution before adding shards. Report eligibility-to-start
+delay separately from build prerequisites. More jobs do not create more runner capacity. Group
+compatible checks to reuse checkout, dependencies, compilation and artifact downloads while
+retaining every original configuration, test invocation and failure signal. Balance actual work
+and avoid unnecessary dependency barriers; keep artifacts scoped to what their consumers need.
+See docs/ci.md#runner-queue-discipline for the measured queue baseline and iteration workflow.
+
 Use hosted CI for the final merge candidate. Batch changes locally and push when the commit is
 ready for the required checks. Before dispatching or retrying a workflow, verify its commit is
 still the current PR head or, before a PR exists, the current branch tip. Reuse queued, running,

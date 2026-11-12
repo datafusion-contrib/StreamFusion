@@ -30,6 +30,11 @@ HOTSPOTS = {
     "FlinkRecursiveScalarSqlHarnessTest": (1134, {"2.2": 0}),
     "FlinkRecursiveTableFunctionSqlHarnessTest": (683, {"2.2": 0}),
 }
+CLUSTER_STARTUP = {
+    "NativeParityValueTest": (2, {"2.2": 0, "1.18": 0}),
+    "arrow.Utf8WriterReuseTest": (2, {"2.2": 0, "1.18": 0}),
+    "operator.TransposeOperatorsTest": (16, {"2.2": 0, "1.18": 0}),
+}
 
 
 def outcomes(reports, suffix, line, selection=CLASSES):
@@ -68,7 +73,8 @@ def outcomes(reports, suffix, line, selection=CLASSES):
     return cases, dict(totals), classes
 
 
-def profile(output, repetitions, line, parallel=False, jfr=False, hotspots=False, slow_mix=False, plan_cache=False):
+def profile(output, repetitions, line, parallel=False, jfr=False, hotspots=False, slow_mix=False,
+            plan_cache=False, cluster_startup=False):
     if "TieredStopAtLevel" in os.environ.get("JAVA_TOOL_OPTIONS", ""):
         raise ValueError("Remove inherited TieredStopAtLevel before the default trial")
     output.mkdir(parents=True, exist_ok=False)
@@ -77,8 +83,8 @@ def profile(output, repetitions, line, parallel=False, jfr=False, hotspots=False
     reports = ROOT / "streamfusion-runtime/target/surefire-reports"
     trials = []
     expected = None
-    selection = HOTSPOTS if hotspots or slow_mix or plan_cache else CLASSES
-    modes = (("plan-cache", "current") if plan_cache else ("current",) if hotspots
+    selection = CLUSTER_STARTUP if cluster_startup else HOTSPOTS if hotspots or slow_mix or plan_cache else CLASSES
+    modes = (("eager", "lazy") if cluster_startup else ("plan-cache", "current") if plan_cache else ("current",) if hotspots
              else ("startup", "parallel") if parallel else ("default", "startup"))
     try:
         java_home = Path(os.environ["JAVA_HOME"]) if jfr else None
@@ -91,11 +97,13 @@ def profile(output, repetitions, line, parallel=False, jfr=False, hotspots=False
                 options += f' -Djava.io.tmpdir="{temporary}"'
                 if mode != "default":
                     options += " -XX:TieredStopAtLevel=1"
+                if cluster_startup:
+                    options += " -XX:ReservedCodeCacheSize=512m"
                 environment = {**os.environ, "JAVA_TOOL_OPTIONS": options, "TMPDIR": str(temporary)}
                 command = ["mvn", "-B", "-ntp", "-pl", "streamfusion-runtime"]
                 if line == "1.18":
                     command.append("-Pflink-1.18")
-                forks, heap = (4, "2g") if mode == "parallel" or hotspots or plan_cache else (2, "4g")
+                forks, heap = (4, "2g") if mode == "parallel" or hotspots or plan_cache or cluster_startup else (2, "4g")
                 fixture_cache = hotspots or mode == "plan-cache"
                 extra = f"-Xmx{heap}"
                 if jfr:
@@ -110,6 +118,8 @@ def profile(output, repetitions, line, parallel=False, jfr=False, hotspots=False
                     fixture_directory = temporary / "fixture-timings"
                     command.append(f"-Dsf.fixtureTimingsDirectory={fixture_directory}")
                 command.append(f"-Dsf.fixturePlanCache={str(fixture_cache).lower()}")
+                if cluster_startup:
+                    command.append(f"-Dsf.test.lazyCluster={str(mode == 'lazy').lower()}")
                 log = output / (suffix + ".log")
                 before = resource.getrusage(resource.RUSAGE_CHILDREN)
                 start = time.monotonic()
@@ -130,6 +140,11 @@ def profile(output, repetitions, line, parallel=False, jfr=False, hotspots=False
                          "elapsed_seconds": elapsed,
                          "cpu_seconds": after.ru_utime + after.ru_stime - before.ru_utime - before.ru_stime,
                          "outcomes": counts, "classes": classes}
+                if cluster_startup:
+                    starts = log.read_text().count("StreamFusion test MiniCluster started pid=")
+                    if starts != (0 if mode == "lazy" else len(selection)):
+                        raise ValueError(f"Unexpected parent cluster starts: {log}: {starts}")
+                    trial["parent_cluster_starts"] = starts
                 if hotspots:
                     files = list(fixture_directory.glob("*.txt"))
                     if len(files) != len(selection):
@@ -161,6 +176,7 @@ def main():
     modes.add_argument("--jfr", action="store_true", help="Capture one instrumented default/C1 pair; not timing evidence")
     modes.add_argument("--hotspots", action="store_true", help="Attribute five measured slow classes under current CI settings")
     modes.add_argument("--plan-cache", action="store_true", help="Compare independent fixtures built from serialized unopened plans")
+    modes.add_argument("--cluster-startup", action="store_true", help="Compare eager/lazy parent clusters with 20 unchanged unit/operator cases")
     parser.add_argument("--slow-mix", action="store_true", help="Use the five measured slow classes for paired comparisons")
     args = parser.parse_args()
     if (args.hotspots or args.slow_mix or args.plan_cache) and args.line != "2.2":
@@ -169,7 +185,10 @@ def main():
         parser.error("Use at least two pairs to alternate execution order")
     if (args.jfr or args.hotspots) and args.repetitions != 1:
         parser.error("Use --repetitions 1 for the separate JFR attribution pass")
-    profile(args.output.resolve(), args.repetitions, args.line, args.parallel, args.jfr or args.hotspots, args.hotspots, args.slow_mix, args.plan_cache)
+    if args.cluster_startup and args.slow_mix:
+        parser.error("The cluster-startup comparison uses its fixed 20-case selection")
+    profile(args.output.resolve(), args.repetitions, args.line, args.parallel, args.jfr or args.hotspots,
+            args.hotspots, args.slow_mix, args.plan_cache, args.cluster_startup)
 
 
 if __name__ == "__main__":

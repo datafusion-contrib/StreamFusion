@@ -490,6 +490,12 @@ Result reuse does not change the job matrix or test selections.
 ## MiniCluster reuse within a test JVM
 
 A JUnit launcher-session listener owns the automatic StreamFusion test MiniCluster.
+The shared cluster starts when a test first requests an execution environment. Pure unit,
+operator-harness and isolated-worker driver tests keep the normal memory budget and leak
+checks without starting an unused parent cluster. The deferred factory starts the released
+MiniCluster resource, installs Flink's ordinary factories, then repeats the environment
+lookup with the original configuration. Flink 1.18 defers both batch and streaming contexts.
+`-Dsf.test.lazyCluster=false` retains eager startup for controlled comparisons.
 Every test class in the same Surefire fork reuses that cluster, including when Surefire
 launches a separate JUnit root for each class. Each test still gets a fresh
 execution-environment binding, which is cleared afterwards; Flink 1.18 also binds and clears
@@ -513,6 +519,18 @@ The regression uses separate JUnit roots in one launcher session, matching reuse
 forks; root ownership alone would restart the cluster between those classes. The fixture
 continues to use Flink's released MiniCluster resource and test-environment APIs
 on both supported lines.
+An additional regression proves a pure test keeps its memory budget without a running
+cluster. The Flink 1.18 adapter also executes batch jobs after batch-first and stream-first
+environment lookups.
+
+Three alternating local comparisons retain all 20 selected unit/operator cases, four fresh
+2 GiB forks and first-tier compilation. Flink 2.2/JDK 17 elapsed medians fall from 4.016 to
+3.435 seconds (14.5%), with 39.5% less child CPU. Flink 1.18/JDK 11 falls from 4.530 to
+3.794 seconds (16.2%), with 38.5% less child CPU. Each eager trial starts three parent
+clusters; each lazy trial starts zero. A separate two-case canonical continuation comparison
+with prepared metadata archives falls from 24.758 to 24.112 seconds (2.6%), with 4.2% less
+CPU. These are selected local comparisons, not whole-CI gains. The
+[structured trials](benchmarks/ci-fast-loops-20261112.json) retain every measurement and limit.
 
 A local paired check of 66 tests in 19 lightweight operator classes reduced the Surefire
 phase from 5.514 s to 4.344 s with one fork and identical release libraries. A two-fork
@@ -873,6 +891,30 @@ throughput benchmark. The ordinary 150-minute job limit cannot accommodate that 
 Canonical shards have a 180-minute limit; no test is removed to make a shard pass.
 
 ## Profiling CI latency and cost
+
+### Runner queue discipline
+
+Use local selected tests and short repeated profiling loops while iterating. The optional
+`cluster-startup` hotspot mode runs the unchanged 20-case comparison on selected Flink lines
+and both pinned JDK releases. Locally, after compiling the requested line, use
+`python3 bin/profile-runtime-ci.py --cluster-startup --line 2.2 --repetitions 3 --output NEW_DIRECTORY`.
+It checks every invocation/outcome and the number of parent clusters actually started.
+The full CI and upstream matrices remain final qualification gates.
+
+Before a dispatch, inspect active workflows across the fork and reuse their handles. Keep
+optional diagnostics separate from the candidate's full qualification campaign. Stop this
+task's remaining campaign after a shared setup failure makes success impossible, retain the
+failure, and repair it with a short regression or focused hosted probe. Other sessions' runs
+remain untouched. The project instructions in `CLAUDE.md` make this the default agent workflow.
+
+The passing compilation-only run 43149560105 reached 20 simultaneous CI jobs. Its 64 canonical
+jobs waited a median 4,331.5 seconds (72.2 minutes), with a maximum of 9,000 seconds
+(150 minutes), **after all four preparation jobs had finished**. This eligibility-to-start
+interval includes scheduler and runner waiting rather than Java preparation. It differs from
+the profiler's broader start-delay field, which also includes prerequisites. Reducing repeated
+setup, avoiding overlapping campaigns, balancing work and removing dependency barriers should
+precede increasing job counts. Preserve all configurations and test invocations when grouping
+compatible checks. Structured timing observations live alongside the short-loop evidence.
 
 For a short local attribution loop, set `SF_CANONICAL_PROFILE_DIR` to a task-specific
 directory and run `CanonicalGroupArithmeticJobTest` with
