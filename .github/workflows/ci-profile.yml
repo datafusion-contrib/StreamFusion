@@ -14,7 +14,7 @@ on:
       hotspot_mode:
         description: 'Attribute slow classes or compare their worker counts'
         type: choice
-        options: [attribution, parallel, plan-cache, canonical-parallel, canonical-gc, deeper-runtime, fluss-details, recursive-completion, recovery-diagnostics, recovery-transport, fluss-close, runtime-regressions]
+        options: [attribution, parallel, plan-cache, canonical-parallel, canonical-gc, canonical-gc-matrix, deeper-runtime, fluss-details, recursive-completion, recovery-diagnostics, recovery-transport, fluss-close, runtime-regressions]
         default: attribution
 
 permissions:
@@ -162,7 +162,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        jdk: ${{ fromJSON(inputs.hotspot_mode == 'parallel' && '["11"]' || (inputs.hotspot_mode == 'deeper-runtime' || inputs.hotspot_mode == 'fluss-details' || inputs.hotspot_mode == 'fluss-close' || inputs.hotspot_mode == 'recursive-completion' || inputs.hotspot_mode == 'runtime-regressions' || inputs.hotspot_mode == 'recovery-diagnostics' || inputs.hotspot_mode == 'recovery-transport') && '["17"]' || '["11", "17"]') }}
+        jdk: ${{ fromJSON((inputs.hotspot_mode == 'parallel' || inputs.hotspot_mode == 'canonical-gc-matrix') && '["11"]' || (inputs.hotspot_mode == 'deeper-runtime' || inputs.hotspot_mode == 'fluss-details' || inputs.hotspot_mode == 'fluss-close' || inputs.hotspot_mode == 'recursive-completion' || inputs.hotspot_mode == 'runtime-regressions' || inputs.hotspot_mode == 'recovery-diagnostics' || inputs.hotspot_mode == 'recovery-transport') && '["17"]' || '["11", "17"]') }}
+        line: ${{ fromJSON(inputs.hotspot_mode == 'canonical-gc-matrix' && '["2.2", "1.18"]' || '["2.2"]') }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -207,15 +208,20 @@ jobs:
       - name: Compile the unchanged complete runtime inventory
         env:
           HOTSPOT_MODE: ${{ inputs.hotspot_mode }}
+          FLINK_LINE: ${{ matrix.line }}
         run: |
           profile=()
           profile_name=''
           projects='streamfusion-runtime'
           goal='test-compile'
           skip=()
-          if [[ "$HOTSPOT_MODE" == 'canonical-parallel' ]]; then
+          if [[ "$HOTSPOT_MODE" == 'canonical-parallel' || "$HOTSPOT_MODE" == 'canonical-gc-matrix' ]]; then
             profile=(-Pcanonical-kafka)
             profile_name='canonical-kafka'
+            if [[ "$FLINK_LINE" == '1.18' ]]; then
+              profile=(-Pflink-1.18,canonical-kafka)
+              profile_name='flink-1.18,canonical-kafka'
+            fi
           elif [[ "$HOTSPOT_MODE" == 'deeper-runtime' || "$HOTSPOT_MODE" == 'fluss-details' || "$HOTSPOT_MODE" == 'fluss-close' ]]; then
             projects='streamfusion-fluss'
             goal='test'
@@ -229,12 +235,13 @@ jobs:
             profile=(-Pflink-1.18)
             profile_name='flink-1.18'
           fi
-          python3 bin/ci-maven-dependencies.py --profile "$profile_name" --projects "$projects"
+          python3 bin/ci-maven-dependencies.py --profile "$profile_name" --projects "$projects" --also-make
           python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5
           mvn -B -ntp "${profile[@]}" -pl "$projects" -am "$goal" "${skip[@]}" -Dnative.build.skip=true
       - name: Attribute measured slow classes under current CI worker settings
         env:
           HOTSPOT_MODE: ${{ inputs.hotspot_mode }}
+          FLINK_LINE: ${{ matrix.line }}
         run: |
           args=(--line 2.2 --repetitions 1 --hotspots)
           if [[ "$HOTSPOT_MODE" == 'parallel' ]]; then
@@ -282,13 +289,15 @@ jobs:
             python3 bin/profile-canonical-ci.py --parallel --repetitions 2 --output "$RUNNER_TEMP/runtime-hotspots"
           elif [[ "$HOTSPOT_MODE" == 'canonical-gc' ]]; then
             python3 bin/profile-canonical-ci.py --gc --repetitions 3 --output "$RUNNER_TEMP/runtime-hotspots"
+          elif [[ "$HOTSPOT_MODE" == 'canonical-gc-matrix' ]]; then
+            python3 bin/profile-canonical-ci.py --gc --worker-mix --line "$FLINK_LINE" --repetitions 2 --output "$RUNNER_TEMP/runtime-hotspots"
           else
             python3 bin/profile-runtime-ci.py "${args[@]}" --output "$RUNNER_TEMP/runtime-hotspots"
           fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: runtime-hotspots-${{ inputs.hotspot_mode }}-jdk${{ matrix.jdk }}
+          name: runtime-hotspots-${{ inputs.hotspot_mode }}-${{ inputs.hotspot_mode == 'canonical-gc-matrix' && format('flink{0}-', matrix.line) || '' }}jdk${{ matrix.jdk }}
           path: |
             ${{ runner.temp }}/runtime-hotspots/
             ${{ runner.temp }}/runtime-hotspots-vmstat.txt

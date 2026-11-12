@@ -3127,5 +3127,632 @@
       "reported_classes": 118
     }
   },
-  "method": "Successful baseline Actions step intervals and Surefire XML from all 64 canonical artifacts. Case digest is SHA-256 of json.dumps(sorted((classname, name, skipped, multiplicity))) using all testcase elements per Flink/JDK cohort. Selection inventories include two abstract bases without reports; class outcomes cover the 118 reported suites. The complete selected inventory contains 120 classes. Runner time adds parallel jobs; start delays include prerequisites and queues. Candidate qualification and net performance comparison are pending."
+  "method": "Successful baseline Actions step intervals and Surefire XML from all 64 canonical artifacts. Case digest is SHA-256 of json.dumps(sorted((classname, name, skipped, multiplicity))) using all testcase elements per Flink/JDK cohort. Selection inventories include two abstract bases without reports; class outcomes cover the 118 reported suites. The complete selected inventory contains 120 classes. Runner time adds parallel jobs; start delays include prerequisites and queues. Candidate qualification and net performance comparison are pending.",
+  "collector_probe": {
+    "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43147998546",
+    "sha": "8a3e5e0d9e0b88fea433ea8645f95ecbe351022c",
+    "cohorts": {
+      "11": {
+        "trials": [
+          {
+            "mode": "gc-g1",
+            "pair": 0,
+            "phase": "preparation",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 202.891984897,
+            "cpu_seconds": 308.660709,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 136.774,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 197.829
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 262369280,
+            "classpath_bytes": 625459768
+          },
+          {
+            "mode": "gc-serial",
+            "pair": 0,
+            "phase": "preparation",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 187.54897497999997,
+            "cpu_seconds": 259.43431599999997,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 129.542,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 182.778
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 244326400,
+            "classpath_bytes": 625459768
+          },
+          {
+            "mode": "gc-g1",
+            "pair": 1,
+            "phase": "measurement",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 113.17910487100005,
+            "cpu_seconds": 227.71013499999998,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 108.274,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 55.215
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 262369280,
+            "classpath_bytes": 625459768
+          },
+          {
+            "mode": "gc-serial",
+            "pair": 1,
+            "phase": "measurement",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 101.56267411299996,
+            "cpu_seconds": 179.44621800000002,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 47.966,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 96.781
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 244326400,
+            "classpath_bytes": 625459768
+          },
+          {
+            "mode": "gc-serial",
+            "pair": 2,
+            "phase": "measurement",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 102.54347742800007,
+            "cpu_seconds": 176.656368,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 97.807,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 49.43
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 244326400,
+            "classpath_bytes": 625459768
+          },
+          {
+            "mode": "gc-g1",
+            "pair": 2,
+            "phase": "measurement",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 108.96484552699997,
+            "cpu_seconds": 228.31209900000002,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 56.609,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 104.103
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 262369280,
+            "classpath_bytes": 625459768
+          },
+          {
+            "mode": "gc-g1",
+            "pair": 3,
+            "phase": "measurement",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 112.40226423499996,
+            "cpu_seconds": 229.34885100000002,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 107.548,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 54.264
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 262369280,
+            "classpath_bytes": 625459768
+          },
+          {
+            "mode": "gc-serial",
+            "pair": 3,
+            "phase": "measurement",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 102.24709126000016,
+            "cpu_seconds": 183.683091,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 97.26,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 51.115
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 244326400,
+            "classpath_bytes": 625459768
+          }
+        ],
+        "medians": {
+          "gc-g1": {
+            "elapsed_seconds": 112.40226423499996,
+            "cpu_seconds": 228.31209900000002
+          },
+          "gc-serial": {
+            "elapsed_seconds": 102.24709126000016,
+            "cpu_seconds": 179.44621800000002
+          }
+        }
+      },
+      "17": {
+        "trials": [
+          {
+            "mode": "gc-g1",
+            "pair": 0,
+            "phase": "preparation",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 92.30045714799999,
+            "cpu_seconds": 133.140427,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 58.979,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 89.031
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 275841024,
+            "classpath_bytes": 625461675
+          },
+          {
+            "mode": "gc-serial",
+            "pair": 0,
+            "phase": "preparation",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 83.42338047300001,
+            "cpu_seconds": 127.32189900000003,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 51.919,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 80.36
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 253079552,
+            "classpath_bytes": 625461675
+          },
+          {
+            "mode": "gc-g1",
+            "pair": 1,
+            "phase": "measurement",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 59.806636422999986,
+            "cpu_seconds": 105.84690699999996,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 56.72,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 31.43
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 275841024,
+            "classpath_bytes": 625461675
+          },
+          {
+            "mode": "gc-serial",
+            "pair": 1,
+            "phase": "measurement",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 60.41996590599996,
+            "cpu_seconds": 104.20699700000004,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 33.927,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 57.259
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 253079552,
+            "classpath_bytes": 625461675
+          },
+          {
+            "mode": "gc-serial",
+            "pair": 2,
+            "phase": "measurement",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 59.09088502800006,
+            "cpu_seconds": 101.72393000000002,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 55.895,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 33.628
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 253079552,
+            "classpath_bytes": 625461675
+          },
+          {
+            "mode": "gc-g1",
+            "pair": 2,
+            "phase": "measurement",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 58.61218670000005,
+            "cpu_seconds": 102.463215,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 30.827,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 55.571
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 275841024,
+            "classpath_bytes": 625461675
+          },
+          {
+            "mode": "gc-g1",
+            "pair": 3,
+            "phase": "measurement",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 57.73031601299999,
+            "cpu_seconds": 97.52035299999987,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 54.641,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 31.693
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 275841024,
+            "classpath_bytes": 625461675
+          },
+          {
+            "mode": "gc-serial",
+            "pair": 3,
+            "phase": "measurement",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 58.24552630099993,
+            "cpu_seconds": 95.92894400000007,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 55.21,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 33.214
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 253079552,
+            "classpath_bytes": 625461675
+          }
+        ],
+        "medians": {
+          "gc-g1": {
+            "elapsed_seconds": 58.61218670000005,
+            "cpu_seconds": 102.463215
+          },
+          "gc-serial": {
+            "elapsed_seconds": 59.09088502800006,
+            "cpu_seconds": 101.72393000000002
+          }
+        }
+      }
+    },
+    "limits": "Five-case Flink 2.2 probe, separate preparation for each collector, three alternating pairs, current first-tier compilation and code-cache limits. Serial GC improves elapsed median by 9.0% on JDK 11 and regresses by 0.8% on JDK 17. No change to merge-gate collector defaults; broader JDK 11 qualification is pending."
+  }
 }

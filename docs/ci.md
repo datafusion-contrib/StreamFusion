@@ -842,6 +842,20 @@ This verifies preserved test coverage; GitHub's required workflow results
 and the assertions inside those tests remain the correctness gates. Comparing timings
 alone cannot establish equivalent coverage.
 
+The [initial collector probe](benchmarks/ci-profile-20261112.json) passed all 80
+invocations on Flink 2.2, including separate archive preparation. Serial GC reduced
+the five-case JDK 11 elapsed median from 112.40 to 102.25 seconds (9.0%) and CPU median
+from 228.31 to 179.45 seconds (21.4%). On JDK 17, elapsed medians were 58.61 and 59.09
+seconds, respectively: no elapsed improvement. These are within-run probe results, not
+whole-matrix savings, and the required jobs retain their existing collector settings.
+
+The optional `canonical-gc-matrix` hotspot dispatch extends the small collector probe to
+both Flink lines on JDK 11. It runs the eight complete canonical classes already used for
+the worker-count comparison: 64 invocations per phase, separate preparation for each
+collector, then two alternating G1/Serial pairs with four fresh 1 GiB parent forks.
+Each line must retain all class outcomes and invocation identities. This broader probe
+tests the JDK 11 result under four busy forks; it changes no merge-gate defaults.
+
 The `runtime-hotspots` dispatch also accepts `hotspot_mode=canonical-gc`. It compares
 G1 and Serial GC on the same runner using the existing five canonical handoff cases,
 on both JDK 11 and 17. Both collectors use first-tier compilation, the current 512 MiB

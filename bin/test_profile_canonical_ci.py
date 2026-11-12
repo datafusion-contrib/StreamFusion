@@ -17,7 +17,7 @@ spec.loader.exec_module(profile)
 
 
 class CanonicalProfileTest(unittest.TestCase):
-    def run_comparison(self, missing_case=False):
+    def run_comparison(self, missing_case=False, worker_mix=False, line="2.2"):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             reports = root / "streamfusion-runtime/target/surefire-reports"
@@ -34,8 +34,9 @@ class CanonicalProfileTest(unittest.TestCase):
                 cache.mkdir(exist_ok=True)
                 for name in ("stock", "native"):
                     (cache / (name + ".jsa")).touch()
-                for name, count in (("CanonicalRegularJoinJobTest", 4),
-                                    ("CanonicalManagedUdfDecimalKeyJobTest", 1)):
+                selection = ([(name, 8) for name in profile.PARALLEL_CLASSES] if worker_mix else
+                             [("CanonicalRegularJoinJobTest", 4), ("CanonicalManagedUdfDecimalKeyJobTest", 1)])
+                for name, count in selection:
                     suite = ET.Element("testsuite", name="tech.streamfusion." + name,
                                        tests=str(count), errors="0", failures="0", skipped="0")
                     for index in range(count - int(missing_case)):
@@ -48,9 +49,9 @@ class CanonicalProfileTest(unittest.TestCase):
                     patch.object(profile.subprocess, "run", side_effect=run):
                 if missing_case:
                     with self.assertRaisesRegex(RuntimeError, "Incomplete or inconsistent"):
-                        profile.profile(root / "results", 3, cds=True, gc=True)
+                        profile.profile(root / "results", 3, cds=True, gc=True, line=line, worker_mix=worker_mix)
                 else:
-                    profile.profile(root / "results", 3, cds=True, gc=True)
+                    profile.profile(root / "results", 3, cds=True, gc=True, line=line, worker_mix=worker_mix)
             self.assertFalse((root / "results/tmp").exists())
             return calls, json.loads((root / "results/summary.json").read_text())
 
@@ -75,6 +76,19 @@ class CanonicalProfileTest(unittest.TestCase):
     def test_report_totals_cannot_hide_missing_invocations(self):
         _, trials = self.run_comparison(missing_case=True)
         self.assertEqual(1, len(trials))
+
+    def test_full_worker_mix_keeps_both_released_line_profiles_and_every_case(self):
+        for line in ("1.18", "2.2"):
+            with self.subTest(line=line):
+                calls, trials = self.run_comparison(worker_mix=True, line=line)
+                for (_, _, _, command), trial in zip(calls, trials):
+                    self.assertIn("-P" + ("flink-1.18," if line == "1.18" else "") + "canonical-kafka", command)
+                    self.assertNotIn("-Dstreamfusion.test.regularJoinJobSmoke=true", command)
+                    self.assertEqual(64, trial["outcomes"]["tests"])
+                    self.assertEqual(line, trial["flink_line"])
+                    self.assertEqual({"tech.streamfusion." + name for name in profile.PARALLEL_CLASSES},
+                                     set(trial["class_outcomes"]))
+        self.run_comparison(missing_case=True, worker_mix=True)
 
 
 if __name__ == "__main__":
