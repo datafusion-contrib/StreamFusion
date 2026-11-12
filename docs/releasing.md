@@ -1,9 +1,9 @@
 # Releasing
 
-StreamFusion publishes the Java reactor, including the optional Delta and Paimon modules, to Maven
-Central and attaches a universal deployment bundle to the matching GitHub release. The release
-builder and publisher explicitly enable the `delta,paimon` profiles. Artifact checks verify Paimon's
-separate native library and that Delta shares the Parquet module without bundling another library.
+StreamFusion publishes the Java reactor to Maven Central and attaches a universal deployment
+bundle to the matching GitHub release. The Flink 2.2 release builder and publisher explicitly
+enable the `delta,paimon,iceberg,doris` profiles. Artifact checks verify each module's native
+ownership, including Paimon's separate library and Delta's reuse of the Parquet module.
 Releases are immutable: prepare and verify a version in a commit before creating its tag.
 
 Every runtime payload carries `StreamFusion-Module` and `StreamFusion-Flink-Line` manifest entries.
@@ -11,6 +11,13 @@ Every runtime payload carries `StreamFusion-Module` and `StreamFusion-Flink-Line
 addition to checking native payload boundaries. The loader also validates the line at startup, so
 release all modules from the same build; an unmarked older payload cannot be mixed into a newly
 built installation. The current release target remains Flink 2.2.
+
+The guard also checks each optional module's executable and source JARs against its selected
+module-local Java sources and SPI files. Source attachments must contain the exact selected
+paths and contents, without another module's sources, another host's adapters, duplicate entries,
+compiled classes or native libraries. Missing source attachments fail release validation.
+Iceberg and Doris participate on Flink 2.2; Hudi participates in the Flink 1.18 development
+bundle and remains Java-only, reusing Parquet's native library.
 
 ## One-time GitHub setup
 
@@ -48,10 +55,10 @@ bin/check-artifacts.sh --host-only
 ```
 
 `bin/build-release.sh` packages with the unsigned `release` profile, so the source and javadoc
-attachments the publish workflow builds are verified locally before any tag exists. Javadoc itself is
-also generated during every `mvn test`, because the shared source root lets javadoc see the optional
-connector sources (Delta, Paimon) beside each module's own: a reference javadoc cannot resolve fails
-the ordinary test build rather than the release, and `-Dmaven.javadoc.skip=true` skips it for a
+attachments the publish workflow builds are verified locally before any tag exists. Javadoc is
+also generated during every `mvn test` so unresolved references or missing module dependencies
+fail the ordinary build. Optional implementations and host adapters live in their owning modules;
+Javadoc does not need another connector's root sources. Use `-Dmaven.javadoc.skip=true` for a
 quick loop.
 
 The workflow's universal bundle verification also enables the `release` profile with

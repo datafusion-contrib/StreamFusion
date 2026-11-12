@@ -379,11 +379,17 @@ connector and verifies its dependency resolves from the core JAR. Image CI runs 
 before packaging, and the artifact checker verifies ownership in the real bundle.
 
 `bin/check-artifacts.sh` also runs `bin/check-connector-ownership.py` on the actual Kafka,
-Delta, Fluss, Paimon and eight format deployment JARs. It requires every module-local production
-type for the selected host, rejects foreign and wrong-version classes, and compares SPI resources with
+Delta, Fluss, Paimon, Iceberg, Doris, Hudi and eight format deployment JARs on their supported
+build lines. It requires every module-local production type for the selected host, rejects
+foreign and wrong-version classes, and compares SPI resources with
 their maintained module files. Nested classes retain their enclosing source owner.
+Release source attachments must contain exactly the selected module Java paths and bytes,
+with no missing, stale, foreign, duplicate, other-host, compiled or native inputs. Iceberg
+and Doris are checked on Flink 2.2, Hudi on Flink 1.18; Hudi and Doris remain Java-only
+artifacts with no separate native library.
 `python3 bin/test_connector_ownership.py` exercises missing types, leaked core or other-host
 types, conflicting source sets and changed/missing SPI registrations as negative controls.
+Source-attachment negative controls cover both hosts, stale contents and binary payloads.
 Its manifest probe also preserves module source-directory names when artifact coordinates
 include the Flink 1.18 suffix, and retains rejection of mismatched host identities.
 The existing bundle checks still require exact native resources, consumer POM identities,

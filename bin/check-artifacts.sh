@@ -41,6 +41,8 @@ native_modules="kafka fluss json csv raw avro protobuf parquet orc paimon"
 if [ "$flink_line" = 2.2 ]; then
   modules="$modules delta iceberg doris"
   native_modules="$native_modules iceberg"
+else
+  modules="$modules hudi"
 fi
 entries=$(mktemp)
 native_entries=$(mktemp)
@@ -113,9 +115,10 @@ for suffix in $modules; do
   fi
   assert_flink_identity "$jar_file" "$artifact"
   case "$suffix" in
-    delta|fluss|paimon|kafka|json|csv|raw|avro|avro-confluent-registry|protobuf|parquet|orc)
+    delta|fluss|paimon|kafka|json|csv|raw|avro|avro-confluent-registry|protobuf|parquet|orc|iceberg|doris|hudi)
       python3 "$script_dir/check-connector-ownership.py" "$repo_root/$module" "$jar_file" \
-        --flink-line "$flink_line"
+        --flink-line "$flink_line" \
+        --sources-jar "$repo_root/$module/target/$artifact-$version-sources.jar"
       ;;
   esac
   if jar tf "$jar_file" | grep -q '^org/slf4j/'; then
@@ -230,6 +233,10 @@ for module in [*modules.split(), "runtime", "loader"]:
                 raise SystemExit(f"{path}: mismatched Flink dependency {artifact}:{dep_version}")
 PYTHON
 
-if [ "$flink_line" = 2.2 ]; then assert_no_native_payload "$repo_root/streamfusion-doris/target/streamfusion-doris-$version.jar" streamfusion-doris; fi
+if [ "$flink_line" = 2.2 ]; then
+  assert_no_native_payload "$repo_root/streamfusion-doris/target/streamfusion-doris-$version.jar" streamfusion-doris
+else
+  assert_no_native_payload "$repo_root/streamfusion-hudi/target/streamfusion-hudi${artifact_suffix}-$version.jar" streamfusion-hudi
+fi
 
 echo "StreamFusion artifact boundaries and consumer POMs are clean for $version / Flink $flink_line"
