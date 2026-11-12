@@ -73,6 +73,11 @@ def profile(output, repetitions, cds=False, parallel=False, gc=False, line="2.2"
                 profiles.append("canonical-kafka")
             if profiles:
                 command.append("-P" + ",".join(profiles))
+            if parallel or worker_mix:
+                command.remove("surefire:test@default-test")
+                command.extend(["-am", "test", "-Dnative.build.skip=true",
+                                "-Dsf.ci.precompiledJava=true", "-Dsf.protobuf.checkStaleness=true",
+                                "-DskipTests=true", "-Dsf.runtime.tests.skip=false"])
             if not (parallel or worker_mix):
                 command.extend(["-Dstreamfusion.test.regularJoinJobSmoke=true",
                                 "-Dsf.canonical.wideKeys.job.smoke=true"])

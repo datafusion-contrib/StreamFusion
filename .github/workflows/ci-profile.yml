@@ -11,6 +11,11 @@ on:
       native_run:
         description: 'Existing native-producing run for runtime-hotspots'
         type: string
+      flink_line:
+        description: 'Flink line for the canonical-gc-matrix diagnostic'
+        type: choice
+        options: [all, '2.2', '1.18']
+        default: all
       hotspot_mode:
         description: 'Attribute slow classes or compare their worker counts'
         type: choice
@@ -163,7 +168,7 @@ jobs:
       fail-fast: false
       matrix:
         jdk: ${{ fromJSON((inputs.hotspot_mode == 'parallel' || inputs.hotspot_mode == 'canonical-gc-matrix') && '["11"]' || (inputs.hotspot_mode == 'deeper-runtime' || inputs.hotspot_mode == 'fluss-details' || inputs.hotspot_mode == 'fluss-close' || inputs.hotspot_mode == 'recursive-completion' || inputs.hotspot_mode == 'runtime-regressions' || inputs.hotspot_mode == 'recovery-diagnostics' || inputs.hotspot_mode == 'recovery-transport') && '["17"]' || '["11", "17"]') }}
-        line: ${{ fromJSON(inputs.hotspot_mode == 'canonical-gc-matrix' && '["2.2", "1.18"]' || '["2.2"]') }}
+        line: ${{ fromJSON(inputs.hotspot_mode == 'canonical-gc-matrix' && (inputs.flink_line == '1.18' && '["1.18"]' || inputs.flink_line == '2.2' && '["2.2"]' || '["2.2", "1.18"]') || '["2.2"]') }}
     steps:
       - uses: actions/checkout@v6
         with:

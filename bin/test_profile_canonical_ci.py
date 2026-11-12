@@ -84,6 +84,11 @@ class CanonicalProfileTest(unittest.TestCase):
                 for (_, _, _, command), trial in zip(calls, trials):
                     self.assertIn("-P" + ("flink-1.18," if line == "1.18" else "") + "canonical-kafka", command)
                     self.assertNotIn("-Dstreamfusion.test.regularJoinJobSmoke=true", command)
+                    self.assertNotIn("surefire:test@default-test", command)
+                    self.assertIn("-am", command)
+                    self.assertIn("test", command)
+                    self.assertIn("-Dsf.ci.precompiledJava=true", command)
+                    self.assertIn("-Dsf.runtime.tests.skip=false", command)
                     self.assertEqual(64, trial["outcomes"]["tests"])
                     self.assertEqual(line, trial["flink_line"])
                     self.assertEqual({"tech.streamfusion." + name for name in profile.PARALLEL_CLASSES},

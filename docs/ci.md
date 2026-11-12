@@ -855,6 +855,11 @@ the worker-count comparison: 64 invocations per phase, separate preparation for 
 collector, then two alternating G1/Serial pairs with four fresh 1 GiB parent forks.
 Each line must retain all class outcomes and invocation identities. This broader probe
 tests the JDK 11 result under four busy forks; it changes no merge-gate defaults.
+The complete worker mixes use Maven's normal test lifecycle with precompiled Java and
+runtime tests explicitly enabled, matching canonical CI. This resolves the JSON module
+through the current reactor rather than depending on an installed project artifact.
+Set the dispatch's `flink_line` to either release to qualify only that cohort; `all`
+retains both. This allows repairing a failed setup without repeating a completed probe.
 
 The `runtime-hotspots` dispatch also accepts `hotspot_mode=canonical-gc`. It compares
 G1 and Serial GC on the same runner using the existing five canonical handoff cases,

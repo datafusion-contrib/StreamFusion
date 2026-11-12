@@ -3753,6 +3753,16 @@
         }
       }
     },
-    "limits": "Five-case Flink 2.2 probe, separate preparation for each collector, three alternating pairs, current first-tier compilation and code-cache limits. Serial GC improves elapsed median by 9.0% on JDK 11 and regresses by 0.8% on JDK 17. No change to merge-gate collector defaults; broader JDK 11 qualification is pending."
+    "limits": "Five-case Flink 2.2 probe, separate preparation for each collector, three alternating pairs, current first-tier compilation and code-cache limits. Serial GC improves elapsed median by 9.0% on JDK 11 and regresses by 0.8% on JDK 17. No change to merge-gate collector defaults; broader JDK 11 qualification is pending.",
+    "extended_setup_failure": {
+      "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43162295022",
+      "line": "1.18",
+      "jdk": "11",
+      "phase": "gc-g1 preparation",
+      "elapsed_seconds": 3.4534317529999896,
+      "executed_cases": 0,
+      "exit_code": 1,
+      "reason": "Direct Surefire invocation cannot resolve the uninstalled streamfusion-json-flink1.18 reactor dependency. Normal precompiled test lifecycle and a single-line dispatch repair setup without repeating the running 2.2 probe."
+    }
   }
 }
