@@ -2187,5 +2187,16 @@
       }
     ],
     "scope": "Two fresh runners. Java preparation had no native library. Consumer verifies exact pinned JDK and archive identity, then loads only stripped core/JSON/Kafka libraries. All selected stock/native recovery and real-broker checkpoint checks pass with positive native evidence. Complete CI parity and net savings remain required."
+  },
+  "jdk_pin_correction": {
+    "failed_probe": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43278831184",
+    "failure_step": "actions/setup-java@v4",
+    "old_pin": "11.0.32+1",
+    "reason": "Earlier probes resolved this cache entry; a different runner had no such entry and the Temurin remote catalog does not publish that build.",
+    "published_pin": "11.0.32+9",
+    "vendor_release": "https://github.com/adoptium/temurin11-binaries/releases/tag/jdk-11.0.32%2B9",
+    "prerelease": false,
+    "diagnostic_change": "check-latest=true forces remote version resolution in Java preparation.",
+    "status": "Release metadata verified; hosted focused validation pending."
   }
 }

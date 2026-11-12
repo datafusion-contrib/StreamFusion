@@ -45,7 +45,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  JAVA_VERSION: ${{ inputs.jdk == '11' && '11.0.32+1' || '17.0.21+9' }}
+  JAVA_VERSION: ${{ inputs.jdk == '11' && '11.0.32+9' || '17.0.21+9' }}
   FLINK_PROFILES: ${{ inputs.line == '1.18' && 'flink-1.18,canonical-kafka' || 'canonical-kafka' }}
   JAVA_TOOL_OPTIONS: '-XX:TieredStopAtLevel=1 -XX:ReservedCodeCacheSize=512m'
   RUST_BACKTRACE: '1'
@@ -61,6 +61,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
+          check-latest: true
           java-version: ${{ env.JAVA_VERSION }}
           cache: maven
       - name: Compile and pack without a native build or library download

@@ -732,10 +732,14 @@ commit, Flink line, complete Java version, operating system and architecture bef
 into fresh output directories. They download the same commit's canonical native payload,
 resolve dependencies with bounded retries, discover their complete compiled canonical
 inventory, and create independent workers, archives and application state.
-Both preparation and consumer jobs pin the same complete Temurin release (11.0.32+1 or
+Both preparation and consumer jobs pin the same complete Temurin release (11.0.32+9 or
 17.0.21+9). Floating major-version selection previously chose 11.0.33+10 for a producer
 and 11.0.32+1 for consumers on different runner images; the identity guard correctly
 rejected the transfer. Version mismatches report both identities and remain errors.
+The initial 11.0.32+1 pin existed on cached runner images but was absent from the vendor's
+remote release list. The current pin uses the [published Temurin 11.0.32+9 release](https://github.com/adoptium/temurin11-binaries/releases/tag/jdk-11.0.32%2B9).
+The focused preparation diagnostic resolves the pinned version remotely even when a runner
+already has a cached JDK, preventing a cache-only build from passing that setup check.
 The [short-loop measurement](benchmarks/ci-fast-loops-20261112.json) inspected the
 Flink 2.2/JDK 11 artifact from run 43203430658: 811,024,598 compressed bytes contained
 1,318,153,104 uncompressed bytes of native libraries plus 460,739,751 bytes of packaged

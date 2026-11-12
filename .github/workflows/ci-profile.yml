@@ -37,7 +37,7 @@ permissions:
 
 env:
   RUST_BACKTRACE: '1'
-  CANONICAL_JAVA_11: '11.0.32+1'
+  CANONICAL_JAVA_11: '11.0.32+9'
   CANONICAL_JAVA_17: '17.0.21+9'
 
 concurrency:

@@ -23,6 +23,9 @@ compare repeated alternating trials with identical invocation identities and out
 local loops lasting seconds or a few minutes; use a focused hosted diagnostic when the local
 platform cannot exercise the relevant JVM, native library or service. Batch independent fixes
 before the full matrices. Report component gains separately from whole-workflow improvements.
+For pinned runtimes and toolchains, verify the canonical vendor release and exercise remote
+resolution in the focused setup diagnostic; a version present in one runner cache can be
+unavailable on another image.
 
 Before dispatching hosted work, inspect queued and running workflows across the personal fork,
 including other branches. Keep one full qualification campaign for the candidate; run optional
