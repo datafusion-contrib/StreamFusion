@@ -88,8 +88,6 @@
                 <version>3.13.0</version>
                 <configuration>
                     <excludes>
-                        <exclude>tech/streamfusion/fluss/**</exclude>
-                        <exclude>tech/streamfusion/planner/*Fluss*.java</exclude>
                         <!-- Paimon likewise ships as its own module against the Paimon connector. -->
                         <exclude>tech/streamfusion/paimon/**</exclude>
                         <exclude>tech/streamfusion/planner/Paimon*.java</exclude>

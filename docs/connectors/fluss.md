@@ -13,6 +13,12 @@ establish uniform sustained speedups.
 [Final 2M-event results](#final-nexmark-validation) include all append-only trials and
 separate primary-key correctness pairs.
 
+The connector implementation and its planner providers are owned by
+`streamfusion-fluss/src/main/java`, with SPI resources and tests in the same module.
+The module no longer selects its production classes from the repository's shared
+source tree. Both supported Flink lines retain the same Java identities, provider
+registration and `tech/streamfusion/native/fluss` library resources.
+
 The integration uses the existing Java connection for metadata, security, routing and
 broker RPCs. Concurrent Arrow readers and writers with identical complete client
 configuration share a reference-counted connection within the module's classloader.
