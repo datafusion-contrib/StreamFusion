@@ -2,9 +2,11 @@
 .github
 .idea
 **/target
-!streamfusion-runtime/target/
-!streamfusion-runtime/target/streamfusion-runtime-1.0-SNAPSHOT-runtime.jar
 !streamfusion-core/target/
-!streamfusion-core/target/streamfusion-core-1.0-SNAPSHOT.jar
+streamfusion-core/target/*
+!streamfusion-core/target/streamfusion-core-*-runtime.jar
 !streamfusion-loader/target/
-!streamfusion-loader/target/streamfusion-loader-1.0-SNAPSHOT.jar
+streamfusion-loader/target/*
+!streamfusion-loader/target/streamfusion-loader-*.jar
+streamfusion-loader/target/*-sources.jar
+streamfusion-loader/target/*-javadoc.jar
