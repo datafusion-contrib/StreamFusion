@@ -13,6 +13,12 @@ establish uniform sustained speedups.
 [Final 2M-event results](#final-nexmark-validation) include all append-only trials and
 separate primary-key correctness pairs.
 
+The connector implementation and its planner providers are owned by
+`streamfusion-fluss/src/main/java`, with SPI resources and tests in the same module.
+The module no longer selects its production classes from the repository's shared
+source tree. Both supported Flink lines retain the same Java identities, provider
+registration and `tech/streamfusion/native/fluss` library resources.
+
 The integration uses the existing Java connection for metadata, security, routing and
 broker RPCs. Concurrent Arrow readers and writers with identical complete client
 configuration share a reference-counted connection within the module's classloader.
@@ -1129,9 +1135,10 @@ remains stock. Exact output parity passes for every pair:
 ### CI packaging and offset alignment
 
 The optional Fluss artifact resolves its published coordinates with the same `ossrh`
-POM flattening as the other connectors. Flink 1.18's overridden Javadoc dependency
-list includes the released Fluss connector so the shared source path remains resolvable;
-this does not add Fluss to the runtime or core consumer dependencies.
+POM flattening as the other connectors. Its module-local sources and declared released
+connector dependency also supply Javadoc on both host lines; the parent no longer adds
+Fluss dependencies to document the shared source tree. Runtime and core consumer
+dependencies remain independent of Fluss.
 
 Borrowed uncompressed string/binary offset buffers may start at an unaligned RPC address.
 The decoder copies only an offset buffer whose address is not aligned to four bytes,

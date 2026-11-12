@@ -46,20 +46,11 @@
     </resources>
     <plugins>
       <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-source-plugin</artifactId>
-        <configuration><includes>
-          <include>tech/streamfusion/doris/**/*.java</include>
-          <include>tech/streamfusion/planner/*Doris*.java</include>
-        </includes></configuration>
-      </plugin>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-javadoc-plugin</artifactId>
-        <configuration><sourceFileIncludes>
-          <sourceFileInclude>tech/streamfusion/doris/**/*.java</sourceFileInclude>
-          <sourceFileInclude>tech/streamfusion/planner/*Doris*.java</sourceFileInclude>
-        </sourceFileIncludes></configuration>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <executions><execution>
+          <id>flink-compatibility-sources</id><phase>none</phase>
+        </execution></executions>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
@@ -77,14 +68,6 @@
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>flatten-maven-plugin</artifactId>
         <configuration><flattenMode>ossrh</flattenMode></configuration>
-      </plugin>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-compiler-plugin</artifactId>
-        <configuration><includes>
-          <include>tech/streamfusion/doris/**/*.java</include>
-          <include>tech/streamfusion/planner/*Doris*.java</include>
-        </includes></configuration>
       </plugin>
     </plugins>
   </build>

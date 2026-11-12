@@ -28,7 +28,6 @@
     </dependencies>
 
     <build>
-        <sourceDirectory>${project.basedir}/../src/main/java</sourceDirectory>
         <resources combine.self="override">
             <resource>
                 <directory>${project.basedir}/src/main/resources</directory>
@@ -45,22 +44,20 @@
         <plugins>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <executions><execution>
+                    <id>flink-compatibility-sources</id>
+                    <phase>none</phase>
+                </execution></executions>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
                 <artifactId>flatten-maven-plugin</artifactId>
                 <configuration><flattenMode>ossrh</flattenMode></configuration>
             </plugin>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.13.0</version>
-                <configuration><includes>
-                    <include>tech/streamfusion/parquet/**/*.java</include>
-                    <include>tech/streamfusion/planner/ParquetPlannerExtension.java</include>
-                    <include>tech/streamfusion/planner/ParquetSinkTranslator.java</include>
-                </includes></configuration>
             </plugin>
         </plugins>
     </build>

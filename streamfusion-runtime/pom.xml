@@ -22,10 +22,99 @@
 
     <dependencies>
         <dependency>
+            <groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-kafka${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-json${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-csv${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-raw${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-avro${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-avro-confluent-registry${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-protobuf${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-parquet${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-orc${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-table-runtime</artifactId>
             <version>${flink.version}</version>
             <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-connector-kafka</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-json</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-csv</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-avro</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-orc</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-common</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -35,8 +124,7 @@
         <sourceDirectory>${project.basedir}/../src/main/java</sourceDirectory>
         <testSourceDirectory>${project.basedir}/../src/test/java</testSourceDirectory>
         <resources combine.self="override">
-            <!-- The all-in-one development/test assembly exposes every optional planner provider.
-                 Deployable artifacts carry only their own provider file. -->
+            <!-- Optional providers are supplied by actual module test dependencies. -->
             <resource>
                 <directory>${project.basedir}/src/main/resources</directory>
             </resource>
@@ -82,31 +170,8 @@
                     </execution>
                 </executions>
             </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.13.0</version>
-                <configuration>
-                    <excludes>
-                        <exclude>tech/streamfusion/fluss/**</exclude>
-                        <exclude>tech/streamfusion/planner/*Fluss*.java</exclude>
-                        <!-- Delta is an opt-in module with its own connector dependencies. -->
-                        <exclude>tech/streamfusion/delta/**</exclude>
-                        <exclude>tech/streamfusion/planner/DeltaPlannerExtension.java</exclude>
-                        <exclude>tech/streamfusion/planner/DeltaSinkMatcher.java</exclude>
-                        <exclude>tech/streamfusion/planner/NativeDeltaSinkExecNode.java</exclude>
-                        <exclude>tech/streamfusion/planner/StreamPhysicalNativeDeltaSink.java</exclude>
-                        <!-- Paimon likewise ships as its own module against the Paimon connector. -->
-                        <exclude>tech/streamfusion/paimon/**</exclude>
-                        <exclude>tech/streamfusion/planner/Paimon*.java</exclude>
-                        <exclude>tech/streamfusion/planner/NativePaimon*.java</exclude>
-                        <exclude>tech/streamfusion/planner/StreamPhysicalNativePaimon*.java</exclude>
-                    </excludes>
-                </configuration>
-            </plugin>
-            <!-- The connector-free payload is embedded by the planner loader during the test phase.
-                 Publish this thin reactor artifact after main compilation so the core shading module
-                 can assemble it before downstream tests, not only at package time. -->
+            <!-- Publish the development runtime and shared fixtures before downstream suites run;
+                 the deployment loader independently embeds the core module's shaded payload. -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
@@ -114,9 +179,8 @@
                 <executions>
                     <execution>
                         <id>default-jar</id>
-                        <!-- Move Maven's normal main artifact earlier in the lifecycle so the
-                             core payload can shade it before downstream tests. Reusing the
-                             default execution avoids a second package-phase JAR. -->
+                        <!-- Reuse the normal main artifact execution to avoid a second
+                             package-phase JAR after downstream canonical tests consume it. -->
                         <phase>process-classes</phase>
                         <goals><goal>jar</goal></goals>
                     </execution>
@@ -246,15 +310,8 @@
             </plugin></plugins></build>
         </profile>
         <profile>
+            <!-- Retain the existing command-line profile; JSON is now always in the test assembly. -->
             <id>canonical-kafka</id>
-            <dependencies>
-                <dependency>
-                    <groupId>tech.streamfusion</groupId>
-                    <artifactId>streamfusion-json${streamfusion.artifact.suffix}</artifactId>
-                    <version>${project.version}</version>
-                    <scope>test</scope>
-                </dependency>
-            </dependencies>
         </profile>
         <profile>
             <id>partition-runtime-tests</id>

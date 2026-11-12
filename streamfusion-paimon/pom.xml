@@ -52,7 +52,7 @@
             <version>${project.version}</version><scope>provided</scope>
         </dependency>
         <!-- The released Paimon connector embeds a newer RowData API. Compile against the host
-             Flink API first, including when javac resolves shared projection sources implicitly. -->
+             Flink API first, including when resolving core projection types from dependencies. -->
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-table-common</artifactId>
@@ -92,9 +92,23 @@
                 </exclusion>
             </exclusions>
         </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-connector-kafka</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-json</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
     <build>
-        <sourceDirectory>${project.basedir}/../src/main/java</sourceDirectory>
         <resources combine.self="override">
             <resource>
                 <directory>${project.basedir}/..</directory>
@@ -121,7 +135,7 @@
                 <artifactId>build-helper-maven-plugin</artifactId>
                 <executions>
                     <execution>
-                        <id>paimon-compaction-bridge</id>
+                        <id>flink-compatibility-sources</id>
                         <phase>generate-sources</phase>
                         <goals><goal>add-source</goal></goals>
                         <configuration><sources>
@@ -155,18 +169,6 @@
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.13.0</version>
-                <configuration><includes>
-                    <include>org/apache/paimon/flink/sink/StreamFusionStoreSinkWrite.java</include>
-                    <include>tech/streamfusion/paimon/**/*.java</include>
-                    <include>tech/streamfusion/planner/Paimon*.java</include>
-                    <include>tech/streamfusion/planner/NativePaimon*.java</include>
-                    <include>tech/streamfusion/planner/StreamPhysicalNativePaimon*.java</include>
-                </includes></configuration>
             </plugin>
         </plugins>
     </build>

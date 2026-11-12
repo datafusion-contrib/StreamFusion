@@ -1,5 +1,14 @@
 # Apache Paimon
 
+Production implementation and planner providers live in `streamfusion-paimon/src/main/java`.
+Host-specific adapters and compaction bridges live in the module's
+`src/main/java-flink1.18` and `src/main/java-flink2.2` source sets; a build selects only its
+host line. Paimon 1.0 generates its compatible sources from this module's common and
+Flink 1.18 sources, retaining the existing filtered copy and legacy overrides in
+`streamfusion-paimon1`. It does not maintain a second hand-copied implementation.
+Java class identities, SPI providers, native resources and deployment coordinates are
+unchanged; install the artifact matching the chosen Paimon and Flink versions.
+
 **Status:** experimental. The optional `streamfusion-paimon` module accelerates streaming
 `SELECT` reads and `INSERT INTO` jobs on Paimon **append-only tables** and **primary-key tables with fixed,
 dynamic, or postpone buckets** on published Paimon `2.1.0` for Flink 2.2 and `2.0.0` for Flink 1.18.

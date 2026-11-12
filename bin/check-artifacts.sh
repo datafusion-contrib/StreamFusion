@@ -41,6 +41,8 @@ native_modules="kafka fluss json csv raw avro protobuf parquet orc paimon"
 if [ "$flink_line" = 2.2 ]; then
   modules="$modules delta iceberg doris"
   native_modules="$native_modules iceberg"
+else
+  modules="$modules hudi"
 fi
 entries=$(mktemp)
 native_entries=$(mktemp)
@@ -48,13 +50,13 @@ expected_native_entries=$(mktemp)
 trap 'rm -f "$entries" "$native_entries" "$expected_native_entries"' EXIT HUP INT TERM
 
 assert_flink_identity() {
-  jar_file=$1
-  module=$2
-  manifest=$(unzip -p "$jar_file" META-INF/MANIFEST.MF | tr -d '\r')
+  identity_jar=$1
+  identity_module=$2
+  manifest=$(unzip -p "$identity_jar" META-INF/MANIFEST.MF | tr -d '\r')
   actual_line=$(printf '%s\n' "$manifest" | sed -n 's/^StreamFusion-Flink-Line: //p')
   actual_module=$(printf '%s\n' "$manifest" | sed -n 's/^StreamFusion-Module: //p')
-  if [ "$actual_line" != "$flink_line" ] || [ "$actual_module" != "$module" ]; then
-    echo "$jar_file has identity '$actual_module' / Flink '$actual_line', expected '$module' / Flink '$flink_line'" >&2
+  if [ "$actual_line" != "$flink_line" ] || [ "$actual_module" != "$identity_module" ]; then
+    echo "$identity_jar has identity '$actual_module' / Flink '$actual_line', expected '$identity_module' / Flink '$flink_line'" >&2
     exit 1
   fi
 }
@@ -112,6 +114,13 @@ for suffix in $modules; do
     exit 1
   fi
   assert_flink_identity "$jar_file" "$artifact"
+  case "$suffix" in
+    delta|fluss|paimon|kafka|json|csv|raw|avro|avro-confluent-registry|protobuf|parquet|orc|iceberg|doris|hudi)
+      python3 "$script_dir/check-connector-ownership.py" "$repo_root/$module" "$jar_file" \
+        --flink-line "$flink_line" \
+        --sources-jar "$repo_root/$module/target/$artifact-$version-sources.jar"
+      ;;
+  esac
   if jar tf "$jar_file" | grep -q '^org/slf4j/'; then
     echo "$artifact must use Flink's logging API instead of bundling SLF4J" >&2
     exit 1
@@ -224,6 +233,10 @@ for module in [*modules.split(), "runtime", "loader"]:
                 raise SystemExit(f"{path}: mismatched Flink dependency {artifact}:{dep_version}")
 PYTHON
 
-if [ "$flink_line" = 2.2 ]; then assert_no_native_payload "$repo_root/streamfusion-doris/target/streamfusion-doris-$version.jar" streamfusion-doris; fi
+if [ "$flink_line" = 2.2 ]; then
+  assert_no_native_payload "$repo_root/streamfusion-doris/target/streamfusion-doris-$version.jar" streamfusion-doris
+else
+  assert_no_native_payload "$repo_root/streamfusion-hudi/target/streamfusion-hudi${artifact_suffix}-$version.jar" streamfusion-hudi
+fi
 
 echo "StreamFusion artifact boundaries and consumer POMs are clean for $version / Flink $flink_line"

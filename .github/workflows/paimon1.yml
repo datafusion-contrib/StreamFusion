@@ -7,11 +7,9 @@ on:
     paths:
       - 'streamfusion-paimon1/**'
       - 'streamfusion-paimon/**'
-      - 'src/main/java/tech/streamfusion/paimon/**'
-      - 'src/main/java/tech/streamfusion/planner/*Paimon*'
       - 'src/main/java/tech/streamfusion/arrow/**'
-      - 'src/main/java/tech/streamfusion/parquet/**'
-      - 'src/main/java/tech/streamfusion/orc/**'
+      - 'streamfusion-parquet/**'
+      - 'streamfusion-orc/**'
       - 'src/main/java/tech/streamfusion/operator/**'
       - 'native/paimon/**'
       - 'native/parquet/**'
