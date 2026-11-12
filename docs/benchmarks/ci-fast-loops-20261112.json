@@ -811,6 +811,1068 @@
     "java_versions": {
       "11": "openjdk full version \"11.0.28+6\"",
       "17": "openjdk full version \"17.0.17+10\""
+    },
+    "hosted_validation": {
+      "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43225947903",
+      "sha": "c3fc3786d779b1950007e94e05bcb3763b2cc14d",
+      "outcome": "success",
+      "timed_invocations": 480,
+      "lifecycle_control_invocations": 320,
+      "cohorts": {
+        "runtime-hotspots-cluster-startup-flink2.2-jdk11": {
+          "trials": [
+            {
+              "mode": "eager",
+              "pair": 1,
+              "line": "2.2",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 8.463123153999987,
+              "cpu_seconds": 19.269257,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 3.786
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 3.154
+                },
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.877
+                }
+              },
+              "parent_cluster_starts": 3
+            },
+            {
+              "mode": "lazy",
+              "pair": 1,
+              "line": "2.2",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 5.669174815000019,
+              "cpu_seconds": 11.481988,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 1.385
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.626
+                },
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.493
+                }
+              },
+              "parent_cluster_starts": 0
+            },
+            {
+              "mode": "lazy",
+              "pair": 2,
+              "line": "2.2",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 5.736385394999985,
+              "cpu_seconds": 11.696231000000001,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.715
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 1.37
+                },
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.301
+                }
+              },
+              "parent_cluster_starts": 0
+            },
+            {
+              "mode": "eager",
+              "pair": 2,
+              "line": "2.2",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 7.837858153000013,
+              "cpu_seconds": 19.662515999999997,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.627
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.898
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 3.417
+                }
+              },
+              "parent_cluster_starts": 3
+            },
+            {
+              "mode": "eager",
+              "pair": 3,
+              "line": "2.2",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 8.026285665000017,
+              "cpu_seconds": 19.553410000000003,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.944
+                },
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.353
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 3.57
+                }
+              },
+              "parent_cluster_starts": 3
+            },
+            {
+              "mode": "lazy",
+              "pair": 3,
+              "line": "2.2",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 5.6980235819999905,
+              "cpu_seconds": 11.490830000000003,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.361
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.564
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 1.358
+                }
+              },
+              "parent_cluster_starts": 0
+            }
+          ],
+          "summary": {
+            "eager": {
+              "elapsed_seconds": 8.026285665000017,
+              "cpu_seconds": 19.553410000000003
+            },
+            "lazy": {
+              "elapsed_seconds": 5.6980235819999905,
+              "cpu_seconds": 11.490830000000003
+            },
+            "elapsed_reduction": 0.29007964333400305,
+            "cpu_reduction": 0.4123362625751723
+          },
+          "lifecycle_controls_passed": 79
+        },
+        "runtime-hotspots-cluster-startup-flink2.2-jdk17": {
+          "trials": [
+            {
+              "mode": "eager",
+              "pair": 1,
+              "line": "2.2",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 8.021736698000012,
+              "cpu_seconds": 19.282125,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 3.199
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.702
+                },
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.408
+                }
+              },
+              "parent_cluster_starts": 3
+            },
+            {
+              "mode": "lazy",
+              "pair": 1,
+              "line": "2.2",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 5.7317933289999985,
+              "cpu_seconds": 12.163841,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 1.164
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.522
+                },
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.336
+                }
+              },
+              "parent_cluster_starts": 0
+            },
+            {
+              "mode": "lazy",
+              "pair": 2,
+              "line": "2.2",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 5.778505739000025,
+              "cpu_seconds": 12.285134000000006,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.551
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 1.2
+                },
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.299
+                }
+              },
+              "parent_cluster_starts": 0
+            },
+            {
+              "mode": "eager",
+              "pair": 2,
+              "line": "2.2",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 7.727467144000002,
+              "cpu_seconds": 19.335807999999997,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.261
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.586
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 3.065
+                }
+              },
+              "parent_cluster_starts": 3
+            },
+            {
+              "mode": "eager",
+              "pair": 3,
+              "line": "2.2",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 7.904164234999996,
+              "cpu_seconds": 19.506961,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.56
+                },
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.164
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 3.1
+                }
+              },
+              "parent_cluster_starts": 3
+            },
+            {
+              "mode": "lazy",
+              "pair": 3,
+              "line": "2.2",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 5.779980579000011,
+              "cpu_seconds": 12.291565999999996,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.284
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.542
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 1.22
+                }
+              },
+              "parent_cluster_starts": 0
+            }
+          ],
+          "summary": {
+            "eager": {
+              "elapsed_seconds": 7.904164234999996,
+              "cpu_seconds": 19.335807999999997
+            },
+            "lazy": {
+              "elapsed_seconds": 5.778505739000025,
+              "cpu_seconds": 12.285134000000006
+            },
+            "elapsed_reduction": 0.2689289383167748,
+            "cpu_reduction": 0.3646433601326612
+          },
+          "lifecycle_controls_passed": 79
+        },
+        "runtime-hotspots-cluster-startup-flink1.18-jdk17": {
+          "trials": [
+            {
+              "mode": "eager",
+              "pair": 1,
+              "line": "1.18",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 5.782342559999989,
+              "cpu_seconds": 12.234299,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 1.632
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 1.785
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.177
+                }
+              },
+              "parent_cluster_starts": 3
+            },
+            {
+              "mode": "lazy",
+              "pair": 1,
+              "line": "1.18",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 4.046984328999997,
+              "cpu_seconds": 7.860825000000003,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.828
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.451
+                },
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.24
+                }
+              },
+              "parent_cluster_starts": 0
+            },
+            {
+              "mode": "lazy",
+              "pair": 2,
+              "line": "1.18",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 4.312825136000015,
+              "cpu_seconds": 8.153615999999998,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.437
+                },
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.238
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.952
+                }
+              },
+              "parent_cluster_starts": 0
+            },
+            {
+              "mode": "eager",
+              "pair": 2,
+              "line": "1.18",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 5.571876932999999,
+              "cpu_seconds": 12.553575000000002,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 1.402
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.127
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 1.705
+                }
+              },
+              "parent_cluster_starts": 3
+            },
+            {
+              "mode": "eager",
+              "pair": 3,
+              "line": "1.18",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 5.501831815000003,
+              "cpu_seconds": 12.239481000000005,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 1.713
+                },
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 1.598
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.068
+                }
+              },
+              "parent_cluster_starts": 3
+            },
+            {
+              "mode": "lazy",
+              "pair": 3,
+              "line": "1.18",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 4.1767344149999985,
+              "cpu_seconds": 7.888418000000004,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.35
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.932
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.411
+                }
+              },
+              "parent_cluster_starts": 0
+            }
+          ],
+          "summary": {
+            "eager": {
+              "elapsed_seconds": 5.571876932999999,
+              "cpu_seconds": 12.239481000000005
+            },
+            "lazy": {
+              "elapsed_seconds": 4.1767344149999985,
+              "cpu_seconds": 7.888418000000004
+            },
+            "elapsed_reduction": 0.2503900453610396,
+            "cpu_reduction": 0.35549407691388213
+          },
+          "lifecycle_controls_passed": 81
+        },
+        "runtime-hotspots-cluster-startup-flink1.18-jdk11": {
+          "trials": [
+            {
+              "mode": "eager",
+              "pair": 1,
+              "line": "1.18",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 8.229844979000006,
+              "cpu_seconds": 17.216402000000002,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.445
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.771
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 3.322
+                }
+              },
+              "parent_cluster_starts": 3
+            },
+            {
+              "mode": "lazy",
+              "pair": 1,
+              "line": "1.18",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 5.419867366000005,
+              "cpu_seconds": 10.747158999999998,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 1.247
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.719
+                },
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.417
+                }
+              },
+              "parent_cluster_starts": 0
+            },
+            {
+              "mode": "lazy",
+              "pair": 2,
+              "line": "1.18",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 5.65703434400001,
+              "cpu_seconds": 10.909402,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.758
+                },
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.563
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 1.337
+                }
+              },
+              "parent_cluster_starts": 0
+            },
+            {
+              "mode": "eager",
+              "pair": 2,
+              "line": "1.18",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 7.154375619999996,
+              "cpu_seconds": 17.211789000000003,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.312
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.919
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.368
+                }
+              },
+              "parent_cluster_starts": 3
+            },
+            {
+              "mode": "eager",
+              "pair": 3,
+              "line": "1.18",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 7.1507861700000035,
+              "cpu_seconds": 17.368139000000006,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.465
+                },
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.148
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.931
+                }
+              },
+              "parent_cluster_starts": 3
+            },
+            {
+              "mode": "lazy",
+              "pair": 3,
+              "line": "1.18",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 5.413949656999989,
+              "cpu_seconds": 10.950081999999998,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.466
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 1.245
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.706
+                }
+              },
+              "parent_cluster_starts": 0
+            }
+          ],
+          "summary": {
+            "eager": {
+              "elapsed_seconds": 7.154375619999996,
+              "cpu_seconds": 17.216402000000002
+            },
+            "lazy": {
+              "elapsed_seconds": 5.419867366000005,
+              "cpu_seconds": 10.909402
+            },
+            "elapsed_reduction": 0.24244019969418262,
+            "cpu_reduction": 0.36633670612477576
+          },
+          "lifecycle_controls_passed": 81
+        }
+      },
+      "retry": "Three initial jobs failed on HTTP 502 in the producer jobs API before test execution. Rerunning only those failed jobs passed; the successful first-attempt cohort was retained."
     }
   },
   "queue_baseline": {
@@ -824,5 +1886,227 @@
     "canonical_eligible_to_start_max_seconds": 9000.0,
     "method": "Use completed successful job intervals and actual first-step start times. Canonical eligibility is completion of all four required preparation jobs. Sweep execution intervals for peak overlapping CI jobs.",
     "limits": "Observed overlap within this CI run, not an account quota declaration. Eligibility-to-start delay includes scheduler/runner waiting; it does not identify which other campaign or scheduler policy caused a delay."
+  },
+  "native_payload_probe": {
+    "source_run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43203430658",
+    "source_sha": "61908c0af4e34b731bf0ff13dcd8a776cc2f9bc9",
+    "artifact": "debug-native-61908c0af4e34b731bf0ff13dcd8a776cc2f9bc9",
+    "method": "GNU binutils 2.39 in a temporary Linux amd64 Alpine container; compare original, strip-debug and strip-unneeded copies. Verify ELF machine remains x86-64 and every allocated section including dynamic symbol/string tables retains identical type, flags, virtual address, size and content. Sum independent raw DEFLATE level-1 stream sizes for each library.",
+    "libraries": [
+      {
+        "name": "libstreamfusion.so",
+        "variants": {
+          "native-original": {
+            "bytes": 620049208,
+            "deflate_level1_bytes": 166172714
+          },
+          "native-no-debug": {
+            "bytes": 258683736,
+            "deflate_level1_bytes": 59273829
+          },
+          "native-unneeded": {
+            "bytes": 169091840,
+            "deflate_level1_bytes": 44128539
+          }
+        }
+      },
+      {
+        "name": "libstreamfusion_avro.so",
+        "variants": {
+          "native-original": {
+            "bytes": 80126496,
+            "deflate_level1_bytes": 15296846
+          },
+          "native-no-debug": {
+            "bytes": 31759408,
+            "deflate_level1_bytes": 6807306
+          },
+          "native-unneeded": {
+            "bytes": 21792456,
+            "deflate_level1_bytes": 5043255
+          }
+        }
+      },
+      {
+        "name": "libstreamfusion_csv.so",
+        "variants": {
+          "native-original": {
+            "bytes": 75562088,
+            "deflate_level1_bytes": 13899931
+          },
+          "native-no-debug": {
+            "bytes": 29623384,
+            "deflate_level1_bytes": 6148850
+          },
+          "native-unneeded": {
+            "bytes": 20280464,
+            "deflate_level1_bytes": 4538068
+          }
+        }
+      },
+      {
+        "name": "libstreamfusion_fluss.so",
+        "variants": {
+          "native-original": {
+            "bytes": 60021792,
+            "deflate_level1_bytes": 10464202
+          },
+          "native-no-debug": {
+            "bytes": 14322680,
+            "deflate_level1_bytes": 3179088
+          },
+          "native-unneeded": {
+            "bytes": 9922728,
+            "deflate_level1_bytes": 2341932
+          }
+        }
+      },
+      {
+        "name": "libstreamfusion_iceberg.so",
+        "variants": {
+          "native-original": {
+            "bytes": 231646672,
+            "deflate_level1_bytes": 48391454
+          },
+          "native-no-debug": {
+            "bytes": 98021688,
+            "deflate_level1_bytes": 23925089
+          },
+          "native-unneeded": {
+            "bytes": 68108744,
+            "deflate_level1_bytes": 18366055
+          }
+        }
+      },
+      {
+        "name": "libstreamfusion_json.so",
+        "variants": {
+          "native-original": {
+            "bytes": 78054688,
+            "deflate_level1_bytes": 14706765
+          },
+          "native-no-debug": {
+            "bytes": 31385968,
+            "deflate_level1_bytes": 6702559
+          },
+          "native-unneeded": {
+            "bytes": 21589360,
+            "deflate_level1_bytes": 4980808
+          }
+        }
+      },
+      {
+        "name": "libstreamfusion_kafka.so",
+        "variants": {
+          "native-original": {
+            "bytes": 83136544,
+            "deflate_level1_bytes": 16375702
+          },
+          "native-no-debug": {
+            "bytes": 32608032,
+            "deflate_level1_bytes": 7410456
+          },
+          "native-unneeded": {
+            "bytes": 22852320,
+            "deflate_level1_bytes": 5600223
+          }
+        }
+      },
+      {
+        "name": "libstreamfusion_orc.so",
+        "variants": {
+          "native-original": {
+            "bytes": 121172496,
+            "deflate_level1_bytes": 22598472
+          },
+          "native-no-debug": {
+            "bytes": 52906704,
+            "deflate_level1_bytes": 11182398
+          },
+          "native-unneeded": {
+            "bytes": 36388864,
+            "deflate_level1_bytes": 8244842
+          }
+        }
+      },
+      {
+        "name": "libstreamfusion_paimon.so",
+        "variants": {
+          "native-original": {
+            "bytes": 202832600,
+            "deflate_level1_bytes": 46687992
+          },
+          "native-no-debug": {
+            "bytes": 94228144,
+            "deflate_level1_bytes": 24609297
+          },
+          "native-unneeded": {
+            "bytes": 65774360,
+            "deflate_level1_bytes": 19089439
+          }
+        }
+      },
+      {
+        "name": "libstreamfusion_parquet.so",
+        "variants": {
+          "native-original": {
+            "bytes": 106264784,
+            "deflate_level1_bytes": 22022143
+          },
+          "native-no-debug": {
+            "bytes": 49704560,
+            "deflate_level1_bytes": 11724369
+          },
+          "native-unneeded": {
+            "bytes": 36381864,
+            "deflate_level1_bytes": 9275486
+          }
+        }
+      },
+      {
+        "name": "libstreamfusion_protobuf.so",
+        "variants": {
+          "native-original": {
+            "bytes": 80857768,
+            "deflate_level1_bytes": 15327544
+          },
+          "native-no-debug": {
+            "bytes": 32640568,
+            "deflate_level1_bytes": 7028802
+          },
+          "native-unneeded": {
+            "bytes": 22549584,
+            "deflate_level1_bytes": 5249610
+          }
+        }
+      },
+      {
+        "name": "libstreamfusion_raw.so",
+        "variants": {
+          "native-original": {
+            "bytes": 74900096,
+            "deflate_level1_bytes": 13693234
+          },
+          "native-no-debug": {
+            "bytes": 29137808,
+            "deflate_level1_bytes": 5990632
+          },
+          "native-unneeded": {
+            "bytes": 19982096,
+            "deflate_level1_bytes": 4417409
+          }
+        }
+      }
+    ],
+    "decision": "Prototype only. Prefer debug-only stripping to retain static function names. Preserve the original full-symbol artifact for diagnostics; test consumers can use separate smaller payloads. Canonical Kafka source/sink fixtures use JSON, requiring core, JSON and Kafka libraries.",
+    "limits": "Offline file-size and allocated-section equivalence checks; no loaded JNI test against stripped copies yet. Deflate totals exclude ZIP container headers. No whole-CI timing claim.",
+    "real_staging_validation": {
+      "libraries": 12,
+      "original_bytes": 1814625232,
+      "test_bytes": 755022680,
+      "allocated_section_comparison": "passed for every library",
+      "tool": "GNU binutils 2.39, Linux amd64, Python 3.10",
+      "status": "offline staging validated; hosted JNI validation pending"
+    }
   }
 }

@@ -13,6 +13,9 @@ maintainer authorization.
 
 Conserve runner capacity by testing changed functionality locally and reusing compatible build
 caches while iterating.
+Keep concurrent tasks on distinct branches and worktrees when a shared checkout is active.
+Preserve other work when isolating changes; shared-branch commits can invalidate another
+task's candidate checks and force unnecessary restarts.
 
 Use short feedback loops before broad qualification. Reproduce a measured bottleneck with the
 smallest unchanged test selection that exercises it, profile the actual worker processes, and

@@ -261,11 +261,16 @@ architectures, every staged library and propagation of native build failures. Th
 repeated compiler invocations; hosted elapsed-time improvement still needs measurement.
 
 Ordinary CI builds all workspace debug native libraries once in a dedicated Ubuntu 24.04
-job. That job verifies the package dependencies and JNI export boundaries, then uploads only
-the shared libraries as a commit-specific artifact. The eight Java and eleven lake-module
-test jobs download those libraries into `native/target/debug` and pass
+job. That job verifies the package dependencies and JNI export boundaries. The original
+`debug-native-SHA` artifact retains full symbols for diagnostics. Test consumers use
+`test-native-SHA`, containing the same libraries after `strip --strip-debug`; canonical
+consumers use `canonical-native-SHA`, containing core, JSON and Kafka libraries. Staging
+preserves the Cargo outputs and cache, verifies ELF identity and every allocated section's
+type, flags, virtual address, size and bytes, and retains static function names. The producer
+removes its staged copies after upload. Consumers download their payload into `native/target/debug` and pass
 `-Dnative.build.skip=true` to Maven. Both JDKs and Flink lines exercise the same native build;
-each consumer still compiles its selected Java reactor and runs its existing tests. A failed
+runtime and lake consumers compile their selected Java reactors, while canonical consumers
+restore their compiled Java inputs. Every consumer runs its existing tests. A failed
 producer blocks the consumers and fails the aggregate CI gate. Consumers have no fallback to
 an older cache or a local native rebuild.
 
@@ -274,6 +279,13 @@ libraries rather than restoring Cargo intermediates or installing a Rust toolcha
 test job separately compiles its test harnesses and checks every tagged native package in
 isolation once, preserving the checks for dependencies accidentally supplied by the workspace.
 The native build retains Cargo's `--timings` report as a separate diagnostic artifact.
+That artifact also records original and staged library sizes. A real Linux amd64 staging
+probe retained all allocated sections across all 12 libraries while reducing uncompressed
+bytes from 1,814,625,232 to 755,022,680. Independent DEFLATE level-1 payload totals fall from
+405,636,999 to 173,982,675 bytes; the canonical three-library subset totals 73,386,844 bytes.
+These are file-size measurements rather than whole-workflow timing. Full-symbol diagnostics
+and release libraries retain their existing behavior. See the
+[structured probe](benchmarks/ci-fast-loops-20261112.json) for each library and limits.
 The Rust test job reads that same dependency cache instead of maintaining another copy;
 it still compiles and runs its own harnesses and standalone package checks.
 
@@ -532,6 +544,11 @@ with prepared metadata archives falls from 24.758 to 24.112 seconds (2.6%), with
 CPU. These are selected local comparisons, not whole-CI gains. The
 [structured trials](benchmarks/ci-fast-loops-20261112.json) retain every measurement and limit.
 
+The focused Linux run 43225947903 passes all four Flink/JDK cohorts: 480 timed invocations
+and 320 lifecycle, native-memory and SQL controls, with no failures or skips. Across those
+cohorts, eager-to-lazy unit/operator medians improve 24.2–29.0% elapsed and 35.5–41.2% CPU.
+These hosted selected-workload results still do not establish a whole-CI speedup.
+
 A local paired check of 66 tests in 19 lightweight operator classes reduced the Surefire
 phase from 5.514 s to 4.344 s with one fork and identical release libraries. A two-fork
 check confirms that ordinary classes start only one cluster per fork, rather than one per
@@ -684,9 +701,14 @@ yet available as a released CI fixture.
 ## Complete canonical job matrix
 
 Canonical Java compilation runs once for each Flink/JDK pair, in four required preparation
-jobs. Those jobs retain the ordinary Maven lifecycle, including dependency resolution,
-Java and protobuf compilation, javadoc checks and the runtime's reactor dependencies' tests.
-Only the runtime test execution is deferred to the existing 64 canonical shards.
+jobs. These jobs depend on the change plan and start alongside native work; compilation
+does not download or wait for a native library. They retain Maven dependency resolution,
+Java and protobuf compilation and javadoc checks, with test execution deferred.
+The 64 consumer shards require both Java preparation and the native producer. The first
+shard in each Flink/JDK cohort executes the reactor dependencies' test lifecycle; the
+remaining shards skip dependency tests. Every shard runs its complete selected runtime
+inventory. This keeps once-per-cohort dependency-test coverage without delaying pure
+compilation behind the runtime queue.
 
 Each preparation uploads a one-day, exact-commit archive of the runtime, core and JSON
 compiled classes, non-native resources and test classes. Native libraries are supplied by
@@ -695,7 +717,7 @@ packaged reactor JARs are regenerated by that lifecycle rather than transferred 
 The archive excludes Surefire reports,
 checkpoints, diagnostics and other execution state. Consumers verify its checksum, source
 commit, Flink line, complete Java version, operating system and architecture before restoring
-into fresh output directories. They still download the same commit's debug native artifact,
+into fresh output directories. They download the same commit's canonical native payload,
 resolve dependencies with bounded retries, discover their complete compiled canonical
 inventory, and create independent workers, archives and application state.
 Both preparation and consumer jobs pin the same complete Temurin release (11.0.32+1 or
@@ -712,11 +734,14 @@ for that artifact. This measures archive size; it does not establish whole-CI sa
 Consumers keep Maven's `test` lifecycle so uninstalled reactor dependencies resolve correctly.
 The explicit `sf.ci.precompiledJava=true` profile skips only Java compilation and the already
 completed javadoc check. Surefire remains active through `sf.runtime.tests.skip=false`;
-reactor dependency tests run in preparation for the same Flink/JDK pair. Protobuf/resource
+reactor dependency tests run in shard 1 for the same Flink/JDK pair. Protobuf/resource
 preparation and both Surefire executions retain their usual lifecycle behavior. Ordinary
 local builds and the other CI jobs do not activate this profile. A real three-module Maven
 regression transfers compiled outputs to a fresh consumer, verifies reactor dependency
 resolution and parameterized cases, and requires an intentional selected failure to fail Maven.
+The regression compiles without any native library, checks the first consumer executes
+dependency and runtime tests, then verifies a later consumer skips dependency tests while
+still running every parameterized runtime case.
 
 The [retained baseline](benchmarks/ci-profile-20261112.json) records every canonical class's
 outcome counts, each cohort's complete inventory and invocation digest, and Actions phase costs.
@@ -755,7 +780,7 @@ deterministic bundle boundaries retain their stricter raw-changelog assertions. 
 fixture also checks every retraction against the current result and rejects a second live result.
 
 Both Flink lines run complete canonical handoff jobs in 16 required shards on each of JDK 11
-and 17. Every shard uses the same shared debug native artifact, startup compiler settings and
+and 17. Every shard uses the same commit's canonical native payload, startup compiler settings and
 scoped class-data cache. Flink 1.18 combines its release profile with `canonical-kafka`; dependency
 resolution, compilation and execution use the same profiles. Artifacts include the Flink line,
 JDK and shard, and selection manifests record the line. The former five-family smoke step in
@@ -915,6 +940,21 @@ the profiler's broader start-delay field, which also includes prerequisites. Red
 setup, avoiding overlapping campaigns, balancing work and removing dependency barriers should
 precede increasing job counts. Preserve all configurations and test invocations when grouping
 compatible checks. Structured timing observations live alongside the short-loop evidence.
+
+The **CI startup profile** workflow's `canonical-setup` suite delegates to the
+**Canonical setup probe**, checking one chosen Flink/JDK pair with two fresh runners.
+Its producer compiles and packs Java before any native library is available.
+The consumer verifies the pinned JDK and transfer, reuses a source-verified existing native
+producer, stages only core/JSON/Kafka libraries without debug information, and runs eight
+selected recovery and real-broker source/sink cases. Positive native work and existing
+stock isolation assertions remain active. Smoke flags are confined to this diagnostic;
+the ordinary CI matrix retains every provider. This probe checks setup quickly and cannot
+satisfy the full CI merge gate.
+
+Native-source verification reads producer jobs in 20-row pages and retries transient
+HTTP 429/5xx responses with bounded delays. The first cluster-startup diagnostic encountered
+three HTTP 502 failures before test execution; retrying only those jobs passed. Source
+differences, failed producers and permission failures remain errors.
 
 For a short local attribution loop, set `SF_CANONICAL_PROFILE_DIR` to a task-specific
 directory and run `CanonicalGroupArithmeticJobTest` with

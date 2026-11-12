@@ -61,14 +61,51 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+      - name: Stage test libraries without duplicated debug information
+        id: test-payload
+        run: |
+          python3 bin/ci_native_test_artifact.py --input native/target/debug \
+            --output "$RUNNER_TEMP/test-native-$GITHUB_SHA"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: test-native-${{ github.sha }}
+          path: ${{ runner.temp }}/test-native-${{ github.sha }}/*.so
+          compression-level: 1
+          if-no-files-found: error
+          retention-days: 1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: canonical-native-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/test-native-${{ github.sha }}/libstreamfusion.so
+            ${{ runner.temp }}/test-native-${{ github.sha }}/libstreamfusion_json.so
+            ${{ runner.temp }}/test-native-${{ github.sha }}/libstreamfusion_kafka.so
+          compression-level: 1
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Retain native compilation timings
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: debug-native-timings-${{ github.sha }}
-          path: native/target/cargo-timings
+          path: |
+            native/target/cargo-timings
+            ${{ runner.temp }}/test-native-${{ github.sha }}/manifest.json
           if-no-files-found: ignore
           retention-days: 7
+
+      - name: Remove staged test libraries
+        if: always() && steps.test-payload.outcome == 'success'
+        run: |
+          python3 - <<'PY_CLEAN'
+          import os
+          from pathlib import Path
+          import shutil
+          shutil.rmtree(Path(os.environ['RUNNER_TEMP']) / ('test-native-' + os.environ['GITHUB_SHA']))
+          PY_CLEAN
 
   native-tests:
     needs: plan
@@ -164,6 +201,8 @@ jobs:
           python3 -m unittest discover -s bin -p 'test_ci_module_groups.py'
           python3 -m unittest discover -s bin -p 'test_ci_runtime_test_shards.py'
           python3 -m unittest discover -s bin -p 'test_ci_java_build.py'
+          python3 -m unittest discover -s bin -p 'test_ci_native_source.py'
+          python3 -m unittest discover -s bin -p 'test_ci_native_test_artifact.py'
           python3 -m unittest discover -s bin -p 'test_ci_maven_dependencies.py'
           python3 -m unittest discover -s bin -p 'test_ci_plan.py'
           python3 -m unittest discover -s bin -p 'test_profile_ci.py'
@@ -181,7 +220,7 @@ jobs:
 
       - uses: actions/download-artifact@v5
         with:
-          name: debug-native-${{ github.sha }}
+          name: test-native-${{ github.sha }}
           path: native/target/debug
 
       # The Kafka decode harnesses use the hosted runner's Docker daemon.
@@ -264,7 +303,8 @@ jobs:
           if-no-files-found: error
 
   canonical-java-build:
-    needs: native-build
+    needs: plan
+    if: needs.plan.outputs.tests == 'true'
     name: Prepare canonical Java (Flink ${{ matrix.line }}, JDK ${{ matrix.jdk }})
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -289,18 +329,14 @@ jobs:
           distribution: temurin
           java-version: ${{ matrix.jdk == '11' && env.CANONICAL_JAVA_11 || env.CANONICAL_JAVA_17 }}
           cache: maven
-      - uses: actions/download-artifact@v5
-        with:
-          name: debug-native-${{ github.sha }}
-          path: native/target/debug
       - name: Resolve canonical Java dependencies
         run: |
           python3 bin/ci-maven-dependencies.py --profile "${{ matrix.profiles }}" --projects streamfusion-runtime --also-make
           python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5 --artifact com.google.protobuf:protobuf-java:2.5.0
-      - name: Compile canonical Java and check its reactor dependencies once
+      - name: Compile canonical Java before native-dependent work
         run: |
           mvn -B -ntp -P${{ matrix.profiles }} -pl streamfusion-runtime -am test \
-            -Dsf.runtime.tests.skip=true -Dnative.build.skip=true \
+            -DskipTests=true -Dnative.build.skip=true \
             -Dsf.testForks=4 -Dsf.testReuseForks=false "-Dsf.extraJvmArgs=-Xmx1g"
           python3 bin/ci_java_build.py pack --line '${{ matrix.line }}' \
             --archive "$RUNNER_TEMP/canonical-java.tar.gz"
@@ -311,17 +347,9 @@ jobs:
           compression-level: 0
           if-no-files-found: error
           retention-days: 1
-      - name: Retain preparation failure diagnostics
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: canonical-java-failures-${{ matrix.line }}-jdk${{ matrix.jdk }}-${{ github.sha }}
-          path: '**/surefire-reports/*'
-          if-no-files-found: ignore
-          retention-days: 7
 
   canonical-job-tests:
-    needs: canonical-java-build
+    needs: [native-build, canonical-java-build]
     name: Canonical savepoint jobs (Flink ${{ matrix.line }}, JDK ${{ matrix.jdk }}) (shard ${{ matrix.shard }})
     runs-on: ubuntu-24.04
     timeout-minutes: 180
@@ -353,7 +381,7 @@ jobs:
           cache: maven
       - uses: actions/download-artifact@v5
         with:
-          name: debug-native-${{ github.sha }}
+          name: canonical-native-${{ github.sha }}
           path: native/target/debug
       - uses: actions/download-artifact@v5
         with:
@@ -386,7 +414,7 @@ jobs:
           mvn -B -ntp -P${{ matrix.profiles }} -pl streamfusion-runtime -am test \
             -Dnative.build.skip=true -Dsf.protobuf.checkStaleness=true \
             -Dsf.ci.precompiledJava=true \
-            -DskipTests=true -Dsf.runtime.tests.skip=false \
+            -DskipTests=${{ matrix.shard != 1 }} -Dsf.runtime.tests.skip=false \
             "-Dsf.runtime.testIncludesFile=$RUNNER_TEMP/canonical-job-includes.txt" \
             -Dsf.testForks=4 -Dsf.testReuseForks=false "-Dsf.extraJvmArgs=-Xmx1g"
       - name: Retain canonical job selection and outcomes
@@ -400,6 +428,17 @@ jobs:
             ${{ runner.temp }}/canonical-cds/*.log
             **/hs_err_pid*.log
           if-no-files-found: error
+          retention-days: 7
+
+      - name: Retain reactor dependency failures
+        if: failure() && matrix.shard == 1
+        uses: actions/upload-artifact@v4
+        with:
+          name: canonical-reactor-tests-flink${{ matrix.line }}-jdk${{ matrix.jdk }}
+          path: |
+            streamfusion-core/target/surefire-reports/*
+            streamfusion-json/target/surefire-reports/*
+          if-no-files-found: warn
           retention-days: 7
 
       - name: Remove canonical worker class metadata
@@ -497,7 +536,7 @@ jobs:
 
       - uses: actions/download-artifact@v5
         with:
-          name: debug-native-${{ github.sha }}
+          name: test-native-${{ github.sha }}
           path: native/target/debug
 
       - name: Resolve lake module dependencies before tests
@@ -544,7 +583,7 @@ jobs:
           cache: maven
       - uses: actions/download-artifact@v5
         with:
-          name: debug-native-${{ github.sha }}
+          name: test-native-${{ github.sha }}
           path: native/target/debug
       - name: Resolve Doris dependencies before tests
         run: python3 bin/ci-maven-dependencies.py --profile doris,doris-it,doris-upstream --projects streamfusion-doris --also-make

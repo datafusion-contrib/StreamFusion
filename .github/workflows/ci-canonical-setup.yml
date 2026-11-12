@@ -1,0 +1,179 @@
+name: Canonical setup probe
+
+on:
+  workflow_call:
+    inputs:
+      line:
+        type: string
+        default: '2.2'
+      jdk:
+        type: string
+        default: '11'
+      native_run:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      line:
+        type: choice
+        options: ['2.2', '1.18']
+        default: '2.2'
+        description: 'Flink line for the focused transfer and worker check'
+      jdk:
+        type: choice
+        options: ['11', '17']
+        default: '11'
+        description: 'JDK release cohort'
+      native_run:
+        type: string
+        required: true
+        description: 'Existing successful native producer with unchanged build inputs'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: canonical-setup-${{ github.ref }}-${{ inputs.line }}-${{ inputs.jdk }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: ${{ inputs.jdk == '11' && '11.0.32+1' || '17.0.21+9' }}
+  FLINK_PROFILES: ${{ inputs.line == '1.18' && 'flink-1.18,canonical-kafka' || 'canonical-kafka' }}
+  JAVA_TOOL_OPTIONS: '-XX:TieredStopAtLevel=1 -XX:ReservedCodeCacheSize=512m'
+  RUST_BACKTRACE: '1'
+
+jobs:
+  prepare:
+    if: github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - run: python3 bin/ci-free-disk.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+      - name: Compile and pack without a native build or library download
+        run: |
+          python3 bin/ci-maven-dependencies.py --profile "$FLINK_PROFILES" --projects streamfusion-runtime --also-make
+          python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5 --artifact com.google.protobuf:protobuf-java:2.5.0
+          mvn -B -ntp -P"$FLINK_PROFILES" -pl streamfusion-runtime -am test \
+            -DskipTests=true -Dnative.build.skip=true
+          python3 bin/ci_java_build.py pack --line '${{ inputs.line }}' \
+            --archive "$RUNNER_TEMP/canonical-java.tar.gz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: canonical-java-${{ inputs.line }}-jdk${{ inputs.jdk }}-${{ github.sha }}
+          path: ${{ runner.temp }}/canonical-java.tar.gz*
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 1
+
+  consume:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      SF_KAFKA_INTEGRATION: 'true'
+      JAVA_TOOL_OPTIONS: >-
+        -XX:TieredStopAtLevel=1 -XX:ReservedCodeCacheSize=512m
+        ${{ inputs.jdk == '11' && '-XX:+UseSerialGC' || '' }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          filter: blob:none
+      - run: python3 bin/ci-free-disk.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+      - uses: actions/download-artifact@v5
+        with:
+          name: canonical-java-${{ inputs.line }}-jdk${{ inputs.jdk }}-${{ github.sha }}
+          path: ${{ runner.temp }}
+      - name: Restore on a fresh runner with the same pinned JDK
+        run: |
+          python3 bin/ci_java_build.py restore --line '${{ inputs.line }}' \
+            --archive "$RUNNER_TEMP/canonical-java.tar.gz"
+          rm "$RUNNER_TEMP/canonical-java.tar.gz" "$RUNNER_TEMP/canonical-java.tar.gz.sha256"
+      - name: Verify the existing native producer
+        id: native
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NATIVE_RUN: ${{ inputs.native_run }}
+        run: python3 bin/ci_native_source.py --run "$NATIVE_RUN"
+      - uses: actions/download-artifact@v5
+        with:
+          name: ${{ steps.native.outputs.artifact }}
+          run-id: ${{ inputs.native_run }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/original-native
+      - name: Exercise the smaller canonical native payload
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          original = Path(os.environ['RUNNER_TEMP']) / 'original-native'
+          required = {'libstreamfusion.so', 'libstreamfusion_json.so', 'libstreamfusion_kafka.so'}
+          if not required.issubset({path.name for path in original.glob('*.so')}):
+              raise SystemExit('Missing a required canonical native library')
+          for path in original.glob('*.so'):
+              if path.name not in required:
+                  path.unlink()
+          PY
+          python3 bin/ci_native_test_artifact.py --input "$RUNNER_TEMP/original-native" \
+            --output native/target/debug
+      - name: Resolve the restored reactor dependencies
+        run: |
+          python3 bin/ci-maven-dependencies.py --profile "$FLINK_PROFILES" --projects streamfusion-runtime --also-make
+          python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5 --artifact com.google.protobuf:protobuf-java:2.5.0
+      - name: Run isolated recovery and real-broker source/sink checks
+        env:
+          SF_CANONICAL_CDS_DIR: ${{ runner.temp }}/canonical-cds
+        run: |
+          mvn -B -ntp -P"$FLINK_PROFILES" -pl streamfusion-runtime -am test \
+            -Dnative.build.skip=true -Dsf.ci.precompiledJava=true -Dsf.protobuf.checkStaleness=true \
+            -DskipTests=true -Dsf.runtime.tests.skip=false \
+            '-Dtest=CanonicalRegularJoinJobTest#regularStateContinuesAcrossCleanEngineProcesses+nativeRegularCheckpointResumesBeforeCanonicalSwitch,CanonicalManagedUdfDecimalKeyJobTest,CanonicalKafkaSourceJobTest,CanonicalKafkaSinkJobTest' \
+            -Dstreamfusion.test.regularJoinJobSmoke=true -Dsf.canonical.wideKeys.job.smoke=true \
+            -Dsf.canonical.kafka.mode=checkpoint -Dsf.canonical.kafka.sink.mode=checkpoint \
+            -Dsf.canonical.kafka.fixture.smoke=true \
+            -Dsf.testForks=4 -Dsf.testReuseForks=false '-Dsf.extraJvmArgs=-Xmx1g'
+          python3 - <<'PY'
+          from collections import Counter
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          counts = Counter()
+          for report in Path('streamfusion-runtime/target/surefire-reports').glob('TEST-*.xml'):
+              suite = ET.parse(report).getroot()
+              counts.update({key: int(suite.get(key, 0)) for key in ('tests', 'failures', 'errors', 'skipped')})
+          if counts != dict(tests=8, failures=0, errors=0, skipped=0):
+              raise SystemExit(f'Incomplete canonical setup probe: {counts}')
+          print('All 8 canonical recovery and real-broker checks passed')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: canonical-setup-results-${{ inputs.line }}-jdk${{ inputs.jdk }}
+          path: |
+            streamfusion-runtime/target/surefire-reports/*
+            native/target/debug/manifest.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Remove probe libraries and worker metadata
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import shutil
+          for directory in (Path(os.environ['RUNNER_TEMP']) / 'original-native',
+                            Path(os.environ['RUNNER_TEMP']) / 'canonical-cds',
+                            Path('native/target/debug')):
+              if directory.exists():
+                  shutil.rmtree(directory)
+          PY

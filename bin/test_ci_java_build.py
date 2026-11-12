@@ -181,10 +181,9 @@ org.junit.jupiter.api.Assertions.assertFalse(Boolean.getBoolean("fixture.fail"))
                                         cwd=where, text=True, capture_output=True, timeout=120)
                 self.assertEqual(success, result.returncode == 0, result.stdout + result.stderr)
 
-            (root / "current-native").mkdir()
-            (root / "current-native/libstreamfusion.so").write_text("producer native artifact")
-            run(root, "test", "-Dsf.runtime.tests.skip=true")
+            run(root, "test", "-DskipTests=true")
             shutil.copytree(root, consumer, ignore=shutil.ignore_patterns("target"))
+            (consumer / "current-native").mkdir()
             (consumer / "current-native/libstreamfusion.so").write_text("consumer native artifact")
             archive = temporary / "build.tar.gz"
             with patch.object(build, "identity", return_value={"commit": "same"}):
@@ -192,11 +191,18 @@ org.junit.jupiter.api.Assertions.assertFalse(Boolean.getBoolean("fixture.fail"))
                 build.restore(consumer, "2.2", archive)
             # Any accidental lifecycle invocation would now fail compilation.
             (consumer / "streamfusion-runtime/src/main/java/example/Runtime.java").write_text("invalid source")
-            run(consumer, "test", "-Dsf.ci.precompiledJava=true", "-DskipTests=true", "-Dsf.runtime.tests.skip=false")
+            run(consumer, "test", "-Dsf.ci.precompiledJava=true", "-DskipTests=false", "-Dsf.runtime.tests.skip=false")
             report = consumer / "streamfusion-runtime/target/surefire-reports/TEST-example.CanonicalExampleJobTest.xml"
             self.assertEqual("2", ET.parse(report).getroot().get("tests"))
             for module in build.MODULES[:2]:
-                self.assertFalse((consumer / module / "target/surefire-reports").exists())
+                dependency_report = consumer / module / "target/surefire-reports/TEST-example.ModuleTest.xml"
+                self.assertEqual("1", ET.parse(dependency_report).getroot().get("tests"))
+            run(consumer, "test", "-Dsf.ci.precompiledJava=true", "-DskipTests=true", "-Dsf.runtime.tests.skip=false",
+                "-Dsurefire.reportNameSuffix=other-shard")
+            for module in build.MODULES[:2]:
+                self.assertFalse(list((consumer / module / "target/surefire-reports").glob("*-other-shard.xml")))
+            runtime_report = consumer / "streamfusion-runtime/target/surefire-reports/TEST-example.CanonicalExampleJobTest-other-shard.xml"
+            self.assertEqual("2", ET.parse(runtime_report).getroot().get("tests"))
             run(consumer, "test", "-Dsf.ci.precompiledJava=true", "-DskipTests=true", "-Dsf.runtime.tests.skip=false",
                 "-Dfixture.fail=true", success=False)
 

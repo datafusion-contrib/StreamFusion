@@ -6,11 +6,16 @@ on:
       suite:
         description: 'Paired JVM comparison to run'
         type: choice
-        options: [runtime, runtime-parallel, runtime-jfr, canonical, native-only, runtime-hotspots]
+        options: [runtime, runtime-parallel, runtime-jfr, canonical, native-only, runtime-hotspots, canonical-setup]
         default: runtime
       native_run:
         description: 'Existing native-producing run for runtime-hotspots'
         type: string
+      jdk:
+        description: 'JDK for the two-runner canonical setup probe'
+        type: choice
+        options: ['11', '17']
+        default: '11'
       flink_line:
         description: 'Flink line for multi-release diagnostics'
         type: choice
@@ -32,12 +37,20 @@ env:
   CANONICAL_JAVA_17: '17.0.21+9'
 
 concurrency:
-  group: ci-startup-profile-${{ github.ref }}-${{ inputs.suite }}-${{ inputs.hotspot_mode }}-${{ inputs.flink_line || 'all' }}
+  group: ci-startup-profile-${{ github.ref }}-${{ inputs.suite }}-${{ inputs.hotspot_mode }}-${{ inputs.flink_line || 'all' }}-${{ inputs.jdk || 'all' }}
   cancel-in-progress: true
 
 jobs:
+  canonical-setup:
+    if: inputs.suite == 'canonical-setup'
+    uses: ./.github/workflows/ci-canonical-setup.yml
+    with:
+      line: ${{ inputs.flink_line == '1.18' && '1.18' || '2.2' }}
+      jdk: ${{ inputs.jdk }}
+      native_run: ${{ inputs.native_run }}
+
   native:
-    if: ${{ inputs.suite != 'runtime-hotspots' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
+    if: ${{ inputs.suite != 'runtime-hotspots' && inputs.suite != 'canonical-setup' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -108,7 +121,7 @@ jobs:
 
   runtime:
     needs: native
-    if: inputs.suite != 'canonical' && inputs.suite != 'native-only' && inputs.suite != 'runtime-hotspots'
+    if: inputs.suite != 'canonical' && inputs.suite != 'native-only' && inputs.suite != 'runtime-hotspots' && inputs.suite != 'canonical-setup'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
@@ -189,27 +202,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           NATIVE_RUN: ${{ inputs.native_run }}
-        run: |
-          python3 - <<'PY'
-          import json, os, re, subprocess
-          def api(path):
-              return json.loads(subprocess.check_output(['gh', 'api', path]))
-          run_id = os.environ['NATIVE_RUN']
-          if not re.fullmatch(r'[0-9]+', run_id):
-              raise SystemExit('Expected a numeric native workflow run ID')
-          repo = os.environ['GITHUB_REPOSITORY']
-          run = api(f'repos/{repo}/actions/runs/{run_id}')
-          sha = run['head_sha']
-          jobs = api(f'repos/{repo}/actions/runs/{run_id}/jobs?per_page=100')['jobs']
-          if not any(j['name'] == 'Shared debug native libraries' and j['conclusion'] == 'success' for j in jobs):
-              raise SystemExit('Native producer has not succeeded')
-          subprocess.run(['git', 'fetch', '--no-tags', '--filter=blob:none', '--depth=1', 'origin', sha], check=True)
-          subprocess.run(['git', 'diff', '--exit-code', sha, 'HEAD', '--',
-                          'native', 'rust-toolchain.toml', '.cargo', '.github/actions/setup-rust'], check=True)
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              output.write(f'artifact=debug-native-{sha}\n')
-          print(f'Reusing native libraries from successful producer at {sha}')
-          PY
+        run: python3 bin/ci_native_source.py --run "$NATIVE_RUN"
       - uses: actions/download-artifact@v5
         with:
           name: ${{ steps.native.outputs.artifact }}
