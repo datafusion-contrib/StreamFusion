@@ -1,4 +1,4 @@
-package tech.streamfusion.planner;
+package tech.streamfusion.planner.stream;
 
 import java.util.List;
 import org.apache.calcite.plan.RelOptCluster;
@@ -10,6 +10,8 @@ import org.apache.flink.table.planner.plan.nodes.exec.ExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.InputProperty;
 import org.apache.flink.table.planner.utils.ShortcutUtils;
 import tech.streamfusion.hudi.HudiSinkPlan;
+import tech.streamfusion.planner.ColumnarInput;
+import tech.streamfusion.planner.common.NativePlanDetails;
 
 public final class StreamPhysicalNativeHudiSink extends StreamPhysicalNativeSingleRel
     implements ColumnarInput {

@@ -22,9 +22,10 @@ a lookup join, but asserts a fixed sequence without `ORDER BY`. Repeated local
 controls reproduce reversed batch-join output with the same exact rows, including
 before the streaming planner/runtime reorganization. This ordering assumption is
 tracked in [#639](https://github.com/datafusion-contrib/StreamFusion/issues/639).
-The suite retains the original SQL and assertion; its failed check stays visible.
-A randomly successful rerun does not resolve that fixture limitation. Ordered
-queries and all row/type/cardinality and native-consumption checks remain required.
+The narrowly guarded assertion adapter described in the Paimon section compares
+the complete result as a bag, retaining duplicate counts, row kinds and values.
+The randomized SQL and native execution remain unchanged. Ordered queries retain
+their ordering checks, and all native-consumption checks remain required.
 
 [Batch SQL](operators/batch.md) documents its current narrow admission. The published
 planner test JAR can be scanned directly with the runtime module's `batch-upstream`

@@ -44,6 +44,9 @@ reuse-barrier counter. Their module-owned source sets must import those shared
 contracts explicitly, including the Flink 1.18-only Hudi and Paimon 1.0 modules.
 The contracts remain in the connector-neutral runtime payload; they do not pull
 optional connector implementations into core.
+Hudi's columnar sink matchers and execution nodes follow the stream package too;
+its runtime commit filter uses the public shared expression contract rather than
+the package-private encoder. Connector service-provider names remain unchanged.
 
 Expression admission reads producer representation and aliasing through
 `common.ExpressionInput`, rather than recognizing streaming physical-node classes.

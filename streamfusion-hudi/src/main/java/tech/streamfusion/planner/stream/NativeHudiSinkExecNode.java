@@ -1,4 +1,4 @@
-package tech.streamfusion.planner;
+package tech.streamfusion.planner.stream;
 
 import java.util.Collections;
 import org.apache.flink.api.dag.Transformation;

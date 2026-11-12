@@ -1,4 +1,4 @@
-package tech.streamfusion.planner;
+package tech.streamfusion.planner.stream;
 
 import org.apache.calcite.rel.RelNode;
 import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
@@ -10,13 +10,15 @@ import org.apache.hudi.table.HoodieTableSink;
 import tech.streamfusion.hudi.HudiSinkPlan;
 import tech.streamfusion.hudi.NativeHudiAppendSink;
 import tech.streamfusion.hudi.NativeHudiMorSink;
+import tech.streamfusion.planner.common.NativePlanDetails;
+import tech.streamfusion.planner.common.StreamPlanningContext;
 
 final class HudiSinkMatcher {
   static boolean appliesTo(StreamPhysicalSink sink) {
     return sink.tableSink() instanceof HoodieTableSink;
   }
 
-  static RelNode substitute(StreamPhysicalSink sink, PlanContext context) {
+  static RelNode substitute(StreamPhysicalSink sink, StreamPlanningContext context) {
     if (sink.upsertMaterialize()
         || ChangelogPlanUtils.generateUpdateBefore((StreamPhysicalRel) sink.getInput())) {
       context.decline("Hudi native writes require post-images without sink materialization");
