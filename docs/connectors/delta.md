@@ -6,6 +6,12 @@ physical schema transforms, optimistic commits, transaction-log actions, primary
 merge-on-read deletion vectors. StreamFusion replaces only the path table's Parquet data-file
 writer and the batch-preserving handoff into it.
 
+Production Java sources and planner providers live in `streamfusion-delta/src/main/java`,
+alongside the module's SPI resources and tests. The module explicitly requires Flink 2.2;
+it does not compile the repository's shared host-version source tree. Package names,
+SPI identities and deployment coordinates are unchanged. Delta continues to reuse the
+Parquet extension and does not bundle a separate Delta native library.
+
 Both unpartitioned and partitioned path tables are supported in `append` and `upsert` write modes.
 This includes direct paths on every Hadoop filesystem supported by the Delta connector (local,
 HDFS, S3A, ABFS, and GCS). Catalog-managed tables currently stay on the stock connector path because

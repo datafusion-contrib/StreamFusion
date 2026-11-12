@@ -80,7 +80,6 @@
         </dependency>
     </dependencies>
     <build>
-        <sourceDirectory>${project.basedir}/../src/main/java</sourceDirectory>
         <resources combine.self="override">
             <resource><directory>${project.basedir}/src/main/resources</directory></resource>
         </resources>
@@ -95,15 +94,24 @@
                 <artifactId>exec-maven-plugin</artifactId>
             </plugin>
             <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <executions><execution>
+                    <id>flink-compatibility-sources</id>
+                    <phase>none</phase>
+                </execution></executions>
+            </plugin>
+            <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.13.0</version>
-                <configuration><includes>
-                    <include>tech/streamfusion/delta/**/*.java</include>
-                    <include>tech/streamfusion/planner/Delta*.java</include>
-                    <include>tech/streamfusion/planner/NativeDelta*.java</include>
-                    <include>tech/streamfusion/planner/StreamPhysicalNativeDelta*.java</include>
-                </includes></configuration>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions><execution>
+                    <id>delta-flink-line</id>
+                    <goals><goal>enforce</goal></goals>
+                    <configuration><rules><requireProperty>
+                        <property>flink.line</property><regex>2\.2</regex>
+                        <message>Native Delta requires the Flink 2.2 host.</message>
+                    </requireProperty></rules></configuration>
+                </execution></executions>
             </plugin>
         </plugins>
     </build>
