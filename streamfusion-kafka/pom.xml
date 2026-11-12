@@ -26,6 +26,16 @@
             <version>${project.version}</version>
             <scope>provided</scope>
         </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-connector-kafka</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -49,10 +59,10 @@
                 <executions><execution>
                     <id>flink-compatibility-sources</id>
                     <phase>generate-sources</phase>
-                        <goals><goal>add-source</goal></goals>
-                        <configuration><sources combine.self="override">
-                            <source>${project.basedir}/src/main/java-flink${flink.line}</source>
-                        </sources></configuration>
+                    <goals><goal>add-source</goal></goals>
+                    <configuration><sources combine.self="override">
+                        <source>${project.basedir}/src/main/java-flink${flink.line}</source>
+                    </sources></configuration>
                 </execution></executions>
             </plugin>
             <plugin>

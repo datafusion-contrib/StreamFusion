@@ -102,6 +102,22 @@
             </resources></build>
         </profile>
         <profile><id>iceberg-nexmark</id><dependencies>
+            <dependency>
+                <groupId>org.apache.flink</groupId>
+                <artifactId>flink-connector-kafka</artifactId>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.kafka</groupId>
+                <artifactId>kafka-clients</artifactId>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.flink</groupId>
+                <artifactId>flink-json</artifactId>
+                <scope>test</scope>
+            </dependency>
+
             <dependency><groupId>tech.streamfusion</groupId><artifactId>streamfusion-kafka${streamfusion.artifact.suffix}</artifactId><version>${project.version}</version><scope>test</scope></dependency>
             <dependency><groupId>tech.streamfusion</groupId><artifactId>streamfusion-json${streamfusion.artifact.suffix}</artifactId><version>${project.version}</version><scope>test</scope></dependency>
             <dependency><groupId>tech.streamfusion</groupId><artifactId>streamfusion-core${streamfusion.artifact.suffix}</artifactId><version>${project.version}</version><type>test-jar</type><scope>test</scope></dependency>

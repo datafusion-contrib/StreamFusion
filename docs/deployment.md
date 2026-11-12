@@ -352,6 +352,13 @@ tests remain in runtime, including its separate ORC execution with protobuf 2.5;
 Protobuf tests retain their selected host runtime. These test dependencies require no new
 test-utils artifact or reverse dependency from the optional modules to runtime.
 
+Kafka, JSON, CSV, Avro, ORC and Hadoop provided dependencies are declared by the modules
+that use them, with shared versions in parent dependency management. Core retains the
+common file-source interfaces but no longer inherits those specialized production APIs.
+Runtime declares their host implementations as test dependencies; connector suites and
+canonical-savepoint tests declare the extra APIs and modules their shared fixtures need.
+Parent Javadoc no longer injects Parquet or Hadoop to resolve unrelated root sources.
+
 Shared Java sources also require explicit module ownership during compilation. Reproducible
 JAR timestamps can precede a fresh checkout's source timestamps; javac then prefers the newer
 source of a referenced core class and can implicitly emit that class into a connector's output.

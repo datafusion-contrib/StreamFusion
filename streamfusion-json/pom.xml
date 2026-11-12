@@ -11,7 +11,19 @@
         <native.library>streamfusion_json</native.library>
         <native.resource.path>tech/streamfusion/native/json</native.resource.path>
     </properties>
-    <dependencies><dependency><groupId>tech.streamfusion</groupId><artifactId>streamfusion-core${streamfusion.artifact.suffix}</artifactId><version>${project.version}</version><scope>provided</scope></dependency></dependencies>
+    <dependencies>
+        <dependency>
+            <groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-core${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-json</artifactId>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
     <build>
         <resources combine.self="override">
             <resource><directory>${project.basedir}/src/main/resources</directory></resource>

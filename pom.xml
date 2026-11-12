@@ -102,6 +102,46 @@
         <sf.testReuseForks>true</sf.testReuseForks>
     </properties>
 
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.apache.flink</groupId>
+                <artifactId>flink-connector-kafka</artifactId>
+                <version>${flink.connector.kafka.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.kafka</groupId>
+                <artifactId>kafka-clients</artifactId>
+                <version>${kafka.clients.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.flink</groupId>
+                <artifactId>flink-json</artifactId>
+                <version>${flink.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.flink</groupId>
+                <artifactId>flink-csv</artifactId>
+                <version>${flink.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.flink</groupId>
+                <artifactId>flink-avro</artifactId>
+                <version>${flink.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.flink</groupId>
+                <artifactId>flink-orc</artifactId>
+                <version>${flink.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.hadoop</groupId>
+                <artifactId>hadoop-common</artifactId>
+                <version>3.3.4</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <dependencies>
         <!-- Flink owns its logging API and provider on the process classpath. -->
         <dependency>
@@ -196,38 +236,11 @@
         </dependency>
         <!-- The native file sources plug into Flink's file source for enumeration/split assignment/
              checkpointing, so the connector is a compile-time dependency (provided at runtime by the
-             Flink distribution, which bundles it). The format jars and Hadoop below stay test-only,
-             used to write the baselines the native readers/writer are compared against. -->
+             Flink distribution, which bundles it). Specialized connector and format APIs are declared
+             by their owners; the runtime test assembly supplies baseline implementations. -->
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-connector-files</artifactId>
-            <version>${flink.version}</version>
-            <scope>provided</scope>
-        </dependency>
-        <!-- Flink owns Kafka consumption and production; StreamFusion wraps its byte-array source
-             and sink with native format operators. The 5.0.0-2.2 release targets Flink 2.2.x and
-             is provided at runtime by the deployment. -->
-        <dependency>
-            <groupId>org.apache.flink</groupId>
-            <artifactId>flink-connector-kafka</artifactId>
-            <version>${flink.connector.kafka.version}</version>
-            <scope>provided</scope>
-        </dependency>
-        <!-- The JSON format factory. Flink instantiates the original kafka+json table source during SQL
-             validation (the native node replaces it only at physical-plan time), and the shallow
-             fallback uses it at runtime. Provided at runtime by the Flink distribution. -->
-        <dependency>
-            <groupId>org.apache.flink</groupId>
-            <artifactId>flink-json</artifactId>
-            <version>${flink.version}</version>
-            <scope>provided</scope>
-        </dependency>
-        <!-- Avro format: the Confluent-Avro benchmark's row-materializing baseline
-             (AvroRowDataDeserializationSchema) and its AvroSchemaConverter + Avro writer for generating
-             the test data. Provided at runtime by the Flink distribution. -->
-        <dependency>
-            <groupId>org.apache.flink</groupId>
-            <artifactId>flink-avro</artifactId>
             <version>${flink.version}</version>
             <scope>provided</scope>
         </dependency>
@@ -242,26 +255,11 @@
             <version>${flink.version}</version>
             <scope>test</scope>
         </dependency>
-        <!-- CSV format factory. Flink validates+builds the kafka+csv table source during SQL validation
-             (the native decode node replaces it at physical-plan time); the format factory must be on
-             the classpath for that, like flink-json. Provided at runtime by the Flink distribution. -->
-        <dependency>
-            <groupId>org.apache.flink</groupId>
-            <artifactId>flink-csv</artifactId>
-            <version>${flink.version}</version>
-            <scope>provided</scope>
-        </dependency>
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-parquet</artifactId>
             <version>${flink.version}</version>
             <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.flink</groupId>
-            <artifactId>flink-orc</artifactId>
-            <version>${flink.version}</version>
-            <scope>provided</scope>
         </dependency>
         <!-- Flink's protobuf format: the host baseline the native protobuf decode is compared against,
              and its protoc (below) generates the message class a protobuf table names. It needs
@@ -278,28 +276,11 @@
             <version>${protobuf.version}</version>
             <scope>test</scope>
         </dependency>
-        <!-- Hadoop is the filesystem/IO layer Flink's Parquet format reads and writes through; the
-             Parquet baseline tests need it at runtime. (Hadoop 3.3.4 runs fine on protobuf-java 4.x.) -->
-        <dependency>
-            <groupId>org.apache.hadoop</groupId>
-            <artifactId>hadoop-common</artifactId>
-            <version>3.3.4</version>
-            <scope>provided</scope>
-        </dependency>
         <dependency>
             <groupId>org.apache.hadoop</groupId>
             <artifactId>hadoop-mapreduce-client-core</artifactId>
             <version>3.3.4</version>
             <scope>test</scope>
-        </dependency>
-        <!-- Kafka client classes (TopicPartition etc.) referenced by the native source's split reader.
-             Provided at runtime by the Flink Kafka connector distribution, like flink-connector-kafka
-             above; also used by the opt-in ingest benchmark and integration tests. -->
-        <dependency>
-            <groupId>org.apache.kafka</groupId>
-            <artifactId>kafka-clients</artifactId>
-            <version>${kafka.clients.version}</version>
-            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
@@ -478,19 +459,6 @@
                 <configuration>
                     <doclint>none</doclint>
                     <quiet>true</quiet>
-                    <!-- Parquet/ORC still share the root sourcepath with core/runtime. -->
-                    <additionalDependencies>
-                        <additionalDependency>
-                            <groupId>org.apache.parquet</groupId>
-                            <artifactId>parquet-hadoop</artifactId>
-                            <version>1.16.0</version>
-                        </additionalDependency>
-                        <additionalDependency>
-                            <groupId>org.apache.hadoop</groupId>
-                            <artifactId>hadoop-common</artifactId>
-                            <version>3.3.4</version>
-                        </additionalDependency>
-                    </additionalDependencies>
                 </configuration>
             </plugin>
             <!-- Generates the protobuf message class a `protobuf`-format table names (and that the host

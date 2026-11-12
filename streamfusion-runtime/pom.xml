@@ -82,6 +82,41 @@
             <type>test-jar</type>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-connector-kafka</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-json</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-csv</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-avro</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-orc</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-common</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <!-- Keep the repository layout stable while exposing a conventional runtime Maven module. -->
@@ -135,9 +170,8 @@
                     </execution>
                 </executions>
             </plugin>
-            <!-- The connector-free payload is embedded by the planner loader during the test phase.
-                 Publish this thin reactor artifact after main compilation so the core shading module
-                 can assemble it before downstream tests, not only at package time. -->
+            <!-- Publish the development runtime and shared fixtures before downstream suites run;
+                 the deployment loader independently embeds the core module's shaded payload. -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
@@ -145,9 +179,8 @@
                 <executions>
                     <execution>
                         <id>default-jar</id>
-                        <!-- Move Maven's normal main artifact earlier in the lifecycle so the
-                             core payload can shade it before downstream tests. Reusing the
-                             default execution avoids a second package-phase JAR. -->
+                        <!-- Reuse the normal main artifact execution to avoid a second
+                             package-phase JAR after downstream canonical tests consume it. -->
                         <phase>process-classes</phase>
                         <goals><goal>jar</goal></goals>
                     </execution>

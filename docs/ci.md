@@ -14,8 +14,11 @@ containers close. Failed smoke reports are retained for three days, so heartbeat
 distinguished from JVM/native crashes or container OOM without weakening the submission assertion.
 
 Canonical-job dependency preparation includes the selected runtime module's reactor dependencies.
-The Kafka canonical profile references the matching JSON module; a cold runner must resolve that
-module inside the reactor rather than depend on an installed copy of an unpublished project JAR.
+Runtime tests explicitly depend on the matching Kafka and format modules; a cold runner resolves
+them inside the reactor rather than depending on installed copies of unpublished project JARs.
+The existing `canonical-kafka` profile remains a compatible command-line marker. Standalone
+canonical-savepoint suites declare these test modules and their provided host APIs explicitly,
+because runtime's test dependencies are not transitive to its consumers.
 
 Prefer focused local tests and reused build caches during development. Combine related work into
 a coherent, locally validated change before pushing for the full CI matrix; intermediate commits
@@ -787,8 +790,8 @@ passing-test evidence; all assertions and the complete canonical matrix remain r
 
 These jobs share the exact-commit debug native artifact, retain their selection manifests and
 Surefire reports, and enable the existing Docker-backed Kafka canonical cases with
-`SF_KAFKA_INTEGRATION=true`. The canonical Kafka profile supplies the JSON module used by those
-jobs. Native execution and clean stock-worker classpath assertions remain active. Benchmarking
+`SF_KAFKA_INTEGRATION=true`. Runtime's test dependencies supply the Kafka and format modules used by
+those jobs. Native execution and clean stock-worker classpath assertions remain active. Benchmarking
 for the canonical delivery is deferred by the maintainer.
 
 The separate schedule is necessary for the existing complete-job tests: retained local XML for

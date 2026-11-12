@@ -9,7 +9,19 @@
         <native.library>streamfusion_avro</native.library>
         <native.resource.path>tech/streamfusion/native/avro</native.resource.path>
     </properties>
-    <dependencies><dependency><groupId>tech.streamfusion</groupId><artifactId>streamfusion-core${streamfusion.artifact.suffix}</artifactId><version>${project.version}</version><scope>provided</scope></dependency></dependencies>
+    <dependencies>
+        <dependency>
+            <groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-core${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-avro</artifactId>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
     <build><resources combine.self="override"><resource><directory>${project.basedir}/src/main/resources</directory></resource></resources><plugins>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
@@ -17,10 +29,10 @@
                 <executions><execution>
                     <id>flink-compatibility-sources</id>
                     <phase>generate-sources</phase>
-                        <goals><goal>add-source</goal></goals>
-                        <configuration><sources combine.self="override">
-                            <source>${project.basedir}/src/main/java-flink${flink.line}</source>
-                        </sources></configuration>
+                    <goals><goal>add-source</goal></goals>
+                    <configuration><sources combine.self="override">
+                        <source>${project.basedir}/src/main/java-flink${flink.line}</source>
+                    </sources></configuration>
                 </execution></executions>
             </plugin>
             <plugin>
