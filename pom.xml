@@ -662,6 +662,16 @@
 
     <profiles>
         <profile>
+            <id>ci-precompiled-java</id>
+            <activation><property><name>sf.ci.precompiledJava</name><value>true</value></property></activation>
+            <properties><maven.javadoc.skip>true</maven.javadoc.skip></properties>
+            <build><pluginManagement><plugins><plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration><skipMain>true</skipMain><skip>true</skip></configuration>
+            </plugin></plugins></pluginManagement></build>
+        </profile>
+        <profile>
             <id>ci-diagnostics</id>
             <dependencies>
                 <dependency>

@@ -650,6 +650,33 @@ yet available as a released CI fixture.
 
 ## Complete canonical job matrix
 
+Canonical Java compilation runs once for each Flink/JDK pair, in four required preparation
+jobs. Those jobs retain the ordinary Maven lifecycle, including dependency resolution,
+Java and protobuf compilation, javadoc checks and the runtime's reactor dependencies' tests.
+Only the runtime test execution is deferred to the existing 64 canonical shards.
+
+Each preparation uploads a one-day, exact-commit archive of the runtime, core and JSON
+compiled classes, resources, test classes and reactor JARs. It excludes Surefire reports,
+checkpoints, diagnostics and other execution state. Consumers verify its checksum, source
+commit, Flink line, complete Java version, operating system and architecture before restoring
+into fresh output directories. They still download the same commit's debug native artifact,
+resolve dependencies with bounded retries, discover their complete compiled canonical
+inventory, and create independent workers, archives and application state.
+
+Consumers keep Maven's `test` lifecycle so uninstalled reactor dependencies resolve correctly.
+The explicit `sf.ci.precompiledJava=true` profile skips only Java compilation and the already
+completed javadoc check. Surefire remains active through `sf.runtime.tests.skip=false`;
+reactor dependency tests run in preparation for the same Flink/JDK pair. Protobuf/resource
+preparation and both Surefire executions retain their usual lifecycle behavior. Ordinary
+local builds and the other CI jobs do not activate this profile. A real three-module Maven
+regression transfers compiled outputs to a fresh consumer, verifies reactor dependency
+resolution and parameterized cases, and requires an intentional selected failure to fail Maven.
+
+The preceding [passing CI run](https://github.com/jordepic/StreamFusion-contrib/actions/runs/43116124202)
+spent 128.6 runner-minutes on the initial compile/partition step across 64 canonical shards.
+Sharing compilation replaces 64 preparations with four; archive preparation, transfer and
+remaining lifecycle costs still require hosted measurement before claiming elapsed-time savings.
+
 Kafka checkpoint handoffs wait for the fixture sink's external commit before cancelling the
 completed checkpoint leg. The coordinator's checkpoint future can complete before the committer
 receives its completion notification. The boundary still requires the exact row count and the

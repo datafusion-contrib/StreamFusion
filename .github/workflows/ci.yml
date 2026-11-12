@@ -161,6 +161,7 @@ jobs:
           python3 -m unittest discover -s bin -p 'test_ci_free_disk.py'
           python3 -m unittest discover -s bin -p 'test_ci_module_groups.py'
           python3 -m unittest discover -s bin -p 'test_ci_runtime_test_shards.py'
+          python3 -m unittest discover -s bin -p 'test_ci_java_build.py'
           python3 -m unittest discover -s bin -p 'test_ci_maven_dependencies.py'
           python3 -m unittest discover -s bin -p 'test_ci_plan.py'
           python3 -m unittest discover -s bin -p 'test_profile_ci.py'
@@ -260,8 +261,64 @@ jobs:
           path: streamfusion-runtime/target/sql-audit/*.json
           if-no-files-found: error
 
-  canonical-job-tests:
+  canonical-java-build:
     needs: native-build
+    name: Prepare canonical Java (Flink ${{ matrix.line }}, JDK ${{ matrix.jdk }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        line: ['2.2', '1.18']
+        jdk: ['17', '11']
+        include:
+          - line: '2.2'
+            profiles: 'canonical-kafka'
+          - line: '1.18'
+            profiles: 'flink-1.18,canonical-kafka'
+    env:
+      SF_KAFKA_INTEGRATION: 'true'
+      JAVA_TOOL_OPTIONS: '-XX:TieredStopAtLevel=1 -XX:ReservedCodeCacheSize=512m'
+    steps:
+      - uses: actions/checkout@v6
+      - run: python3 bin/ci-free-disk.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.jdk }}
+          cache: maven
+      - uses: actions/download-artifact@v5
+        with:
+          name: debug-native-${{ github.sha }}
+          path: native/target/debug
+      - name: Resolve canonical Java dependencies
+        run: |
+          python3 bin/ci-maven-dependencies.py --profile "${{ matrix.profiles }}" --projects streamfusion-runtime --also-make
+          python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5 --artifact com.google.protobuf:protobuf-java:2.5.0
+      - name: Compile canonical Java and check its reactor dependencies once
+        run: |
+          mvn -B -ntp -P${{ matrix.profiles }} -pl streamfusion-runtime -am test \
+            -Dsf.runtime.tests.skip=true -Dnative.build.skip=true
+          python3 bin/ci_java_build.py pack --line '${{ matrix.line }}' \
+            --archive "$RUNNER_TEMP/canonical-java.tar.gz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: canonical-java-${{ matrix.line }}-jdk${{ matrix.jdk }}-${{ github.sha }}
+          path: ${{ runner.temp }}/canonical-java.tar.gz*
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 1
+      - name: Retain preparation failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: canonical-java-failures-${{ matrix.line }}-jdk${{ matrix.jdk }}-${{ github.sha }}
+          path: '**/surefire-reports/*'
+          if-no-files-found: ignore
+          retention-days: 7
+
+  canonical-job-tests:
+    needs: canonical-java-build
     name: Canonical savepoint jobs (Flink ${{ matrix.line }}, JDK ${{ matrix.jdk }}) (shard ${{ matrix.shard }})
     runs-on: ubuntu-24.04
     timeout-minutes: 180
@@ -293,13 +350,21 @@ jobs:
         with:
           name: debug-native-${{ github.sha }}
           path: native/target/debug
+      - uses: actions/download-artifact@v5
+        with:
+          name: canonical-java-${{ matrix.line }}-jdk${{ matrix.jdk }}-${{ github.sha }}
+          path: ${{ runner.temp }}
+      - name: Restore the matching canonical Java build
+        run: |
+          python3 bin/ci_java_build.py restore --line '${{ matrix.line }}' \
+            --archive "$RUNNER_TEMP/canonical-java.tar.gz"
+          rm "$RUNNER_TEMP/canonical-java.tar.gz" "$RUNNER_TEMP/canonical-java.tar.gz.sha256"
       - name: Resolve Java dependencies before tests
         run: |
           python3 bin/ci-maven-dependencies.py --profile "${{ matrix.profiles }}" --projects streamfusion-runtime --also-make
           python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5 --artifact com.google.protobuf:protobuf-java:2.5.0
-      - name: Compile and partition complete canonical jobs
+      - name: Partition the complete compiled canonical inventory
         run: |
-          mvn -B -ntp -P${{ matrix.profiles }} -pl streamfusion-runtime -am test -DskipTests -Dnative.build.skip=true
           python3 bin/ci_runtime_test_shards.py \
             --classes streamfusion-runtime/target/test-classes \
             --suite canonical --line ${{ matrix.line }} --count 16 --index ${{ matrix.shard }} \
@@ -315,6 +380,8 @@ jobs:
           trap 'kill "$memory_sampler" 2>/dev/null || true' EXIT
           mvn -B -ntp -P${{ matrix.profiles }} -pl streamfusion-runtime -am test \
             -Dnative.build.skip=true -Dsf.protobuf.checkStaleness=true \
+            -Dsf.ci.precompiledJava=true \
+            -DskipTests=true -Dsf.runtime.tests.skip=false \
             "-Dsf.runtime.testIncludesFile=$RUNNER_TEMP/canonical-job-includes.txt" \
             -Dsf.testForks=4 -Dsf.testReuseForks=false "-Dsf.extraJvmArgs=-Xmx1g"
       - name: Retain canonical job selection and outcomes
@@ -619,7 +686,7 @@ jobs:
   all-tests:
     name: All CI tests
     if: ${{ (always() && !cancelled()) && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
-    needs: [plan, native-build, native-tests, java-tests, canonical-job-tests, lake-module-tests, image-integration, doris-tests]
+    needs: [plan, native-build, native-tests, java-tests, canonical-java-build, canonical-job-tests, lake-module-tests, image-integration, doris-tests]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

@@ -16,7 +16,9 @@ Those historical records support a decision; this ledger describes the current
 technique and its measured limits.
 
 CI JVM startup settings, repeated-check elimination and profiling are documented in the
-[CI guide](../ci.md#profiling-ci-latency-and-cost). CI build reuse and runner scheduling are documented in the
+[CI guide](../ci.md#profiling-ci-latency-and-cost); its [canonical job matrix](../ci.md#complete-canonical-job-matrix)
+also documents sharing exact-commit Java compilation across savepoint shards.
+CI build reuse and runner scheduling are documented in the
 [upstream-suite guide](../upstream-flink-suite.md#shared-builds-and-runtime-shards): compiled Flink
 caching, shared build artifacts, grouped connector suites and combined coverage verification.
 Those measurements describe CI job counts and elapsed time, not SQL execution throughput.
