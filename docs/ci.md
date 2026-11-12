@@ -652,6 +652,15 @@ yet available as a released CI fixture.
 
 ## Complete canonical job matrix
 
+The isolated canonical job worker exits explicitly after its job, native-work
+checks and try-with-resources cluster cleanup complete. A Flink 2.2/JDK 11
+checkpoint worker finished that work in about seven seconds but retained an idle
+non-daemon Pekko metrics dispatcher, keeping the JVM alive until the four-minute
+process timeout. Success exits with status zero; any job, assertion or cleanup
+failure still prints its original stack and exits nonzero. The process regression
+injects a lingering non-daemon thread and checks both outcomes and completed cleanup.
+The timeout and all result, state-transfer and native-execution checks are unchanged.
+
 Kafka checkpoint handoffs wait for the fixture sink's external commit before cancelling the
 completed checkpoint leg. The coordinator's checkpoint future can complete before the committer
 receives its completion notification. The boundary still requires the exact row count and the
