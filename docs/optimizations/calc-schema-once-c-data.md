@@ -137,7 +137,7 @@ are 1.794/1.330 microseconds; that component result is not a complete-job speedu
 168 handoff fixtures pass, including nullable, sliced, wide, nested and retained-value cases.
 
 [All 448 primary observations, warmups, ranges, identities and profile counters](../benchmarks/results/native-boundaries-248-2026-10-23.json)
-and [full plans, native work observations, folded CPU/allocation stacks, excluded attempt and confirmation logs](../benchmarks/results/native-boundaries-248-evidence-2026-10-23.json.gz)
+and [full plans, native work observations, folded CPU/allocation stacks, excluded attempt and confirmation logs](https://datafusion-contrib.github.io/StreamFusion/benchmarks/results/native-boundaries-248-evidence-2026-10-23.json.gz)
 are retained. The profile and native component diagnostics are separate from complete-job timings.
 The [bounded closing decision and reopening criteria](https://github.com/datafusion-contrib/StreamFusion/blob/main/.claude/wontdos/248-native-handle-redesign.md)
 defer broader ownership/handle redesign; this does not claim that required array wrappers or
