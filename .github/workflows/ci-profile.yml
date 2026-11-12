@@ -30,7 +30,7 @@ env:
   RUST_BACKTRACE: '1'
 
 concurrency:
-  group: ci-startup-profile-${{ github.ref }}-${{ inputs.suite }}-${{ inputs.hotspot_mode }}
+  group: ci-startup-profile-${{ github.ref }}-${{ inputs.suite }}-${{ inputs.hotspot_mode }}-${{ inputs.flink_line || 'all' }}
   cancel-in-progress: true
 
 jobs:
@@ -164,6 +164,9 @@ jobs:
     if: inputs.suite == 'runtime-hotspots' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main')
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    concurrency:
+      group: ci-hotspot-profile-${{ github.ref }}-${{ inputs.hotspot_mode }}-${{ matrix.line }}-jdk${{ matrix.jdk }}
+      cancel-in-progress: true
     strategy:
       fail-fast: false
       matrix:

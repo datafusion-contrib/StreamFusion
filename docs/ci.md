@@ -860,6 +860,8 @@ runtime tests explicitly enabled, matching canonical CI. This resolves the JSON 
 through the current reactor rather than depending on an installed project artifact.
 Set the dispatch's `flink_line` to either release to qualify only that cohort; `all`
 retains both. This allows repairing a failed setup without repeating a completed probe.
+Workflow concurrency distinguishes the requested line, while job concurrency still prevents
+duplicate probes for the same branch, mode, actual Flink line and JDK.
 
 The `runtime-hotspots` dispatch also accepts `hotspot_mode=canonical-gc`. It compares
 G1 and Serial GC on the same runner using the existing five canonical handoff cases,
