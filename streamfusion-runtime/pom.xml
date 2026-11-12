@@ -127,10 +127,7 @@
                         <exclude>tech/streamfusion/orc/**</exclude>
                         <exclude>tech/streamfusion/format/avro/**</exclude>
                         <exclude>tech/streamfusion/format/avroconfluent/**</exclude>
-                        <exclude>tech/streamfusion/format/csv/**</exclude>
-                        <exclude>tech/streamfusion/format/json/**</exclude>
                         <exclude>tech/streamfusion/format/protobuf/**</exclude>
-                        <exclude>tech/streamfusion/format/raw/**</exclude>
                         <exclude>tech/streamfusion/planner/KafkaPlannerExtension.java</exclude>
                         <exclude>tech/streamfusion/planner/KafkaSinkMatcher.java</exclude>
                         <exclude>tech/streamfusion/planner/KafkaSinkTranslator.java</exclude>

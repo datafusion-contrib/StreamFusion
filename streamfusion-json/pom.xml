@@ -13,7 +13,6 @@
     </properties>
     <dependencies><dependency><groupId>tech.streamfusion</groupId><artifactId>streamfusion-core${streamfusion.artifact.suffix}</artifactId><version>${project.version}</version><scope>provided</scope></dependency></dependencies>
     <build>
-        <sourceDirectory>${project.basedir}/../src/main/java</sourceDirectory>
         <resources combine.self="override">
             <resource><directory>${project.basedir}/src/main/resources</directory></resource>
             <resource>
@@ -28,13 +27,21 @@
         <plugins>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <executions><execution>
+                    <id>flink-compatibility-sources</id>
+                    <phase>none</phase>
+                </execution></executions>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
                 <artifactId>flatten-maven-plugin</artifactId>
                 <configuration><flattenMode>ossrh</flattenMode></configuration>
             </plugin>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
-            </plugin><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version><configuration><includes><include>tech/streamfusion/format/json/**/*.java</include></includes></configuration></plugin></plugins>
+            </plugin></plugins>
     </build>
 
     <!-- Universal releases package the payloads staged for each supported platform. -->

@@ -338,8 +338,10 @@ Paimon 1.0 retains filtered source generation and its legacy overrides, consumin
 and Flink 1.18 sources from `streamfusion-paimon` rather than the root tree.
 
 This ownership boundary preserves Java packages, service names, JNI symbols, native
-resources and deployment coordinates. It adds no native libraries. Kafka and formats
-still use shared production sources while their migration is in progress. Runtime tests
+resources and deployment coordinates. It adds no native libraries.
+`streamfusion-json`, `streamfusion-csv`, `streamfusion-raw` also own their production sources and selected host adapters.
+`streamfusion-kafka`, `streamfusion-parquet`, `streamfusion-orc`, `streamfusion-avro`, `streamfusion-avro-confluent-registry`, `streamfusion-protobuf` still use shared sources pending migration.
+Runtime tests
 now depend on the actual Kafka and format modules instead of compiling duplicate
 implementations or carrying duplicate provider registrations. Module-local SPI files
 provide the same installed providers in the test classpath. Cross-module SQL and recovery
