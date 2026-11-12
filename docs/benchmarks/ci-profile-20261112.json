@@ -947,11 +947,12 @@
         "failures": 0,
         "skipped": 0
       },
-      "selected_classes": 118,
+      "selected_classes": 120,
       "case_identities_sha256": "629201a64b8b5317b6c9c215001370b993a0283569e24481f45b88f6e3c8dd20",
       "inventory_sha256": [
         "aa0f72bd3192746068a76fb24ab8d0f548e964a6dcb19bd0b3feab7d1f1781ec"
-      ]
+      ],
+      "reported_classes": 118
     },
     "flink1.18-jdk17": {
       "classes": {
@@ -1670,11 +1671,12 @@
         "failures": 0,
         "skipped": 0
       },
-      "selected_classes": 118,
+      "selected_classes": 120,
       "case_identities_sha256": "629201a64b8b5317b6c9c215001370b993a0283569e24481f45b88f6e3c8dd20",
       "inventory_sha256": [
         "aa0f72bd3192746068a76fb24ab8d0f548e964a6dcb19bd0b3feab7d1f1781ec"
-      ]
+      ],
+      "reported_classes": 118
     },
     "flink2.2-jdk11": {
       "classes": {
@@ -2393,11 +2395,12 @@
         "failures": 0,
         "skipped": 0
       },
-      "selected_classes": 118,
+      "selected_classes": 120,
       "case_identities_sha256": "746fa4abeba3c2e12ca32a9203e6ad8baf4c5b2daf2e485c8682957612efcb00",
       "inventory_sha256": [
         "aa0f72bd3192746068a76fb24ab8d0f548e964a6dcb19bd0b3feab7d1f1781ec"
-      ]
+      ],
+      "reported_classes": 118
     },
     "flink2.2-jdk17": {
       "classes": {
@@ -3116,12 +3119,13 @@
         "failures": 0,
         "skipped": 0
       },
-      "selected_classes": 118,
+      "selected_classes": 120,
       "case_identities_sha256": "746fa4abeba3c2e12ca32a9203e6ad8baf4c5b2daf2e485c8682957612efcb00",
       "inventory_sha256": [
         "aa0f72bd3192746068a76fb24ab8d0f548e964a6dcb19bd0b3feab7d1f1781ec"
-      ]
+      ],
+      "reported_classes": 118
     }
   },
-  "method": "Successful baseline Actions step intervals and Surefire XML from all 64 canonical artifacts. Case digest is SHA-256 of json.dumps(sorted((classname, name, skipped, multiplicity))) using all testcase elements per Flink/JDK cohort. Class outcomes preserve abstract zero-test suites. Runner time adds parallel jobs; start delays include prerequisites and queues. Candidate qualification and net performance comparison are pending."
+  "method": "Successful baseline Actions step intervals and Surefire XML from all 64 canonical artifacts. Case digest is SHA-256 of json.dumps(sorted((classname, name, skipped, multiplicity))) using all testcase elements per Flink/JDK cohort. Selection inventories include two abstract bases without reports; class outcomes cover the 118 reported suites. The complete selected inventory contains 120 classes. Runner time adds parallel jobs; start delays include prerequisites and queues. Candidate qualification and net performance comparison are pending."
 }

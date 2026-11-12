@@ -701,8 +701,8 @@ Each line selects from its own compiled test inventory and duration estimates, p
 method and inherited parameterized invocation. Canonical job fixtures and their typed-state
 bases now live in shared test sources for joins, sort, normalization, deduplication, rank,
 window and grouped aggregates and managed UDFs. Kafka source, partition-discovery and all twelve
-sink/pipeline job classes are shared as well. Both release lines now compile the same 118-class
-canonical job inventory. Narrow fixture adapters inspect each released connector's recovery
+sink/pipeline job classes are shared as well. Both release lines now compile the same 120-class
+canonical job inventory, including two abstract bases without Surefire reports. Narrow fixture adapters inspect each released connector's recovery
 format: 1.18's legacy writer prefix and committer collector, or 2.2's explicit writer ownership
 and precommitted transactions. The 1.18 connector uses its released incrementing transaction
 scheme; 2.2 retains both incrementing and pooling providers. Local fixture selection can sample
@@ -827,6 +827,20 @@ throughput benchmark. The ordinary 150-minute job limit cannot accommodate that 
 Canonical shards have a 180-minute limit; no test is removed to make a shard pass.
 
 ## Profiling CI latency and cost
+
+To compare a canonical matrix with a previous complete run, download that candidate's
+`canonical-job-results-*` artifacts into one directory. Pass it to `bin/profile-ci.py`
+with `--canonical-reports DIRECTORY --canonical-baseline BASELINE.json` alongside the
+usual `--repo`, `--run` and optional `--json` arguments. The helper requires every cohort
+and declared shard, matches each selection manifest to its reports, rejects duplicate
+classes and malformed outcome totals, and compares the full parameterized invocation
+multiset with the baseline digest. Missing, duplicated or newly skipped invocations fail
+the comparison. Abstract inventory entries need no report, while every class with a baseline
+report, including zero-case suites, must still appear. The tool recomputes the complete
+selected-inventory digest, including abstract entries, from the manifests.
+This verifies preserved test coverage; GitHub's required workflow results
+and the assertions inside those tests remain the correctness gates. Comparing timings
+alone cannot establish equivalent coverage.
 
 The `runtime-hotspots` dispatch also accepts `hotspot_mode=canonical-gc`. It compares
 G1 and Serial GC on the same runner using the existing five canonical handoff cases,

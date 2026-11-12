@@ -2,10 +2,14 @@
 """Report Actions execution cost separately from dependency and runner start delays."""
 
 import argparse
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime
+import hashlib
 import json
+from pathlib import Path
+import re
 import subprocess
+import xml.etree.ElementTree as ET
 
 
 def timestamp(value):
@@ -29,6 +33,7 @@ def summarize(run, jobs):
         elapsed = seconds(started, job["completed_at"]) if started and job.get("completed_at") else None
         name = job["name"]
         group = ("canonical" if name.startswith("Canonical savepoint jobs")
+                 else "canonical preparation" if name.startswith("Prepare canonical Java")
                  else "java" if name.startswith("Runtime, connectors and formats")
                  else "upstream preparation" if "Prepare upstream build" in name
                  else "upstream tests" if " suite (Flink " in name else "other")
@@ -65,12 +70,91 @@ def api(endpoint):
     return json.loads(subprocess.check_output(["gh", "api", endpoint], text=True))
 
 
+def canonical_coverage(reports, baseline):
+    expected = baseline["canonical_baseline"]
+    if not expected:
+        raise ValueError("The baseline has no canonical cohorts")
+    cohorts = defaultdict(lambda: {"shards": {}, "classes": {}, "selected": set(),
+                                   "cases": Counter(), "inventories": set()})
+    for directory in sorted(reports.glob("canonical-job-results-*")):
+        match = re.fullmatch(r"canonical-job-results-(flink[\d.]+-jdk\d+)-shard(\d+)", directory.name)
+        if not directory.is_dir() or not match or match[1] not in expected:
+            raise ValueError(f"Unexpected canonical artifact: {directory.name}")
+        key, shard = match[1], int(match[2])
+        cohort = cohorts[key]
+        manifests = list(directory.rglob("canonical-job-includes.json"))
+        if len(manifests) != 1:
+            raise ValueError(f"Expected one selection manifest: {directory.name}")
+        manifest = json.loads(manifests[0].read_text())
+        count = manifest["count"]
+        if (not isinstance(count, int) or isinstance(count, bool) or count < 1
+                or shard not in range(1, count + 1) or manifest["shard"] != shard
+                or manifest["suite"] != "canonical"
+                or manifest["flink_line"] != key.split("-jdk")[0].removeprefix("flink")
+                or shard in cohort["shards"]):
+            raise ValueError(f"Invalid canonical selection: {directory.name}")
+        cohort["shards"][shard] = count
+        cohort["inventories"].add(manifest["inventory_sha256"])
+        reported = set()
+        for path in sorted(directory.rglob("TEST-*.xml")):
+            suite = ET.parse(path).getroot()
+            name = suite.get("name")
+            if name not in expected[key]["classes"] or name in cohort["classes"]:
+                raise ValueError(f"Unexpected or duplicate canonical class: {key}/{name}")
+            cases = list(suite.iter("testcase"))
+            actual = {"tests": len(cases), **{
+                field: sum(case.find(element) is not None for case in cases)
+                for field, element in (("errors", "error"), ("failures", "failure"), ("skipped", "skipped"))}}
+            if (actual != {field: int(suite.get(field, 0)) for field in actual}
+                    or actual != expected[key]["classes"][name]):
+                raise ValueError(f"Changed canonical outcomes: {key}/{name}")
+            cohort["classes"][name] = actual
+            reported.add(name.split("$", 1)[0].replace(".", "/"))
+            for case in cases:
+                if not case.get("classname") or not case.get("name"):
+                    raise ValueError(f"Missing canonical invocation identity: {key}/{name}")
+                cohort["cases"][(case.get("classname"), case.get("name"), case.find("skipped") is not None)] += 1
+        selected = manifest["classes"]
+        expected_reports = {name for name in selected if name.replace("/", ".") in expected[key]["classes"]}
+        if (len(selected) != len(set(selected)) or cohort["selected"].intersection(selected)
+                or reported != expected_reports):
+            raise ValueError(f"Canonical selection differs from reports: {directory.name}")
+        cohort["selected"].update(selected)
+    if set(cohorts) != set(expected):
+        raise ValueError("Missing canonical cohorts")
+    result = {}
+    for key, cohort in sorted(cohorts.items()):
+        counts = set(cohort["shards"].values())
+        if len(counts) != 1 or set(cohort["shards"]) != set(range(1, next(iter(counts)) + 1)):
+            raise ValueError(f"Missing canonical shards: {key}")
+        identities = hashlib.sha256(json.dumps(sorted(
+            (*identity, count) for identity, count in cohort["cases"].items())).encode()).hexdigest()
+        inventory = hashlib.sha256(json.dumps(sorted(cohort["selected"])).encode()).hexdigest()
+        if (cohort["classes"] != expected[key]["classes"]
+                or cohort["inventories"] != set(expected[key]["inventory_sha256"])
+                or cohort["inventories"] != {inventory}
+                or identities != expected[key]["case_identities_sha256"]):
+            raise ValueError(f"Changed canonical inventory or invocations: {key}")
+        outcomes = Counter()
+        for values in cohort["classes"].values():
+            outcomes.update(values)
+        result[key] = {"shards": len(cohort["shards"]), "selected_classes": len(cohort["selected"]),
+                       "reported_classes": len(cohort["classes"]),
+                       "outcomes": dict(outcomes), "case_identities_sha256": identities,
+                       "inventory_sha256": sorted(cohort["inventories"])}
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", required=True)
     parser.add_argument("--run", required=True, type=int)
     parser.add_argument("--json", action="store_true", help="Emit reusable JSON instead of Markdown")
+    parser.add_argument("--canonical-reports", type=Path, help="Directory containing downloaded canonical-job-results-* artifacts")
+    parser.add_argument("--canonical-baseline", type=Path, help="Prior complete canonical inventory and invocation evidence JSON")
     args = parser.parse_args()
+    if bool(args.canonical_reports) != bool(args.canonical_baseline):
+        parser.error("--canonical-reports and --canonical-baseline must be supplied together")
     run = api(f"repos/{args.repo}/actions/runs/{args.run}")
     jobs = []
     page = 1
@@ -81,6 +165,9 @@ def main():
             break
         page += 1
     report = summarize(run, jobs)
+    if args.canonical_reports:
+        report["canonical_coverage"] = canonical_coverage(
+            args.canonical_reports, json.loads(args.canonical_baseline.read_text()))
     if args.json:
         print(json.dumps(report, indent=2))
         return
@@ -101,6 +188,8 @@ def main():
         for job in failures:
             print(f"- [{job['name']}]({job['url']}): {', '.join(job['failed_steps'])}")
     print(f"\n{report['limits']}")
+    if "canonical_coverage" in report:
+        print("\nCanonical inventories, class outcomes and invocation identities match the complete baseline.")
 
 
 if __name__ == "__main__":
