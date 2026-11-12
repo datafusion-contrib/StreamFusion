@@ -504,7 +504,7 @@ boundary witnesses, not exhaustive coverage of all types, options, recovery mode
 The dyadic-shortcut revision adds a non-dyadic `decimal_ambiguous` JNI profile, increasing
 that suite from 72 to 96 fixtures. Historical counts and probes above describe the earlier
 revision; all 96 profiles pass the released-Flink bit/schema/NULL comparisons.
-[Expanded JNI probes](double-truncate-expanded-probes-2026-10-01.csv) are retained. Timing
+[Expanded JNI probes](double-truncate-decimal-grid-probes-2026-10-01.csv) are retained. Timing
 comparisons for the revised helper remain pending.
 
 
@@ -1131,7 +1131,7 @@ Each compares exact result bits, NULL positions and schema with released Flink.
 The embedded JVM loads freshly compiled Flink 2.2 candidate classes first;
 bytecode and source/class hashes verify the scale-dependent bound. Independent
 helper oracle and generated/SQL checks also pass on released Flink 1.18.
-[Allocation probes](double-truncate-scale-bound-jni-allocations-2026-10-02.csv)
+[Allocation probes](double-truncate-domain-probes-2026-10-01.csv)
 retain the complete matrix. These count requested Rust allocations with the
 benchmark allocator, excluding JVM/native worker allocations; no JVM allocation
 saving or Criterion throughput improvement is inferred from this smoke run.
