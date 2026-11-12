@@ -48,13 +48,13 @@ expected_native_entries=$(mktemp)
 trap 'rm -f "$entries" "$native_entries" "$expected_native_entries"' EXIT HUP INT TERM
 
 assert_flink_identity() {
-  jar_file=$1
-  module=$2
-  manifest=$(unzip -p "$jar_file" META-INF/MANIFEST.MF | tr -d '\r')
+  identity_jar=$1
+  identity_module=$2
+  manifest=$(unzip -p "$identity_jar" META-INF/MANIFEST.MF | tr -d '\r')
   actual_line=$(printf '%s\n' "$manifest" | sed -n 's/^StreamFusion-Flink-Line: //p')
   actual_module=$(printf '%s\n' "$manifest" | sed -n 's/^StreamFusion-Module: //p')
-  if [ "$actual_line" != "$flink_line" ] || [ "$actual_module" != "$module" ]; then
-    echo "$jar_file has identity '$actual_module' / Flink '$actual_line', expected '$module' / Flink '$flink_line'" >&2
+  if [ "$actual_line" != "$flink_line" ] || [ "$actual_module" != "$identity_module" ]; then
+    echo "$identity_jar has identity '$actual_module' / Flink '$actual_line', expected '$identity_module' / Flink '$flink_line'" >&2
     exit 1
   fi
 }
@@ -113,7 +113,7 @@ for suffix in $modules; do
   fi
   assert_flink_identity "$jar_file" "$artifact"
   case "$suffix" in
-    delta|fluss|paimon)
+    delta|fluss|paimon|kafka|json|csv|raw|avro|avro-confluent-registry|protobuf|parquet|orc)
       python3 "$script_dir/check-connector-ownership.py" "$repo_root/$module" "$jar_file" \
         --flink-line "$flink_line"
       ;;

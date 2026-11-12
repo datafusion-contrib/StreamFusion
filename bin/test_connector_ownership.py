@@ -2,6 +2,7 @@
 
 import importlib.util
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 import zipfile
@@ -13,6 +14,32 @@ SPEC.loader.exec_module(CHECKER)
 
 
 class ConnectorOwnershipTest(unittest.TestCase):
+    def test_manifest_identity_keeps_the_module_source_directory(self):
+        script = Path(__file__).with_name("check-artifacts.sh").read_text()
+        start = script.index("assert_flink_identity() {")
+        helper = script[start:script.index("\n}\n", start) + 3]
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = Path(directory) / "connector.jar"
+            for line, suffix in [("2.2", ""), ("1.18", "-flink1.18")]:
+                with self.subTest(line=line):
+                    identity = "streamfusion-kafka" + suffix
+                    with zipfile.ZipFile(artifact, "w") as jar:
+                        jar.writestr("META-INF/MANIFEST.MF",
+                                     f"StreamFusion-Flink-Line: {line}\r\n"
+                                     f"StreamFusion-Module: {identity}\r\n")
+                    probe = ('set -eu\n' + helper + '\n'
+                             'module=streamfusion-kafka\nflink_line=$2\n'
+                             'assert_flink_identity "$1" "$3"\n'
+                             'test "$module" = streamfusion-kafka\n')
+                    subprocess.run(["sh", "-c", probe, "probe", str(artifact), line, identity],
+                                   check=True)
+                    wrong_host = "1.18" if line == "2.2" else "2.2"
+                    rejected = subprocess.run(
+                        ["sh", "-c", probe, "probe", str(artifact), wrong_host, identity],
+                        capture_output=True, text=True)
+                    self.assertNotEqual(0, rejected.returncode)
+                    self.assertIn("has identity", rejected.stderr)
+
     def test_packaged_ownership_and_negative_controls(self):
         with tempfile.TemporaryDirectory() as directory:
             module = Path(directory)

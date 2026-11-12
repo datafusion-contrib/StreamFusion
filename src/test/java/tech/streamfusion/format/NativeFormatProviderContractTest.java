@@ -52,8 +52,8 @@ class NativeFormatProviderContractTest {
   @Test
   void providersLinkWithoutFlinkOnTheClasspath() throws Exception {
     for (String provider : registeredProviders()) {
-      try (FlinkLessClassLoader loader = new FlinkLessClassLoader()) {
-        Class.forName(provider, false, loader).getConstructor();
+      try {
+        Class.forName(provider, false, new FlinkLessClassLoader()).getConstructor();
       } catch (NoClassDefFoundError | ClassNotFoundException e) {
         fail(
             provider
@@ -107,7 +107,7 @@ class NativeFormatProviderContractTest {
    * The probe's classloader shape: project bytes come from the module test classpath, the JDK
    * from the platform loader, and everything else — Flink above all — does not exist.
    */
-  private static final class FlinkLessClassLoader extends ClassLoader implements AutoCloseable {
+  private static final class FlinkLessClassLoader extends ClassLoader {
     private FlinkLessClassLoader() {
       super(ClassLoader.getPlatformClassLoader());
     }
@@ -127,8 +127,5 @@ class NativeFormatProviderContractTest {
         throw new ClassNotFoundException(name, e);
       }
     }
-
-    @Override
-    public void close() {}
   }
 }
