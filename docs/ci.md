@@ -283,8 +283,23 @@ while compiling tests; the runner itself crashed before it could upload a test r
 The preflight removes only unused hosted-runner toolchains and fails early if it cannot
 provide enough initial capacity.
 
-Optimized image builds and the separately prepared upstream
-Flink suite keep their own build configurations. The debug artifact is scoped to its current
+Upstream Flink preparation restores the same `debug-jvm` dependency cache, at the same
+`native/target` path and with matching Rust environment settings, on both Flink lines.
+Cargo still builds all current workspace libraries from each suite's isolated source checkout.
+Only the dynamic libraries reported by that successful Cargo invocation are staged into
+the suite build; cached extra libraries cannot enter its artifact. Upstream preparation
+does not write another cache. This removes two redundant dependency-cache copies without
+sharing test outcomes or changing native package/feature selection. The ordinary native
+producer remains the cache writer. Optimized image builds keep their release configuration.
+The November 12 cache snapshot recorded two 1.26 GB upstream entries with the same key but
+different versions, in addition to the ordinary debug entry. Each line cached a different
+target path, and the upstream environment also omitted the producer's `RUST_BACKTRACE`.
+Normalizing those paths and settings removes about 2.53 GB of redundant cache candidates.
+This is projected storage avoidance, not measured reclaimed space or an elapsed-time gain.
+GitHub includes cached paths in [cache version matching](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching)
+and evicts older entries when the repository's cache budget fills. Default-branch retention
+still depends on that budget; matching caches never replace current-source compilation.
+The debug artifact is scoped to its current
 workflow run and commit; it is not a release payload or a cache of test outcomes. This replaces
 the independent debug library builds with one without changing test selection or test concurrency.
 Actual elapsed-time savings must be measured in GitHub Actions after this change runs.

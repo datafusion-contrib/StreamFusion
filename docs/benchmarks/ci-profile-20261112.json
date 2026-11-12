@@ -3764,5 +3764,34 @@
       "exit_code": 1,
       "reason": "Direct Surefire invocation cannot resolve the uninstalled streamfusion-json-flink1.18 reactor dependency. Normal precompiled test lifecycle and a single-line dispatch repair setup without repeating the running 2.2 probe."
     }
+  },
+  "native_cache_layout_baseline": {
+    "captured_at": "2026-11-12T05:50:13.083903+00:00",
+    "entries": [
+      {
+        "id": 10391898513,
+        "key": "v0-rust-upstream-suite-Linux-x64-d0b819d4-a6f17d09",
+        "version": "0adb023b648a1b66f9105230a88fb1400108f68a4386f7cfa846bd6454f11b08",
+        "ref": "refs/heads/perf/ci-worker-startup",
+        "size_in_bytes": 1264505858
+      },
+      {
+        "id": 10391847036,
+        "key": "v0-rust-upstream-suite-Linux-x64-d0b819d4-a6f17d09",
+        "version": "e5a206df9cd3b763840d3d669174f1b6ed8b155ee5c600b8e8634ed5e6abc44f",
+        "ref": "refs/heads/perf/ci-worker-startup",
+        "size_in_bytes": 1264519389
+      },
+      {
+        "id": 10391604640,
+        "key": "v0-rust-debug-jvm-Linux-x64-4379f36a-a6f17d09",
+        "version": "f042e81e967119671f464f066cfcebc7a0fe9e27b39b4148f250c8b797d89a0e",
+        "ref": "refs/heads/perf/ci-worker-startup",
+        "size_in_bytes": 1264432617
+      }
+    ],
+    "default_branch_entries": 0,
+    "projected_avoided_duplicate_bytes": 2529025247,
+    "observation": "The native producer and upstream preparation considered the same Rust version and environment variables except upstream omitted RUST_BACKTRACE. The upstream entries have identical keys but distinct versions because their cache paths differ by Flink line. Proposed shared-key, environment and target-path normalization reuses the ordinary producer cache; source Cargo builds and exact-commit library staging remain required. Hosted verification pending."
   }
 }

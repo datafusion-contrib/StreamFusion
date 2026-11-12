@@ -410,10 +410,9 @@ else
   # development DSO explicitly so the suite cannot accidentally package or load an excluded,
   # stale native/target left by an earlier run.
   echo "Building the StreamFusion development native library for the source suite..."
-  (
-    cd "${STREAMFUSION_BUILD_ROOT}/native" &&
-      cargo build --workspace
-  ) || exit $?
+  python3 "${REPO_ROOT}/dev/flink-suite/native_build.py" \
+    --source "${STREAMFUSION_BUILD_ROOT}" \
+    --target "${FLINK_SUITE_NATIVE_TARGET_DIR:-${STREAMFUSION_BUILD_ROOT}/native/target}" || exit $?
 
   echo "Building and installing StreamFusion and its supported connector/format modules against the source-suite planner..."
   streamfusion_profiles="paimon"

@@ -23,6 +23,7 @@ permissions:
 jobs:
   prepare:
     env:
+      RUST_BACKTRACE: '1'
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
       CARGO_PROFILE_TEST_DEBUG: line-tables-only
     name: Prepare upstream build
@@ -65,13 +66,14 @@ jobs:
       - uses: ./.github/actions/setup-rust
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: upstream-suite
-          save-if: ${{ github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main' }}
-          workspaces: native -> ../.flink-suite/${{ inputs.line }}/streamfusion-source/native/target
+          shared-key: debug-jvm
+          save-if: false
+          workspaces: native
       - name: Build Flink and StreamFusion once
         env:
           FLINK_VERSION: ${{ inputs.version }}
           FLINK_SUITE_BUILD_THREADS: 1C
+          FLINK_SUITE_NATIVE_TARGET_DIR: ${{ github.workspace }}/native/target
         run: |
           set -o pipefail
           bin/flink-suite.sh prepare 2>&1 | tee upstream-prepare.log

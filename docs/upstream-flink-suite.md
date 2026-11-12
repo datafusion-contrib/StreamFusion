@@ -970,9 +970,13 @@ StreamFusion's native workspace and Java payloads, and the upstream format test 
 build also includes the Delta payload. Kafka and Paimon compile their own test fixtures in their
 consumer jobs, reusing the common build. The isolated Maven repository at `.flink-suite/<line>/m2`
 is cached separately by platform, JDK, Flink version and build inputs; `setup-java`'s ordinary
-Maven cache serves the injection-agent build. Rust dependencies are cached in the isolated source
-build's actual native target directory. Every run still rebuilds current StreamFusion code.
-The Rust cache keeps the existing `upstream-suite` key. Each Flink line runs its own preparation
+Maven cache serves the injection-agent build. Both lines restore the ordinary CI producer's
+`debug-jvm` Rust dependency cache at `native/target`, with matching debug and backtrace
+settings. Cargo builds current libraries from the isolated suite source against that target,
+then stages only the dynamic libraries reported by the successful current build into the
+suite's own native directory. The shared archive retains those libraries without transferring
+Cargo intermediates. Upstream jobs do not save additional Rust cache copies. Every run still
+validates current StreamFusion sources through Cargo. Each Flink line runs its own preparation
 and consumer jobs in a reusable workflow: 1.18 consumers need only the 1.18 preparation, and 2.2
 consumers need only the 2.2 preparation. Suite selection happens inside preparation, removing a
 separate runner allocation. The parent gate still requires both lines to succeed.
@@ -1003,13 +1007,14 @@ The preparation job also caches the compiled, clean Flink checkout using an exac
 the released Flink version, actual JDK version, runner platform/architecture, and build script/settings/workflow
 hash. Maven still runs the same build commands to validate and install its outputs; this is incremental
 compilation reuse, not a cached test result or a skipped StreamFusion build. A cache miss takes the
-normal cold-build path. Only main-branch preparation jobs save the compiled Flink and isolated Maven
-caches, before any upstream tests run, and shared artifacts continue to exclude test reports.
-Rust caches in ordinary CI, upstream preparation, and Paimon 1.0 compatibility are saved only on each
-repository's `main`. Fork feature branches restore available caches but do not save their own copies
-of these large caches; sibling branches cannot reuse those copies. Syncing and pushing `main` in a
-fork seeds that fork's default-branch caches. Forks do not share the canonical repository's caches. The ordinary Maven dependency cache
-managed by `setup-java` retains its existing policy.
+normal cold-build path. Personal-fork preparation and canonical `main` save the compiled Flink
+and isolated Maven caches before any upstream tests run; canonical feature branches do not.
+Shared artifacts continue to exclude test reports. The ordinary CI producer is the sole writer
+of the shared debug Rust dependency cache; upstream preparation only restores it. Paimon 1.0
+and optimized images retain their release-cache configuration. Fork feature branches can
+restore their fork's default-branch caches, while sibling branches cannot restore one another's
+entries. Forks do not share the canonical repository's caches. The ordinary Maven dependency
+cache managed by `setup-java` retains its existing policy.
 
 The optimized image jobs cache `native/target/release-staging`, the actual Cargo target directory
 used by the release builder. Debug dependencies retain their separate caches. The first run after
