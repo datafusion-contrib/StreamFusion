@@ -907,6 +907,11 @@ A local synthetic 323 MB packing loop with four fresh cache instances, repeated 
 alternating pairs, reduced elapsed medians from 13.57 to 0.042 seconds on JDK 11 and from
 13.91 to 0.027 seconds on JDK 17. This isolates redundant packing and hashing; it does not
 measure engine throughput or full CI. The structured short-loop evidence records every trial.
+The subsequent hosted setup probe 43282442243 passed all eight recovery/Kafka cases with
+positive native-work and stock-isolation assertions. Four parent recordings contained 37
+classpath-packing samples out of 269 Java samples, versus 1,543 out of 1,771 before the change;
+SHA-256 leaf samples fell from 1,442 to 25. These separate instrumented runs confirm the
+targeted work was removed, without establishing an exact CPU or elapsed speedup.
 Compiled directories remain immutable for each Surefire
 fork. Snapshot names derive from their contents; an existing snapshot is checked for corruption
 and retained without changing its timestamp. Changed compiled bytes produce a new snapshot.
