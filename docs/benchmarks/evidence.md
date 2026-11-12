@@ -141,6 +141,19 @@ and retrieval consumers before removing source-tree copies. Do not overwrite an
 existing evidence release's assets. Preserve the human-readable conclusion and
 structured observations, including regressions and rejected approaches.
 
+### Shared historical CSV tables
+
+The following former filenames contained byte-identical data. Each now refers to
+one retained canonical table; the separate investigations, conclusions and
+measurement boundaries remain as recorded. These aliases do not add independent
+trials to an aggregate.
+
+| Former filename | Canonical table |
+| --- | --- |
+| `double-truncate-expanded-probes-2026-10-01.csv` | [Decimal-grid probes](double-truncate-decimal-grid-probes-2026-10-01.csv) |
+| `double-truncate-scale-bound-jni-allocations-2026-10-02.csv` | [Domain/rounding allocation probes](double-truncate-domain-probes-2026-10-01.csv) |
+| `fluss-write-2026-10-08/pre-metadata-fix-wall.csv` | [Before-metadata-fix wall trials](fluss-write-2026-10-08/before-wall.csv) |
+
 ### Recording and moving evidence
 
 - Link a new report from its topic page or this index, and link each cohort's
