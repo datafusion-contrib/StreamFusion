@@ -336,6 +336,11 @@ under each module's `src/main/java`, beside its SPI registrations and tests. Pai
 Delta requires Flink 2.2; it and Fluss do not add the root compatibility source tree.
 Paimon 1.0 retains filtered source generation and its legacy overrides, consuming common
 and Flink 1.18 sources from `streamfusion-paimon` rather than the root tree.
+Iceberg, Doris and Hudi also use their local source directories. Common-only Iceberg and
+Doris disable the inherited root host-adapter source execution instead of filtering out
+foreign sources at compilation or publication time. Their source and Javadoc attachments
+therefore follow the same module boundary as their executable JARs; their existing host
+and JDK requirements still apply.
 
 This ownership boundary preserves Java packages, service names, JNI symbols, native
 resources and deployment coordinates. It adds no native libraries. Kafka and the JSON,

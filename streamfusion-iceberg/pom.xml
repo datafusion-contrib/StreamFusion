@@ -60,15 +60,10 @@
         <plugins>
             <plugin><groupId>org.codehaus.mojo</groupId><artifactId>exec-maven-plugin</artifactId></plugin>
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId>
-                <configuration><includes><include>tech/streamfusion/iceberg/**/*.java</include><include>tech/streamfusion/planner/*Iceberg*.java</include></includes></configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId><artifactId>maven-javadoc-plugin</artifactId>
-                <configuration><sourceFileIncludes>
-                    <sourceFileInclude>tech/streamfusion/iceberg/**/*.java</sourceFileInclude>
-                    <sourceFileInclude>tech/streamfusion/planner/*Iceberg*.java</sourceFileInclude>
-                </sourceFileIncludes></configuration>
+                <groupId>org.codehaus.mojo</groupId><artifactId>build-helper-maven-plugin</artifactId>
+                <executions><execution>
+                    <id>flink-compatibility-sources</id><phase>none</phase>
+                </execution></executions>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId><artifactId>maven-enforcer-plugin</artifactId>
