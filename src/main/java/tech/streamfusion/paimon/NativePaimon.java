@@ -19,7 +19,7 @@ public final class NativePaimon {
   public static native String liveNativeHandles();
 
   static native long createReader(
-      Object io, String descriptor, long schema, int rows, long budget, boolean kinds);
+      Object io, String descriptor, long schema, int rows, long budget, boolean kinds, Object memory);
 
   static native boolean readerNext(long handle, long array, long schema);
 

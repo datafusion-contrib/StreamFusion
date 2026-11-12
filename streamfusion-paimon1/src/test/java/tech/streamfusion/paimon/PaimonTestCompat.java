@@ -28,8 +28,13 @@ final class PaimonTestCompat {
   }
 
   static CommitMessage compactMessage(org.apache.paimon.compact.CompactResult result) {
+    return compactMessage(BinaryRow.EMPTY_ROW, result);
+  }
+
+  static CommitMessage compactMessage(
+      BinaryRow partition, org.apache.paimon.compact.CompactResult result) {
     return new org.apache.paimon.table.sink.CommitMessageImpl(
-        BinaryRow.EMPTY_ROW,
+        partition,
         0,
         new org.apache.paimon.io.DataIncrement(
             java.util.List.of(), java.util.List.of(), java.util.List.of()),

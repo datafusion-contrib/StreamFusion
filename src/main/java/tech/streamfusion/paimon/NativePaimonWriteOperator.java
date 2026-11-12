@@ -50,6 +50,7 @@ public final class NativePaimonWriteOperator extends TableWriteOperator<Bucketed
 
   @Override
   public void initializeState(StateInitializationContext context) throws Exception {
+    tech.streamfusion.operator.NativeAllocator.initializeFor(this);
     super.initializeState(context);
     if (options.get(org.apache.paimon.flink.FlinkConnectorOptions.SINK_USE_MANAGED_MEMORY)) {
       var manager = getContainingTask().getEnvironment().getMemoryManager();

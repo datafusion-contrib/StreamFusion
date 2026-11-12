@@ -41,6 +41,10 @@ public final class ParquetCodec implements ColumnarFileCodec {
         return NativeParquet.parquetEncoderEstimatedBytes(handle);
       }
 
+      public long bufferedBytes() {
+        return NativeParquet.parquetEncoderBufferedBytes(handle);
+      }
+
       public void finish() {
         NativeParquet.parquetEncoderFinish(handle);
       }

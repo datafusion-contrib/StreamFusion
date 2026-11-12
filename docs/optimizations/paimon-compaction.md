@@ -7,6 +7,65 @@ and merges the selected files; the existing native codecs encode Arrow bundles. 
 metadata, rolling, abort, scheduling and commit/recovery. No comparator, reducer or compaction
 planner is added. [Coverage and fallback](../connectors/paimon.md#compaction) remain bounded.
 
+## Resource-aware append rewrites
+
+Append admission reserves the estimated reader, encoder and staging working set against the shared
+TaskManager authority before output opens, leaving headroom for independently owned Arrow imports.
+The released paimon-rust resource context suballocates the reader allowance. One row group runs at
+a time, and the encoder's retained-buffer estimate is checked after each bundle. This admits ordinary
+native-written Parquet groups when task resources allow them, without treating the unrelated sort
+buffer as the compact reader's budget. See [the coverage page](../connectors/paimon.md#compaction)
+for the formula, fallback evidence, ownership and limitations.
+
+Compact reads reuse one staging buffer, grown lazily up to the smaller of the projected group estimate
+and 4 MiB (with a 64 KiB floor), across streams and sequential files. The OpenDAL positioned reader
+uses that same bound. Previously, each native range was fragmented into 2 MiB positioned reads and
+64 KiB Java stream copies. Matching both limits reduces JNI and underlying stream-read overhead;
+larger Java buffers alone leave OpenDAL's fragmentation in place. Ordinary sources keep their
+existing transfer sizes. This does not claim parallel remote I/O from the synchronous Java FileIO.
+
+The [complete observations](../benchmarks/results/paimon-append-memory-638.json) retain all 168
+trials, including warmups, on Apple M4 / 16 GiB, JDK 17.0.17, Flink 2.2.1, Paimon 2.1.0 and
+paimon-rust 0.4.0 with release/mimalloc libraries and one codegen unit. Each engine has two active JVM
+processors, a 2 GiB heap and 1 GiB available task budget. Two actual native-written inputs contain
+128 plus 16,384/49,152 rows of approximately 1 KiB unique strings, NULLs and three partition fields.
+The original append rewriter from `e1d71357c` supplies the previous policy; only its class name changes.
+All engines reuse the same files, rotate order, warm up twice and run five measured trials.
+
+Medians in milliseconds; each cell's full range and individual observations are in the JSON:
+
+| Rows | Row-group target | Added read latency | Stock Java | Previous | Current |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 16,512 | 128 MiB | 0 | 177.373 | 148.938 | 146.576 |
+| 16,512 | 8 MiB | 0 | 177.118 | 147.743 | 154.351 |
+| 49,280 | 128 MiB | 0 | 499.979 | 495.901 | 414.043 |
+| 49,280 | 8 MiB | 0 | 485.640 | 413.524 | 419.294 |
+| 16,512 | 128 MiB | 1 ms/read | 197.901 | 498.275 | 175.084 |
+| 16,512 | 8 MiB | 1 ms/read | 202.260 | 503.086 | 175.867 |
+| 49,280 | 128 MiB | 1 ms/read | 527.923 | 535.157 | 450.198 |
+| 49,280 | 8 MiB | 1 ms/read | 522.189 | 1,380.905 | 455.899 |
+
+The reported default-group reproduction now runs natively: elapsed medians improve 17.2% against
+stock and 16.5% against the previous Java fallback without added latency; with synthetic latency,
+they improve 14.7% and 15.9%. Every current case beats stock in this series. Already-native 8 MiB
+controls cost 1.4–4.5% more than previous without added latency (ranges overlap), while the latency
+controls improve substantially. This is a bounded resource policy with measured costs, not a
+uniform speedup over every previous native path.
+
+The latency diagnostic delays each underlying Java stream read by one millisecond only inside
+timing. It is not a remote-store measurement. Initial 64 KiB transfers lost heavily under that
+diagnostic; a larger Java buffer alone still trailed stock. The final comparison includes both
+transfer limits. Spotlight consumed approximately one CPU core during the final series, so absolute
+times must not be compared with earlier pilots or presented as idle-machine throughput. Within each
+series data, limits, host conditions and verification are shared across engines.
+
+The timer includes preflight, runtime setup, JNI, FileIO, decode, memory admission, encode and output
+close; creating the table-writer object, fixtures, full value/statistics validation and cleanup are
+outside it. Every content value, NULL, partition field, sequence and statistic must match; footer
+witnesses and counters require the expected native/Java routes. These are local file-rewrite
+diagnostics, not complete-job, startup, remote-storage, RSS or CPU-efficiency claims.
+The [coverage page](../connectors/paimon.md#compaction) includes reproduction commands.
+
 The [expanded release diagnostic](../benchmarks/paimon-compaction-expanded-20261105/README.md)
 retains 120 worker trials on Paimon 1.0: Parquet medians improve 1.27–2.04× versus stock and
 1.26–2.02× versus previous; ORC improves 1.27–1.67× versus stock and 1.30–1.69× versus previous.

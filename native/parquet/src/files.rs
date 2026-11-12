@@ -812,6 +812,12 @@ impl<W: std::io::Write + Send> EncoderWriter<W> {
             Self::Int96(w) => w.in_progress_size(),
         }
     }
+    fn memory_size(&self) -> usize {
+        match self {
+            Self::Arrow(w) => w.memory_size(),
+            Self::Int96(w) => w.memory_size(),
+        }
+    }
     fn finish(&mut self) -> parquet::errors::Result<()> {
         match self {
             Self::Arrow(w) => w.finish().map(|_| ()),
@@ -1075,6 +1081,12 @@ impl<W: std::io::Write + Send> ParquetEncoder<W> {
         writer.bytes_written() + writer.in_progress_size()
     }
 
+    fn buffered_bytes(&self) -> usize {
+        self.writer.as_ref().map_or(0, |writer| {
+            writer.memory_size() + JniParquetOutput::CHUNK_BYTES
+        })
+    }
+
     /// Flushes the last row group and writes the footer into Flink's output stream.
     pub(crate) fn finish(&mut self) {
         let mut writer = self
@@ -1194,6 +1206,18 @@ pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_parquetEncod
     crate::bridge::jni_guard(env, move |_env| {
         let encoder = unsafe { &*(handle as *const ParquetEncoder<JniParquetOutput>) };
         jlong::try_from(encoder.estimated_bytes()).expect("Parquet byte estimate exceeded jlong")
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_parquetEncoderBufferedBytes(
+    env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+) -> jlong {
+    crate::bridge::jni_guard(env, |_| {
+        let encoder = unsafe { &*(handle as *const ParquetEncoder<JniParquetOutput>) };
+        jlong::try_from(encoder.buffered_bytes()).expect("Parquet memory exceeded jlong")
     })
 }
 

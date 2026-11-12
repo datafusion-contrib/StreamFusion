@@ -157,7 +157,7 @@ need a merge. Selection merges drop winning retracts and retain the winning add 
 partial-update reductions follow the row-kind rules above. Changelog tailing continues to preserve all stored changes.
 
 `sort-spill-buffer-size` supplies the snapshot merge read resource budget. Raw append/changelog
-decoding keeps the existing unbounded resource context rather than acquiring an unrelated merge
+**source** decoding keeps the existing unbounded resource context rather than acquiring an unrelated merge
 limit; batch rows and the handover queue still bound batching, not total bytes. Before emission, the existing footer
 check requires the sum of each run's largest compressed-plus-uncompressed row group (Parquet),
 or conservative stripe/dictionary estimate (ORC), to fit half that budget. Larger splits retain
@@ -1155,6 +1155,81 @@ statistics, file sizing and commit construction. The 1.0 adapter advances the st
 for bundles; newer releases already do so. Fixed-bucket writers share the manager adapter. Unaware
 append jobs and dedicated single-table workers inherit the released worker lifecycle and decorate
 only the task's payload writer. Table refresh still resolves the writer and table through Paimon.
+Append compaction has its own resource policy, separate from raw source reads and snapshot merges.
+Before opening output it inspects every selected input and admits the estimated working set
+against StreamFusion's shared TaskManager task-off-heap authority. With `E` the largest projected
+compressed-plus-uncompressed Parquet row group (or conservative ORC stripe estimate), and `T` the
+configured output row-group/stripe target, and `B = max(64 KiB, min(E, 4 MiB))`, admission requires
+`3E + 2T + B + 2 MiB`: one `E` for the reader, one for its outgoing batch, and `2T + E + 1 MiB` for encoder buffers and target overshoot;
+the remaining `B + 1 MiB` cover a single shared Java input staging buffer and bridge headroom.
+Compact reads grow that staging buffer lazily for requested ranges, up to `B`, and reuse it
+across their open streams and sequential input readers; ordinary sources retain
+64 KiB transfers. Larger transfers avoid paying an underlying stream read for every 64 KiB of a
+wide column chunk. The compact OpenDAL positioned reader uses the same bound, avoiding its
+normal 2 MiB request fragmentation. It prepays the reader, staging and encoder shares, atomically
+leaving `E + 1 MiB` headroom for Arrow imports, which charge the authority independently. Headroom
+is available capacity rather than an exclusive reservation; other consumers can use it, and a
+later denial aborts the native attempt. Inputs are read sequentially. Parquet compaction overrides
+row-group parallelism to one and its prefetch byte window to `E`. The released `ResourceContext`
+enforces the reader allowance through a `MemoryPool` adapter to that prepaid reservation. Co-located
+workers compete for the same authority and cannot each reserve the same reader/encoder bytes.
+
+The encoder's retained-buffer estimate is checked after every bundle against its reserved share;
+bytes already written to disk do not consume that share. Imported Arrow batches also keep their
+normal reference-counted shared-allocator accounting, independently of the compact reader's lifetime.
+These are conservative working-set reservations, **not an allocator or a strict RSS cap**: decoder
+estimates, metadata, transient encoding allocations and Java heap overhead can differ from actual
+memory use. ORC reader allocations are covered by the prepaid stripe estimate rather than the
+released Parquet reservation callbacks. Writer-budget failure after output starts aborts and fails
+the attempt. No partially written rewrite is retried in Java.
+
+Append admission no longer uses half of the unrelated sort-spill buffer. Under default writer
+settings, larger historical row groups can run when the shared task budget can cover the entire
+working set. Insufficient capacity (including an uninitialized task budget) retains Java before
+output creation. Fallback logs report the largest input's path, projected estimate, effective
+threshold, available bytes, writer target, row-group parallelism, prefetch window and batch rows;
+a reservation race reports `task-off-heap-budget`. Reducing batch rows alone does not change `E`,
+and output target changes do not rewrite historical row groups.
+
+`PaimonCompactionMemoryTest` writes two actual native Parquet inputs containing wide unique strings,
+NULLs and partition fields. It covers the default 128 MiB writer target, multiple 8 MiB-target row
+groups, three output batch sizes, sequence/statistics preservation, committed compact replay,
+shared-worker denial, decoder cancellation accounting and exported-batch ownership. Existing
+compaction failure tests retain abort-without-retry checks for read, write, close and cancellation
+failures after output begins. The released Paimon 1.0, 2.0 and 2.1 host suites retain their normal
+compatibility and upstream-compaction gates.
+Focused release-native validation on this change passed 101 cases on Paimon 2.1/Flink 2.2/JDK 17,
+92 on Paimon 2.0/Flink 1.18/JDK 11, and 86 on Paimon 1.0/Flink 1.18/JDK 11, with zero skips.
+Each host executed all fourteen memory-policy cases. These focused checks do not replace the
+required full CI and upstream suite.
+
+The opt-in `PaimonCompactionMemoryBenchmark` compares complete file rewrites on identical native
+inputs against stock Java and the previous append rewriter. It retains JNI, Java FileIO, decoder
+work, encoding and output close; fixture creation and full value/statistics verification are outside
+the timer. It alternates engine order, warms up each engine twice and records five trials for
+16,512/49,280 rows of approximately 1 KiB strings, with 128/8 MiB writer targets. Every engine
+uses the same 1 GiB of available task budget, 2 GiB heap and two active JVM processors in the
+reported runs. `SF_PAIMON_COMPACT_READ_LATENCY_MS=1` adds one millisecond to each underlying
+stream read while timing, providing a controlled latency diagnostic; it is not remote storage.
+Prepare the previous rewriter from its actual source, changing only the class name, and use release libraries:
+
+```sh
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+git show e1d71357c3240b99e944d141aa2fe0fe6afd16f0:src/main/java/tech/streamfusion/paimon/NativePaimonAppendRewriter.java \
+  | sed 's/NativePaimonAppendRewriter/PreviousNativePaimonAppendRewriter/g' \
+  > "$scratch/PreviousNativePaimonAppendRewriter.java"
+SF_PAIMON_COMPACT_MEMORY_BENCHMARK=true \
+SF_PAIMON_COMPACT_BASELINE_SOURCE="$scratch/PreviousNativePaimonAppendRewriter.java" \
+mvn -Ppaimon,bench -pl streamfusion-paimon -am test \
+  -Dtest=PaimonCompactionMemoryBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
+  "-Dsf.extraJvmArgs=-Xmx2g -XX:ActiveProcessorCount=2 -Djava.io.tmpdir=$scratch"
+```
+
+This is a local-file rewrite benchmark, not a complete Flink job or remote-I/O throughput claim.
+The small-row-group comparison includes the prior prefetch policy, so a native counter increase
+alone cannot qualify the resource-policy change as a performance improvement.
+
 Multi-table unaware workers, precommit append workers and unadapted SQL procedures currently retain
 stock rewriting; remaining integration and upstream validation are tracked in
 [#592](https://github.com/datafusion-contrib/StreamFusion/issues/592).
@@ -1682,7 +1757,7 @@ packaging verifies the native payload and provided 1.0.0 dependency.
 and the new adapter on identical data. Local measurements on 2026-09-28 include
 the shared boundary and aggregate changes through main `0b7243c3`, and used JDK 17,
 Flink 1.18.1, Paimon 1.0.0, release Rust with mimalloc, one task, two JVM CPUs,
-a 1.5 GiB test heap, 4,096-row Arrow batches, and a 32 MiB writer buffer.
+a 1.5 GiB test heap, 4,096-row Arrow batches, and a 4 MiB writer buffer.
 The `bench` profile disables local zero-copy exchange, retaining serialization costs.
 Each configuration has one warmup and three measurements with rotating engine order.
 Times are **median [minimum, maximum]**, not best-of-run throughput claims.

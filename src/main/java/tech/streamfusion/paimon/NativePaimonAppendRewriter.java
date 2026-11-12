@@ -1,5 +1,6 @@
 package tech.streamfusion.paimon;
 
+import java.io.InterruptedIOException;
 import java.lang.reflect.Method;
 import java.util.List;
 import org.apache.paimon.CoreOptions;
@@ -17,6 +18,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.arrow.ArrowFileBatch;
+import tech.streamfusion.operator.TaskOffHeapMemory;
 
 /** Copies Java-selected append files in order through released Rust readers and stock writers. */
 final class NativePaimonAppendRewriter implements CompactRewriter {
@@ -29,6 +31,7 @@ final class NativePaimonAppendRewriter implements CompactRewriter {
   private final CompactRewriter stock;
   private final NativePaimonCompactRewriter.Counters counters;
   String fallbackReason;
+  String admissionEvidence;
 
   NativePaimonAppendRewriter(
       FileStoreTable table,
@@ -63,20 +66,61 @@ final class NativePaimonAppendRewriter implements CompactRewriter {
 
   @Override
   public List<DataFileMeta> rewrite(List<DataFileMeta> files) throws Exception {
+    if (Thread.currentThread().isInterrupted())
+      throw new InterruptedIOException("Paimon append compaction cancelled");
+    admissionEvidence = null;
     fallbackReason = unsupportedReason(files);
     if (fallbackReason != null) return stockRewrite(files);
     var type = LogicalTypeConversion.toLogicalType(table.rowType());
     String bucketPath = table.store().pathFactory().bucketPath(partition, bucket).toString();
     int batchRows = table.coreOptions().toConfiguration().get(CoreOptions.READ_BATCH_SIZE);
-    if (fallbackReason == null
-        && !PaimonReadPreflight.rawWithinBudget(
+    var estimate =
+        PaimonReadPreflight.appendEstimate(
             table,
             files,
             ArrowFileBatch.schema(ArrowConversion.toArrowSchema(type)),
             table.rowType().getFieldNames().toArray(String[]::new),
             bucketPath,
-            batchRows)) fallbackReason = "projected-row-group-budget";
-    if (fallbackReason != null) return stockRewrite(files);
+            batchRows);
+    long writerTarget = PaimonCompactMemory.writerTarget(table);
+    long available = TaskOffHeapMemory.availableBytes();
+    long threshold = PaimonCompactMemory.threshold(available, writerTarget);
+    admissionEvidence =
+        "file="
+            + estimate.file
+            + ", estimate="
+            + estimate.bytes
+            + ", threshold="
+            + threshold
+            + ", available="
+            + available
+            + ", writerTarget="
+            + writerTarget
+            + ", rowGroupParallelism=1, maxInflightBytes="
+            + Math.max(1, estimate.bytes)
+            + ", batchRows="
+            + batchRows;
+    if (estimate.bytes > threshold || TaskOffHeapMemory.capacityBytes() == 0) {
+      fallbackReason = "projected-row-group-budget";
+      return stockRewrite(files);
+    }
+    try (var memory = PaimonCompactMemory.acquire(Math.max(1, estimate.bytes), writerTarget)) {
+      if (memory == null) {
+        fallbackReason = "task-off-heap-budget";
+        admissionEvidence += ", availableAfterDenial=" + TaskOffHeapMemory.availableBytes();
+        return stockRewrite(files);
+      }
+      return rewrite(files, type, bucketPath, batchRows, memory);
+    }
+  }
+
+  private List<DataFileMeta> rewrite(
+      List<DataFileMeta> files,
+      org.apache.flink.table.types.logical.RowType type,
+      String bucketPath,
+      int batchRows,
+      PaimonCompactMemory memory)
+      throws Exception {
     var sequence = new LongCounter(files.get(0).minSequenceNumber());
     var output =
         (RowDataRollingFileWriter)
@@ -94,7 +138,8 @@ final class NativePaimonAppendRewriter implements CompactRewriter {
                   .isStreaming(false)
                   .rawConvertible(true)
                   .build();
-          try (var reader = new PaimonRustReader(table, split, type, batchRows, true)) {
+          try (var reader =
+              PaimonRustReader.appendCompaction(table, split, type, batchRows, memory)) {
             for (var batch = reader.next(); batch != null; batch = reader.next())
               try (var root = batch) {
                 if (root.getRowCount() == 0) continue;
@@ -122,11 +167,13 @@ final class NativePaimonAppendRewriter implements CompactRewriter {
 
   private List<DataFileMeta> stockRewrite(List<DataFileMeta> files) throws Exception {
     LOG.info(
-        "Using Java Paimon append compaction: reason={}, partition={}, bucket={}, files={}",
+        "Using Java Paimon append compaction: reason={}, partition={}, bucket={}, files={},"
+            + " admission={}",
         fallbackReason,
         partition,
         bucket,
-        files.size());
+        files.size(),
+        admissionEvidence);
     counters.stockGroups.inc();
     return stock.rewrite(files);
   }
