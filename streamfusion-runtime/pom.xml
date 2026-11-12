@@ -82,20 +82,6 @@
                     </execution>
                 </executions>
             </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.13.0</version>
-                <configuration>
-                    <excludes>
-                        <!-- Paimon likewise ships as its own module against the Paimon connector. -->
-                        <exclude>tech/streamfusion/paimon/**</exclude>
-                        <exclude>tech/streamfusion/planner/Paimon*.java</exclude>
-                        <exclude>tech/streamfusion/planner/NativePaimon*.java</exclude>
-                        <exclude>tech/streamfusion/planner/StreamPhysicalNativePaimon*.java</exclude>
-                    </excludes>
-                </configuration>
-            </plugin>
             <!-- The connector-free payload is embedded by the planner loader during the test phase.
                  Publish this thin reactor artifact after main compilation so the core shading module
                  can assemble it before downstream tests, not only at package time. -->

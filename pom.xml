@@ -370,11 +370,9 @@
                 <version>1.7.1</version>
             </extension>
         </extensions>
-        <!-- Releases attach javadoc for every module, and the shared source root lets javadoc see
-             the optional connector sources beside each module's own, so a broken reference or an
-             unresolvable connector class only surfaced at release time. Generating (not packaging)
-             the javadoc in the ordinary test build makes `mvn test` fail the same way the release
-             would; skip it for a quick loop with -Dmaven.javadoc.skip=true. -->
+        <!-- Validate Javadoc in ordinary builds as well as releases. Some format modules still
+             share the root sourcepath; keep their references checked until they move to module-local
+             sources too. Skip documentation generation for a quick loop with -Dmaven.javadoc.skip=true. -->
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -446,9 +444,9 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
                 <configuration>
-                    <!-- Each deployment module owns only its explicit includes. Reproducible
-                         dependency JAR timestamps can make javac prefer newer shared sources;
-                         resolve them if needed, but never emit another module's classes. -->
+                    <!-- Reproducible dependency JAR timestamps can make javac prefer newer
+                         sources in the remaining shared roots. Resolve them if needed, but
+                         emit only the module's owned sources, never another module's classes. -->
                     <compilerArgs>
                         <arg>-implicit:none</arg>
                     </compilerArgs>
@@ -480,15 +478,7 @@
                 <configuration>
                     <doclint>none</doclint>
                     <quiet>true</quiet>
-                    <!-- Modules document only the sources they compile, but javadoc still
-                         parses the opt-in Paimon sources it finds next to them on the
-                         shared sourcepath, so their connector dependencies must be resolvable. -->
-                    <sourceFileExcludes>
-                        <sourceFileExclude>tech/streamfusion/paimon/**</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/planner/Paimon*.java</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/planner/NativePaimon*.java</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/planner/StreamPhysicalNativePaimon*.java</sourceFileExclude>
-                    </sourceFileExcludes>
+                    <!-- Parquet/ORC still share the root sourcepath with core/runtime. -->
                     <additionalDependencies>
                         <additionalDependency>
                             <groupId>org.apache.parquet</groupId>
@@ -499,11 +489,6 @@
                             <groupId>org.apache.hadoop</groupId>
                             <artifactId>hadoop-common</artifactId>
                             <version>3.3.4</version>
-                        </additionalDependency>
-                        <additionalDependency>
-                            <groupId>org.apache.paimon</groupId>
-                            <artifactId>paimon-flink-${flink.line}</artifactId>
-                            <version>${paimon.version}</version>
                         </additionalDependency>
                     </additionalDependencies>
                 </configuration>
@@ -693,29 +678,6 @@
                                 </goals>
                             </execution>
                         </executions>
-                    </plugin>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-javadoc-plugin</artifactId>
-                        <configuration>
-                            <additionalDependencies combine.self="override">
-                                <additionalDependency>
-                                    <groupId>org.apache.parquet</groupId>
-                                    <artifactId>parquet-hadoop</artifactId>
-                                    <version>1.16.0</version>
-                                </additionalDependency>
-                                <additionalDependency>
-                                    <groupId>org.apache.hadoop</groupId>
-                                    <artifactId>hadoop-common</artifactId>
-                                    <version>3.3.4</version>
-                                </additionalDependency>
-                                <additionalDependency>
-                                    <groupId>org.apache.paimon</groupId>
-                                    <artifactId>paimon-flink-1.18</artifactId>
-                                    <version>${paimon.version}</version>
-                                </additionalDependency>
-                            </additionalDependencies>
-                        </configuration>
                     </plugin>
                 </plugins>
             </build>

@@ -124,13 +124,6 @@
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-javadoc-plugin</artifactId>
-                <configuration>
-                    <sourceFileExcludes combine.self="override"/>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-resources-plugin</artifactId>
                 <version>3.3.1</version>
                 <executions>
@@ -144,7 +137,7 @@
                             <outputDirectory>${project.build.directory}/generated-sources/paimon</outputDirectory>
                             <resources>
                                 <resource>
-                                    <directory>${project.basedir}/../src/main/java</directory>
+                                    <directory>${project.basedir}/../streamfusion-paimon/src/main/java</directory>
                                     <filtering>false</filtering>
                                     <includes>
                                         <include>tech/streamfusion/paimon/**/*.java</include>
@@ -178,7 +171,7 @@
                                     </excludes>
                                 </resource>
                                 <resource>
-                                    <directory>${project.basedir}/../src/main/java-flink1.18</directory>
+                                    <directory>${project.basedir}/../streamfusion-paimon/src/main/java-flink1.18</directory>
                                     <filtering>false</filtering>
                                     <includes>
                                         <include>tech/streamfusion/paimon/PaimonSourceReaderCompat.java</include>
