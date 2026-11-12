@@ -22,6 +22,60 @@
 
     <dependencies>
         <dependency>
+            <groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-kafka${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-json${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-csv${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-raw${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-avro${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-avro-confluent-registry${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-protobuf${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-parquet${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-orc${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-table-runtime</artifactId>
             <version>${flink.version}</version>
@@ -35,8 +89,7 @@
         <sourceDirectory>${project.basedir}/../src/main/java</sourceDirectory>
         <testSourceDirectory>${project.basedir}/../src/test/java</testSourceDirectory>
         <resources combine.self="override">
-            <!-- The all-in-one development/test assembly exposes every optional planner provider.
-                 Deployable artifacts carry only their own provider file. -->
+            <!-- Optional providers are supplied by actual module test dependencies. -->
             <resource>
                 <directory>${project.basedir}/src/main/resources</directory>
             </resource>
@@ -63,6 +116,38 @@
             </testResource>
         </testResources>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <excludes>
+                        <exclude>tech/streamfusion/kafka/**</exclude>
+                        <exclude>tech/streamfusion/parquet/**</exclude>
+                        <exclude>tech/streamfusion/orc/**</exclude>
+                        <exclude>tech/streamfusion/format/avro/**</exclude>
+                        <exclude>tech/streamfusion/format/avroconfluent/**</exclude>
+                        <exclude>tech/streamfusion/format/csv/**</exclude>
+                        <exclude>tech/streamfusion/format/json/**</exclude>
+                        <exclude>tech/streamfusion/format/protobuf/**</exclude>
+                        <exclude>tech/streamfusion/format/raw/**</exclude>
+                        <exclude>tech/streamfusion/planner/KafkaPlannerExtension.java</exclude>
+                        <exclude>tech/streamfusion/planner/KafkaSinkMatcher.java</exclude>
+                        <exclude>tech/streamfusion/planner/KafkaSinkTranslator.java</exclude>
+                        <exclude>tech/streamfusion/planner/KafkaTables.java</exclude>
+                        <exclude>tech/streamfusion/planner/KeyedDecodeSpec.java</exclude>
+                        <exclude>tech/streamfusion/planner/NativeKafkaDecodeExecNode.java</exclude>
+                        <exclude>tech/streamfusion/planner/NativeKafkaSinkExecNode.java</exclude>
+                        <exclude>tech/streamfusion/planner/ParquetPlannerExtension.java</exclude>
+                        <exclude>tech/streamfusion/planner/OrcPlannerExtension.java</exclude>
+                        <exclude>tech/streamfusion/planner/OrcSinkTranslator.java</exclude>
+                        <exclude>tech/streamfusion/planner/ParquetSinkTranslator.java</exclude>
+                        <exclude>tech/streamfusion/planner/ProtobufDescriptors.java</exclude>
+                        <exclude>tech/streamfusion/planner/StreamPhysicalNativeKafkaDecode.java</exclude>
+                        <exclude>tech/streamfusion/planner/StreamPhysicalNativeKafkaSink.java</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>flatten-maven-plugin</artifactId>
@@ -224,15 +309,8 @@
             </plugin></plugins></build>
         </profile>
         <profile>
+            <!-- Retain the existing command-line profile; JSON is now always in the test assembly. -->
             <id>canonical-kafka</id>
-            <dependencies>
-                <dependency>
-                    <groupId>tech.streamfusion</groupId>
-                    <artifactId>streamfusion-json${streamfusion.artifact.suffix}</artifactId>
-                    <version>${project.version}</version>
-                    <scope>test</scope>
-                </dependency>
-            </dependencies>
         </profile>
         <profile>
             <id>partition-runtime-tests</id>

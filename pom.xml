@@ -14,10 +14,8 @@
     <url>https://streamfusion.tech/</url>
 
     <modules>
-        <module>streamfusion-runtime</module>
         <module>streamfusion-core</module>
         <module>streamfusion-kafka</module>
-        <module>streamfusion-fluss</module>
         <module>streamfusion-json</module>
         <module>streamfusion-csv</module>
         <module>streamfusion-raw</module>
@@ -26,6 +24,8 @@
         <module>streamfusion-protobuf</module>
         <module>streamfusion-parquet</module>
         <module>streamfusion-orc</module>
+        <module>streamfusion-runtime</module>
+        <module>streamfusion-fluss</module>
         <module>streamfusion-loader</module>
     </modules>
 
