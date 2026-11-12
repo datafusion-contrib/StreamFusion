@@ -339,8 +339,8 @@ and Flink 1.18 sources from `streamfusion-paimon` rather than the root tree.
 
 This ownership boundary preserves Java packages, service names, JNI symbols, native
 resources and deployment coordinates. It adds no native libraries.
-`streamfusion-json`, `streamfusion-csv`, `streamfusion-raw`, `streamfusion-avro`, `streamfusion-avro-confluent-registry`, `streamfusion-protobuf` also own their production sources and selected host adapters.
-`streamfusion-kafka`, `streamfusion-parquet`, `streamfusion-orc` still use shared sources pending migration.
+`streamfusion-parquet`, `streamfusion-orc`, `streamfusion-json`, `streamfusion-csv`, `streamfusion-raw`, `streamfusion-avro`, `streamfusion-avro-confluent-registry`, `streamfusion-protobuf` also own their production sources and selected host adapters.
+`streamfusion-kafka` still use shared sources pending migration.
 Runtime tests
 now depend on the actual Kafka and format modules instead of compiling duplicate
 implementations or carrying duplicate provider registrations. Module-local SPI files
