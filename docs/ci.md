@@ -672,6 +672,8 @@ local builds and the other CI jobs do not activate this profile. A real three-mo
 regression transfers compiled outputs to a fresh consumer, verifies reactor dependency
 resolution and parameterized cases, and requires an intentional selected failure to fail Maven.
 
+The [retained baseline](benchmarks/ci-profile-20261112.json) records every canonical class's
+outcome counts, each cohort's complete inventory and invocation digest, and Actions phase costs.
 The preceding [passing CI run](https://github.com/jordepic/StreamFusion-contrib/actions/runs/43116124202)
 spent 128.6 runner-minutes on the initial compile/partition step across 64 canonical shards.
 Sharing compilation replaces 64 preparations with four; archive preparation, transfer and

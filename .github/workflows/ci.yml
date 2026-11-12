@@ -298,7 +298,8 @@ jobs:
       - name: Compile canonical Java and check its reactor dependencies once
         run: |
           mvn -B -ntp -P${{ matrix.profiles }} -pl streamfusion-runtime -am test \
-            -Dsf.runtime.tests.skip=true -Dnative.build.skip=true
+            -Dsf.runtime.tests.skip=true -Dnative.build.skip=true \
+            -Dsf.testForks=4 -Dsf.testReuseForks=false "-Dsf.extraJvmArgs=-Xmx1g"
           python3 bin/ci_java_build.py pack --line '${{ matrix.line }}' \
             --archive "$RUNNER_TEMP/canonical-java.tar.gz"
       - uses: actions/upload-artifact@v4
