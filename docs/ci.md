@@ -980,7 +980,10 @@ It checks every invocation/outcome and the number of parent clusters actually st
 The full CI and upstream matrices remain final qualification gates.
 
 Before a dispatch, inspect active workflows across the fork and reuse their handles. Keep
-optional diagnostics separate from the candidate's full qualification campaign. Stop this
+optional diagnostics separate from the candidate's full qualification campaign. When another
+task's qualification already fills the observed runner capacity, finish local preparation and
+wait for capacity before dispatching another broad matrix. This rule covers all fork branches;
+separate task worktrees do not provide separate runner pools. Stop this
 task's remaining campaign after a shared setup failure makes success impossible, retain the
 failure, and repair it with a short regression or focused hosted probe. Other sessions' runs
 remain untouched. The project instructions in `CLAUDE.md` make this the default agent workflow.
@@ -993,6 +996,12 @@ the profiler's broader start-delay field, which also includes prerequisites. Red
 setup, avoiding overlapping campaigns, balancing work and removing dependency barriers should
 precede increasing job counts. Preserve all configurations and test invocations when grouping
 compatible checks. Structured timing observations live alongside the short-loop evidence.
+
+`bin/profile-ci.py` reads jobs in 20-row pages with a 30-second limit on each API request.
+Large 100-row job queries repeatedly stalled or reset during this investigation while smaller
+pages completed. An observation timeout does not cancel or restart CI: query the same run handle
+again. Incomplete profiles remain explicitly incomplete, and the invocation audit still requires
+every shard from the exact candidate's completed run.
 
 The **CI startup profile** workflow's `canonical-setup` suite delegates to the
 **Canonical setup probe**, checking one chosen Flink/JDK pair with two fresh runners.

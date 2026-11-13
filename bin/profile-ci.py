@@ -67,7 +67,7 @@ def summarize(run, jobs):
 
 
 def api(endpoint):
-    return json.loads(subprocess.check_output(["gh", "api", endpoint], text=True))
+    return json.loads(subprocess.check_output(["gh", "api", endpoint], text=True, timeout=30))
 
 
 def canonical_coverage(reports, baseline):
@@ -159,9 +159,9 @@ def main():
     jobs = []
     page = 1
     while True:
-        batch = api(f"repos/{args.repo}/actions/runs/{args.run}/attempts/{run['run_attempt']}/jobs?per_page=100&page={page}")
+        batch = api(f"repos/{args.repo}/actions/runs/{args.run}/attempts/{run['run_attempt']}/jobs?per_page=20&page={page}")
         jobs.extend(batch["jobs"])
-        if len(batch["jobs"]) < 100:
+        if len(batch["jobs"]) < 20:
             break
         page += 1
     report = summarize(run, jobs)

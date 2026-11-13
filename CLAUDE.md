@@ -28,7 +28,10 @@ resolution in the focused setup diagnostic; a version present in one runner cach
 unavailable on another image.
 
 Before dispatching hosted work, inspect queued and running workflows across the personal fork,
-including other branches. Keep one full qualification campaign for the candidate; run optional
+including other branches. If an existing qualification campaign already fills the observed runner
+capacity, finish local preparation and wait for capacity before dispatching another broad matrix.
+This applies across concurrent tasks, not only within one task. Keep one full qualification campaign
+for the candidate; run optional
 profiling campaigns separately so they do not compete with its merge gates or contaminate timing.
 Use the smallest diagnostic matrix needed for the question. Reuse existing successful native
 artifacts after verifying their source and producer. Cancel only this task's superseded work;
