@@ -360,7 +360,7 @@ jobs:
       matrix:
         line: ['2.2', '1.18']
         jdk: ['17', '11']
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
         include:
           - line: '2.2'
             profiles: 'canonical-kafka'
@@ -402,7 +402,7 @@ jobs:
         run: |
           python3 bin/ci_runtime_test_shards.py \
             --classes streamfusion-runtime/target/test-classes \
-            --suite canonical --line ${{ matrix.line }} --count 16 --index ${{ matrix.shard }} \
+            --suite canonical --line ${{ matrix.line }} --count 10 --index ${{ matrix.shard }} \
             --output "$RUNNER_TEMP/canonical-job-includes.txt"
       - name: Run every selected canonical job
         env:

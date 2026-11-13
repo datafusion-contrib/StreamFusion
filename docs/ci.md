@@ -378,7 +378,7 @@ operators, embedded clusters and the Maven process on hosted runners.
 Savepoint CI uses four fresh 1 GiB parent forks per job, each retaining its existing fresh
 1 GiB engine worker for a handoff stage. The configured parent heaps total 4 GiB, with
 8 GiB of combined parent/worker heaps when all four workers run. The required matrix
-contains 64 jobs across both Flink lines and JDKs; first-tier compilation, immutable metadata sharing and fresh engine
+contains 40 jobs across both Flink lines and JDKs; first-tier compilation, immutable metadata sharing and fresh engine
 process boundaries remain in place. The test step records processors, memory and `vmstat`.
 
 Released Flink MiniClusters keep completed execution graphs and serialized results in an
@@ -718,7 +718,7 @@ Canonical Java compilation runs once for each Flink/JDK pair, in four required p
 jobs. These jobs depend on the change plan and start alongside native work; compilation
 does not download or wait for a native library. They retain Maven dependency resolution,
 Java and protobuf compilation and javadoc checks, with test execution deferred.
-The 64 consumer shards require both Java preparation and the native producer. The first
+The 40 consumer shards require both Java preparation and the native producer. The first
 shard in each Flink/JDK cohort executes the reactor dependencies' test lifecycle; the
 remaining shards skip dependency tests. Every shard runs its complete selected runtime
 inventory. This keeps once-per-cohort dependency-test coverage without delaying pure
@@ -816,7 +816,7 @@ can flush at different boundaries and emit different valid intermediate updates.
 deterministic bundle boundaries retain their stricter raw-changelog assertions. The global
 fixture also checks every retraction against the current result and rejects a second live result.
 
-Both Flink lines run complete canonical handoff jobs in 16 required shards on each of JDK 11
+Both Flink lines run complete canonical handoff jobs in 10 required shards on each of JDK 11
 and 17. Every shard uses the same commit's canonical native payload, startup compiler settings and
 scoped class-data cache. Flink 1.18 combines its release profile with `canonical-kafka`; dependency
 resolution, compilation and execution use the same profiles. Artifacts include the Flink line,
@@ -945,15 +945,15 @@ under the current runner's temporary directory and are removed after outcomes an
 archive diagnostics are uploaded. Default local Maven runs do not enable this cache.
 Each runner uses four fresh 1 GiB Surefire JVMs, with process reuse disabled. The earlier 2.2-only
 change preserved its 118 classes on each JDK while reducing that line's runner jobs from 64 to 32.
-The required two-line matrix now has 64 jobs, preserving each line's compiled inventory. The stock
+The required two-line matrix now has 40 jobs, preserving each line's compiled inventory. The stock
 and native worker processes retain their separate 1 GiB heaps; native memory and containers
 also need headroom. The complete 32-shard hosted canonical matrix passed on both JDKs;
 the full CI and upstream aggregates remain required for source changes.
 
 The first combined run exhausted the three-hour JDK 11 limit after seven classes passed in
 one canonical shard. Its alphabetical round-robin selection combined several of the longest
-job suites. Recorded maximum XML class times from that run now spread this work across the
-same 16 shards per JDK. These times are scheduling hints, not performance measurements or
+job suites. Recorded maximum XML class times spread this work across the shards; the current
+layout uses ten per Flink/JDK cohort. These times are scheduling hints, not performance measurements or
 passing-test evidence; all assertions and the complete canonical matrix remain required.
 
 These jobs share the exact-commit debug native artifact, retain their selection manifests and
@@ -996,6 +996,20 @@ the profiler's broader start-delay field, which also includes prerequisites. Red
 setup, avoiding overlapping campaigns, balancing work and removing dependency barriers should
 precede increasing job counts. Preserve all configurations and test invocations when grouping
 compatible checks. Structured timing observations live alongside the short-loop evidence.
+
+A local scheduling model uses all class elapsed times from successful baseline 43116124202,
+after verifying all 14,536 invocation identities and outcomes. Its existing-cost, 16-shard
+partition exactly matches all 64 observed selections. Across 300 seeded trials that randomize
+class order within four-fork jobs and job order across 20 slots, ten shards per cohort reduce
+the summed modeled job spans from 154,221 to 139,371 seconds and canonical-batch median from
+9,516 to 9,056 seconds. Eight shards reduce occupied spans further but give a longer batch
+tail; twelve and sixteen also model slower than ten. CI therefore tests forty canonical jobs,
+retaining all 120 selected classes per cohort, every provider and unchanged fresh-process
+boundaries. This is a scheduling hypothesis, not a measured CI speedup: setup, other jobs,
+resource interference and real scheduler order are outside the model. The full integrated
+campaign and invocation audit remain required before merging. The
+[structured model](benchmarks/ci-shard-layout-20261113.json) retains all class elapsed-time inputs,
+observed shard selections, model results, the offline partition audit and reproduction steps.
 
 Do not assume a smaller runner label bypasses this queue. GitHub documents that
 [`ubuntu-slim` follows the standard runner concurrency model](https://docs.github.com/en/actions/reference/runners/github-hosted-runners#single-cpu-runners).

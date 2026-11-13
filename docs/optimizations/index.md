@@ -29,6 +29,8 @@ Archive generation uses G1 independently of the workers' measured collector sett
 the observed JDK 11 Serial full-GC crash during metadata relocation.
 Compatible Paimon format checks share compilation while keeping separate test processes
 and report sets, reducing required lake jobs from thirteen to nine with the same configurations.
+Canonical jobs group the same complete invocation inventory into forty jobs using a measured-class
+scheduling model; full hosted qualification remains necessary to establish actual savings.
 CI build reuse and runner scheduling are documented in the
 [upstream-suite guide](../upstream-flink-suite.md#shared-builds-and-runtime-shards): compiled Flink
 caching, shared build artifacts, grouped connector suites and combined coverage verification.
