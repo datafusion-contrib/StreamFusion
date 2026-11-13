@@ -28,6 +28,8 @@ engines are stock Flink, StreamFusion with its Hudi boundaries disabled, and
 StreamFusion with native Hudi source/sink boundaries. Every native plan must
 contain both boundaries and no payload transpose. Every nonempty output must
 contain Parquet data with the expected Java or Rust encoder footer.
+Encoder checks cover user data and log payloads. Hudi's own timeline/archive and
+partition metadata retain their original Java implementation and are excluded.
 Object reuse follows the shared Kafka harness: enabled unless `SF_OBJECT_REUSE=false`.
 The first q4 warmup in each RocksDB configuration checks that each engine opens
 an actual RocksDB database. Watcher setup, checks and teardown are outside
