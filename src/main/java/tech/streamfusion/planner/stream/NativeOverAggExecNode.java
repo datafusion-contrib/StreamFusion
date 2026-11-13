@@ -85,7 +85,6 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
                                         tech.streamfusion.compat.FlinkPlanCompat
                                             .unboundedOverVersion()))))
         || bounded && proctime && frameKind == 2
-        || keyColumns.length > 1
         || java.util.Arrays.stream(aggregateKinds)
             .anyMatch(kind -> kind != 0 && kind != 3 && kind != 4 && kind != 22)
         || !proctime
@@ -97,10 +96,9 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
                     .toMillis()
                 > 1) return false;
     var input = (RowType) getInputEdges().get(0).getOutputType();
-    if (keyColumns.length == 1
-        && !input
-            .getTypeAt(keyColumns[0])
-            .is(org.apache.flink.table.types.logical.LogicalTypeRoot.BIGINT)) return false;
+    if (java.util.Arrays.stream(keyColumns).anyMatch(key ->
+        !tech.streamfusion.state.StockOverFoldStateContract.supportsPartitionKey(
+            input.getTypeAt(key)))) return false;
     for (int column : valueColumns) {
       if (column < 0 || column >= input.getFieldCount()) return false;
       var type = input.getTypeAt(column);

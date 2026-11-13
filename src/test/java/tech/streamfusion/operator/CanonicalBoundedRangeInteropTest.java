@@ -67,6 +67,27 @@ class CanonicalBoundedRangeInteropTest {
       String type, boolean keyless, boolean stockStore, boolean nativeStore, boolean pendingOnly)
       throws Exception {
     var plan = new Plan(type, keyless);
+    verifyInterchange(plan, stockStore, nativeStore, pendingOnly);
+  }
+
+  static Stream<Arguments> typedKeys() {
+    return CanonicalOverKeyFixture.stores()
+        .flatMap(args -> Stream.of("range", "event-rows", "processing-rows")
+            .map(mode -> Arguments.of(args.get()[0], args.get()[1], args.get()[2], mode)));
+  }
+
+  @ParameterizedTest
+  @MethodSource("typedKeys")
+  void scalarAndCompositeKeysRetainRawFoldsFramesAndCallbacks(
+      String keyType, boolean composite, boolean rocks, String mode) throws Exception {
+    var plan = new Plan("BIGINT", false, mode.equals("processing-rows"),
+        mode.equals("event-rows"), mode.equals("range") ? 32 : 2, 0, false, null,
+        keyType, composite);
+    verifyInterchange(plan, rocks, rocks, true);
+  }
+
+  private void verifyInterchange(
+      Plan plan, boolean stockStore, boolean nativeStore, boolean pendingOnly) throws Exception {
     long allocated = NativeAllocator.SHARED.getAllocatedMemory();
     OperatorSubtaskState original;
     List<String> expected;
@@ -570,6 +591,22 @@ class CanonicalBoundedRangeInteropTest {
         boolean starAndLiteral,
         String payload)
         throws Exception {
+      this(type, keyless, processingRows, eventRows, offset, ttl, starAndLiteral, payload,
+          "BIGINT", false);
+    }
+
+    Plan(
+        String type,
+        boolean keyless,
+        boolean processingRows,
+        boolean eventRows,
+        int offset,
+        long ttl,
+        boolean starAndLiteral,
+        String payload,
+        String keySqlType,
+        boolean composite)
+        throws Exception {
       this.eventRows = eventRows;
       this.processingRows = processingRows;
       this.offset = offset;
@@ -581,14 +618,15 @@ class CanonicalBoundedRangeInteropTest {
       config.setString("streamfusion.native.enabled", "false");
       var table = NativePlannerTestEnvironment.create(config);
       table.executeSql(
-          "CREATE TABLE range_input(k BIGINT,v "
+          "CREATE TABLE range_input(k " + keySqlType + ",v "
               + type
               + ",rt TIMESTAMP(3)"
+              + (composite ? ",k2 BIGINT" : "")
               + (payload == null ? "" : ",payload " + payload)
               + (processingRows ? ",pt AS PROCTIME()" : ",WATERMARK FOR rt AS rt")
               + ") WITH ('connector'='datagen')");
       table.executeSql(
-          "CREATE TABLE range_output(k BIGINT,v "
+          "CREATE TABLE range_output(k " + keySqlType + ",v "
               + type
               + ",rt TIMESTAMP(3)"
               + (payload == null ? "" : ",payload " + payload)
@@ -606,7 +644,7 @@ class CanonicalBoundedRangeInteropTest {
                           ? "COUNT(*) OVER w,SUM(CAST(7 AS BIGINT)) OVER w,AVG(v) OVER w"
                           : "SUM(v) OVER w,COUNT(v) OVER w,AVG(v) OVER w")
                       + " FROM range_input WINDOW w AS ("
-                      + (keyless ? "" : "PARTITION BY k ")
+                      + (keyless ? "" : "PARTITION BY k" + (composite ? ",k2" : "") + " ")
                       + (processingRows || eventRows
                           ? "ORDER BY "
                               + (processingRows ? "pt" : "rt")
@@ -622,7 +660,8 @@ class CanonicalBoundedRangeInteropTest {
       input = (RowType) node.getInputEdges().get(0).getOutputType();
       output = (RowType) node.getOutputType();
       assertEquals(List.of("k", "v", "rt"), input.getFieldNames().subList(0, 3));
-      keys = keyless ? new int[0] : new int[] {0};
+      keys = keyless ? new int[0] : composite
+          ? new int[] {0, input.getFieldNames().indexOf("k2")} : new int[] {0};
       keyType =
           RowType.of(Arrays.stream(keys).mapToObj(input::getTypeAt).toArray(LogicalType[]::new));
       selector =
@@ -839,9 +878,7 @@ class CanonicalBoundedRangeInteropTest {
               processingRows || eventRows ? 1 : 2,
               offset,
               processingRows,
-              keys.length == 0
-                  ? new int[] {Native.STOCK_KEY_PROJECTION}
-                  : new int[] {Native.STOCK_KEY_PROJECTION, -1},
+              tech.streamfusion.planner.FlinkKeyGroupUtils.stockKeyDescriptor(input, keys),
               ttl,
               input,
               128);
@@ -880,9 +917,10 @@ class CanonicalBoundedRangeInteropTest {
 
     private RowData rowValue(Long key, Long value, long time) {
       var row = new GenericRowData(input.getFieldCount());
-      row.setField(0, key);
+      CanonicalOverKeyFixture.set(row, input, key);
       for (int i = 1; i < input.getFieldCount(); i++) {
-        if (input.getFieldNames().get(i).equals("payload")) continue;
+        if (input.getFieldNames().get(i).equals("payload")
+            || input.getFieldNames().get(i).equals("k2")) continue;
         var logical = input.getTypeAt(i);
         if (logical instanceof TimestampType || logical instanceof LocalZonedTimestampType) {
           row.setField(i, TimestampData.fromEpochMillis(time));

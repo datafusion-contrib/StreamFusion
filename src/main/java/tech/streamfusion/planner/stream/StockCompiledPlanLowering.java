@@ -1720,21 +1720,17 @@ final class StockCompiledPlanLowering {
     var inputType = (RowType) input.getOutputType();
     int[] keys = spec.getPartition().getFieldIndices(), order = group.getSort().getFieldIndices();
     boolean bounded = !group.getLowerBound().isUnbounded();
-    if (keys.length > 1
-        || keys.length == 1 && !inputType.getTypeAt(keys[0]).is(LogicalTypeRoot.BIGINT)
+    if (Arrays.stream(keys).anyMatch(key ->
+            !tech.streamfusion.state.StockOverFoldStateContract.supportsPartitionKey(
+                inputType.getTypeAt(key)))
         || order.length != 1
         || !group.getSort().getAscendingOrders()[0]
         || !(LogicalTypeChecks.isProctimeAttribute(inputType.getTypeAt(order[0]))
             || LogicalTypeChecks.isRowtimeAttribute(inputType.getTypeAt(order[0])))
+        || LogicalTypeChecks.getPrecision(inputType.getTypeAt(order[0])) > 3
         || bounded && !(group.getLowerBound().isPreceding() || group.getLowerBound().isCurrentRow())
         || !group.getUpperBound().isCurrentRow()) return stock;
-    if (inputType.getChildren().stream()
-        .anyMatch(
-            type ->
-                !NativeOverAggExecNode.stockArithmeticValueType(type)
-                    && !((type.is(LogicalTypeRoot.TIMESTAMP_WITHOUT_TIME_ZONE)
-                            || type.is(LogicalTypeRoot.TIMESTAMP_WITH_LOCAL_TIME_ZONE))
-                        && LogicalTypeChecks.getPrecision(type) <= 3))) return stock;
+    if (!RowDataArrowConverter.supports(inputType)) return stock;
     boolean processing = LogicalTypeChecks.isProctimeAttribute(inputType.getTypeAt(order[0]));
     if (bounded && processing && !group.isRows()) return stock;
     long offset = 0;

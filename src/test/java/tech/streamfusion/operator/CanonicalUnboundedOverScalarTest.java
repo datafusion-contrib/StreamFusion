@@ -88,6 +88,22 @@ class CanonicalUnboundedOverScalarTest {
       String type, boolean rows, boolean global, long ttl, boolean stockStore, boolean nativeStore)
       throws Exception {
     var plan = new Plan(type, rows, global, ttl);
+    verifyInterchange(plan, stockStore, nativeStore);
+  }
+
+  static Stream<Arguments> typedKeys() {
+    return CanonicalOverKeyFixture.stores();
+  }
+
+  @ParameterizedTest
+  @MethodSource("typedKeys")
+  void scalarAndCompositeKeysRetainAccumulatorsAndOriginalTtlAges(
+      String keyType, boolean composite, boolean rocks) throws Exception {
+    verifyInterchange(new Plan("BIGINT", true, false, 1000, keyType, composite), rocks, rocks);
+  }
+
+  private void verifyInterchange(Plan plan, boolean stockStore, boolean nativeStore)
+      throws Exception {
     var prefix =
         List.of(
             plan.row(Long.MIN_VALUE, 10000000000000000L),
@@ -208,6 +224,11 @@ class CanonicalUnboundedOverScalarTest {
     final long ttl;
 
     Plan(String type, boolean rows, boolean global, long ttl) throws Exception {
+      this(type, rows, global, ttl, "BIGINT", false);
+    }
+
+    Plan(String type, boolean rows, boolean global, long ttl, String keyType, boolean composite)
+        throws Exception {
       this.rows = rows;
       this.ttl = ttl;
       var config = new Configuration();
@@ -215,11 +236,12 @@ class CanonicalUnboundedOverScalarTest {
       config.setString("table.exec.state.ttl", ttl + " ms");
       var table = NativePlannerTestEnvironment.create(config);
       table.executeSql(
-          "CREATE TABLE scalar_input(k BIGINT,v "
+          "CREATE TABLE scalar_input(k " + keyType + ",v "
               + type
+              + (composite ? ",k2 BIGINT" : "")
               + ",pt AS PROCTIME()) WITH ('connector'='datagen')");
       table.executeSql(
-          "CREATE TABLE scalar_output(k BIGINT,v "
+          "CREATE TABLE scalar_output(k " + keyType + ",v "
               + type
               + ",s "
               + type
@@ -231,7 +253,7 @@ class CanonicalUnboundedOverScalarTest {
               .compilePlanSql(
                   "INSERT INTO scalar_output SELECT k,v,SUM(v) OVER w,COUNT(v) OVER w,AVG(v) OVER w"
                       + " FROM scalar_input WINDOW w AS ("
-                      + (global ? "" : "PARTITION BY k ")
+                      + (global ? "" : "PARTITION BY k" + (composite ? ",k2" : "") + " ")
                       + "ORDER BY pt "
                       + (rows ? "ROWS" : "RANGE")
                       + " BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)")
@@ -356,9 +378,7 @@ class CanonicalUnboundedOverScalarTest {
               rows ? 3 : 0,
               0,
               true,
-              partitions.length == 0
-                  ? new int[] {Native.STOCK_KEY_PROJECTION}
-                  : new int[] {Native.STOCK_KEY_PROJECTION, -1},
+              tech.streamfusion.planner.FlinkKeyGroupUtils.stockKeyDescriptor(input, partitions),
               ttl,
               input,
               128);
@@ -386,7 +406,7 @@ class CanonicalUnboundedOverScalarTest {
 
     RowData row(Long key, Long value) {
       var row = new GenericRowData(input.getFieldCount());
-      row.setField(0, key);
+      CanonicalOverKeyFixture.set(row, input, key);
       Object number = value;
       if (value != null && input.getTypeAt(1).is(LogicalTypeRoot.FLOAT))
         number = value.floatValue();

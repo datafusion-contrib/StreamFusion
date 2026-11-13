@@ -118,6 +118,23 @@ class CanonicalBoundedOverPlanTest {
       boolean proctimePayload,
       int version)
       throws Exception {
+    assertPlan(mode, type, keyless, compiled, uids, ttl, starAndLiteral, proctimePayload,
+        version, "BIGINT", false);
+  }
+
+  void assertPlan(
+      String mode,
+      String type,
+      boolean keyless,
+      boolean compiled,
+      String uids,
+      long ttl,
+      boolean starAndLiteral,
+      boolean proctimePayload,
+      int version,
+      String keyType,
+      boolean composite)
+      throws Exception {
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", "true");
     config.setString("parallelism.default", "2");
@@ -127,12 +144,13 @@ class CanonicalBoundedOverPlanTest {
     config.setString("table.exec.unbounded-over.version", Integer.toString(version));
     var table = NativePlannerTestEnvironment.create(config);
     table.executeSql(
-        "CREATE TABLE over_input(k BIGINT,v "
+        "CREATE TABLE over_input(k " + keyType + ",v "
             + type
+            + (composite ? ",k2 BIGINT" : "")
             + ",rt TIMESTAMP(3),pt AS PROCTIME(),WATERMARK FOR rt AS rt) WITH"
             + " ('connector'='datagen')");
     table.executeSql(
-        "CREATE TABLE over_output(k BIGINT,v "
+        "CREATE TABLE over_output(k " + keyType + ",v "
             + type
             + ",rt TIMESTAMP(3),s "
             + type
@@ -149,7 +167,7 @@ class CanonicalBoundedOverPlanTest {
                 : "SUM(v) OVER w,COUNT(v) OVER w,AVG(v) OVER w")
             + (proctimePayload ? ",pt" : "")
             + " FROM over_input WINDOW w AS ("
-            + (keyless ? "" : "PARTITION BY k ")
+            + (keyless ? "" : "PARTITION BY k" + (composite ? ",k2" : "") + " ")
             + "ORDER BY "
             + (processing ? "pt" : "rt")
             + (unbounded
@@ -231,7 +249,7 @@ class CanonicalBoundedOverPlanTest {
     assertEquals(uids.equals("DISABLED"), owner.getTransformationUID() == null);
     assertEquals(ttl, GroupAggregateStockTestFixture.field(operator, "stateTtlMillis"));
     assertEquals(
-        keyless ? 0 : 1,
+        keyless ? 0 : composite ? 2 : 1,
         ((org.apache.flink.table.types.logical.RowType)
                 GroupAggregateStockTestFixture.field(contract, "keyType"))
             .getFieldCount());

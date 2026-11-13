@@ -49,8 +49,7 @@ public final class StockOverFoldStateContract implements StockStateContract {
     this.kinds = kinds.clone();
     this.widths = widths.clone();
     this.ttl = ttl;
-    if (keyType.getFieldCount() > 1
-        || keyType.getChildren().stream().anyMatch(type -> !type.is(LogicalTypeRoot.BIGINT))
+    if (keyType.getChildren().stream().anyMatch(type -> !supportsPartitionKey(type))
         || kinds.length == 0
         || kinds.length != widths.length
         || Arrays.stream(widths).sum() != accumulatorType.getFieldCount())
@@ -80,6 +79,26 @@ public final class StockOverFoldStateContract implements StockStateContract {
     return type.is(LogicalTypeRoot.BIGINT)
         || type.is(LogicalTypeRoot.FLOAT)
         || type.is(LogicalTypeRoot.DOUBLE);
+  }
+
+  public static boolean supportsPartitionKey(LogicalType type) {
+    switch (type.getTypeRoot()) {
+      case TINYINT:
+      case SMALLINT:
+      case INTEGER:
+      case BIGINT:
+      case BOOLEAN:
+      case CHAR:
+      case VARCHAR:
+      case DECIMAL:
+      case DATE:
+      case TIME_WITHOUT_TIME_ZONE:
+      case TIMESTAMP_WITHOUT_TIME_ZONE:
+      case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
+        return true;
+      default:
+        return false;
+    }
   }
 
   @Override

@@ -17,8 +17,10 @@ source entries on malformed later chunks or a failed target allocation. A fresh 
 a valid immutable source. The JNI boundary follows Comet's moved Arrow ownership: imported C Data
 is released before reporting an exception so release callbacks cannot erase the original failure.
 
-The initial scalar binding qualifies BIGINT, FLOAT and DOUBLE arithmetic. Decimal, DISTINCT,
-views, wider keys and the remaining connector/version/failure protocols are
+The initial scalar binding qualifies BIGINT, FLOAT and DOUBLE arithmetic. The resumed implementation
+also uses the existing scalar key codec for composite integer, boolean, string, decimal and temporal
+keys; no key is re-encoded through a BIGINT carrier. Unbounded decimal accumulators, DISTINCT,
+views, floating-point/nested keys and the remaining connector/version/failure protocols are
 unfinished work in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569), not
 alternative compatibility formats. Benchmarking is explicitly deferred.
 

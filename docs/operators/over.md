@@ -1579,6 +1579,18 @@ one millisecond. Benchmarking remains deferred.
 
 ### Automatic bounded arithmetic state binding (partial)
 
+The resumed #569 implementation also binds existing scalar partition-key carriers in composite
+keys: TINYINT/SMALLINT/INT/BIGINT, BOOLEAN, CHAR/STRING, DECIMAL, DATE, TIME and timestamp types.
+The shared stock key descriptor supplies key-group hashing and timestamp precision to native
+execution and import. Scalar key support is independent of the arithmetic accumulator layout;
+floating-point and nested partition keys remain outside this binding. Retained input columns
+use the existing Arrow boundary admission, including already-supported nested payloads, while
+the order attribute remains millisecond precision. Newly authored planner and both-order
+continuation controls cover these keys across bounded and unbounded frames; INT/STRING event-time
+jobs additionally cover ordinary SQL, compiled plans, rescaling and native-checkpoint recovery.
+Execution of this new scope is deferred to the final six-hour test window of the one-day task.
+Historical evidence below does not yet qualify the wider key scope.
+
 Ordinary SQL and stock portable plans capture the released bounded operator's actual accumulator
 schema, physical aggregate calls and widths, hidden input counter, key serializer, time column,
 constant arguments, retention, identity and maximum parallelism. The initial binding covers
@@ -1592,7 +1604,7 @@ Its state binding therefore starts from the original stock template, like the qu
 bindings, and supplies constants through the native operator's internal constant columns.
 The displayed and serialized submission plan stays stock Flink; runtime transposes remain ordinary
 boundaries. Unbounded contracts outside the processing-time scalar mode below, selection, DISTINCT/view,
-wider key/type and event-time ROWS cleanup contracts are outside this binding. Unaligned checkpoints and asynchronous state are
+remaining key/type and event-time ROWS cleanup contracts are outside this binding. Unaligned checkpoints and asynchronous state are
 also excluded. The general native OVER processing coverage above does not establish stock
 canonical interchange for those additional contracts.
 
@@ -1647,7 +1659,7 @@ error. Source entries are cleared only after the complete import succeeds. Memor
 leave the source available for a fresh target retry. Arrow callbacks retain the original Java
 exception and release their imported buffers on both success and failure.
 
-Unbounded DECIMAL, DISTINCT, selection/UDF/view accumulators and wider keys remain outside this
+Unbounded DECIMAL, DISTINCT, selection/UDF/view accumulators and floating-point/nested keys remain outside this
 scalar binding. They require their own exact contracts; the bounded DECIMAL qualification does
 not extend to this path. Event-time V2 uses the separate contract described below. Native checkpoint
 recovery is checked before a canonical savepoint performs any backend change. Broader connector
