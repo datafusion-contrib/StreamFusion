@@ -1,3 +1,4 @@
+diff --git a/src/test/java/tech/streamfusion/CanonicalWorkerCache.java b/src/test/java/tech/streamfusion/CanonicalWorkerCache.java
 --- a/src/test/java/tech/streamfusion/CanonicalWorkerCache.java
 +++ b/src/test/java/tech/streamfusion/CanonicalWorkerCache.java
 @@ -185 +185,5 @@
@@ -23,6 +24,8 @@
 +        for (String line : Files.readAllLines(log))
 +          if (line.startsWith("real ") || line.startsWith("user ") || line.startsWith("sys "))
 +            System.out.println("ARCHIVE_TIME " + line);
+diff --git a/src/test/java/tech/streamfusion/StockMetadataProbe.java b/src/test/java/tech/streamfusion/StockMetadataProbe.java
+new file mode 100644
 --- /dev/null
 +++ b/src/test/java/tech/streamfusion/StockMetadataProbe.java
 @@ -0,0 +1,28 @@

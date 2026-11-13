@@ -3462,6 +3462,6 @@
     },
     "decision": "Deferred: stock-only local evidence, no native/Linux qualification or complete CI-cache-lifetime measurement. Keep the validated static archive path for this change; preserve the small probe patch and actual outcomes for a later focused experiment.",
     "probe_patch": ".claude/wontdos/ci-dynamic-cds.patch",
-    "probe_patch_sha256": "787e706d9a7dcc340cc29fa6b5186be92e629052fe2948c0c8277050b988fd78"
+    "probe_patch_sha256": "7f3de433fc8ff46b047bd3b3cd0da04e49c2c1aa21a9684f012621e5a5b51ee7"
   }
 }
