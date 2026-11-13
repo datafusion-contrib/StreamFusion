@@ -24,7 +24,8 @@ final class HudiSourceMatcher {
           && ((org.apache.flink.table.planner.plan.abilities.source.ReadingMetadataSpec) ability)
               .getMetadataKeys()
               .isEmpty()) continue;
-      if (!Set.of("ProjectPushDownSpec").contains(ability.getClass().getSimpleName())) {
+      if (!Set.of("ProjectPushDownSpec", "PartitionPushDownSpec", "FilterPushDownSpec")
+          .contains(ability.getClass().getSimpleName())) {
         context.decline(
             "Hudi source ability is not admitted: " + ability.getClass().getSimpleName());
         return null;
@@ -34,7 +35,7 @@ final class HudiSourceMatcher {
     NativeHudiSource.Plan plan;
     try {
       plan =
-          NativeHudiSource.plan(
+          NativeHudiSource.planSql(
               source, FlinkTypeFactory$.MODULE$.toLogicalRowType(scan.getRowType()));
     } catch (IllegalArgumentException | LinkageError failure) {
       context.decline("Hudi source: " + failure.getMessage());

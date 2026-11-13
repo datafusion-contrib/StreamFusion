@@ -41,7 +41,13 @@ public final class NativeHudiSource
   }
 
   public static Plan plan(HoodieTableSource table, RowType output) {
-    String schema = validateOptions(table, output);
+    String schema = validateOptions(table, output, false);
+    return new Plan((HoodieTableSource) table.copy(), output, schema);
+  }
+
+  /** The pinned SQL source returns every filter as a residual; Java may also prune files. */
+  public static Plan planSql(HoodieTableSource table, RowType output) {
+    String schema = validateOptions(table, output, true);
     return new Plan((HoodieTableSource) table.copy(), output, schema);
   }
 
@@ -87,12 +93,13 @@ public final class NativeHudiSource
   }
 
   public static void validate(HoodieTableSource source, RowType output) {
-    validateOptions(source, output);
+    validateOptions(source, output, false);
   }
 
-  private static String validateOptions(HoodieTableSource source, RowType output) {
+  private static String validateOptions(
+      HoodieTableSource source, RowType output, boolean residualFilters) {
     if (source.getClass() != HoodieTableSource.class
-        || !"1.2.1".equals(HoodieTableSource.class.getPackage().getImplementationVersion()))
+        || !HudiRelease.supported(HoodieTableSource.class))
       throw new IllegalArgumentException("Hudi source requires the released 1.2.1 implementation");
     var meta = source.getMetaClient();
     if (meta == null || meta.getCommitsTimeline().filterCompletedInstants().empty())
@@ -116,11 +123,7 @@ public final class NativeHudiSource
         || conf.get(FlinkOptions.CHANGELOG_ENABLED) && !(mor && streaming)
         || !conf.get(FlinkOptions.READ_UTC_TIMEZONE)
         || table.getBootstrapBasePath().isPresent()
-        || table
-            .getPartitionFields()
-            .map(fields -> java.util.Arrays.stream(fields).anyMatch(s -> !s.isEmpty()))
-            .orElse(false)
-        || !source.getPredicates().isEmpty()
+        || !residualFilters && !source.getPredicates().isEmpty()
         || !streaming && conf.get(FlinkOptions.READ_START_COMMIT) != null
         || conf.get(FlinkOptions.READ_END_COMMIT) != null
         || Boolean.parseBoolean(conf.toMap().getOrDefault("hoodie.schema.on.read.enable", "false")))
@@ -158,14 +161,9 @@ public final class NativeHudiSource
         org.apache.hudi.util.HoodieSchemaConverter.convertToRowType(source.getTableSchema());
     validateProjection(physical, output);
     var storage = source.getMetaClient().getStorage();
-    var format =
-        org.apache.hudi.io.storage.HoodieIOFactory.getIOFactory(storage)
-            .getFileFormatUtils(HoodieFileFormat.PARQUET);
     for (var slice : source.getBaseFileOnlyFileSlices(source.getMetaClient())) {
       var path = slice.getBaseFile().get().getStoragePath();
-      var stored =
-          org.apache.hudi.util.HoodieSchemaConverter.convertToRowType(
-              format.readSchema(storage, path));
+      var stored = HudiTypes.fileSchema(storage, path);
       validateProjection(stored, output);
       if (streaming) {
         int commit = stored.getFieldNames().indexOf("_hoodie_commit_time");
@@ -183,21 +181,17 @@ public final class NativeHudiSource
     for (int i = 0; i < output.getFieldCount(); i++) {
       String name = output.getFieldNames().get(i);
       int position = physical.getFieldNames().indexOf(name);
-      switch (output.getTypeAt(i).getTypeRoot()) {
-        case BIGINT:
-        case INTEGER:
-        case BOOLEAN:
-        case VARCHAR:
-          break;
-        default:
-          throw new IllegalArgumentException(
-              "Hudi source type is not admitted: " + output.getTypeAt(i));
-      }
+      HudiTypes.validate(output.getTypeAt(i), true);
       if (name.startsWith("_hoodie_")
           || position < 0
-          || !output.getTypeAt(i).copy(true).equals(physical.getTypeAt(position).copy(true)))
+          || !HudiTypes.compatible(output.getTypeAt(i), physical.getTypeAt(position)))
         throw new IllegalArgumentException(
-            "Hudi physical projection or metadata contract is not admitted");
+            "Hudi physical projection or metadata contract is not admitted for "
+                + name
+                + ": requested "
+                + output.getTypeAt(i)
+                + ", stored "
+                + (position < 0 ? "missing" : physical.getTypeAt(position)));
     }
   }
 

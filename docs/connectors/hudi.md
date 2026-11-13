@@ -15,13 +15,25 @@ Its Java-only JAR includes the project license and planner service registration.
 
 In the streaming SQL runtime, native planning admits bounded COPY_ON_WRITE
 Parquet snapshot reads using Hudi's Source V2 (`read.source-v2.enabled=true`).
-The current payload types are BIGINT, INT, BOOLEAN and STRING/VARCHAR. Top-level
-projection, reordered columns and NULLs remain columnar. SQL admission requires
+Payload types include BOOLEAN, INT, BIGINT, FLOAT, DOUBLE, DECIMAL,
+STRING/VARCHAR, BINARY/VARBINARY, DATE, TIME through millisecond precision,
+and TIMESTAMP/TIMESTAMP_LTZ at precision 3 or 6.
+ROW, ARRAY and MAP payloads can nest these types. TINYINT and SMALLINT remain
+stock because Hudi's Avro schema normalizes them to INT. Top-level projection,
+reordered columns and NULLs remain columnar. SQL admission requires
 an immediate columnar consumer, such as a native Calc or aggregate; a bare scan
-returning rows retains stock Hudi to avoid a decode-to-Arrow-to-row detour. The table must be
-unpartitioned and every selected base file must have the requested physical
+returning rows retains stock Hudi to avoid a decode-to-Arrow-to-row detour. Every selected base file must have the requested physical
 column names and matching types. Java Hudi resolves the visible base files and
 checks footer schemas once during admission; mismatches retain the stock source.
+Partitioned tables retain Hudi's partition discovery and pruning. SQL filter
+pushdown is admitted because the pinned Hudi source leaves every input filter
+in Flink's remaining-filter list; the downstream Calc evaluates the residual
+predicate. Direct DataStream admission rejects unapplied predicates.
+Hudi's binary/string physical normalization is shared by fixed-length binary,
+bounded VARCHAR and VARBINARY declarations. BINARY uses the shared variable
+Arrow binary transport; disabling both experimental binary transport features
+retains stock Hudi for BINARY columns. Other timestamp precisions stay stock
+because Hudi normalizes their table schemas differently from their file encoding.
 
 Hudi's original factory constructs its source before the task reader is replaced,
 following the existing version-gated Iceberg adapter pattern. The factory method
@@ -69,7 +81,7 @@ retain the stock source. The same source schema/projection restrictions apply.
 
 ## MOR snapshot and continuous sources
 
-Version-9 unpartitioned MOR tables can use the same Rust Parquet decoder for
+Version-9 MOR tables, including partitioned tables, can use the same Rust Parquet decoder for
 base files and Parquet log blocks. Java Hudi's existing file-group reader owns
 log framing, completed-instant visibility, rollback blocks, update/delete winner
 selection and operation tags. Its reader context supplies stable views into Arrow
@@ -80,7 +92,7 @@ gather, avoiding per-row projection wrappers. Rust's Arrow interleave kernel
 gathers the winning rows into bounded output batches.
 
 Admission covers standard full-row event-time or commit-time merging, a single
-INT/BIGINT ordering field, the existing four primitive payload types and
+INT/BIGINT ordering field, the same payload types as COW reads and
 `hoodie.datasource.merge.type=payload_combine`. Existing base schemas and
 Parquet-log headers are checked during planning. Avro logs, partial updates, custom payloads and
 unverified schema evolution retain the stock source. The same SQL requirement
@@ -112,10 +124,10 @@ the same Arrow batch survives control serialization and projection.
 
 ## Immutable COW append sink
 
-The first native sink admits `write.operation=insert` on unpartitioned COW tables
+The native append sink admits `write.operation=insert` on partitioned or unpartitioned COW tables
 with `hoodie.populate.meta.fields=false`, `metadata.enabled=false`, and Hudi's
-unbuffered append path. It accepts insert-only input with the same four primitive
-payload types as the source. Updating, overwrite, partitioned, buffered and
+unbuffered append path. It accepts insert-only input with the same scalar and nested
+payload types as the source. Updating, overwrite, buffered and
 metadata-bearing writes retain stock Hudi. Bloom metadata, ignored write failures,
 unknown Parquet overrides and unverified constraint policies also retain stock.
 
@@ -126,8 +138,8 @@ The pinned released sink builds its normal graph first. Following the Iceberg
 adapter, StreamFusion replaces only its append operator factory, preserving Hudi's
 coordinator, operator identities, markers, write statuses and commit/checkpoint
 protocol. The original append function still processes key/counter access through
-borrowed views of Arrow columns. The Parquet writer recognizes each batch once;
-payload vectors are exported to the existing Rust encoder without a row transpose.
+borrowed views of Arrow columns. Each partition writer accumulates selected row positions for the batch;
+those selections reach the existing Rust encoder without a row transpose.
 Hudi's Java storage creates the output stream and writes its bytes.
 
 The original Java write client resolves the effective Parquet configuration.
@@ -143,17 +155,17 @@ those files unchanged.
 
 ## MOR primary-key sink
 
-The MOR sink admits insert/update-after/delete SQL post-images and the public
-`NativeHudiMorSink.append` boundary. Release complete-job measurements pass the
-stock/previous-StreamFusion performance gate at 200k and one million rows.
-Admission requires version 9, an unpartitioned MOR upsert table, the SIMPLE BUCKET index, explicit `write.tasks=1`,
+The MOR sink admits insert/update-before/update-after/delete SQL changes and the public
+`NativeHudiMorSink.append` boundary. The one-writer primitive workload measured
+below passes the stock/previous-StreamFusion performance gate at 200k and one million rows.
+Admission requires version 9, a MOR upsert table, the SIMPLE BUCKET index, explicit positive `write.tasks`,
 Parquet log blocks, on-heap Hudi buffering and positive writer/batch budgets.
-Precombine, metadata-table writes, CDC/changelog storage, write-rate limiting,
+Metadata-table writes, CDC/changelog storage, write-rate limiting,
 compaction and clustering are disabled. Standard full-row commit-time merging or
-one declared NOT NULL INT/BIGINT event-ordering field is admitted, with the same four payload types
+one declared NOT NULL INT/BIGINT event-ordering field is admitted, with the scalar payload types above
 and four Parquet codecs as append. Existing targets must match the declared
 schema, keys, merge mode and table options. Partial/custom merges, duplicate
-insert policy, concurrent writers, sink materialization and update-before input
+insert policy, independent concurrent writer jobs and nested payloads
 retain stock Hudi. SQL NOT NULL constraints use the existing columnar enforcer.
 Admission also checks Hudi's effective settings, so raw `hoodie.*` overrides cannot
 enable metadata-table writes or an extra operation metadata column behind the Flink flags.
@@ -171,11 +183,23 @@ Boolean/string payloads, metadata alignment,
 selected row order, four codecs and iterator/payload failure cleanup. The released
 1.2.1 log serialization helper has no writer cleanup on iterator failure, so the
 adapter retains its small control loop with scoped encoder ownership.
+Log encoding retains Hudi's default Parquet row-group and page sizes. Each
+simultaneous encoder reserves twice its row-group size plus a transfer buffer;
+four active writers therefore need a larger task off-heap budget than one.
 
 The graph adapter retains Hudi's original SIMPLE bucket index and writer coordinator.
+When Flink requires sink materialization, the existing native sink materializer
+consumes and emits Arrow over the shared columnar keyed exchange. It uses Flink's
+inferred input upsert key and state retention setting; Hudi then receives the
+materialized changelog. The planner retains its ordinary materialization decision.
 Java's original routing assigns file groups using borrowed key views. Each Java
 bucket retains Arrow batch references and a bitset of its selected row positions.
 Hudi's buffer map and bucket metadata are accessed only for the pinned release.
+With precombine enabled, Hudi's original deduplication helper and buffered record
+merger select winners before log encoding. The shared Arrow record context retains
+stable payload references through `seal` and binary-row conversion requests.
+No payload is copied into binary rows. This also preserves Hudi's ordinary
+delete/reinsert behavior when precombine is disabled.
 Original batch/checkpoint flushes drain stable borrowed row views into
 the existing Java write client, which generates metadata and ordered key-delete
 blocks. Payload encoding remains Rust Parquet. No merge, index or spill algorithm
@@ -191,16 +215,32 @@ that budget fails the task rather than introducing a different flush policy.
 
 The graph adapter removes only the bypassed row preprocessing roots it created;
 Flink otherwise still executes disconnected registered roots. Existing upstream
-inputs and the Java downstream lifecycle remain intact. A single upstream writer
-channel connects directly; multiple upstream channels route to the admitted one
-writer. A two-input-task regression verifies Arrow shuffle routing to that one
-writer with update/delete readback. Tests also verify stock Hudi readback across
+inputs and the Java downstream lifecycle remain intact. A single writer connects directly. Multiple writers use Hudi's original bucket
+partitioner to choose a channel through borrowed key views, then the existing
+Rust bucket-routing operation gathers Arrow batches for Flink's channel shuffle.
+Hudi retains bucket assignment and file-group reuse across commits. Tests verify
+four partition writers, two-input routing to one writer, and stock Hudi readback across
 two commits, unchanged file-group IDs, Rust Parquet footers,
 Java key-delete blocks, early flushes under a 1 MiB buffer budget, and recovery
-after a completed checkpoint with final update/delete parity. Buffer tests compare
+after a completed checkpoint with final update/delete parity at one, two, three
+and four configured writers. Storage partition count is independent of writer
+parallelism. Buffer tests compare
 stock/control occupancy and exhaustion at inline-string, UTF-8, null-bitset and
 page boundaries. SQL tests require the native sink and verified fallback plans;
-stock-oracle tests cover equal-version and commit-time delete/reinsert behavior.
+stock-oracle tests cover equal-version, commit-time delete/reinsert and
+update-before behavior. NULL variable fields consume the same page space as
+Flink's original serializer; their Arrow payloads are never serialized to pages.
+
+Timestamp encoding derives physical units and UTC annotations from Hudi's own
+Parquet schema converter. The shared Rust codec receives that schema metadata,
+including timestamps nested in COW payloads.
+
+On recovery the adapter uses Hudi's existing inflight-instant request and wait helper
+to await older checkpoint commits
+before the first restored batch reaches bucket assignment. The coordinator can
+still be completing the restored checkpoint's commit when tasks start accepting
+input. Waiting prevents bootstrapping new file groups before those committed
+groups become visible; Hudi retains all commit and index decisions.
 
 `HudiMorSinkBenchmarkTest` measures the complete COW Parquet source → Calc → MOR
 upsert pipeline against stock Flink and the previous native-source/Calc plus stock
@@ -240,15 +280,18 @@ The following retain the stock connector:
 
 - Read-optimized and bounded incremental queries, CDC and stored intermediate-change logs.
 - Continuous reads without version-9 metadata, end-commit windows and unverified discovery options.
-- Legacy sources, partitioned or bootstrap tables, source watermarks and metadata columns.
+- Legacy sources, bootstrap tables, source watermarks and metadata columns.
 - Tables without an initialized, completed snapshot.
-- Pushed filters and limits, nested or zero-column projections, and other payload types.
+- Pushed limits, nested or zero-column projections, and other payload types.
 - Requested schema-on-read evolution, mismatched physical file schemas, non-UTC read
   conversion, bounded commit-range options, and unverified read/Parquet reader options.
 - Batch-runtime SQL scans and portable compiled-plan source lowering.
-- COW upserts and other unverified sinks; partitioned or multiwriter MOR writes,
-  state/Bloom/consistent-hashing indexes, precombine and unverified payload policies.
+- COW upserts and other unverified sinks;
+  state/Bloom/consistent-hashing indexes and unverified payload policies.
   Index operations, compaction and clustering remain Java-owned.
+- Sinks that drop partition columns from their physical payload, or override the
+  write schema with columns/types different from the declared table. Native reads
+  also require each requested partition column to exist in its physical files.
 
 Both MOR directions use released Java Hudi's merge/index/transaction machinery
 with Arrow payload references and the existing Rust Parquet codec. The earlier
@@ -259,13 +302,20 @@ operation contract through Hudi's existing merger.
 
 ## Validation
 
+`HudiExpandedCoverageTest` verifies partitioned reads with residual predicates,
+nested COW payloads and four MOR writers over two commits. `HudiMorSinkTest`
+compares precombine and update-before behavior against the original writer and
+checks native sink materialization. Recovery exercises one through four configured
+writers. Expanded performance qualification remains in progress; the earlier
+one-writer measurements below do not qualify the expanded matrix.
+
 `NativeHudiSourceTest` uses stock Hudi SQL writes, compares stock/native SQL results,
 and requires the native source plan. It checks projection/NULLs, restored logical
 row offsets with changed batch sizes, stock fallback admission, and Arrow validity
 after reader close, and the fixed admitted snapshot across later commits. Continuous tests restore the
 original Java enumerator and reader state, check a rewritten COW file against
 unchanged rows, and compare SQL post-images across new commits. The
-optional CI lake-module matrix includes this Flink 1.18 module. Append tests verify all four types and NULLs, batch-boundary rolling,
+optional CI lake-module matrix includes this Flink 1.18 module. Append tests verify supported scalar/nested types and NULLs, batch-boundary rolling,
 stock readback, native SQL source/sink plans without transposes, and recovery after
 a completed checkpoint with no duplicates. Other connectors' normal tests cover
 the shared file-batch import helper.
