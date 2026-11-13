@@ -997,6 +997,11 @@ setup, avoiding overlapping campaigns, balancing work and removing dependency ba
 precede increasing job counts. Preserve all configurations and test invocations when grouping
 compatible checks. Structured timing observations live alongside the short-loop evidence.
 
+Do not assume a smaller runner label bypasses this queue. GitHub documents that
+[`ubuntu-slim` follows the standard runner concurrency model](https://docs.github.com/en/actions/reference/runners/github-hosted-runners#single-cpu-runners).
+Use lightweight runners for suitable work, but reduce repeated work and overlapping campaigns
+before treating a runner-label change as a capacity improvement.
+
 `bin/profile-ci.py` reads jobs in 20-row pages with a 30-second limit on each API request.
 Large 100-row job queries repeatedly stalled or reset during this investigation while smaller
 pages completed. An observation timeout does not cancel or restart CI: query the same run handle
