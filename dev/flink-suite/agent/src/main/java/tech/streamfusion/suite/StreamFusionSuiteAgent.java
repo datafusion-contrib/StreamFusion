@@ -448,6 +448,23 @@ public final class StreamFusionSuiteAgent {
                         Advice.to(ReportNativeMemoryState.class)
                             .on(named("initializeState").and(takesArguments(1))))
                     .visit(Advice.to(BindNativeExecution.class).on(named("open"))))
+        .type(
+            namedOneOf(
+                "tech.streamfusion.hudi.HudiAppendOperator",
+                "tech.streamfusion.hudi.HudiMorOperator"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                builder
+                    .visit(Advice.to(BindNativeExecution.class).on(named("open")))
+                    .visit(
+                        Advice.to(RecordNativeElement.class)
+                            .on(named("processElement").and(not(isBridge())))))
+        .type(named("tech.streamfusion.hudi.HudiParquetReader"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                builder
+                    .visit(Advice.to(BindNativeExecution.class).on(isConstructor()))
+                    .visit(Advice.to(RecordDorisArrowRead.class).on(named("next"))))
         .type(named(NATIVE_PARQUET_WRITER_FACTORY))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->

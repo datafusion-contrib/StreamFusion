@@ -1,0 +1,39 @@
+{
+  "version": "1.2.1",
+  "release_tag": "release-1.2.1",
+  "helpers": {
+    "org/apache/hudi/sink/utils/MockTaskInfo.java": {
+      "source": "hudi-flink-datasource/hudi-flink1.18.x/src/test/java/org/apache/hudi/sink/utils/MockTaskInfo.java",
+      "sha256": "1b1dd6bf7b554ed9d930b6ce8a6bc6e56c20a02b8fe31517ecad91a60173619f"
+    },
+    "org/apache/hudi/adapter/CollectOutputAdapter.java": {
+      "source": "hudi-flink-datasource/hudi-flink1.18.x/src/test/java/org/apache/hudi/adapter/CollectOutputAdapter.java",
+      "sha256": "5442faa015dec5dc12d95ce4b12351df37294e656839d255e771de0e51f69f97"
+    },
+    "org/apache/hudi/adapter/ExecutionAttemptUtil.java": {
+      "source": "hudi-flink-datasource/hudi-flink1.18.x/src/test/java/org/apache/hudi/adapter/ExecutionAttemptUtil.java",
+      "sha256": "6a80ec77ba57cd16699fd423d7ef7f820d7979b3525c7bec0b1e583407573227"
+    },
+    "org/apache/hudi/adapter/KeyedStateStoreAdapter.java": {
+      "source": "hudi-flink-datasource/hudi-flink1.18.x/src/test/java/org/apache/hudi/adapter/KeyedStateStoreAdapter.java",
+      "sha256": "022d396b33081376f7fcdcd8fa4119ebf188403a99073486b293c180431fb678"
+    },
+    "org/apache/hudi/adapter/OperatorStateStoreAdapter.java": {
+      "source": "hudi-flink-datasource/hudi-flink1.18.x/src/test/java/org/apache/hudi/adapter/OperatorStateStoreAdapter.java",
+      "sha256": "42b661ed355e0b3d0f8b42bfb28eb6de63cd19cede24aa1867838146a624b406"
+    },
+    "org/apache/hudi/adapter/TestStreamConfigs.java": {
+      "source": "hudi-flink-datasource/hudi-flink1.18.x/src/test/java/org/apache/hudi/adapter/TestStreamConfigs.java",
+      "sha256": "dd0030b332d0a803fbe06584291ffea0ee906dad804521ef4a8a670acea4efaa"
+    }
+  },
+  "artifacts": {
+    "hudi-flink-tests": "c4c250f623fefd0f3a0e507f675ec458fd945426903a5489e68105afe49a21a7",
+    "hudi-common-tests": "36fd28fe12bcbf599936461e492073c4ea7ca48f3121f45c0b55bf900375665c",
+    "hudi-hadoop-common-tests": "5743a1018da904069a2731fc51082dd2e573f1cbdbfecc1f036e7852be5df9a2",
+    "hudi-client-common-tests": "973ea3f14764c35965e4f62ac8bc47f9120b46b8a10618dbf6c8744c3108a25a",
+    "hudi-flink-client-tests": "e790f8b088cf636c01e22ebf660241aa686ad2d52e04e261dbaebed9768e4f53",
+    "hudi-tests-common": "a131deaccfa31c3690a8ad8da96077f8fbe32a495661633076c538fde575b9f5"
+  },
+  "release_commit": "dee422b3e3f71668387ffefbe3d71307a9fe0235"
+}
