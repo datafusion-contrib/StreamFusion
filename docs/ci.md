@@ -1011,6 +1011,16 @@ campaign and invocation audit remain required before merging. The
 [structured model](benchmarks/ci-shard-layout-20261113.json) retains all class elapsed-time inputs,
 observed shard selections, model results, the offline partition audit and reproduction steps.
 
+Create the historically heavier JDK 11 cohorts before JDK 17, keeping Flink 2.2 before 1.18
+within each JDK. Run 43324959481 started the four cohorts at median delays of 2,517 seconds
+(2.2/17), 4,889.5 (2.2/11), 6,137 (1.18/17) and 7,483.5 (1.18/11); the final two running
+canonical jobs were on 1.18/JDK 11. All cohorts share the same prerequisites, so this skew
+is not different Java preparation work. Baseline cohort runner costs place both JDK 11
+cohorts above JDK 17. GitHub documents that
+[matrix variable order controls job creation order](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idstrategymatrix).
+The scheduler still determines actual starts: creating heavier work earlier is a scheduling
+hypothesis to measure, not a guaranteed priority or additional runner capacity.
+
 Do not assume a smaller runner label bypasses this queue. GitHub documents that
 [`ubuntu-slim` follows the standard runner concurrency model](https://docs.github.com/en/actions/reference/runners/github-hosted-runners#single-cpu-runners).
 Use lightweight runners for suitable work, but reduce repeated work and overlapping campaigns

@@ -1192,5 +1192,29 @@
     "Report medians of summed shard spans and whole modeled batch spans, with sorted trial indices29/269 as p10/p90. Preserve the limits: no setup, artifact cost, other jobs, contention changes or real scheduler guarantees."
   ],
   "decision": "Test10shards per cohort (40 canonical jobs), retaining current weights, four fresh parent forks and every original invocation. Existing16-shard selections exactly reproduce all64 observed baseline partitions. Full integrated-head qualification must establish correctness and actual elapsed/runner cost before merging.",
-  "planner_source_repository": "jordepic/StreamFusion-contrib"
+  "planner_source_repository": "jordepic/StreamFusion-contrib",
+  "matrix_creation_order": {
+    "observation_run": 43324959481,
+    "observation_head": "af5ab61cbb531f24ea3ace318de1d89ea121ded9",
+    "prechange_cohort_start_delay_medians_seconds": {
+      "flink2.2-jdk17": 2517,
+      "flink2.2-jdk11": 4889.5,
+      "flink1.18-jdk17": 6137,
+      "flink1.18-jdk11": 7483.5
+    },
+    "baseline_cohort_runner_seconds": {
+      "flink1.18-jdk11": 41229.0,
+      "flink1.18-jdk17": 32808.0,
+      "flink2.2-jdk11": 47358.0,
+      "flink2.2-jdk17": 34897.0
+    },
+    "candidate_order": [
+      "flink2.2-jdk11",
+      "flink1.18-jdk11",
+      "flink2.2-jdk17",
+      "flink1.18-jdk17"
+    ],
+    "documentation": "https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idstrategymatrix",
+    "limits": "All cohorts share the same prerequisite barrier. Start delays include prerequisites, scheduler/concurrency and runner queues; these observations do not identify a configured quota. GitHub creation order is documented; actual execution priority and improvement require measurement. No invocation/configuration changes."
+  }
 }
