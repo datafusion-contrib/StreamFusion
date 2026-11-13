@@ -1,0 +1,56 @@
+--- a/src/test/java/tech/streamfusion/CanonicalWorkerCache.java
++++ b/src/test/java/tech/streamfusion/CanonicalWorkerCache.java
+@@ -185 +185,5 @@
+-        } else command.add(1, "-XX:DumpLoadedClassList=" + classes);
++        } else {
++          command.add(1, "-XX:DumpLoadedClassList=" + classes);
++          if (Boolean.getBoolean("probe.dynamicArchive"))
++            command.add(1, "-XX:ArchiveClassesAtExit=" + archive + ".tmp");
++        }
+@@ -194,0 +199,5 @@
++      if (Boolean.getBoolean("probe.dynamicArchive") && Files.exists(temporary)) {
++        Files.move(temporary, archive, StandardCopyOption.ATOMIC_MOVE);
++        Files.deleteIfExists(classes);
++        return;
++      }
+@@ -197,0 +207,2 @@
++      var timedDump = new ArrayList<String>(List.of("/usr/bin/time", "-p"));
++      timedDump.addAll(dump);
+@@ -199 +210 @@
+-          new ProcessBuilder(dump).redirectErrorStream(true).redirectOutput(log.toFile()).start();
++          new ProcessBuilder(timedDump).redirectErrorStream(true).redirectOutput(log.toFile()).start();
+@@ -203,0 +215,3 @@
++        for (String line : Files.readAllLines(log))
++          if (line.startsWith("real ") || line.startsWith("user ") || line.startsWith("sys "))
++            System.out.println("ARCHIVE_TIME " + line);
+--- /dev/null
++++ b/src/test/java/tech/streamfusion/StockMetadataProbe.java
+@@ -0,0 +1,28 @@
++package tech.streamfusion;
++import java.nio.file.*; import java.util.*;
++import org.apache.flink.table.types.logical.BigIntType;
++import org.apache.flink.table.types.logical.RowType;
++import org.example.canonical.CanonicalFixtureFactory;
++public class StockMetadataProbe {
++ public static void main(String[] args) throws Exception {
++  Path base=Path.of(args[0]); Files.createDirectories(base);
++  var test=new CanonicalGroupArithmeticJobTest(); test.directory=base;
++  var runner=new CanonicalJobRunner(base); var fixture=runner.fixtureJar();
++  for(int index=0; index<(args.length>1?Integer.parseInt(args[1]):2); index++) {
++   Path root=test.prepare("stock-"+index,"continue",false);
++   long start=System.nanoTime();
++   runner.run(fixture,false,root,Integer.MAX_VALUE,"none","baseline",3,"hashmap");
++   var type=RowType.of(new BigIntType(),new BigIntType(),new BigIntType());
++   var rows=CanonicalFixtureFactory.committedRows(root.resolve("committed"),type);
++   var materialized=new HashMap<String,String>();
++   for(String row:rows) {String[] cells=row.split("\\|",-1);
++    if(cells[0].equals("+I")||cells[0].equals("+U"))materialized.put(cells[1],cells[2]+"|"+cells[3]);
++    else if(cells[0].equals("-D")||cells[0].equals("-U"))materialized.remove(cells[1]);
++    else throw new AssertionError(row);
++   }
++   if(!test.expectedTable("continue").equals(materialized)) throw new AssertionError(materialized);
++   if(!Files.exists(root.resolve("baseline-stock-classpath-verified"))) throw new AssertionError("Stock isolation missing");
++   System.out.println("WORKER "+index+" seconds="+((System.nanoTime()-start)/1e9)+" rows="+rows.size());
++  }
++ }
++}

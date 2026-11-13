@@ -2989,5 +2989,479 @@
       "candidate_download_verify_step_seconds": 1255,
       "consumers": 14
     }
+  },
+  "qualified_control_af5ab61cb": {
+    "baseline_run": 43116124202,
+    "candidate_run": 43324959481,
+    "head": "af5ab61cbb531f24ea3ace318de1d89ea121ded9",
+    "production_source_diff": "git diff b531553fa72b12d4da2d5e96d092c6828920dbf3 af5ab61cbb531f24ea3ace318de1d89ea121ded9 -- native src/main is empty",
+    "baseline_elapsed_seconds": 13034.0,
+    "candidate_elapsed_seconds": 10840.0,
+    "elapsed_reduction_percent": 16.832898572963018,
+    "baseline_ci_runner_seconds": 204900.0,
+    "candidate_ci_runner_seconds": 168673.0,
+    "ci_runner_reduction_percent": 17.68033186920449,
+    "baseline_two_test_workflows_runner_seconds": 219021.0,
+    "candidate_two_test_workflows_runner_seconds": 183629.0,
+    "two_test_workflows_runner_reduction_percent": 16.159181083092488,
+    "canonical_eligibility_to_start": {
+      "prerequisites_ready_delay_seconds": 141.0,
+      "median_seconds": 4873.5,
+      "max_seconds": 8001.0
+    },
+    "peak_ci_execution": 20,
+    "cohorts": {
+      "Flink 2.2, JDK 17": {
+        "runner_seconds": 28595.0,
+        "median_start_delay_seconds": 2517.0
+      },
+      "Flink 2.2, JDK 11": {
+        "runner_seconds": 37074.0,
+        "median_start_delay_seconds": 4889.5
+      },
+      "Flink 1.18, JDK 17": {
+        "runner_seconds": 26828.0,
+        "median_start_delay_seconds": 6137.0
+      },
+      "Flink 1.18, JDK 11": {
+        "runner_seconds": 33597.0,
+        "median_start_delay_seconds": 7483.5
+      }
+    },
+    "canonical_coverage": {
+      "flink1.18-jdk11": {
+        "shards": 16,
+        "selected_classes": 120,
+        "reported_classes": 118,
+        "outcomes": {
+          "tests": 3592,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "case_identities_sha256": "629201a64b8b5317b6c9c215001370b993a0283569e24481f45b88f6e3c8dd20",
+        "inventory_sha256": [
+          "aa0f72bd3192746068a76fb24ab8d0f548e964a6dcb19bd0b3feab7d1f1781ec"
+        ]
+      },
+      "flink1.18-jdk17": {
+        "shards": 16,
+        "selected_classes": 120,
+        "reported_classes": 118,
+        "outcomes": {
+          "tests": 3592,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "case_identities_sha256": "629201a64b8b5317b6c9c215001370b993a0283569e24481f45b88f6e3c8dd20",
+        "inventory_sha256": [
+          "aa0f72bd3192746068a76fb24ab8d0f548e964a6dcb19bd0b3feab7d1f1781ec"
+        ]
+      },
+      "flink2.2-jdk11": {
+        "shards": 16,
+        "selected_classes": 120,
+        "reported_classes": 118,
+        "outcomes": {
+          "tests": 3676,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "case_identities_sha256": "746fa4abeba3c2e12ca32a9203e6ad8baf4c5b2daf2e485c8682957612efcb00",
+        "inventory_sha256": [
+          "aa0f72bd3192746068a76fb24ab8d0f548e964a6dcb19bd0b3feab7d1f1781ec"
+        ]
+      },
+      "flink2.2-jdk17": {
+        "shards": 16,
+        "selected_classes": 120,
+        "reported_classes": 118,
+        "outcomes": {
+          "tests": 3676,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "case_identities_sha256": "746fa4abeba3c2e12ca32a9203e6ad8baf4c5b2daf2e485c8682957612efcb00",
+        "inventory_sha256": [
+          "aa0f72bd3192746068a76fb24ab8d0f548e964a6dcb19bd0b3feab7d1f1781ec"
+        ]
+      }
+    },
+    "limits": "Successful64-shard pre-integration candidate. No production native/Java source changes against baseline; all14536 invocations/outcomes match. Cross-run timings include environment/cache/queue variance. Original baseline overlapped optional Paimon1.0 campaign43116130672; candidate ran merge gates/docs only. Runner seconds are observed execution intervals, not billed minutes. Proposed40-shard and upstream private stripping changes are not qualified by this run.",
+    "groups": {
+      "other": {
+        "jobs": 16,
+        "runner_seconds": 10518.0,
+        "max_job_seconds": 2308.0
+      },
+      "canonical preparation": {
+        "jobs": 4,
+        "runner_seconds": 448.0,
+        "max_job_seconds": 119.0
+      },
+      "java": {
+        "jobs": 12,
+        "runner_seconds": 31613.0,
+        "max_job_seconds": 3615.0
+      },
+      "canonical": {
+        "jobs": 64,
+        "runner_seconds": 126094.0,
+        "max_job_seconds": 2849.0
+      }
+    },
+    "checks": {
+      "ci_jobs": 96,
+      "ci_conclusion": "success",
+      "upstream_run": 43324963308,
+      "upstream_jobs": 19,
+      "upstream_conclusion": "success",
+      "docs_run": 43324967247,
+      "docs_conclusion": "success",
+      "attempts": 1
+    },
+    "all_production_source_changes": []
+  },
+  "dynamic_cds_deferred": {
+    "candidate_commit": "87f22de65008ead9f81a6b4d282d4be635368e95",
+    "platform": "macOS-15.3.1-arm64-arm-64bit-Mach-O",
+    "java": "openjdk full version \"17.0.17+10\"",
+    "selection": "Actual stock CanonicalGroupArithmeticJobTest continue/compiled-plan/hashmap fixture via CanonicalJobRunner. Eight fresh stock workers per trial; three alternating pairs. All48 timed workers retained result and stock-isolation checks, each produced33 committed changes with the expected final aggregate state.",
+    "medians": {
+      "static": {
+        "elapsed_seconds": 21.037583875004202,
+        "cpu_seconds": 21.014348
+      },
+      "dynamic": {
+        "elapsed_seconds": 18.18833579204511,
+        "cpu_seconds": 18.599044
+      }
+    },
+    "limits": "Local stock-only attribution and comparison. No native-engine or hosted Linux proof; no claim about full-CI speedup. Separate generator time real43.99 in first pair conflicts with total/worker monotonic timers and is not used in comparisons. Dynamic class-load control verifies CanonicalJobWorker loaded from shared objects file (top).",
+    "reference": "https://docs.oracle.com/en/java/javase/17/docs/specs/man/java.html",
+    "timed_trials": [
+      {
+        "pair": 0,
+        "dynamic": false,
+        "exit_code": 0,
+        "elapsed_seconds": 21.186884332913905,
+        "cpu_seconds": 21.014348,
+        "workers": [
+          {
+            "index": 0,
+            "elapsed_seconds": 10.049749291,
+            "committed_rows": 33
+          },
+          {
+            "index": 1,
+            "elapsed_seconds": 1.54855975,
+            "committed_rows": 33
+          },
+          {
+            "index": 2,
+            "elapsed_seconds": 1.578503084,
+            "committed_rows": 33
+          },
+          {
+            "index": 3,
+            "elapsed_seconds": 1.577231,
+            "committed_rows": 33
+          },
+          {
+            "index": 4,
+            "elapsed_seconds": 1.573367916,
+            "committed_rows": 33
+          },
+          {
+            "index": 5,
+            "elapsed_seconds": 1.575790208,
+            "committed_rows": 33
+          },
+          {
+            "index": 6,
+            "elapsed_seconds": 1.584234541,
+            "committed_rows": 33
+          },
+          {
+            "index": 7,
+            "elapsed_seconds": 1.579011292,
+            "committed_rows": 33
+          }
+        ],
+        "archive_process_observations": {
+          "real": 43.99,
+          "user": 5.18,
+          "sys": 1.71
+        }
+      },
+      {
+        "pair": 0,
+        "dynamic": true,
+        "exit_code": 0,
+        "elapsed_seconds": 18.093468124978244,
+        "cpu_seconds": 18.541128,
+        "workers": [
+          {
+            "index": 0,
+            "elapsed_seconds": 7.347091125,
+            "committed_rows": 33
+          },
+          {
+            "index": 1,
+            "elapsed_seconds": 1.513807083,
+            "committed_rows": 33
+          },
+          {
+            "index": 2,
+            "elapsed_seconds": 1.522617083,
+            "committed_rows": 33
+          },
+          {
+            "index": 3,
+            "elapsed_seconds": 1.51492725,
+            "committed_rows": 33
+          },
+          {
+            "index": 4,
+            "elapsed_seconds": 1.527537209,
+            "committed_rows": 33
+          },
+          {
+            "index": 5,
+            "elapsed_seconds": 1.515403125,
+            "committed_rows": 33
+          },
+          {
+            "index": 6,
+            "elapsed_seconds": 1.509489708,
+            "committed_rows": 33
+          },
+          {
+            "index": 7,
+            "elapsed_seconds": 1.514446667,
+            "committed_rows": 33
+          }
+        ],
+        "archive_process_observations": {}
+      },
+      {
+        "pair": 1,
+        "dynamic": true,
+        "exit_code": 0,
+        "elapsed_seconds": 18.56846341607161,
+        "cpu_seconds": 18.599044,
+        "workers": [
+          {
+            "index": 0,
+            "elapsed_seconds": 7.372589,
+            "committed_rows": 33
+          },
+          {
+            "index": 1,
+            "elapsed_seconds": 1.510444042,
+            "committed_rows": 33
+          },
+          {
+            "index": 2,
+            "elapsed_seconds": 1.5184965,
+            "committed_rows": 33
+          },
+          {
+            "index": 3,
+            "elapsed_seconds": 1.555137417,
+            "committed_rows": 33
+          },
+          {
+            "index": 4,
+            "elapsed_seconds": 1.859970791,
+            "committed_rows": 33
+          },
+          {
+            "index": 5,
+            "elapsed_seconds": 1.515175916,
+            "committed_rows": 33
+          },
+          {
+            "index": 6,
+            "elapsed_seconds": 1.514551542,
+            "committed_rows": 33
+          },
+          {
+            "index": 7,
+            "elapsed_seconds": 1.54377775,
+            "committed_rows": 33
+          }
+        ],
+        "archive_process_observations": {}
+      },
+      {
+        "pair": 1,
+        "dynamic": false,
+        "exit_code": 0,
+        "elapsed_seconds": 20.910305583965965,
+        "cpu_seconds": 20.967537,
+        "workers": [
+          {
+            "index": 0,
+            "elapsed_seconds": 9.789778458,
+            "committed_rows": 33
+          },
+          {
+            "index": 1,
+            "elapsed_seconds": 1.553369292,
+            "committed_rows": 33
+          },
+          {
+            "index": 2,
+            "elapsed_seconds": 1.561525,
+            "committed_rows": 33
+          },
+          {
+            "index": 3,
+            "elapsed_seconds": 1.573226583,
+            "committed_rows": 33
+          },
+          {
+            "index": 4,
+            "elapsed_seconds": 1.5811855,
+            "committed_rows": 33
+          },
+          {
+            "index": 5,
+            "elapsed_seconds": 1.572209375,
+            "committed_rows": 33
+          },
+          {
+            "index": 6,
+            "elapsed_seconds": 1.57933275,
+            "committed_rows": 33
+          },
+          {
+            "index": 7,
+            "elapsed_seconds": 1.563212,
+            "committed_rows": 33
+          }
+        ],
+        "archive_process_observations": {
+          "real": 6.79,
+          "user": 5.13,
+          "sys": 1.68
+        }
+      },
+      {
+        "pair": 2,
+        "dynamic": false,
+        "exit_code": 0,
+        "elapsed_seconds": 21.037583875004202,
+        "cpu_seconds": 21.216070000000002,
+        "workers": [
+          {
+            "index": 0,
+            "elapsed_seconds": 9.914603208,
+            "committed_rows": 33
+          },
+          {
+            "index": 1,
+            "elapsed_seconds": 1.558573542,
+            "committed_rows": 33
+          },
+          {
+            "index": 2,
+            "elapsed_seconds": 1.581246667,
+            "committed_rows": 33
+          },
+          {
+            "index": 3,
+            "elapsed_seconds": 1.546849042,
+            "committed_rows": 33
+          },
+          {
+            "index": 4,
+            "elapsed_seconds": 1.5805775,
+            "committed_rows": 33
+          },
+          {
+            "index": 5,
+            "elapsed_seconds": 1.568805833,
+            "committed_rows": 33
+          },
+          {
+            "index": 6,
+            "elapsed_seconds": 1.580835042,
+            "committed_rows": 33
+          },
+          {
+            "index": 7,
+            "elapsed_seconds": 1.57224525,
+            "committed_rows": 33
+          }
+        ],
+        "archive_process_observations": {
+          "real": 6.91,
+          "user": 5.22,
+          "sys": 1.71
+        }
+      },
+      {
+        "pair": 2,
+        "dynamic": true,
+        "exit_code": 0,
+        "elapsed_seconds": 18.18833579204511,
+        "cpu_seconds": 18.687162999999995,
+        "workers": [
+          {
+            "index": 0,
+            "elapsed_seconds": 7.392231458,
+            "committed_rows": 33
+          },
+          {
+            "index": 1,
+            "elapsed_seconds": 1.510327209,
+            "committed_rows": 33
+          },
+          {
+            "index": 2,
+            "elapsed_seconds": 1.511941083,
+            "committed_rows": 33
+          },
+          {
+            "index": 3,
+            "elapsed_seconds": 1.518717583,
+            "committed_rows": 33
+          },
+          {
+            "index": 4,
+            "elapsed_seconds": 1.520272916,
+            "committed_rows": 33
+          },
+          {
+            "index": 5,
+            "elapsed_seconds": 1.526852833,
+            "committed_rows": 33
+          },
+          {
+            "index": 6,
+            "elapsed_seconds": 1.531470125,
+            "committed_rows": 33
+          },
+          {
+            "index": 7,
+            "elapsed_seconds": 1.527369041,
+            "committed_rows": 33
+          }
+        ],
+        "archive_process_observations": {}
+      }
+    ],
+    "steady_worker_elapsed_medians_seconds": {
+      "static": 1.573367916,
+      "dynamic": 1.5184965
+    },
+    "decision": "Deferred: stock-only local evidence, no native/Linux qualification or complete CI-cache-lifetime measurement. Keep the validated static archive path for this change; preserve the small probe patch and actual outcomes for a later focused experiment.",
+    "probe_patch": ".claude/wontdos/ci-dynamic-cds.patch",
+    "probe_patch_sha256": "787e706d9a7dcc340cc29fa6b5186be92e629052fe2948c0c8277050b988fd78"
   }
 }

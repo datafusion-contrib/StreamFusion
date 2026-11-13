@@ -793,8 +793,23 @@ provider, checkpoint, rescale and native-work assertion.
 Combined candidate 43284069894 finished in 184.7 minutes and used 49.18 runner-hours, but
 one canonical invocation failed during that metadata-generator crash; its aggregate gate failed.
 Its full upstream suite 43284074933 passed all 19 jobs. These observations preserve the failed
-qualification and do not establish a successful whole-CI speedup. The repaired candidate still
-requires both complete merge gates and full canonical invocation/outcome comparison.
+qualification and do not establish a successful whole-CI speedup.
+
+The repaired 64-shard control at `af5ab61cb` passed all 96 CI jobs, all 19 upstream jobs and
+docs. The complete invocation audit matches all 14,536 original cases, class outcomes and
+inventories, with no failures, errors or skips. CI elapsed falls from 217.2 to 180.7 minutes
+(16.8%) and observed runner execution from 56.92 to 46.85 hours (17.7%). Across CI and the
+upstream test workflow together, runner execution falls from 60.84 to 51.01 hours (16.2%),
+including the upstream workflow's 5.9% runner-cost regression. Production `native/` and
+`src/main/` sources are unchanged between those two measured revisions.
+
+These are successful cross-run observations, not a controlled estimate for every component.
+The original baseline also overlapped the optional Paimon 1.0 compatibility campaign; the
+candidate ran merge gates and docs only. Cache, runner and queue variation still apply.
+Canonical eligibility-to-start waiting falls from a median 100.5 to 81.2 minutes, with 20
+observed simultaneous CI jobs in both runs. The subsequent integrated forty-shard candidate
+also includes updated upstream code and smaller upstream native transfers; it needs its own
+complete gates, invocation audit and timing comparison before merging.
 
 The isolated canonical job worker exits explicitly after its job, native-work
 checks and try-with-resources cluster cleanup complete. A Flink 2.2/JDK 11

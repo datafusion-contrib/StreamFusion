@@ -1215,6 +1215,1003 @@
       "flink1.18-jdk17"
     ],
     "documentation": "https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idstrategymatrix",
-    "limits": "All cohorts share the same prerequisite barrier. Start delays include prerequisites, scheduler/concurrency and runner queues; these observations do not identify a configured quota. GitHub creation order is documented; actual execution priority and improvement require measurement. No invocation/configuration changes."
+    "limits": "All cohorts share the same prerequisite barrier. Start delays include prerequisites, scheduler/concurrency and runner queues; these observations do not identify a configured quota. GitHub creation order is documented; actual execution priority and improvement require measurement. No invocation/configuration changes.",
+    "qualified_control_cohort_runner_seconds": {
+      "Flink 2.2, JDK 17": 28595.0,
+      "Flink 2.2, JDK 11": 37074.0,
+      "Flink 1.18, JDK 17": 26828.0,
+      "Flink 1.18, JDK 11": 33597.0
+    }
+  },
+  "qualified_control_recheck": {
+    "source_run": 43324959481,
+    "source_head": "af5ab61cbb531f24ea3ace318de1d89ea121ded9",
+    "cohorts": {
+      "flink1.18-jdk11": {
+        "shards": [
+          {
+            "index": 1,
+            "actual_job_runner_seconds": 2258.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "44": 243.231,
+              "51": 626.693,
+              "53": 235.022,
+              "82": 2152.072,
+              "83": 927.401,
+              "104": 848.67,
+              "109": 873.702
+            }
+          },
+          {
+            "index": 10,
+            "actual_job_runner_seconds": 2098.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "3": 503.987,
+              "5": 1304.948,
+              "9": 980.066,
+              "52": 247.541,
+              "61": 182.915,
+              "68": 1985.595,
+              "74": 869.934,
+              "101": 765.119
+            }
+          },
+          {
+            "index": 11,
+            "actual_job_runner_seconds": 2491.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "15": 1030.343,
+              "37": 311.876,
+              "41": 153.232,
+              "66": 1013.438,
+              "86": 2380.637,
+              "112": 1279.986,
+              "113": 982.837,
+              "118": 1157.314
+            }
+          },
+          {
+            "index": 12,
+            "actual_job_runner_seconds": 2025.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "12": 841.29,
+              "14": 849.239,
+              "42": 279.931,
+              "54": 371.038,
+              "84": 718.273,
+              "92": 1072.618,
+              "116": 1401.195
+            }
+          },
+          {
+            "index": 13,
+            "actual_job_runner_seconds": 1815.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "17": 815.27,
+              "29": 1311.02,
+              "55": 249.398,
+              "91": 340.585,
+              "96": 827.892,
+              "100": 891.876,
+              "115": 1438.748
+            }
+          },
+          {
+            "index": 14,
+            "actual_job_runner_seconds": 2849.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "45": 313.749,
+              "67": 1957.435,
+              "73": 814.192,
+              "79": 1484.091,
+              "87": 607.251,
+              "111": 1524.98,
+              "117": 940.336
+            }
+          },
+          {
+            "index": 15,
+            "actual_job_runner_seconds": 1980.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "6": 1244.119,
+              "8": 960.443,
+              "26": 749.502,
+              "35": 847.791,
+              "46": 1868.81,
+              "59": 220.93,
+              "89": 491.446
+            }
+          },
+          {
+            "index": 16,
+            "actual_job_runner_seconds": 2266.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "27": 832.408,
+              "33": 1011.619,
+              "34": 229.698,
+              "58": 629.939,
+              "64": 2122.832,
+              "65": 2117.006,
+              "103": 1079.999
+            }
+          },
+          {
+            "index": 2,
+            "actual_job_runner_seconds": 1624.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "7": 669.324,
+              "18": 1527.075,
+              "22": 599.697,
+              "31": 1189.053,
+              "38": 534.189,
+              "47": 256.251,
+              "56": 211.717
+            }
+          },
+          {
+            "index": 3,
+            "actual_job_runner_seconds": 2303.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "13": 1031.348,
+              "19": 706.659,
+              "28": 326.381,
+              "36": 240.394,
+              "57": 317.678,
+              "76": 2182.453,
+              "85": 894.535,
+              "114": 1720.807
+            }
+          },
+          {
+            "index": 4,
+            "actual_job_runner_seconds": 1965.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "20": 1175.929,
+              "21": 560.134,
+              "23": 655.457,
+              "43": 279.032,
+              "78": 1282.571,
+              "105": 1871.837,
+              "110": 346.097
+            }
+          },
+          {
+            "index": 5,
+            "actual_job_runner_seconds": 2139.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "2": 1560.451,
+              "11": null,
+              "24": 529.646,
+              "39": 155.481,
+              "62": 991.658,
+              "63": 1031.986,
+              "69": null,
+              "75": 617.651,
+              "93": 659.411,
+              "98": 620.787,
+              "107": 352.319
+            }
+          },
+          {
+            "index": 6,
+            "actual_job_runner_seconds": 1826.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "4": 1717.9,
+              "25": 490.75,
+              "70": 1027.915,
+              "81": 628.566,
+              "90": 549.513,
+              "99": 698.312,
+              "108": 177.446
+            }
+          },
+          {
+            "index": 7,
+            "actual_job_runner_seconds": 2299.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "1": 990.232,
+              "10": 2191.263,
+              "30": 1045.298,
+              "40": 229.614,
+              "50": 249.223,
+              "60": 511.783,
+              "71": 1586.674,
+              "80": 844.403
+            }
+          },
+          {
+            "index": 8,
+            "actual_job_runner_seconds": 1966.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "0": 710.266,
+              "48": 224.502,
+              "72": 1242.451,
+              "94": 1851.303,
+              "95": 470.197,
+              "106": 998.732,
+              "119": 813.516
+            }
+          },
+          {
+            "index": 9,
+            "actual_job_runner_seconds": 1693.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "16": 651.942,
+              "32": 885.527,
+              "49": 191.389,
+              "77": 263.73,
+              "88": 1548.337,
+              "97": 639.435,
+              "102": 717.107
+            }
+          }
+        ]
+      },
+      "flink1.18-jdk17": {
+        "shards": [
+          {
+            "index": 1,
+            "actual_job_runner_seconds": 1546.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "44": 162.423,
+              "51": 396.864,
+              "53": 148.402,
+              "82": 1445.437,
+              "83": 557.497,
+              "104": 561.493,
+              "109": 576.375
+            }
+          },
+          {
+            "index": 10,
+            "actual_job_runner_seconds": 1416.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "3": 337.222,
+              "5": 905.674,
+              "9": 662.54,
+              "52": 147.61,
+              "61": 113.855,
+              "68": 1331.877,
+              "74": 582.978,
+              "101": 549.293
+            }
+          },
+          {
+            "index": 11,
+            "actual_job_runner_seconds": 1650.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "15": 665.078,
+              "37": 197.306,
+              "41": 99.33,
+              "66": 657.467,
+              "86": 1558.909,
+              "112": 897.985,
+              "113": 648.514,
+              "118": 799.014
+            }
+          },
+          {
+            "index": 12,
+            "actual_job_runner_seconds": 1632.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "12": 653.847,
+              "14": 652.828,
+              "42": 195.219,
+              "54": 262.623,
+              "84": 599.77,
+              "92": 883.007,
+              "116": 1125.515
+            }
+          },
+          {
+            "index": 13,
+            "actual_job_runner_seconds": 1429.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "17": 556.081,
+              "29": 747.223,
+              "55": 129.312,
+              "91": 269.09,
+              "96": 593.394,
+              "100": 909.952,
+              "115": 1068.066
+            }
+          },
+          {
+            "index": 14,
+            "actual_job_runner_seconds": 2343.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "45": 237.132,
+              "67": 1365.102,
+              "73": 702.472,
+              "79": 1725.098,
+              "87": 534.873,
+              "111": 1325.064,
+              "117": 876.21
+            }
+          },
+          {
+            "index": 15,
+            "actual_job_runner_seconds": 1563.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "6": 1081.827,
+              "8": 883.122,
+              "26": 646.061,
+              "35": 576.44,
+              "46": 1469.642,
+              "59": 144.754,
+              "89": 337.277
+            }
+          },
+          {
+            "index": 16,
+            "actual_job_runner_seconds": 1297.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "27": 463.856,
+              "33": 586.405,
+              "34": 122.791,
+              "58": 320.933,
+              "64": 1199.73,
+              "65": 1193.57,
+              "103": 607.507
+            }
+          },
+          {
+            "index": 2,
+            "actual_job_runner_seconds": 1271.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "7": 537.815,
+              "18": 1179.772,
+              "22": 433.183,
+              "31": 674.947,
+              "38": 507.992,
+              "47": 163.279,
+              "56": 120.206
+            }
+          },
+          {
+            "index": 3,
+            "actual_job_runner_seconds": 1619.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "13": 620.302,
+              "19": 601.54,
+              "28": 170.838,
+              "36": 197.317,
+              "57": 173.768,
+              "76": 1524.984,
+              "85": 661.636,
+              "114": 1162.177
+            }
+          },
+          {
+            "index": 4,
+            "actual_job_runner_seconds": 2176.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "20": 1362.315,
+              "21": 784.86,
+              "23": 463.784,
+              "43": 367.142,
+              "78": 1393.999,
+              "105": 2061.887,
+              "110": 406.464
+            }
+          },
+          {
+            "index": 5,
+            "actual_job_runner_seconds": 2228.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "2": 1073.607,
+              "11": null,
+              "24": 538.284,
+              "39": 172.589,
+              "62": 1083.746,
+              "63": 1051.278,
+              "69": null,
+              "75": 624.48,
+              "93": 971.164,
+              "98": 660.376,
+              "107": 306.848
+            }
+          },
+          {
+            "index": 6,
+            "actual_job_runner_seconds": 1742.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "4": 1653.717,
+              "25": 438.05,
+              "70": 1011.559,
+              "81": 635.429,
+              "90": 552.834,
+              "99": 596.529,
+              "108": 230.888
+            }
+          },
+          {
+            "index": 7,
+            "actual_job_runner_seconds": 1336.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "1": 501.354,
+              "10": 1225.771,
+              "30": 559.361,
+              "40": 170.788,
+              "50": 128.711,
+              "60": 261.003,
+              "71": 756.682,
+              "80": 565.953
+            }
+          },
+          {
+            "index": 8,
+            "actual_job_runner_seconds": 1405.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "0": 525.178,
+              "48": 133.968,
+              "72": 903.186,
+              "94": 1289.991,
+              "95": 357.226,
+              "106": 730.116,
+              "119": 590.702
+            }
+          },
+          {
+            "index": 9,
+            "actual_job_runner_seconds": 2175.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "16": 667.758,
+              "32": 1545.288,
+              "49": 171.12,
+              "77": 374.3,
+              "88": 1900.664,
+              "97": 892.506,
+              "102": 883.3
+            }
+          }
+        ]
+      },
+      "flink2.2-jdk11": {
+        "shards": [
+          {
+            "index": 1,
+            "actual_job_runner_seconds": 2461.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "44": 250.36,
+              "51": 1376.227,
+              "53": 390.832,
+              "82": 2364.945,
+              "83": 849.65,
+              "104": 1072.491,
+              "109": 735.814
+            }
+          },
+          {
+            "index": 10,
+            "actual_job_runner_seconds": 1842.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "3": 450.199,
+              "5": 1170.601,
+              "9": 834.259,
+              "52": 405.884,
+              "61": 180.411,
+              "68": 1764.512,
+              "74": 746.546,
+              "101": 695.806
+            }
+          },
+          {
+            "index": 11,
+            "actual_job_runner_seconds": 1835.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "15": 593.1,
+              "37": 242.743,
+              "41": 113.667,
+              "66": 756.043,
+              "86": 1765.741,
+              "112": 1120.25,
+              "113": 710.688,
+              "118": 1125.712
+            }
+          },
+          {
+            "index": 12,
+            "actual_job_runner_seconds": 2273.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "12": 862.005,
+              "14": 1076.912,
+              "42": 245.312,
+              "54": 947.869,
+              "84": 1062.076,
+              "92": 2074.569,
+              "116": 2011.455
+            }
+          },
+          {
+            "index": 13,
+            "actual_job_runner_seconds": 2489.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "17": 1153.374,
+              "29": 1830.4,
+              "55": 487.46,
+              "91": 437.435,
+              "96": 1142.415,
+              "100": 1248.273,
+              "115": 2060.008
+            }
+          },
+          {
+            "index": 14,
+            "actual_job_runner_seconds": 2534.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "45": 288.725,
+              "67": 1738.338,
+              "73": 727.719,
+              "79": 1349.389,
+              "87": 536.796,
+              "111": 1357.251,
+              "117": 812.787
+            }
+          },
+          {
+            "index": 15,
+            "actual_job_runner_seconds": 2581.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "6": 1820.467,
+              "8": 1340.035,
+              "26": 1087.795,
+              "35": 946.85,
+              "46": 2493.027,
+              "59": 421.951,
+              "89": 560.739
+            }
+          },
+          {
+            "index": 16,
+            "actual_job_runner_seconds": 2369.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "27": 865.287,
+              "33": 843.038,
+              "34": 192.872,
+              "58": 1062.864,
+              "64": 1220.697,
+              "65": 1676.791,
+              "103": 695.941
+            }
+          },
+          {
+            "index": 2,
+            "actual_job_runner_seconds": 2467.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "7": 1115.369,
+              "18": 2367.543,
+              "22": 873.701,
+              "31": 1354.832,
+              "38": 1007.494,
+              "47": 339.761,
+              "56": 429.492
+            }
+          },
+          {
+            "index": 3,
+            "actual_job_runner_seconds": 2480.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "13": 1118.834,
+              "19": 775.334,
+              "28": 358.243,
+              "36": 251.359,
+              "57": 478.272,
+              "76": 2393.042,
+              "85": 966.419,
+              "114": 1840.892
+            }
+          },
+          {
+            "index": 4,
+            "actual_job_runner_seconds": 2291.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "20": 1487.699,
+              "21": 595.193,
+              "23": 763.774,
+              "43": 344.194,
+              "78": 1506.99,
+              "105": 2199.388,
+              "110": 420.349
+            }
+          },
+          {
+            "index": 5,
+            "actual_job_runner_seconds": 2026.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "2": 1486.962,
+              "11": null,
+              "24": 555.897,
+              "39": 181.129,
+              "62": 1032.524,
+              "63": 840.749,
+              "69": null,
+              "75": 582.959,
+              "93": 1113.868,
+              "98": 730.941,
+              "107": 417.647
+            }
+          },
+          {
+            "index": 6,
+            "actual_job_runner_seconds": 2588.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "4": 2500.169,
+              "25": 645.096,
+              "70": 1558.278,
+              "81": 1011.269,
+              "90": 891.155,
+              "99": 900.068,
+              "108": 392.698
+            }
+          },
+          {
+            "index": 7,
+            "actual_job_runner_seconds": 1974.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "1": 774.334,
+              "10": 1892.939,
+              "30": 896.522,
+              "40": 294.088,
+              "50": 457.25,
+              "60": 511.075,
+              "71": 1348.287,
+              "80": 623.007
+            }
+          },
+          {
+            "index": 8,
+            "actual_job_runner_seconds": 2040.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "0": 728.002,
+              "48": 409.579,
+              "72": 1346.962,
+              "94": 1951.654,
+              "95": 515.262,
+              "106": 748.907,
+              "119": 899.689
+            }
+          },
+          {
+            "index": 9,
+            "actual_job_runner_seconds": 2824.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "16": 874.621,
+              "32": 2013.616,
+              "49": 443.445,
+              "77": 500.358,
+              "88": 2281.467,
+              "97": 1129.54,
+              "102": 1137.874
+            }
+          }
+        ]
+      },
+      "flink2.2-jdk17": {
+        "shards": [
+          {
+            "index": 1,
+            "actual_job_runner_seconds": 1680.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "44": 165.092,
+              "51": 940.148,
+              "53": 242.274,
+              "82": 1598.487,
+              "83": 539.783,
+              "104": 693.14,
+              "109": 501.352
+            }
+          },
+          {
+            "index": 10,
+            "actual_job_runner_seconds": 1885.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "3": 333.712,
+              "5": 1346.171,
+              "9": 872.886,
+              "52": 330.092,
+              "61": 153.463,
+              "68": 1804.381,
+              "74": 666.899,
+              "101": 874.911
+            }
+          },
+          {
+            "index": 11,
+            "actual_job_runner_seconds": 1409.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "15": 564.547,
+              "37": 155.612,
+              "41": 81.647,
+              "66": 562.266,
+              "86": 1333.824,
+              "112": 743.913,
+              "113": 553.619,
+              "118": 702.983
+            }
+          },
+          {
+            "index": 12,
+            "actual_job_runner_seconds": 1988.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "12": 806.731,
+              "14": 813.907,
+              "42": 221.86,
+              "54": 596.339,
+              "84": 735.183,
+              "92": 1098.36,
+              "116": 1389.848
+            }
+          },
+          {
+            "index": 13,
+            "actual_job_runner_seconds": 1833.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "17": 805.156,
+              "29": 1340.326,
+              "55": 302.36,
+              "91": 341.445,
+              "96": 804.805,
+              "100": 950.624,
+              "115": 1477.543
+            }
+          },
+          {
+            "index": 14,
+            "actual_job_runner_seconds": 1888.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "45": 189.704,
+              "67": 1320.061,
+              "73": 517.507,
+              "79": 991.513,
+              "87": 404.972,
+              "111": 1003.956,
+              "117": 636.984
+            }
+          },
+          {
+            "index": 15,
+            "actual_job_runner_seconds": 1595.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "6": 1050.629,
+              "8": 852.156,
+              "26": 633.172,
+              "35": 620.332,
+              "46": 1526.918,
+              "59": 249.734,
+              "89": 366.768
+            }
+          },
+          {
+            "index": 16,
+            "actual_job_runner_seconds": 2490.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "27": 891.662,
+              "33": 873.967,
+              "34": 215.092,
+              "58": 1027.435,
+              "64": 1372.139,
+              "65": 1812.323,
+              "103": 769.979
+            }
+          },
+          {
+            "index": 2,
+            "actual_job_runner_seconds": 1575.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "7": 529.215,
+              "18": 1311.342,
+              "22": 493.384,
+              "31": 913.197,
+              "38": 648.349,
+              "47": 179.402,
+              "56": 251.228
+            }
+          },
+          {
+            "index": 3,
+            "actual_job_runner_seconds": 1299.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "13": 568.251,
+              "19": 448.677,
+              "28": 165.394,
+              "36": 136.595,
+              "57": 252.659,
+              "76": 1227.858,
+              "85": 520.515,
+              "114": 980.988
+            }
+          },
+          {
+            "index": 4,
+            "actual_job_runner_seconds": 1484.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "20": 955.44,
+              "21": 551.586,
+              "23": 331.085,
+              "43": 249.902,
+              "78": 986.521,
+              "105": 1416.61,
+              "110": 266.489
+            }
+          },
+          {
+            "index": 5,
+            "actual_job_runner_seconds": 2271.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "2": 1099.034,
+              "11": null,
+              "24": 545.507,
+              "39": 163.262,
+              "62": 1106.925,
+              "63": 1085.438,
+              "69": null,
+              "75": 648.338,
+              "93": 991.184,
+              "98": 671.606,
+              "107": 306.595
+            }
+          },
+          {
+            "index": 6,
+            "actual_job_runner_seconds": 1996.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "4": 1904.749,
+              "25": 492.5,
+              "70": 1175.29,
+              "81": 748.455,
+              "90": 700.387,
+              "99": 690.291,
+              "108": 275.213
+            }
+          },
+          {
+            "index": 7,
+            "actual_job_runner_seconds": 1280.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "1": 549.145,
+              "10": 1203.75,
+              "30": 546.833,
+              "40": 140.278,
+              "50": 252.645,
+              "60": 270.362,
+              "71": 860.068,
+              "80": 518.608
+            }
+          },
+          {
+            "index": 8,
+            "actual_job_runner_seconds": 1651.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "0": 585.994,
+              "48": 296.137,
+              "72": 1041.245,
+              "94": 1565.296,
+              "95": 411.262,
+              "106": 611.825,
+              "119": 719.565
+            }
+          },
+          {
+            "index": 9,
+            "actual_job_runner_seconds": 2271.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "16": 846.666,
+              "32": 1239.02,
+              "49": 348.726,
+              "77": 406.079,
+              "88": 2080.848,
+              "97": 901.661,
+              "102": 944.303
+            }
+          }
+        ]
+      }
+    },
+    "model": {
+      "rows": [
+        {
+          "weight_mode": "observed",
+          "shards_per_cohort": 16,
+          "canonical_jobs": 64,
+          "exact_existing_shard_matches": null,
+          "median_job_span_sum_seconds": 132731.2855,
+          "median_20_slot_batch_seconds": 8085.8355,
+          "p10_20_slot_batch_seconds": 7607.991,
+          "p90_20_slot_batch_seconds": 8622.934,
+          "median_longest_job_seconds": 3419.7349999999997
+        },
+        {
+          "weight_mode": "current",
+          "shards_per_cohort": 8,
+          "canonical_jobs": 32,
+          "exact_existing_shard_matches": null,
+          "median_job_span_sum_seconds": 115113.5595,
+          "median_20_slot_batch_seconds": 8011.0575,
+          "p10_20_slot_batch_seconds": 7567.469,
+          "p90_20_slot_batch_seconds": 8573.010999999999,
+          "median_longest_job_seconds": 5013.5215
+        },
+        {
+          "weight_mode": "current",
+          "shards_per_cohort": 10,
+          "canonical_jobs": 40,
+          "exact_existing_shard_matches": null,
+          "median_job_span_sum_seconds": 119428.61850000001,
+          "median_20_slot_batch_seconds": 7677.3825,
+          "p10_20_slot_batch_seconds": 7168.348,
+          "p90_20_slot_batch_seconds": 8309.901,
+          "median_longest_job_seconds": 4462.833500000001
+        },
+        {
+          "weight_mode": "current",
+          "shards_per_cohort": 12,
+          "canonical_jobs": 48,
+          "exact_existing_shard_matches": null,
+          "median_job_span_sum_seconds": 124587.043,
+          "median_20_slot_batch_seconds": 8011.076999999999,
+          "p10_20_slot_batch_seconds": 7565.7970000000005,
+          "p90_20_slot_batch_seconds": 8535.059000000001,
+          "median_longest_job_seconds": 3821.809
+        },
+        {
+          "weight_mode": "current",
+          "shards_per_cohort": 16,
+          "canonical_jobs": 64,
+          "exact_existing_shard_matches": 64,
+          "median_job_span_sum_seconds": 132742.06650000002,
+          "median_20_slot_batch_seconds": 8093.2155,
+          "p10_20_slot_batch_seconds": 7622.889999999999,
+          "p90_20_slot_batch_seconds": 8606.679,
+          "median_longest_job_seconds": 3419.3410000000003
+        },
+        {
+          "weight_mode": "measured",
+          "shards_per_cohort": 8,
+          "canonical_jobs": 32,
+          "exact_existing_shard_matches": null,
+          "median_job_span_sum_seconds": 115351.14749999999,
+          "median_20_slot_batch_seconds": 7969.553,
+          "p10_20_slot_batch_seconds": 7590.182999999999,
+          "p90_20_slot_batch_seconds": 8463.721,
+          "median_longest_job_seconds": 4938.179
+        },
+        {
+          "weight_mode": "measured",
+          "shards_per_cohort": 10,
+          "canonical_jobs": 40,
+          "exact_existing_shard_matches": null,
+          "median_job_span_sum_seconds": 119967.5315,
+          "median_20_slot_batch_seconds": 7492.7045,
+          "p10_20_slot_batch_seconds": 7052.405,
+          "p90_20_slot_batch_seconds": 7943.197,
+          "median_longest_job_seconds": 4218.442999999999
+        },
+        {
+          "weight_mode": "measured",
+          "shards_per_cohort": 12,
+          "canonical_jobs": 48,
+          "exact_existing_shard_matches": null,
+          "median_job_span_sum_seconds": 124838.36050000001,
+          "median_20_slot_batch_seconds": 8014.25,
+          "p10_20_slot_batch_seconds": 7565.935,
+          "p90_20_slot_batch_seconds": 8503.231,
+          "median_longest_job_seconds": 3771.2795
+        },
+        {
+          "weight_mode": "measured",
+          "shards_per_cohort": 16,
+          "canonical_jobs": 64,
+          "exact_existing_shard_matches": 0,
+          "median_job_span_sum_seconds": 134636.1975,
+          "median_20_slot_batch_seconds": 8134.518,
+          "p10_20_slot_batch_seconds": 7744.909000000001,
+          "p90_20_slot_batch_seconds": 8650.163,
+          "median_longest_job_seconds": 3267.663
+        }
+      ],
+      "limits": "Monte Carlo scheduling sensitivity only:300 seeded trials randomize class order within four-worker shards and job order across20 slots. Uses all measured baseline class durations and unchanged complete inventories. Other jobs, setup/transfer, resource interference and current candidate speed changes are omitted. Observed control uses original shard selections; current uses versioned line costs; measured uses worst actual class time across JDKs per line. No hosted speedup claim."
+    },
+    "result": "The same300-trial scheduling method on all qualified control class durations still favors10shards for canonical-batch median. Current weights16-shard selections exactly match all64 observed shards. A model is not hosted execution evidence."
   }
 }
