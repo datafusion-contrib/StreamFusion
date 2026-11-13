@@ -14,7 +14,8 @@ path. Scalar coercion follows Flink's converters exactly: string-encoded numbers
 `Infinity`/`NaN`/suffix floats, never-failing booleans, strict `ISO_LOCAL_DATE` dates, and
 integer/boolean/container echo under `STRING`. DECIMAL parses the exact raw literal with
 `BigDecimal`'s HALF_UP-or-NULL rounding. `ignore-parse-errors` skips at Flink's own per-field
-granularity. A top-level JSON array fans out into one row per element, matching Flink's
+granularity. A schema that declares a DECIMAL is an exception to both (below). A top-level JSON
+array fans out into one row per element, matching Flink's
 `processArray` (an empty array yields zero rows; a bad element fails the message in strict mode
 and drops alone under `ignore-parse-errors`). TIME columns parse `SQL_TIME_FORMAT` and reproduce
 Flink's silent sub-second discard (`toSecondOfDay() * 1000`, regardless of declared precision),
@@ -28,8 +29,20 @@ On the SIMD scalar decode path, numeric and boolean trimming follows Java `Strin
 exact width and overflow checks. Decimal strings also accept those digits. Float suffixes
 apply only to decimal literals: `NaNf` and `InfinityD` are invalid. Malformed Unicode numeric
 or timestamp input returns the ordinary conversion failure, including per-field nulls under
-`ignore-parse-errors`. Decimal-bearing schemas retain the raw-literal path's separately
-documented coercion limits in [the ingest divergence note](https://github.com/datafusion-contrib/StreamFusion/blob/main/divergences/21-ingest-text-envelope.md).
+`ignore-parse-errors`.
+
+A schema that declares a DECIMAL decodes through arrow-json, which keeps each number's raw literal.
+Its DECIMAL, DATE, TIME, TIMESTAMP, VARBINARY and BOOLEAN values convert afterwards with the same
+parsers as the SIMD path, field by field as in Flink. arrow-json reads every other value itself and
+rejects the whole document on one it can't read: a container under any scalar column, or under a
+numeric column a boolean, an out-of-range number, or a string Java would parse differently
+(`" 42 "`, `"1.5d"`, non-ASCII digits). Flink converts each such value on its own — it reads those
+strings, and a container under `STRING` as its JSON text — while natively the message fails the
+job, or drops whole under `ignore-parse-errors`. arrow-json also reads values Flink rejects: a
+number with a fraction or an exponent truncates under `TINYINT` and `SMALLINT`, and `FLOAT` and
+`DOUBLE` accept `inf`, `infinity` and `nan` in any case.
+[The ingest divergence note](https://github.com/datafusion-contrib/StreamFusion/blob/main/divergences/21-ingest-text-envelope.md)
+records the details.
 
 Decimal zero accepts the full Java exponent range without constructing exponent-sized powers
 of ten. Nonzero rescaling detects precision overflow and complete fractional discard before

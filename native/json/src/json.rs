@@ -40,7 +40,9 @@ pub(crate) struct JsonEnv {
     /// parser-path row converter, whose field counter saturates at the arity and skips the
     /// remaining keys (the default, `false`); the CDC dialects run Flink's tree-based
     /// deserializer (`readTree` + `JsonToRowDataConverters`), where the object is rebuilt as a
-    /// map first — the last occurrence simply wins and no counter exists (`true`).
+    /// map first — the last occurrence simply wins and no counter exists (`true`). That tree
+    /// also reads a DECIMAL-bearing schema's zero number tokens unsigned
+    /// ([`unsigned_zero_numbers`]).
     pub(crate) tree_duplicates: bool,
 }
 
@@ -207,9 +209,9 @@ where
     }
 }
 
-/// DATE: strings parse per Java's strict `ISO_LOCAL_DATE` (`yyyy-MM-dd`, a real calendar date) —
-/// Flink rejects everything else, bare numbers included (its converter renders the token to text
-/// and hands it to the date formatter, which fails on digits).
+/// DATE: strings parse per Java's strict `ISO_LOCAL_DATE` (`yyyy-MM-dd` or a signed expanded year,
+/// a real calendar date) — Flink rejects everything else, bare numbers included (its converter
+/// renders the token to text and hands it to the date formatter, which fails on digits).
 pub(crate) struct DateJsonAppender {
     builder: PrimitiveBuilder<Date32Type>,
     env: JsonEnv,
@@ -1500,8 +1502,10 @@ pub(crate) struct JsonDecoder {
     pub(crate) schema: SchemaRef,
     /// DECIMAL columns need the raw number literal for exactness (see
     /// `json_needs_raw_number_literals`); those schemas decode via arrow-json, all others via the
-    /// simd-json tape walk. The arrow-json path keeps its own (lenient) temporal/coercion
-    /// envelope — an accept-where-Flink-rejects residual documented in divergences/21.
+    /// simd-json tape walk. On the arrow-json path DECIMAL, DATE, TIME, TIMESTAMP, VARBINARY and
+    /// BOOLEAN leaves convert from their text through the simd path's Flink-exact parsers; what
+    /// arrow-json still reads differently from Flink, in both directions, is documented in
+    /// divergences/21.
     raw_literals: bool,
     /// The table's `timestamp-format.standard` and skip mode.
     env: JsonEnv,
@@ -1608,10 +1612,10 @@ impl JsonDecoder {
     /// literal) and converted here with Flink's exact semantics — `new BigDecimal(String)` then a
     /// HALF_UP rescale that goes NULL on precision overflow. arrow-json's own decimal parse
     /// truncates extra fraction digits and errors on overflow, which silently diverged from Flink
-    /// on valid data. TIME and VARBINARY leaves sharing such a schema also ride as text and
-    /// convert through the same Flink-exact parsers the simd path uses — arrow-json's own
-    /// time/binary handling has a different envelope. Documents feed one at a time to keep the
-    /// decoder's record boundaries aligned with the input rows.
+    /// on valid data. DATE, TIME, TIMESTAMP, VARBINARY and BOOLEAN leaves sharing such a schema
+    /// also ride as text and convert through the same Flink-exact parsers the simd path uses —
+    /// arrow-json's own handling of those types has a different envelope. Documents feed one at
+    /// a time to keep the decoder's record boundaries aligned with the input rows.
     fn decode_raw_literals(&self, bodies: &RecordBatch) -> RecordBatch {
         let column = bodies.column(0);
         let text_schema = Arc::new(Schema::new(
@@ -1631,9 +1635,10 @@ impl JsonDecoder {
         // In skip mode each message decodes through its own decoder so a bad one drops alone
         // (arrow-json's decoder state is unusable after an error), and each fanned-out array
         // element through its own so a bad element drops alone — the same per-element granularity
-        // as the simd path. Flink's skip on this path is otherwise approximated at message/element
-        // granularity for non-decimal errors — divergences/21; the decimal cells themselves skip
-        // per FIELD in restore_exact_leaves, like the host.
+        // as the simd path. A value arrow-json itself rejects still drops its whole message or
+        // element, where Flink converts each field on its own (divergences/21); a bad text-restored
+        // leaf (DECIMAL, DATE, TIME, TIMESTAMP, VARBINARY) nulls per FIELD in restore_exact_leaves,
+        // like the host.
         let mut batches = Vec::new();
         if self.env.lenient {
             for row in 0..bodies.num_rows() {
@@ -1643,6 +1648,7 @@ impl JsonDecoder {
                 if skip_blank_body(bytes, true) {
                     continue;
                 }
+                let bytes = self.root_document(bytes);
                 let elements = match self.array_body(bytes) {
                     ArrayBody::Not => vec![bytes],
                     ArrayBody::Elements(elements) => elements,
@@ -1653,9 +1659,10 @@ impl JsonDecoder {
                     if !starts_with_object(element) {
                         continue; // a non-object array element drops alone, like the simd path
                     }
+                    let element = self.literal_document(element);
                     let mut decoder = build(1);
                     let decoded = decoder
-                        .decode(element)
+                        .decode(&element)
                         .ok()
                         .filter(|&consumed| consumed == element.len())
                         .and_then(|_| decoder.flush().ok().flatten());
@@ -1667,7 +1674,7 @@ impl JsonDecoder {
         } else {
             // Fanned-out arrays can exceed the input row count, and the decoder stops consuming
             // at its batch size — so gather every document first and size the decoder to fit.
-            let mut documents: Vec<&[u8]> = Vec::with_capacity(bodies.num_rows());
+            let mut documents: Vec<std::borrow::Cow<[u8]>> = Vec::with_capacity(bodies.num_rows());
             for row in 0..bodies.num_rows() {
                 let Some(bytes) = binary_body(column, row) else {
                     continue;
@@ -1675,15 +1682,16 @@ impl JsonDecoder {
                 if skip_blank_body(bytes, false) {
                     continue;
                 }
+                let bytes = self.root_document(bytes);
                 match self.array_body(bytes) {
-                    ArrayBody::Not => documents.push(bytes),
+                    ArrayBody::Not => documents.push(self.literal_document(bytes)),
                     ArrayBody::Elements(elements) => {
                         for element in elements {
                             assert!(
                                 starts_with_object(element),
                                 "JSON array element was not an object"
                             );
-                            documents.push(element);
+                            documents.push(self.literal_document(element));
                         }
                     }
                     ArrayBody::Corrupt => panic!("JSON body was not a single object"),
@@ -1692,11 +1700,11 @@ impl JsonDecoder {
             let mut decoder = build(documents.len());
             for document in documents {
                 let consumed = decoder
-                    .decode(document)
+                    .decode(&document)
                     .expect("failed to decode JSON record");
-                assert_eq!(
-                    consumed,
-                    document.len(),
+                // An unterminated root would otherwise be completed by the next message's bytes.
+                assert!(
+                    consumed == document.len() && !decoder.has_partial_record(),
                     "JSON body was not a single complete document"
                 );
             }
@@ -1723,6 +1731,28 @@ impl JsonDecoder {
             })
             .collect();
         RecordBatch::try_new(self.schema.clone(), columns).expect("failed to build JSON batch")
+    }
+
+    /// The part of a message Flink's plain `json` format reads: Jackson parses one root value and
+    /// never looks past it, so content trailing a root object or array (`{"a":1}}`) is ignored,
+    /// as the simd path's Jackson-faithful walk ignores it. The CDC dialects keep their strict
+    /// parse (divergences/21).
+    fn root_document<'a>(&self, bytes: &'a [u8]) -> &'a [u8] {
+        if self.retryable {
+            first_root_value(bytes)
+        } else {
+            bytes
+        }
+    }
+
+    /// A document as arrow-json reads it: on Flink's tree path (the CDC dialects) zero number
+    /// tokens first lose their sign ([`unsigned_zero_numbers`]).
+    fn literal_document<'a>(&self, document: &'a [u8]) -> std::borrow::Cow<'a, [u8]> {
+        if self.env.tree_duplicates {
+            unsigned_zero_numbers(document)
+        } else {
+            std::borrow::Cow::Borrowed(document)
+        }
     }
 
     /// Classifies a body for the raw-literals path: `Not` (the root is not an array — decode it as
@@ -1762,6 +1792,81 @@ enum ArrayBody<'a> {
     Not,
     Elements(Vec<&'a [u8]>),
     Corrupt,
+}
+
+/// The bytes through the end of a message's root object or array; a message whose root is not a
+/// closed container is returned whole.
+pub(crate) fn first_root_value(bytes: &[u8]) -> &[u8] {
+    let Some(start) = bytes.iter().position(|b| !b.is_ascii_whitespace()) else {
+        return bytes;
+    };
+    if !matches!(bytes[start], b'{' | b'[') {
+        return bytes;
+    }
+    let (mut depth, mut in_string, mut escaped) = (0usize, false, false);
+    for (i, &byte) in bytes.iter().enumerate().skip(start) {
+        if in_string {
+            in_string = escaped || byte != b'"';
+            escaped = !escaped && byte == b'\\';
+        } else {
+            match byte {
+                b'"' => in_string = true,
+                b'{' | b'[' => depth += 1,
+                b'}' | b']' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return &bytes[..=i];
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    bytes
+}
+
+/// Flink's CDC dialects read their envelope into a tree with `USE_BIG_DECIMAL_FOR_FLOATS` once
+/// the schema declares a DECIMAL — exactly when the raw-literals path runs — so a float token
+/// becomes a `BigDecimal` and an integer token an `IntNode`, neither of which holds a negative
+/// zero: a zero number token reads as +0.0 under DOUBLE/FLOAT, and an integer `-0` reads as `0`
+/// under STRING. arrow-json keeps the literal's sign, so the minus is dropped from such tokens
+/// before it decodes. A quoted `"-0.0"` keeps its sign in both. A float token under STRING still
+/// reads as its literal here, where the tree spells its BigDecimal (`1.50` as `1.5`).
+pub(crate) fn unsigned_zero_numbers(document: &[u8]) -> std::borrow::Cow<'_, [u8]> {
+    if !document.windows(2).any(|pair| pair == b"-0") {
+        return std::borrow::Cow::Borrowed(document);
+    }
+    let mut out = Vec::with_capacity(document.len());
+    let (mut in_string, mut escaped) = (false, false);
+    let mut i = 0;
+    while i < document.len() {
+        let byte = document[i];
+        if in_string {
+            in_string = escaped || byte != b'"';
+            escaped = !escaped && byte == b'\\';
+        } else if byte == b'"' {
+            in_string = true;
+        } else if byte == b'-' || byte.is_ascii_digit() {
+            let length = document[i..]
+                .iter()
+                .take_while(|b| matches!(b, b'0'..=b'9' | b'.' | b'e' | b'E' | b'+' | b'-'))
+                .count();
+            let token = &document[i..i + length];
+            let mantissa = token[1..].split(|b| matches!(b, b'e' | b'E')).next();
+            let zero = mantissa
+                .is_some_and(|m| m.contains(&b'0') && m.iter().all(|b| matches!(b, b'0' | b'.')));
+            out.extend_from_slice(if byte == b'-' && zero {
+                &token[1..]
+            } else {
+                token
+            });
+            i += length;
+            continue;
+        }
+        out.push(byte);
+        i += 1;
+    }
+    std::borrow::Cow::Owned(out)
 }
 
 /// [`ArrayRootPolicy::UnwrapSingle`] on the raw-literals path: the message decodes as its lone
@@ -1827,8 +1932,9 @@ fn top_level_array_elements(bytes: &[u8]) -> Vec<&[u8]> {
 }
 
 /// The leaves the raw-literals path decodes as Utf8 and converts with a Flink-exact parser after
-/// arrow-json: DECIMAL (needs the raw number literal), TIME, and VARBINARY (arrow-json's own
-/// envelopes differ from Flink's).
+/// arrow-json: DECIMAL (needs the raw number literal), DATE, TIME, TIMESTAMP, VARBINARY and BOOLEAN
+/// (arrow-json's own envelopes differ from Flink's; it rejects the quoted boolean `parseBoolean`
+/// reads and accepts the unpadded date `ISO_LOCAL_DATE` rejects).
 fn text_restored_leaf(data_type: &DataType) -> bool {
     streamfusion_bridge::timestamp::is_timestamp(data_type)
         || matches!(
@@ -1837,6 +1943,8 @@ fn text_restored_leaf(data_type: &DataType) -> bool {
                 | DataType::Time32(_)
                 | DataType::Time64(_)
                 | DataType::Binary
+                | DataType::Boolean
+                | DataType::Date32
         )
 }
 
@@ -1853,8 +1961,8 @@ fn needs_text_restore(data_type: &DataType) -> bool {
     }
 }
 
-/// The arrow-json decode schema for the raw-literals path: every (nested) DECIMAL/TIME/VARBINARY
-/// leaf becomes Utf8, so `coerce_primitive` captures the exact literal for
+/// The arrow-json decode schema for the raw-literals path: every (nested) text-restored leaf
+/// ([`text_restored_leaf`]) becomes Utf8, so `coerce_primitive` captures the exact literal for
 /// [`restore_exact_leaves`] to convert.
 fn exact_leaves_as_text(field: &Field) -> Field {
     let data_type = match field.data_type() {
@@ -1876,9 +1984,11 @@ fn exact_leaves_as_text(field: &Field) -> Field {
 
 /// Converts a raw-literals column back to its declared type: a Utf8-decoded DECIMAL leaf parses
 /// with Flink's `BigDecimal` + `DecimalData.fromBigDecimal` (HALF_UP, precision overflow → NULL,
-/// garbage fails), TIME with the `SQL_TIME_FORMAT`-and-truncate rule, VARBINARY with Jackson's
-/// base64 read; containers rebuild around their converted children; anything else is already its
-/// declared type.
+/// garbage fails), TIME with the `SQL_TIME_FORMAT`-and-truncate rule, TIMESTAMP with the table's
+/// `timestamp-format.standard`, VARBINARY with Jackson's base64 read, BOOLEAN with `parseBoolean`
+/// over trimmed text (a number renders to text that is simply false), DATE with the strict
+/// `ISO_LOCAL_DATE` (a number's text fails); containers rebuild around their converted children;
+/// anything else is already its declared type.
 fn restore_exact_leaves(column: &ArrayRef, target: &DataType, env: JsonEnv) -> ArrayRef {
     if !needs_text_restore(target) {
         return column.clone();
@@ -1918,6 +2028,37 @@ fn restore_exact_leaves(column: &ArrayRef, target: &DataType, env: JsonEnv) -> A
                 })
                 .collect();
             time_array(target, &seconds)
+        }
+        DataType::Boolean => {
+            let strings = column
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .expect("boolean text");
+            let values: BooleanArray = strings
+                .iter()
+                .map(|text| {
+                    text.map(|text| flink_text::parse_java_boolean(flink_text::trim_java(text)))
+                })
+                .collect();
+            Arc::new(values)
+        }
+        DataType::Date32 => {
+            let strings = column
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .expect("date text");
+            let values: arrow::array::Date32Array = strings
+                .iter()
+                .map(|text| {
+                    let text = text?;
+                    match flink_text::parse_iso_local_date(text) {
+                        Some(days) => Some(days),
+                        None if env.lenient => None,
+                        None => panic!("failed to parse \"{text}\" as DATE"),
+                    }
+                })
+                .collect();
+            Arc::new(values)
         }
         DataType::Binary => {
             let strings = column
