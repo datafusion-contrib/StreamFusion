@@ -82,7 +82,8 @@ public final class CanonicalJobWorker {
             ? Integer.parseInt(Files.readString(root.resolve(stage + "-parallelism")).trim())
             : 1;
     String fixedConnectorParallelism =
-        Files.exists(root.resolve("rescale")) ? ",'parallelism'='1'" : "";
+        Files.exists(root.resolve("rescale")) && !Files.exists(root.resolve("rescale-materializer"))
+            ? ",'parallelism'='1'" : "";
     Configuration config = new Configuration();
     config.setString("execution.target", "local");
     config.setString("restart-strategy.type", "none");

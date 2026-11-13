@@ -102,13 +102,24 @@ The shared adapter imports and exports the released stock LEGACY candidate list 
 and 2.2.1. Flink 2.2 additionally has VALUE, MAP and both ADAPTIVE representations; their released
 serializers stay behind a narrow version adapter. Flink 1.18 has no V2 materializer runtime.
 
-Canonical materialization currently requires explicitly attaching this stock contract. The unused
-2.2 runtime-node prototype was never installed by the compiled-plan lowering path. Earlier claims
-of automatic BIGINT compiled-plan binding and seventy qualified full jobs were stale and are
-removed. Automatic ordinary-SQL/compiled-plan binding, accelerated Doris binding and full sink jobs
-remain outside the frozen operator-contract scope. Component/harness continuation evidence below
-must not be read as complete-job qualification. Native-format portable snapshots remain separate
-from stock-compatible canonical savepoints.
+The resumed #569 implementation now attaches the contract to captured BIGINT-only stock sink
+materializers through ordinary SQL and portable compiled plans. It retains the released sink's
+constraint, writer and committer translation, replaces its materializer hook, and captures the
+actual stock strategy, input matching key, LEGACY TTL and adaptive threshold overrides. The shared
+runtime supports LEGACY on both releases and the V2 strategies on 2.2. Stateful registration uses
+the final runtime primary hash, including generated IDs with UID generation disabled; canonical
+identity projection maps that owner back to the original stock materializer and accounts for its
+stateless transpose/exchange helpers.
+
+This new automatic path is an implementation awaiting qualification in the final six-hour test
+window of the resumed one-day task. New controls cover both engine orders, ordinary SQL and
+compiled plans, matching keys, strategies, no-input returns, native checkpoint recovery and
+1→3→2 source/materializer/writer rescaling. They are authored but have not run yet. Historical
+component evidence below does not qualify these new jobs. Earlier claims of seventy qualified
+automatic jobs remain withdrawn. Wider types, async/unaligned state and accelerated Doris binding
+remain separate work; existing accelerated connector replacements retain their prior route.
+`streamfusion.operator.sinkMaterializer.enabled=false` keeps the captured stock materializer.
+Native-format portable snapshots remain separate from stock-compatible canonical savepoints.
 
 For native RocksDB, the barrier flushes pending writes and pins an independent MVCC view. Conversion
 starts on Flink's async writer thread and reads native candidate/index records in bounded frames.
@@ -163,9 +174,8 @@ in chunks.
 Forty-eight JNI capture-failure controls throw before Arrow import and after importing the batch.
 They require the original JVM exception, released buffers, unchanged canonical metadata/entry bytes
 on retry, and correct native and stock continuation through later retractions. Broader logical types,
-key layouts, other parallelism/version combinations, ordinary SQL and accelerated-connector
-workflows remain qualification work;
-the explicit adapter does not establish those submission forms.
+key layouts, other parallelism/version combinations and accelerated-connector workflows remain
+qualification work. The new ordinary-SQL binding and full-job controls above await execution.
 
 The controls retain a released MAP/linked-ADAPTIVE failure boundary: replacing an older input-key
 candidate moves the cursor; appending can overwrite a live sequence, and a later removal throws

@@ -3720,7 +3720,105 @@ final class StockCompiledPlanLowering {
       bindings.put(sink, new StockBinding(stock.getId(), stockUids.get(stock.getId()), null));
       return sink;
     }
-    return stock;
+    return lowerSinkMaterializer((StreamExecSink) stock, definition, mode, config);
+  }
+
+  private ExecNode<?> lowerSinkMaterializer(
+      StreamExecSink stock, JsonNode definition,
+      org.apache.flink.table.connector.ChangelogMode mode, Configuration config)
+      throws IOException {
+    if (!nativeKeyedState || !NativeConfig.operatorEnabled("sinkMaterializer")
+        || !definition.path("requireUpsertMaterialize").asBoolean()
+        || mode.containsOnly(org.apache.flink.types.RowKind.INSERT)
+        || Boolean.parseBoolean(config.getString("execution.checkpointing.unaligned.enabled", "false"))
+        || Boolean.parseBoolean(config.getString("table.exec.async-state.enabled", "false")))
+      return stock;
+    var original = sinkMaterializer(stock);
+    if (original == null
+        || !(original.getStateKeyType() instanceof org.apache.flink.table.runtime.typeutils.InternalTypeInfo)
+        || !(original.getOutputType() instanceof org.apache.flink.table.runtime.typeutils.InternalTypeInfo)
+        || !(original.getStateKeySelector() instanceof org.apache.flink.table.runtime.keyselector.RowDataKeySelector))
+      return stock;
+    var inputType = ((org.apache.flink.table.runtime.typeutils.InternalTypeInfo<?>)
+        original.getOutputType()).toRowType();
+    if (inputType.getChildren().stream().anyMatch(type -> !type.is(LogicalTypeRoot.BIGINT)))
+      return stock;
+    int[] upsertKeys = definition.path("inputUpsertKey").isArray()
+        ? reader.forType(int[].class).readValue(definition.path("inputUpsertKey")) : null;
+    if (upsertKeys != null && upsertKeys.length == 0) return stock;
+    var operator = ((SimpleOperatorFactory<?>) original.getOperatorFactory()).getOperator();
+    String strategy;
+    long ttl;
+    var strategyConfig = new Configuration();
+    if (operator.getClass() == org.apache.flink.table.runtime.operators.sink.SinkUpsertMaterializer.class) {
+      strategy = "LEGACY";
+      if (!Arrays.equals(upsertKeys, (int[]) releasedField(operator, "inputUpsertKey")))
+        return stock;
+      var retention = (org.apache.flink.api.common.state.StateTtlConfig)
+          releasedField(operator, "ttlConfig");
+      ttl = retention.isEnabled() ? FlinkPlanCompat.ttlMillis(retention) : 0;
+    } else {
+      var parameters = releasedField(operator, "stateParameters");
+      var stateConfig = releasedField(parameters, "config");
+      strategy = ((Enum<?>) releasedField(stateConfig, "strategy")).name();
+      if (!Set.of("VALUE", "MAP", "ADAPTIVE").contains(strategy)
+          || (boolean) releasedField(operator, "hasUpsertKey") != (upsertKeys != null))
+        return stock;
+      ttl = 0;
+      for (String bound : List.of("high", "low")) {
+        var value = (Long) releasedField(stateConfig,
+            bound.equals("high") ? "adaptiveHighThresholdOverride" : "adaptiveLowThresholdOverride");
+        if (value != null)
+          strategyConfig.setString(
+              "table.exec.sink.upsert-materialize-strategy.adaptive.threshold." + bound,
+              value.toString());
+      }
+    }
+    @SuppressWarnings("unchecked")
+    var keyInfo = (org.apache.flink.table.runtime.typeutils.InternalTypeInfo<RowData>)
+        original.getStateKeyType();
+    var contract = new tech.streamfusion.state.StockSinkMaterializerStateContract(
+        keyInfo.createSerializer(FlinkPlanCompat.serializerConfig(planner.getExecEnv().getConfig())),
+        keyInfo.toRowType(), inputType, upsertKeys,
+        tech.streamfusion.state.StockSinkMaterializerStateContract.Strategy.valueOf(strategy), ttl);
+    List<StateMetadata> metadata = definition.path("state").isArray()
+        ? Arrays.asList(reader.forType(StateMetadata[].class)
+            .<StateMetadata[]>readValue(definition.path("state"))) : null;
+    var runtime = new CanonicalSinkMaterializerRuntime(original, inputType,
+        stockMaximum(original), ttl, strategy, strategyConfig, contract);
+    var sink = new NativeCanonicalSinkExecNode(stock,
+        new ExecNodeContext(definition.path("type").asText()), mode, upsertKeys,
+        strategy, metadata, runtime);
+    connect(stock.getInputEdges().get(0).getSource(), sink);
+    bindings.put(sink, new StockBinding(stock.getId(), stockUids.get(stock.getId()), null));
+    return sink;
+  }
+
+  private OneInputTransformation<?, ?> sinkMaterializer(StreamExecSink stock) {
+    var originalNode = stockNodes.get(stock.getId());
+    var boundary = stockTransformations.get(originalNode.getInputEdges().get(0).getSource().getId());
+    var pending = new ArrayDeque<Transformation<?>>();
+    pending.add(stockTransformations.get(stock.getId()));
+    var visited = Collections.newSetFromMap(new IdentityHashMap<Transformation<?>, Boolean>());
+    OneInputTransformation<?, ?> found = null;
+    while (!pending.isEmpty()) {
+      var transformation = pending.removeFirst();
+      if (transformation == boundary || !visited.add(transformation)) continue;
+      if (transformation instanceof OneInputTransformation) {
+        var one = (OneInputTransformation<?, ?>) transformation;
+        if (one.getOperatorFactory() instanceof SimpleOperatorFactory) {
+          String name = ((SimpleOperatorFactory<?>) one.getOperatorFactory())
+              .getOperator().getClass().getName();
+          if (name.equals("org.apache.flink.table.runtime.operators.sink.SinkUpsertMaterializer")
+              || name.equals("org.apache.flink.table.runtime.operators.sink.SinkUpsertMaterializerV2")) {
+            if (found != null) return null;
+            found = one;
+          }
+        }
+      }
+      pending.addAll(transformation.getInputs());
+    }
+    return found;
   }
 
   private ExecNode<?> lowerSource(StreamExecTableSourceScan stock) throws IOException {
@@ -4381,8 +4479,21 @@ final class StockCompiledPlanLowering {
     var hashes = new StreamGraphHasherV2().traverseStreamGraphAndGenerateHashes(runtime);
     bindings.forEach(
         (node, binding) -> {
-          if (binding.contract == null) return;
-          Transformation<?> transformation = ((ExecNodeBase<?>) node).getTransformation();
+          StockStateContract contract = binding.contract;
+          Transformation<?> transformation;
+          AbstractNativeStatefulOperator<?> operator;
+          if (node instanceof CanonicalSinkIdentities) {
+            var sink = (CanonicalSinkIdentities) node;
+            var owner = sink.materializerTransformation();
+            transformation = owner;
+            contract = sink.materializerContract();
+            operator = (AbstractNativeStatefulOperator<?>)
+                ((SimpleOperatorFactory<?>) owner.getOperatorFactory()).getOperator();
+          } else {
+            if (contract == null) return;
+            transformation = ((ExecNodeBase<?>) node).getTransformation();
+            operator = nativeOperator(node);
+          }
           byte[] hash = hashes.get(transformation.getId());
           if (hash == null)
             throw new IllegalStateException("Native state owner has no physical primary identity");
@@ -4390,8 +4501,8 @@ final class StockCompiledPlanLowering {
               planner.getExecEnv(),
               planner.getTableConfig().getConfiguration(),
               new OperatorID(hash).toString(),
-              nativeOperator(node).getClass().getSimpleName(),
-              binding.contract,
+              operator.getClass().getSimpleName(),
+              contract,
               planner.getFlinkContext().getClassLoader());
         });
   }

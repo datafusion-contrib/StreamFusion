@@ -32,7 +32,7 @@ pages. Historical cohorts are not silently requalified against each newer librar
 | [Interval joins](../operators/joins/interval-join.md#complete-job-handoff-matrix) | Event/proctime state, four join kinds and selected complete-job/rescale matrices | Wider schemas, cleanup edges and remaining ordinary-SQL combinations |
 | [Temporal joins](../operators/joins/temporal-join.md#complete-job-handoff-matrix) | Qualified INNER/LEFT history/probe/timer state and complete jobs | Legacy proctime variant, wider schemas and commit-failure matrix |
 | [Event-time sort](../operators/event-time-sort.md#stock-compatible-canonical-interchange) | Automatic single ascending-rowtime contract and complete-job handoffs | Secondary sorting and wider schema/connector/failure/version matrices |
-| [Sink materialization](../operators/sink-upsert-materialize.md#canonical-interchange-qualification) | Explicit LEGACY contract on both releases; 2.2 VALUE/MAP/ADAPTIVE layouts | Automatic planner/connector binding, complete jobs, wider types and writer rescaling |
+| [Sink materialization](../operators/sink-upsert-materialize.md#canonical-interchange-qualification) | LEGACY contract on both releases; 2.2 VALUE/MAP/ADAPTIVE layouts; automatic BIGINT stock-sink binding awaiting qualification | Accelerated connector binding, wider types and complete new-job/writer-rescale qualification |
 | [Window joins](../operators/joins/window-join.md#stock-canonical-savepoint-interoperability) | Qualified event-time INNER/outer window layouts and complete jobs | Wider schemas/residuals and additional exchange/rescale combinations |
 
 ## Release parity and frozen scope
@@ -46,9 +46,10 @@ MAP and ADAPTIVE exist only in 2.2. Parity means the same admitted logical opera
 state to their own released stock runtime, including async native RocksDB capture. It does not
 claim a downgrade from a newer stock state format into an older release.
 
-Sink-materializer contracts require explicit attachment on both lines. An unused 2.2 runtime-node
-prototype was never called by the planner; earlier automatic-binding and complete-job claims on
-its operator page were stale. Automatic sink binding remains outside this frozen scope.
+The frozen sink-materializer cohort used explicit attachment on both lines. Resumed #569 work now
+connects automatic BIGINT stock-sink binding through the shared materializer hook; new planner and
+complete-job controls await the final six-hour testing window. Earlier automatic-job qualification
+claims remain withdrawn. This extension is separate from the historical frozen evidence.
 Captured JVM aggregate handlers already store their accumulators/views in released Flink managed
 state. Their bounded bundles/caches drain at the barrier, then Flink's own RocksDB snapshot and
 canonical writer handle that state; no native-state projection is needed.
@@ -2268,11 +2269,12 @@ Connector factories that depend on a custom in-memory catalog-table implementati
 the physical route. Stock plan serialization reconstructs a standard catalog table and cannot
 preserve arbitrary subclass fields; such factories are not admitted to portable-template lowering.
 
-Ordinary SQL that requires a stock sink-materialization helper retains its complete physical
-execution and native-checkpoint route. These ordinary helper identities are not yet qualified
-for canonical interchange; fresh planner display IDs must not make a working job fail during
-topology binding. Compiled-plan lowering also has no automatic materializer contract binding;
-explicit adapters have their own component qualification.
+Ordinary SQL using an unqualified accelerated connector retains its complete physical execution
+and native-checkpoint route, including its sink-materialization helper. The resumed automatic
+BIGINT stock-sink binding instead uses the portable stock template, captures the materializer's
+original identity and explicitly accounts for transpose/exchange helpers. That new implementation
+and its generated-ID/full-job controls await testing; the explicit adapters retain their separate
+historical component qualification.
 
 The shared two-phase JVM aggregate node also rebuilds its local/global state owners from the
 stock template. This keeps canonical identities, maximum parallelism and serializer contracts
