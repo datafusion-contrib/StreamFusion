@@ -18,6 +18,9 @@ on:
       metadata_regression:
         type: boolean
         default: false
+      kafka_rescale_regression:
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       line:
@@ -42,13 +45,17 @@ on:
         type: boolean
         default: false
         description: 'Run collector isolation and the complete append-arithmetic regression'
+      kafka_rescale_regression:
+        type: boolean
+        default: false
+        description: 'Run the released committer codec and all eight Kafka rescale providers'
 
 permissions:
   contents: read
   actions: read
 
 concurrency:
-  group: canonical-setup-${{ github.ref }}-${{ inputs.line }}-${{ inputs.jdk }}-${{ inputs.parent_jfr && 'jfr' || 'plain' }}-${{ inputs.metadata_regression }}
+  group: canonical-setup-${{ github.ref }}-${{ inputs.line }}-${{ inputs.jdk }}-${{ inputs.parent_jfr && 'jfr' || 'plain' }}-${{ inputs.metadata_regression }}-${{ inputs.kafka_rescale_regression }}
   cancel-in-progress: true
 
 env:
@@ -151,11 +158,20 @@ jobs:
           SF_CANONICAL_CDS_DIR: ${{ runner.temp }}/canonical-cds
           PARENT_JFR: ${{ inputs.parent_jfr }}
           METADATA_REGRESSION: ${{ inputs.metadata_regression }}
+          KAFKA_RESCALE_REGRESSION: ${{ inputs.kafka_rescale_regression }}
         run: |
           extra='-Xmx1g'
+          kafka_mode=checkpoint
+          kafka_smoke=true
           selection='CanonicalRegularJoinJobTest#regularStateContinuesAcrossCleanEngineProcesses+nativeRegularCheckpointResumesBeforeCanonicalSwitch,CanonicalManagedUdfDecimalKeyJobTest,CanonicalKafkaSourceJobTest,CanonicalKafkaSinkJobTest'
           if [[ "$METADATA_REGRESSION" == 'true' ]]; then
             selection='CanonicalWorkerCacheTest,CanonicalGroupArithmeticAppendJobTest'
+          fi
+          if [[ "$KAFKA_RESCALE_REGRESSION" == 'true' ]]; then
+            [[ "$METADATA_REGRESSION" != 'true' && "$FLINK_PROFILES" == 'canonical-kafka' ]]
+            selection='CanonicalWorkerCompatTest,CanonicalKafkaSinkJobTest'
+            kafka_mode=rescale
+            kafka_smoke=false
           fi
           if [[ "$PARENT_JFR" == 'true' ]]; then
             mkdir -p "$RUNNER_TEMP/parent-jfr"
@@ -173,8 +189,8 @@ jobs:
             -DskipTests=true -Dsf.runtime.tests.skip=false \
             "-Dtest=$selection" \
             -Dstreamfusion.test.regularJoinJobSmoke=true -Dsf.canonical.wideKeys.job.smoke=true \
-            -Dsf.canonical.kafka.mode=checkpoint -Dsf.canonical.kafka.sink.mode=checkpoint \
-            -Dsf.canonical.kafka.fixture.smoke=true \
+            -Dsf.canonical.kafka.mode=checkpoint "-Dsf.canonical.kafka.sink.mode=$kafka_mode" \
+            "-Dsf.canonical.kafka.fixture.smoke=$kafka_smoke" \
             -Dsf.testForks=4 -Dsf.testReuseForks=false "-Dsf.extraJvmArgs=$extra"
           python3 - <<'PY'
           from collections import Counter
@@ -182,12 +198,18 @@ jobs:
           import os
           import xml.etree.ElementTree as ET
           counts = Counter()
+          classes = {}
           for report in Path('streamfusion-runtime/target/surefire-reports').glob('TEST-*.xml'):
               suite = ET.parse(report).getroot()
               counts.update({key: int(suite.get(key, 0)) for key in ('tests', 'failures', 'errors', 'skipped')})
-          expected = 36 if os.environ['METADATA_REGRESSION'] == 'true' else 8
+              classes[suite.get('name')] = int(suite.get('tests', 0))
+          expected = 10 if os.environ['KAFKA_RESCALE_REGRESSION'] == 'true' else 36 if os.environ['METADATA_REGRESSION'] == 'true' else 8
           if counts != dict(tests=expected, failures=0, errors=0, skipped=0):
               raise SystemExit(f'Incomplete canonical setup probe: {counts}')
+          if os.environ['KAFKA_RESCALE_REGRESSION'] == 'true' and classes != {
+                  'org.example.canonical.CanonicalWorkerCompatTest': 2,
+                  'tech.streamfusion.CanonicalKafkaSinkJobTest': 8}:
+              raise SystemExit(f'Incomplete Kafka rescale/codec selection: {classes}')
           print(f'All {expected} selected canonical setup checks passed')
           PY
       - name: Summarize actual parent JVM CPU, allocation and wait samples
@@ -199,7 +221,7 @@ jobs:
           sys.path.insert(0, 'bin')
           import ci_jfr
           temporary = Path(os.environ['RUNNER_TEMP'])
-          expected = 2 if '${{ inputs.metadata_regression }}' == 'true' else 4
+          expected = 2 if '${{ inputs.metadata_regression }}' == 'true' or '${{ inputs.kafka_rescale_regression }}' == 'true' else 4
           summary = ci_jfr.summarize(list((temporary / 'parent-jfr').glob('*.jfr')),
                                      Path(os.environ['JAVA_HOME']), expected)
           (temporary / 'parent-profile.json').write_text(json.dumps(summary, indent=2) + '\n')

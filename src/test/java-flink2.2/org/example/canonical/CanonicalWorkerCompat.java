@@ -41,12 +41,44 @@ final class CanonicalWorkerCompat {
     };
   }
 
+  @SuppressWarnings("unchecked")
   static java.util.List<String> kafkaPendingCommittables(
       org.apache.flink.core.io.SimpleVersionedSerializer<?> serializer,
       byte[] bytes,
       int subtask,
-      int parallelism) {
-    return java.util.List.of();
+      int parallelism)
+      throws Exception {
+    var metrics =
+        org.apache.flink.runtime.metrics.groups.InternalSinkCommitterMetricGroup.wrap(
+            org.apache.flink.metrics.groups.UnregisteredMetricsGroup.createOperatorMetricGroup());
+    var collectorSerializer =
+        new org.apache.flink.streaming.runtime.operators.sink.committables
+            .CommittableCollectorSerializer<>(
+            (org.apache.flink.core.io.SimpleVersionedSerializer<Object>) serializer,
+            subtask,
+            parallelism,
+            metrics);
+    var collector =
+        org.apache.flink.core.io.SimpleVersionedSerialization.readVersionAndDeSerialize(
+            collectorSerializer, bytes);
+    var transactions = new java.util.ArrayList<String>();
+    // The released runtime exposes pending requests only within its package. Read the decoded copy.
+    for (var manager : collector.getCheckpointCommittablesUpTo(Long.MAX_VALUE)) {
+      var pending = manager.getClass().getDeclaredMethod("getPendingRequests");
+      pending.setAccessible(true);
+      try (var requests =
+          (java.util.stream.Stream<
+                  org.apache.flink.api.connector.sink2.Committer.CommitRequest<Object>>)
+              pending.invoke(manager)) {
+        requests.forEach(
+            request ->
+                transactions.add(
+                    ((org.apache.flink.connector.kafka.sink.KafkaCommittable)
+                            request.getCommittable())
+                        .getTransactionalId()));
+      }
+    }
+    return transactions;
   }
 
   static String kafkaFailureEvidence() {

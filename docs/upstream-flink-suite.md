@@ -1069,6 +1069,13 @@ loads models without executing a lifecycle or requiring unbuilt reactor artifact
 the line's pinned wrapper, profile and isolated repository. Downloads have bounded setup
 retries and a 60-second HTTP read inactivity timeout for both Resolver and Wagon; the original
 build and unchanged upstream test commands still run once. See [dependency setup](ci.md#maven-dependencies).
+
+Canonical Kafka savepoint inspection decodes committer-held transactions as well as writer state
+on Flink2.2, using the released collector and Kafka committable serializers. A rescale provider
+exposed an inspector that returned no committables without decoding the serialized state. Pure Java codec
+controls retain multiple checkpoints/writers and reject corrupted state; the focused rescale
+probe and full matrix retain the assertion requiring real pending transaction state, transaction
+ownership, exact offsets, native work and exactly-once output.
 The shared repository also contains the selected release's `paimon-vfs-hadoop` transitive
 provider graph, so Paimon connector compilation does not first fetch its Hadoop client graph
 after the dependency-preparation stage. Provider downloads use the same bounded setup retries.

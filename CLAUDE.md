@@ -39,6 +39,12 @@ leave other contributors' or sessions' runs alone. If a shared setup failure gua
 task's full campaign cannot pass, retain its failure evidence and stop its remaining work while
 fixing the setup in a short loop.
 
+Include other active repositories owned by the same account when investigating capacity:
+standard hosted concurrency is shared by the owner, not reserved for this fork. A repository's
+observed peak is not proof of its configured account limit. Keep the inner loop independent of
+bulk qualification: use local Java-only codec/setup regressions first, then a source-verified
+focused hosted check for Linux/native behavior, then one complete candidate campaign.
+
 Treat runner queueing as a scheduling problem. Measure dependency completion, actual job starts,
 active-run overlap and peak concurrent execution before adding shards. Report eligibility-to-start
 delay separately from build prerequisites. More jobs do not create more runner capacity. Group

@@ -23,6 +23,8 @@ It also covers demand-started test clusters, pure Java preparation alongside nat
 and smaller test-only native payloads while retaining full-symbol diagnostics.
 Upstream shared builds use the same ELF-verified stripping for their private native copies,
 retaining the original Cargo outputs and all Java payloads.
+Maven resolves ordinary release artifacts from Central before consulting the test-only vendor
+repository, avoiding unrelated vendor timeouts while retaining its required fallback.
 Canonical worker metadata snapshots also omit the bundled native copies already loaded through
 the worker's explicit library path, avoiding repeated packing and hashing in every parent fork.
 Archive generation uses G1 independently of the workers' measured collector settings to avoid

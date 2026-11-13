@@ -987,6 +987,32 @@ Canonical shards have a 180-minute limit; no test is removed to make a shard pas
 
 ### Runner queue discipline
 
+Use three feedback loops: local selection/codec/dependency checks in seconds, a focused
+Linux/native regression that includes the failing provider, and the complete matrices after
+the candidate is ready. Standard hosted concurrency is shared across an owner's repositories;
+inspect other active repositories as well as fork branches. GitHub documents 20 standard
+concurrent jobs on Free and 40 on Pro in its
+[Actions limits](https://docs.github.com/en/actions/reference/limits). Measure the actual account
+and competing work before choosing capacity; switching runner labels does not create capacity.
+The measured canonical jobs are mostly CPU busy during active work (median idle 6–10.5% in
+one median-length job per cohort), so doubling forks alone does not establish a 50% speedup.
+
+Declare Maven Central before the test-only Confluent repository. A successful JDK11 preparation
+in run 43350750332 repeatedly spent about a minute checking Confluent for artifacts already
+downloaded from Central, delaying the shared preparation barrier. Twenty-four local real-Maven
+cold/warm model-resolution invocations retain vendor-only fallback while eliminating all
+unnecessary vendor requests for Central parents under Central-first order. The regular repository
+regression uses the actual project ordering against two loopback servers. These are request-routing
+and fallback checks; they do not claim a measured full-CI improvement.
+
+The setup probe's `kafka_rescale_regression` input runs the two released-state codec controls and
+all eight Flink2.2 Kafka rescale providers, including ordinary SQL, both engine directions and
+both transaction naming strategies. It requires exactly those ten cases with zero skips/errors/
+failures. This isolates a full-matrix failure without rerunning unrelated jobs. The complete CI
+still runs every Kafka provider. Flink2.2 inventory reads both writer and committer state with
+the released collector serializer; the previous empty committer inspector could miss real pending
+transactions. The existing assertion requiring actual precommitted state stays in force.
+
 Use local selected tests and short repeated profiling loops while iterating. The optional
 `cluster-startup` hotspot mode runs the unchanged 20-case comparison on selected Flink lines
 and both pinned JDK releases. Locally, after compiling the requested line, use

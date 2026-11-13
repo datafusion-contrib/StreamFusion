@@ -331,6 +331,11 @@
     </dependencies>
 
     <repositories>
+        <repository>
+            <id>central</id>
+            <url>https://repo.maven.apache.org/maven2</url>
+            <snapshots><enabled>false</enabled></snapshots>
+        </repository>
         <!-- Hosts io.confluent:kafka-schema-registry-client, the transitive of the test-only
              flink-avro-confluent-registry baseline above (the shipped jar doesn't touch it). -->
         <repository>

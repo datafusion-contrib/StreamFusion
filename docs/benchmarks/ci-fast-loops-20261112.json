@@ -3463,5 +3463,611 @@
     "decision": "Deferred: stock-only local evidence, no native/Linux qualification or complete CI-cache-lifetime measurement. Keep the validated static archive path for this change; preserve the small probe patch and actual outcomes for a later focused experiment.",
     "probe_patch": ".claude/wontdos/ci-dynamic-cds.patch",
     "probe_patch_sha256": "7f3de433fc8ff46b047bd3b3cd0da04e49c2c1aa21a9684f012621e5a5b51ee7"
+  },
+  "inner_loop_followup": {
+    "maven_repository_order": {
+      "trials": [
+        {
+          "pair": 0,
+          "mode": "vendor_first",
+          "artifact": "central-parent",
+          "phase": "cold",
+          "elapsed_seconds": 1.084937792038545,
+          "exit_code": 0,
+          "requests": [
+            {
+              "repository": "confluent",
+              "artifact": "central-parent",
+              "path": "/confluent/test/repository/order/central-parent/1/central-parent-1.pom",
+              "status": 404
+            },
+            {
+              "repository": "central",
+              "artifact": "central-parent",
+              "path": "/central/test/repository/order/central-parent/1/central-parent-1.pom",
+              "status": 200
+            },
+            {
+              "repository": "central",
+              "artifact": "central-parent",
+              "path": "/central/test/repository/order/central-parent/1/central-parent-1.pom.sha1",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "pair": 0,
+          "mode": "vendor_first",
+          "artifact": "central-parent",
+          "phase": "warm",
+          "elapsed_seconds": 0.5803513750433922,
+          "exit_code": 0,
+          "requests": []
+        },
+        {
+          "pair": 0,
+          "mode": "vendor_first",
+          "artifact": "vendor-parent",
+          "phase": "cold",
+          "elapsed_seconds": 0.6593297909712419,
+          "exit_code": 0,
+          "requests": [
+            {
+              "repository": "confluent",
+              "artifact": "vendor-parent",
+              "path": "/confluent/test/repository/order/vendor-parent/1/vendor-parent-1.pom",
+              "status": 200
+            },
+            {
+              "repository": "confluent",
+              "artifact": "vendor-parent",
+              "path": "/confluent/test/repository/order/vendor-parent/1/vendor-parent-1.pom.sha1",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "pair": 0,
+          "mode": "vendor_first",
+          "artifact": "vendor-parent",
+          "phase": "warm",
+          "elapsed_seconds": 0.5635057910112664,
+          "exit_code": 0,
+          "requests": []
+        },
+        {
+          "pair": 0,
+          "mode": "central_first",
+          "artifact": "central-parent",
+          "phase": "cold",
+          "elapsed_seconds": 0.6607119170948863,
+          "exit_code": 0,
+          "requests": [
+            {
+              "repository": "central",
+              "artifact": "central-parent",
+              "path": "/central/test/repository/order/central-parent/1/central-parent-1.pom",
+              "status": 200
+            },
+            {
+              "repository": "central",
+              "artifact": "central-parent",
+              "path": "/central/test/repository/order/central-parent/1/central-parent-1.pom.sha1",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "pair": 0,
+          "mode": "central_first",
+          "artifact": "central-parent",
+          "phase": "warm",
+          "elapsed_seconds": 0.5692808750318363,
+          "exit_code": 0,
+          "requests": []
+        },
+        {
+          "pair": 0,
+          "mode": "central_first",
+          "artifact": "vendor-parent",
+          "phase": "cold",
+          "elapsed_seconds": 0.6588784999912605,
+          "exit_code": 0,
+          "requests": [
+            {
+              "repository": "central",
+              "artifact": "vendor-parent",
+              "path": "/central/test/repository/order/vendor-parent/1/vendor-parent-1.pom",
+              "status": 404
+            },
+            {
+              "repository": "confluent",
+              "artifact": "vendor-parent",
+              "path": "/confluent/test/repository/order/vendor-parent/1/vendor-parent-1.pom",
+              "status": 200
+            },
+            {
+              "repository": "confluent",
+              "artifact": "vendor-parent",
+              "path": "/confluent/test/repository/order/vendor-parent/1/vendor-parent-1.pom.sha1",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "pair": 0,
+          "mode": "central_first",
+          "artifact": "vendor-parent",
+          "phase": "warm",
+          "elapsed_seconds": 0.5918495840160176,
+          "exit_code": 0,
+          "requests": []
+        },
+        {
+          "pair": 1,
+          "mode": "central_first",
+          "artifact": "central-parent",
+          "phase": "cold",
+          "elapsed_seconds": 0.6648289159638807,
+          "exit_code": 0,
+          "requests": [
+            {
+              "repository": "central",
+              "artifact": "central-parent",
+              "path": "/central/test/repository/order/central-parent/1/central-parent-1.pom",
+              "status": 200
+            },
+            {
+              "repository": "central",
+              "artifact": "central-parent",
+              "path": "/central/test/repository/order/central-parent/1/central-parent-1.pom.sha1",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "mode": "central_first",
+          "artifact": "central-parent",
+          "phase": "warm",
+          "elapsed_seconds": 0.5875491669867188,
+          "exit_code": 0,
+          "requests": []
+        },
+        {
+          "pair": 1,
+          "mode": "central_first",
+          "artifact": "vendor-parent",
+          "phase": "cold",
+          "elapsed_seconds": 0.6627274169586599,
+          "exit_code": 0,
+          "requests": [
+            {
+              "repository": "central",
+              "artifact": "vendor-parent",
+              "path": "/central/test/repository/order/vendor-parent/1/vendor-parent-1.pom",
+              "status": 404
+            },
+            {
+              "repository": "confluent",
+              "artifact": "vendor-parent",
+              "path": "/confluent/test/repository/order/vendor-parent/1/vendor-parent-1.pom",
+              "status": 200
+            },
+            {
+              "repository": "confluent",
+              "artifact": "vendor-parent",
+              "path": "/confluent/test/repository/order/vendor-parent/1/vendor-parent-1.pom.sha1",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "mode": "central_first",
+          "artifact": "vendor-parent",
+          "phase": "warm",
+          "elapsed_seconds": 0.5722532499348745,
+          "exit_code": 0,
+          "requests": []
+        },
+        {
+          "pair": 1,
+          "mode": "vendor_first",
+          "artifact": "central-parent",
+          "phase": "cold",
+          "elapsed_seconds": 0.9212309579597786,
+          "exit_code": 0,
+          "requests": [
+            {
+              "repository": "confluent",
+              "artifact": "central-parent",
+              "path": "/confluent/test/repository/order/central-parent/1/central-parent-1.pom",
+              "status": 404
+            },
+            {
+              "repository": "central",
+              "artifact": "central-parent",
+              "path": "/central/test/repository/order/central-parent/1/central-parent-1.pom",
+              "status": 200
+            },
+            {
+              "repository": "central",
+              "artifact": "central-parent",
+              "path": "/central/test/repository/order/central-parent/1/central-parent-1.pom.sha1",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "mode": "vendor_first",
+          "artifact": "central-parent",
+          "phase": "warm",
+          "elapsed_seconds": 0.5669055840699002,
+          "exit_code": 0,
+          "requests": []
+        },
+        {
+          "pair": 1,
+          "mode": "vendor_first",
+          "artifact": "vendor-parent",
+          "phase": "cold",
+          "elapsed_seconds": 0.6650709999958053,
+          "exit_code": 0,
+          "requests": [
+            {
+              "repository": "confluent",
+              "artifact": "vendor-parent",
+              "path": "/confluent/test/repository/order/vendor-parent/1/vendor-parent-1.pom",
+              "status": 200
+            },
+            {
+              "repository": "confluent",
+              "artifact": "vendor-parent",
+              "path": "/confluent/test/repository/order/vendor-parent/1/vendor-parent-1.pom.sha1",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "mode": "vendor_first",
+          "artifact": "vendor-parent",
+          "phase": "warm",
+          "elapsed_seconds": 0.5713342089438811,
+          "exit_code": 0,
+          "requests": []
+        },
+        {
+          "pair": 2,
+          "mode": "vendor_first",
+          "artifact": "central-parent",
+          "phase": "cold",
+          "elapsed_seconds": 0.9140150409657508,
+          "exit_code": 0,
+          "requests": [
+            {
+              "repository": "confluent",
+              "artifact": "central-parent",
+              "path": "/confluent/test/repository/order/central-parent/1/central-parent-1.pom",
+              "status": 404
+            },
+            {
+              "repository": "central",
+              "artifact": "central-parent",
+              "path": "/central/test/repository/order/central-parent/1/central-parent-1.pom",
+              "status": 200
+            },
+            {
+              "repository": "central",
+              "artifact": "central-parent",
+              "path": "/central/test/repository/order/central-parent/1/central-parent-1.pom.sha1",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "mode": "vendor_first",
+          "artifact": "central-parent",
+          "phase": "warm",
+          "elapsed_seconds": 0.5845976669806987,
+          "exit_code": 0,
+          "requests": []
+        },
+        {
+          "pair": 2,
+          "mode": "vendor_first",
+          "artifact": "vendor-parent",
+          "phase": "cold",
+          "elapsed_seconds": 0.6556447909679264,
+          "exit_code": 0,
+          "requests": [
+            {
+              "repository": "confluent",
+              "artifact": "vendor-parent",
+              "path": "/confluent/test/repository/order/vendor-parent/1/vendor-parent-1.pom",
+              "status": 200
+            },
+            {
+              "repository": "confluent",
+              "artifact": "vendor-parent",
+              "path": "/confluent/test/repository/order/vendor-parent/1/vendor-parent-1.pom.sha1",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "mode": "vendor_first",
+          "artifact": "vendor-parent",
+          "phase": "warm",
+          "elapsed_seconds": 0.581948334001936,
+          "exit_code": 0,
+          "requests": []
+        },
+        {
+          "pair": 2,
+          "mode": "central_first",
+          "artifact": "central-parent",
+          "phase": "cold",
+          "elapsed_seconds": 0.6603571249870583,
+          "exit_code": 0,
+          "requests": [
+            {
+              "repository": "central",
+              "artifact": "central-parent",
+              "path": "/central/test/repository/order/central-parent/1/central-parent-1.pom",
+              "status": 200
+            },
+            {
+              "repository": "central",
+              "artifact": "central-parent",
+              "path": "/central/test/repository/order/central-parent/1/central-parent-1.pom.sha1",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "mode": "central_first",
+          "artifact": "central-parent",
+          "phase": "warm",
+          "elapsed_seconds": 0.5685543329454958,
+          "exit_code": 0,
+          "requests": []
+        },
+        {
+          "pair": 2,
+          "mode": "central_first",
+          "artifact": "vendor-parent",
+          "phase": "cold",
+          "elapsed_seconds": 0.6697018329286948,
+          "exit_code": 0,
+          "requests": [
+            {
+              "repository": "central",
+              "artifact": "vendor-parent",
+              "path": "/central/test/repository/order/vendor-parent/1/vendor-parent-1.pom",
+              "status": 404
+            },
+            {
+              "repository": "confluent",
+              "artifact": "vendor-parent",
+              "path": "/confluent/test/repository/order/vendor-parent/1/vendor-parent-1.pom",
+              "status": 200
+            },
+            {
+              "repository": "confluent",
+              "artifact": "vendor-parent",
+              "path": "/confluent/test/repository/order/vendor-parent/1/vendor-parent-1.pom.sha1",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "mode": "central_first",
+          "artifact": "vendor-parent",
+          "phase": "warm",
+          "elapsed_seconds": 0.5941720829578117,
+          "exit_code": 0,
+          "requests": []
+        }
+      ],
+      "all_24_invocations_succeeded": true,
+      "wrong_vendor_requests_for_central": {
+        "vendor_first": 3,
+        "central_first": 0
+      },
+      "limits": "Controlled real-Maven parent-model resolution with two loopback repositories, tiny private local caches and simulated200ms vendor not-found latency. Measures routing and fallback semantics, not a CI speedup. Cold/warm release resolution retains-U; vendor-only parent must still resolve."
+    },
+    "canonical_runner_utilization": {
+      "source_run": 43324959481,
+      "head": "af5ab61cbb531f24ea3ace318de1d89ea121ded9",
+      "jobs": [
+        {
+          "job": 131556234990,
+          "name": "Canonical savepoint jobs (Flink 1.18, JDK 11) (shard 10)",
+          "execution_seconds": 2098.0,
+          "samples_30_seconds": 67,
+          "cpu_idle_percent_median": 6,
+          "cpu_idle_percent_mean": 14.955223880597014,
+          "cpu_user_percent_mean": 75.34328358208955,
+          "cpu_system_percent_mean": 9.671641791044776,
+          "cpu_io_wait_percent_mean": 0.014925373134328358,
+          "free_memory_kib_min": 7403380,
+          "swap_used_kib_max": 0,
+          "run_queue_median": 6
+        },
+        {
+          "job": 131556234534,
+          "name": "Canonical savepoint jobs (Flink 1.18, JDK 17) (shard 3)",
+          "execution_seconds": 1619.0,
+          "samples_30_seconds": 52,
+          "cpu_idle_percent_median": 10.0,
+          "cpu_idle_percent_mean": 23.173076923076923,
+          "cpu_user_percent_mean": 64.40384615384616,
+          "cpu_system_percent_mean": 11.557692307692308,
+          "cpu_io_wait_percent_mean": 0.8846153846153846,
+          "free_memory_kib_min": 7674652,
+          "swap_used_kib_max": 0,
+          "run_queue_median": 6.0
+        },
+        {
+          "job": 131556234360,
+          "name": "Canonical savepoint jobs (Flink 2.2, JDK 11) (shard 1)",
+          "execution_seconds": 2461.0,
+          "samples_30_seconds": 80,
+          "cpu_idle_percent_median": 10.5,
+          "cpu_idle_percent_mean": 27.95,
+          "cpu_user_percent_mean": 63.9375,
+          "cpu_system_percent_mean": 8.0125,
+          "cpu_io_wait_percent_mean": 0.075,
+          "free_memory_kib_min": 6841812,
+          "swap_used_kib_max": 0,
+          "run_queue_median": 4.0
+        },
+        {
+          "job": 131556234131,
+          "name": "Canonical savepoint jobs (Flink 2.2, JDK 17) (shard 13)",
+          "execution_seconds": 1833.0,
+          "samples_30_seconds": 59,
+          "cpu_idle_percent_median": 6,
+          "cpu_idle_percent_mean": 18.864406779661017,
+          "cpu_user_percent_mean": 72.08474576271186,
+          "cpu_system_percent_mean": 8.813559322033898,
+          "cpu_io_wait_percent_mean": 0.1016949152542373,
+          "free_memory_kib_min": 7793480,
+          "swap_used_kib_max": 0,
+          "run_queue_median": 7
+        }
+      ],
+      "limits": "One median-execution job per cohort, with first vmstat average-since-boot row dropped.30s interval samples include within-job tail/idle/setup; they do not measure an isolated case or establish a fork-count speedup."
+    },
+    "prep_dependency_delay": {
+      "run": 43350750332,
+      "head": "3859e0ef7fecb8b184f32943081fd445b6228d30",
+      "job": 131641000081,
+      "job_name": "Prepare canonical Java Flink2.2/JDK11",
+      "largest_log_gaps": [
+        {
+          "seconds": 61.395648,
+          "before": "[WARNING] commons-codec:commons-codec:pom:1.17.0 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution",
+          "after": "[WARNING] org.apache.maven.shared:maven-invoker:jar:3.3.0 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution"
+        },
+        {
+          "seconds": 60.391401,
+          "before": "[WARNING] com.thoughtworks.qdox:qdox:pom:2.0.3 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution",
+          "after": "[WARNING] org.apache.maven.shared:maven-shared-incremental:jar:1.1 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution"
+        },
+        {
+          "seconds": 60.368826,
+          "before": "[WARNING] org.codehaus.plexus:plexus:pom:8 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution",
+          "after": "[WARNING] org.apache-extras.beanshell:bsh:jar:2.0b6 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution"
+        },
+        {
+          "seconds": 60.07758,
+          "before": "[WARNING] org.apache.maven:maven-parent:pom:23 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution",
+          "after": "[WARNING] com.thoughtworks.qdox:qdox:pom:2.0.3 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution"
+        },
+        {
+          "seconds": 59.457154,
+          "before": "[WARNING] org.junit:junit-bom:pom:5.8.0-M1 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution",
+          "after": "[WARNING] commons-codec:commons-codec:pom:1.17.0 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution"
+        },
+        {
+          "seconds": 56.859175,
+          "before": "[WARNING] org.apache.maven.wagon:wagon-provider-api:pom:3.0.0 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution",
+          "after": "[WARNING] org.slf4j:slf4j-api:pom:1.7.25 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution"
+        },
+        {
+          "seconds": 56.563543,
+          "before": "[WARNING] org.apache:apache:pom:17 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution",
+          "after": "[WARNING] com.vladsch.flexmark:flexmark-util-collection:pom:0.62.2 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution"
+        },
+        {
+          "seconds": 33.20485,
+          "before": "[WARNING] com.nimbusds:nimbus-jose-jwt:pom:3.10 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution",
+          "after": "[WARNING] org.junit.jupiter:junit-jupiter:jar:5.10.2 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution"
+        },
+        {
+          "seconds": 32.431888,
+          "before": "[WARNING] org.apache.maven.surefire:surefire-logger-api:pom:3.2.5 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution",
+          "after": "[WARNING] org.apache.maven.shared:maven-common-artifact-filters:pom:3.1.1 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution"
+        },
+        {
+          "seconds": 19.143641,
+          "before": "[WARNING] org.apache.hadoop.thirdparty:hadoop-shaded-protobuf_3_7:pom:1.1.1 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution",
+          "after": "Resolving Maven dependencies (attempt 2/3)"
+        }
+      ],
+      "limits": "Gaps between emitted job-log lines, not CPU or exclusive network attribution; job completed successfully."
+    },
+    "owner_queue_visibility": {
+      "visible_owned_repositories": 59,
+      "recently_pushed_repositories_checked": 1,
+      "active_runs": [
+        {
+          "repo": "StreamFusion-contrib",
+          "id": 43350750332,
+          "name": "CI",
+          "status": "in_progress"
+        }
+      ],
+      "limits": "Only visible nonarchived repositories pushed in last7days, first100 owned repositories; cannot rule out hidden/private or older scheduled activity."
+    },
+    "github_limits_source": "https://docs.github.com/en/actions/reference/limits",
+    "account_plan": "Authenticated user API did not expose the plan; observed20 concurrent jobs is not proof of configured limit. Optional user clarification requested.",
+    "maven_repository_regressions": {
+      "tests": 9,
+      "elapsed_seconds": 9.46,
+      "success": true,
+      "includes": "Actual project repository ordering with cold/warm Central and vendor-only loopback parent resolution."
+    }
+  },
+  "integrated_3859_failure": {
+    "run": 43350750332,
+    "head": "3859e0ef7fecb8b184f32943081fd445b6228d30",
+    "job": 131646312079,
+    "class": "tech.streamfusion.CanonicalKafkaSinkJobTest",
+    "invocation": "preservesExactlyOnceSinkEffectsAcrossRepeatedCanonicalSwitches(String, boolean, boolean, String)[26]",
+    "provider": {
+      "mode": "rescale",
+      "ordinary": true,
+      "nativeFirst": false,
+      "naming": "pooling"
+    },
+    "failure": "Existing assertion requires real precommitted state; writer inventory reported0 and Flink2.2 committer inspector returned an unconditional empty list. Actual committer bytes were never inspected. No assertion or provider removed.",
+    "shard_outcomes": {
+      "tests": 396,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "upstream_run": 43350752646,
+    "upstream_conclusion": "success",
+    "docs_run": 43350754874,
+    "docs_conclusion": "success",
+    "remaining_ci_action": "Canceled only this task CI after concrete failure required a repair, freeing capacity for the10-case focused regression. Failed qualification is not a successful timing comparison.",
+    "repair_status": "Released Flink2.2 collector/Kafka serializers now inspect every pending request across checkpoints/writers. Two codec controls pass locally on JDK17 in0.129s excluding build; hosted rescale and full matrices still required.",
+    "local_codec_validation": {
+      "jdk17": {
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "junit_elapsed_seconds": 0.129
+      },
+      "jdk11": {
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "junit_elapsed_seconds": 0.162
+      },
+      "scope": "Actual released serializers, pending transactions across2checkpoints/3writers, empty and invalid-version states. Local Java-only runs disable native leak auto-extension because no native JNI is used; hosted/full workflows retain it."
+    }
   }
 }

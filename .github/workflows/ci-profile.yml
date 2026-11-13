@@ -24,6 +24,10 @@ on:
         description: 'Check metadata collector isolation and complete append arithmetic'
         type: boolean
         default: false
+      kafka_rescale_regression:
+        description: 'Check released committer-state decoding and all Kafka rescale providers'
+        type: boolean
+        default: false
       flink_line:
         description: 'Flink line for multi-release diagnostics'
         type: choice
@@ -119,6 +123,7 @@ jobs:
       native_run: ${{ inputs.native_run }}
       parent_jfr: ${{ inputs.parent_jfr }}
       metadata_regression: ${{ inputs.metadata_regression }}
+      kafka_rescale_regression: ${{ inputs.kafka_rescale_regression }}
 
   native:
     if: ${{ inputs.suite != 'runtime-hotspots' && inputs.suite != 'canonical-setup' && inputs.suite != 'lake-setup' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
