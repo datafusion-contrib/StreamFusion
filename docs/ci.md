@@ -263,11 +263,16 @@ architectures, every staged library and propagation of native build failures. Th
 repeated compiler invocations; hosted elapsed-time improvement still needs measurement.
 
 Ordinary CI builds all workspace debug native libraries once in a dedicated Ubuntu 24.04
-job. That job verifies the package dependencies and JNI export boundaries, then uploads only
-the shared libraries as a commit-specific artifact. The eight Java and eleven lake-module
-test jobs download those libraries into `native/target/debug` and pass
+job. That job verifies the package dependencies and JNI export boundaries. The original
+`debug-native-SHA` artifact retains full symbols for diagnostics. Test consumers use
+`test-native-SHA`, containing the same libraries after `strip --strip-debug`; canonical
+consumers use `canonical-native-SHA`, containing core, JSON and Kafka libraries. Staging
+preserves the Cargo outputs and cache, verifies ELF identity and every allocated section's
+type, flags, virtual address, size and bytes, and retains static function names. The producer
+removes its staged copies after upload. Consumers download their payload into `native/target/debug` and pass
 `-Dnative.build.skip=true` to Maven. Both JDKs and Flink lines exercise the same native build;
-each consumer still compiles its selected Java reactor and runs its existing tests. A failed
+runtime and lake consumers compile their selected Java reactors, while canonical consumers
+restore their compiled Java inputs. Every consumer runs its existing tests. A failed
 producer blocks the consumers and fails the aggregate CI gate. Consumers have no fallback to
 an older cache or a local native rebuild.
 
@@ -276,6 +281,13 @@ libraries rather than restoring Cargo intermediates or installing a Rust toolcha
 test job separately compiles its test harnesses and checks every tagged native package in
 isolation once, preserving the checks for dependencies accidentally supplied by the workspace.
 The native build retains Cargo's `--timings` report as a separate diagnostic artifact.
+That artifact also records original and staged library sizes. A real Linux amd64 staging
+probe retained all allocated sections across all 12 libraries while reducing uncompressed
+bytes from 1,814,625,232 to 755,022,680. Independent DEFLATE level-1 payload totals fall from
+405,636,999 to 173,982,675 bytes; the canonical three-library subset totals 73,386,844 bytes.
+These are file-size measurements rather than whole-workflow timing. Full-symbol diagnostics
+and release libraries retain their existing behavior. See the
+[structured probe](benchmarks/ci-fast-loops-20261112.json) for each library and limits.
 The Rust test job reads that same dependency cache instead of maintaining another copy;
 it still compiles and runs its own harnesses and standalone package checks.
 
@@ -285,8 +297,23 @@ while compiling tests; the runner itself crashed before it could upload a test r
 The preflight removes only unused hosted-runner toolchains and fails early if it cannot
 provide enough initial capacity.
 
-Optimized image builds and the separately prepared upstream
-Flink suite keep their own build configurations. The debug artifact is scoped to its current
+Upstream Flink preparation restores the same `debug-jvm` dependency cache, at the same
+`native/target` path and with matching Rust environment settings, on both Flink lines.
+Cargo still builds all current workspace libraries from each suite's isolated source checkout.
+Only the dynamic libraries reported by that successful Cargo invocation are staged into
+the suite build; cached extra libraries cannot enter its artifact. Upstream preparation
+does not write another cache. This removes two redundant dependency-cache copies without
+sharing test outcomes or changing native package/feature selection. The ordinary native
+producer remains the cache writer. Optimized image builds keep their release configuration.
+The November 12 cache snapshot recorded two 1.26 GB upstream entries with the same key but
+different versions, in addition to the ordinary debug entry. Each line cached a different
+target path, and the upstream environment also omitted the producer's `RUST_BACKTRACE`.
+Normalizing those paths and settings removes about 2.53 GB of redundant cache candidates.
+This is projected storage avoidance, not measured reclaimed space or an elapsed-time gain.
+GitHub includes cached paths in [cache version matching](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching)
+and evicts older entries when the repository's cache budget fills. Default-branch retention
+still depends on that budget; matching caches never replace current-source compilation.
+The debug artifact is scoped to its current
 workflow run and commit; it is not a release payload or a cache of test outcomes. This replaces
 the independent debug library builds with one without changing test selection or test concurrency.
 Actual elapsed-time savings must be measured in GitHub Actions after this change runs.
@@ -309,6 +336,18 @@ toolchain prevents those image updates from invalidating the pinned build's cach
 compiler-option, target and actual project-toolchain changes still affect the cache keys.
 
 ## Connector and format test coverage
+
+Lake coverage uses nine jobs for the same thirteen module/format configurations. Each
+Paimon Flink/JDK pair resolves dependencies and compiles once, then runs the complete
+Parquet and ORC suites in separate Maven/Surefire processes with distinct report suffixes.
+The precompiled profile skips repeat Java compilation and javadoc while preserving resources,
+test discovery and every assertion. Both formats execute even if one fails; either failure
+fails the job. A failed preparation stops before either format. Outcome validation rejects
+empty, wholly skipped or malformed reports and clears only prior reports with its own suffix.
+The Flink 2.2/JDK 17 upstream compaction checks remain required after the paired formats.
+Other lake configurations retain their existing commands. Real Maven regressions exercise
+both formats and prove a failed first format does not suppress the second; a matrix contract
+compares all thirteen expanded configurations with the original coverage.
 
 The full Java suite includes every connector and format tag on both Flink lines and both
 JDKs. Its default Surefire execution runs untagged tests and every tag except ORC; a second
@@ -339,7 +378,7 @@ operators, embedded clusters and the Maven process on hosted runners.
 Savepoint CI uses four fresh 1 GiB parent forks per job, each retaining its existing fresh
 1 GiB engine worker for a handoff stage. The configured parent heaps total 4 GiB, with
 8 GiB of combined parent/worker heaps when all four workers run. The required matrix
-remains 32 jobs; first-tier compilation, immutable metadata sharing and fresh engine
+contains 40 jobs across both Flink lines and JDKs; first-tier compilation, immutable metadata sharing and fresh engine
 process boundaries remain in place. The test step records processors, memory and `vmstat`.
 
 Released Flink MiniClusters keep completed execution graphs and serialized results in an
@@ -477,6 +516,12 @@ Result reuse does not change the job matrix or test selections.
 ## MiniCluster reuse within a test JVM
 
 A JUnit launcher-session listener owns the automatic StreamFusion test MiniCluster.
+The shared cluster starts when a test first requests an execution environment. Pure unit,
+operator-harness and isolated-worker driver tests keep the normal memory budget and leak
+checks without starting an unused parent cluster. The deferred factory starts the released
+MiniCluster resource, installs Flink's ordinary factories, then repeats the environment
+lookup with the original configuration. Flink 1.18 defers both batch and streaming contexts.
+`-Dsf.test.lazyCluster=false` retains eager startup for controlled comparisons.
 Every test class in the same Surefire fork reuses that cluster, including when Surefire
 launches a separate JUnit root for each class. Each test still gets a fresh
 execution-environment binding, which is cleared afterwards; Flink 1.18 also binds and clears
@@ -500,6 +545,23 @@ The regression uses separate JUnit roots in one launcher session, matching reuse
 forks; root ownership alone would restart the cluster between those classes. The fixture
 continues to use Flink's released MiniCluster resource and test-environment APIs
 on both supported lines.
+An additional regression proves a pure test keeps its memory budget without a running
+cluster. The Flink 1.18 adapter also executes batch jobs after batch-first and stream-first
+environment lookups.
+
+Three alternating local comparisons retain all 20 selected unit/operator cases, four fresh
+2 GiB forks and first-tier compilation. Flink 2.2/JDK 17 elapsed medians fall from 4.016 to
+3.435 seconds (14.5%), with 39.5% less child CPU. Flink 1.18/JDK 11 falls from 4.530 to
+3.794 seconds (16.2%), with 38.5% less child CPU. Each eager trial starts three parent
+clusters; each lazy trial starts zero. A separate two-case canonical continuation comparison
+with prepared metadata archives falls from 24.758 to 24.112 seconds (2.6%), with 4.2% less
+CPU. These are selected local comparisons, not whole-CI gains. The
+[structured trials](benchmarks/ci-fast-loops-20261112.json) retain every measurement and limit.
+
+The focused Linux run 43225947903 passes all four Flink/JDK cohorts: 480 timed invocations
+and 320 lifecycle, native-memory and SQL controls, with no failures or skips. Across those
+cohorts, eager-to-lazy unit/operator medians improve 24.2–29.0% elapsed and 35.5–41.2% CPU.
+These hosted selected-workload results still do not establish a whole-CI speedup.
 
 A local paired check of 66 tests in 19 lightweight operator classes reduced the Surefire
 phase from 5.514 s to 4.344 s with one fork and identical release libraries. A two-fork
@@ -652,6 +714,103 @@ yet available as a released CI fixture.
 
 ## Complete canonical job matrix
 
+Canonical Java compilation runs once for each Flink/JDK pair, in four required preparation
+jobs. These jobs depend on the change plan and start alongside native work; compilation
+does not download or wait for a native library. They retain Maven dependency resolution,
+Java and protobuf compilation and javadoc checks, with test execution deferred.
+The 40 consumer shards require both Java preparation and the native producer. The first
+shard in each Flink/JDK cohort executes the reactor dependencies' test lifecycle; the
+remaining shards skip dependency tests. Every shard runs its complete selected runtime
+inventory. This keeps once-per-cohort dependency-test coverage without delaying pure
+compilation behind the runtime queue.
+
+Each preparation uploads a one-day, exact-commit archive of the runtime, core and JSON
+compiled classes, non-native resources and test classes. Native libraries are supplied by
+the separate exact-commit native artifact and copied by the normal resource lifecycle;
+packaged reactor JARs are regenerated by that lifecycle rather than transferred twice.
+The archive excludes Surefire reports,
+checkpoints, diagnostics and other execution state. Consumers verify its checksum, source
+commit, Flink line, complete Java version, operating system and architecture before restoring
+into fresh output directories. They download the same commit's canonical native payload,
+resolve dependencies with bounded retries, discover their complete compiled canonical
+inventory, and create independent workers, archives and application state.
+Both preparation and consumer jobs pin the same complete Temurin release (11.0.32+9 or
+17.0.21+9). Floating major-version selection previously chose 11.0.33+10 for a producer
+and 11.0.32+1 for consumers on different runner images; the identity guard correctly
+rejected the transfer. Version mismatches report both identities and remain errors.
+The initial 11.0.32+1 pin existed on cached runner images but was absent from the vendor's
+remote release list. The current pin uses the [published Temurin 11.0.32+9 release](https://github.com/adoptium/temurin11-binaries/releases/tag/jdk-11.0.32%2B9).
+The focused preparation diagnostic resolves the pinned version remotely even when a runner
+already has a cached JDK, preventing a cache-only build from passing that setup check.
+The [short-loop measurement](benchmarks/ci-fast-loops-20261112.json) inspected the
+Flink 2.2/JDK 11 artifact from run 43203430658: 811,024,598 compressed bytes contained
+1,318,153,104 uncompressed bytes of native libraries plus 460,739,751 bytes of packaged
+JARs, compared with 28,625,775 bytes of classes and other resources. Repacking only the
+shared Java inputs at gzip level 1 produced 10,387,432 bytes, a 98.7% transfer reduction
+for that artifact. This measures archive size; it does not establish whole-CI savings.
+
+Consumers keep Maven's `test` lifecycle so uninstalled reactor dependencies resolve correctly.
+The explicit `sf.ci.precompiledJava=true` profile skips only Java compilation and the already
+completed javadoc check. Surefire remains active through `sf.runtime.tests.skip=false`;
+reactor dependency tests run in shard 1 for the same Flink/JDK pair. Protobuf/resource
+preparation and both Surefire executions retain their usual lifecycle behavior. Ordinary
+local builds and the other CI jobs do not activate this profile. A real three-module Maven
+regression transfers compiled outputs to a fresh consumer, verifies reactor dependency
+resolution and parameterized cases, and requires an intentional selected failure to fail Maven.
+The regression compiles without any native library, checks the first consumer executes
+dependency and runtime tests, then verifies a later consumer skips dependency tests while
+still running every parameterized runtime case.
+
+The [retained baseline](benchmarks/ci-profile-20261112.json) records every canonical class's
+outcome counts, each cohort's complete inventory and invocation digest, and Actions phase costs.
+The preceding [passing CI run](https://github.com/jordepic/StreamFusion-contrib/actions/runs/43116124202)
+spent 128.6 runner-minutes on the initial compile/partition step across 64 canonical shards.
+Sharing compilation replaces 64 preparations with four; archive preparation, transfer and
+remaining lifecycle costs still require hosted measurement before claiming elapsed-time savings.
+
+The [complete shared-compilation candidate](benchmarks/ci-profile-20261112.json) passed all
+100 CI jobs and all 19 upstream checks. Every canonical cohort retained its 120 selected
+classes, 118 reported suites, exact invocation identities and outcomes: 3,592 cases on
+Flink 1.18 and 3,676 on 2.2 per JDK, with no skips or failures. Initial compilation and
+packing used 8.6 runner-minutes instead of the reference's 128.6-minute compile/partition
+phase, with another 13.7 minutes for consumer extraction. Whole CI used 57.64 runner-hours
+versus 56.92 (1.3% more) and took 236.9 minutes versus 217.2. Higher JDK 11 test execution
+time offset setup savings. These cross-run observations include cold native setup, runner
+variation and competing diagnostics; they establish no whole-CI speedup from compilation
+reuse alone. The combined candidate must qualify the collector and cache changes below.
+
+JDK 11 canonical jobs use Serial GC for Maven, fresh Surefire parents and their fresh engine
+workers. The separate CDS generator uses G1: the first combined candidate crashed inside
+Temurin 11.0.32+9's Serial full GC while relocating metadata (`AdjustPointerClosure::do_oop`).
+The collector override applies only to archive generation. A Linux child-JVM control records
+the actual collectors and checks that a G1-generated archive is reused by fresh Serial workers.
+JDK 17 keeps its usual worker collector. The shared compiler preparations retain their
+existing settings. Artifact identity reads the complete JDK version without inherited runtime
+option variables, so changing the test collector cannot turn an option-pickup banner into
+a false compiler-version mismatch. This affects only CI test JVMs and preserves every
+provider, checkpoint, rescale and native-work assertion.
+
+Combined candidate 43284069894 finished in 184.7 minutes and used 49.18 runner-hours, but
+one canonical invocation failed during that metadata-generator crash; its aggregate gate failed.
+Its full upstream suite 43284074933 passed all 19 jobs. These observations preserve the failed
+qualification and do not establish a successful whole-CI speedup.
+
+The repaired 64-shard control at `af5ab61cb` passed all 96 CI jobs, all 19 upstream jobs and
+docs. The complete invocation audit matches all 14,536 original cases, class outcomes and
+inventories, with no failures, errors or skips. CI elapsed falls from 217.2 to 180.7 minutes
+(16.8%) and observed runner execution from 56.92 to 46.85 hours (17.7%). Across CI and the
+upstream test workflow together, runner execution falls from 60.84 to 51.01 hours (16.2%),
+including the upstream workflow's 5.9% runner-cost regression. Production `native/` and
+`src/main/` sources are unchanged between those two measured revisions.
+
+These are successful cross-run observations, not a controlled estimate for every component.
+The original baseline also overlapped the optional Paimon 1.0 compatibility campaign; the
+candidate ran merge gates and docs only. Cache, runner and queue variation still apply.
+Canonical eligibility-to-start waiting falls from a median 100.5 to 81.2 minutes, with 20
+observed simultaneous CI jobs in both runs. The subsequent integrated forty-shard candidate
+also includes updated upstream code and smaller upstream native transfers; it needs its own
+complete gates, invocation audit and timing comparison before merging.
+
 The isolated canonical job worker exits explicitly after its job, native-work
 checks and try-with-resources cluster cleanup complete. A Flink 2.2/JDK 11
 checkpoint worker finished that work in about seven seconds but retained an idle
@@ -672,8 +831,8 @@ can flush at different boundaries and emit different valid intermediate updates.
 deterministic bundle boundaries retain their stricter raw-changelog assertions. The global
 fixture also checks every retraction against the current result and rejects a second live result.
 
-Both Flink lines run complete canonical handoff jobs in 16 required shards on each of JDK 11
-and 17. Every shard uses the same shared debug native artifact, startup compiler settings and
+Both Flink lines run complete canonical handoff jobs in 10 required shards on each of JDK 11
+and 17. Every shard uses the same commit's canonical native payload, startup compiler settings and
 scoped class-data cache. Flink 1.18 combines its release profile with `canonical-kafka`; dependency
 resolution, compilation and execution use the same profiles. Artifacts include the Flink line,
 JDK and shard, and selection manifests record the line. The former five-family smoke step in
@@ -683,8 +842,8 @@ Each line selects from its own compiled test inventory and duration estimates, p
 method and inherited parameterized invocation. Canonical job fixtures and their typed-state
 bases now live in shared test sources for joins, sort, normalization, deduplication, rank,
 window and grouped aggregates and managed UDFs. Kafka source, partition-discovery and all twelve
-sink/pipeline job classes are shared as well. Both release lines now compile the same 118-class
-canonical job inventory. Narrow fixture adapters inspect each released connector's recovery
+sink/pipeline job classes are shared as well. Both release lines now compile the same 120-class
+canonical job inventory, including two abstract bases without Surefire reports. Narrow fixture adapters inspect each released connector's recovery
 format: 1.18's legacy writer prefix and committer collector, or 2.2's explicit writer ownership
 and precommitted transactions. The 1.18 connector uses its released incrementing transaction
 scheme; 2.2 retains both incrementing and pooling providers. Local fixture selection can sample
@@ -773,7 +932,23 @@ checkpoints and results; the archive stores class metadata rather than a running
 
 [AppCDS requires JAR classpaths](https://docs.oracle.com/en/java/javase/11/tools/java.html),
 so the harness snapshots compiled class directories into deterministic JARs while preserving
-classpath order and resource paths. Compiled directories remain immutable for each Surefire
+classpath order and non-native resource paths. These test-only metadata JARs omit bundled
+`.so`, `.dylib` and `.dll` copies under `tech/streamfusion/native/`: native workers already
+receive the current libraries through their explicit `java.library.path`. Original compiled
+resources and deployable JARs remain intact. `-Dsf.canonical.packNativeResources=true` restores
+the previous snapshot contents for a controlled comparison. A hosted four-parent JDK 11 JFR
+profile found packing in 1,543 of 1,771 Java execution samples, predominantly SHA-256; these
+samples attribute work and are not an end-to-end speedup measurement.
+A local synthetic 323 MB packing loop with four fresh cache instances, repeated in three
+alternating pairs, reduced elapsed medians from 13.57 to 0.042 seconds on JDK 11 and from
+13.91 to 0.027 seconds on JDK 17. This isolates redundant packing and hashing; it does not
+measure engine throughput or full CI. The structured short-loop evidence records every trial.
+The subsequent hosted setup probe 43282442243 passed all eight recovery/Kafka cases with
+positive native-work and stock-isolation assertions. Four parent recordings contained 37
+classpath-packing samples out of 269 Java samples, versus 1,543 out of 1,771 before the change;
+SHA-256 leaf samples fell from 1,442 to 25. These separate instrumented runs confirm the
+targeted work was removed, without establishing an exact CPU or elapsed speedup.
+Compiled directories remain immutable for each Surefire
 fork. Snapshot names derive from their contents; an existing snapshot is checked for corruption
 and retained without changing its timestamp. Changed compiled bytes produce a new snapshot.
 Archive keys include the JDK, VM arguments, classpath, worker class and engine role. A stage's
@@ -785,15 +960,15 @@ under the current runner's temporary directory and are removed after outcomes an
 archive diagnostics are uploaded. Default local Maven runs do not enable this cache.
 Each runner uses four fresh 1 GiB Surefire JVMs, with process reuse disabled. The earlier 2.2-only
 change preserved its 118 classes on each JDK while reducing that line's runner jobs from 64 to 32.
-The required two-line matrix now has 64 jobs, preserving each line's compiled inventory. The stock
+The required two-line matrix now has 40 jobs, preserving each line's compiled inventory. The stock
 and native worker processes retain their separate 1 GiB heaps; native memory and containers
 also need headroom. The complete 32-shard hosted canonical matrix passed on both JDKs;
 the full CI and upstream aggregates remain required for source changes.
 
 The first combined run exhausted the three-hour JDK 11 limit after seven classes passed in
 one canonical shard. Its alphabetical round-robin selection combined several of the longest
-job suites. Recorded maximum XML class times from that run now spread this work across the
-same 16 shards per JDK. These times are scheduling hints, not performance measurements or
+job suites. Recorded maximum XML class times spread this work across the shards; the current
+layout uses ten per Flink/JDK cohort. These times are scheduling hints, not performance measurements or
 passing-test evidence; all assertions and the complete canonical matrix remain required.
 
 These jobs share the exact-commit debug native artifact, retain their selection manifests and
@@ -809,6 +984,199 @@ throughput benchmark. The ordinary 150-minute job limit cannot accommodate that 
 Canonical shards have a 180-minute limit; no test is removed to make a shard pass.
 
 ## Profiling CI latency and cost
+
+### Runner queue discipline
+
+Use three feedback loops: local selection/codec/dependency checks in seconds, a focused
+Linux/native regression that includes the failing provider, and the complete matrices after
+the candidate is ready. Standard hosted concurrency is shared across an owner's repositories;
+inspect other active repositories as well as fork branches. GitHub documents 20 standard
+concurrent jobs on Free and 40 on Pro in its
+[Actions limits](https://docs.github.com/en/actions/reference/limits). Measure the actual account
+and competing work before choosing capacity; switching runner labels does not create capacity.
+The measured canonical jobs are mostly CPU busy during active work (median idle 6–10.5% in
+one median-length job per cohort), so doubling forks alone does not establish a 50% speedup.
+
+Declare Maven Central before the test-only Confluent repository. A successful JDK11 preparation
+in run 43350750332 repeatedly spent about a minute checking Confluent for artifacts already
+downloaded from Central, delaying the shared preparation barrier. Twenty-four local real-Maven
+cold/warm model-resolution invocations retain vendor-only fallback while eliminating all
+unnecessary vendor requests for Central parents under Central-first order. The regular repository
+regression uses the actual project ordering against two loopback servers. These are request-routing
+and fallback checks; they do not claim a measured full-CI improvement.
+
+The setup probe's `kafka_rescale_regression` input runs the two released-state codec controls and
+all eight Flink2.2 Kafka rescale providers, including ordinary SQL, both engine directions and
+both transaction naming strategies. It requires exactly those ten cases with zero skips/errors/
+failures. This isolates a full-matrix failure without rerunning unrelated jobs. The complete CI
+still runs every Kafka provider. Flink2.2 inventory reads both writer and committer state with
+the released collector serializer; the previous empty committer inspector could miss real pending
+transactions. The existing assertion requiring actual precommitted state stays in force.
+
+Use local selected tests and short repeated profiling loops while iterating. The optional
+`cluster-startup` hotspot mode runs the unchanged 20-case comparison on selected Flink lines
+and both pinned JDK releases. Locally, after compiling the requested line, use
+`python3 bin/profile-runtime-ci.py --cluster-startup --line 2.2 --repetitions 3 --output NEW_DIRECTORY`.
+It checks every invocation/outcome and the number of parent clusters actually started.
+The full CI and upstream matrices remain final qualification gates.
+
+Before a dispatch, inspect active workflows across the fork and reuse their handles. Keep
+optional diagnostics separate from the candidate's full qualification campaign. When another
+task's qualification already fills the observed runner capacity, finish local preparation and
+wait for capacity before dispatching another broad matrix. This rule covers all fork branches;
+separate task worktrees do not provide separate runner pools. Stop this
+task's remaining campaign after a shared setup failure makes success impossible, retain the
+failure, and repair it with a short regression or focused hosted probe. Other sessions' runs
+remain untouched. The project instructions in `CLAUDE.md` make this the default agent workflow.
+
+The passing compilation-only run 43149560105 reached 20 simultaneous CI jobs. Its 64 canonical
+jobs waited a median 4,331.5 seconds (72.2 minutes), with a maximum of 9,000 seconds
+(150 minutes), **after all four preparation jobs had finished**. This eligibility-to-start
+interval includes scheduler and runner waiting rather than Java preparation. It differs from
+the profiler's broader start-delay field, which also includes prerequisites. Reducing repeated
+setup, avoiding overlapping campaigns, balancing work and removing dependency barriers should
+precede increasing job counts. Preserve all configurations and test invocations when grouping
+compatible checks. Structured timing observations live alongside the short-loop evidence.
+
+A local scheduling model uses all class elapsed times from successful baseline 43116124202,
+after verifying all 14,536 invocation identities and outcomes. Its existing-cost, 16-shard
+partition exactly matches all 64 observed selections. Across 300 seeded trials that randomize
+class order within four-fork jobs and job order across 20 slots, ten shards per cohort reduce
+the summed modeled job spans from 154,221 to 139,371 seconds and canonical-batch median from
+9,516 to 9,056 seconds. Eight shards reduce occupied spans further but give a longer batch
+tail; twelve and sixteen also model slower than ten. CI therefore tests forty canonical jobs,
+retaining all 120 selected classes per cohort, every provider and unchanged fresh-process
+boundaries. This is a scheduling hypothesis, not a measured CI speedup: setup, other jobs,
+resource interference and real scheduler order are outside the model. The full integrated
+campaign and invocation audit remain required before merging. The
+[structured model](benchmarks/ci-shard-layout-20261113.json) retains all class elapsed-time inputs,
+observed shard selections, model results, the offline partition audit and reproduction steps.
+
+Create the historically heavier JDK 11 cohorts before JDK 17, keeping Flink 2.2 before 1.18
+within each JDK. Run 43324959481 started the four cohorts at median delays of 2,517 seconds
+(2.2/17), 4,889.5 (2.2/11), 6,137 (1.18/17) and 7,483.5 (1.18/11); the final two running
+canonical jobs were on 1.18/JDK 11. All cohorts share the same prerequisites, so this skew
+is not different Java preparation work. Baseline cohort runner costs place both JDK 11
+cohorts above JDK 17. GitHub documents that
+[matrix variable order controls job creation order](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idstrategymatrix).
+The scheduler still determines actual starts: creating heavier work earlier is a scheduling
+hypothesis to measure, not a guaranteed priority or additional runner capacity.
+
+Do not assume a smaller runner label bypasses this queue. GitHub documents that
+[`ubuntu-slim` follows the standard runner concurrency model](https://docs.github.com/en/actions/reference/runners/github-hosted-runners#single-cpu-runners).
+Use lightweight runners for suitable work, but reduce repeated work and overlapping campaigns
+before treating a runner-label change as a capacity improvement.
+
+`bin/profile-ci.py` reads jobs in 20-row pages with a 30-second limit on each API request.
+Large 100-row job queries repeatedly stalled or reset during this investigation while smaller
+pages completed. An observation timeout does not cancel or restart CI: query the same run handle
+again. Incomplete profiles remain explicitly incomplete, and the invocation audit still requires
+every shard from the exact candidate's completed run.
+
+The **CI startup profile** workflow's `canonical-setup` suite delegates to the
+**Canonical setup probe**, checking one chosen Flink/JDK pair with two fresh runners.
+Its producer compiles and packs Java before any native library is available.
+The consumer verifies the pinned JDK and transfer, reuses a source-verified existing native
+producer, stages only core/JSON/Kafka libraries without debug information, and runs eight
+selected recovery and real-broker source/sink cases. Positive native work and existing
+stock isolation assertions remain active. Smoke flags are confined to this diagnostic;
+the ordinary CI matrix retains every provider. This probe checks setup quickly and cannot
+satisfy the full CI merge gate.
+The first successful run, 43240390726, prepares Java in 170 runner-seconds and completes
+the fresh consumer in 333 runner-seconds, including dependency resolution and all eight
+checks. Its Java transfer is 10,391,513 ZIP bytes. This validates the setup and smaller
+native subset; it does not qualify the remaining canonical inventory or establish net CI
+timing. The structured evidence retains every selected class outcome and phase boundary.
+
+Set the setup suite's `parent_jfr` input to record the four fresh parent test JVMs separately
+from their isolated engine workers. The diagnostic summarizes execution/native samples,
+compiler activity, allocations and waits, then removes the recordings. Instrumented elapsed
+times remain attribution evidence. The `lake-setup` suite separately runs both complete Paimon
+format configurations for one chosen line/JDK and retains compilation, per-format elapsed/CPU
+times and JUnit outcomes. These small workflows remain separate from merge-gate qualification.
+The setup probe's `metadata_regression` input instead runs all eight worker-cache controls plus
+the complete 28-case append-arithmetic class that exposed the JDK 11 crash. It requires all 36
+checks to pass, including actual collector isolation and unchanged native/stock continuation,
+checkpoint and rescale checks. This mode records two parent JVMs when `parent_jfr` is enabled.
+
+Native-source verification reads producer jobs in 20-row pages and retries transient
+HTTP 429/5xx responses with bounded delays. The first cluster-startup diagnostic encountered
+three HTTP 502 failures before test execution; retrying only those jobs passed. Source
+differences, failed producers and permission failures remain errors.
+
+For a short local attribution loop, set `SF_CANONICAL_PROFILE_DIR` to a task-specific
+directory and run `CanonicalGroupArithmeticJobTest` with
+`-Dstreamfusion.test.groupArithmeticJobSmoke=true`. This retains continued-input handoffs
+through both stores and records each fresh stock/native worker separately with JFR's
+profile settings. The optional instrumentation is added after archive identity and dump
+commands are constructed, preserving ordinary metadata reuse. Remove the variable for
+uninstrumented A/B timing. Summarize the recordings and delete them after inspection;
+instrumented times are attribution evidence, not speedup measurements.
+
+The handoff-readiness polling experiment retained the existing one-second fallback:
+a 100 ms probe showed no consistent elapsed benefit and slightly higher CPU on both
+JDKs. The [decision record](https://github.com/datafusion-contrib/StreamFusion/blob/main/.claude/wontdos/ci-handoff-polling.md)
+and [structured trials](benchmarks/ci-profile-20261112.json) preserve the result.
+Hotspot jobs use a shallow partial checkout and fetch only the native-producing
+commit needed for their unchanged source comparison, avoiding a complete history clone.
+
+To compare a canonical matrix with a previous complete run, download that candidate's
+`canonical-job-results-*` artifacts into one directory. Pass it to `bin/profile-ci.py`
+with `--canonical-reports DIRECTORY --canonical-baseline BASELINE.json` alongside the
+usual `--repo`, `--run` and optional `--json` arguments. The helper requires every cohort
+and declared shard, matches each selection manifest to its reports, rejects duplicate
+classes and malformed outcome totals, and compares the full parameterized invocation
+multiset with the baseline digest. Missing, duplicated or newly skipped invocations fail
+the comparison. Abstract inventory entries need no report, while every class with a baseline
+report, including zero-case suites, must still appear. The tool recomputes the complete
+selected-inventory digest, including abstract entries, from the manifests.
+This verifies preserved test coverage; GitHub's required workflow results
+and the assertions inside those tests remain the correctness gates. Comparing timings
+alone cannot establish equivalent coverage.
+
+The [initial collector probe](benchmarks/ci-profile-20261112.json) passed all 80
+invocations on Flink 2.2, including separate archive preparation. Serial GC reduced
+the five-case JDK 11 elapsed median from 112.40 to 102.25 seconds (9.0%) and CPU median
+from 228.31 to 179.45 seconds (21.4%). On JDK 17, elapsed medians were 58.61 and 59.09
+seconds, respectively: no elapsed improvement. These are within-run probe results, not
+whole-matrix savings. JDK 17 retains its default collector; the broader comparison qualifies
+the JDK 11 choice.
+
+The optional `canonical-gc-matrix` hotspot dispatch extends the small collector probe to
+both Flink lines on JDK 11. It runs the eight complete canonical classes already used for
+the worker-count comparison: 64 invocations per phase, separate preparation for each
+collector, then two alternating G1/Serial pairs with four fresh 1 GiB parent forks.
+Each line must retain all class outcomes and invocation identities. The completed broader
+probe passed all 768 invocations, including both collectors' separate archive preparation.
+Each measurement runs the same 64 cases with four busy forks. Medians from two alternating pairs:
+
+| Flink / JDK | G1 elapsed | Serial elapsed | Elapsed reduction | CPU reduction |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18 / 11 | 734.42 s | 595.56 s | 18.9% | 21.2% |
+| 2.2 / 11 | 786.30 s | 627.81 s | 20.2% | 22.7% |
+
+The [retained trials](benchmarks/ci-profile-20261112.json) include preparation separately,
+both successful runs and their source commits. These results select Serial GC for JDK 11
+canonical jobs. They are measured worker-throughput gains, not whole-workflow savings;
+the final combined CI matrix remains required.
+The complete worker mixes use Maven's normal test lifecycle with precompiled Java and
+runtime tests explicitly enabled, matching canonical CI. This resolves the JSON module
+through the current reactor rather than depending on an installed project artifact.
+Set the dispatch's `flink_line` to either release to qualify only that cohort; `all`
+retains both. This allows repairing a failed setup without repeating a completed probe.
+Workflow concurrency distinguishes the requested line, while job concurrency still prevents
+duplicate probes for the same branch, mode, actual Flink line and JDK.
+
+The `runtime-hotspots` dispatch also accepts `hotspot_mode=canonical-gc`. It compares
+G1 and Serial GC on the same runner using the existing five canonical handoff cases,
+on both JDK 11 and 17. Both collectors use first-tier compilation, the current 512 MiB
+code-cache reservation and four fresh 1 GiB Surefire forks. Each collector prepares
+its own job-local metadata archives before three alternating measurement pairs; archive
+construction is reported separately. Exact invocation identities, successful outcomes,
+and at least two worker archives remain mandatory. The probe retains clean stock/native
+processes and their checkpoint assertions. It does not change the merge-gate JVM settings
+or establish complete-matrix savings. Use an existing successful native-producing CI run
+with identical native sources through `native_run`, as for the other hotspot diagnostics.
 
 Use `python3 bin/profile-ci.py --repo OWNER/REPO --run RUN_ID` with an authenticated `gh`
 CLI. Add `--json` for reusable evidence. The profiler reads the latest run attempt, paginates

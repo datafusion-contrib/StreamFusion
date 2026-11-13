@@ -6,15 +6,37 @@ on:
       suite:
         description: 'Paired JVM comparison to run'
         type: choice
-        options: [runtime, runtime-parallel, runtime-jfr, canonical, native-only, runtime-hotspots]
+        options: [runtime, runtime-parallel, runtime-jfr, canonical, native-only, runtime-hotspots, canonical-setup, lake-setup]
         default: runtime
       native_run:
-        description: 'Existing native-producing run for runtime-hotspots'
+        description: 'Existing native producer for focused diagnostics'
         type: string
+      jdk:
+        description: 'JDK for a focused setup diagnostic'
+        type: choice
+        options: ['11', '17']
+        default: '11'
+      parent_jfr:
+        description: 'Record the canonical setup probe parent JVMs for attribution'
+        type: boolean
+        default: false
+      metadata_regression:
+        description: 'Check metadata collector isolation and complete append arithmetic'
+        type: boolean
+        default: false
+      kafka_rescale_regression:
+        description: 'Check released committer-state decoding and all Kafka rescale providers'
+        type: boolean
+        default: false
+      flink_line:
+        description: 'Flink line for multi-release diagnostics'
+        type: choice
+        options: [all, '2.2', '1.18']
+        default: all
       hotspot_mode:
         description: 'Attribute slow classes or compare their worker counts'
         type: choice
-        options: [attribution, parallel, plan-cache, canonical-parallel, deeper-runtime, fluss-details, recursive-completion, recovery-diagnostics, recovery-transport, fluss-close, runtime-regressions]
+        options: [attribution, parallel, plan-cache, canonical-parallel, canonical-gc, canonical-gc-matrix, cluster-startup, deeper-runtime, fluss-details, recursive-completion, recovery-diagnostics, recovery-transport, fluss-close, runtime-regressions]
         default: attribution
 
 permissions:
@@ -23,14 +45,88 @@ permissions:
 
 env:
   RUST_BACKTRACE: '1'
+  CANONICAL_JAVA_11: '11.0.32+9'
+  CANONICAL_JAVA_17: '17.0.21+9'
 
 concurrency:
-  group: ci-startup-profile-${{ github.ref }}-${{ inputs.suite }}-${{ inputs.hotspot_mode }}
+  group: ci-startup-profile-${{ github.ref }}-${{ inputs.suite }}-${{ inputs.hotspot_mode }}-${{ inputs.flink_line || 'all' }}-${{ inputs.jdk || 'all' }}-${{ inputs.parent_jfr && 'jfr' || 'plain' }}
   cancel-in-progress: true
 
 jobs:
+  lake-setup:
+    if: inputs.suite == 'lake-setup' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      FLINK_PROFILES: ${{ inputs.flink_line == '1.18' && 'paimon,flink-1.18' || 'paimon' }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          filter: blob:none
+      - run: python3 bin/ci-free-disk.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.jdk == '11' && env.CANONICAL_JAVA_11 || env.CANONICAL_JAVA_17 }}
+          cache: maven
+      - name: Verify the existing native producer
+        id: native
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NATIVE_RUN: ${{ inputs.native_run }}
+        run: python3 bin/ci_native_source.py --run "$NATIVE_RUN"
+      - uses: actions/download-artifact@v5
+        with:
+          name: ${{ steps.native.outputs.artifact }}
+          run-id: ${{ inputs.native_run }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/original-native
+      - name: Stage smaller libraries with identical runtime sections
+        run: |
+          python3 bin/ci_native_test_artifact.py --input "$RUNNER_TEMP/original-native" \
+            --output native/target/debug
+      - name: Resolve the complete module dependencies
+        run: python3 bin/ci-maven-dependencies.py --profile "$FLINK_PROFILES" --projects streamfusion-paimon --also-make
+      - name: Run both complete format configurations
+        run: >-
+          python3 bin/ci_lake_tests.py --profile "$FLINK_PROFILES" --module streamfusion-paimon
+          --summary "$RUNNER_TEMP/lake-test-phases.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lake-setup-${{ inputs.flink_line == '1.18' && '1.18' || '2.2' }}-jdk${{ inputs.jdk }}
+          path: |
+            ${{ runner.temp }}/lake-test-phases.json
+            streamfusion-paimon/target/surefire-reports/*paimon-parquet*
+            streamfusion-paimon/target/surefire-reports/*paimon-orc*
+            native/target/debug/manifest.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Remove probe libraries
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import shutil
+          for directory in (Path(os.environ['RUNNER_TEMP']) / 'original-native', Path('native/target/debug')):
+              if directory.exists():
+                  shutil.rmtree(directory)
+          PY
+
+  canonical-setup:
+    if: inputs.suite == 'canonical-setup'
+    uses: ./.github/workflows/ci-canonical-setup.yml
+    with:
+      line: ${{ inputs.flink_line == '1.18' && '1.18' || '2.2' }}
+      jdk: ${{ inputs.jdk }}
+      native_run: ${{ inputs.native_run }}
+      parent_jfr: ${{ inputs.parent_jfr }}
+      metadata_regression: ${{ inputs.metadata_regression }}
+      kafka_rescale_regression: ${{ inputs.kafka_rescale_regression }}
+
   native:
-    if: ${{ inputs.suite != 'runtime-hotspots' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
+    if: ${{ inputs.suite != 'runtime-hotspots' && inputs.suite != 'canonical-setup' && inputs.suite != 'lake-setup' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -101,7 +197,7 @@ jobs:
 
   runtime:
     needs: native
-    if: inputs.suite != 'canonical' && inputs.suite != 'native-only' && inputs.suite != 'runtime-hotspots'
+    if: inputs.suite != 'canonical' && inputs.suite != 'native-only' && inputs.suite != 'runtime-hotspots' && inputs.suite != 'canonical-setup' && inputs.suite != 'lake-setup'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
@@ -159,45 +255,30 @@ jobs:
     if: inputs.suite == 'runtime-hotspots' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main')
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    concurrency:
+      group: ci-hotspot-profile-${{ github.ref }}-${{ inputs.hotspot_mode }}-${{ matrix.line }}-jdk${{ matrix.jdk }}
+      cancel-in-progress: true
     strategy:
       fail-fast: false
       matrix:
-        jdk: ${{ fromJSON(inputs.hotspot_mode == 'parallel' && '["11"]' || (inputs.hotspot_mode == 'deeper-runtime' || inputs.hotspot_mode == 'fluss-details' || inputs.hotspot_mode == 'fluss-close' || inputs.hotspot_mode == 'recursive-completion' || inputs.hotspot_mode == 'runtime-regressions' || inputs.hotspot_mode == 'recovery-diagnostics' || inputs.hotspot_mode == 'recovery-transport') && '["17"]' || '["11", "17"]') }}
+        jdk: ${{ fromJSON((inputs.hotspot_mode == 'parallel' || inputs.hotspot_mode == 'canonical-gc-matrix') && '["11"]' || (inputs.hotspot_mode == 'deeper-runtime' || inputs.hotspot_mode == 'fluss-details' || inputs.hotspot_mode == 'fluss-close' || inputs.hotspot_mode == 'recursive-completion' || inputs.hotspot_mode == 'runtime-regressions' || inputs.hotspot_mode == 'recovery-diagnostics' || inputs.hotspot_mode == 'recovery-transport') && '["17"]' || '["11", "17"]') }}
+        line: ${{ fromJSON((inputs.hotspot_mode == 'canonical-gc-matrix' || inputs.hotspot_mode == 'cluster-startup') && (inputs.flink_line == '1.18' && '["1.18"]' || inputs.flink_line == '2.2' && '["2.2"]' || '["2.2", "1.18"]') || '["2.2"]') }}
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0
+          filter: blob:none
       - run: python3 bin/ci-free-disk.py
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: ${{ matrix.jdk }}
+          java-version: ${{ inputs.hotspot_mode == 'cluster-startup' && (matrix.jdk == '11' && env.CANONICAL_JAVA_11 || env.CANONICAL_JAVA_17) || matrix.jdk }}
           cache: maven
       - name: Verify native artifact source and completed producer
         id: native
         env:
           GH_TOKEN: ${{ github.token }}
           NATIVE_RUN: ${{ inputs.native_run }}
-        run: |
-          python3 - <<'PY'
-          import json, os, re, subprocess
-          def api(path):
-              return json.loads(subprocess.check_output(['gh', 'api', path]))
-          run_id = os.environ['NATIVE_RUN']
-          if not re.fullmatch(r'[0-9]+', run_id):
-              raise SystemExit('Expected a numeric native workflow run ID')
-          repo = os.environ['GITHUB_REPOSITORY']
-          run = api(f'repos/{repo}/actions/runs/{run_id}')
-          sha = run['head_sha']
-          jobs = api(f'repos/{repo}/actions/runs/{run_id}/jobs?per_page=100')['jobs']
-          if not any(j['name'] == 'Shared debug native libraries' and j['conclusion'] == 'success' for j in jobs):
-              raise SystemExit('Native producer has not succeeded')
-          subprocess.run(['git', 'diff', '--exit-code', sha, 'HEAD', '--',
-                          'native', 'rust-toolchain.toml', '.cargo', '.github/actions/setup-rust'], check=True)
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              output.write(f'artifact=debug-native-{sha}\n')
-          print(f'Reusing native libraries from successful producer at {sha}')
-          PY
+        run: python3 bin/ci_native_source.py --run "$NATIVE_RUN"
       - uses: actions/download-artifact@v5
         with:
           name: ${{ steps.native.outputs.artifact }}
@@ -207,15 +288,23 @@ jobs:
       - name: Compile the unchanged complete runtime inventory
         env:
           HOTSPOT_MODE: ${{ inputs.hotspot_mode }}
+          FLINK_LINE: ${{ matrix.line }}
         run: |
           profile=()
           profile_name=''
           projects='streamfusion-runtime'
           goal='test-compile'
           skip=()
-          if [[ "$HOTSPOT_MODE" == 'canonical-parallel' ]]; then
+          if [[ "$HOTSPOT_MODE" == 'canonical-parallel' || "$HOTSPOT_MODE" == 'canonical-gc-matrix' ]]; then
             profile=(-Pcanonical-kafka)
             profile_name='canonical-kafka'
+            if [[ "$FLINK_LINE" == '1.18' ]]; then
+              profile=(-Pflink-1.18,canonical-kafka)
+              profile_name='flink-1.18,canonical-kafka'
+            fi
+          elif [[ "$HOTSPOT_MODE" == 'cluster-startup' && "$FLINK_LINE" == '1.18' ]]; then
+            profile=(-Pflink-1.18)
+            profile_name='flink-1.18'
           elif [[ "$HOTSPOT_MODE" == 'deeper-runtime' || "$HOTSPOT_MODE" == 'fluss-details' || "$HOTSPOT_MODE" == 'fluss-close' ]]; then
             projects='streamfusion-fluss'
             goal='test'
@@ -229,12 +318,13 @@ jobs:
             profile=(-Pflink-1.18)
             profile_name='flink-1.18'
           fi
-          python3 bin/ci-maven-dependencies.py --profile "$profile_name" --projects "$projects"
+          python3 bin/ci-maven-dependencies.py --profile "$profile_name" --projects "$projects" --also-make
           python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5
           mvn -B -ntp "${profile[@]}" -pl "$projects" -am "$goal" "${skip[@]}" -Dnative.build.skip=true
       - name: Attribute measured slow classes under current CI worker settings
         env:
           HOTSPOT_MODE: ${{ inputs.hotspot_mode }}
+          FLINK_LINE: ${{ matrix.line }}
         run: |
           args=(--line 2.2 --repetitions 1 --hotspots)
           if [[ "$HOTSPOT_MODE" == 'parallel' ]]; then
@@ -278,18 +368,55 @@ jobs:
             python3 bin/profile-ci-details.py --line 1.18 --suite recovery --output "$RUNNER_TEMP/runtime-hotspots/recovery"
           elif [[ "$HOTSPOT_MODE" == 'recovery-transport' ]]; then
             python3 bin/profile-ci-details.py --line 1.18 --suite recovery --compare-transport --output "$RUNNER_TEMP/runtime-hotspots/recovery-transport"
+          elif [[ "$HOTSPOT_MODE" == 'cluster-startup' ]]; then
+            python3 bin/profile-runtime-ci.py --cluster-startup --line "$FLINK_LINE" --repetitions 3 --output "$RUNNER_TEMP/runtime-hotspots"
           elif [[ "$HOTSPOT_MODE" == 'canonical-parallel' ]]; then
             python3 bin/profile-canonical-ci.py --parallel --repetitions 2 --output "$RUNNER_TEMP/runtime-hotspots"
+          elif [[ "$HOTSPOT_MODE" == 'canonical-gc' ]]; then
+            python3 bin/profile-canonical-ci.py --gc --repetitions 3 --output "$RUNNER_TEMP/runtime-hotspots"
+          elif [[ "$HOTSPOT_MODE" == 'canonical-gc-matrix' ]]; then
+            python3 bin/profile-canonical-ci.py --gc --worker-mix --line "$FLINK_LINE" --repetitions 2 --output "$RUNNER_TEMP/runtime-hotspots"
           else
             python3 bin/profile-runtime-ci.py "${args[@]}" --output "$RUNNER_TEMP/runtime-hotspots"
           fi
+      - name: Verify deferred cluster lifecycle and native cleanup
+        if: inputs.hotspot_mode == 'cluster-startup'
+        env:
+          FLINK_LINE: ${{ matrix.line }}
+          JAVA_TOOL_OPTIONS: '-XX:TieredStopAtLevel=1 -XX:ReservedCodeCacheSize=512m'
+        run: |
+          profile=()
+          selection='SharedFlinkClusterLifecycleTest,CanonicalWorkerCacheTest,NativeAllocatorTest,NativeParityValueTest,Utf8WriterReuseTest,TransposeOperatorsTest,FlinkJvmAggregateSqlHarnessTest'
+          if [[ "$FLINK_LINE" == '1.18' ]]; then
+            profile=(-Pflink-1.18)
+            selection+=',FlinkBatchTestContextLifecycleTest'
+          fi
+          mvn -B -ntp "${profile[@]}" -pl streamfusion-runtime \
+            "-Dtest=$selection" -Dsf.testForks=4 -Dsf.testReuseForks=false \
+            '-Dsf.extraJvmArgs=-Xmx2g' -Dsurefire.reportNameSuffix=ci-cluster-controls \
+            surefire:test@default-test
+          python3 - <<'PY'
+          from collections import Counter
+          import os
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          counts = Counter()
+          for report in Path('streamfusion-runtime/target/surefire-reports').glob('TEST-*-ci-cluster-controls.xml'):
+              suite = ET.parse(report).getroot()
+              counts.update({key: int(suite.get(key, 0)) for key in ('tests', 'failures', 'errors', 'skipped')})
+          expected = 81 if os.environ['FLINK_LINE'] == '1.18' else 79
+          if counts != dict(tests=expected, failures=0, errors=0, skipped=0):
+              raise SystemExit(f'Incomplete lifecycle controls: {counts}')
+          print(f'All {expected} lifecycle, native cleanup and SQL controls passed')
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: runtime-hotspots-${{ inputs.hotspot_mode }}-jdk${{ matrix.jdk }}
+          name: runtime-hotspots-${{ inputs.hotspot_mode }}-${{ (inputs.hotspot_mode == 'canonical-gc-matrix' || inputs.hotspot_mode == 'cluster-startup') && format('flink{0}-', matrix.line) || '' }}jdk${{ matrix.jdk }}
           path: |
             ${{ runner.temp }}/runtime-hotspots/
             ${{ runner.temp }}/runtime-hotspots-vmstat.txt
             ${{ runner.temp }}/runtime-hotspots-containers.txt
             streamfusion-runtime/target/surefire-reports/*runtime-profile*
+            streamfusion-runtime/target/surefire-reports/*ci-cluster-controls*
           retention-days: 7

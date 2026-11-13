@@ -23,6 +23,7 @@ permissions:
 jobs:
   prepare:
     env:
+      RUST_BACKTRACE: '1'
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
       CARGO_PROFILE_TEST_DEBUG: line-tables-only
     name: Prepare upstream build
@@ -65,16 +66,24 @@ jobs:
       - uses: ./.github/actions/setup-rust
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: upstream-suite
-          save-if: ${{ github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main' }}
-          workspaces: native -> ../.flink-suite/${{ inputs.line }}/streamfusion-source/native/target
+          shared-key: debug-jvm
+          save-if: false
+          workspaces: native
       - name: Build Flink and StreamFusion once
         env:
           FLINK_VERSION: ${{ inputs.version }}
           FLINK_SUITE_BUILD_THREADS: 1C
+          FLINK_SUITE_NATIVE_TARGET_DIR: ${{ github.workspace }}/native/target
         run: |
           set -o pipefail
           bin/flink-suite.sh prepare 2>&1 | tee upstream-prepare.log
+          test_native="$RUNNER_TEMP/streamfusion-upstream-test-native"
+          trap 'rm -rf "$test_native"' EXIT
+          python3 bin/ci_native_test_artifact.py \
+            --input ".flink-suite/${{ inputs.line }}/streamfusion-source/native/target/debug" \
+            --output "$test_native"
+          mv "$test_native/"*.so ".flink-suite/${{ inputs.line }}/streamfusion-source/native/target/debug/"
+          cp "$test_native/manifest.json" ".flink-suite/${{ inputs.line }}/native-test-libraries.json"
           python3 dev/flink-suite/shared_build.py pack \
             --root ".flink-suite/${{ inputs.line }}" --version "${{ inputs.version }}" \
             --archive upstream-build.tar.zst
@@ -94,6 +103,7 @@ jobs:
           path: |
             upstream-prepare.log
             .flink-suite/${{ inputs.line }}/runtime-shards.json
+            .flink-suite/${{ inputs.line }}/native-test-libraries.json
           include-hidden-files: true
           retention-days: 7
 

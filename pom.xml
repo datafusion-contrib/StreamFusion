@@ -331,6 +331,11 @@
     </dependencies>
 
     <repositories>
+        <repository>
+            <id>central</id>
+            <url>https://repo.maven.apache.org/maven2</url>
+            <snapshots><enabled>false</enabled></snapshots>
+        </repository>
         <!-- Hosts io.confluent:kafka-schema-registry-client, the transitive of the test-only
              flink-avro-confluent-registry baseline above (the shipped jar doesn't touch it). -->
         <repository>
@@ -661,6 +666,16 @@
     </build>
 
     <profiles>
+        <profile>
+            <id>ci-precompiled-java</id>
+            <activation><property><name>sf.ci.precompiledJava</name><value>true</value></property></activation>
+            <properties><maven.javadoc.skip>true</maven.javadoc.skip></properties>
+            <build><pluginManagement><plugins><plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration><skipMain>true</skipMain><skip>true</skip></configuration>
+            </plugin></plugins></pluginManagement></build>
+        </profile>
         <profile>
             <id>ci-diagnostics</id>
             <dependencies>

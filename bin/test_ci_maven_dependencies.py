@@ -12,6 +12,7 @@ import subprocess
 import tempfile
 import threading
 import unittest
+import xml.etree.ElementTree as ET
 from unittest.mock import patch
 
 
@@ -22,6 +23,70 @@ SPEC.loader.exec_module(PREPARE)
 
 
 class MavenDependenciesTest(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("mvn"), "Maven is required for repository routing")
+    def test_central_artifacts_avoid_vendor_requests_and_vendor_only_parents_still_resolve(self):
+        namespace = {"m": "http://maven.apache.org/POM/4.0.0"}
+        repositories = [r.findtext("m:id", namespaces=namespace)
+                        for r in ET.parse(ROOT / "pom.xml").findall("m:repositories/m:repository", namespace)]
+        if "central" not in repositories:
+            repositories.append("central")
+        requests = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                repository = self.path.strip("/").split("/", 1)[0]
+                artifact = "central-parent" if "/central-parent/" in self.path else "vendor-parent"
+                found = repository == ("central" if artifact == "central-parent" else "confluent")
+                requests.append((repository, artifact, found))
+                if not found:
+                    self.send_error(404)
+                    return
+                parent = ("<project><modelVersion>4.0.0</modelVersion>"
+                          "<groupId>test.repository.order</groupId><artifactId>" + artifact
+                          + "</artifactId><version>1</version><packaging>pom</packaging></project>").encode()
+                body = hashlib.sha1(parent).hexdigest().encode() if self.path.endswith(".sha1") else parent
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory(prefix="repository-routing-") as directory:
+                root = Path(directory)
+                settings = root / "settings.xml"
+                settings.write_text("<settings/>")
+                declarations = "".join(
+                    f"<repository><id>{name}</id><url>http://127.0.0.1:{server.server_port}/{name}/</url></repository>"
+                    for name in repositories)
+                for artifact in ("central-parent", "vendor-parent"):
+                    pom = root / (artifact + ".pom")
+                    pom.write_text(
+                        "<project><modelVersion>4.0.0</modelVersion><parent>"
+                        "<groupId>test.repository.order</groupId><artifactId>" + artifact
+                        + "</artifactId><version>1</version><relativePath/></parent>"
+                        "<artifactId>probe</artifactId><packaging>pom</packaging><repositories>"
+                        + declarations + "</repositories></project>")
+                    for _ in range(2):
+                        result = subprocess.run(
+                            ["mvn", "-B", "-ntp", "-U", "-s", str(settings), "-gs", str(settings),
+                             f"-Dmaven.repo.local={root / 'm2'}", "-f", str(pom), "validate"],
+                            capture_output=True, text=True, timeout=30)
+                        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertFalse(any(repo == "confluent" and artifact == "central-parent"
+                                     for repo, artifact, found in requests))
+                self.assertTrue(any(repo == "confluent" and artifact == "vendor-parent" and found
+                                    for repo, artifact, found in requests))
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
     def options(self):
         return argparse.Namespace(maven="mvn", profile="flink-1.18", projects="streamfusion-runtime",
                                   also_make=True, pom=Path("checkout with spaces/pom.xml"),

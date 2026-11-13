@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.List;
+import java.util.Set;
 import java.util.jar.JarFile;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -40,6 +41,34 @@ class CanonicalWorkerCacheTest {
           "compiled bytes",
           new String(archive.getInputStream(archive.getJarEntry("Example.class")).readAllBytes()));
     }
+  }
+
+  @Test
+  void metadataSnapshotsOmitBundledNativeCopiesButPreserveOtherResources() throws Exception {
+    Path source = directory.resolve("classes");
+    Path resources = source.resolve("tech/streamfusion/native");
+    Files.createDirectories(resources.resolve("json"));
+    Files.writeString(resources.resolve("libstreamfusion.so"), "core");
+    Files.writeString(resources.resolve("json/libstreamfusion_json.dylib"), "json");
+    Files.writeString(resources.resolve("streamfusion.dll"), "windows");
+    Files.writeString(resources.resolve("metadata.json"), "metadata");
+    Files.writeString(source.resolve("Example.class"), "compiled bytes");
+    Files.writeString(source.resolve("fixture.so"), "unrelated test resource");
+    for (boolean includeNative : List.of(false, true)) {
+      var cache =
+          new CanonicalWorkerCache(directory.resolve("cache-" + includeNative), includeNative);
+      Path snapshot = Path.of(cache.classpath(List.of(source.toString())).get(0));
+      try (var jar = new JarFile(snapshot.toFile())) {
+        for (String name :
+            List.of("libstreamfusion.so", "json/libstreamfusion_json.dylib", "streamfusion.dll")) {
+          assertEquals(includeNative, jar.getJarEntry("tech/streamfusion/native/" + name) != null);
+        }
+        assertNotNull(jar.getJarEntry("Example.class"));
+        assertNotNull(jar.getJarEntry("fixture.so"));
+        assertNotNull(jar.getJarEntry("tech/streamfusion/native/metadata.json"));
+      }
+    }
+    assertEquals("core", Files.readString(resources.resolve("libstreamfusion.so")));
   }
 
   @Test
@@ -97,6 +126,68 @@ class CanonicalWorkerCacheTest {
       assertEquals("owned training data", Files.readString(classes));
     }
     assertFalse(Files.exists(classes));
+  }
+
+  @Test
+  void archiveGenerationUsesG1WhileFreshWorkersKeepSerialCollection() throws Exception {
+    org.junit.jupiter.api.Assumptions.assumeTrue(System.getProperty("os.name").equals("Linux"));
+    Path source = directory.resolve("collector-probe");
+    Files.createDirectories(source);
+    Path probe = source.resolve("CacheProbe.java");
+    Files.writeString(
+        probe,
+        "import java.nio.file.*; import java.lang.management.*; import java.util.stream.*; public"
+            + " class CacheProbe {public static void main(String[] args) throws Exception {"
+            + "Files.writeString(Path.of(args[1]),ManagementFactory.getGarbageCollectorMXBeans()"
+            + ".stream().map(GarbageCollectorMXBean::getName).collect(Collectors.joining(\",\")));}}");
+    assertEquals(
+        0,
+        javax.tools.ToolProvider.getSystemJavaCompiler()
+            .run(null, null, null, "-d", source.toString(), probe.toString()));
+    Files.delete(probe);
+    var cache = new CanonicalWorkerCache(directory.resolve("metadata"));
+    String classpath = cache.classpath(List.of(source.toString())).get(0);
+    for (String stage : List.of("first", "reused")) {
+      Path temporary = Files.createDirectory(directory.resolve(stage));
+      Path output = directory.resolve(stage + ".txt");
+      var command = probeCommand(classpath, temporary, "stock", output);
+      command.add(1, "-XX:+UseSerialGC");
+      command.add(1, "-Xlog:gc:file=" + directory.resolve("gc-%p.log"));
+      try (var archive = cache.archive(command)) {
+        assertEquals(stage.equals("reused"), command.contains("-Xshare:on"));
+        Path log = directory.resolve(stage + ".log");
+        var process =
+            new ProcessBuilder(command)
+                .redirectErrorStream(true)
+                .redirectOutput(log.toFile())
+                .start();
+        try {
+          assertTrue(process.waitFor(30, java.util.concurrent.TimeUnit.SECONDS));
+          assertEquals(0, process.exitValue(), () -> log.toString());
+          archive.trained();
+        } finally {
+          if (process.isAlive()) {
+            process.destroyForcibly();
+            process.waitFor(10, java.util.concurrent.TimeUnit.SECONDS);
+          }
+        }
+      }
+      assertEquals(Set.of("Copy", "MarkSweepCompact"), Set.of(Files.readString(output).split(",")));
+    }
+    int g1 = 0;
+    int serial = 0;
+    try (var files = Files.list(directory)) {
+      for (Path log :
+          files
+              .filter(path -> path.getFileName().toString().startsWith("gc-"))
+              .collect(java.util.stream.Collectors.toList())) {
+        String text = Files.readString(log);
+        if (text.contains("Using G1")) g1++;
+        if (text.contains("Using Serial")) serial++;
+      }
+    }
+    assertEquals(1, g1);
+    assertEquals(2, serial);
   }
 
   @Test

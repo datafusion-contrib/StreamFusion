@@ -25,21 +25,23 @@ PARALLEL_CLASSES = (
 )
 
 
-def profile(output, repetitions, cds=False, parallel=False):
+def profile(output, repetitions, cds=False, parallel=False, gc=False, line="2.2", worker_mix=False):
     if "TieredStopAtLevel" in os.environ.get("JAVA_TOOL_OPTIONS", ""):
         raise ValueError("Remove inherited TieredStopAtLevel so the default trial uses normal compilation")
     if os.environ.get("SF_CANONICAL_CDS_DIR"):
         raise ValueError("Remove inherited SF_CANONICAL_CDS_DIR so the default trial has no worker archive")
+    if gc and "GC" in os.environ.get("JAVA_TOOL_OPTIONS", ""):
+        raise ValueError("Remove inherited garbage-collector settings before comparing collectors")
     output.mkdir(parents=True, exist_ok=False)
     temporary = output / "tmp"
     temporary.mkdir()
     reports = ROOT / "streamfusion-runtime/target/surefire-reports"
     trials = []
     expected = None
-    preparation = "cds-two" if parallel else "cds"
-    schedule = [(preparation, -1, "preparation")] if cds else []
+    preparations = ("gc-g1", "gc-serial") if gc else ("cds-two" if parallel else "cds",)
+    schedule = [(mode, -1, "preparation") for mode in preparations] if cds else []
     for index in range(repetitions):
-        modes = (("cds-two", "cds-four") if parallel else
+        modes = (("gc-g1", "gc-serial") if gc else ("cds-two", "cds-four") if parallel else
                  ("default", "startup", "cds") if cds else ("default", "startup"))
         if index % 2:
             modes = tuple(reversed(modes))
@@ -50,22 +52,33 @@ def profile(output, repetitions, cds=False, parallel=False):
             options = os.environ.get("JAVA_TOOL_OPTIONS", "")
             options += f' -Djava.io.tmpdir="{temporary}"'
             if mode != "default":
-                options += " -XX:TieredStopAtLevel=1"
+                options += " -XX:TieredStopAtLevel=1 -XX:ReservedCodeCacheSize=512m"
+            if gc:
+                options += " -XX:+UseSerialGC" if mode == "gc-serial" else " -XX:+UseG1GC"
             environment = {**os.environ, "JAVA_TOOL_OPTIONS": options}
-            use_archive = mode in ("cds", "cds-two", "cds-four")
+            use_archive = gc or mode in ("cds", "cds-two", "cds-four")
             if use_archive:
-                environment["SF_CANONICAL_CDS_DIR"] = str(temporary / "archives")
-            if parallel:
+                environment["SF_CANONICAL_CDS_DIR"] = str(
+                    temporary / (mode if gc else "archives"))
+            if parallel or worker_mix:
                 environment["SF_KAFKA_INTEGRATION"] = "true"
-            forks, heap = (4, "1g") if mode == "cds-four" else (2, "2g")
-            selection = ",".join(PARALLEL_CLASSES) if parallel else SELECTION
+            forks, heap = (4, "1g") if gc or mode == "cds-four" else (2, "2g")
+            selection = ",".join(PARALLEL_CLASSES) if parallel or worker_mix else SELECTION
             command = ["mvn", "-B", "-ntp", "-pl", "streamfusion-runtime",
                        f"-Dtest={selection}", f"-Dsf.testForks={forks}",
                        "-Dsf.testReuseForks=false", f"-Dsf.extraJvmArgs=-Xmx{heap}",
                        f"-Dsurefire.reportNameSuffix={suffix}", "surefire:test@default-test"]
-            if parallel:
-                command.append("-Pcanonical-kafka")
-            else:
+            profiles = (["flink-1.18"] if line == "1.18" else [])
+            if parallel or worker_mix:
+                profiles.append("canonical-kafka")
+            if profiles:
+                command.append("-P" + ",".join(profiles))
+            if parallel or worker_mix:
+                command.remove("surefire:test@default-test")
+                command.extend(["-am", "test", "-Dnative.build.skip=true",
+                                "-Dsf.ci.precompiledJava=true", "-Dsf.protobuf.checkStaleness=true",
+                                "-DskipTests=true", "-Dsf.runtime.tests.skip=false"])
+            if not (parallel or worker_mix):
                 command.extend(["-Dstreamfusion.test.regularJoinJobSmoke=true",
                                 "-Dsf.canonical.wideKeys.job.smoke=true"])
             before = resource.getrusage(resource.RUSAGE_CHILDREN)
@@ -91,7 +104,8 @@ def profile(output, repetitions, cds=False, parallel=False):
                 class_outcomes[name] = {key: int(suite.get(key, 0)) for key in ("tests", "failures", "errors", "skipped")}
                 cases.update((case.get("classname").removesuffix(f"({suffix})"), case.get("name"))
                              for case in suite.iter("testcase"))
-            trial = {"mode": mode, "pair": index + 1, "phase": phase, "forks": forks, "heap": heap, "elapsed_seconds": elapsed,
+            trial = {"mode": mode, "pair": index + 1, "phase": phase, "flink_line": line,
+                     "forks": forks, "heap": heap, "elapsed_seconds": elapsed,
                      "cpu_seconds": after.ru_utime + after.ru_stime - before.ru_utime - before.ru_stime,
                      "outcomes": dict(totals), "classes": classes, "class_outcomes": class_outcomes, "exit_code": result.returncode}
             if use_archive:
@@ -102,7 +116,7 @@ def profile(output, repetitions, cds=False, parallel=False):
                 trial["classpath_bytes"] = sum(path.stat().st_size for path in cache.glob("*.jar"))
             trials.append(trial)
             (output / "summary.json").write_text(json.dumps(trials, indent=2) + "\n")
-            expected_classes = {"tech.streamfusion." + name: 8 for name in PARALLEL_CLASSES} if parallel else {
+            expected_classes = {"tech.streamfusion." + name: 8 for name in PARALLEL_CLASSES} if parallel or worker_mix else {
                 "tech.streamfusion.CanonicalRegularJoinJobTest": 4,
                 "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 1}
             expected_tests = sum(expected_classes.values())
@@ -126,9 +140,15 @@ def main():
     parser.add_argument("--output", type=Path, required=True, help="New directory for concise trial evidence")
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--cds", action="store_true", help="Also measure job-local class metadata archives")
-    parser.add_argument("--parallel", action="store_true", help="Compare two vs four fresh forks with prepared worker metadata")
+    comparison = parser.add_mutually_exclusive_group()
+    comparison.add_argument("--parallel", action="store_true", help="Compare two vs four fresh forks with prepared worker metadata")
+    comparison.add_argument("--gc", action="store_true", help="Compare G1 and Serial GC with current startup settings and separate prepared archives")
+    parser.add_argument("--line", choices=("1.18", "2.2"), default="2.2")
+    parser.add_argument("--worker-mix", action="store_true", help="Compare collectors with eight complete canonical classes and four busy forks")
     args = parser.parse_args()
-    if args.parallel:
+    if args.worker_mix and not args.gc:
+        parser.error("--worker-mix requires --gc")
+    if args.parallel or args.gc:
         args.cds = True
     if args.repetitions < 2:
         parser.error("Use at least two pairs to alternate execution order")
@@ -147,7 +167,7 @@ def main():
                 capture_output=True, text=True, timeout=120)
         if supported.returncode:
             parser.error("This JVM cannot use class-data sharing; omit --cds to measure default/first-tier compilation")
-    profile(args.output.resolve(), args.repetitions, args.cds, args.parallel)
+    profile(args.output.resolve(), args.repetitions, args.cds, args.parallel, args.gc, args.line, args.worker_mix)
 
 
 if __name__ == "__main__":

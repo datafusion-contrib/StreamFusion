@@ -1,0 +1,5231 @@
+{
+  "baseline": {
+    "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43116124202",
+    "sha": "b531553fa72b12d4da2d5e96d092c6828920dbf3",
+    "conclusion": "success",
+    "elapsed_seconds": 13034.0,
+    "runner_seconds": 204900.0,
+    "groups": {
+      "other": {
+        "jobs": 20,
+        "runner_seconds": 12152.0,
+        "max_job_seconds": 2102.0
+      },
+      "java": {
+        "jobs": 12,
+        "runner_seconds": 36456.0,
+        "max_job_seconds": 3638.0
+      },
+      "canonical": {
+        "jobs": 64,
+        "runner_seconds": 156292.0,
+        "max_job_seconds": 3855.0
+      }
+    },
+    "steps": {
+      "Run every selected canonical job": {
+        "executions": 64,
+        "seconds": 141208.0
+      },
+      "Run Java test suite": {
+        "executions": 12,
+        "seconds": 31138.0
+      },
+      "Compile and partition complete canonical jobs": {
+        "executions": 64,
+        "seconds": 7715.0
+      },
+      "Resolve Java dependencies before tests": {
+        "executions": 76,
+        "seconds": 6359.0
+      },
+      "Run optional lake module suite": {
+        "executions": 13,
+        "seconds": 4773.0
+      },
+      "Compile the complete reactor and partition runtime test classes": {
+        "executions": 12,
+        "seconds": 2626.0
+      },
+      "Run actions/download-artifact@v5": {
+        "executions": 90,
+        "seconds": 1552.0
+      },
+      "Run unchanged Paimon compaction fixtures with stock and native work evidence": {
+        "executions": 1,
+        "seconds": 1501.0
+      },
+      "Build optimized core image": {
+        "executions": 2,
+        "seconds": 1386.0
+      },
+      "Resolve lake module dependencies before tests": {
+        "executions": 13,
+        "seconds": 1328.0
+      },
+      "Run Arrow ownership, SQL parity and upstream Doris connector tests": {
+        "executions": 1,
+        "seconds": 1092.0
+      },
+      "Run Fluss SQL and complete Nexmark parity smoke": {
+        "executions": 1,
+        "seconds": 530.0
+      },
+      "Test upstream execution evidence checks": {
+        "executions": 2,
+        "seconds": 448.0
+      },
+      "Check deployed Java 11 bytecode including embedded payloads": {
+        "executions": 4,
+        "seconds": 444.0
+      },
+      "Verify JVM boundary defaults and optional cache on the freshly built native library": {
+        "executions": 2,
+        "seconds": 356.0
+      },
+      "Run actions/checkout@v6": {
+        "executions": 95,
+        "seconds": 354.0
+      },
+      "Run actions/setup-java@v4": {
+        "executions": 92,
+        "seconds": 308.0
+      },
+      "Run native test suite": {
+        "executions": 1,
+        "seconds": 235.0
+      },
+      "Resolve image dependencies before builds and tests": {
+        "executions": 2,
+        "seconds": 191.0
+      },
+      "Set up job": {
+        "executions": 96,
+        "seconds": 147.0
+      },
+      "Retain canonical job selection and outcomes": {
+        "executions": 64,
+        "seconds": 138.0
+      },
+      "Resolve Doris dependencies before tests": {
+        "executions": 1,
+        "seconds": 130.0
+      },
+      "Run Flink Session-cluster image smoke test": {
+        "executions": 2,
+        "seconds": 97.0
+      },
+      "Run Swatinem/rust-cache@v2": {
+        "executions": 4,
+        "seconds": 95.0
+      },
+      "Verify Fluss RocksDB backends and output parity": {
+        "executions": 1,
+        "seconds": 80.0
+      },
+      "Check every standalone native package": {
+        "executions": 1,
+        "seconds": 63.0
+      },
+      "Post Run actions/setup-java@v4": {
+        "executions": 92,
+        "seconds": 38.0
+      },
+      "Execute the packaged loader and mixed-line identity tests": {
+        "executions": 1,
+        "seconds": 37.0
+      },
+      "Build all debug native libraries once": {
+        "executions": 1,
+        "seconds": 35.0
+      },
+      "Verify Java host APIs and deployment module ownership": {
+        "executions": 2,
+        "seconds": 32.0
+      },
+      "Run ./.github/actions/setup-rust": {
+        "executions": 4,
+        "seconds": 30.0
+      },
+      "Run actions/upload-artifact@v4": {
+        "executions": 2,
+        "seconds": 23.0
+      },
+      "Post Run actions/checkout@v6": {
+        "executions": 95,
+        "seconds": 18.0
+      },
+      "Upload runtime test partition": {
+        "executions": 12,
+        "seconds": 13.0
+      },
+      "Verify native JNI exports": {
+        "executions": 1,
+        "seconds": 11.0
+      },
+      "Free disk space": {
+        "executions": 94,
+        "seconds": 8.0
+      },
+      "Package qualified Flink 1.18 payloads": {
+        "executions": 1,
+        "seconds": 8.0
+      },
+      "Test Flink 1.18 native and fallback contract selection": {
+        "executions": 1,
+        "seconds": 8.0
+      },
+      "Complete job": {
+        "executions": 96,
+        "seconds": 6.0
+      },
+      "Upload Fluss SQL execution plans and test results": {
+        "executions": 1,
+        "seconds": 6.0
+      },
+      "Remove canonical worker class metadata": {
+        "executions": 64,
+        "seconds": 5.0
+      },
+      "Upload portable SQL audit outcomes": {
+        "executions": 4,
+        "seconds": 4.0
+      },
+      "Check native formatting": {
+        "executions": 1,
+        "seconds": 3.0
+      },
+      "Retain Paimon compaction results and invocation evidence": {
+        "executions": 1,
+        "seconds": 3.0
+      },
+      "Retain Doris plans, upstream assertions and server logs": {
+        "executions": 1,
+        "seconds": 2.0
+      },
+      "Retain native compilation timings": {
+        "executions": 1,
+        "seconds": 1.0
+      },
+      "Test fork result reporting": {
+        "executions": 1,
+        "seconds": 1.0
+      },
+      "Check native package boundaries": {
+        "executions": 1,
+        "seconds": 1.0
+      },
+      "Run python3 bin/ci-plan.py >> \"$GITHUB_OUTPUT\"": {
+        "executions": 1,
+        "seconds": 0
+      },
+      "Post Run Swatinem/rust-cache@v2": {
+        "executions": 4,
+        "seconds": 0
+      },
+      "Require every test job to succeed": {
+        "executions": 1,
+        "seconds": 0
+      }
+    }
+  },
+  "canonical_baseline": {
+    "flink1.18-jdk11": {
+      "classes": {
+        "tech.streamfusion.CanonicalKafkaPipelineJobTest": {
+          "tests": 18,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingTinyIntExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalTemporalJoinJobTest": {
+          "tests": 26,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaReaderWriterRescaleJobTest": {
+          "tests": 4,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryIntervalJoinJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryNormalizerJobTest": {
+          "tests": 26,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalBareUpdateDedupJobTest": {
+          "tests": 16,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaPipelineProcessFailureJobTest": {
+          "tests": 4,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalManagedUdfTimestampKeyJobTest": {
+          "tests": 42,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalBufferedDedupJobTest": {
+          "tests": 48,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKeylessAntiJoinJobTest": {
+          "tests": 4,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingSmallIntExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalDistinctWindowAggregateJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalNormalizerNestedRowKeyJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalEventUnboundedRowsJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryRegularJoinJobTest": {
+          "tests": 90,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalManagedUdfGroupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalTwoPhaseSumDistinctJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalTwoPhaseWindowAggregateJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupDateExtremaJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalWindowJoinJobTest": {
+          "tests": 46,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupTypedCheckpointJobTest": {
+          "tests": 4,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryUpdateTopNJobTest": {
+          "tests": 60,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaSinkBarrierJobTest": {
+          "tests": 12,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalUpdateTopNJobTest": {
+          "tests": 60,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupTypedContinueJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryNormalizerNestedRowKeyJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalEventUnboundedRowsCleanupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalEventUnboundedRangeCleanupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingProctimeJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaSinkCompletionFailureJobTest": {
+          "tests": 4,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingBooleanExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalFixedWindowAggregateJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryTemporalSortJobTest": {
+          "tests": 14,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalManagedUdfGroupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalUnboundedOverJobTest": {
+          "tests": 56,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalHiddenExtremaJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryEagerDedupJobTest": {
+          "tests": 76,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalTwoPhaseMiniBatchStringJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalNormalizerJobTest": {
+          "tests": 26,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryRetractingAggregateGraphJobTest": {
+          "tests": 18,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalManagedUdfStructuredKeyJobTest": {
+          "tests": 42,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalWindowDeduplicateJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalGroupArithmeticAppendJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalCachedGlobalManagedUdfGroupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalCachedMiniBatchManagedUdfGroupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaSinkProcessFailureJobTest": {
+          "tests": 4,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalIntervalJoinJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupArithmeticJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinarySharedFirstNJobTest": {
+          "tests": 16,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaSinkJobTest": {
+          "tests": 18,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupArithmeticAppendJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+          "tests": 42,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalGroupArithmeticJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingTime3ExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalManagedUdfContainerKeyJobTest": {
+          "tests": 42,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalUnboundedOverConstantJobTest": {
+          "tests": 48,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupSumDistinctJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaPartitionDiscoveryJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaSinkFailureJobTest": {
+          "tests": 4,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalCachedManagedUdfGroupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalEventUnboundedRangeCleanupJobTest": {
+          "tests": 20,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGeneratedIntervalJoinJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGeneratedTemporalJoinJobTest": {
+          "tests": 26,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryNormalizerRowKeyJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalUnboundedOverConstantJobTest": {
+          "tests": 48,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalEventUnboundedRangeJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaSinkFencingJobTest": {
+          "tests": 4,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryAppendTopNJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalAppendExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryBufferedDedupJobTest": {
+          "tests": 48,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGeneratedWindowJoinJobTest": {
+          "tests": 46,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupTypedNoInputJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingTopNJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalTemporalSortJobTest": {
+          "tests": 14,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalEventUnboundedRangeJobTest": {
+          "tests": 20,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalEventUnboundedRowsCleanupJobTest": {
+          "tests": 20,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalLegacyDistinctSessionJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalLegacySessionJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalSharedFirstNJobTest": {
+          "tests": 16,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryWindowJoinJobTest": {
+          "tests": 46,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalNormalizerRowKeyJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalAppendTopNJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryTemporalJoinJobTest": {
+          "tests": 26,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalMiniBatchManagedUdfGroupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalBoundedOverJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalEventUnboundedRowsJobTest": {
+          "tests": 20,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalTemporalJoinCommitFailureJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingIntExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryFirstNJobTest": {
+          "tests": 30,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalRetractingExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalAppendStringExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalEagerDedupJobTest": {
+          "tests": 76,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaSourceJobTest": {
+          "tests": 14,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalMiniBatchStringJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaPipelineFencingJobTest": {
+          "tests": 4,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryExplicitTemporalJoinJobTest": {
+          "tests": 26,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRegularJoinJobTest": {
+          "tests": 90,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalMiniBatchSumDistinctJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingAggregateGraphJobTest": {
+          "tests": 18,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaPipelineCompletionFailureJobTest": {
+          "tests": 4,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalWindowRankJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalSessionWindowAggregateJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalAppendExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingDateExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalUnboundedOverJobTest": {
+          "tests": 56,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaPipelineFailureJobTest": {
+          "tests": 4,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryBareUpdateDedupJobTest": {
+          "tests": 16,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalFirstNJobTest": {
+          "tests": 30,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryRetractingTopNJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingTime0ExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        }
+      },
+      "outcomes": {
+        "tests": 3592,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0
+      },
+      "selected_classes": 120,
+      "case_identities_sha256": "629201a64b8b5317b6c9c215001370b993a0283569e24481f45b88f6e3c8dd20",
+      "inventory_sha256": [
+        "aa0f72bd3192746068a76fb24ab8d0f548e964a6dcb19bd0b3feab7d1f1781ec"
+      ],
+      "reported_classes": 118
+    },
+    "flink1.18-jdk17": {
+      "classes": {
+        "tech.streamfusion.CanonicalKafkaPipelineJobTest": {
+          "tests": 18,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingTinyIntExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalTemporalJoinJobTest": {
+          "tests": 26,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaReaderWriterRescaleJobTest": {
+          "tests": 4,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryIntervalJoinJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryNormalizerJobTest": {
+          "tests": 26,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalBareUpdateDedupJobTest": {
+          "tests": 16,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaPipelineProcessFailureJobTest": {
+          "tests": 4,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalManagedUdfTimestampKeyJobTest": {
+          "tests": 42,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalBufferedDedupJobTest": {
+          "tests": 48,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKeylessAntiJoinJobTest": {
+          "tests": 4,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingSmallIntExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalDistinctWindowAggregateJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalNormalizerNestedRowKeyJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalEventUnboundedRowsJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryRegularJoinJobTest": {
+          "tests": 90,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalManagedUdfGroupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalTwoPhaseSumDistinctJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalTwoPhaseWindowAggregateJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupDateExtremaJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalWindowJoinJobTest": {
+          "tests": 46,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupTypedCheckpointJobTest": {
+          "tests": 4,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryUpdateTopNJobTest": {
+          "tests": 60,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaSinkBarrierJobTest": {
+          "tests": 12,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalUpdateTopNJobTest": {
+          "tests": 60,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupTypedContinueJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryNormalizerNestedRowKeyJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalEventUnboundedRowsCleanupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalEventUnboundedRangeCleanupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingProctimeJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaSinkCompletionFailureJobTest": {
+          "tests": 4,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingBooleanExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalFixedWindowAggregateJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryTemporalSortJobTest": {
+          "tests": 14,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalManagedUdfGroupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalUnboundedOverJobTest": {
+          "tests": 56,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalHiddenExtremaJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryEagerDedupJobTest": {
+          "tests": 76,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalTwoPhaseMiniBatchStringJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalNormalizerJobTest": {
+          "tests": 26,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryRetractingAggregateGraphJobTest": {
+          "tests": 18,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalManagedUdfStructuredKeyJobTest": {
+          "tests": 42,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalWindowDeduplicateJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalGroupArithmeticAppendJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalCachedGlobalManagedUdfGroupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalCachedMiniBatchManagedUdfGroupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaSinkProcessFailureJobTest": {
+          "tests": 4,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalIntervalJoinJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupArithmeticJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinarySharedFirstNJobTest": {
+          "tests": 16,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaSinkJobTest": {
+          "tests": 18,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupArithmeticAppendJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+          "tests": 42,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalGroupArithmeticJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingTime3ExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalManagedUdfContainerKeyJobTest": {
+          "tests": 42,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalUnboundedOverConstantJobTest": {
+          "tests": 48,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupSumDistinctJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaPartitionDiscoveryJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaSinkFailureJobTest": {
+          "tests": 4,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalCachedManagedUdfGroupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalEventUnboundedRangeCleanupJobTest": {
+          "tests": 20,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGeneratedIntervalJoinJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGeneratedTemporalJoinJobTest": {
+          "tests": 26,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryNormalizerRowKeyJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalUnboundedOverConstantJobTest": {
+          "tests": 48,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalEventUnboundedRangeJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaSinkFencingJobTest": {
+          "tests": 4,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryAppendTopNJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalAppendExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryBufferedDedupJobTest": {
+          "tests": 48,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGeneratedWindowJoinJobTest": {
+          "tests": 46,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupTypedNoInputJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingTopNJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalTemporalSortJobTest": {
+          "tests": 14,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalEventUnboundedRangeJobTest": {
+          "tests": 20,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalEventUnboundedRowsCleanupJobTest": {
+          "tests": 20,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalLegacyDistinctSessionJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalLegacySessionJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalSharedFirstNJobTest": {
+          "tests": 16,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryWindowJoinJobTest": {
+          "tests": 46,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalNormalizerRowKeyJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalAppendTopNJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryTemporalJoinJobTest": {
+          "tests": 26,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalMiniBatchManagedUdfGroupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalBoundedOverJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalEventUnboundedRowsJobTest": {
+          "tests": 20,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalTemporalJoinCommitFailureJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingIntExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryFirstNJobTest": {
+          "tests": 30,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalRetractingExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalAppendStringExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalEagerDedupJobTest": {
+          "tests": 76,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaSourceJobTest": {
+          "tests": 14,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalMiniBatchStringJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaPipelineFencingJobTest": {
+          "tests": 4,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryExplicitTemporalJoinJobTest": {
+          "tests": 26,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRegularJoinJobTest": {
+          "tests": 90,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalMiniBatchSumDistinctJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingAggregateGraphJobTest": {
+          "tests": 18,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaPipelineCompletionFailureJobTest": {
+          "tests": 4,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalWindowRankJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalSessionWindowAggregateJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalAppendExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingDateExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalUnboundedOverJobTest": {
+          "tests": 56,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaPipelineFailureJobTest": {
+          "tests": 4,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryBareUpdateDedupJobTest": {
+          "tests": 16,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalFirstNJobTest": {
+          "tests": 30,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryRetractingTopNJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingTime0ExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        }
+      },
+      "outcomes": {
+        "tests": 3592,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0
+      },
+      "selected_classes": 120,
+      "case_identities_sha256": "629201a64b8b5317b6c9c215001370b993a0283569e24481f45b88f6e3c8dd20",
+      "inventory_sha256": [
+        "aa0f72bd3192746068a76fb24ab8d0f548e964a6dcb19bd0b3feab7d1f1781ec"
+      ],
+      "reported_classes": 118
+    },
+    "flink2.2-jdk11": {
+      "classes": {
+        "tech.streamfusion.CanonicalKafkaPipelineJobTest": {
+          "tests": 36,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingTinyIntExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalTemporalJoinJobTest": {
+          "tests": 26,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaReaderWriterRescaleJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryIntervalJoinJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryNormalizerJobTest": {
+          "tests": 26,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalBareUpdateDedupJobTest": {
+          "tests": 16,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaPipelineProcessFailureJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalManagedUdfTimestampKeyJobTest": {
+          "tests": 42,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalBufferedDedupJobTest": {
+          "tests": 48,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKeylessAntiJoinJobTest": {
+          "tests": 4,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingSmallIntExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalDistinctWindowAggregateJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalNormalizerNestedRowKeyJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalEventUnboundedRowsJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryRegularJoinJobTest": {
+          "tests": 90,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalManagedUdfGroupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalTwoPhaseSumDistinctJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalTwoPhaseWindowAggregateJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupDateExtremaJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalWindowJoinJobTest": {
+          "tests": 46,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupTypedCheckpointJobTest": {
+          "tests": 4,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryUpdateTopNJobTest": {
+          "tests": 60,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaSinkBarrierJobTest": {
+          "tests": 24,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalUpdateTopNJobTest": {
+          "tests": 60,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupTypedContinueJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryNormalizerNestedRowKeyJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalEventUnboundedRowsCleanupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalEventUnboundedRangeCleanupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingProctimeJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaSinkCompletionFailureJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingBooleanExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalFixedWindowAggregateJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryTemporalSortJobTest": {
+          "tests": 14,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalManagedUdfGroupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalUnboundedOverJobTest": {
+          "tests": 56,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalHiddenExtremaJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryEagerDedupJobTest": {
+          "tests": 76,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalTwoPhaseMiniBatchStringJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalNormalizerJobTest": {
+          "tests": 26,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryRetractingAggregateGraphJobTest": {
+          "tests": 18,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalManagedUdfStructuredKeyJobTest": {
+          "tests": 42,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalWindowDeduplicateJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalGroupArithmeticAppendJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalCachedGlobalManagedUdfGroupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalCachedMiniBatchManagedUdfGroupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaSinkProcessFailureJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalIntervalJoinJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupArithmeticJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinarySharedFirstNJobTest": {
+          "tests": 16,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaSinkJobTest": {
+          "tests": 36,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupArithmeticAppendJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+          "tests": 42,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalGroupArithmeticJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingTime3ExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalManagedUdfContainerKeyJobTest": {
+          "tests": 42,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalUnboundedOverConstantJobTest": {
+          "tests": 48,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupSumDistinctJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaPartitionDiscoveryJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaSinkFailureJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalCachedManagedUdfGroupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalEventUnboundedRangeCleanupJobTest": {
+          "tests": 20,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGeneratedIntervalJoinJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGeneratedTemporalJoinJobTest": {
+          "tests": 26,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryNormalizerRowKeyJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalUnboundedOverConstantJobTest": {
+          "tests": 48,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalEventUnboundedRangeJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaSinkFencingJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryAppendTopNJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalAppendExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryBufferedDedupJobTest": {
+          "tests": 48,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGeneratedWindowJoinJobTest": {
+          "tests": 46,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupTypedNoInputJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingTopNJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalTemporalSortJobTest": {
+          "tests": 14,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalEventUnboundedRangeJobTest": {
+          "tests": 20,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalEventUnboundedRowsCleanupJobTest": {
+          "tests": 20,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalLegacyDistinctSessionJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalLegacySessionJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalSharedFirstNJobTest": {
+          "tests": 16,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryWindowJoinJobTest": {
+          "tests": 46,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalNormalizerRowKeyJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalAppendTopNJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryTemporalJoinJobTest": {
+          "tests": 26,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalMiniBatchManagedUdfGroupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalBoundedOverJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalEventUnboundedRowsJobTest": {
+          "tests": 20,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalTemporalJoinCommitFailureJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingIntExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryFirstNJobTest": {
+          "tests": 30,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalRetractingExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalAppendStringExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalEagerDedupJobTest": {
+          "tests": 76,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaSourceJobTest": {
+          "tests": 14,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalMiniBatchStringJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaPipelineFencingJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryExplicitTemporalJoinJobTest": {
+          "tests": 26,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRegularJoinJobTest": {
+          "tests": 90,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalMiniBatchSumDistinctJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingAggregateGraphJobTest": {
+          "tests": 18,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaPipelineCompletionFailureJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalWindowRankJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalSessionWindowAggregateJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalAppendExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingDateExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalUnboundedOverJobTest": {
+          "tests": 56,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaPipelineFailureJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryBareUpdateDedupJobTest": {
+          "tests": 16,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalFirstNJobTest": {
+          "tests": 30,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryRetractingTopNJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingTime0ExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        }
+      },
+      "outcomes": {
+        "tests": 3676,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0
+      },
+      "selected_classes": 120,
+      "case_identities_sha256": "746fa4abeba3c2e12ca32a9203e6ad8baf4c5b2daf2e485c8682957612efcb00",
+      "inventory_sha256": [
+        "aa0f72bd3192746068a76fb24ab8d0f548e964a6dcb19bd0b3feab7d1f1781ec"
+      ],
+      "reported_classes": 118
+    },
+    "flink2.2-jdk17": {
+      "classes": {
+        "tech.streamfusion.CanonicalKafkaPipelineJobTest": {
+          "tests": 36,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingTinyIntExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalTemporalJoinJobTest": {
+          "tests": 26,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaReaderWriterRescaleJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryIntervalJoinJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryNormalizerJobTest": {
+          "tests": 26,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalBareUpdateDedupJobTest": {
+          "tests": 16,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaPipelineProcessFailureJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalManagedUdfTimestampKeyJobTest": {
+          "tests": 42,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalBufferedDedupJobTest": {
+          "tests": 48,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKeylessAntiJoinJobTest": {
+          "tests": 4,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingSmallIntExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalDistinctWindowAggregateJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalNormalizerNestedRowKeyJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalEventUnboundedRowsJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryRegularJoinJobTest": {
+          "tests": 90,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalManagedUdfGroupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalTwoPhaseSumDistinctJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalTwoPhaseWindowAggregateJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupDateExtremaJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalWindowJoinJobTest": {
+          "tests": 46,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupTypedCheckpointJobTest": {
+          "tests": 4,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryUpdateTopNJobTest": {
+          "tests": 60,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaSinkBarrierJobTest": {
+          "tests": 24,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalUpdateTopNJobTest": {
+          "tests": 60,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupTypedContinueJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryNormalizerNestedRowKeyJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalEventUnboundedRowsCleanupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalEventUnboundedRangeCleanupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingProctimeJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaSinkCompletionFailureJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingBooleanExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalFixedWindowAggregateJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryTemporalSortJobTest": {
+          "tests": 14,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalManagedUdfGroupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalUnboundedOverJobTest": {
+          "tests": 56,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalHiddenExtremaJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryEagerDedupJobTest": {
+          "tests": 76,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalTwoPhaseMiniBatchStringJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalNormalizerJobTest": {
+          "tests": 26,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryRetractingAggregateGraphJobTest": {
+          "tests": 18,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalManagedUdfStructuredKeyJobTest": {
+          "tests": 42,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalWindowDeduplicateJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalGroupArithmeticAppendJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalCachedGlobalManagedUdfGroupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalCachedMiniBatchManagedUdfGroupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaSinkProcessFailureJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalIntervalJoinJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupArithmeticJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinarySharedFirstNJobTest": {
+          "tests": 16,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaSinkJobTest": {
+          "tests": 36,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupArithmeticAppendJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+          "tests": 42,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalGroupArithmeticJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingTime3ExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalManagedUdfContainerKeyJobTest": {
+          "tests": 42,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalUnboundedOverConstantJobTest": {
+          "tests": 48,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupSumDistinctJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaPartitionDiscoveryJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaSinkFailureJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalCachedManagedUdfGroupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalEventUnboundedRangeCleanupJobTest": {
+          "tests": 20,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGeneratedIntervalJoinJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGeneratedTemporalJoinJobTest": {
+          "tests": 26,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryNormalizerRowKeyJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalUnboundedOverConstantJobTest": {
+          "tests": 48,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalEventUnboundedRangeJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaSinkFencingJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryAppendTopNJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalAppendExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryBufferedDedupJobTest": {
+          "tests": 48,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGeneratedWindowJoinJobTest": {
+          "tests": 46,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupTypedNoInputJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingTopNJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalTemporalSortJobTest": {
+          "tests": 14,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalEventUnboundedRangeJobTest": {
+          "tests": 20,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalEventUnboundedRowsCleanupJobTest": {
+          "tests": 20,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalLegacyDistinctSessionJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalLegacySessionJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalSharedFirstNJobTest": {
+          "tests": 16,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryWindowJoinJobTest": {
+          "tests": 46,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalNormalizerRowKeyJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalAppendTopNJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryTemporalJoinJobTest": {
+          "tests": 26,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalMiniBatchManagedUdfGroupJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalBoundedOverJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalEventUnboundedRowsJobTest": {
+          "tests": 20,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalTemporalJoinCommitFailureJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingIntExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryFirstNJobTest": {
+          "tests": 30,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalRetractingExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalAppendStringExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalEagerDedupJobTest": {
+          "tests": 76,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaSourceJobTest": {
+          "tests": 14,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalMiniBatchStringJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaPipelineFencingJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryExplicitTemporalJoinJobTest": {
+          "tests": 26,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRegularJoinJobTest": {
+          "tests": 90,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalMiniBatchSumDistinctJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingAggregateGraphJobTest": {
+          "tests": 18,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaPipelineCompletionFailureJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalWindowRankJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalSessionWindowAggregateJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalAppendExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingDateExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalGlobalUnboundedOverJobTest": {
+          "tests": 56,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalKafkaPipelineFailureJobTest": {
+          "tests": 8,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryBareUpdateDedupJobTest": {
+          "tests": 16,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalFirstNJobTest": {
+          "tests": 30,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalOrdinaryRetractingTopNJobTest": {
+          "tests": 84,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "tech.streamfusion.CanonicalRetractingTime0ExtremaJobTest": {
+          "tests": 28,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        }
+      },
+      "outcomes": {
+        "tests": 3676,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0
+      },
+      "selected_classes": 120,
+      "case_identities_sha256": "746fa4abeba3c2e12ca32a9203e6ad8baf4c5b2daf2e485c8682957612efcb00",
+      "inventory_sha256": [
+        "aa0f72bd3192746068a76fb24ab8d0f548e964a6dcb19bd0b3feab7d1f1781ec"
+      ],
+      "reported_classes": 118
+    }
+  },
+  "method": "Successful baseline Actions step intervals and Surefire XML from all 64 canonical artifacts. Case digest is SHA-256 of json.dumps(sorted((classname, name, skipped, multiplicity))) using all testcase elements per Flink/JDK cohort. Selection inventories include two abstract bases without reports; class outcomes cover the 118 reported suites. The complete selected inventory contains 120 classes. Runner time adds parallel jobs; start delays include prerequisites and queues. Candidate qualification and net performance comparison are pending.",
+  "collector_probe": {
+    "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43147998546",
+    "sha": "8a3e5e0d9e0b88fea433ea8645f95ecbe351022c",
+    "cohorts": {
+      "11": {
+        "trials": [
+          {
+            "mode": "gc-g1",
+            "pair": 0,
+            "phase": "preparation",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 202.891984897,
+            "cpu_seconds": 308.660709,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 136.774,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 197.829
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 262369280,
+            "classpath_bytes": 625459768
+          },
+          {
+            "mode": "gc-serial",
+            "pair": 0,
+            "phase": "preparation",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 187.54897497999997,
+            "cpu_seconds": 259.43431599999997,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 129.542,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 182.778
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 244326400,
+            "classpath_bytes": 625459768
+          },
+          {
+            "mode": "gc-g1",
+            "pair": 1,
+            "phase": "measurement",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 113.17910487100005,
+            "cpu_seconds": 227.71013499999998,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 108.274,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 55.215
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 262369280,
+            "classpath_bytes": 625459768
+          },
+          {
+            "mode": "gc-serial",
+            "pair": 1,
+            "phase": "measurement",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 101.56267411299996,
+            "cpu_seconds": 179.44621800000002,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 47.966,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 96.781
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 244326400,
+            "classpath_bytes": 625459768
+          },
+          {
+            "mode": "gc-serial",
+            "pair": 2,
+            "phase": "measurement",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 102.54347742800007,
+            "cpu_seconds": 176.656368,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 97.807,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 49.43
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 244326400,
+            "classpath_bytes": 625459768
+          },
+          {
+            "mode": "gc-g1",
+            "pair": 2,
+            "phase": "measurement",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 108.96484552699997,
+            "cpu_seconds": 228.31209900000002,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 56.609,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 104.103
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 262369280,
+            "classpath_bytes": 625459768
+          },
+          {
+            "mode": "gc-g1",
+            "pair": 3,
+            "phase": "measurement",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 112.40226423499996,
+            "cpu_seconds": 229.34885100000002,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 107.548,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 54.264
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 262369280,
+            "classpath_bytes": 625459768
+          },
+          {
+            "mode": "gc-serial",
+            "pair": 3,
+            "phase": "measurement",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 102.24709126000016,
+            "cpu_seconds": 183.683091,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 97.26,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 51.115
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 244326400,
+            "classpath_bytes": 625459768
+          }
+        ],
+        "medians": {
+          "gc-g1": {
+            "elapsed_seconds": 112.40226423499996,
+            "cpu_seconds": 228.31209900000002
+          },
+          "gc-serial": {
+            "elapsed_seconds": 102.24709126000016,
+            "cpu_seconds": 179.44621800000002
+          }
+        }
+      },
+      "17": {
+        "trials": [
+          {
+            "mode": "gc-g1",
+            "pair": 0,
+            "phase": "preparation",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 92.30045714799999,
+            "cpu_seconds": 133.140427,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 58.979,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 89.031
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 275841024,
+            "classpath_bytes": 625461675
+          },
+          {
+            "mode": "gc-serial",
+            "pair": 0,
+            "phase": "preparation",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 83.42338047300001,
+            "cpu_seconds": 127.32189900000003,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 51.919,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 80.36
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 253079552,
+            "classpath_bytes": 625461675
+          },
+          {
+            "mode": "gc-g1",
+            "pair": 1,
+            "phase": "measurement",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 59.806636422999986,
+            "cpu_seconds": 105.84690699999996,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 56.72,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 31.43
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 275841024,
+            "classpath_bytes": 625461675
+          },
+          {
+            "mode": "gc-serial",
+            "pair": 1,
+            "phase": "measurement",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 60.41996590599996,
+            "cpu_seconds": 104.20699700000004,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 33.927,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 57.259
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 253079552,
+            "classpath_bytes": 625461675
+          },
+          {
+            "mode": "gc-serial",
+            "pair": 2,
+            "phase": "measurement",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 59.09088502800006,
+            "cpu_seconds": 101.72393000000002,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 55.895,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 33.628
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 253079552,
+            "classpath_bytes": 625461675
+          },
+          {
+            "mode": "gc-g1",
+            "pair": 2,
+            "phase": "measurement",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 58.61218670000005,
+            "cpu_seconds": 102.463215,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 30.827,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 55.571
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 275841024,
+            "classpath_bytes": 625461675
+          },
+          {
+            "mode": "gc-g1",
+            "pair": 3,
+            "phase": "measurement",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 57.73031601299999,
+            "cpu_seconds": 97.52035299999987,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 54.641,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 31.693
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 275841024,
+            "classpath_bytes": 625461675
+          },
+          {
+            "mode": "gc-serial",
+            "pair": 3,
+            "phase": "measurement",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 58.24552630099993,
+            "cpu_seconds": 95.92894400000007,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 55.21,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 33.214
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 253079552,
+            "classpath_bytes": 625461675
+          }
+        ],
+        "medians": {
+          "gc-g1": {
+            "elapsed_seconds": 58.61218670000005,
+            "cpu_seconds": 102.463215
+          },
+          "gc-serial": {
+            "elapsed_seconds": 59.09088502800006,
+            "cpu_seconds": 101.72393000000002
+          }
+        }
+      }
+    },
+    "limits": "Five-case Flink 2.2 probe, separate preparation for each collector, three alternating pairs, current first-tier compilation and code-cache limits. Serial GC improves elapsed median by 9.0% on JDK 11 and regresses by 0.8% on JDK 17. No change to merge-gate collector defaults; broader JDK 11 qualification is pending.",
+    "extended_setup_failure": {
+      "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43162295022",
+      "line": "1.18",
+      "jdk": "11",
+      "phase": "gc-g1 preparation",
+      "elapsed_seconds": 3.4534317529999896,
+      "executed_cases": 0,
+      "exit_code": 1,
+      "reason": "Direct Surefire invocation cannot resolve the uninstalled streamfusion-json-flink1.18 reactor dependency. Normal precompiled test lifecycle and a single-line dispatch repair setup without repeating the running 2.2 probe."
+    }
+  },
+  "native_cache_layout_baseline": {
+    "captured_at": "2026-11-12T05:50:13.083903+00:00",
+    "entries": [
+      {
+        "id": 10391898513,
+        "key": "v0-rust-upstream-suite-Linux-x64-d0b819d4-a6f17d09",
+        "version": "0adb023b648a1b66f9105230a88fb1400108f68a4386f7cfa846bd6454f11b08",
+        "ref": "refs/heads/perf/ci-worker-startup",
+        "size_in_bytes": 1264505858
+      },
+      {
+        "id": 10391847036,
+        "key": "v0-rust-upstream-suite-Linux-x64-d0b819d4-a6f17d09",
+        "version": "e5a206df9cd3b763840d3d669174f1b6ed8b155ee5c600b8e8634ed5e6abc44f",
+        "ref": "refs/heads/perf/ci-worker-startup",
+        "size_in_bytes": 1264519389
+      },
+      {
+        "id": 10391604640,
+        "key": "v0-rust-debug-jvm-Linux-x64-4379f36a-a6f17d09",
+        "version": "f042e81e967119671f464f066cfcebc7a0fe9e27b39b4148f250c8b797d89a0e",
+        "ref": "refs/heads/perf/ci-worker-startup",
+        "size_in_bytes": 1264432617
+      }
+    ],
+    "default_branch_entries": 0,
+    "projected_avoided_duplicate_bytes": 2529025247,
+    "observation": "The native producer and upstream preparation considered the same Rust version and environment variables except upstream omitted RUST_BACKTRACE. The upstream entries have identical keys but distinct versions because their cache paths differ by Flink line. Proposed shared-key, environment and target-path normalization reuses the ordinary producer cache; source Cargo builds and exact-commit library staging remain required. Hosted verification pending."
+  },
+  "shared_java_candidate": {
+    "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43149560105",
+    "sha": "c3c0744be2ec50c296ddc602da19b7726287fac3",
+    "complete": true,
+    "conclusion": "success",
+    "elapsed_seconds": 14213.0,
+    "runner_seconds": 207517.0,
+    "groups": {
+      "other": {
+        "jobs": 20,
+        "runner_seconds": 15168.0,
+        "max_job_seconds": 2663.0
+      },
+      "canonical preparation": {
+        "jobs": 4,
+        "runner_seconds": 940.0,
+        "max_job_seconds": 275.0
+      },
+      "java": {
+        "jobs": 12,
+        "runner_seconds": 32545.0,
+        "max_job_seconds": 3452.0
+      },
+      "canonical": {
+        "jobs": 64,
+        "runner_seconds": 158864.0,
+        "max_job_seconds": 4097.0
+      }
+    },
+    "steps": {
+      "Run every selected canonical job": {
+        "executions": 64,
+        "seconds": 149650.0
+      },
+      "Run Java test suite": {
+        "executions": 12,
+        "seconds": 27831.0
+      },
+      "Resolve Java dependencies before tests": {
+        "executions": 76,
+        "seconds": 6051.0
+      },
+      "Run optional lake module suite": {
+        "executions": 13,
+        "seconds": 4926.0
+      },
+      "Build optimized core image": {
+        "executions": 2,
+        "seconds": 3300.0
+      },
+      "Run actions/download-artifact@v5": {
+        "executions": 158,
+        "seconds": 2704.0
+      },
+      "Compile the complete reactor and partition runtime test classes": {
+        "executions": 12,
+        "seconds": 2287.0
+      },
+      "Run unchanged Paimon compaction fixtures with stock and native work evidence": {
+        "executions": 1,
+        "seconds": 1512.0
+      },
+      "Run Arrow ownership, SQL parity and upstream Doris connector tests": {
+        "executions": 1,
+        "seconds": 1141.0
+      },
+      "Resolve lake module dependencies before tests": {
+        "executions": 13,
+        "seconds": 1028.0
+      },
+      "Run native test suite": {
+        "executions": 1,
+        "seconds": 819.0
+      },
+      "Restore the matching canonical Java build": {
+        "executions": 64,
+        "seconds": 819.0
+      },
+      "Build all debug native libraries once": {
+        "executions": 1,
+        "seconds": 644.0
+      },
+      "Run Fluss SQL and complete Nexmark parity smoke": {
+        "executions": 1,
+        "seconds": 590.0
+      },
+      "Compile canonical Java and check its reactor dependencies once": {
+        "executions": 4,
+        "seconds": 517.0
+      },
+      "Test upstream execution evidence checks": {
+        "executions": 2,
+        "seconds": 434.0
+      },
+      "Check deployed Java 11 bytecode including embedded payloads": {
+        "executions": 4,
+        "seconds": 410.0
+      },
+      "Run actions/checkout@v6": {
+        "executions": 99,
+        "seconds": 353.0
+      },
+      "Verify JVM boundary defaults and optional cache on the freshly built native library": {
+        "executions": 2,
+        "seconds": 353.0
+      },
+      "Run actions/setup-java@v4": {
+        "executions": 96,
+        "seconds": 344.0
+      },
+      "Resolve canonical Java dependencies": {
+        "executions": 4,
+        "seconds": 306.0
+      },
+      "Resolve image dependencies before builds and tests": {
+        "executions": 2,
+        "seconds": 191.0
+      },
+      "Set up job": {
+        "executions": 100,
+        "seconds": 152.0
+      },
+      "Run Flink Session-cluster image smoke test": {
+        "executions": 2,
+        "seconds": 123.0
+      },
+      "Retain canonical job selection and outcomes": {
+        "executions": 64,
+        "seconds": 118.0
+      },
+      "Verify Fluss RocksDB backends and output parity": {
+        "executions": 1,
+        "seconds": 117.0
+      },
+      "Resolve Doris dependencies before tests": {
+        "executions": 1,
+        "seconds": 75.0
+      },
+      "Check every standalone native package": {
+        "executions": 1,
+        "seconds": 68.0
+      },
+      "Run actions/upload-artifact@v4": {
+        "executions": 6,
+        "seconds": 54.0
+      },
+      "Post Run Swatinem/rust-cache@v2": {
+        "executions": 4,
+        "seconds": 40.0
+      },
+      "Run ./.github/actions/setup-rust": {
+        "executions": 4,
+        "seconds": 38.0
+      },
+      "Verify Java host APIs and deployment module ownership": {
+        "executions": 2,
+        "seconds": 37.0
+      },
+      "Execute the packaged loader and mixed-line identity tests": {
+        "executions": 1,
+        "seconds": 36.0
+      },
+      "Post Run actions/checkout@v6": {
+        "executions": 99,
+        "seconds": 29.0
+      },
+      "Post Run actions/setup-java@v4": {
+        "executions": 96,
+        "seconds": 19.0
+      },
+      "Upload runtime test partition": {
+        "executions": 12,
+        "seconds": 14.0
+      },
+      "Remove canonical worker class metadata": {
+        "executions": 64,
+        "seconds": 12.0
+      },
+      "Test Flink 1.18 native and fallback contract selection": {
+        "executions": 1,
+        "seconds": 9.0
+      },
+      "Package qualified Flink 1.18 payloads": {
+        "executions": 1,
+        "seconds": 8.0
+      },
+      "Partition the complete compiled canonical inventory": {
+        "executions": 64,
+        "seconds": 8.0
+      },
+      "Upload portable SQL audit outcomes": {
+        "executions": 4,
+        "seconds": 5.0
+      },
+      "Free disk space": {
+        "executions": 94,
+        "seconds": 4.0
+      },
+      "Run Swatinem/rust-cache@v2": {
+        "executions": 4,
+        "seconds": 4.0
+      },
+      "Check native formatting": {
+        "executions": 1,
+        "seconds": 3.0
+      },
+      "Verify native JNI exports": {
+        "executions": 1,
+        "seconds": 3.0
+      },
+      "Check native package boundaries": {
+        "executions": 1,
+        "seconds": 2.0
+      },
+      "Upload Fluss SQL execution plans and test results": {
+        "executions": 1,
+        "seconds": 2.0
+      },
+      "Retain Paimon compaction results and invocation evidence": {
+        "executions": 1,
+        "seconds": 2.0
+      },
+      "Retain native compilation timings": {
+        "executions": 1,
+        "seconds": 1.0
+      },
+      "Retain Doris plans, upstream assertions and server logs": {
+        "executions": 1,
+        "seconds": 1.0
+      },
+      "Run python3 bin/ci-plan.py >> \"$GITHUB_OUTPUT\"": {
+        "executions": 1,
+        "seconds": 0
+      },
+      "Complete job": {
+        "executions": 100,
+        "seconds": 0
+      },
+      "Test fork result reporting": {
+        "executions": 1,
+        "seconds": 0
+      },
+      "Run python3 bin/ci-free-disk.py": {
+        "executions": 4,
+        "seconds": 0
+      },
+      "Require every test job to succeed": {
+        "executions": 1,
+        "seconds": 0
+      }
+    },
+    "canonical_coverage": {
+      "flink1.18-jdk11": {
+        "shards": 16,
+        "selected_classes": 120,
+        "reported_classes": 118,
+        "outcomes": {
+          "tests": 3592,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "case_identities_sha256": "629201a64b8b5317b6c9c215001370b993a0283569e24481f45b88f6e3c8dd20",
+        "inventory_sha256": [
+          "aa0f72bd3192746068a76fb24ab8d0f548e964a6dcb19bd0b3feab7d1f1781ec"
+        ]
+      },
+      "flink1.18-jdk17": {
+        "shards": 16,
+        "selected_classes": 120,
+        "reported_classes": 118,
+        "outcomes": {
+          "tests": 3592,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "case_identities_sha256": "629201a64b8b5317b6c9c215001370b993a0283569e24481f45b88f6e3c8dd20",
+        "inventory_sha256": [
+          "aa0f72bd3192746068a76fb24ab8d0f548e964a6dcb19bd0b3feab7d1f1781ec"
+        ]
+      },
+      "flink2.2-jdk11": {
+        "shards": 16,
+        "selected_classes": 120,
+        "reported_classes": 118,
+        "outcomes": {
+          "tests": 3676,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "case_identities_sha256": "746fa4abeba3c2e12ca32a9203e6ad8baf4c5b2daf2e485c8682957612efcb00",
+        "inventory_sha256": [
+          "aa0f72bd3192746068a76fb24ab8d0f548e964a6dcb19bd0b3feab7d1f1781ec"
+        ]
+      },
+      "flink2.2-jdk17": {
+        "shards": 16,
+        "selected_classes": 120,
+        "reported_classes": 118,
+        "outcomes": {
+          "tests": 3676,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "case_identities_sha256": "746fa4abeba3c2e12ca32a9203e6ad8baf4c5b2daf2e485c8682957612efcb00",
+        "inventory_sha256": [
+          "aa0f72bd3192746068a76fb24ab8d0f548e964a6dcb19bd0b3feab7d1f1781ec"
+        ]
+      }
+    },
+    "limits": "Start delay includes prerequisites, concurrency limits and runner queues. Runner seconds exclude jobs without a completed execution interval; they are not billed minutes. Step times overlap between parallel jobs.",
+    "interpretation": "Complete canonical coverage matches the baseline. Initial compile/pack time falls to 517 seconds, with 819 seconds for consumer extraction, but total CI runner time rises 1.3% and elapsed time rises 9.0%. JDK11 canonical class execution is higher; concurrent diagnostics, cold setup and runner variation prevent an isolated causal timing claim. No whole-CI speedup is established by compilation reuse alone."
+  },
+  "collector_worker_mix": {
+    "method": "Eight complete classes and 64 invocations per phase on JDK11. Independent G1/Serial metadata preparation followed by two alternating pairs on each line, four fresh 1GiB parents, unchanged 1GiB isolated child workers, C1 and 512MiB code cache. Full native work and handoff assertions retained; profiler rejects changed invocation identities. All 768 invocations pass without skips.",
+    "cohorts": {
+      "1.18": {
+        "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43163664985",
+        "source": "4baeb7d7cfddc4a59631b75a31796231a6750352",
+        "jdk": "11",
+        "class_outcomes_per_trial": {
+          "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": {
+            "tests": 8,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": {
+            "tests": 8,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "tech.streamfusion.CanonicalGroupDateExtremaJobTest": {
+            "tests": 8,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": {
+            "tests": 8,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": {
+            "tests": 8,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": {
+            "tests": 8,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": {
+            "tests": 8,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "tech.streamfusion.CanonicalHiddenExtremaJobTest": {
+            "tests": 8,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          }
+        },
+        "trials": [
+          {
+            "mode": "gc-g1",
+            "pair": 0,
+            "phase": "preparation",
+            "flink_line": "1.18",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 821.2225638210001,
+            "cpu_seconds": 2723.3196249999996,
+            "outcomes": {
+              "tests": 64,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": 344.807,
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": 342.778,
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": 416.69,
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": 419.599,
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": 353.817,
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": 424.007,
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": 420.565,
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": 338.025
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 245006336,
+            "classpath_bytes": 703561219
+          },
+          {
+            "mode": "gc-serial",
+            "pair": 0,
+            "phase": "preparation",
+            "flink_line": "1.18",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 657.0560916649999,
+            "cpu_seconds": 2096.665477000001,
+            "outcomes": {
+              "tests": 64,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": 271.564,
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": 265.928,
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": 341.686,
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": 273.476,
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": 332.172,
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": 270.476,
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": 332.817,
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": 341.269
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 228204544,
+            "classpath_bytes": 703561219
+          },
+          {
+            "mode": "gc-g1",
+            "pair": 1,
+            "phase": "measurement",
+            "flink_line": "1.18",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 734.3835927190003,
+            "cpu_seconds": 2617.487718,
+            "outcomes": {
+              "tests": 64,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": 339.654,
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": 352.422,
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": 344.234,
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": 339.792,
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": 334.934,
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": 341.648,
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": 340.47,
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": 317.774
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 245006336,
+            "classpath_bytes": 703561219
+          },
+          {
+            "mode": "gc-serial",
+            "pair": 1,
+            "phase": "measurement",
+            "flink_line": "1.18",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 597.7980604660002,
+            "cpu_seconds": 2071.020940000001,
+            "outcomes": {
+              "tests": 64,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": 277.097,
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": 271.712,
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": 260.324,
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": 276.955,
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": 269.249,
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": 266.836,
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": 288.252,
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": 268.283
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 228204544,
+            "classpath_bytes": 703561219
+          },
+          {
+            "mode": "gc-serial",
+            "pair": 2,
+            "phase": "measurement",
+            "flink_line": "1.18",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 593.3300852849998,
+            "cpu_seconds": 2052.3334399999994,
+            "outcomes": {
+              "tests": 64,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": 278.914,
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": 267.275,
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": 262.426,
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": 277.868,
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": 252.549,
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": 265.723,
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": 272.661,
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": 276.228
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 228204544,
+            "classpath_bytes": 703561219
+          },
+          {
+            "mode": "gc-g1",
+            "pair": 2,
+            "phase": "measurement",
+            "flink_line": "1.18",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 734.4554393440003,
+            "cpu_seconds": 2617.0098780000008,
+            "outcomes": {
+              "tests": 64,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": 356.554,
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": 337.824,
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": 346.811,
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": 345.9,
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": 324.963,
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": 347.118,
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": 331.154,
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": 335.679
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 245006336,
+            "classpath_bytes": 703561219
+          }
+        ],
+        "medians": {
+          "gc-g1": {
+            "elapsed_seconds": 734.4195160315003,
+            "cpu_seconds": 2617.2487980000005
+          },
+          "gc-serial": {
+            "elapsed_seconds": 595.5640728755,
+            "cpu_seconds": 2061.6771900000003
+          }
+        },
+        "reduction_percent": {
+          "elapsed_seconds": 18.90682915213334,
+          "cpu_seconds": 21.22731352191455
+        }
+      },
+      "2.2": {
+        "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43163696055",
+        "source": "4baeb7d7cfddc4a59631b75a31796231a6750352",
+        "jdk": "11",
+        "class_outcomes_per_trial": {
+          "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": {
+            "tests": 8,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": {
+            "tests": 8,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "tech.streamfusion.CanonicalGroupDateExtremaJobTest": {
+            "tests": 8,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": {
+            "tests": 8,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": {
+            "tests": 8,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": {
+            "tests": 8,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": {
+            "tests": 8,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "tech.streamfusion.CanonicalHiddenExtremaJobTest": {
+            "tests": 8,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          }
+        },
+        "trials": [
+          {
+            "mode": "gc-g1",
+            "pair": 0,
+            "phase": "preparation",
+            "flink_line": "2.2",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 899.7576282949999,
+            "cpu_seconds": 2973.3051379999997,
+            "outcomes": {
+              "tests": 64,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": 369.962,
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": 368.907,
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": 475.32,
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": 456.997,
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": 380.097,
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": 469.099,
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": 474.64,
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": 370.07
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 261779456,
+            "classpath_bytes": 703546547
+          },
+          {
+            "mode": "gc-serial",
+            "pair": 0,
+            "phase": "preparation",
+            "flink_line": "2.2",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 741.806657609,
+            "cpu_seconds": 2329.051847,
+            "outcomes": {
+              "tests": 64,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": 291.732,
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": 298.18,
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": 385.984,
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": 301.399,
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": 396.203,
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": 290.871,
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": 386.318,
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": 397.468
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 243707904,
+            "classpath_bytes": 703546547
+          },
+          {
+            "mode": "gc-g1",
+            "pair": 1,
+            "phase": "measurement",
+            "flink_line": "2.2",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 786.6791358120001,
+            "cpu_seconds": 2824.4534300000005,
+            "outcomes": {
+              "tests": 64,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": 357.427,
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": 377.91,
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": 367.978,
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": 367.566,
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": 361.535,
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": 349.656,
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": 359.205,
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": 385.869
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 261779456,
+            "classpath_bytes": 703546547
+          },
+          {
+            "mode": "gc-serial",
+            "pair": 1,
+            "phase": "measurement",
+            "flink_line": "2.2",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 629.1751639069998,
+            "cpu_seconds": 2174.759776,
+            "outcomes": {
+              "tests": 64,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": 289.927,
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": 290.778,
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": 291.794,
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": 279.573,
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": 280.577,
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": 305.239,
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": 271.464,
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": 281.342
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 243707904,
+            "classpath_bytes": 703546547
+          },
+          {
+            "mode": "gc-serial",
+            "pair": 2,
+            "phase": "measurement",
+            "flink_line": "2.2",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 626.4465563060003,
+            "cpu_seconds": 2181.6141449999996,
+            "outcomes": {
+              "tests": 64,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": 272.357,
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": 294.617,
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": 279.551,
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": 293.1,
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": 302.421,
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": 281.779,
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": 281.488,
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": 288.621
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 243707904,
+            "classpath_bytes": 703546547
+          },
+          {
+            "mode": "gc-g1",
+            "pair": 2,
+            "phase": "measurement",
+            "flink_line": "2.2",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 785.9286793520005,
+            "cpu_seconds": 2811.465808999999,
+            "outcomes": {
+              "tests": 64,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": 350.676,
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": 360.0,
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": 362.757,
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": 373.111,
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": 354.192,
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": 386.053,
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": 372.714,
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": 357.147
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 261779456,
+            "classpath_bytes": 703546547
+          }
+        ],
+        "medians": {
+          "gc-g1": {
+            "elapsed_seconds": 786.3039075820003,
+            "cpu_seconds": 2817.9596194999995
+          },
+          "gc-serial": {
+            "elapsed_seconds": 627.8108601065001,
+            "cpu_seconds": 2178.1869604999997
+          }
+        },
+        "reduction_percent": {
+          "elapsed_seconds": 20.15671624510803,
+          "cpu_seconds": 22.70340052330192
+        }
+      }
+    },
+    "decision": "Use Serial GC only in JDK11 canonical test JVMs. JDK17 and shared compiler preparation keep their existing settings. Combined exact-head CI and upstream gates remain required."
+  },
+  "native_cache_layout_candidate": {
+    "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43166149911",
+    "source": "8b4aee44c27bf1fa31957963b1cc0c00650dca67",
+    "upstream_checks": 19,
+    "conclusion": "success",
+    "cache_producer": {
+      "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43164176434",
+      "source": "99ca3ac95884ab3bdd014580475814f92f2ff252",
+      "ref": "main",
+      "key": "v0-rust-debug-jvm-Linux-x64-4379f36a-a6f17d09",
+      "bytes": 1264433225
+    },
+    "native_phases": [
+      {
+        "line": "2.2",
+        "cold_job": 130955299946,
+        "warm_job": 131008727893,
+        "cold_seconds": 447.872203,
+        "warm_seconds": 43.761954,
+        "cold_compilation_messages": 490,
+        "warm_compilation_messages": 19
+      },
+      {
+        "line": "1.18",
+        "cold_job": 130955300007,
+        "warm_job": 131008728007,
+        "cold_seconds": 529.020862,
+        "warm_seconds": 30.198175,
+        "cold_compilation_messages": 490,
+        "warm_compilation_messages": 19
+      }
+    ],
+    "scope": "Both preparations restore the exact debug-jvm key from the default branch and rebuild current workspace libraries, staging Cargo-reported artifacts. Native phase timing starts at the build announcement and ends at Java-build announcement, excluding the approximately 33-second cache restore. Reference is the cold upstream run 43149562563. This intentionally measures cold versus primed cache reuse, not a same-state CPU comparison or whole-suite latency improvement."
+  },
+  "handoff_poll_probe": {
+    "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43199424972",
+    "source": "c84b522e1d3e1965328792792024d902a1226c16",
+    "method": "One metadata preparation and three alternating one-second/100ms pairs, same five Flink2.2 handoff cases on each JDK; same conditions and deadlines. All 70 invocations pass.",
+    "cohorts": {
+      "11": {
+        "trials": [
+          {
+            "mode": "poll-old",
+            "pair": 0,
+            "phase": "preparation",
+            "flink_line": "2.2",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 141.19848534300002,
+            "cpu_seconds": 219.480938,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 86.311,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 137.109
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 256299008,
+            "classpath_bytes": 625459856
+          },
+          {
+            "mode": "poll-old",
+            "pair": 1,
+            "phase": "measurement",
+            "flink_line": "2.2",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 91.29057066200005,
+            "cpu_seconds": 171.081053,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 87.488,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 46.756
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 256299008,
+            "classpath_bytes": 625459856
+          },
+          {
+            "mode": "poll-quick",
+            "pair": 1,
+            "phase": "measurement",
+            "flink_line": "2.2",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 91.54162740999999,
+            "cpu_seconds": 171.99929000000006,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 46.423,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 87.728
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 256299008,
+            "classpath_bytes": 625459856
+          },
+          {
+            "mode": "poll-quick",
+            "pair": 2,
+            "phase": "measurement",
+            "flink_line": "2.2",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 91.47989852699993,
+            "cpu_seconds": 170.7874539999999,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 87.676,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 45.668
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 256299008,
+            "classpath_bytes": 625459856
+          },
+          {
+            "mode": "poll-old",
+            "pair": 2,
+            "phase": "measurement",
+            "flink_line": "2.2",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 93.54546640499996,
+            "cpu_seconds": 172.881731,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 46.125,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 89.718
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 256299008,
+            "classpath_bytes": 625459856
+          },
+          {
+            "mode": "poll-old",
+            "pair": 3,
+            "phase": "measurement",
+            "flink_line": "2.2",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 92.72028479999994,
+            "cpu_seconds": 171.22239800000006,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 44.287,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 88.875
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 256299008,
+            "classpath_bytes": 625459856
+          },
+          {
+            "mode": "poll-quick",
+            "pair": 3,
+            "phase": "measurement",
+            "flink_line": "2.2",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 90.91783975399994,
+            "cpu_seconds": 171.67660499999985,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 45.929,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 87.126
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 256299008,
+            "classpath_bytes": 625459856
+          }
+        ],
+        "medians": {
+          "poll-old": {
+            "elapsed_seconds": 92.72028479999994,
+            "cpu_seconds": 171.22239800000006
+          },
+          "poll-quick": {
+            "elapsed_seconds": 91.47989852699993,
+            "cpu_seconds": 171.67660499999985
+          }
+        },
+        "reduction_percent": {
+          "elapsed_seconds": 1.3377722854017948,
+          "cpu_seconds": -0.265273121568943
+        }
+      },
+      "17": {
+        "trials": [
+          {
+            "mode": "poll-old",
+            "pair": 0,
+            "phase": "preparation",
+            "flink_line": "2.2",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 130.735447468,
+            "cpu_seconds": 203.897902,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 75.391,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 126.1
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 269074432,
+            "classpath_bytes": 625461780
+          },
+          {
+            "mode": "poll-old",
+            "pair": 1,
+            "phase": "measurement",
+            "flink_line": "2.2",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 90.73881608599999,
+            "cpu_seconds": 166.15567000000001,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 86.203,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 47.437
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 269074432,
+            "classpath_bytes": 625461780
+          },
+          {
+            "mode": "poll-quick",
+            "pair": 1,
+            "phase": "measurement",
+            "flink_line": "2.2",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 93.13516153300003,
+            "cpu_seconds": 166.8576860000001,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 48.022,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 88.554
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 269074432,
+            "classpath_bytes": 625461780
+          },
+          {
+            "mode": "poll-quick",
+            "pair": 2,
+            "phase": "measurement",
+            "flink_line": "2.2",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 92.07278351499997,
+            "cpu_seconds": 166.91584199999994,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 87.455,
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 47.825
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 269074432,
+            "classpath_bytes": 625461780
+          },
+          {
+            "mode": "poll-old",
+            "pair": 2,
+            "phase": "measurement",
+            "flink_line": "2.2",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 88.12686700999996,
+            "cpu_seconds": 167.69574599999999,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 47.478,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 83.519
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 269074432,
+            "classpath_bytes": 625461780
+          },
+          {
+            "mode": "poll-old",
+            "pair": 3,
+            "phase": "measurement",
+            "flink_line": "2.2",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 91.52453494500003,
+            "cpu_seconds": 165.7529370000001,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 45.842,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 86.947
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 269074432,
+            "classpath_bytes": 625461780
+          },
+          {
+            "mode": "poll-quick",
+            "pair": 3,
+            "phase": "measurement",
+            "flink_line": "2.2",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 90.72137926599999,
+            "cpu_seconds": 166.59141799999998,
+            "outcomes": {
+              "tests": 5,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": 48.152,
+              "tech.streamfusion.CanonicalRegularJoinJobTest": 86.041
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+                "tests": 1,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalRegularJoinJobTest": {
+                "tests": 4,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 269074432,
+            "classpath_bytes": 625461780
+          }
+        ],
+        "medians": {
+          "poll-old": {
+            "elapsed_seconds": 90.73881608599999,
+            "cpu_seconds": 166.15567000000001
+          },
+          "poll-quick": {
+            "elapsed_seconds": 92.07278351499997,
+            "cpu_seconds": 166.8576860000001
+          }
+        },
+        "reduction_percent": {
+          "elapsed_seconds": -1.470117736312182,
+          "cpu_seconds": -0.42250499185496615
+        }
+      }
+    },
+    "decision": "Keep the one-second wait. The JDK11 median improvement is 1.3%, JDK17 regresses 1.5%, and CPU rises slightly on both. No polling property or interval change ships. Retain shallow native-source verification from the successful diagnostic."
+  }
+}

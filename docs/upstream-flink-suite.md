@@ -994,12 +994,28 @@ StreamFusion's native workspace and Java payloads, and the upstream format test 
 build also includes the Delta payload. Kafka and Paimon compile their own test fixtures in their
 consumer jobs, reusing the common build. The isolated Maven repository at `.flink-suite/<line>/m2`
 is cached separately by platform, JDK, Flink version and build inputs; `setup-java`'s ordinary
-Maven cache serves the injection-agent build. Rust dependencies are cached in the isolated source
-build's actual native target directory. Every run still rebuilds current StreamFusion code.
-The Rust cache keeps the existing `upstream-suite` key. Each Flink line runs its own preparation
+Maven cache serves the injection-agent build. Both lines restore the ordinary CI producer's
+`debug-jvm` Rust dependency cache at `native/target`, with matching debug and backtrace
+settings. Cargo builds current libraries from the isolated suite source against that target,
+then stages only the dynamic libraries reported by the successful current build into the
+suite's own native directory. Before packing, CI replaces those private native copies with
+debug-stripped test libraries, verifying their ELF identity and every allocated section against
+the current full-symbol originals. The shared Cargo target and Java payloads retain their
+original files. A per-library size manifest travels with the preparation diagnostics. The shared
+archive retains the smaller test libraries without transferring Cargo intermediates.
+Upstream jobs do not save additional Rust cache copies. Every run still
+validates current StreamFusion sources through Cargo. Each Flink line runs its own preparation
 and consumer jobs in a reusable workflow: 1.18 consumers need only the 1.18 preparation, and 2.2
 consumers need only the 2.2 preparation. Suite selection happens inside preparation, removing a
 separate runner allocation. The parent gate still requires both lines to succeed.
+
+The successful pre-stripping run 43324963308 used 14,956 runner-seconds versus the original
+14,121 seconds; summed download/verification steps rose from 682 to 1,255 seconds across
+14 consumers. Its actual Flink 2.2 archive was 2,996,228,021 bytes and contained 1,814,625,672
+uncompressed native-library bytes, 2,571,642,206 Maven-repository bytes and 128,211,445
+duplicate JAR bytes. This prioritizes the already verified native stripping technique over
+a new JAR-deduplication format. The integrated campaign must establish the archive reduction
+and full-suite behavior; the pre-stripping observations do not claim an upstream speedup.
 
 The Flink wrapper installs its pinned Maven distribution under
 `.flink-suite/<line>/maven-wrapper`, which travels in the shared build with executable bits preserved.
@@ -1027,13 +1043,14 @@ The preparation job also caches the compiled, clean Flink checkout using an exac
 the released Flink version, actual JDK version, runner platform/architecture, and build script/settings/workflow
 hash. Maven still runs the same build commands to validate and install its outputs; this is incremental
 compilation reuse, not a cached test result or a skipped StreamFusion build. A cache miss takes the
-normal cold-build path. Only main-branch preparation jobs save the compiled Flink and isolated Maven
-caches, before any upstream tests run, and shared artifacts continue to exclude test reports.
-Rust caches in ordinary CI, upstream preparation, and Paimon 1.0 compatibility are saved only on each
-repository's `main`. Fork feature branches restore available caches but do not save their own copies
-of these large caches; sibling branches cannot reuse those copies. Syncing and pushing `main` in a
-fork seeds that fork's default-branch caches. Forks do not share the canonical repository's caches. The ordinary Maven dependency cache
-managed by `setup-java` retains its existing policy.
+normal cold-build path. Personal-fork preparation and canonical `main` save the compiled Flink
+and isolated Maven caches before any upstream tests run; canonical feature branches do not.
+Shared artifacts continue to exclude test reports. The ordinary CI producer is the sole writer
+of the shared debug Rust dependency cache; upstream preparation only restores it. Paimon 1.0
+and optimized images retain their release-cache configuration. Fork feature branches can
+restore their fork's default-branch caches, while sibling branches cannot restore one another's
+entries. Forks do not share the canonical repository's caches. The ordinary Maven dependency
+cache managed by `setup-java` retains its existing policy.
 
 The optimized image jobs cache `native/target/release-staging`, the actual Cargo target directory
 used by the release builder. Debug dependencies retain their separate caches. The first run after
@@ -1052,6 +1069,13 @@ loads models without executing a lifecycle or requiring unbuilt reactor artifact
 the line's pinned wrapper, profile and isolated repository. Downloads have bounded setup
 retries and a 60-second HTTP read inactivity timeout for both Resolver and Wagon; the original
 build and unchanged upstream test commands still run once. See [dependency setup](ci.md#maven-dependencies).
+
+Canonical Kafka savepoint inspection decodes committer-held transactions as well as writer state
+on Flink2.2, using the released collector and Kafka committable serializers. A rescale provider
+exposed an inspector that returned no committables without decoding the serialized state. Pure Java codec
+controls retain multiple checkpoints/writers and reject corrupted state; the focused rescale
+probe and full matrix retain the assertion requiring real pending transaction state, transaction
+ownership, exact offsets, native work and exactly-once output.
 The shared repository also contains the selected release's `paimon-vfs-hadoop` transitive
 provider graph, so Paimon connector compilation does not first fetch its Hadoop client graph
 after the dependency-preparation stage. Provider downloads use the same bounded setup retries.
