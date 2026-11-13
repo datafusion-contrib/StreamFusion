@@ -57,7 +57,7 @@ class NativeParquetSourceTest {
             },
             new String[] {"value", "id"});
     var format = format(projected, 4);
-    assertFalse(format.isSplittable());
+    assertTrue(format.isSplittable());
     long checkpoint;
     try (var reader = format.createReader(new Configuration(), split)) {
       var batch = reader.readBatch();
@@ -142,7 +142,7 @@ class NativeParquetSourceTest {
 
   @Test
   void stockSourceReaderRestoresLogicalRowsAndClosesPrefetchedBatches() throws Exception {
-    var split = fixture(103);
+    var split = fixture(1003, true);
     TaskOffHeapMemory.resetForTests(16L << 20);
     var config = new Configuration();
     config.set(
@@ -157,7 +157,10 @@ class NativeParquetSourceTest {
     var output = new Output();
     List<FileSourceSplit> checkpoint;
     try (var reader = source.createReader(context(config))) {
-      reader.addSplits(List.of(split));
+      reader.addSplits(
+          new ArrayList<>(
+              new tech.streamfusion.parquet.ParquetRowGroupEnumerator()
+                  .enumerateSplits(new org.apache.flink.core.fs.Path[] {split.path()}, 2)));
       reader.notifyNoMoreSplits();
       reader.start();
       while (output.rows.isEmpty()) {
@@ -166,7 +169,15 @@ class NativeParquetSourceTest {
           reader.isAvailable().get(10, java.util.concurrent.TimeUnit.SECONDS);
       }
       checkpoint = reader.snapshotState(1);
-      assertEquals(4, checkpoint.get(0).getReaderPosition().orElseThrow().getRecordsAfterOffset());
+      assertEquals(
+          4,
+          checkpoint.stream()
+              .filter(item -> item.getReaderPosition().isPresent())
+              .findFirst()
+              .orElseThrow()
+              .getReaderPosition()
+              .orElseThrow()
+              .getRecordsAfterOffset());
     }
     assertEquals(List.of(0, 1, 2, 3), output.rows);
     assertEquals(
@@ -178,8 +189,9 @@ class NativeParquetSourceTest {
       while (reader.pollNext(output) != org.apache.flink.core.io.InputStatus.END_OF_INPUT)
         reader.isAvailable().get(10, java.util.concurrent.TimeUnit.SECONDS);
     }
+    output.rows.sort(Integer::compareTo);
     assertEquals(
-        java.util.stream.IntStream.range(0, 103)
+        java.util.stream.IntStream.range(0, 1003)
             .boxed()
             .collect(java.util.stream.Collectors.toList()),
         output.rows);
@@ -203,6 +215,128 @@ class NativeParquetSourceTest {
           TaskOffHeapMemory.reservedBytes() < full,
           "an id-only scan must not reserve string and decimal decoder chunks");
     }
+  }
+
+  @Test
+  void rowGroupSplitsCoverOneLocalFileAndRestoreWithinANonzeroSplit() throws Exception {
+    TaskOffHeapMemory.resetForTests(16L << 20);
+    var whole = fixture(1003, true);
+    Files.copy(java.nio.file.Path.of(whole.path().toUri()), directory.resolve(".hidden.parquet"));
+    var splits =
+        new ArrayList<>(
+            new tech.streamfusion.parquet.ParquetRowGroupEnumerator()
+                .enumerateSplits(
+                    new org.apache.flink.core.fs.Path[] {
+                      new org.apache.flink.core.fs.Path(directory.toUri())
+                    },
+                    2));
+    try (var footer =
+        org.apache.parquet.hadoop.ParquetFileReader.open(
+            org.apache.parquet.hadoop.util.HadoopInputFile.fromPath(
+                new org.apache.hadoop.fs.Path(whole.path().toUri()),
+                new org.apache.hadoop.conf.Configuration(false)))) {
+      assertEquals(footer.getRowGroups().size(), splits.size());
+    }
+    assertTrue(splits.size() > 2, "one local file must supply several row-group splits");
+    var ids = new ArrayList<Integer>();
+    long end = 0;
+    for (var split : splits) {
+      assertEquals(end, split.offset());
+      end += split.length();
+      try (var reader = format(TYPE, 7).createReader(new Configuration(), split)) {
+        ids.addAll(readIds(reader));
+      }
+    }
+    assertEquals(whole.fileSize(), end);
+    assertEquals(
+        java.util.stream.IntStream.range(0, 1003)
+            .boxed()
+            .collect(java.util.stream.Collectors.toList()),
+        ids);
+    var split = splits.get(1);
+    assertTrue(split.offset() > 0);
+    List<Integer> expected;
+    try (var reader = format(TYPE, 7).createReader(new Configuration(), split)) {
+      expected = readIds(reader);
+    }
+    long checkpoint;
+    try (var reader = format(TYPE, 4).createReader(new Configuration(), split)) {
+      var batch = reader.readBatch();
+      var record = batch.next();
+      checkpoint = record.getRecordSkipCount();
+      assertEquals(4, checkpoint);
+      record.getRecord().root().close();
+      batch.releaseBatch();
+    }
+    var restored =
+        split.updateWithCheckpointedPosition(
+            new CheckpointedPosition(CheckpointedPosition.NO_OFFSET, checkpoint));
+    var serializer = org.apache.flink.connector.file.src.FileSourceSplitSerializer.INSTANCE;
+    restored = serializer.deserialize(serializer.getVersion(), serializer.serialize(restored));
+    try (var reader = format(TYPE, 7).restoreReader(new Configuration(), restored)) {
+      assertEquals(expected.subList(4, expected.size()), readIds(reader));
+    }
+    var exhausted =
+        split.updateWithCheckpointedPosition(
+            new CheckpointedPosition(CheckpointedPosition.NO_OFFSET, expected.size()));
+    try (var reader = format(TYPE, 7).restoreReader(new Configuration(), exhausted)) {
+      assertNull(reader.readBatch());
+    }
+    var invalid =
+        split.updateWithCheckpointedPosition(
+            new CheckpointedPosition(CheckpointedPosition.NO_OFFSET, expected.size() + 1));
+    try (var reader = format(TYPE, 7).restoreReader(new Configuration(), invalid)) {
+      assertThrows(java.io.IOException.class, () -> readIds(reader));
+    }
+  }
+
+  @Test
+  void midpointRangesAssignEveryRowOnceAndEmptyRangesReserveNoDecoderWorkspace() throws Exception {
+    TaskOffHeapMemory.resetForTests(16L << 20);
+    var whole = fixture(1003, true);
+    long midpoint;
+    try (var footer =
+        org.apache.parquet.hadoop.ParquetFileReader.open(
+            org.apache.parquet.hadoop.util.HadoopInputFile.fromPath(
+                new org.apache.hadoop.fs.Path(whole.path().toUri()),
+                new org.apache.hadoop.conf.Configuration(false)))) {
+      var group = footer.getRowGroups().get(1);
+      midpoint = group.getStartingPos() + group.getCompressedSize() / 2;
+    }
+    var ids = new ArrayList<Integer>();
+    for (var range : new long[][] {{0, midpoint}, {midpoint, whole.fileSize() - midpoint}}) {
+      var split =
+          new FileSourceSplit("range", whole.path(), range[0], range[1], 0, whole.fileSize());
+      try (var reader = format(TYPE, 17).createReader(new Configuration(), split)) {
+        ids.addAll(readIds(reader));
+      }
+    }
+    assertEquals(
+        java.util.stream.IntStream.range(0, 1003)
+            .boxed()
+            .collect(java.util.stream.Collectors.toList()),
+        ids);
+    var empty = new FileSourceSplit("empty", whole.path(), 0, 1, 0, whole.fileSize());
+    try (var reader = format(TYPE, 7).createReader(new Configuration(), empty)) {
+      assertEquals(0, TaskOffHeapMemory.reservedBytes());
+      assertNull(reader.readBatch());
+    }
+  }
+
+  private static List<Integer> readIds(
+      org.apache.flink.connector.file.src.reader.BulkFormat.Reader<ArrowBatch> reader)
+      throws Exception {
+    var ids = new ArrayList<Integer>();
+    org.apache.flink.connector.file.src.reader.BulkFormat.RecordIterator<ArrowBatch> batch;
+    while ((batch = reader.readBatch()) != null) {
+      try (var root = batch.next().getRecord().root()) {
+        for (int row = 0; row < root.getRowCount(); row++)
+          ids.add(((IntVector) root.getVector("id")).get(row));
+      } finally {
+        batch.releaseBatch();
+      }
+    }
+    return ids;
   }
 
   private static org.apache.flink.api.connector.source.SourceReaderContext context(
@@ -274,13 +408,22 @@ class NativeParquetSourceTest {
   }
 
   private FileSourceSplit fixture(int count) throws Exception {
+    return fixture(count, false);
+  }
+
+  private FileSourceSplit fixture(int count, boolean multipleGroups) throws Exception {
     var file = directory.resolve("rows-" + count + ".parquet");
     var path = new org.apache.flink.core.fs.Path(file.toUri());
+    var config = new org.apache.hadoop.conf.Configuration(false);
+    if (multipleGroups) {
+      config.setInt("parquet.block.size", 512);
+      config.setInt("parquet.page.size", 128);
+      config.setInt("parquet.page.size.row.check.min", 10);
+      config.setInt("parquet.page.size.row.check.max", 10);
+      config.setBoolean("parquet.enable.dictionary", false);
+    }
     try (var output = path.getFileSystem().create(path, WriteMode.NO_OVERWRITE)) {
-      var writer =
-          ParquetRowDataBuilder.createWriterFactory(
-                  TYPE, new org.apache.hadoop.conf.Configuration(false), false)
-              .create(output);
+      var writer = ParquetRowDataBuilder.createWriterFactory(TYPE, config, false).create(output);
       for (int i = 0; i < count; i++)
         writer.addElement(
             GenericRowData.of(

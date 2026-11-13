@@ -9,9 +9,13 @@ fallback to stock Flink as the normal, safe outcome.
 Bounded filesystem scans can use this module's existing native decoder directly into
 Arrow when feeding an admitted native batch island. Flink retains filesystem access,
 credentials, recursive file discovery, split assignment, reader queues and checkpoint
-serialization. The initial native path uses one split per file, preserving projected
-column names and physical row order. It checkpoints the number of logical rows emitted,
-then replays/skips that many rows on restoration; it does not count Arrow batches as rows.
+serialization. Footer discovery creates one byte-range split per row group, including
+on local and object-store filesystems without block locations. The decoder reads only
+the row groups whose physical midpoint belongs to that split, preserving projected
+column names and physical row order within each split. It checkpoints the number of
+logical rows emitted within the split, then replays/skips those rows on restoration;
+it does not count Arrow batches as rows. Existing whole-file native checkpoints remain
+readable; new row-group checkpoints retain their byte range through Flink's split serializer.
 This is a native-source state contract, not stock Parquet byte-split savepoint compatibility.
 
 Initial admission requires fixed batch parallelism
@@ -30,8 +34,12 @@ share operator. Queued unconsumed Arrow batches close on cancellation. Decoder w
 reserved from the same process-wide task-off-heap authority before loading row groups;
 only projected column chunks count toward its compressed-plus-uncompressed estimate.
 Imported output buffers are charged by the shared Arrow allocator for their own lifetime.
-There is no separate source memory allowance. Whole-file splits currently limit read
-parallelism to the number of files; row-group split support is not claimed.
+There is no separate source memory allowance. Workspace estimates include only the
+selected row groups and projected chunks. Parallel source readers can share one file
+when it contains multiple row groups; a single row group remains indivisible. Footer
+reads during enumeration use the same host filesystem and credentials as task reads;
+the optional native Parquet library must be available on the coordinator as well
+as the task workers.
 
 See the [TPC-H benchmark](../benchmarks/tpch.md) for the same-file stock/native comparison
 and its earlier stock-reader baseline. Streaming filesystem scans continue to use Flink's

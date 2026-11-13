@@ -1,0 +1,2031 @@
+{
+  "date": "2026-11-12",
+  "baseRevision": "c3fc3786d779b1950007e94e05bcb3763b2cc14d",
+  "changes": "Native Parquet row-group enumeration and split-aware decoder; uncommitted source hashes below",
+  "build": {
+    "command": "cargo build -p streamfusion-parquet --release --features mimalloc",
+    "nativeLibrarySha256": "03bb6546da2e8907dfcb9eb26e04c1cb6d41d0c849d732b75a2f430c7c9cecdd",
+    "rustVersion": "rustc 1.95.0 (59807616e 2026-04-14)",
+    "flink": "2.2.1",
+    "parquetJava": "1.15.2",
+    "parquetRust": "58.4.1",
+    "profile": "release, mimalloc"
+  },
+  "host": {
+    "cpu": "Apple M4",
+    "logicalCpus": 10,
+    "memoryBytes": 17179869184,
+    "cache": "warm local filesystem; shared developer host, CPU/storage load not isolated"
+  },
+  "method": {
+    "boundary": "Source-only: file enumeration/footer discovery, task scheduling, host I/O, native decoding, JNI and C Data/Arrow import, checksum consumption and reader close. Excludes data generation and complete-query planning/shuffle/sink costs.",
+    "resources": "Two fixed worker threads, 8 GiB Java heap, shared 512 MiB task off-heap authority, 8192-row native and stock batches.",
+    "controls": "All modes read the identical single SNAPPY file and schema. Stock uses Flink BlockSplittingRecursiveEnumerator, which yields one local split. Native whole-file control uses NonSplittingRecursiveEnumerator with the same candidate native decoder, reproducing the preceding split policy rather than benchmarking an older binary.",
+    "order": "Three warmups per mode and seven retained trials, rotating engine order each trial. No profilers.",
+    "validation": "Every scan checks exact row count and id XOR key checksum; allocator and workspace return to zero after each trial. Separate SQL tests compare exact typed results and require positive source rows from both subtasks. Final cohorts run in the same JVM invocation as the targeted correctness tests; all timing trials remain sequential and unprofiled."
+  },
+  "sourceSha256": {
+    "native/parquet/src/reader.rs": "f598535d817bdd5b61bdf7955a15b2a5c4eab75cd787923943bcaf583bee33bf",
+    "src/main/java/tech/streamfusion/parquet/NativeParquet.java": "7b6033888ce9d14535f265e7ec569bbabfba4c169a6828de4fc14879e8db5b2a",
+    "src/main/java/tech/streamfusion/parquet/NativeParquetBulkFormat.java": "868f6c38ac81ec07e9fbc0cabb345eb95197f6ba6d6c6df4138d7d19e83d03a9",
+    "src/main/java/tech/streamfusion/parquet/NativeParquetSource.java": "cff7c9edea96e74f7792b797a4aaf4d2d10ed78a15231c79875b6479923f9c0f",
+    "src/main/java/tech/streamfusion/parquet/ParquetInputFile.java": "4e819091b143c0282608e73784aa55c55b9270fd9de61da20c803a248f0fccf7",
+    "src/main/java/tech/streamfusion/parquet/ParquetRowGroupEnumerator.java": "57223dc5a216eeb712ca817c728dfb624acd5ae0880b590d065a110801dea061",
+    "src/test/java/tech/streamfusion/operator/ParquetSplitBenchmark.java": "e632d363b43b3c69a087b896e8457ca091f1486d5c22573615af37fc5ecf2979"
+  },
+  "validation": {
+    "nativeReleaseTests": 27,
+    "flink22Jdk17": {
+      "tests": 19,
+      "failures": 0,
+      "errors": 0
+    },
+    "flink118Jdk11": {
+      "tests": 19,
+      "failures": 0,
+      "errors": 0
+    },
+    "coverage": [
+      "row-group ownership, including a boundary exactly at a physical midpoint",
+      "one-file positive source rows from both subtasks",
+      "nonzero split restore with a changed batch size and serialized split position",
+      "restore of queued multiple splits and legacy whole-file positions",
+      "split end and out-of-bounds checkpoint positions",
+      "empty ranges, projected workspace accounting, cancellation and memory denial",
+      "stock SQL equality, option/metadata fallback and producer retry",
+      "INT96 wide dates, fractions, NULLs, dictionary encoding and selected row groups",
+      "zero-row row groups between nonempty INT96 row groups"
+    ],
+    "sf1Tpch": {
+      "mode": "verify",
+      "scale": 1.0,
+      "parallelism": 2,
+      "nativeBytes": 536870912,
+      "format": "parquet",
+      "maxHeapBytes": 8589934592,
+      "tables": {
+        "customer": {
+          "sha256": "a035a33a703d3a043ecf97746b4e3a7988316c1c04923fda63231a59d5e46092",
+          "rows": 150000,
+          "bytes": 24196144
+        },
+        "orders": {
+          "sha256": "3f111871419ea6f319fcc51c235d199b3edf16754c5e100be92927527e5f6c97",
+          "rows": 1500000,
+          "bytes": 170452161
+        },
+        "lineitem": {
+          "sha256": "4feb529dfa255799bbf0243d2f2c5028375dfb684e592eb94775345602aa2728",
+          "rows": 6001215,
+          "bytes": 753862072
+        },
+        "part": {
+          "sha256": "cecd01146ae002aebe47e6b58bd81644df1d51d9c14da3425aea2b4976e02d60",
+          "rows": 200000,
+          "bytes": 23935125
+        },
+        "partsupp": {
+          "sha256": "3a68b7b7757cd3aacccb39c4bc092dc3edf3b7e0e7609a259c39238cae0be41e",
+          "rows": 800000,
+          "bytes": 118184616
+        },
+        "supplier": {
+          "sha256": "f5699b5df22724f41bee9b8521798d8fc0cecd5beb0bd3bca96547ac58095547",
+          "rows": 10000,
+          "bytes": 1399184
+        },
+        "nation": {
+          "sha256": "7d47bc9397da331054fa92b8fb92e4c074004bad72dcbb893012093218dccf6c",
+          "rows": 25,
+          "bytes": 2199
+        },
+        "region": {
+          "sha256": "5a7c2fe9718db00ff5e5bc82a9ebfa8abc492cc75260d3c0ffb411974f235ab0",
+          "rows": 5,
+          "bytes": 384
+        }
+      },
+      "parquet": {
+        "writer": "stock Flink filesystem/Parquet, SNAPPY, outside query timing",
+        "writerParallelism": 2,
+        "sourceCsvManifestSha256": "2087637bbeb54624bc11246101da422aa030cc719c093fdb8a3d35f0d2c704c7",
+        "writerJobIds": [
+          "d0c006be9604957033a2d1fd442d241f",
+          "5504d103580dd34e6cb4c38b1467ee4b",
+          "e8902149be4d6e5089834fed63b03dcb",
+          "61b5a737d19d0c5b0ebcddd48a4e9caf",
+          "b14f8a351a760c769d73fcc98d39bef0",
+          "d11696ddc5dccaadff746d85279dc21f",
+          "9dd9ad1013d4ac4133136240ea9a3fc6",
+          "e667cce48b97f2800f4caa9d6e5e0f31"
+        ],
+        "files": [
+          {
+            "sha256": "1f8159e314958aacb385f466b732e3377552154b6e35d5ada2fa5d60f0a3418d",
+            "path": "customer/part-e2c6907a-a2e1-404e-9a3a-bfbe72c92cf4-task-1-file-0",
+            "bytes": 12443660
+          },
+          {
+            "sha256": "c5632c71ca8166c772767664aebc5f469af816bfe65c12eb75f0d715f09f82b8",
+            "path": "lineitem/part-030e9b72-16bf-4b68-9e34-594f27c54f32-task-1-file-0",
+            "bytes": 228153614
+          },
+          {
+            "sha256": "34e74d68051cbd1325868ab73f1007862759e35ea96369ffd9df3f51f0bbc454",
+            "path": "nation/part-8303c7e6-8518-428f-9040-9ef28cfe705b-task-0-file-0",
+            "bytes": 2793
+          },
+          {
+            "sha256": "49def52deaac1e6567414196bffdf4f75f96bc6db850f312aad4a96bf930497d",
+            "path": "orders/part-369402e9-2d03-4684-8487-1cb0a0831c8a-task-1-file-0",
+            "bytes": 56372199
+          },
+          {
+            "sha256": "97958d0273dbc8c2e2e4c50d87cf2b498e75ef992a9d5d47fbf519b34c666e21",
+            "path": "part/part-1c0f6a06-6f81-4328-bb70-2b3ddd2b9a93-task-1-file-0",
+            "bytes": 6232371
+          },
+          {
+            "sha256": "632db8c0d92268a0f1cbfce783770e6b820436d8bf31e1c59fe5ca81900f2311",
+            "path": "partsupp/part-9b8eb0ab-f969-44a7-a28b-6b060236c438-task-1-file-0",
+            "bytes": 42491907
+          },
+          {
+            "sha256": "1d8934d861eb59db767934a5767544398b2ca697d597efa01fde470723d239da",
+            "path": "region/part-a5baacbd-3b12-4f93-9823-57761cf9538b-task-0-file-0",
+            "bytes": 1300
+          },
+          {
+            "sha256": "78ef70b358e12a8ec483ed36c6d5423ac7a83a3fe0c4bbcd1c09163a8832375a",
+            "path": "supplier/part-9f1da342-0258-43a1-a570-1a5b6a2f93ba-task-1-file-0",
+            "bytes": 797572
+          }
+        ]
+      },
+      "interpretation": "One verification pair per query, exact stock result/type equality and positive source work. These cold single observations are excluded from performance summaries.",
+      "rowGroupsPerTable": {
+        "customer": 1,
+        "lineitem": 2,
+        "nation": 1,
+        "orders": 1,
+        "part": 1,
+        "partsupp": 1,
+        "region": 1,
+        "supplier": 1
+      },
+      "queries": [
+        {
+          "query": 1,
+          "sqlSha256": "864a088f29bb394a6397b71c28a5bdb1dbd74e667f690917feff0d9e293df4e6",
+          "nativePlanned": true,
+          "resultType": "ROW<`l_returnflag` STRING, `l_linestatus` STRING, `sum_qty` DECIMAL(38, 2), `sum_base_price` DECIMAL(38, 2), `sum_disc_price` DECIMAL(38, 4), `sum_charge` DECIMAL(38, 6), `avg_qty` DECIMAL(38, 6), `avg_price` DECIMAL(38, 6), `avg_disc` DECIMAL(38, 6), `count_order` BIGINT NOT NULL> NOT NULL",
+          "rows": 4,
+          "resultSha256": "25510cc27944ade10f79659078255e62b67a443db84d89357894740eb0b9c28a",
+          "stockNanos": [
+            4488117334
+          ],
+          "nativeNanos": [
+            608212334
+          ],
+          "stockRuntimeMs": [
+            4304
+          ],
+          "nativeRuntimeMs": [
+            513
+          ],
+          "status": "passed",
+          "runs": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "jobId": "df0961b4a01dcda2fc3611c7599f8d92",
+              "sourceArrowRows": 0,
+              "entryTransposeRows": 0,
+              "nativeWork": []
+            },
+            {
+              "engine": "streamfusion",
+              "trial": 0,
+              "jobId": "534a1ee5c98b0a5aea322d14110d47f0",
+              "sourceArrowRows": 6001215,
+              "entryTransposeRows": 0,
+              "nativeWork": [
+                {
+                  "recordsIn": 2436531,
+                  "operator": "NativeAggregate(groupBy=[l_returnflag, l_linestatus], select=[l_returnflag, l_li",
+                  "recordsOut": 4,
+                  "subtask": "1",
+                  "attempt": "0",
+                  "jobId": "534a1ee5c98b0a5aea322d14110d47f0"
+                },
+                {
+                  "recordsIn": 2471115,
+                  "operator": "NativeCalc(select=[l_returnflag, l_linestatus, l_quantity, l_extendedprice, *(l_",
+                  "recordsOut": 2436531,
+                  "subtask": "1",
+                  "attempt": "0",
+                  "jobId": "534a1ee5c98b0a5aea322d14110d47f0"
+                },
+                {
+                  "recordsIn": 3480060,
+                  "operator": "NativeAggregate(groupBy=[l_returnflag, l_linestatus], select=[l_returnflag, l_li",
+                  "recordsOut": 4,
+                  "subtask": "0",
+                  "attempt": "0",
+                  "jobId": "534a1ee5c98b0a5aea322d14110d47f0"
+                },
+                {
+                  "recordsIn": 3530100,
+                  "operator": "NativeCalc(select=[l_returnflag, l_linestatus, l_quantity, l_extendedprice, *(l_",
+                  "recordsOut": 3480060,
+                  "subtask": "0",
+                  "attempt": "0",
+                  "jobId": "534a1ee5c98b0a5aea322d14110d47f0"
+                },
+                {
+                  "recordsIn": 4,
+                  "operator": "NativeAggregate(isMerge=[true], groupBy=[l_returnflag, l_linestatus], select=[l_",
+                  "recordsOut": 2,
+                  "subtask": "0",
+                  "attempt": "0",
+                  "jobId": "534a1ee5c98b0a5aea322d14110d47f0"
+                },
+                {
+                  "recordsIn": 4,
+                  "operator": "NativeAggregate(isMerge=[true], groupBy=[l_returnflag, l_linestatus], select=[l_",
+                  "recordsOut": 2,
+                  "subtask": "1",
+                  "attempt": "0",
+                  "jobId": "534a1ee5c98b0a5aea322d14110d47f0"
+                },
+                {
+                  "recordsIn": 4,
+                  "operator": "NativeSort(orderBy=[l_returnflag ASC, l_linestatus ASC])[61]",
+                  "recordsOut": 4,
+                  "subtask": "0",
+                  "attempt": "0",
+                  "jobId": "534a1ee5c98b0a5aea322d14110d47f0"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "query": 3,
+          "sqlSha256": "d8d2f7579eac245cd2609e49f572025a6efa1725dc30e3ccc3c6887f4c4f0bbf",
+          "nativePlanned": true,
+          "resultType": "ROW<`l_orderkey` BIGINT, `revenue` DECIMAL(38, 4), `o_orderdate` DATE, `o_shippriority` INT> NOT NULL",
+          "rows": 10,
+          "resultSha256": "11250d327145e05d6d369b3ba6e4b81ef64758d0ce307a052f8526a32e24c396",
+          "stockNanos": [
+            1810904417
+          ],
+          "nativeNanos": [
+            490331667
+          ],
+          "stockRuntimeMs": [
+            1641
+          ],
+          "nativeRuntimeMs": [
+            381
+          ],
+          "status": "passed",
+          "runs": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "jobId": "a8607beaec06e06631379bd1130c9bba",
+              "sourceArrowRows": 0,
+              "entryTransposeRows": 0,
+              "nativeWork": []
+            },
+            {
+              "engine": "streamfusion",
+              "trial": 0,
+              "jobId": "0903104012f8ed24becccc2f00dd82a2",
+              "sourceArrowRows": 7651215,
+              "entryTransposeRows": 0,
+              "nativeWork": [
+                {
+                  "recordsIn": 0,
+                  "operator": "NativeCalc(select=[c_custkey], where=[=(c_mktsegment, 'BUILDING')], nativeFuncti",
+                  "recordsOut": 0,
+                  "subtask": "1",
+                  "attempt": "0",
+                  "jobId": "0903104012f8ed24becccc2f00dd82a2"
+                },
+                {
+                  "recordsIn": 0,
+                  "operator": "NativeCalc(select=[o_orderkey, o_custkey, o_orderdate, o_shippriority], where=[<",
+                  "recordsOut": 0,
+                  "subtask": "0",
+                  "attempt": "0",
+                  "jobId": "0903104012f8ed24becccc2f00dd82a2"
+                },
+                {
+                  "recordsIn": 0,
+                  "operator": "NativeCalc(select=[o_orderkey, o_orderdate, o_shippriority], nativeFunctions=[],",
+                  "recordsOut": 0,
+                  "subtask": "0",
+                  "attempt": "0",
+                  "jobId": "0903104012f8ed24becccc2f00dd82a2"
+                },
+                {
+                  "recordsIn": 10,
+                  "operator": "NativeCalc(select=[l_orderkey, revenue, o_orderdate, o_shippriority], nativeFunc",
+                  "recordsOut": 10,
+                  "subtask": "0",
+                  "attempt": "0",
+                  "jobId": "0903104012f8ed24becccc2f00dd82a2"
+                },
+                {
+                  "recordsIn": 147126,
+                  "operator": "NativeCalc(select=[o_orderkey, o_orderdate, o_shippriority], nativeFunctions=[],",
+                  "recordsOut": 147126,
+                  "subtask": "1",
+                  "attempt": "0",
+                  "jobId": "0903104012f8ed24becccc2f00dd82a2"
+                },
+                {
+                  "recordsIn": 14786,
+                  "operator": "NativeAggregate(isMerge=[false], groupBy=[l_orderkey, o_orderdate, o_shippriorit",
+                  "recordsOut": 5670,
+                  "subtask": "0",
+                  "attempt": "0",
+                  "jobId": "0903104012f8ed24becccc2f00dd82a2"
+                },
+                {
+                  "recordsIn": 150000,
+                  "operator": "NativeCalc(select=[c_custkey], where=[=(c_mktsegment, 'BUILDING')], nativeFuncti",
+                  "recordsOut": 30142,
+                  "subtask": "0",
+                  "attempt": "0",
+                  "jobId": "0903104012f8ed24becccc2f00dd82a2"
+                },
+                {
+                  "recordsIn": 1500000,
+                  "operator": "NativeCalc(select=[o_orderkey, o_custkey, o_orderdate, o_shippriority], where=[<",
+                  "recordsOut": 727305,
+                  "subtask": "1",
+                  "attempt": "0",
+                  "jobId": "0903104012f8ed24becccc2f00dd82a2"
+                },
+                {
+                  "recordsIn": 15111,
+                  "operator": "NativeCalc(select=[l_orderkey, o_orderdate, o_shippriority, *(l_extendedprice, -",
+                  "recordsOut": 15111,
+                  "subtask": "0",
+                  "attempt": "0",
+                  "jobId": "0903104012f8ed24becccc2f00dd82a2"
+                },
+                {
+                  "recordsIn": 15408,
+                  "operator": "NativeCalc(select=[l_orderkey, o_orderdate, o_shippriority, *(l_extendedprice, -",
+                  "recordsOut": 15408,
+                  "subtask": "1",
+                  "attempt": "0",
+                  "jobId": "0903104012f8ed24becccc2f00dd82a2"
+                },
+                {
+                  "recordsIn": 15733,
+                  "operator": "NativeAggregate(isMerge=[false], groupBy=[l_orderkey, o_orderdate, o_shippriorit",
+                  "recordsOut": 5950,
+                  "subtask": "1",
+                  "attempt": "0",
+                  "jobId": "0903104012f8ed24becccc2f00dd82a2"
+                },
+                {
+                  "recordsIn": 1692190,
+                  "operator": "NativeJoin(joinType=[InnerJoin], where=[=(l_orderkey, o_orderkey)], select=[o_or",
+                  "recordsOut": 15111,
+                  "subtask": "0",
+                  "attempt": "0",
+                  "jobId": "0903104012f8ed24becccc2f00dd82a2"
+                },
+                {
+                  "recordsIn": 1696712,
+                  "operator": "NativeJoin(joinType=[InnerJoin], where=[=(l_orderkey, o_orderkey)], select=[o_or",
+                  "recordsOut": 15408,
+                  "subtask": "1",
+                  "attempt": "0",
+                  "jobId": "0903104012f8ed24becccc2f00dd82a2"
+                },
+                {
+                  "recordsIn": 20,
+                  "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+                  "recordsOut": 10,
+                  "subtask": "0",
+                  "attempt": "0",
+                  "jobId": "0903104012f8ed24becccc2f00dd82a2"
+                },
+                {
+                  "recordsIn": 2471115,
+                  "operator": "NativeCalc(select=[l_orderkey, l_extendedprice, l_discount], where=[>(l_shipdate",
+                  "recordsOut": 1334398,
+                  "subtask": "0",
+                  "attempt": "0",
+                  "jobId": "0903104012f8ed24becccc2f00dd82a2"
+                },
+                {
+                  "recordsIn": 30142,
+                  "operator": "NativeJoin(joinType=[InnerJoin], where=[=(c_custkey, o_custkey)], select=[c_cust",
+                  "recordsOut": 0,
+                  "subtask": "0",
+                  "attempt": "0",
+                  "jobId": "0903104012f8ed24becccc2f00dd82a2"
+                },
+                {
+                  "recordsIn": 3530100,
+                  "operator": "NativeCalc(select=[l_orderkey, l_extendedprice, l_discount], where=[>(l_shipdate",
+                  "recordsOut": 1907378,
+                  "subtask": "1",
+                  "attempt": "0",
+                  "jobId": "0903104012f8ed24becccc2f00dd82a2"
+                },
+                {
+                  "recordsIn": 5670,
+                  "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+                  "recordsOut": 10,
+                  "subtask": "0",
+                  "attempt": "0",
+                  "jobId": "0903104012f8ed24becccc2f00dd82a2"
+                },
+                {
+                  "recordsIn": 5950,
+                  "operator": "NativeSort(orderBy=[revenue DESC, o_orderdate ASC], offset=[0], fetch=[10], glob",
+                  "recordsOut": 10,
+                  "subtask": "1",
+                  "attempt": "0",
+                  "jobId": "0903104012f8ed24becccc2f00dd82a2"
+                },
+                {
+                  "recordsIn": 757447,
+                  "operator": "NativeJoin(joinType=[InnerJoin], where=[=(c_custkey, o_custkey)], select=[c_cust",
+                  "recordsOut": 147126,
+                  "subtask": "1",
+                  "attempt": "0",
+                  "jobId": "0903104012f8ed24becccc2f00dd82a2"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "query": 6,
+          "sqlSha256": "9a0f373ae3a61ce5596f4b77647988f09b3f8261661853a11db1930708771c21",
+          "nativePlanned": true,
+          "resultType": "ROW<`revenue` DECIMAL(38, 4)> NOT NULL",
+          "rows": 1,
+          "resultSha256": "3b7d6014c113dcbe7abf123c80dfb895bfa79c896008fedd40cd7660be86ddec",
+          "stockNanos": [
+            778208541
+          ],
+          "nativeNanos": [
+            242957083
+          ],
+          "stockRuntimeMs": [
+            664
+          ],
+          "nativeRuntimeMs": [
+            204
+          ],
+          "status": "passed",
+          "runs": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "jobId": "a62a1a512cdc75f82eac68367407138d",
+              "sourceArrowRows": 0,
+              "entryTransposeRows": 0,
+              "nativeWork": []
+            },
+            {
+              "engine": "streamfusion",
+              "trial": 0,
+              "jobId": "6dd0eeb35fa29ae85d92086c0313528d",
+              "sourceArrowRows": 6001215,
+              "entryTransposeRows": 0,
+              "nativeWork": [
+                {
+                  "recordsIn": 2,
+                  "operator": "NativeAggregate(isMerge=[true], select=[Final_SUM(sum$0) AS revenue])[240]",
+                  "recordsOut": 1,
+                  "subtask": "0",
+                  "attempt": "0",
+                  "jobId": "6dd0eeb35fa29ae85d92086c0313528d"
+                },
+                {
+                  "recordsIn": 2471115,
+                  "operator": "NativeCalc(select=[*(l_extendedprice, l_discount) AS $f0], where=[AND(SEARCH(l_s",
+                  "recordsOut": 46756,
+                  "subtask": "1",
+                  "attempt": "0",
+                  "jobId": "6dd0eeb35fa29ae85d92086c0313528d"
+                },
+                {
+                  "recordsIn": 3530100,
+                  "operator": "NativeCalc(select=[*(l_extendedprice, l_discount) AS $f0], where=[AND(SEARCH(l_s",
+                  "recordsOut": 67404,
+                  "subtask": "0",
+                  "attempt": "0",
+                  "jobId": "6dd0eeb35fa29ae85d92086c0313528d"
+                },
+                {
+                  "recordsIn": 46756,
+                  "operator": "NativeAggregate(select=[Partial_SUM($f0) AS sum$0])[238]",
+                  "recordsOut": 1,
+                  "subtask": "1",
+                  "attempt": "0",
+                  "jobId": "6dd0eeb35fa29ae85d92086c0313528d"
+                },
+                {
+                  "recordsIn": 67404,
+                  "operator": "NativeAggregate(select=[Partial_SUM($f0) AS sum$0])[238]",
+                  "recordsOut": 1,
+                  "subtask": "0",
+                  "attempt": "0",
+                  "jobId": "6dd0eeb35fa29ae85d92086c0313528d"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "coreNativeLibrarySha256": "3393dff22eb1a5dcbc692ce4c3823857293f99600b833a790d47269cc5f66690",
+      "parquetNativeLibrarySha256": "e25b8de8e1e7a2ae340d0d23d5dbcea3b0a011af9c9ce41702ede23cd7005879"
+    }
+  },
+  "cohorts": [
+    {
+      "batchRows": 8192,
+      "trials": 7,
+      "scope": "Source only: enumeration, open, decode, JNI/Arrow import, checksum, close",
+      "input": {
+        "fileSha256": "e2246b59a82d118ac1de4c47b60c32676d9ef168130ec2215d00f83162a668dc",
+        "javaVersion": "17.0.17",
+        "os": "Mac OS X aarch64",
+        "schema": "ROW<`id` BIGINT, `k` INT, `payload` VARCHAR(1)>",
+        "rowGroups": [
+          {
+            "rows": 1730100,
+            "compressedBytes": 16181766,
+            "uncompressedBytes": 116545651,
+            "codec": "SNAPPY"
+          },
+          {
+            "rows": 269900,
+            "compressedBytes": 2524772,
+            "uncompressedBytes": 18354811,
+            "codec": "SNAPPY"
+          }
+        ]
+      },
+      "runs": [
+        {
+          "splits": 1,
+          "nanos": 79327459,
+          "checksum": 1999998994833,
+          "trial": -3,
+          "mode": "stock",
+          "rows": 2000000
+        },
+        {
+          "splits": 1,
+          "nanos": 68877708,
+          "checksum": 1999998994833,
+          "trial": -3,
+          "mode": "native-whole-file",
+          "rows": 2000000
+        },
+        {
+          "splits": 2,
+          "nanos": 45295750,
+          "checksum": 1999998994833,
+          "trial": -3,
+          "mode": "native-row-groups",
+          "rows": 2000000
+        },
+        {
+          "splits": 1,
+          "nanos": 48462833,
+          "checksum": 1999998994833,
+          "trial": -2,
+          "mode": "native-whole-file",
+          "rows": 2000000
+        },
+        {
+          "splits": 2,
+          "nanos": 41003542,
+          "checksum": 1999998994833,
+          "trial": -2,
+          "mode": "native-row-groups",
+          "rows": 2000000
+        },
+        {
+          "splits": 1,
+          "nanos": 46733500,
+          "checksum": 1999998994833,
+          "trial": -2,
+          "mode": "stock",
+          "rows": 2000000
+        },
+        {
+          "splits": 2,
+          "nanos": 41159917,
+          "checksum": 1999998994833,
+          "trial": -1,
+          "mode": "native-row-groups",
+          "rows": 2000000
+        },
+        {
+          "splits": 1,
+          "nanos": 45618084,
+          "checksum": 1999998994833,
+          "trial": -1,
+          "mode": "stock",
+          "rows": 2000000
+        },
+        {
+          "splits": 1,
+          "nanos": 48269500,
+          "checksum": 1999998994833,
+          "trial": -1,
+          "mode": "native-whole-file",
+          "rows": 2000000
+        },
+        {
+          "splits": 1,
+          "nanos": 45012166,
+          "checksum": 1999998994833,
+          "trial": 0,
+          "mode": "stock",
+          "rows": 2000000
+        },
+        {
+          "splits": 1,
+          "nanos": 46785792,
+          "checksum": 1999998994833,
+          "trial": 0,
+          "mode": "native-whole-file",
+          "rows": 2000000
+        },
+        {
+          "splits": 2,
+          "nanos": 41854375,
+          "checksum": 1999998994833,
+          "trial": 0,
+          "mode": "native-row-groups",
+          "rows": 2000000
+        },
+        {
+          "splits": 1,
+          "nanos": 46544583,
+          "checksum": 1999998994833,
+          "trial": 1,
+          "mode": "native-whole-file",
+          "rows": 2000000
+        },
+        {
+          "splits": 2,
+          "nanos": 40807958,
+          "checksum": 1999998994833,
+          "trial": 1,
+          "mode": "native-row-groups",
+          "rows": 2000000
+        },
+        {
+          "splits": 1,
+          "nanos": 44083458,
+          "checksum": 1999998994833,
+          "trial": 1,
+          "mode": "stock",
+          "rows": 2000000
+        },
+        {
+          "splits": 2,
+          "nanos": 41596625,
+          "checksum": 1999998994833,
+          "trial": 2,
+          "mode": "native-row-groups",
+          "rows": 2000000
+        },
+        {
+          "splits": 1,
+          "nanos": 45684500,
+          "checksum": 1999998994833,
+          "trial": 2,
+          "mode": "stock",
+          "rows": 2000000
+        },
+        {
+          "splits": 1,
+          "nanos": 46496542,
+          "checksum": 1999998994833,
+          "trial": 2,
+          "mode": "native-whole-file",
+          "rows": 2000000
+        },
+        {
+          "splits": 1,
+          "nanos": 44495084,
+          "checksum": 1999998994833,
+          "trial": 3,
+          "mode": "stock",
+          "rows": 2000000
+        },
+        {
+          "splits": 1,
+          "nanos": 46460125,
+          "checksum": 1999998994833,
+          "trial": 3,
+          "mode": "native-whole-file",
+          "rows": 2000000
+        },
+        {
+          "splits": 2,
+          "nanos": 40256000,
+          "checksum": 1999998994833,
+          "trial": 3,
+          "mode": "native-row-groups",
+          "rows": 2000000
+        },
+        {
+          "splits": 1,
+          "nanos": 46502958,
+          "checksum": 1999998994833,
+          "trial": 4,
+          "mode": "native-whole-file",
+          "rows": 2000000
+        },
+        {
+          "splits": 2,
+          "nanos": 40852625,
+          "checksum": 1999998994833,
+          "trial": 4,
+          "mode": "native-row-groups",
+          "rows": 2000000
+        },
+        {
+          "splits": 1,
+          "nanos": 45010375,
+          "checksum": 1999998994833,
+          "trial": 4,
+          "mode": "stock",
+          "rows": 2000000
+        },
+        {
+          "splits": 2,
+          "nanos": 41317583,
+          "checksum": 1999998994833,
+          "trial": 5,
+          "mode": "native-row-groups",
+          "rows": 2000000
+        },
+        {
+          "splits": 1,
+          "nanos": 44820750,
+          "checksum": 1999998994833,
+          "trial": 5,
+          "mode": "stock",
+          "rows": 2000000
+        },
+        {
+          "splits": 1,
+          "nanos": 47007667,
+          "checksum": 1999998994833,
+          "trial": 5,
+          "mode": "native-whole-file",
+          "rows": 2000000
+        },
+        {
+          "splits": 1,
+          "nanos": 44203541,
+          "checksum": 1999998994833,
+          "trial": 6,
+          "mode": "stock",
+          "rows": 2000000
+        },
+        {
+          "splits": 1,
+          "nanos": 46657292,
+          "checksum": 1999998994833,
+          "trial": 6,
+          "mode": "native-whole-file",
+          "rows": 2000000
+        },
+        {
+          "splits": 2,
+          "nanos": 39962417,
+          "checksum": 1999998994833,
+          "trial": 6,
+          "mode": "native-row-groups",
+          "rows": 2000000
+        }
+      ],
+      "rows": 2000000,
+      "fileBytes": 18730110,
+      "warmups": 3,
+      "parallelism": 2,
+      "summary": {
+        "stock": {
+          "medianMs": 44.82075,
+          "minMs": 44.083458,
+          "maxMs": 45.6845
+        },
+        "native-whole-file": {
+          "medianMs": 46.544583,
+          "minMs": 46.460125,
+          "maxMs": 47.007667
+        },
+        "native-row-groups": {
+          "medianMs": 40.852625,
+          "minMs": 39.962417,
+          "maxMs": 41.854375
+        },
+        "stockSpeedup": 1.0971326811924569,
+        "wholeFileControlSpeedup": 1.139329063921841
+      }
+    },
+    {
+      "scope": "Source only: enumeration, open, decode, JNI/Arrow import, checksum, close",
+      "trials": 7,
+      "batchRows": 8192,
+      "parallelism": 2,
+      "warmups": 3,
+      "fileBytes": 74910379,
+      "rows": 8000000,
+      "runs": [
+        {
+          "splits": 1,
+          "rows": 8000000,
+          "mode": "stock",
+          "trial": -3,
+          "checksum": 31999995994241,
+          "nanos": 203448250
+        },
+        {
+          "splits": 1,
+          "rows": 8000000,
+          "mode": "native-whole-file",
+          "trial": -3,
+          "checksum": 31999995994241,
+          "nanos": 218275625
+        },
+        {
+          "splits": 5,
+          "rows": 8000000,
+          "mode": "native-row-groups",
+          "trial": -3,
+          "checksum": 31999995994241,
+          "nanos": 115682000
+        },
+        {
+          "splits": 1,
+          "rows": 8000000,
+          "mode": "native-whole-file",
+          "trial": -2,
+          "checksum": 31999995994241,
+          "nanos": 186685667
+        },
+        {
+          "splits": 5,
+          "rows": 8000000,
+          "mode": "native-row-groups",
+          "trial": -2,
+          "checksum": 31999995994241,
+          "nanos": 108587084
+        },
+        {
+          "splits": 1,
+          "rows": 8000000,
+          "mode": "stock",
+          "trial": -2,
+          "checksum": 31999995994241,
+          "nanos": 168897542
+        },
+        {
+          "splits": 5,
+          "rows": 8000000,
+          "mode": "native-row-groups",
+          "trial": -1,
+          "checksum": 31999995994241,
+          "nanos": 110143084
+        },
+        {
+          "splits": 1,
+          "rows": 8000000,
+          "mode": "stock",
+          "trial": -1,
+          "checksum": 31999995994241,
+          "nanos": 169864875
+        },
+        {
+          "splits": 1,
+          "rows": 8000000,
+          "mode": "native-whole-file",
+          "trial": -1,
+          "checksum": 31999995994241,
+          "nanos": 185225375
+        },
+        {
+          "splits": 1,
+          "rows": 8000000,
+          "mode": "stock",
+          "trial": 0,
+          "checksum": 31999995994241,
+          "nanos": 168395542
+        },
+        {
+          "splits": 1,
+          "rows": 8000000,
+          "mode": "native-whole-file",
+          "trial": 0,
+          "checksum": 31999995994241,
+          "nanos": 183426792
+        },
+        {
+          "splits": 5,
+          "rows": 8000000,
+          "mode": "native-row-groups",
+          "trial": 0,
+          "checksum": 31999995994241,
+          "nanos": 108062916
+        },
+        {
+          "splits": 1,
+          "rows": 8000000,
+          "mode": "native-whole-file",
+          "trial": 1,
+          "checksum": 31999995994241,
+          "nanos": 182941375
+        },
+        {
+          "splits": 5,
+          "rows": 8000000,
+          "mode": "native-row-groups",
+          "trial": 1,
+          "checksum": 31999995994241,
+          "nanos": 109090125
+        },
+        {
+          "splits": 1,
+          "rows": 8000000,
+          "mode": "stock",
+          "trial": 1,
+          "checksum": 31999995994241,
+          "nanos": 169061959
+        },
+        {
+          "splits": 5,
+          "rows": 8000000,
+          "mode": "native-row-groups",
+          "trial": 2,
+          "checksum": 31999995994241,
+          "nanos": 107916959
+        },
+        {
+          "splits": 1,
+          "rows": 8000000,
+          "mode": "stock",
+          "trial": 2,
+          "checksum": 31999995994241,
+          "nanos": 166571750
+        },
+        {
+          "splits": 1,
+          "rows": 8000000,
+          "mode": "native-whole-file",
+          "trial": 2,
+          "checksum": 31999995994241,
+          "nanos": 182455167
+        },
+        {
+          "splits": 1,
+          "rows": 8000000,
+          "mode": "stock",
+          "trial": 3,
+          "checksum": 31999995994241,
+          "nanos": 167081000
+        },
+        {
+          "splits": 1,
+          "rows": 8000000,
+          "mode": "native-whole-file",
+          "trial": 3,
+          "checksum": 31999995994241,
+          "nanos": 182969750
+        },
+        {
+          "splits": 5,
+          "rows": 8000000,
+          "mode": "native-row-groups",
+          "trial": 3,
+          "checksum": 31999995994241,
+          "nanos": 107708042
+        },
+        {
+          "splits": 1,
+          "rows": 8000000,
+          "mode": "native-whole-file",
+          "trial": 4,
+          "checksum": 31999995994241,
+          "nanos": 182992667
+        },
+        {
+          "splits": 5,
+          "rows": 8000000,
+          "mode": "native-row-groups",
+          "trial": 4,
+          "checksum": 31999995994241,
+          "nanos": 108207958
+        },
+        {
+          "splits": 1,
+          "rows": 8000000,
+          "mode": "stock",
+          "trial": 4,
+          "checksum": 31999995994241,
+          "nanos": 167231500
+        },
+        {
+          "splits": 5,
+          "rows": 8000000,
+          "mode": "native-row-groups",
+          "trial": 5,
+          "checksum": 31999995994241,
+          "nanos": 109031125
+        },
+        {
+          "splits": 1,
+          "rows": 8000000,
+          "mode": "stock",
+          "trial": 5,
+          "checksum": 31999995994241,
+          "nanos": 165483584
+        },
+        {
+          "splits": 1,
+          "rows": 8000000,
+          "mode": "native-whole-file",
+          "trial": 5,
+          "checksum": 31999995994241,
+          "nanos": 183148375
+        },
+        {
+          "splits": 1,
+          "rows": 8000000,
+          "mode": "stock",
+          "trial": 6,
+          "checksum": 31999995994241,
+          "nanos": 165888583
+        },
+        {
+          "splits": 1,
+          "rows": 8000000,
+          "mode": "native-whole-file",
+          "trial": 6,
+          "checksum": 31999995994241,
+          "nanos": 182904417
+        },
+        {
+          "splits": 5,
+          "rows": 8000000,
+          "mode": "native-row-groups",
+          "trial": 6,
+          "checksum": 31999995994241,
+          "nanos": 107360750
+        }
+      ],
+      "input": {
+        "javaVersion": "17.0.17",
+        "fileSha256": "26d79a56fde86bfd0cfbb8286a5c9eb63df511fa6330e2f6b754ceb1ad7d00ab",
+        "rowGroups": [
+          {
+            "rows": 1730100,
+            "codec": "SNAPPY",
+            "uncompressedBytes": 116545651,
+            "compressedBytes": 16181766
+          },
+          {
+            "rows": 1730100,
+            "codec": "SNAPPY",
+            "uncompressedBytes": 117656802,
+            "compressedBytes": 16181386
+          },
+          {
+            "rows": 1730100,
+            "codec": "SNAPPY",
+            "uncompressedBytes": 117656797,
+            "compressedBytes": 16178778
+          },
+          {
+            "rows": 1730100,
+            "codec": "SNAPPY",
+            "uncompressedBytes": 117656795,
+            "compressedBytes": 16177476
+          },
+          {
+            "rows": 1079600,
+            "codec": "SNAPPY",
+            "uncompressedBytes": 73419026,
+            "compressedBytes": 10098206
+          }
+        ],
+        "schema": "ROW<`id` BIGINT, `k` INT, `payload` VARCHAR(1)>",
+        "os": "Mac OS X aarch64"
+      },
+      "summary": {
+        "stock": {
+          "medianMs": 167.081,
+          "minMs": 165.483584,
+          "maxMs": 169.061959
+        },
+        "native-whole-file": {
+          "medianMs": 182.96975,
+          "minMs": 182.455167,
+          "maxMs": 183.426792
+        },
+        "native-row-groups": {
+          "medianMs": 108.062916,
+          "minMs": 107.36075,
+          "maxMs": 109.090125
+        },
+        "stockSpeedup": 1.5461455805986208,
+        "wholeFileControlSpeedup": 1.6931779816121193
+      }
+    }
+  ],
+  "pilot": {
+    "rows": 2000000,
+    "runs": [
+      {
+        "mode": "stock",
+        "trial": -3,
+        "checksum": 1999998994833,
+        "nanos": 115861541,
+        "splits": 1,
+        "rows": 2000000
+      },
+      {
+        "mode": "native-whole-file",
+        "trial": -3,
+        "checksum": 1999998994833,
+        "nanos": 305738541,
+        "splits": 1,
+        "rows": 2000000
+      },
+      {
+        "mode": "native-row-groups",
+        "trial": -3,
+        "checksum": 1999998994833,
+        "nanos": 50544166,
+        "splits": 2,
+        "rows": 2000000
+      },
+      {
+        "mode": "native-whole-file",
+        "trial": -2,
+        "checksum": 1999998994833,
+        "nanos": 52669542,
+        "splits": 1,
+        "rows": 2000000
+      },
+      {
+        "mode": "native-row-groups",
+        "trial": -2,
+        "checksum": 1999998994833,
+        "nanos": 43628417,
+        "splits": 2,
+        "rows": 2000000
+      },
+      {
+        "mode": "stock",
+        "trial": -2,
+        "checksum": 1999998994833,
+        "nanos": 58562417,
+        "splits": 1,
+        "rows": 2000000
+      },
+      {
+        "mode": "native-row-groups",
+        "trial": -1,
+        "checksum": 1999998994833,
+        "nanos": 43209375,
+        "splits": 2,
+        "rows": 2000000
+      },
+      {
+        "mode": "stock",
+        "trial": -1,
+        "checksum": 1999998994833,
+        "nanos": 50662083,
+        "splits": 1,
+        "rows": 2000000
+      },
+      {
+        "mode": "native-whole-file",
+        "trial": -1,
+        "checksum": 1999998994833,
+        "nanos": 49966666,
+        "splits": 1,
+        "rows": 2000000
+      },
+      {
+        "mode": "stock",
+        "trial": 0,
+        "checksum": 1999998994833,
+        "nanos": 48800584,
+        "splits": 1,
+        "rows": 2000000
+      },
+      {
+        "mode": "native-whole-file",
+        "trial": 0,
+        "checksum": 1999998994833,
+        "nanos": 49613917,
+        "splits": 1,
+        "rows": 2000000
+      },
+      {
+        "mode": "native-row-groups",
+        "trial": 0,
+        "checksum": 1999998994833,
+        "nanos": 42928041,
+        "splits": 2,
+        "rows": 2000000
+      },
+      {
+        "mode": "native-whole-file",
+        "trial": 1,
+        "checksum": 1999998994833,
+        "nanos": 48596667,
+        "splits": 1,
+        "rows": 2000000
+      },
+      {
+        "mode": "native-row-groups",
+        "trial": 1,
+        "checksum": 1999998994833,
+        "nanos": 42269292,
+        "splits": 2,
+        "rows": 2000000
+      },
+      {
+        "mode": "stock",
+        "trial": 1,
+        "checksum": 1999998994833,
+        "nanos": 46281542,
+        "splits": 1,
+        "rows": 2000000
+      },
+      {
+        "mode": "native-row-groups",
+        "trial": 2,
+        "checksum": 1999998994833,
+        "nanos": 39864875,
+        "splits": 2,
+        "rows": 2000000
+      },
+      {
+        "mode": "stock",
+        "trial": 2,
+        "checksum": 1999998994833,
+        "nanos": 45217375,
+        "splits": 1,
+        "rows": 2000000
+      },
+      {
+        "mode": "native-whole-file",
+        "trial": 2,
+        "checksum": 1999998994833,
+        "nanos": 45686375,
+        "splits": 1,
+        "rows": 2000000
+      },
+      {
+        "mode": "stock",
+        "trial": 3,
+        "checksum": 1999998994833,
+        "nanos": 45118417,
+        "splits": 1,
+        "rows": 2000000
+      },
+      {
+        "mode": "native-whole-file",
+        "trial": 3,
+        "checksum": 1999998994833,
+        "nanos": 46139417,
+        "splits": 1,
+        "rows": 2000000
+      },
+      {
+        "mode": "native-row-groups",
+        "trial": 3,
+        "checksum": 1999998994833,
+        "nanos": 40429708,
+        "splits": 2,
+        "rows": 2000000
+      },
+      {
+        "mode": "native-whole-file",
+        "trial": 4,
+        "checksum": 1999998994833,
+        "nanos": 44854417,
+        "splits": 1,
+        "rows": 2000000
+      },
+      {
+        "mode": "native-row-groups",
+        "trial": 4,
+        "checksum": 1999998994833,
+        "nanos": 40016041,
+        "splits": 2,
+        "rows": 2000000
+      },
+      {
+        "mode": "stock",
+        "trial": 4,
+        "checksum": 1999998994833,
+        "nanos": 44776875,
+        "splits": 1,
+        "rows": 2000000
+      },
+      {
+        "mode": "native-row-groups",
+        "trial": 5,
+        "checksum": 1999998994833,
+        "nanos": 41500292,
+        "splits": 2,
+        "rows": 2000000
+      },
+      {
+        "mode": "stock",
+        "trial": 5,
+        "checksum": 1999998994833,
+        "nanos": 45214875,
+        "splits": 1,
+        "rows": 2000000
+      },
+      {
+        "mode": "native-whole-file",
+        "trial": 5,
+        "checksum": 1999998994833,
+        "nanos": 46447709,
+        "splits": 1,
+        "rows": 2000000
+      },
+      {
+        "mode": "stock",
+        "trial": 6,
+        "checksum": 1999998994833,
+        "nanos": 45485084,
+        "splits": 1,
+        "rows": 2000000
+      },
+      {
+        "mode": "native-whole-file",
+        "trial": 6,
+        "checksum": 1999998994833,
+        "nanos": 45979458,
+        "splits": 1,
+        "rows": 2000000
+      },
+      {
+        "mode": "native-row-groups",
+        "trial": 6,
+        "checksum": 1999998994833,
+        "nanos": 39004750,
+        "splits": 2,
+        "rows": 2000000
+      }
+    ],
+    "batchRows": 8192,
+    "scope": "Source only: enumeration, open, decode, JNI/Arrow import, checksum, close",
+    "warmups": 3,
+    "fileBytes": 18730110,
+    "trials": 7,
+    "parallelism": 2,
+    "interpretation": "Initial two-million-row diagnostic before adding footer/input identity fields to the report; excluded from final summaries. Same generator/schema, no input hash recorded for this pilot."
+  },
+  "precedingCohorts": {
+    "interpretation": "Measured before the final empty-row-group guard. Retained separately from final summaries; shared-host and JVM warmup differences prevent attributing timing differences to that guard.",
+    "build": {
+      "command": "cargo build -p streamfusion-parquet --release --features mimalloc",
+      "nativeLibrarySha256": "e25b8de8e1e7a2ae340d0d23d5dbcea3b0a011af9c9ce41702ede23cd7005879",
+      "rustVersion": "rustc 1.95.0 (59807616e 2026-04-14)",
+      "flink": "2.2.1",
+      "parquetJava": "1.15.2",
+      "parquetRust": "58.4.1",
+      "profile": "release, mimalloc"
+    },
+    "sourceSha256": {
+      "native/parquet/src/reader.rs": "9f97b8963a869671521fd9159854576a150a1d27551478c98c496e64482ae344",
+      "src/main/java/tech/streamfusion/parquet/NativeParquet.java": "7b6033888ce9d14535f265e7ec569bbabfba4c169a6828de4fc14879e8db5b2a",
+      "src/main/java/tech/streamfusion/parquet/NativeParquetBulkFormat.java": "868f6c38ac81ec07e9fbc0cabb345eb95197f6ba6d6c6df4138d7d19e83d03a9",
+      "src/main/java/tech/streamfusion/parquet/NativeParquetSource.java": "cff7c9edea96e74f7792b797a4aaf4d2d10ed78a15231c79875b6479923f9c0f",
+      "src/main/java/tech/streamfusion/parquet/ParquetInputFile.java": "4e819091b143c0282608e73784aa55c55b9270fd9de61da20c803a248f0fccf7",
+      "src/main/java/tech/streamfusion/parquet/ParquetRowGroupEnumerator.java": "57223dc5a216eeb712ca817c728dfb624acd5ae0880b590d065a110801dea061",
+      "src/test/java/tech/streamfusion/operator/ParquetSplitBenchmark.java": "e632d363b43b3c69a087b896e8457ca091f1486d5c22573615af37fc5ecf2979"
+    },
+    "cohorts": [
+      {
+        "trials": 7,
+        "scope": "Source only: enumeration, open, decode, JNI/Arrow import, checksum, close",
+        "input": {
+          "fileSha256": "170d14d03224b1c2ba4682d9276a1a74a15bfc03b3804f9a08eb56a7b5c206a9",
+          "javaVersion": "17.0.17",
+          "os": "Mac OS X aarch64",
+          "schema": "ROW<`id` BIGINT, `k` INT, `payload` VARCHAR(1)>",
+          "rowGroups": [
+            {
+              "rows": 1730100,
+              "compressedBytes": 16181766,
+              "uncompressedBytes": 116545651,
+              "codec": "SNAPPY"
+            },
+            {
+              "rows": 269900,
+              "compressedBytes": 2524772,
+              "uncompressedBytes": 18354811,
+              "codec": "SNAPPY"
+            }
+          ]
+        },
+        "runs": [
+          {
+            "splits": 1,
+            "nanos": 115606417,
+            "checksum": 1999998994833,
+            "trial": -3,
+            "mode": "stock",
+            "rows": 2000000
+          },
+          {
+            "splits": 1,
+            "nanos": 284524000,
+            "checksum": 1999998994833,
+            "trial": -3,
+            "mode": "native-whole-file",
+            "rows": 2000000
+          },
+          {
+            "splits": 2,
+            "nanos": 46121083,
+            "checksum": 1999998994833,
+            "trial": -3,
+            "mode": "native-row-groups",
+            "rows": 2000000
+          },
+          {
+            "splits": 1,
+            "nanos": 49797625,
+            "checksum": 1999998994833,
+            "trial": -2,
+            "mode": "native-whole-file",
+            "rows": 2000000
+          },
+          {
+            "splits": 2,
+            "nanos": 41332042,
+            "checksum": 1999998994833,
+            "trial": -2,
+            "mode": "native-row-groups",
+            "rows": 2000000
+          },
+          {
+            "splits": 1,
+            "nanos": 48565958,
+            "checksum": 1999998994833,
+            "trial": -2,
+            "mode": "stock",
+            "rows": 2000000
+          },
+          {
+            "splits": 2,
+            "nanos": 41193417,
+            "checksum": 1999998994833,
+            "trial": -1,
+            "mode": "native-row-groups",
+            "rows": 2000000
+          },
+          {
+            "splits": 1,
+            "nanos": 49064792,
+            "checksum": 1999998994833,
+            "trial": -1,
+            "mode": "stock",
+            "rows": 2000000
+          },
+          {
+            "splits": 1,
+            "nanos": 46513042,
+            "checksum": 1999998994833,
+            "trial": -1,
+            "mode": "native-whole-file",
+            "rows": 2000000
+          },
+          {
+            "splits": 1,
+            "nanos": 48914291,
+            "checksum": 1999998994833,
+            "trial": 0,
+            "mode": "stock",
+            "rows": 2000000
+          },
+          {
+            "splits": 1,
+            "nanos": 48025791,
+            "checksum": 1999998994833,
+            "trial": 0,
+            "mode": "native-whole-file",
+            "rows": 2000000
+          },
+          {
+            "splits": 2,
+            "nanos": 41354917,
+            "checksum": 1999998994833,
+            "trial": 0,
+            "mode": "native-row-groups",
+            "rows": 2000000
+          },
+          {
+            "splits": 1,
+            "nanos": 47222583,
+            "checksum": 1999998994833,
+            "trial": 1,
+            "mode": "native-whole-file",
+            "rows": 2000000
+          },
+          {
+            "splits": 2,
+            "nanos": 44458209,
+            "checksum": 1999998994833,
+            "trial": 1,
+            "mode": "native-row-groups",
+            "rows": 2000000
+          },
+          {
+            "splits": 1,
+            "nanos": 46371500,
+            "checksum": 1999998994833,
+            "trial": 1,
+            "mode": "stock",
+            "rows": 2000000
+          },
+          {
+            "splits": 2,
+            "nanos": 39812375,
+            "checksum": 1999998994833,
+            "trial": 2,
+            "mode": "native-row-groups",
+            "rows": 2000000
+          },
+          {
+            "splits": 1,
+            "nanos": 46063334,
+            "checksum": 1999998994833,
+            "trial": 2,
+            "mode": "stock",
+            "rows": 2000000
+          },
+          {
+            "splits": 1,
+            "nanos": 44857041,
+            "checksum": 1999998994833,
+            "trial": 2,
+            "mode": "native-whole-file",
+            "rows": 2000000
+          },
+          {
+            "splits": 1,
+            "nanos": 43900833,
+            "checksum": 1999998994833,
+            "trial": 3,
+            "mode": "stock",
+            "rows": 2000000
+          },
+          {
+            "splits": 1,
+            "nanos": 45280625,
+            "checksum": 1999998994833,
+            "trial": 3,
+            "mode": "native-whole-file",
+            "rows": 2000000
+          },
+          {
+            "splits": 2,
+            "nanos": 39931917,
+            "checksum": 1999998994833,
+            "trial": 3,
+            "mode": "native-row-groups",
+            "rows": 2000000
+          },
+          {
+            "splits": 1,
+            "nanos": 43978000,
+            "checksum": 1999998994833,
+            "trial": 4,
+            "mode": "native-whole-file",
+            "rows": 2000000
+          },
+          {
+            "splits": 2,
+            "nanos": 39739917,
+            "checksum": 1999998994833,
+            "trial": 4,
+            "mode": "native-row-groups",
+            "rows": 2000000
+          },
+          {
+            "splits": 1,
+            "nanos": 47399791,
+            "checksum": 1999998994833,
+            "trial": 4,
+            "mode": "stock",
+            "rows": 2000000
+          },
+          {
+            "splits": 2,
+            "nanos": 38821500,
+            "checksum": 1999998994833,
+            "trial": 5,
+            "mode": "native-row-groups",
+            "rows": 2000000
+          },
+          {
+            "splits": 1,
+            "nanos": 46728917,
+            "checksum": 1999998994833,
+            "trial": 5,
+            "mode": "stock",
+            "rows": 2000000
+          },
+          {
+            "splits": 1,
+            "nanos": 44448250,
+            "checksum": 1999998994833,
+            "trial": 5,
+            "mode": "native-whole-file",
+            "rows": 2000000
+          },
+          {
+            "splits": 1,
+            "nanos": 44691042,
+            "checksum": 1999998994833,
+            "trial": 6,
+            "mode": "stock",
+            "rows": 2000000
+          },
+          {
+            "splits": 1,
+            "nanos": 45768542,
+            "checksum": 1999998994833,
+            "trial": 6,
+            "mode": "native-whole-file",
+            "rows": 2000000
+          },
+          {
+            "splits": 2,
+            "nanos": 40124875,
+            "checksum": 1999998994833,
+            "trial": 6,
+            "mode": "native-row-groups",
+            "rows": 2000000
+          }
+        ],
+        "rows": 2000000,
+        "fileBytes": 18730110,
+        "warmups": 3,
+        "parallelism": 2,
+        "batchRows": 8192,
+        "summary": {
+          "stock": {
+            "medianMs": 46.3715,
+            "minMs": 43.900833,
+            "maxMs": 48.914291
+          },
+          "native-whole-file": {
+            "medianMs": 45.280625,
+            "minMs": 43.978,
+            "maxMs": 48.025791
+          },
+          "native-row-groups": {
+            "medianMs": 39.931917,
+            "minMs": 38.8215,
+            "maxMs": 44.458209
+          },
+          "stockSpeedup": 1.1612640585224094,
+          "wholeFileControlSpeedup": 1.1339456856028225
+        }
+      },
+      {
+        "batchRows": 8192,
+        "trials": 7,
+        "scope": "Source only: enumeration, open, decode, JNI/Arrow import, checksum, close",
+        "input": {
+          "fileSha256": "62c7bc37bf5827bf48b5db76b06fb01b58076a41c48d2d2d8b1a48023e341c04",
+          "javaVersion": "17.0.17",
+          "os": "Mac OS X aarch64",
+          "schema": "ROW<`id` BIGINT, `k` INT, `payload` VARCHAR(1)>",
+          "rowGroups": [
+            {
+              "rows": 1730100,
+              "compressedBytes": 16181766,
+              "uncompressedBytes": 116545651,
+              "codec": "SNAPPY"
+            },
+            {
+              "rows": 1730100,
+              "compressedBytes": 16181386,
+              "uncompressedBytes": 117656802,
+              "codec": "SNAPPY"
+            },
+            {
+              "rows": 1730100,
+              "compressedBytes": 16178778,
+              "uncompressedBytes": 117656797,
+              "codec": "SNAPPY"
+            },
+            {
+              "rows": 1730100,
+              "compressedBytes": 16177476,
+              "uncompressedBytes": 117656795,
+              "codec": "SNAPPY"
+            },
+            {
+              "rows": 1079600,
+              "compressedBytes": 10098206,
+              "uncompressedBytes": 73419026,
+              "codec": "SNAPPY"
+            }
+          ]
+        },
+        "runs": [
+          {
+            "splits": 1,
+            "nanos": 246904917,
+            "checksum": 31999995994241,
+            "trial": -3,
+            "mode": "stock",
+            "rows": 8000000
+          },
+          {
+            "splits": 1,
+            "nanos": 430778375,
+            "checksum": 31999995994241,
+            "trial": -3,
+            "mode": "native-whole-file",
+            "rows": 8000000
+          },
+          {
+            "splits": 5,
+            "nanos": 114767750,
+            "checksum": 31999995994241,
+            "trial": -3,
+            "mode": "native-row-groups",
+            "rows": 8000000
+          },
+          {
+            "splits": 1,
+            "nanos": 185774917,
+            "checksum": 31999995994241,
+            "trial": -2,
+            "mode": "native-whole-file",
+            "rows": 8000000
+          },
+          {
+            "splits": 5,
+            "nanos": 108552166,
+            "checksum": 31999995994241,
+            "trial": -2,
+            "mode": "native-row-groups",
+            "rows": 8000000
+          },
+          {
+            "splits": 1,
+            "nanos": 200291625,
+            "checksum": 31999995994241,
+            "trial": -2,
+            "mode": "stock",
+            "rows": 8000000
+          },
+          {
+            "splits": 5,
+            "nanos": 109617208,
+            "checksum": 31999995994241,
+            "trial": -1,
+            "mode": "native-row-groups",
+            "rows": 8000000
+          },
+          {
+            "splits": 1,
+            "nanos": 189897250,
+            "checksum": 31999995994241,
+            "trial": -1,
+            "mode": "stock",
+            "rows": 8000000
+          },
+          {
+            "splits": 1,
+            "nanos": 187562708,
+            "checksum": 31999995994241,
+            "trial": -1,
+            "mode": "native-whole-file",
+            "rows": 8000000
+          },
+          {
+            "splits": 1,
+            "nanos": 188897541,
+            "checksum": 31999995994241,
+            "trial": 0,
+            "mode": "stock",
+            "rows": 8000000
+          },
+          {
+            "splits": 1,
+            "nanos": 183635416,
+            "checksum": 31999995994241,
+            "trial": 0,
+            "mode": "native-whole-file",
+            "rows": 8000000
+          },
+          {
+            "splits": 5,
+            "nanos": 109599625,
+            "checksum": 31999995994241,
+            "trial": 0,
+            "mode": "native-row-groups",
+            "rows": 8000000
+          },
+          {
+            "splits": 1,
+            "nanos": 184500417,
+            "checksum": 31999995994241,
+            "trial": 1,
+            "mode": "native-whole-file",
+            "rows": 8000000
+          },
+          {
+            "splits": 5,
+            "nanos": 107550583,
+            "checksum": 31999995994241,
+            "trial": 1,
+            "mode": "native-row-groups",
+            "rows": 8000000
+          },
+          {
+            "splits": 1,
+            "nanos": 186223666,
+            "checksum": 31999995994241,
+            "trial": 1,
+            "mode": "stock",
+            "rows": 8000000
+          },
+          {
+            "splits": 5,
+            "nanos": 107043667,
+            "checksum": 31999995994241,
+            "trial": 2,
+            "mode": "native-row-groups",
+            "rows": 8000000
+          },
+          {
+            "splits": 1,
+            "nanos": 184253792,
+            "checksum": 31999995994241,
+            "trial": 2,
+            "mode": "stock",
+            "rows": 8000000
+          },
+          {
+            "splits": 1,
+            "nanos": 182445541,
+            "checksum": 31999995994241,
+            "trial": 2,
+            "mode": "native-whole-file",
+            "rows": 8000000
+          },
+          {
+            "splits": 1,
+            "nanos": 181546750,
+            "checksum": 31999995994241,
+            "trial": 3,
+            "mode": "stock",
+            "rows": 8000000
+          },
+          {
+            "splits": 1,
+            "nanos": 182169334,
+            "checksum": 31999995994241,
+            "trial": 3,
+            "mode": "native-whole-file",
+            "rows": 8000000
+          },
+          {
+            "splits": 5,
+            "nanos": 107303416,
+            "checksum": 31999995994241,
+            "trial": 3,
+            "mode": "native-row-groups",
+            "rows": 8000000
+          },
+          {
+            "splits": 1,
+            "nanos": 180544417,
+            "checksum": 31999995994241,
+            "trial": 4,
+            "mode": "native-whole-file",
+            "rows": 8000000
+          },
+          {
+            "splits": 5,
+            "nanos": 107966500,
+            "checksum": 31999995994241,
+            "trial": 4,
+            "mode": "native-row-groups",
+            "rows": 8000000
+          },
+          {
+            "splits": 1,
+            "nanos": 182542375,
+            "checksum": 31999995994241,
+            "trial": 4,
+            "mode": "stock",
+            "rows": 8000000
+          },
+          {
+            "splits": 5,
+            "nanos": 107977084,
+            "checksum": 31999995994241,
+            "trial": 5,
+            "mode": "native-row-groups",
+            "rows": 8000000
+          },
+          {
+            "splits": 1,
+            "nanos": 184211167,
+            "checksum": 31999995994241,
+            "trial": 5,
+            "mode": "stock",
+            "rows": 8000000
+          },
+          {
+            "splits": 1,
+            "nanos": 182892417,
+            "checksum": 31999995994241,
+            "trial": 5,
+            "mode": "native-whole-file",
+            "rows": 8000000
+          },
+          {
+            "splits": 1,
+            "nanos": 181700917,
+            "checksum": 31999995994241,
+            "trial": 6,
+            "mode": "stock",
+            "rows": 8000000
+          },
+          {
+            "splits": 1,
+            "nanos": 182681584,
+            "checksum": 31999995994241,
+            "trial": 6,
+            "mode": "native-whole-file",
+            "rows": 8000000
+          },
+          {
+            "splits": 5,
+            "nanos": 107896333,
+            "checksum": 31999995994241,
+            "trial": 6,
+            "mode": "native-row-groups",
+            "rows": 8000000
+          }
+        ],
+        "rows": 8000000,
+        "fileBytes": 74910379,
+        "warmups": 3,
+        "parallelism": 2,
+        "summary": {
+          "stock": {
+            "medianMs": 184.211167,
+            "minMs": 181.54675,
+            "maxMs": 188.897541
+          },
+          "native-whole-file": {
+            "medianMs": 182.681584,
+            "minMs": 180.544417,
+            "maxMs": 184.500417
+          },
+          "native-row-groups": {
+            "medianMs": 107.896333,
+            "minMs": 107.043667,
+            "maxMs": 109.599625
+          },
+          "stockSpeedup": 1.7072977540395187,
+          "wholeFileControlSpeedup": 1.6931213408337056
+        }
+      }
+    ]
+  }
+}

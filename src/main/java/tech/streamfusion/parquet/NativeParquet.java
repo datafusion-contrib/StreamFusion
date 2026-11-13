@@ -29,7 +29,19 @@ public final class NativeParquet {
   public static native long createParquetDecoder(
       Object input, long length, long schemaAddress, String[] physicalNames, int batchSize);
 
-  public static native boolean parquetDecoderNext(long handle, long arrayAddress, long schemaAddress);
+  public static native long[] parquetRowGroupOffsets(Object input, long length);
+
+  public static native long createParquetSplitDecoder(
+      Object input,
+      long length,
+      long schemaAddress,
+      String[] physicalNames,
+      int batchSize,
+      long splitOffset,
+      long splitLength);
+
+  public static native boolean parquetDecoderNext(
+      long handle, long arrayAddress, long schemaAddress);
 
   public static native void closeParquetDecoder(long handle);
 
@@ -79,5 +91,4 @@ public final class NativeParquet {
       long handle, long outArrayAddress, long outSchemaAddress);
 
   public static native void closePartitionSplit(long handle);
-
 }
