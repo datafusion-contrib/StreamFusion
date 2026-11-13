@@ -3538,7 +3538,21 @@ accumulator contract during SQL and compiled-plan submission. The global stage r
 `accState` under the original operator identity, key serializer and maximum parallelism.
 Its native configuration is rebound before canonical or ordinary native-checkpoint restore;
 no StreamFusion serializer or additional persistent state descriptor enters the savepoint.
-Retracting mini-batches and global DISTINCT/data-view/UDF layouts remain outside this adapter.
+Local/global retracting mini-batches remain outside this typed adapter. Captured managed UDF
+contracts have their own scope below.
+
+The resumed #569 implementation additionally binds one-phase retracting scalar bundles and
+COUNT DISTINCT through the existing typed header/view contract. Hidden record counts retain
+group liveness independently of filtered SUM/AVG counts and DISTINCT multiplicities. A barrier
+drains the existing native bundle before direct canonical projection; no input replay or new
+state encoding is added. SUM DISTINCT and retracting MIN/MAX views retain their existing gates,
+and DISTINCT with entry TTL still requires a separate timestamp contract.
+New planner and repeated-switch controls cover nullable/duplicate members, orphan retracts,
+temporary zero counts, group deletion/recreation, both native stores and native-checkpoint
+recovery. Full jobs retain ordinary SQL/compiled submission, both engine orders, stock reference
+jobs stopped at the same bundle cuts, and rescaling. These tests are authored but deferred to
+the final six-hour testing window of the resumed one-day task; the new scope is not included
+in the historical passing evidence below.
 
 The local stage produces stock partial fields directly. AVG carries its widened sum and
 independent BIGINT count, with the actual released accumulator type defining the sum carrier.

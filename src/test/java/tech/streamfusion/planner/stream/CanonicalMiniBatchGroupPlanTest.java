@@ -18,6 +18,33 @@ import tech.streamfusion.operator.NativeColumnarLocalGroupAggregateOperator;
 import tech.streamfusion.state.StockGroupTypedStateContract;
 
 class CanonicalMiniBatchGroupPlanTest {
+  static Stream<Arguments> retractingCases() {
+    return Stream.of("INT", "BIGINT", "DOUBLE", "STRING")
+        .flatMap(type -> Stream.of(false, true)
+            .flatMap(distinct -> Stream.of(false, true)
+                .map(compiled -> Arguments.of(type, distinct, compiled))));
+  }
+
+  @ParameterizedTest
+  @MethodSource("retractingCases")
+  void retractingScalarAndCountDistinctBundlesBindTheirReleasedInputCounter(
+      String type, boolean distinct, boolean compiled) throws Exception {
+    var graph = MiniBatchGroupStockFixture.graph(type, false, true, distinct, true, compiled);
+    var owners = graph.getStreamNodes().stream()
+        .filter(node -> node.getOperatorFactory() instanceof SimpleOperatorFactory
+            && ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator()
+                instanceof NativeColumnarGroupAggregateOperator)
+        .collect(java.util.stream.Collectors.toList());
+    assertEquals(1, owners.size(), graph.getStreamingPlanAsJSON());
+    var owner = ((SimpleOperatorFactory<?>) owners.get(0).getOperatorFactory()).getOperator();
+    var contract = assertInstanceOf(StockGroupTypedStateContract.class,
+        field(owner, "stockStateContract"));
+    assertTrue((int) field(contract, "recordCountField") >= 0);
+    assertEquals(false, field(contract, "globalMerge"));
+    assertEquals(true, field(owner, "miniBatch"));
+    assertEquals(distinct, !((java.util.List<?>) field(contract, "views")).isEmpty());
+  }
+
   static Stream<Arguments> cases() {
     return Stream.of(false, true)
         .flatMap(

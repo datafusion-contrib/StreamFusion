@@ -2332,7 +2332,7 @@ final class StockCompiledPlanLowering {
         || Boolean.parseBoolean(config.getString("table.exec.async-state.enabled", "false")))
       return stock;
     boolean retract = definition.path("needRetraction").asBoolean();
-    if (miniBatch && retract) return stock;
+    if (miniBatch && retract && global) return stock;
     var calls =
         reader
             .forType(org.apache.calcite.rel.core.AggregateCall[].class)

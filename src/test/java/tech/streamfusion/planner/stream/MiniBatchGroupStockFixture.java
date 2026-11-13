@@ -49,6 +49,13 @@ final class MiniBatchGroupStockFixture implements AutoCloseable {
   @SuppressWarnings("unchecked")
   MiniBatchGroupStockFixture(String type, boolean global, boolean rocks, boolean distinct)
       throws Exception {
+    this(type, global, rocks, distinct, false);
+  }
+
+  @SuppressWarnings("unchecked")
+  MiniBatchGroupStockFixture(
+      String type, boolean global, boolean rocks, boolean distinct, boolean retract)
+      throws Exception {
     this.rocks = rocks;
     this.global = global;
     var stock =
@@ -56,8 +63,8 @@ final class MiniBatchGroupStockFixture implements AutoCloseable {
             "minibatch.stock-plan",
             () ->
                 PLANS.get(
-                    List.of(type, global, false, distinct),
-                    () -> new FixtureNodes(graph(type, global, false, distinct).getStreamNodes())));
+                    List.of(type, global, false, distinct, retract),
+                    () -> new FixtureNodes(graph(type, global, false, distinct, retract).getStreamNodes())));
     StreamNode node =
         stock.stream()
             .filter(
@@ -118,8 +125,8 @@ final class MiniBatchGroupStockFixture implements AutoCloseable {
             "minibatch.native-plan",
             () ->
                 PLANS.get(
-                    List.of(type, global, true, distinct),
-                    () -> new FixtureNodes(graph(type, global, true, distinct).getStreamNodes())));
+                    List.of(type, global, true, distinct, retract),
+                    () -> new FixtureNodes(graph(type, global, true, distinct, retract).getStreamNodes())));
     template =
         (NativeColumnarGroupAggregateOperator)
             nativeGraph.stream()
@@ -180,6 +187,17 @@ final class MiniBatchGroupStockFixture implements AutoCloseable {
 
   static StreamGraph graph(String type, boolean global, boolean nativeEnabled, boolean distinct)
       throws Exception {
+    return graph(type, global, nativeEnabled, distinct, false);
+  }
+
+  static StreamGraph graph(
+      String type, boolean global, boolean nativeEnabled, boolean distinct, boolean retract)
+      throws Exception {
+    return graph(type, global, nativeEnabled, distinct, retract, false);
+  }
+
+  static StreamGraph graph(String type, boolean global, boolean nativeEnabled,
+      boolean distinct, boolean retract, boolean compiled) throws Exception {
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", Boolean.toString(nativeEnabled));
     config.setString("pipeline.max-parallelism", "128");
@@ -203,10 +221,14 @@ final class MiniBatchGroupStockFixture implements AutoCloseable {
             + ",v "
             + (distinct ? "STRING" : type)
             + ") WITH"
-            + " ('connector'='canonical-fixture','input'='unused.csv','ready'='unused.ready','insert-only'='true')");
+            + " ('connector'='canonical-fixture','input'='unused.csv','ready'='unused.ready','insert-only'='"
+            + !retract + "')");
     table.useCatalog("default_catalog");
     String aggregates =
-        distinct
+        retract
+            ? "av " + arithmeticType(type) + ",s " + arithmeticType(type)
+                + (distinct ? ",dn BIGINT" : "")
+            : distinct
             ? "sd "
                 + type
                 + ",sf "
@@ -227,18 +249,27 @@ final class MiniBatchGroupStockFixture implements AutoCloseable {
             + aggregates
             + ") WITH ('connector'='blackhole')");
     var planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
-    return CanonicalRegularJoinPlanTest.graph(
-        planner,
-        table,
-        CanonicalRegularJoinPlanTest.translate(
-            planner,
-            distinct
+    String query = retract
+                ? "INSERT INTO output_table SELECT k,COUNT(*),AVG(a) FILTER(WHERE a>1),"
+                    + "SUM(a) FILTER(WHERE a>1)" + (distinct ? ",COUNT(DISTINCT v)" : "")
+                    + " FROM fixture.db.input_table GROUP BY k"
+                : distinct
                 ? "INSERT INTO output_table SELECT k,COUNT(*),SUM(DISTINCT a),SUM(DISTINCT a)"
                     + " FILTER(WHERE a>1),COUNT(DISTINCT a),COUNT(DISTINCT a) FILTER(WHERE"
                     + " a>1),AVG(a),COUNT(DISTINCT v) FROM fixture.db.input_table GROUP BY k"
                 : "INSERT INTO output_table SELECT k,COUNT(*),AVG(a) FILTER(WHERE"
                     + " a>1),MIN(v),MAX(v),SUM(a) FILTER(WHERE a>1) FROM fixture.db.input_table"
-                    + " GROUP BY k"));
+                    + " GROUP BY k";
+    var plan = compiled ? table.compilePlanSql(query) : null;
+    String portable = compiled ? plan.asJsonString() : "";
+    assertFalse(portable.contains("tech.streamfusion"));
+    var transformations = compiled
+        ? planner.translatePlan(planner.loadPlan(
+            org.apache.flink.table.api.PlanReference.fromJsonString(portable)))
+        : CanonicalRegularJoinPlanTest.translate(planner, query);
+    var graph = CanonicalRegularJoinPlanTest.graph(planner, table, transformations);
+    if (compiled) assertEquals(portable, plan.asJsonString());
+    return graph;
   }
 
   RowData seed(Long key, Integer value, String text, boolean javaCache) throws Exception {
