@@ -29,6 +29,12 @@ visitors, preflighting the complete source before applying native state. Arroyo'
 retained input and computation is preserved; released Flink's exact descriptors and callbacks
 supply the interoperability contract. Constants remain native arguments, not saved row fields.
 
+The event-time policy belongs to the captured released operator rather than its Flink release.
+Flink 2.2 can still instantiate the V1 ROWS/RANGE owners, including from an older compiled plan.
+Both the native execution owner and its async canonical reader retain that explicit choice.
+The existing V1 polling implementation is reused on either supported release; no new timer or
+savepoint encoding is introduced.
+
 A Flink PROCTIME indicator is physically NULL until materialized even when its logical type is
 NOT NULL. The Arrow schema therefore describes the nullable physical slot, while the stock
 serializer and logical row type remain unchanged. This follows Comet's export of actual vector

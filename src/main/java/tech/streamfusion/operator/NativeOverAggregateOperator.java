@@ -41,6 +41,7 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
   private final long stateTtlMillis;
   private final RowType rowType;
   private boolean eventCleanupTimers;
+  private int eventTimeVersion = tech.streamfusion.compat.FlinkPlanCompat.unboundedOverVersion();
   private RowType constantType;
   private byte[] constantValues;
   private transient RowType nativeRowType;
@@ -86,6 +87,14 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
     return this;
   }
 
+  public NativeOverAggregateOperator withEventTimeVersion(int version) {
+    if (proctime || (frameKind != 0 && frameKind != 3)
+        || !tech.streamfusion.compat.FlinkPlanCompat.supportsUnboundedOverVersion(version))
+      throw new IllegalArgumentException("Unsupported event-time unbounded OVER version: " + version);
+    eventTimeVersion = version;
+    return this;
+  }
+
   @Override
   protected java.util.function.LongConsumer memoryStateCopier() {
     final long source = handle;
@@ -108,7 +117,7 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
     if (!proctime
         && (frameKind == 0 || frameKind == 3)
         && java.util.Arrays.stream(aggregateKinds).noneMatch(kind -> kind >= 10 && kind <= 12)
-        && tech.streamfusion.compat.FlinkPlanCompat.unboundedOverVersion() == 1)
+        && eventTimeVersion == 1)
       Native.bindOverEventPollingTimers(stateHandle);
   }
 

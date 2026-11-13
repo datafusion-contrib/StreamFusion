@@ -213,6 +213,16 @@ public final class FlinkPlanCompat {
   }
 
   public static Class<?> eventUnboundedOver(boolean rows) {
+    return eventUnboundedOver(rows, unboundedOverVersion());
+  }
+
+  public static boolean supportsUnboundedOverVersion(int version) {
+    return version == 1;
+  }
+
+  public static Class<?> eventUnboundedOver(boolean rows, int version) {
+    if (!supportsUnboundedOverVersion(version))
+      throw new IllegalArgumentException("Unsupported event-time unbounded OVER version: " + version);
     return rows
         ? org.apache.flink.table.runtime.operators.over.RowTimeRowsUnboundedPrecedingFunction.class
         : org.apache.flink.table.runtime.operators.over.RowTimeRangeUnboundedPrecedingFunction

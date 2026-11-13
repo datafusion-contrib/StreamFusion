@@ -75,15 +75,15 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
     if (!bounded
             && (frameKind != 0 && frameKind != 3
                 || !proctime
-                    && getPersistedConfig()
+                    && !tech.streamfusion.compat.FlinkPlanCompat.supportsUnboundedOverVersion(
+                        getPersistedConfig()
                             .get(
                                 org.apache.flink.configuration.ConfigOptions.key(
                                         "table.exec.unbounded-over.version")
                                     .intType()
                                     .defaultValue(
                                         tech.streamfusion.compat.FlinkPlanCompat
-                                            .unboundedOverVersion()))
-                        != tech.streamfusion.compat.FlinkPlanCompat.unboundedOverVersion())
+                                            .unboundedOverVersion()))))
         || bounded && proctime && frameKind == 2
         || keyColumns.length > 1
         || java.util.Arrays.stream(aggregateKinds)
@@ -166,6 +166,12 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
             maxParallelism);
     if (constantType != null) operator.withConstantArguments(constantType, constantValues);
     if (eventCleanupTimers) operator.withEventTimeCleanupTimers();
+    if (!proctime && (frameKind == 0 || frameKind == 3))
+      operator.withEventTimeVersion(
+          getPersistedConfig().get(
+              org.apache.flink.configuration.ConfigOptions.key("table.exec.unbounded-over.version")
+                  .intType()
+                  .defaultValue(tech.streamfusion.compat.FlinkPlanCompat.unboundedOverVersion())));
     OneInputTransformation<ArrowBatch, ArrowBatch> transformation =
         ExecNodeUtil.createOneInputTransformation(
             input,

@@ -211,8 +211,21 @@ public final class FlinkPlanCompat {
   }
 
   public static Class<?> eventUnboundedOver(boolean rows) {
-    return org.apache.flink.table.runtime.operators.over.RowTimeUnboundedPrecedingOverFunctionV2
-        .class;
+    return eventUnboundedOver(rows, unboundedOverVersion());
+  }
+
+  public static boolean supportsUnboundedOverVersion(int version) {
+    return version == 1 || version == 2;
+  }
+
+  public static Class<?> eventUnboundedOver(boolean rows, int version) {
+    if (version == 1)
+      return rows
+          ? org.apache.flink.table.runtime.operators.over.RowTimeRowsUnboundedPrecedingFunction.class
+          : org.apache.flink.table.runtime.operators.over.RowTimeRangeUnboundedPrecedingFunction.class;
+    if (version == 2)
+      return org.apache.flink.table.runtime.operators.over.RowTimeUnboundedPrecedingOverFunctionV2.class;
+    throw new IllegalArgumentException("Unsupported event-time unbounded OVER version: " + version);
   }
 
   public static org.apache.flink.table.planner.plan.nodes.physical.stream

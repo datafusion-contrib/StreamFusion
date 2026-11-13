@@ -213,6 +213,20 @@ class CanonicalEventUnboundedOverInteropTest {
   }
 
   @ParameterizedTest
+  @MethodSource("pollingCases")
+  void explicitV1StateAndCallbacksContinueInBothEngineOrders(
+      boolean rows, boolean stockStore, boolean nativeStore, long ttl) throws Exception {
+    verifyInterchange(new Plan("BIGINT", rows, false, ttl, 1), stockStore, nativeStore);
+  }
+
+  @ParameterizedTest
+  @MethodSource("pollingCases")
+  void explicitV1NativeCheckpointRetainsThePollingContractBeforeCanonicalReturn(
+      boolean rows, boolean stockStore, boolean nativeStore, long ttl) throws Exception {
+    verifyCheckpoint(new Plan("BIGINT", rows, false, ttl, 1), stockStore, nativeStore);
+  }
+
+  @ParameterizedTest
   @MethodSource("inventoryStores")
   void manyRestoredOwnersPreservePendingTimersAndContinueAfterImport(
       boolean stockStore, boolean nativeStore) throws Exception {
@@ -251,8 +265,7 @@ class CanonicalEventUnboundedOverInteropTest {
   @MethodSource("inventoryStores")
   void hotV1PhysicalCallbacksCrossExportChunksAndReturnToStockExactly(
       boolean stockStore, boolean nativeStore) throws Exception {
-    org.junit.jupiter.api.Assumptions.assumeTrue(FlinkPlanCompat.unboundedOverVersion() == 1);
-    var plan = new Plan("BIGINT", true, false, 1000);
+    var plan = new Plan("BIGINT", true, false, 1000, 1);
     long allocated = NativeAllocator.SHARED.getAllocatedMemory();
     try (var reference = plan.stock(stockStore);
         var target = plan.nativeHarness(nativeStore)) {
@@ -294,8 +307,7 @@ class CanonicalEventUnboundedOverInteropTest {
   @MethodSource("pollingCases")
   void pollingCallbacksRetainTheirPhysicalTimersAcrossTheFirstRestoredWatermark(
       boolean rows, boolean stockStore, boolean nativeStore, long ttl) throws Exception {
-    org.junit.jupiter.api.Assumptions.assumeTrue(FlinkPlanCompat.unboundedOverVersion() == 1);
-    var plan = new Plan("BIGINT", rows, false, ttl);
+    var plan = new Plan("BIGINT", rows, false, ttl, 1);
     OperatorSubtaskState state;
     try (var stock = plan.stock(stockStore);
         var nativeOp = plan.nativeHarness(nativeStore)) {
@@ -357,8 +369,7 @@ class CanonicalEventUnboundedOverInteropTest {
   @MethodSource("pollingCases")
   void orphanPollingCallbacksPreserveCleanupWithoutInventingInputOrFolds(
       boolean rows, boolean stockStore, boolean nativeStore, long ttl) throws Exception {
-    org.junit.jupiter.api.Assumptions.assumeTrue(FlinkPlanCompat.unboundedOverVersion() == 1);
-    var plan = new Plan("BIGINT", rows, false, ttl);
+    var plan = new Plan("BIGINT", rows, false, ttl, 1);
     OperatorSubtaskState state;
     try (var stock = plan.stock(stockStore)) {
       stock.open();
@@ -718,11 +729,16 @@ class CanonicalEventUnboundedOverInteropTest {
     final int[] kinds, columns, codes, partitions;
     final int timeColumn;
     final boolean rows;
+    final int version;
     final long ttl;
     final tech.streamfusion.planner.stream.OverConstantArguments constants;
 
     Plan(String type, boolean rows, boolean global, long ttl) throws Exception {
       this(type, rows, global, ttl, false);
+    }
+
+    Plan(String type, boolean rows, boolean global, long ttl, int version) throws Exception {
+      this(type, rows, global, ttl, false, false, false, null, version);
     }
 
     Plan(String type, boolean rows, boolean global, long ttl, boolean literals) throws Exception {
@@ -756,11 +772,28 @@ class CanonicalEventUnboundedOverInteropTest {
         boolean requiredValue,
         String payload)
         throws Exception {
+      this(type, rows, global, ttl, literals, proctime, requiredValue, payload,
+          FlinkPlanCompat.unboundedOverVersion());
+    }
+
+    Plan(
+        String type,
+        boolean rows,
+        boolean global,
+        long ttl,
+        boolean literals,
+        boolean proctime,
+        boolean requiredValue,
+        String payload,
+        int version)
+        throws Exception {
       this.rows = rows;
       this.ttl = ttl;
+      this.version = version;
       var config = new Configuration();
       config.setString("streamfusion.native.enabled", "false");
       config.setString("table.exec.state.ttl", ttl + " ms");
+      config.setString("table.exec.unbounded-over.version", Integer.toString(version));
       var table = NativePlannerTestEnvironment.create(config);
       table.executeSql(
           "CREATE TABLE scalar_input(k BIGINT,v "
@@ -804,7 +837,7 @@ class CanonicalEventUnboundedOverInteropTest {
           (KeyedProcessOperator<?, ?, ?>)
               ((SimpleOperatorFactory<?>) transform.getOperatorFactory()).getOperator();
       var function = operator.getUserFunction();
-      assertEquals(FlinkPlanCompat.eventUnboundedOver(rows), function.getClass());
+      assertEquals(FlinkPlanCompat.eventUnboundedOver(rows, version), function.getClass());
       Class<?> owner = function.getClass();
       while (Arrays.stream(owner.getDeclaredFields())
           .noneMatch(candidate -> candidate.getName().equals("accTypes")))
@@ -903,7 +936,8 @@ class CanonicalEventUnboundedOverInteropTest {
               widths,
               constants.type(),
               constants.encodedValues(),
-              ttl > 1);
+              ttl > 1,
+              version);
     }
 
     ExecNode<?> node() throws Exception {
@@ -970,7 +1004,8 @@ class CanonicalEventUnboundedOverInteropTest {
                   : new int[] {Native.STOCK_KEY_PROJECTION, -1},
               ttl,
               input,
-              128);
+              128)
+              .withEventTimeVersion(version);
       if (constants.type().getFieldCount() > 0)
         operator.withConstantArguments(constants.type(), constants.encodedValues());
       if (ttl > 1) operator.withEventTimeCleanupTimers();

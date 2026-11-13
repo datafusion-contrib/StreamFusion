@@ -184,6 +184,10 @@ public final class CanonicalJobWorker {
             .getConfig()
             .set("table.exec.state.ttl", Files.readString(root.resolve("state-ttl")).trim());
       }
+      if (Files.exists(root.resolve("unbounded-over-version")))
+        table.getConfig().set(
+            "table.exec.unbounded-over.version",
+            Files.readString(root.resolve("unbounded-over-version")).trim());
       boolean twoPhase = Files.exists(root.resolve("two-phase-mini-batch"));
       boolean miniBatch = twoPhase || Files.exists(root.resolve("one-phase-mini-batch"));
       table.getConfig().set("table.exec.mini-batch.enabled", Boolean.toString(miniBatch));

@@ -43,6 +43,15 @@ class CanonicalEventUnboundedOverPlanTest {
     new CanonicalBoundedOverPlanTest().assertPlan(mode, type, global, compiled, uids, ttl, false);
   }
 
+  @ParameterizedTest
+  @MethodSource("cases")
+  void explicitLegacySubmissionRetainsItsPollingOwnerAndOriginalStockIdentity(
+      String mode, String type, boolean global, boolean compiled, String uids, long ttl)
+      throws Exception {
+    new CanonicalBoundedOverPlanTest()
+        .assertPlan(mode, type, global, compiled, uids, ttl, false, false, 1);
+  }
+
   static Stream<Arguments> constantCases() {
     return tech.streamfusion.CanonicalTestMatrix.select(allConstantCases());
   }

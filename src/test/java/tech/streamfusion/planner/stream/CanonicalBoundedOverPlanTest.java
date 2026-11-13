@@ -103,12 +103,28 @@ class CanonicalBoundedOverPlanTest {
       boolean starAndLiteral,
       boolean proctimePayload)
       throws Exception {
+    assertPlan(mode, type, keyless, compiled, uids, ttl, starAndLiteral, proctimePayload,
+        tech.streamfusion.compat.FlinkPlanCompat.unboundedOverVersion());
+  }
+
+  void assertPlan(
+      String mode,
+      String type,
+      boolean keyless,
+      boolean compiled,
+      String uids,
+      long ttl,
+      boolean starAndLiteral,
+      boolean proctimePayload,
+      int version)
+      throws Exception {
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", "true");
     config.setString("parallelism.default", "2");
     config.setString("pipeline.max-parallelism", "257");
     config.setString("table.exec.uid.generation", uids);
     config.setString("table.exec.state.ttl", ttl + " ms");
+    config.setString("table.exec.unbounded-over.version", Integer.toString(version));
     var table = NativePlannerTestEnvironment.create(config);
     table.executeSql(
         "CREATE TABLE over_input(k BIGINT,v "
@@ -194,6 +210,10 @@ class CanonicalBoundedOverPlanTest {
     }
     var contract = GroupAggregateStockTestFixture.field(operator, "stockStateContract");
     assertNotNull(contract);
+    if (unbounded && !processing) {
+      assertEquals(version, GroupAggregateStockTestFixture.field(operator, "eventTimeVersion"));
+      assertEquals(version == 1, GroupAggregateStockTestFixture.field(contract, "pollingTimers"));
+    }
     if (starAndLiteral && !unbounded)
       assertEquals(-1, GroupAggregateStockTestFixture.field(contract, "hiddenCount"));
     assertEquals(

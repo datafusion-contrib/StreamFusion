@@ -1823,6 +1823,17 @@ logical types, input values or the stock oracle.
 
 ### Flink 1.18 unbounded event-time polling timers
 
+Explicit `table.exec.unbounded-over.version=1` on Flink 2.2 now binds the same V1 ROWS/RANGE
+contract. Lowering identifies the released function in the stock transformation and carries that
+version into both native execution and the canonical adapter. This also preserves a portable
+compiled plan's selected owner when the submission environment has a different version default.
+Each operator retains its policy through live processing, native checkpoint recovery and
+asynchronous captured readers; selecting V1 does not change the stock state serializers.
+New planner, operator and complete-job controls cover explicit V1 on both releases, including
+polling-only callbacks, overlapping restored timers, TTL and both native stores. These controls
+are authored but not yet run during the implementation phase of the resumed one-day #569 work.
+The historical qualification counts below predate that extension.
+
 The same BIGINT/FLOAT/DOUBLE scalar layouts and BIGINT/global keys bind the released Flink 1.18
 ROWS/RANGE owners. Their state serializers remain shared with the 2.2 binding, while a narrow
 native policy preserves the V1 physical timer lifecycle. V1 registers a per-key polling callback

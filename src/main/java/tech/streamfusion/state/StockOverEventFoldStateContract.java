@@ -54,8 +54,7 @@ public final class StockOverEventFoldStateContract implements StockStateContract
   private final int[] keyColumns;
   private final int timeColumn;
   private final boolean cleanupEnabled;
-  private final boolean pollingTimers =
-      tech.streamfusion.compat.FlinkPlanCompat.unboundedOverVersion() == 1;
+  private final boolean pollingTimers;
   private transient RowData constantRow;
   private transient CheckpointableKeyedStateBackend<RowData> timerBackend;
   private transient KeyGroupedInternalPriorityQueue<TimerHeapInternalTimer<RowData, VoidNamespace>>
@@ -74,6 +73,28 @@ public final class StockOverEventFoldStateContract implements StockStateContract
       RowType constants,
       byte[] constantBytes,
       boolean cleanupEnabled) {
+    this(
+        keys, keyType, inputType, accumulatorType, keyColumns, timeColumn, kinds, widths,
+        constants, constantBytes, cleanupEnabled,
+        tech.streamfusion.compat.FlinkPlanCompat.unboundedOverVersion());
+  }
+
+  public StockOverEventFoldStateContract(
+      TypeSerializer<RowData> keys,
+      RowType keyType,
+      RowType inputType,
+      RowType accumulatorType,
+      int[] keyColumns,
+      int timeColumn,
+      int[] kinds,
+      int[] widths,
+      RowType constants,
+      byte[] constantBytes,
+      boolean cleanupEnabled,
+      int version) {
+    if (!tech.streamfusion.compat.FlinkPlanCompat.supportsUnboundedOverVersion(version))
+      throw new IllegalArgumentException("Unsupported event-time unbounded OVER version: " + version);
+    pollingTimers = version == 1;
     folds = new StockOverFoldStateContract(keys, keyType, accumulatorType, kinds, widths, false);
     this.keyType = keyType;
     this.inputType = inputType;

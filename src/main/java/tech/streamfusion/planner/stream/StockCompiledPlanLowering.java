@@ -1761,9 +1761,17 @@ final class StockCompiledPlanLowering {
                         .RowTimeRowsBoundedPrecedingFunction.class
                     : org.apache.flink.table.runtime.operators.over
                         .RowTimeRangeBoundedPrecedingFunction.class;
-    if (function.getClass() != expected) return stock;
+    int eventTimeVersion = FlinkPlanCompat.unboundedOverVersion();
+    if (function.getClass() != expected) {
+      if (bounded || processing
+          || function.getClass() != FlinkPlanCompat.eventUnboundedOver(group.isRows(), 1))
+        return stock;
+      eventTimeVersion = 1;
+    }
     var config = new Configuration(planner.getTableConfig().getConfiguration());
     FlinkPlanCompat.persistedConfig(stock).toMap().forEach(config::setString);
+    if (!bounded && !processing)
+      config.setString("table.exec.unbounded-over.version", Integer.toString(eventTimeVersion));
     if (Boolean.parseBoolean(config.getString("execution.checkpointing.unaligned.enabled", "false"))
         || Boolean.parseBoolean(config.getString("table.exec.async-state.enabled", "false")))
       return stock;
@@ -1889,7 +1897,8 @@ final class StockCompiledPlanLowering {
                       widths,
                       constants.get().type(),
                       constants.get().encodedValues(),
-                      retention > 1)
+                      retention > 1,
+                      eventTimeVersion)
               : processing
                   ? new tech.streamfusion.state.StockOverProcessingRowsStateContract(
                       serializer,

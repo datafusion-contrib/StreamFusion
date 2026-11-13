@@ -27,7 +27,7 @@ pages. Historical cohorts are not silently requalified against each newer librar
 | [Sessions](../operators/window-aggregate.md) | Automatic partitioned TVF and legacy event/processing-time SESSION binding, operator recovery and selected complete-job handoffs | Native unpartitioned SESSION TVF assignment and wider merging/timer/recovery matrix |
 | [Window rank](../operators/top-n.md#window-rank-canonical-interchange-partial) | Automatic event-time retained sort-list, timer and watermark binding | Wider bounds/types, processing-time projection and failure/delivery matrix |
 | [Window deduplication](../operators/deduplication.md#window-deduplication-canonical-interchange-partial) | Automatic event-time winner, timer and watermark binding | Wider winner/types, processing-time projection and failure/delivery matrix |
-| [OVER](../operators/over.md#automatic-bounded-arithmetic-state-binding-partial) | Bounded arithmetic, processing-time unbounded scalar and event-time unbounded scalar contracts (1.18 V1 / 2.2 V2) with automatic binding | Explicit legacy V1 on 2.2, wider keys/types, DISTINCT/views and bounded event-ROWS cleanup |
+| [OVER](../operators/over.md#automatic-bounded-arithmetic-state-binding-partial) | Bounded arithmetic, processing-time unbounded scalar and event-time unbounded scalar contracts with automatic binding; explicit 2.2 V1 implementation awaiting qualification | Wider keys/types, DISTINCT/views, bounded event-ROWS cleanup and complete V1 qualification |
 | [Changelog normalization](../operators/changelog-normalize.md#canonical-savepoint-adapter) | Automatic retained-row/TTL contract and complete jobs | Wider keys, mini-batches, consumers and failure matrix |
 | [Interval joins](../operators/joins/interval-join.md#complete-job-handoff-matrix) | Event/proctime state, four join kinds and selected complete-job/rescale matrices | Wider schemas, cleanup edges and remaining ordinary-SQL combinations |
 | [Temporal joins](../operators/joins/temporal-join.md#complete-job-handoff-matrix) | Qualified INNER/LEFT history/probe/timer state and complete jobs | Legacy proctime variant, wider schemas and commit-failure matrix |
@@ -80,7 +80,8 @@ Legacy event/processing-time TUMBLE/HOP group windows share the slicing converte
 TimeWindow accumulator/pane and timer namespaces. HOP requires a positive size that is an integral
 multiple of its slide. These legacy owners also reset their watermark and write no operator state.
 Buffered dedup
-uses the older eager owner, and explicit legacy V1 mode on 2.2 remains unqualified. The shared
+uses the older eager owner. Explicit legacy V1 mode on 2.2 now selects the captured stock
+owner's polling policy; its newly added continuation controls await execution. The shared
 unbounded event-time scalar binding preserves 1.18 polling callbacks separately from pending
 timestamps; its captured RocksDB reader leaves metadata on disk. These same-line controls do not qualify every variant or cross-line upgrades. Both lines
 compile the shared canonical job fixtures, including all twelve Kafka sink/pipeline families. Their release adapters
