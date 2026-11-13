@@ -20,7 +20,7 @@ import org.apache.flink.core.io.SimpleVersionedSerializer;
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.TaskOffHeapMemory;
 
-/** Whole-file native Parquet scans using the stock bounded file enumerator and reader state. */
+/** Native Parquet row-group scans using stock bounded file assignment and reader state. */
 public final class NativeParquetSource
     implements Source<ArrowBatch, FileSourceSplit, PendingSplitsCheckpoint<FileSourceSplit>> {
   private final FileSource<ArrowBatch> source;
@@ -35,6 +35,7 @@ public final class NativeParquetSource
     source =
         FileSource.forBulkFileFormat(
                 new NativeParquetBulkFormat(schema, names, batchRows, null), paths)
+            .setFileEnumerator(ParquetRowGroupEnumerator::new)
             .build();
   }
 

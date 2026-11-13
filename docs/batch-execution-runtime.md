@@ -354,7 +354,9 @@ resolved source reuse. The optional module owns source admission and file decodi
 core only supplies the extension hook and retained-view sharing. A shared source is
 converted only if every direct consumer accepts the same Arrow representation.
 Flink retains file discovery, assignment, seekable filesystem access and source
-checkpoint serialization. Native checkpoints count emitted logical rows in a
-whole-file split; restoration replays/skips those rows. This does not claim stock
+checkpoint serialization. Native footer enumeration supplies one split per Parquet
+row group, independently of filesystem block locations. Native checkpoints count
+emitted logical rows within each byte-range split; restoration replays/skips those
+rows. Whole-file native checkpoints remain readable. This does not claim stock
 Parquet byte-split checkpoint interchange. Source queues and decoder workspace
 share the existing process-wide task-off-heap authority.

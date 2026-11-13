@@ -394,8 +394,8 @@ StreamFusion's Paimon path. It reads through Flink's filesystem API and emits Ar
 batches directly, eliminating the source-side row materialization and transpose.
 The stock engine reads the identical SNAPPY Parquet files through its ordinary
 reader. SQL, output collection, resources, warmups and completed-job timing match.
-Both engines retain their normal projection behavior. Native file splits are
-whole-file splits; stock Flink retains its own splitting behavior. The local OS
+Both engines retain their normal projection behavior. In this cohort, native file
+splits were whole-file splits; stock Flink retained its own splitting behavior. The local OS
 cache is not flushed between trials, so these are warm-cache local-file jobs,
 not remote-storage or cold-read throughput results.
 
@@ -474,8 +474,9 @@ Arrow; its decoding and C Data import are timed instead.
 
 The shared macOS developer host had changing load and intermittent pauses; CPU and
 storage caches were not isolated. Q19–Q22 stock timings vary more than earlier
-queries. File count bounds native source parallelism because its splits currently
-cover whole files. This comparison establishes a local complete-job gain for this
+queries. In this measured cohort, file count bounded native source parallelism because
+the reader used whole-file splits. The reader now supports row-group splits; these
+historical timings have not been rerun with that change. This comparison establishes a local complete-job gain for this
 cohort; it is not a remote-storage, cold-cache or official TPC-H QphH claim.
 
 A later post-rebase system-allocator diagnostic was interrupted after finding that
@@ -573,3 +574,57 @@ The [complete report](results/tpch-native-parquet-post-ci-20261110.json) include
 | Q22 | 638.492 | 238.961 | 2.672× |
 
 The [Flink 1.18 control](results/tpch-native-parquet-post-ci-validation118-20261110.json) reran all 22 queries at SF0.01 against the same native binaries: 44 paired observations passed declared-type/result equality, positive native source work, zero native entry transposes and zero stock native work. The two source SQL option/metadata/retry tests and the native union/aggregate boundary regression also passed on Flink 1.18. These are correctness controls, not a second performance cohort.
+
+## Row-group source splits (November 12)
+
+The native filesystem reader now enumerates one split per Parquet row group, so a
+single file can feed multiple source subtasks even without filesystem block
+locations. The 2026-11-10 TPC-H cohorts above used whole-file splits and have not
+been rerun with this change.
+
+A separate **source-only** release diagnostic compares stock Flink's local-file
+split policy, a native whole-file control, and native row-group splits. All modes
+read the same stock-written SNAPPY file and schema with two worker threads and
+8,192-row batches. Enumeration/footer reads, host I/O, decoding, JNI/Arrow import,
+checksum consumption and close are timed. Fixture generation, query operators,
+shuffles and sinks are outside this diagnostic. The whole-file control uses the
+same native decoder as the candidate, reproducing the preceding split policy;
+it is not an older native binary. Each size has three warmups and seven retained
+trials per mode, rotating mode order.
+
+| Rows in one file | Row groups | Stock median ms | Native whole-file ms | Native row-group ms | vs stock | vs whole-file |
+|---|---:|---:|---:|---:|---:|---:|
+| 2,000,000 | 2 | 44.821 | 46.545 | 40.853 | 1.097× | 1.139× |
+| 8,000,000 | 5 | 167.081 | 182.970 | 108.063 | 1.546× | 1.693× |
+
+These are warm-cache measurements on a shared Apple M4 developer host, with
+8 GiB Java heap and the existing shared 512 MiB task-off-heap authority. The
+[report](results/parquet-row-group-splits-20261112.json) retains all trials and
+ranges, input and library hashes, source identities, preceding cohorts and the
+initial diagnostic. Final cohorts share the JVM invocation with the targeted
+correctness tests; all timing trials run sequentially without profiling.
+It establishes a source-read improvement, not a new complete-TPC-H speedup.
+Single-row-group files remain indivisible.
+
+The 19 targeted tests pass on both Flink 2.2/JDK 17 and Flink 1.18/JDK 11; 27
+native release tests also pass. SQL checks require exact stock results and
+positive source rows from both subtasks reading a single file. The controls also
+cover midpoint ownership, split serialization, restore inside nonzero splits
+with a different batch size, retry, cancellation, memory denial, empty ranges,
+projected workspace, zero-row row groups and aligned INT96 timestamp readers. A separate SF1 verification
+of Q1, Q3 and Q6 also passes exact stock rows/types with positive native source
+work and zero entry-transpose rows under the unchanged 512 MiB native limit. Its
+`lineitem` input is one file with two row groups, now enumerated as two splits.
+These single verification observations are excluded from the performance table.
+
+`ParquetSplitBenchmark` is opt-in through `SF_PARQUET_SPLIT_BENCHMARK=true`.
+With release native libraries available, run it with the ordinary `bench` profile:
+
+```sh
+sf_parquet_work=$(mktemp -d "${TMPDIR:-/tmp}/streamfusion-parquet-splits.XXXXXX")
+trap 'rm -rf "$sf_parquet_work"' EXIT
+SF_PARQUET_SPLIT_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
+  -Dtest=ParquetSplitBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
+  "-Dsf.extraJvmArgs=-Djava.io.tmpdir=$sf_parquet_work -Dsf.parquet.benchmark.directory=$sf_parquet_work -Dsf.parquet.benchmark.rows=8000000"
+cp "$sf_parquet_work/report.json" parquet-split-report.json
+```

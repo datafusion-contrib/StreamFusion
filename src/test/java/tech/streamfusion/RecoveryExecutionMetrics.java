@@ -128,6 +128,22 @@ final class RecoveryExecutionMetrics implements AutoCloseable {
     return total[0];
   }
 
+  Map<String, Long> countersBySubtask(String jobId, String name) {
+    Map<String, Long> counts = new java.util.TreeMap<>();
+    reporter
+        .getMetricsByGroup()
+        .forEach(
+            (group, metrics) -> {
+              var variables = group.getAllVariables();
+              if (jobId.equals(variables.get("<job_id>")) && metrics.get(name) instanceof Counter)
+                counts.merge(
+                    variables.getOrDefault("<subtask_index>", ""),
+                    ((Counter) metrics.get(name)).getCount(),
+                    Long::sum);
+            });
+    return counts;
+  }
+
   long completedCheckpoints(String jobId) {
     long[] completed = {0};
     reporter
