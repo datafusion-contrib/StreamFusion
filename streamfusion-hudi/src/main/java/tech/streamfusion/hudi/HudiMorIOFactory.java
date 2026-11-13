@@ -29,7 +29,6 @@ import org.apache.hudi.table.format.HoodieFlinkIOFactory;
 import org.apache.hudi.util.HoodieSchemaConverter;
 import org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.parquet.hadoop.metadata.ParquetMetadata;
-import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.format.ColumnarFileCodec;
 import tech.streamfusion.operator.NativeAllocator;
 import tech.streamfusion.operator.TaskOffHeapMemory;
@@ -104,7 +103,7 @@ public final class HudiMorIOFactory extends HoodieFlinkIOFactory {
     LogWriter(EncodedBytes output, HoodieConfig config, HoodieSchema hudiSchema)
         throws IOException {
       this.output = output;
-      schema = ArrowConversion.toArrowSchema(HoodieSchemaConverter.convertToRowType(hudiSchema));
+      schema = HudiTypes.encoderSchema(HoodieSchemaConverter.convertToRowType(hudiSchema));
       long block = config.getLongOrDefault(HoodieStorageConfig.PARQUET_BLOCK_SIZE);
       memory =
           TaskOffHeapMemory.reserve(

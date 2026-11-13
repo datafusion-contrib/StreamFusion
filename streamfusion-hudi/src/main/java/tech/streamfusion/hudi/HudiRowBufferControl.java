@@ -2,7 +2,7 @@ package tech.streamfusion.hudi;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
-import org.apache.arrow.vector.VarCharVector;
+import org.apache.arrow.vector.BaseVariableWidthVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.core.memory.MemorySegmentFactory;
 import org.apache.flink.runtime.memory.AbstractPagedOutputView;
@@ -41,14 +41,25 @@ final class HudiRowBufferControl {
     return row;
   }
 
-  static int rowBytes(VectorSchemaRoot root, int row, int fields) {
-    int size = BinaryRowData.calculateFixPartSizeInBytes(fields);
-    for (int column = 0; column < fields; column++) {
+  static int rowBytes(VectorSchemaRoot root, int row, RowType type) {
+    int size = BinaryRowData.calculateFixPartSizeInBytes(type.getFieldCount());
+    for (int column = 0; column < type.getFieldCount(); column++) {
+      var logical = type.getTypeAt(column);
       var vector = root.getVector(column);
-      if (vector instanceof VarCharVector && !vector.isNull(row)) {
-        int length = ((VarCharVector) vector).getValueLength(row);
+      if (vector.isNull(row)) continue;
+      if (vector instanceof BaseVariableWidthVector) {
+        int length = ((BaseVariableWidthVector) vector).getValueLength(row);
         if (length > BinaryFormat.MAX_FIX_PART_DATA_SIZE)
           size = Math.addExact(size, Math.addExact(length, 7) & ~7);
+      } else if (logical instanceof org.apache.flink.table.types.logical.DecimalType) {
+        if (((org.apache.flink.table.types.logical.DecimalType) logical).getPrecision() > 18)
+          size = Math.addExact(size, 16);
+      } else if (logical instanceof org.apache.flink.table.types.logical.TimestampType) {
+        if (((org.apache.flink.table.types.logical.TimestampType) logical).getPrecision() > 3)
+          size = Math.addExact(size, 8);
+      } else if (logical instanceof org.apache.flink.table.types.logical.LocalZonedTimestampType) {
+        if (((org.apache.flink.table.types.logical.LocalZonedTimestampType) logical).getPrecision()
+            > 3) size = Math.addExact(size, 8);
       }
     }
     return size;

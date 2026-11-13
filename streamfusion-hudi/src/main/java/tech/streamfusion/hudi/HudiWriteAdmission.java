@@ -17,7 +17,7 @@ final class HudiWriteAdmission {
       HoodieTableSink table, RowType type) {
     var conf = table.getConf();
     if (table.getClass() != HoodieTableSink.class
-        || !"1.2.1".equals(HoodieTableSink.class.getPackage().getImplementationVersion())
+        || !HudiRelease.supported(HoodieTableSink.class)
         || conf.get(FlinkOptions.IGNORE_FAILED)
         || !"PARQUET"
             .equalsIgnoreCase(
@@ -37,17 +37,7 @@ final class HudiWriteAdmission {
           || key.startsWith("hadoop.parquet.")
           || key.startsWith("hoodie.parquet.") && !parquetOptions.contains(key))
         throw new IllegalArgumentException("Hudi Parquet writer option is not admitted: " + key);
-    for (var field : type.getFields())
-      switch (field.getType().getTypeRoot()) {
-        case BIGINT:
-        case INTEGER:
-        case BOOLEAN:
-        case VARCHAR:
-          break;
-        default:
-          throw new IllegalArgumentException(
-              "Hudi append type is not admitted: " + field.getType());
-      }
+    for (var field : type.getFields()) HudiTypes.validate(field.getType(), true);
     var expected = declaredType(table);
     if (expected.getFieldCount() != type.getFieldCount())
       throw new IllegalArgumentException("Partial Hudi write schemas are not admitted");
@@ -60,11 +50,18 @@ final class HudiWriteAdmission {
     org.apache.hudi.configuration.OptionsInference.setupIndexConfigs(planning);
     var effective = org.apache.hudi.util.FlinkWriteClients.getHoodieClientConfig(planning);
     if (effective.isMetadataTableEnabled()
+        || effective.shouldDropPartitionColumns()
         || !java.util.Set.of("SNAPPY", "UNCOMPRESSED", "GZIP", "ZSTD")
             .contains(effective.getParquetCompressionCodec().toUpperCase(java.util.Locale.ROOT))
         || effective.getParquetBlockSize() <= 0
         || effective.getParquetPageSize() <= 0)
       throw new IllegalArgumentException("Hudi effective write settings are not admitted");
+    var configured =
+        org.apache.hudi.util.HoodieSchemaConverter.convertToRowType(
+            org.apache.hudi.common.schema.HoodieSchema.parse(effective.getSchema())
+                .getNonNullType());
+    if (!canonicalType(expected).copy(true).equals(configured.copy(true)))
+      throw new IllegalArgumentException("Hudi write schema does not match the declared columns");
     for (var entry : hadoop)
       if (entry.getKey().startsWith("parquet."))
         throw new IllegalArgumentException(
@@ -72,6 +69,11 @@ final class HudiWriteAdmission {
     if (!NativeParquet.isLoaded())
       throw new IllegalArgumentException("Native Parquet is unavailable");
     return effective;
+  }
+
+  static RowType canonicalType(RowType type) {
+    return org.apache.hudi.util.HoodieSchemaConverter.convertToRowType(
+        org.apache.hudi.util.HoodieSchemaConverter.convertToSchema(type).getNonNullType());
   }
 
   static RowType declaredType(HoodieTableSink table) {

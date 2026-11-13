@@ -32,7 +32,7 @@ Coverage and measurements are recorded on the connector page.
 
 The immutable COW append adapter follows Iceberg's released-graph decoration. It
 retains Hudi's append function and coordinator and gives Java only borrowed Arrow
-row views for keys/counters. A whole batch reaches the shared Parquet encoder once;
+row views for keys/counters. Each partition writer passes its selected batch rows to the shared Parquet encoder;
 Java retains authenticated output I/O, markers, file handles and commit metadata.
 File rolling is deferred until the current Arrow batch has been counted completely.
 This avoids duplicating Hudi's write/commit protocol or transposing payload rows.
@@ -53,3 +53,27 @@ version-pinned serializer hook skips payload writes while reserving identical
 control pages. Original cross-bucket input order is preserved because changing
 flush boundaries changes delete/reinsert semantics. No custom index, memory-pool,
 spill or winner-selection algorithm is introduced.
+
+Append and MOR writers share one adapter for the released graph, preserving the
+original writer coordinator and identities. Multiple MOR tasks use Hudi's own
+bucket partitioner for channel assignment and the existing Arrow routing kernel
+for payload selection. Channel IDs go through Flink's custom partitioner rather
+than being interpreted as Flink key groups. Partition discovery and pruning
+remain in the original source. SQL predicates remain explicit residual Calcs,
+matching the pinned source's filter contract.
+
+Physical timestamp encoding is derived from Hudi's Parquet schema converter;
+StreamFusion supplies its existing Rust encoder with unit/UTC/INT96 metadata.
+This avoids maintaining a second Hudi logical-to-physical type policy. Parquet
+footer admission uses Hudi's own Avro converter with standard list unwrapping.
+
+Read merging and write precombine share an Arrow-preserving Hudi record context.
+Write precombine calls the released deduplication helper and buffered merger.
+The context retains stable row references instead of making binary-row payload
+copies. Disabling precombine retains stock behavior, including delete/reinsert
+effects at the original buffer's flush boundaries.
+
+Restored writers query Hudi's original coordinator for inflight instants and await
+older checkpoint commits before their first bucket assignment. Task startup can precede replayed commit completion, and early
+index bootstrap would miss that commit's file groups. Hudi's wait helper honors the configured commit acknowledgement timeout.
+Commit and index decisions remain in the original coordinator and writer.

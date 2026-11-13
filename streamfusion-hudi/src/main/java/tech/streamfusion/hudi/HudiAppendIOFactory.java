@@ -61,6 +61,7 @@ public final class HudiAppendIOFactory extends HoodieFlinkIOFactory {
     final VectorSchemaRoot data;
     final Cursor cursor;
     final VectorizedColumnBatch vectors;
+    final java.util.List<Writer> writers = new java.util.ArrayList<>();
     boolean finished;
 
     Batch(VectorSchemaRoot root, RowType type) {
@@ -74,6 +75,12 @@ public final class HudiAppendIOFactory extends HoodieFlinkIOFactory {
           new VectorizedColumnBatch(
               ArrowConversion.createArrowReader(data, type).getColumnVectors());
       cursor = new Cursor(this, vectors);
+    }
+
+    void finish() throws IOException {
+      for (var writer : writers) writer.flushBatch();
+      writers.clear();
+      finished = true;
     }
   }
 
@@ -128,6 +135,8 @@ public final class HudiAppendIOFactory extends HoodieFlinkIOFactory {
     private final TaskOffHeapMemory.Reservation memory;
     private final long targetSize;
     private Batch last;
+    private final org.apache.flink.runtime.util.IntArrayList selected =
+        new org.apache.flink.runtime.util.IntArrayList(4096);
     private boolean closed;
 
     Writer(HoodieStorage storage, StoragePath path, HoodieWriteConfig config, RowType type)
@@ -154,7 +163,7 @@ public final class HudiAppendIOFactory extends HoodieFlinkIOFactory {
         encoder =
             new ParquetCodec()
                 .createEncoder(
-                    ArrowConversion.toArrowSchema(type),
+                    HudiTypes.encoderSchema(type),
                     new int[0],
                     options.keySet().toArray(new String[0]),
                     options.values().toArray(new String[0]),
@@ -184,9 +193,18 @@ public final class HudiAppendIOFactory extends HoodieFlinkIOFactory {
       if (!(row instanceof Cursor))
         throw new IOException("Hudi append expected a borrowed Arrow row view");
       Batch batch = ((Cursor) row).batch;
-      if (batch == last) return;
-      encoder.write(batch.data, new int[0], 0, batch.data.getRowCount());
-      last = batch;
+      if (batch != last) {
+        if (!selected.isEmpty()) throw new IOException("Previous Hudi Arrow batch was not flushed");
+        last = batch;
+        batch.writers.add(this);
+      }
+      selected.add(((Cursor) row).rowId);
+    }
+
+    void flushBatch() throws IOException {
+      int[] rows = selected.toArray();
+      encoder.write(last.data, rows, 0, rows.length);
+      selected.clear();
     }
 
     @Override

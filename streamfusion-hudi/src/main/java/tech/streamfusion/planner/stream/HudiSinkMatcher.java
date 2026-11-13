@@ -2,9 +2,11 @@ package tech.streamfusion.planner.stream;
 
 import org.apache.calcite.rel.RelNode;
 import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
+import org.apache.flink.table.planner.plan.metadata.FlinkRelMetadataQuery;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalRel;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink;
 import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
+import org.apache.flink.table.planner.plan.utils.UpsertKeyUtil;
 import org.apache.hudi.configuration.OptionsResolver;
 import org.apache.hudi.table.HoodieTableSink;
 import tech.streamfusion.hudi.HudiSinkPlan;
@@ -19,9 +21,8 @@ final class HudiSinkMatcher {
   }
 
   static RelNode substitute(StreamPhysicalSink sink, StreamPlanningContext context) {
-    if (sink.upsertMaterialize()
-        || ChangelogPlanUtils.generateUpdateBefore((StreamPhysicalRel) sink.getInput())) {
-      context.decline("Hudi native writes require post-images without sink materialization");
+    if (sink.upsertMaterialize() && context.keyedStateUnsupportedReason() != null) {
+      context.decline(context.keyedStateUnsupportedReason());
       return null;
     }
     String constraint = SinkConstraintGate.fallbackReason(sink, true);
@@ -46,12 +47,34 @@ final class HudiSinkMatcher {
       context.decline("Hudi sink: " + failure.getMessage());
       return null;
     }
+    int[] materializationKeys = null;
+    int[] inputUpsertKeys = null;
+    RelNode input = sink.getInput();
+    if (sink.upsertMaterialize()) {
+      var primary = sink.contextResolvedTable().getResolvedSchema().getPrimaryKey().orElseThrow();
+      materializationKeys =
+          primary.getColumns().stream().mapToInt(type.getFieldNames()::indexOf).toArray();
+      var metadata = FlinkRelMetadataQuery.reuseOrCreate(sink.getCluster().getMetadataQuery());
+      inputUpsertKeys =
+          UpsertKeyUtil.getSmallestKey(metadata.getUpsertKeys(context.originalNode(input)));
+      input =
+          new StreamPhysicalNativeColumnarExchange(
+              sink.getCluster(),
+              input.getTraitSet(),
+              input,
+              input.getRowType(),
+              materializationKeys,
+              false);
+    }
     return new StreamPhysicalNativeHudiSink(
         sink.getCluster(),
         sink.getTraitSet(),
-        sink.getInput(),
+        input,
         sink.getRowType(),
         plan,
+        materializationKeys,
+        inputUpsertKeys,
         NativePlanDetails.from(sink));
   }
+
 }

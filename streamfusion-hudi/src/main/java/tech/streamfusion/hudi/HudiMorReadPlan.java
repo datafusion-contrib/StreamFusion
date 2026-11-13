@@ -47,15 +47,17 @@ final class HudiMorReadPlan {
           throw new IllegalArgumentException("MOR ordering requires a verified integer field");
       }
       var storage = source.getMetaClient().getStorage();
-      var parquet =
-          org.apache.hudi.io.storage.HoodieIOFactory.getIOFactory(storage)
-              .getFileFormatUtils(org.apache.hudi.common.model.HoodieFileFormat.PARQUET);
       for (var split : source.buildHoodieSplits(source.getMetaClient(), conf)) {
-        if (split.getBasePath().isPresent())
-          validatePhysicalSchema(
-              parquet.readSchema(
-                  storage, new org.apache.hudi.storage.StoragePath(split.getBasePath().get())),
-              physical);
+        if (split.getBasePath().isPresent()) {
+          var base =
+              HudiTypes.fileSchema(
+                  storage, new org.apache.hudi.storage.StoragePath(split.getBasePath().get()));
+          if (base.getFieldNames()
+              .contains(org.apache.hudi.common.model.HoodieRecord.OPERATION_METADATA_FIELD))
+            throw new IllegalArgumentException(
+                "Stored MOR intermediate operations require the stock reader");
+          NativeHudiSource.validateProjection(base, physical);
+        }
         for (String path : split.getLogPaths().orElse(java.util.List.of())) {
           try (var reader =
               org.apache.hudi.common.table.log.HoodieLogFormat.newReader(
