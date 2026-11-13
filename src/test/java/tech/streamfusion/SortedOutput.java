@@ -19,7 +19,7 @@ import java.util.PriorityQueue;
 
 /** Exact multiset parity with bounded heap, including duplicate rows. */
 final class SortedOutput implements AutoCloseable {
-  private final Path directory = Files.createTempDirectory("streamfusion-fluss-parity-");
+  private final Path directory = Files.createTempDirectory("streamfusion-parity-");
   private final List<Path> chunks = new ArrayList<>();
   private final List<String> buffered = new ArrayList<>();
   private final int chunkRows;
@@ -58,9 +58,13 @@ final class SortedOutput implements AutoCloseable {
   }
 
   void assertSame(SortedOutput other, String query) throws IOException {
-    assertEquals(count, other.count, query + " output row count");
     spill();
     other.spill();
+    if (count != other.count)
+      assertEquals(
+          count,
+          other.count,
+          query + " output row count; expected=" + preview() + "; actual=" + other.preview());
     try (Merge expected = new Merge(chunks);
         Merge actual = new Merge(other.chunks)) {
       for (long row = 0; row < count; row++) {
@@ -69,6 +73,15 @@ final class SortedOutput implements AutoCloseable {
       assertEquals(null, expected.next());
       assertEquals(null, actual.next());
     }
+  }
+
+  private List<String> preview() throws IOException {
+    var rows = new ArrayList<String>();
+    try (var merge = new Merge(chunks)) {
+      String row;
+      while (rows.size() < 16 && (row = merge.next()) != null) rows.add(row);
+    }
+    return rows;
   }
 
   private static final class Head {

@@ -1729,7 +1729,7 @@ class NexmarkMatrixBenchmark {
     }
   }
 
-  private static Thread engagementWatcher(AtomicBoolean seen, BooleanSupplier probe) {
+  static Thread engagementWatcher(AtomicBoolean seen, BooleanSupplier probe) {
     Thread watcher =
         new Thread(
             () -> {

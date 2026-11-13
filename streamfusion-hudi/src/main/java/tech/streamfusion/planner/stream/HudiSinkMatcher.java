@@ -1,6 +1,8 @@
 package tech.streamfusion.planner.stream;
 
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rex.RexCall;
+import org.apache.calcite.rex.RexVisitorImpl;
 import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
 import org.apache.flink.table.planner.plan.metadata.FlinkRelMetadataQuery;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalRel;
@@ -66,6 +68,7 @@ final class HudiSinkMatcher {
               materializationKeys,
               false);
     }
+    input = wholeBatchesBeforeSink(input);
     return new StreamPhysicalNativeHudiSink(
         sink.getCluster(),
         sink.getTraitSet(),
@@ -77,4 +80,26 @@ final class HudiSinkMatcher {
         NativePlanDetails.from(sink));
   }
 
+  private static RelNode wholeBatchesBeforeSink(RelNode input) {
+    if (input instanceof StreamPhysicalNativeWatermarkAssigner)
+      return ((StreamPhysicalNativeWatermarkAssigner) input).wholeBatches();
+    if (!(input instanceof StreamPhysicalNativeCalc)) return input;
+    var program = ((StreamPhysicalNativeCalc) input).sourceProgram();
+    if (program == null) return input;
+    var observes = new boolean[1];
+    var visitor =
+        new RexVisitorImpl<Void>(true) {
+          @Override
+          public Void visitCall(RexCall call) {
+            if (call.getOperator().getName().equals("CURRENT_WATERMARK")) observes[0] = true;
+            return super.visitCall(call);
+          }
+        };
+    program.getExprList().forEach(expression -> expression.accept(visitor));
+    if (observes[0]) return input;
+    var child = wholeBatchesBeforeSink(input.getInput(0));
+    return child == input.getInput(0)
+        ? input
+        : input.copy(input.getTraitSet(), java.util.List.of(child));
+  }
 }

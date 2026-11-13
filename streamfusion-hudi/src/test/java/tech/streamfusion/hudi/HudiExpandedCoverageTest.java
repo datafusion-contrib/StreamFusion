@@ -27,6 +27,73 @@ class HudiExpandedCoverageTest {
           + " MAP<STRING,ROW<n BIGINT,t TIMESTAMP_LTZ(6)>>";
 
   @Test
+  void onlyUnobservedWatermarksKeepWholeBatchesBeforeHudi() throws Exception {
+    var stock = environment();
+    stock.getConfig().getConfiguration().setInteger("table.exec.resource.default-parallelism", 1);
+    String source =
+        "CREATE TABLE timed (id BIGINT,ts TIMESTAMP(3),WATERMARK FOR ts AS ts - INTERVAL '1'"
+            + " SECOND) WITH ("
+            + watermarkOptions("timed", true)
+            + ")";
+    stock.executeSql(source);
+    stock
+        .executeSql(
+            "INSERT INTO timed VALUES (1,TIMESTAMP '2026-01-01 00:00:00'),"
+                + "(2,TIMESTAMP '2026-01-01 00:00:10'),(3,TIMESTAMP '2026-01-01 00:00:05')")
+        .await();
+    var nativeSql = environment();
+    nativeSql
+        .getConfig()
+        .getConfiguration()
+        .setInteger("table.exec.resource.default-parallelism", 1);
+    nativeSql.executeSql(source);
+    var scan = NativePlanner.install(nativeSql);
+    for (boolean observed : List.of(false, true)) {
+      String expression = observed ? "CURRENT_WATERMARK(ts)" : "ts";
+      for (var sql : List.of(stock, nativeSql)) {
+        String name = "result_" + observed + "_" + (sql == stock ? "stock" : "native");
+        sql.executeSql(
+            "CREATE TABLE "
+                + name
+                + " (id BIGINT,ts TIMESTAMP(3)) WITH ("
+                + watermarkOptions(name, false)
+                + ")");
+        String insert = "INSERT INTO " + name + " SELECT id," + expression + " FROM timed";
+        if (sql == nativeSql) {
+          String plan = sql.explainSql(insert);
+          assertTrue(plan.contains("NativeHudiSource"), plan + scan.explainSummary());
+          assertTrue(plan.contains("NativeHudiSink"), plan);
+          assertEquals(!observed, plan.contains("watermarkGranularity=[batch]"), plan);
+        }
+        sql.executeSql(insert).await();
+      }
+      var reader = environment();
+      for (String engine : List.of("stock", "native")) {
+        String name = "result_" + observed + "_" + engine;
+        reader.executeSql(
+            "CREATE TABLE "
+                + name
+                + " (id BIGINT,ts TIMESTAMP(3)) WITH ("
+                + watermarkOptions(name, false)
+                + ")");
+      }
+      assertEquals(
+          read(reader, "result_" + observed + "_stock"),
+          read(reader, "result_" + observed + "_native"));
+    }
+  }
+
+  private String watermarkOptions(String name, boolean metadata) {
+    return "'connector'='hudi','path'='"
+        + temporary.resolve(name).toUri()
+        + "','table.type'='COPY_ON_WRITE','write.operation'='insert','write.tasks'='1',"
+        + "'read.tasks'='1','read.source-v2.enabled'='true','metadata.enabled'='false',"
+        + "'hoodie.populate.meta.fields'='"
+        + metadata
+        + "','hoodie.datasource.write.recordkey.field'='id','hoodie.parquet.block.size'='1048576'";
+  }
+
+  @Test
   void fourMorWritersUseHudiPartitionRoutingAndRustLogsAcrossCommits() throws Exception {
     var sql = environment();
     String schema =

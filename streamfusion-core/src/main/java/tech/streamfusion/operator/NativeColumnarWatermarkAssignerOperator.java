@@ -29,12 +29,15 @@ import tech.streamfusion.compat.FlinkStreamOperator;
  * post-shuffle operator cannot reconstruct). Even sorted rows retain these boundaries because a
  * downstream {@code CURRENT_WATERMARK} can observe each eager emission. A batch without an internal
  * emission boundary is forwarded whole. Idleness is not modelled for this assigner.
+ * A planner proof that the terminal path cannot observe watermarks permits whole batches while
+ * retaining candidate evaluation and NULL validation.
  */
 public class NativeColumnarWatermarkAssignerOperator extends FlinkStreamOperator<ArrowBatch>
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch>, ProcessingTimeCallback {
 
   private final int rowtimeColumn;
   private final WatermarkExpression expression;
+  private final boolean preserveBoundaries;
 
   private transient WatermarkExpression.Evaluator evaluator;
 
@@ -49,8 +52,14 @@ public class NativeColumnarWatermarkAssignerOperator extends FlinkStreamOperator
 
   public NativeColumnarWatermarkAssignerOperator(
       int rowtimeColumn, WatermarkExpression expression) {
+    this(rowtimeColumn, expression, true);
+  }
+
+  public NativeColumnarWatermarkAssignerOperator(
+      int rowtimeColumn, WatermarkExpression expression, boolean preserveBoundaries) {
     this.rowtimeColumn = rowtimeColumn;
     this.expression = expression;
+    this.preserveBoundaries = preserveBoundaries;
   }
 
   @Override
@@ -99,6 +108,16 @@ public class NativeColumnarWatermarkAssignerOperator extends FlinkStreamOperator
     }
     boolean forwarded = false;
     try (WatermarkExpression.Values candidates = evaluator.evaluate(root)) {
+      if (!preserveBoundaries) {
+        for (int i = 0; i < rows; i++)
+          if (!candidates.isNull(i))
+            currentWatermark = Math.max(currentWatermark, candidates.getMillis(i));
+        forwarded = true;
+        ColumnarRecordMetrics.forward(
+            output, getMetricGroup(), element.replace(new ArrowBatch(root)), rows);
+        if (currentWatermark - lastWatermark > watermarkInterval) advanceWatermark();
+        return;
+      }
       int sliceStart = 0;
       for (int i = 0; i < rows; i++) {
         if (!candidates.isNull(i)) {

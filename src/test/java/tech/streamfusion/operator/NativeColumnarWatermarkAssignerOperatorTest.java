@@ -36,6 +36,31 @@ class NativeColumnarWatermarkAssignerOperatorTest {
           new String[] {"value", "rt"});
 
   @Test
+  void unobservedWatermarksKeepWholeBatchesAndValidateRowtime() throws Exception {
+    var operator =
+        new NativeColumnarWatermarkAssignerOperator(
+            1, WatermarkExpression.subtractMillis(1, 100), false);
+    try (var allocator = new RootAllocator();
+        var harness =
+            new OneInputStreamOperatorTestHarness<>(operator, new ArrowBatchSerializer())) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      harness.processElement(
+          new StreamRecord<>(batch(allocator, event(1, 1000), event(2, 5000), event(3, 500))));
+      assertEquals(List.of(3), forwardedRowCounts(harness));
+      assertEquals(List.of(4900L), watermarks(harness));
+      harness.processWatermark(Watermark.MAX_WATERMARK);
+      assertEquals(List.of(4900L, Long.MAX_VALUE), watermarks(harness));
+      closeForwarded(harness);
+      assertThrows(
+          RuntimeException.class,
+          () ->
+              harness.processElement(
+                  new StreamRecord<>(batch(allocator, GenericRowData.of(4L, null)))));
+    }
+  }
+
+  @Test
   void sortedBatchesPreserveEveryEagerWatermarkBoundary() throws Exception {
     NativeColumnarWatermarkAssignerOperator operator =
         new NativeColumnarWatermarkAssignerOperator(1, 100);
@@ -45,7 +70,8 @@ class NativeColumnarWatermarkAssignerOperatorTest {
       harness.setup(new ArrowBatchSerializer());
       harness.open();
 
-      harness.processElement(new StreamRecord<>(batch(allocator, event(1, 0), event(2, 500), event(3, 1000))));
+      harness.processElement(
+          new StreamRecord<>(batch(allocator, event(1, 0), event(2, 500), event(3, 1000))));
       harness.processElement(new StreamRecord<>(batch(allocator, event(4, 1500), event(5, 2500))));
 
       assertEquals(List.of(2, 1, 1, 1), forwardedRowCounts(harness));
@@ -56,7 +82,8 @@ class NativeColumnarWatermarkAssignerOperatorTest {
 
   @Test
   void floorsCandidateAtZeroAndForwardsMaxAtEndOfInput() throws Exception {
-    // Delay 100ms with rowtimes below it: candidate is negative, so the watermark stays at 0 (no emit).
+    // Delay 100ms with rowtimes below it: candidate is negative, so the watermark stays at 0 (no
+    // emit).
     NativeColumnarWatermarkAssignerOperator operator =
         new NativeColumnarWatermarkAssignerOperator(1, 100);
     try (BufferAllocator allocator = new RootAllocator();
@@ -69,7 +96,8 @@ class NativeColumnarWatermarkAssignerOperatorTest {
       assertEquals(List.of(2), forwardedRowCounts(harness));
       assertEquals(List.of(), watermarks(harness));
 
-      // End of input forwards MAX_WATERMARK (what finish() delegates to), flushing downstream windows.
+      // End of input forwards MAX_WATERMARK (what finish() delegates to), flushing downstream
+      // windows.
       harness.processWatermark(new Watermark(Long.MAX_VALUE));
       assertEquals(List.of(Long.MAX_VALUE), watermarks(harness));
       closeForwarded(harness);
@@ -78,7 +106,8 @@ class NativeColumnarWatermarkAssignerOperatorTest {
 
   @Test
   void emitsOnPeriodicTimerWhenJumpIsSmall() throws Exception {
-    // Delay 0, a small candidate (<= interval) so the eager path does not fire; the periodic timer does.
+    // Delay 0, a small candidate (<= interval) so the eager path does not fire; the periodic timer
+    // does.
     NativeColumnarWatermarkAssignerOperator operator =
         new NativeColumnarWatermarkAssignerOperator(1, 0);
     try (BufferAllocator allocator = new RootAllocator();
@@ -112,7 +141,8 @@ class NativeColumnarWatermarkAssignerOperatorTest {
       harness.processElement(
           new StreamRecord<>(batch(allocator, event(1, 0), event(2, 5000), event(3, 500))));
 
-      // Sliced after the row that jumped the watermark (rows 0,1), then the trailing late row (row 2).
+      // Sliced after the row that jumped the watermark (rows 0,1), then the trailing late row (row
+      // 2).
       assertEquals(List.of(2, 1), forwardedRowCounts(harness));
       assertEquals(List.of(5000L), watermarks(harness));
       closeForwarded(harness);
@@ -229,7 +259,8 @@ class NativeColumnarWatermarkAssignerOperatorTest {
 
   // The operator forwards batches without closing them (the downstream consumer owns them), so the
   // test plays that consumer and releases the forwarded roots before the allocator is checked.
-  private static void closeForwarded(OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch> harness) {
+  private static void closeForwarded(
+      OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch> harness) {
     for (Object event : harness.getOutput()) {
       if (event instanceof StreamRecord) {
         ((ArrowBatch) ((StreamRecord<?>) event).getValue()).root().close();

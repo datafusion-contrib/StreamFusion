@@ -77,3 +77,11 @@ Restored writers query Hudi's original coordinator for inflight instants and awa
 older checkpoint commits before their first bucket assignment. Task startup can precede replayed commit completion, and early
 index bootstrap would miss that commit's file groups. Hudi's wait helper honors the configured commit acknowledgement timeout.
 Commit and index decisions remain in the original coordinator and writer.
+
+Arroyo's expression watermark generator forwards a whole record batch before
+broadcasting progress. Flink's eager per-row emissions require finer boundaries
+when a window or `CURRENT_WATERMARK` can observe them. Before a terminal Hudi sink,
+StreamFusion uses whole batches only across a proven chain of native Calcs that
+does not read the watermark. It still evaluates every candidate and rejects NULL
+rowtime. The planner copies this branch rather than changing shared producers;
+all unknown or watermark-sensitive downstream paths keep the existing boundaries.
