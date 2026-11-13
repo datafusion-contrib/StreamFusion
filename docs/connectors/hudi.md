@@ -302,12 +302,55 @@ operation contract through Hudi's existing merger.
 
 ## Validation
 
-`HudiExpandedCoverageTest` verifies partitioned reads with residual predicates,
-nested COW payloads and four MOR writers over two commits. `HudiMorSinkTest`
-compares precombine and update-before behavior against the original writer and
-checks native sink materialization. Recovery exercises one through four configured
-writers. Expanded performance qualification remains in progress; the earlier
-one-writer measurements below do not qualify the expanded matrix.
+`bin/hudi-suite.py` runs the released Hudi 1.2.1 Flink test bytecode unchanged
+against stock Flink and StreamFusion. The corpus includes every concrete
+table-level SQL integration class in the released Flink test JAR: the main
+datasource, DFS/HMS SQL schema evolution, data schema evolution, dynamic buckets,
+blob writes and Spark vector fixture compatibility. It also includes
+`TestHoodieTableSource` and `TestHoodieFileGroupReaderOnFlink`.
+The manifest has 350 invocations (349 enabled), including
+Hudi's disabled `testMultipleLogBlocksWithDataSkipping`. The manifest detects missing cases and changed
+skips. This is a SQL/source/file-group-reader corpus, not the entire Hudi test repository.
+
+`ITTestVariantCrossEngineCompatibility` is retained in the fixture JAR but is an
+explicit baseline exclusion: all three unchanged tests fail in stock Flink 1.18
+with `Unknown identifier 'VARIANT'`. This is not counted as passing or skipped
+coverage. Reproduce it with `--mode stock --tests ITTestVariantCrossEngineCompatibility`.
+
+The fixture build uses published test JARs and matches the released bundle's
+package relocations. Hudi does not publish the Flink 1.18 adapter test JAR, so
+six unchanged adapter helpers are vendored from the exact release commit.
+`dev/flink-suite/hudi-fixtures/provenance.json` pins their source paths and
+SHA-256 values, plus the published fixture JAR checksums. Test dependencies
+include Hive and Lance so the original mixed-format/catalog cases can execute.
+These do not enter the production connector artifact.
+
+```bash
+python3 bin/hudi-suite.py
+```
+
+The runner requires JDK 17, builds the fixture and observation agent in a scoped
+temporary directory, and removes runtime data afterwards. Use `--tests` for a
+focused Surefire selection, `--mode stock|native|both` for engines and
+`--native-library-dir` to reuse prebuilt libraries. The default report is
+`streamfusion-hudi/target/hudi-upstream.json`. It records every result and native
+work/fallback observations per JUnit invocation, rejects native work in stock,
+and compares both engines' invocation inventories. All 349 enabled invocations
+have maintained execution contracts that reject missing expected work,
+unexpected routes and changed fallback reasons. The unchanged upstream
+cases retain their original legacy-source and row-result choices, so many Hudi
+boundaries correctly stay stock while native Calcs execute. The expanded tests
+and Nexmark harness separately require native Hudi source/sink execution.
+CI runs the default corpus
+in the Hudi JDK 17 lane and uploads the concise report.
+Maintainers can collect routes for new focused selections with `--inventory`;
+those reports have `inventory` status and do not qualify as a passing gate.
+
+`HudiExpandedCoverageTest` covers partitioned reads, residual predicates, nested
+COW payloads and four MOR writers over two commits. `HudiMorSinkTest` compares
+update-before and precombine behavior with the original writer and exercises the
+shared native sink materializer. Expanded performance qualification remains in
+progress; earlier one-writer measurements do not qualify the expanded matrix.
 
 `NativeHudiSourceTest` uses stock Hudi SQL writes, compares stock/native SQL results,
 and requires the native source plan. It checks projection/NULLs, restored logical
