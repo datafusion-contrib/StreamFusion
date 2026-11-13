@@ -271,7 +271,7 @@ class NexmarkHudiBenchmark {
     tables.executeSql(sourceDdl());
     tables.executeSql("INSERT INTO events SELECT * FROM corpus").await();
     awaitCommits(temporary.resolve("events"));
-    try (var files = Files.walk(temporary.resolve("events"))) {
+    try (var files = payloadFiles(temporary.resolve("events"))) {
       var baseFiles =
           files.filter(path -> path.toString().endsWith(".parquet")).collect(Collectors.toList());
       assertEquals(4, baseFiles.size(), "Expected one immutable source file per partition");
@@ -445,7 +445,7 @@ class NexmarkHudiBenchmark {
 
   private static Map<String, Long> parquetRows(Path target) {
     var counts = new java.util.TreeMap<String, Long>();
-    try (var files = Files.walk(target)) {
+    try (var files = payloadFiles(target)) {
       for (Path file :
           files.filter(p -> p.toString().endsWith(".parquet")).collect(Collectors.toList())) {
         try (var reader =
@@ -482,6 +482,24 @@ class NexmarkHudiBenchmark {
       wait.waitFor();
   }
 
+  private static java.util.stream.Stream<Path> payloadFiles(Path target)
+      throws java.io.IOException {
+    return Files.walk(target)
+        .filter(Files::isRegularFile)
+        .filter(
+            file ->
+                !file.startsWith(
+                    target.resolve(
+                        org.apache.hudi.common.table.HoodieTableMetaClient.METAFOLDER_NAME)))
+        .filter(
+            file ->
+                !file.getFileName()
+                    .toString()
+                    .startsWith(
+                        org.apache.hudi.common.model.HoodiePartitionMetadata
+                            .HOODIE_PARTITION_METAFILE_PREFIX));
+  }
+
   private static void verifyEncoding(Path target, boolean nativeEncoder, long outputRows)
       throws Exception {
     var conf = new org.apache.flink.configuration.Configuration();
@@ -489,7 +507,7 @@ class NexmarkHudiBenchmark {
     var meta = org.apache.hudi.util.StreamerUtil.createMetaClient(conf);
     var storage = meta.getStorage();
     boolean found = false;
-    try (var files = Files.walk(target)) {
+    try (var files = payloadFiles(target)) {
       for (var file : files.filter(Files::isRegularFile).collect(Collectors.toList())) {
         if (file.toString().endsWith(".parquet")) {
           found = true;
