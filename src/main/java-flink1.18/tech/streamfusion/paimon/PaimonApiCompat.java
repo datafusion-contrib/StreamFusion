@@ -19,6 +19,14 @@ import org.apache.paimon.table.FileStoreTable;
 final class PaimonApiCompat {
   private PaimonApiCompat() {}
 
+  static org.apache.flink.api.connector.source.Source<
+          tech.streamfusion.operator.ArrowBatch,
+          org.apache.paimon.flink.source.FileStoreSourceSplit,
+          org.apache.paimon.flink.source.PendingSplitsCheckpoint>
+      withSourceLineage(NativePaimonSource source, FileStoreTable table) {
+    return source;
+  }
+
   static boolean compactionSumWraps() {
     return false;
   }

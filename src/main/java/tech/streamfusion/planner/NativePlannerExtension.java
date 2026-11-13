@@ -13,6 +13,31 @@ public interface NativePlannerExtension {
    */
   void addSubstitutions(List<StreamRule<?>> substitutions);
 
+  /** An optional connector's bounded source, with host discovery and source state retained. */
+  default BatchSource planBatchSource(
+      org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalTableSourceScan scan,
+      org.apache.flink.configuration.ReadableConfig config) {
+    return null;
+  }
+
+  /** An optional connector's bounded Arrow sink; null retains the host sink. */
+  default BatchSink planBatchSink(
+      org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalSink sink,
+      org.apache.flink.configuration.ReadableConfig config) {
+    return null;
+  }
+
+  interface BatchSource
+      extends tech.streamfusion.planner.common.CommonRowDataToArrowExecNode.SourceConversion {}
+
+  @FunctionalInterface
+  interface BatchSink {
+    org.apache.flink.api.dag.Transformation<?> translate(
+        org.apache.flink.table.planner.delegation.PlannerBase planner,
+        org.apache.flink.api.dag.Transformation<tech.streamfusion.operator.ArrowBatch> input,
+        String description);
+  }
+
   /** Optional columnar file source; null retains the host source and ordinary transpose. */
   default org.apache.flink.api.dag.Transformation<tech.streamfusion.operator.ArrowBatch>
       lowerBatchFileSource(

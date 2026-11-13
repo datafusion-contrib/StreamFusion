@@ -215,6 +215,7 @@ public final class StreamFusionSuiteAgent {
                                 named("optimizeConfigured")
                                     .or(
                                         named("optimizeRoots")
+                                            .and(takesArguments(3))
                                             .and(
                                                 isDeclaredBy(
                                                     named(
@@ -1160,7 +1161,8 @@ public final class StreamFusionSuiteAgent {
                     Class.forName("org.apache.flink.configuration.ExecutionOptions")
                         .getField("RUNTIME_MODE")
                         .get(null));
-        if (!"STREAMING".equals(runtimeMode.toString()) && !"BATCH".equals(runtimeMode.toString())) {
+        if (!"STREAMING".equals(runtimeMode.toString())
+            && !"BATCH".equals(runtimeMode.toString())) {
           return;
         }
         if (!StreamFusionSuiteAgent.markConfigForInstallation(tableConfig)) {
@@ -1171,9 +1173,10 @@ public final class StreamFusionSuiteAgent {
           ClassLoader classLoader = context.getClass().getClassLoader();
           Class<?> nativePlanner =
               Class.forName("tech.streamfusion.planner.NativePlanner", true, classLoader);
-          if ("STREAMING".equals(runtimeMode.toString())) nativePlanner
-              .getMethod("install", Class.forName("org.apache.flink.table.api.TableConfig"))
-              .invoke(null, tableConfig);
+          if ("STREAMING".equals(runtimeMode.toString()))
+            nativePlanner
+                .getMethod("install", Class.forName("org.apache.flink.table.api.TableConfig"))
+                .invoke(null, tableConfig);
           Class.forName("tech.streamfusion.Native", true, classLoader);
         } catch (ClassNotFoundException
             | NoSuchMethodException

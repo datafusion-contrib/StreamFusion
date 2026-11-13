@@ -15,6 +15,8 @@ CONNECTOR_SUITES = {'formats', 'parquet', 'orc', 'kafka', 'paimon', 'delta'}
 BOUNDARIES = {"Sink", "LegacySink", "TableSourceScan", "LegacyTableSourceScan", "DataStreamScan", "Values", "IntermediateTableScan", "PreparedLegacySink"}
 TRANSPOSES = {'StreamPhysicalRowDataToArrow', 'StreamPhysicalArrowToRowData',
               'BatchPhysicalRowDataToArrow', 'BatchPhysicalArrowToRowData'}
+CONNECTOR_BOUNDARIES = {'BatchPhysicalNativeConnectorSource', 'BatchPhysicalNativeConnectorSink',
+                        'BatchPhysicalNativeShare'}
 
 
 def category(reason: str) -> str:
@@ -81,6 +83,8 @@ def classify_plan(plan: dict) -> tuple[str, str, str]:
             if re.sub(r'^(Stream|Batch)Physical', '', op) not in BOUNDARIES}
     if native:
         if host:
+            if not native - CONNECTOR_BOUNDARIES:
+                return 'should be accelerated', 'connector-boundary', 'Native connector boundaries retain host SQL computation: ' + ', '.join(sorted(host))
             return 'should be accelerated', 'all-or-nothing-violation', 'Query is not fully accelerated: native operators coexist with host computation: ' + ', '.join(sorted(host))
         return 'accelerated', 'whole-query-native', 'Entire query admitted by the all-or-nothing gate; no host computation remains between source and sink boundaries.'
     if operators and not host and not plan['fallback_reasons']:
@@ -113,7 +117,7 @@ def features(record: dict) -> list[str]:
     operators.update(op for plan in record['plans'] for root in plan.get('roots', []) for op in root['operators'])
     families = []
     for family, patterns in (
-        ('connector-boundary', ('NativeFileSink', 'NativeKafka', 'NativePaimon', 'NativeDelta')),
+        ('connector-boundary', ('NativeConnector', 'NativeFileSink', 'NativeKafka', 'NativePaimon', 'NativeDelta')),
         ('async-and-model-functions', ('AsyncCalc', 'MLPredict', 'VectorSearch')),
         ('pattern-matching', ('Match',)),
         ('table-function', ('Correlate', 'Unnest', 'TableAggregate')),

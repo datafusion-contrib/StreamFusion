@@ -3,7 +3,7 @@ package tech.streamfusion.planner.stream;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.flink.table.api.config.ExecutionConfigOptions;
 import org.apache.flink.table.catalog.ResolvedCatalogTable;
-import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink;
+import org.apache.flink.table.planner.plan.nodes.calcite.Sink;
 import org.apache.flink.table.planner.utils.ShortcutUtils;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.LogicalTypeRoot;
@@ -15,11 +15,11 @@ import org.apache.flink.table.types.logical.VarCharType;
 final class SinkConstraintGate {
   private SinkConstraintGate() {}
 
-  static String fallbackReason(StreamPhysicalSink sink) {
+  static String fallbackReason(Sink sink) {
     return fallbackReason(sink, false);
   }
 
-  static String fallbackReason(StreamPhysicalSink sink, boolean enforcesNotNullErrors) {
+  static String fallbackReason(Sink sink, boolean enforcesNotNullErrors) {
     ResolvedCatalogTable table =
         (ResolvedCatalogTable) sink.contextResolvedTable().getResolvedTable();
     RowType targetType =

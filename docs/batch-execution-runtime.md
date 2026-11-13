@@ -2,7 +2,8 @@
 
 This runtime executes the [admitted batch SQL sorts and global aggregates](operators/batch.md). It also
 provides native controls for future bounded operators; those controls alone do not
-admit additional SQL operators. Whole-query admission remains mandatory.
+admit additional SQL operators. Compute islands retain whole-query admission. Optional
+connector boundaries are admitted separately and insert row/Arrow conversions around host computation.
 
 ## Execution
 
@@ -15,6 +16,13 @@ context names in the shared implementation are compatibility identities, not mod
 admission. Batch-specific file-source lowering is injected at the conversion boundary
 after the complete batch reuse graph is known. Both modes use the same source-reuse
 configuration policy, without calling the other mode's scan.
+
+Optional modules can contribute bounded source conversions and Arrow sink translations through
+the connector-neutral planner extension. After compute admission, a boundary pass substitutes
+admitted sources and sinks, removes redundant transposes and retains shared source buffers.
+The original physical source remains visible to Flink's graph processors; its translated source
+is replaced at the conversion boundary. Paimon reuses its exact bounded enumerator and its
+streaming reader/writer implementation with the bounded commit and row-kind contracts.
 
 The batch planner, scan, physical/exec nodes, graph boundary rewrites and operator
 specifications live in `planner.batch`. The public `NativePlanner.installBatch`

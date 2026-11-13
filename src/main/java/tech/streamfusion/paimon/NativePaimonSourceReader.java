@@ -30,7 +30,8 @@ final class NativePaimonSourceReader extends PaimonSourceReaderCompat {
       SourceReaderContext context,
       int batchRows,
       int rowtimeIndex,
-      WatermarkExpression watermarkExpression) {
+      WatermarkExpression watermarkExpression,
+      boolean carryRowKinds) {
     this(
         table,
         read,
@@ -38,9 +39,12 @@ final class NativePaimonSourceReader extends PaimonSourceReaderCompat {
         batchRows,
         rowtimeIndex,
         watermarkExpression,
+        carryRowKinds,
         IOManager.create(
             ConfigurationUtils.splitPaths(context.getConfiguration().get(CoreOptions.TMP_DIRS))),
-        new FileStoreSourceReaderMetrics(context.metricGroup()));
+        new FileStoreSourceReaderMetrics(context.metricGroup()),
+        context.metricGroup().counter("nativePaimonSourceRows"),
+        context.metricGroup().counter("paimonSourceFallbackRows"));
   }
 
   private NativePaimonSourceReader(
@@ -50,8 +54,11 @@ final class NativePaimonSourceReader extends PaimonSourceReaderCompat {
       int batchRows,
       int rowtimeIndex,
       WatermarkExpression watermarkExpression,
+      boolean carryRowKinds,
       IOManager io,
-      FileStoreSourceReaderMetrics metrics) {
+      FileStoreSourceReaderMetrics metrics,
+      org.apache.flink.metrics.Counter nativeRows,
+      org.apache.flink.metrics.Counter fallbackRows) {
     super(
         () ->
             new NativePaimonSplitReader(
@@ -63,7 +70,9 @@ final class NativePaimonSourceReader extends PaimonSourceReaderCompat {
                     batchRows,
                     rowtimeIndex,
                     watermarkExpression)
-                .withMetrics(metrics),
+                .withMetrics(metrics)
+                .withRowKinds(carryRowKinds)
+                .withExecutionCounters(nativeRows, fallbackRows),
         (record, output, state) -> {
           context
               .metricGroup()

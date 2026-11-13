@@ -95,7 +95,10 @@ public final class NativeBatchPlanner extends BatchPlanner {
         if (compilingPlan) return JavaScalaConversionUtil.toScala(roots);
         try (NativeConfig.Scope ignored =
             NativeConfig.usePlannerConfig(getTableConfig().getConfiguration())) {
-          return JavaScalaConversionUtil.toScala(scan.optimizeRoots(roots));
+          var connectors =
+              new BatchConnectorPlans(getTableConfig(), getFlinkContext().getClassLoader());
+          return JavaScalaConversionUtil.toScala(
+              scan.optimizeRoots(roots, connectors::hasNativeSource, connectors::lower));
         }
       }
     };

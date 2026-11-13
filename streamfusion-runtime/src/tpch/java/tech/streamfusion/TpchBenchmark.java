@@ -35,8 +35,7 @@ class TpchBenchmark {
     Path root = Path.of(System.getProperty("sf.tpch.directory")).toAbsolutePath();
     Files.createDirectories(root);
     double scale = Double.parseDouble(System.getProperty("sf.tpch.scale", "0.01"));
-    String format = System.getProperty("sf.tpch.format", "csv");
-    assertTrue(format.equals("csv") || format.equals("parquet"), "Unsupported TPC-H format");
+    String format = inputFormat();
     String mode = System.getProperty("sf.tpch.mode", "audit");
     assertTrue(mode.equals("audit") || mode.equals("verify") || mode.equals("compare"), mode);
     if (mode.equals("compare"))
@@ -86,14 +85,10 @@ class TpchBenchmark {
     config.setString("table.exec.resource.default-parallelism", Integer.toString(parallelism));
     config.setString("table.optimizer.range-sort.enabled", "false");
     List<String> failures = new ArrayList<>();
-    try (var metrics = new RecoveryExecutionMetrics()) {
+    try (var metrics = RecoveryExecutionMetrics.countersOnly()) {
       metrics.setAsContext(config, parallelism, cap);
-      Path directory = root.resolve("data-sf-" + scale);
-      if (format.equals("parquet")) {
-        directory = root.resolve("data-parquet-sf-" + scale);
-        report.put(
-            "parquet", parquet(root.resolve("data-sf-" + scale), directory, config, parallelism));
-      }
+      Path directory =
+          prepareInput(root, root.resolve("data-sf-" + scale), config, parallelism, format, report);
       var stock = environment(false, config, parallelism, directory, format);
       var nativeEnv = environment(true, config, parallelism, directory, format);
       String selection = "," + System.getProperty("sf.tpch.queries", "") + ",";
@@ -138,29 +133,18 @@ class TpchBenchmark {
                       ? new jdk.jfr.Recording(jdk.jfr.Configuration.getConfiguration("profile"))
                       : null) {
                 if (recording != null) recording.start();
-                long start = System.nanoTime();
-                var result = (nativeRun ? nativeEnv : stock).executeSql(sql);
-                String schema = result.getResolvedSchema().toPhysicalRowDataType().toString();
+                QueryRun measured =
+                    executeQuery(
+                        nativeRun ? nativeEnv : stock, sql, root, number, trial, nativeRun);
+                String schema = measured.schema;
                 if (expectedSchema == null) expectedSchema = schema;
                 else
                   assertEquals(
                       expectedSchema, schema, "Q" + number + " declared result types differ");
-                int[] orderFields = orderFields(sql, result.getResolvedSchema().getColumnNames());
-                List<String> rows = new ArrayList<>();
-                List<List<Object>> keys = new ArrayList<>();
-                try (var iterator = result.collect()) {
-                  while (iterator.hasNext()) {
-                    Row row = iterator.next();
-                    rows.add(row.toString());
-                    var key = new ArrayList<Object>();
-                    for (int field : orderFields) key.add(row.getField(field));
-                    keys.add(key);
-                  }
-                }
-                var client = result.getJobClient().orElseThrow();
-                long runtime = client.getJobExecutionResult().get().getNetRuntime();
-                long nanos = System.nanoTime() - start;
-                rows = canonicalRows(rows, keys);
+                var client = measured.client;
+                long runtime = measured.runtime;
+                long nanos = measured.nanos;
+                var rows = measured.rows;
                 long work =
                     metrics.nativeOperators().stream()
                         .filter(item -> client.getJobID().toString().equals(item.get("jobId")))
@@ -170,8 +154,7 @@ class TpchBenchmark {
                 observation.put("engine", nativeRun ? "streamfusion" : "stock");
                 observation.put("trial", trial);
                 observation.put("jobId", client.getJobID().toString());
-                long sourceRows =
-                    metrics.counterValue(client.getJobID().toString(), "sourceArrowRows");
+                long sourceRows = nativeSourceRows(metrics, client.getJobID().toString());
                 observation.put("sourceArrowRows", sourceRows);
                 long entryRows =
                     metrics.counterValue(
@@ -182,11 +165,12 @@ class TpchBenchmark {
                         System.getProperty(
                             "sf.tpch.requireNativeSource",
                             Boolean.toString(
-                                format.equals("parquet")
+                                (format.equals("parquet") || format.equals("paimon"))
                                     && Boolean.parseBoolean(
                                         System.getProperty("sf.tpch.fileSource", "true")))))) {
                   assertTrue(
-                      sourceRows > 0, "Q" + number + " native Parquet source did not execute");
+                      sourceRows > 0,
+                      "Q" + number + " native " + format + " source did not execute");
                   assertEquals(0, entryRows, "Q" + number + " retained a row-to-Arrow entry");
                 }
                 observation.put(
@@ -194,6 +178,7 @@ class TpchBenchmark {
                     metrics.nativeOperators().stream()
                         .filter(item -> client.getJobID().toString().equals(item.get("jobId")))
                         .collect(java.util.stream.Collectors.toList()));
+                observation.putAll(measured.details);
                 runs.add(observation);
                 if (nativeRun) assertTrue(work > 0, "Q" + number + " consumed no native rows");
                 else assertEquals(0, work, "stock run entered native execution");
@@ -244,7 +229,7 @@ class TpchBenchmark {
           json.writerWithDefaultPrettyPrinter()
               .writeValue(
                   root.resolve(
-                          "report-" + (format.equals("csv") ? "" : "parquet-") + mode + ".json")
+                          "report-" + (format.equals("csv") ? "" : format + "-") + mode + ".json")
                       .toFile(),
                   report);
         }
@@ -257,7 +242,81 @@ class TpchBenchmark {
     assertTrue(failures.isEmpty(), failures.toString());
   }
 
-  private static TableEnvironment environment(
+  String inputFormat() {
+    String format = System.getProperty("sf.tpch.format", "csv");
+    assertTrue(format.equals("csv") || format.equals("parquet"), "Unsupported TPC-H format");
+    return format;
+  }
+
+  long nativeSourceRows(RecoveryExecutionMetrics metrics, String job) {
+    return metrics.counterValue(job, "sourceArrowRows");
+  }
+
+  Path prepareInput(
+      Path root,
+      Path csv,
+      Configuration config,
+      int parallelism,
+      String format,
+      Map<String, Object> report)
+      throws Exception {
+    if (!format.equals("parquet")) return csv;
+    Path directory =
+        root.resolve(csv.getFileName().toString().replace("data-sf-", "data-parquet-sf-"));
+    report.put("parquet", parquet(csv, directory, config, parallelism));
+    return directory;
+  }
+
+  static final class QueryRun {
+    final String schema;
+    final List<String> rows;
+    final org.apache.flink.core.execution.JobClient client;
+    final long runtime;
+    final long nanos;
+    final Map<String, Object> details;
+
+    QueryRun(
+        String schema,
+        List<String> rows,
+        org.apache.flink.core.execution.JobClient client,
+        long runtime,
+        long nanos,
+        Map<String, Object> details) {
+      this.schema = schema;
+      this.rows = rows;
+      this.client = client;
+      this.runtime = runtime;
+      this.nanos = nanos;
+      this.details = details;
+    }
+  }
+
+  QueryRun executeQuery(
+      TableEnvironment environment, String sql, Path root, int number, int trial, boolean nativeRun)
+      throws Exception {
+    long start = System.nanoTime();
+    var result = environment.executeSql(sql);
+    String schema = result.getResolvedSchema().toPhysicalRowDataType().toString();
+    int[] orderFields = orderFields(sql, result.getResolvedSchema().getColumnNames());
+    List<String> rows = new ArrayList<>();
+    List<List<Object>> keys = new ArrayList<>();
+    try (var iterator = result.collect()) {
+      while (iterator.hasNext()) {
+        Row row = iterator.next();
+        rows.add(row.toString());
+        var key = new ArrayList<Object>();
+        for (int field : orderFields) key.add(row.getField(field));
+        keys.add(key);
+      }
+    }
+    var client = result.getJobClient().orElseThrow();
+    long runtime = client.getJobExecutionResult().get().getNetRuntime();
+    long nanos = System.nanoTime() - start;
+    rows = canonicalRows(rows, keys);
+    return new QueryRun(schema, rows, client, runtime, nanos, Map.of());
+  }
+
+  TableEnvironment environment(
       boolean nativeRun, Configuration options, int parallelism, Path directory, String format)
       throws Exception {
     Configuration config = new Configuration(options);
@@ -285,7 +344,7 @@ class TpchBenchmark {
     return table;
   }
 
-  private static String columns(TpchTable<?> source) {
+  static String columns(TpchTable<?> source) {
     List<String> fields = new ArrayList<>();
     for (TpchColumn<?> column : source.getColumns()) {
       String type;
@@ -396,7 +455,7 @@ class TpchBenchmark {
     }
   }
 
-  private static void removeGenerated(Path directory) throws Exception {
+  static void removeGenerated(Path directory) throws Exception {
     if (!Files.exists(directory)) return;
     try (var paths = Files.walk(directory)) {
       for (Path path :
@@ -482,7 +541,7 @@ class TpchBenchmark {
     }
   }
 
-  private static String hashFile(Path path) throws Exception {
+  static String hashFile(Path path) throws Exception {
     MessageDigest digest = MessageDigest.getInstance("SHA-256");
     try (var input = Files.newInputStream(path)) {
       byte[] buffer = new byte[65536];
@@ -491,7 +550,7 @@ class TpchBenchmark {
     return hex(digest.digest());
   }
 
-  private static String hash(String value) throws Exception {
+  static String hash(String value) throws Exception {
     byte[] bytes =
         MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
     return hex(bytes);

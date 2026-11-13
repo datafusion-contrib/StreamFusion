@@ -59,9 +59,12 @@ public final class NativePaimonSplitReader
   private NativePaimonSnapshotReader snapshot;
   private PaimonRustReader rust;
   private boolean nativeSnapshotsEnabled = true;
+  private boolean carryRowKinds = true;
   private int nativeSnapshots;
   private volatile boolean wakeup;
   private int nativeFiles;
+  private org.apache.flink.metrics.Counter nativeRows;
+  private org.apache.flink.metrics.Counter fallbackRows;
 
   public int nativeFilesRead() {
     return nativeFiles + (rust == null ? 0 : rust.filesOpened());
@@ -73,6 +76,11 @@ public final class NativePaimonSplitReader
 
   NativePaimonSplitReader withNativeSnapshots(boolean enabled) {
     nativeSnapshotsEnabled = enabled;
+    return this;
+  }
+
+  NativePaimonSplitReader withRowKinds(boolean enabled) {
+    carryRowKinds = enabled;
     return this;
   }
 
@@ -100,6 +108,14 @@ public final class NativePaimonSplitReader
 
   NativePaimonSplitReader withMetrics(FileStoreSourceReaderMetrics metrics) {
     this.metrics = metrics;
+    return this;
+  }
+
+  NativePaimonSplitReader withExecutionCounters(
+      org.apache.flink.metrics.Counter nativeCounter,
+      org.apache.flink.metrics.Counter fallbackCounter) {
+    nativeRows = nativeCounter;
+    fallbackRows = fallbackCounter;
     return this;
   }
 
@@ -170,6 +186,13 @@ public final class NativePaimonSplitReader
         root.close();
         root = sliced;
         skip = 0;
+      }
+      var decodedRows = rust != null || snapshot != null ? nativeRows : fallbackRows;
+      if (decodedRows != null) decodedRows.inc(root.getRowCount());
+      var kinds = root.getVector(RowDataArrowConverter.ROW_KIND_COLUMN);
+      if (!carryRowKinds && kinds != null) {
+        root = root.removeVector(root.getFieldVectors().indexOf(kinds));
+        kinds.close();
       }
       position += root.getRowCount();
       return new Records(

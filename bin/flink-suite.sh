@@ -799,7 +799,13 @@ if [[ "${SUITE_MODE}" == "state" && -z "${FLINK_SUITE_TEST:-}" ]]; then
 fi
 if [[ "${SUITE_MODE}" == "paimon" && "${FLINK_LINE}" == "1.18" && -z "${FLINK_SUITE_TEST:-}" ]]; then
   while IFS= read -r shared_test; do
-    SUMMARY_ARGS+=(--require-test-method "${shared_test}")
+    if [[ "${shared_test}" == "!"* ]]; then
+      continue
+    elif [[ "${shared_test}" == *"#"* ]]; then
+      SUMMARY_ARGS+=(--require-test-method "${shared_test}")
+    else
+      SUMMARY_ARGS+=(--require-test-class "${shared_test}")
+    fi
   done < "${PAIMON_118_SHARED_TESTS}"
 fi
 python3 "${REPO_ROOT}/dev/flink-suite/summarize.py" "${SUMMARY_ARGS[@]}"

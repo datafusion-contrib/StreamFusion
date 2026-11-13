@@ -68,6 +68,14 @@ public final class NativePaimonSinkExecNode extends ExecNodeBase<Object>
       PlannerBase planner, ExecNodeConfig config) {
     Transformation<ArrowBatch> input =
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
+    return translate(planner, input, planned, getDescription());
+  }
+
+  static Transformation<Object> translate(
+      PlannerBase planner,
+      Transformation<ArrowBatch> input,
+      PaimonSinkMatcher.Planned planned,
+      String description) {
     FileStoreTable table = planned.table;
     if (java.util.Arrays.stream(planned.notNullFieldNames).anyMatch(name -> name != null)) {
       input =
@@ -97,6 +105,15 @@ public final class NativePaimonSinkExecNode extends ExecNodeBase<Object>
             .getOptional(FlinkConnectorOptions.SINK_PARALLELISM)
             .orElse(null);
     int writerParallelism = parallelism == null ? input.getParallelism() : parallelism;
+    if (parallelism == null && writerParallelism <= 0) {
+      writerParallelism = planner.getExecEnv().getParallelism();
+      if (writerParallelism <= 0)
+        writerParallelism =
+            planner
+                .getTableConfig()
+                .getConfiguration()
+                .get(org.apache.flink.configuration.CoreOptions.DEFAULT_PARALLELISM);
+    }
     Integer configuredAssigners = table.coreOptions().dynamicBucketAssignerParallelism();
     int assignerParallelism = configuredAssigners == null ? writerParallelism : configuredAssigners;
     Integer initialBuckets = table.coreOptions().dynamicBucketInitialBuckets();
@@ -122,12 +139,12 @@ public final class NativePaimonSinkExecNode extends ExecNodeBase<Object>
                     planned.bucketColumns,
                     planned.bucketTimestampPrecisions,
                     routeDestinations,
-                    planned.primaryKey,
+                    true,
                     routeAssigners)),
             BucketedArrowBatchTypeInformation.INSTANCE,
             input.getParallelism(),
             false);
-    route.setDescription(getDescription());
+    route.setDescription(description);
     DataStream<BucketedArrowBatch> routed = new DataStream<>(planner.getExecEnv(), route);
     int partitionArity = table.partitionKeys().size();
 
@@ -169,11 +186,22 @@ public final class NativePaimonSinkExecNode extends ExecNodeBase<Object>
               routed, BucketedArrowBatchChannelComputer.byBucket(partitionArity), parallelism);
       end = new NativePaimonBucketSink(table, planned.primaryKey).sinkFrom(partitioned);
     } else {
-      DataStream<BucketedArrowBatch> shuffled = routed;
+      var assigned =
+          routed.transform(
+              "native-paimon-round-robin-route",
+              BucketedArrowBatchTypeInformation.INSTANCE,
+              new tech.streamfusion.paimon.NativePaimonRoundRobinOperator(writerParallelism));
+      DataStream<BucketedArrowBatch> shuffled =
+          FlinkStreamPartitioner.partition(
+                  assigned, BucketedArrowBatchChannelComputer.byChannel(), parallelism)
+              .map(batch -> new BucketedArrowBatch(batch.root(), batch.partition(), 0))
+              .returns(BucketedArrowBatchTypeInformation.INSTANCE)
+              .name("Strip Channel")
+              .setParallelism(writerParallelism);
       end = new NativePaimonAppendSink(table, parallelism).sinkFrom(shuffled);
     }
-    end.name(NativePlanDetails.name("NativeSink", getDescription()));
-    end.getTransformation().setDescription(getDescription());
+    end.name(NativePlanDetails.name("NativeSink", description));
+    end.getTransformation().setDescription(description);
     return (Transformation<Object>) (Transformation<?>) end.getTransformation();
   }
 }

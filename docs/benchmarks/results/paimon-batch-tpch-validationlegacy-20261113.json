@@ -1,0 +1,1763 @@
+{
+  "mode": "verify",
+  "format": "paimon",
+  "resultOrderValidation": "Exact rows and multiplicities, preserving ORDER BY key order; row order within equal-key groups is immaterial",
+  "profile": false,
+  "scale": 0.01,
+  "javaVersion": "11.0.28",
+  "javaVm": "OpenJDK 64-Bit Server VM",
+  "os": "Mac OS X aarch64",
+  "maxHeapBytes": 8589934592,
+  "generator": "io.airlift.tpch:tpch:0.10",
+  "schema": "TPC-H identifiers BIGINT, integer INT, numeric DECIMAL(15,2), date DATE, text STRING",
+  "parallelism": 2,
+  "nativeBytes": 536870912,
+  "nativeBatchRows": 8192,
+  "fileSource": true,
+  "warmups": 0,
+  "trials": 1,
+  "tables": {
+    "customer": {
+      "bytes": 239490,
+      "sha256": "22156f2770387f5adadbc72774f2282d353aedd5092bd8fc54871b3bf5e74cba",
+      "rows": 1500
+    },
+    "orders": {
+      "bytes": 1644137,
+      "sha256": "a444603dfba6c47e902e24b517608a5eb3b117127e99dff16a40f4eaa47b812c",
+      "rows": 15000
+    },
+    "lineitem": {
+      "bytes": 7204075,
+      "sha256": "517b566190fbeadc638602554d109a463631e19788936ccb97196ebd407b51f1",
+      "rows": 60175
+    },
+    "part": {
+      "bytes": 235134,
+      "sha256": "604232ee10e95dca875c196f759c07babf34293dfac8c99b9f1f0c2708f0561b",
+      "rows": 2000
+    },
+    "partsupp": {
+      "bytes": 1153705,
+      "sha256": "906f58419af6ad5d62489a7e2105257654bb6d8458a7fd8fe19b76655aac50c7",
+      "rows": 8000
+    },
+    "supplier": {
+      "bytes": 13695,
+      "sha256": "b199bef3350840676cfe4be096091851bc47b6a57cd8a71b3f559d42b7d9dacd",
+      "rows": 100
+    },
+    "nation": {
+      "bytes": 2199,
+      "sha256": "7d47bc9397da331054fa92b8fb92e4c074004bad72dcbb893012093218dccf6c",
+      "rows": 25
+    },
+    "region": {
+      "bytes": 384,
+      "sha256": "5a7c2fe9718db00ff5e5bc82a9ebfa8abc492cc75260d3c0ffb411974f235ab0",
+      "rows": 5
+    }
+  },
+  "queries": [
+    {
+      "query": 1,
+      "sqlSha256": "864a088f29bb394a6397b71c28a5bdb1dbd74e667f690917feff0d9e293df4e6",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "67c68befcb766827a23f49affdebb751",
+          "sourceArrowRows": 0,
+          "entryTransposeRows": 0,
+          "committedRows": 4,
+          "files": 1,
+          "nativeWriter": false,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {}
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "d58b4c55f4087ee983c39a7f027991f5",
+          "sourceArrowRows": 60175,
+          "entryTransposeRows": 0,
+          "committedRows": 4,
+          "files": 1,
+          "nativeWriter": true,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {
+            "NativeSink": 1,
+            "NativeAggregate": 59311,
+            "NativeSort": 4,
+            "NativeCalc": 60175
+          }
+        }
+      ],
+      "resultType": "ROW<`l_returnflag` STRING, `l_linestatus` STRING, `sum_qty` DECIMAL(38, 2), `sum_base_price` DECIMAL(38, 2), `sum_disc_price` DECIMAL(38, 4), `sum_charge` DECIMAL(38, 6), `avg_qty` DECIMAL(38, 6), `avg_price` DECIMAL(38, 6), `avg_disc` DECIMAL(38, 6), `count_order` BIGINT NOT NULL> NOT NULL",
+      "rows": 4,
+      "resultSha256": "9ec085e2998adc5572315b4ad435c9fa0c643bbc38c2ab22fce26a8719507df0",
+      "stockNanos": [
+        520935667
+      ],
+      "nativeNanos": [
+        254113500
+      ],
+      "stockRuntimeMs": [
+        377
+      ],
+      "nativeRuntimeMs": [
+        191
+      ],
+      "status": "passed",
+      "stockPlanSha256": "2b7941f38d598e5f8dd498bfd5f98d9f34840d2654d3e642044b2b55ffd30ca3",
+      "nativePlanSha256": "0af4271b2f036d5bc774c0f4871744052e9acc22a0e582777fb419266348f5b8",
+      "admissionSha256": "dc972476929eded5a023e7bd57325fe5544e37c8d4d5ba68f898d7530c99efbd"
+    },
+    {
+      "query": 2,
+      "sqlSha256": "f42e396d36f43602ff020b8f4d37f44a3734aaf0cfb5ce468f674f07555cb79d",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "b6066708a46abfc7d6b7ecd2d7a0568b",
+          "sourceArrowRows": 0,
+          "entryTransposeRows": 0,
+          "committedRows": 4,
+          "files": 1,
+          "nativeWriter": false,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {}
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "46e574eb1c4adc91a9c43f50e5588866",
+          "sourceArrowRows": 18260,
+          "entryTransposeRows": 0,
+          "committedRows": 4,
+          "files": 1,
+          "nativeWriter": true,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {
+            "NativeSink": 1,
+            "NativeCalc": 27776,
+            "NativeShareExecNode": 260,
+            "NativeJoin": 33889,
+            "NativeAggregate": 2796,
+            "NativeSort": 8
+          }
+        }
+      ],
+      "resultType": "ROW<`s_acctbal` DECIMAL(15, 2), `s_name` STRING, `n_name` STRING, `p_partkey` BIGINT, `p_mfgr` STRING, `s_address` STRING, `s_phone` STRING, `s_comment` STRING> NOT NULL",
+      "rows": 4,
+      "resultSha256": "73a35adbd68f43299a3f36988d4cc722e50539afd624c343ab55482ec6ff777e",
+      "stockNanos": [
+        447860667
+      ],
+      "nativeNanos": [
+        274089292
+      ],
+      "stockRuntimeMs": [
+        298
+      ],
+      "nativeRuntimeMs": [
+        162
+      ],
+      "status": "passed",
+      "stockPlanSha256": "ec92f315a7b165b4750834ea40903d55b9b4ef1a6d5dad8b1ea34caad79b6635",
+      "nativePlanSha256": "c1850a2d9f403affc8479481c2ce5ce12cbdc3e5880a6048c43961c2548728a4",
+      "admissionSha256": "31465dad5194165ffdf1d7375925da951ab0d75ed77f7a14106fc9a94bdc5ff1"
+    },
+    {
+      "query": 3,
+      "sqlSha256": "d8d2f7579eac245cd2609e49f572025a6efa1725dc30e3ccc3c6887f4c4f0bbf",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "a98287759355a21bb9f5846dec51b95d",
+          "sourceArrowRows": 0,
+          "entryTransposeRows": 0,
+          "committedRows": 10,
+          "files": 1,
+          "nativeWriter": false,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {}
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "38a66fddb8106f0a5efa759b1166356e",
+          "sourceArrowRows": 76675,
+          "entryTransposeRows": 0,
+          "committedRows": 10,
+          "files": 1,
+          "nativeWriter": true,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {
+            "NativeSink": 1,
+            "NativeCalc": 78838,
+            "NativeSort": 158,
+            "NativeJoin": 41680,
+            "NativeAggregate": 494
+          }
+        }
+      ],
+      "resultType": "ROW<`l_orderkey` BIGINT, `revenue` DECIMAL(38, 4), `o_orderdate` DATE, `o_shippriority` INT> NOT NULL",
+      "rows": 10,
+      "resultSha256": "931631b0cce06fce4c994c789c74aa06cd02e543257a647812afc1fdb244f54a",
+      "stockNanos": [
+        275001750
+      ],
+      "nativeNanos": [
+        160389250
+      ],
+      "stockRuntimeMs": [
+        204
+      ],
+      "nativeRuntimeMs": [
+        113
+      ],
+      "status": "passed",
+      "stockPlanSha256": "5e32752bbdf5ff23844ce330a0824e27500e788368dca1084ff7f53752e08f60",
+      "nativePlanSha256": "c96b6ed773a9b5d746fe63b907dc48f2d14761fd9e0cdab0e636bdf625d17229",
+      "admissionSha256": "3238c4921a97a8266b5a0d9ea659d4ded20c82bc1e81ebc3c4e49e89c0b7246a"
+    },
+    {
+      "query": 4,
+      "sqlSha256": "04297c2ddbbcc2bd3999494f3f531235e8bf5d723e678796ee485c0309711594",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "09a8b0a49e56803d3e9a9a8ebc6377b5",
+          "sourceArrowRows": 0,
+          "entryTransposeRows": 0,
+          "committedRows": 5,
+          "files": 1,
+          "nativeWriter": false,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {}
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "64bad279a7c468ee7c90865cf54a78ed",
+          "sourceArrowRows": 75175,
+          "entryTransposeRows": 0,
+          "committedRows": 5,
+          "files": 1,
+          "nativeWriter": true,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {
+            "NativeSink": 1,
+            "NativeCalc": 75710,
+            "NativeAggregate": 540,
+            "NativeJoin": 38479,
+            "NativeSort": 5
+          }
+        }
+      ],
+      "resultType": "ROW<`o_orderpriority` STRING, `order_count` BIGINT NOT NULL> NOT NULL",
+      "rows": 5,
+      "resultSha256": "7e56380468cb51ff6ffe7601b7d279b8b6a53fb8be7398b02e35982042159670",
+      "stockNanos": [
+        230746125
+      ],
+      "nativeNanos": [
+        147703500
+      ],
+      "stockRuntimeMs": [
+        178
+      ],
+      "nativeRuntimeMs": [
+        105
+      ],
+      "status": "passed",
+      "stockPlanSha256": "272fca36b374fd16c45c0b8f45c28b599a93e081673ff37a18edce5d0f5b17ef",
+      "nativePlanSha256": "0cb9a559ffda51203606c5bd39f07ab912fc3a3c2df35a090b7056a5787cacb6",
+      "admissionSha256": "5f0e1acc247d106f2092682a8717f22db6af08ab3403493bbc87ed5c8d7bb3a2"
+    },
+    {
+      "query": 5,
+      "sqlSha256": "c4fe1313161ee7e67d0c554a54126ac20560c0df04b86e33aa5ec251f908c315",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "2f9ec6329e9ecd4f2338451a0a9a965e",
+          "sourceArrowRows": 0,
+          "entryTransposeRows": 0,
+          "committedRows": 5,
+          "files": 1,
+          "nativeWriter": false,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {}
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "c135695307d7fb286de351308f457d28",
+          "sourceArrowRows": 76805,
+          "entryTransposeRows": 0,
+          "committedRows": 5,
+          "files": 1,
+          "nativeWriter": true,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {
+            "NativeSink": 1,
+            "NativeAggregate": 118,
+            "NativeCalc": 27459,
+            "NativeSort": 113,
+            "NativeJoin": 76455
+          }
+        }
+      ],
+      "resultType": "ROW<`n_name` STRING, `revenue` DECIMAL(38, 4)> NOT NULL",
+      "rows": 5,
+      "resultSha256": "f9589de4a90e32fdccc084a30ddf3fea2d7f9a095cf41004842ac7c439aba1cb",
+      "stockNanos": [
+        292057500
+      ],
+      "nativeNanos": [
+        213323833
+      ],
+      "stockRuntimeMs": [
+        207
+      ],
+      "nativeRuntimeMs": [
+        138
+      ],
+      "status": "passed",
+      "stockPlanSha256": "c212fddf2b22bac77bc8bf4d286f523e0d18f14a6753cbafb16c6d2179b6c58b",
+      "nativePlanSha256": "48405ee0781d62427fc41af27f93f11c004d58d9b9fed28e961483773634e1a8",
+      "admissionSha256": "be912205d2a878bd5e0c1baa60354ea035f1696861dd12fb509520c7b3bc8162"
+    },
+    {
+      "query": 6,
+      "sqlSha256": "9a0f373ae3a61ce5596f4b77647988f09b3f8261661853a11db1930708771c21",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "af5bd701015fe99e7b5ffd6b1d731d29",
+          "sourceArrowRows": 0,
+          "entryTransposeRows": 0,
+          "committedRows": 1,
+          "files": 1,
+          "nativeWriter": false,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {}
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "da6f602ed33bd6ea2af3ec7ac9d6436c",
+          "sourceArrowRows": 60175,
+          "entryTransposeRows": 0,
+          "committedRows": 1,
+          "files": 1,
+          "nativeWriter": true,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {
+            "NativeAggregate": 1192,
+            "NativeSink": 1,
+            "NativeCalc": 60175
+          }
+        }
+      ],
+      "resultType": "ROW<`revenue` DECIMAL(38, 4)> NOT NULL",
+      "rows": 1,
+      "resultSha256": "1618df4be83c3b8f05deb7f16459269384a8fabf25faccfc7f883c39244dc83c",
+      "stockNanos": [
+        138100166
+      ],
+      "nativeNanos": [
+        110590583
+      ],
+      "stockRuntimeMs": [
+        109
+      ],
+      "nativeRuntimeMs": [
+        85
+      ],
+      "status": "passed",
+      "stockPlanSha256": "652c905b0faae45c487021c7f7439730b91e1f7d842b198ff5d500391bb4ba59",
+      "nativePlanSha256": "6738e3ed4c5d85eedf3304cfdbebe4ecf2d738615a7509b56005b7e656406fe9",
+      "admissionSha256": "2e2065f71593dc2fa36a6ffca719278729579c49ed94b1e8339fa45d0fe1aa5f"
+    },
+    {
+      "query": 7,
+      "sqlSha256": "ae45f801e45c97c4a69a9156b2709b29a7373b5a3a82741bf1a4fb1415fa100b",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "06b9f377e24f0f3d9e02495ae9974ef3",
+          "sourceArrowRows": 0,
+          "entryTransposeRows": 0,
+          "committedRows": 4,
+          "files": 1,
+          "nativeWriter": false,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {}
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "99207beb906053d228217bf804045e3a",
+          "sourceArrowRows": 76825,
+          "entryTransposeRows": 0,
+          "committedRows": 4,
+          "files": 1,
+          "nativeWriter": true,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {
+            "NativeSink": 1,
+            "NativeCalc": 115468,
+            "NativeJoin": 89774,
+            "NativeAggregate": 50,
+            "NativeSort": 50,
+            "NativeShareExecNode": 50
+          }
+        }
+      ],
+      "resultType": "ROW<`supp_nation` STRING, `cust_nation` STRING, `l_year` BIGINT, `revenue` DECIMAL(38, 4)> NOT NULL",
+      "rows": 4,
+      "resultSha256": "7210ea9d6979246007769e271f182a35d8ad1b45c5542e31e9b648b858c05599",
+      "stockNanos": [
+        283710166
+      ],
+      "nativeNanos": [
+        215597084
+      ],
+      "stockRuntimeMs": [
+        195
+      ],
+      "nativeRuntimeMs": [
+        155
+      ],
+      "status": "passed",
+      "stockPlanSha256": "5e6b98b78410c0d087c9168d8da619f74af7390024ac785cd2d46855e41c30e2",
+      "nativePlanSha256": "0e1dbca45c7c083b656bf34cae072bf821da8dc45ae63368637649a482587ba6",
+      "admissionSha256": "eefb05e23c2bbe4bc2bae0251098766f84e84332dde723506894e20afdb06569"
+    },
+    {
+      "query": 8,
+      "sqlSha256": "32f7a9d5fa9a84fecdc2c25f2acf33491d1cf8e176eaca5c2d48bcf5a8c41c31",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "9a6b6209cfa74428d052292ba179c3ac",
+          "sourceArrowRows": 0,
+          "entryTransposeRows": 0,
+          "committedRows": 2,
+          "files": 1,
+          "nativeWriter": false,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {}
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "d2413fe8f91f1051fa8f41632caac0f7",
+          "sourceArrowRows": 78830,
+          "entryTransposeRows": 0,
+          "committedRows": 2,
+          "files": 1,
+          "nativeWriter": true,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {
+            "NativeAggregate": 35,
+            "NativeCalc": 17916,
+            "NativeSort": 33,
+            "NativeSink": 1,
+            "NativeJoin": 68369,
+            "NativeShareExecNode": 50
+          }
+        }
+      ],
+      "resultType": "ROW<`o_year` BIGINT, `mkt_share` DECIMAL(38, 6)> NOT NULL",
+      "rows": 2,
+      "resultSha256": "2b88fd12aa466431ccbcc107c0d21d207fb65edfc559d7430812843ebf98283d",
+      "stockNanos": [
+        306910166
+      ],
+      "nativeNanos": [
+        211158375
+      ],
+      "stockRuntimeMs": [
+        218
+      ],
+      "nativeRuntimeMs": [
+        139
+      ],
+      "status": "passed",
+      "stockPlanSha256": "015f9517380c377bc7066ffa5ac34128481463b32f175d5524d56b6bc470409c",
+      "nativePlanSha256": "0e09bb5e4f5cd2699c87a8d788fcfddf3cf574af13247ae42f51f4de084e6b53",
+      "admissionSha256": "55c073e9bfaa793f73b9895eb377338f248a5af48a143b66dabc8194cdca915c"
+    },
+    {
+      "query": 9,
+      "sqlSha256": "0adb679bcda7561efec2c45c9bbc3de42549f21c3aee299cf6ef47f9e58662f0",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "36475f0a7802dfe85ffa2ea23f46063f",
+          "sourceArrowRows": 0,
+          "entryTransposeRows": 0,
+          "committedRows": 173,
+          "files": 1,
+          "nativeWriter": false,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {}
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "fdd07665d5f73652e15d3930723c9fed",
+          "sourceArrowRows": 85300,
+          "entryTransposeRows": 0,
+          "committedRows": 173,
+          "files": 1,
+          "nativeWriter": true,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {
+            "NativeSink": 1,
+            "NativeJoin": 103776,
+            "NativeSort": 173,
+            "NativeCalc": 14892,
+            "NativeAggregate": 3396
+          }
+        }
+      ],
+      "resultType": "ROW<`nation` STRING, `o_year` BIGINT, `sum_profit` DECIMAL(38, 4)> NOT NULL",
+      "rows": 173,
+      "resultSha256": "812baff24ca28317d4989e586c6681e74773be62c16da62cec7108de6508295d",
+      "stockNanos": [
+        329024542
+      ],
+      "nativeNanos": [
+        172637250
+      ],
+      "stockRuntimeMs": [
+        257
+      ],
+      "nativeRuntimeMs": [
+        121
+      ],
+      "status": "passed",
+      "stockPlanSha256": "564004ce866fb6848e88f34518bbe52b41cb5187b4f4101b6025c8cc46a185d8",
+      "nativePlanSha256": "7607264dd9f4169631e1b2eed1cde7f2e252f1bd5aa98665a3337b1132aa52b0",
+      "admissionSha256": "cdab1990527ea3176135e5f374a143a6e7e644068c56e1da4460bbea919f3b2b"
+    },
+    {
+      "query": 10,
+      "sqlSha256": "2c82e9ab8c67d6423ed357ef3c945f60cc140f50d489a1a098cbb290fd1f191e",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "cf889e9eccb3a009e13f59983f62b520",
+          "sourceArrowRows": 0,
+          "entryTransposeRows": 0,
+          "committedRows": 20,
+          "files": 1,
+          "nativeWriter": false,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {}
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "31dacca96e6e3e934d397da628b007ab",
+          "sourceArrowRows": 76700,
+          "entryTransposeRows": 0,
+          "committedRows": 20,
+          "files": 1,
+          "nativeWriter": true,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {
+            "NativeSink": 1,
+            "NativeAggregate": 1658,
+            "NativeCalc": 78324,
+            "NativeJoin": 18908,
+            "NativeSort": 439
+          }
+        }
+      ],
+      "resultType": "ROW<`c_custkey` BIGINT, `c_name` STRING, `revenue` DECIMAL(38, 4), `c_acctbal` DECIMAL(15, 2), `n_name` STRING, `c_address` STRING, `c_phone` STRING, `c_comment` STRING> NOT NULL",
+      "rows": 20,
+      "resultSha256": "631b6cdbcd993ba5ed399744c84a2d069c5ee4ecd1450047662beea43f03c1e0",
+      "stockNanos": [
+        351337750
+      ],
+      "nativeNanos": [
+        223417000
+      ],
+      "stockRuntimeMs": [
+        244
+      ],
+      "nativeRuntimeMs": [
+        143
+      ],
+      "status": "passed",
+      "stockPlanSha256": "dd94bd4ddfdb0a7ff5709599070326057ed1c3ffaac53e1ae9cfd3402111ea26",
+      "nativePlanSha256": "f34bb4fa82c6956aa8b055913693b59ca093dc421ef674153d4995e548d3bd99",
+      "admissionSha256": "78485067e744c1be872de1e421fa3f2b0f756f10aa06644169208ea2fb2a4e3c"
+    },
+    {
+      "query": 11,
+      "sqlSha256": "6c13dffd3aa87a4bb45ccb379ff54b834d12b87d070ee3dafd63906c8c6ce8ce",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "04d94a41a5d785b30f3006e1b3351fb6",
+          "sourceArrowRows": 0,
+          "entryTransposeRows": 0,
+          "committedRows": 359,
+          "files": 1,
+          "nativeWriter": false,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {}
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "7630269b6bc9b3b7b5288bdb6d59dee3",
+          "sourceArrowRows": 16250,
+          "entryTransposeRows": 0,
+          "committedRows": 359,
+          "files": 1,
+          "nativeWriter": true,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {
+            "NativeAggregate": 1176,
+            "NativeCalc": 25210,
+            "NativeSink": 1,
+            "NativeShareExecNode": 16250,
+            "NativeJoin": 32578,
+            "NativeSort": 359
+          }
+        }
+      ],
+      "resultType": "ROW<`ps_partkey` BIGINT, `value` DECIMAL(38, 2)> NOT NULL",
+      "rows": 359,
+      "resultSha256": "4f94f1985e7f0cad3b9798af414af857a6ca1c4f4410312d1beeaa359695148d",
+      "stockNanos": [
+        239259041
+      ],
+      "nativeNanos": [
+        187640333
+      ],
+      "stockRuntimeMs": [
+        171
+      ],
+      "nativeRuntimeMs": [
+        144
+      ],
+      "status": "passed",
+      "stockPlanSha256": "2851116693471dba54801368c5420ddf114bfb5059b8f6e8ccd8c6ba6c9265c4",
+      "nativePlanSha256": "d30eee1893d3ab424d768b98c450ee4c04721ca9753f854eee870cfc72c3f86a",
+      "admissionSha256": "9a43dd6ac2d441c6c8673d16bc747e2793d361bd1ee7bd6caa2299babb55104b"
+    },
+    {
+      "query": 12,
+      "sqlSha256": "8622e45700f76a2b08b67c19a124013fc4e021623a8bd2c0d65845b1a1a3e9b0",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "045112455fb33bdf5c08fcaf6c5dc2ad",
+          "sourceArrowRows": 0,
+          "entryTransposeRows": 0,
+          "committedRows": 2,
+          "files": 1,
+          "nativeWriter": false,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {}
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "c25490aa7244a8df2f60bd867d7d5b49",
+          "sourceArrowRows": 75175,
+          "entryTransposeRows": 0,
+          "committedRows": 2,
+          "files": 1,
+          "nativeWriter": true,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {
+            "NativeAggregate": 309,
+            "NativeSink": 1,
+            "NativeJoin": 15307,
+            "NativeSort": 2,
+            "NativeCalc": 60482
+          }
+        }
+      ],
+      "resultType": "ROW<`l_shipmode` STRING, `high_line_count` INT NOT NULL, `low_line_count` INT NOT NULL> NOT NULL",
+      "rows": 2,
+      "resultSha256": "c6c7bcef5322699f445da4d52fa4cbed4e78a3d1e60f9bf8959ab7972fe7e4da",
+      "stockNanos": [
+        225500041
+      ],
+      "nativeNanos": [
+        158505333
+      ],
+      "stockRuntimeMs": [
+        161
+      ],
+      "nativeRuntimeMs": [
+        118
+      ],
+      "status": "passed",
+      "stockPlanSha256": "c77c0aa8d80827a1bcd0cdbf9cc0c86bee94cb28f486eab9b189c0eeb95f4603",
+      "nativePlanSha256": "60d3e5482aa9ed8c6c9fd9c0a993bd1092ea7caa24d9df380f351a502d71cf95",
+      "admissionSha256": "2f1e90735663da186c184c3a39c4043ea5649c6967ac4d929ad96356b5fe8fa7"
+    },
+    {
+      "query": 13,
+      "sqlSha256": "38b57cf5cb9b9f964337c1abfada5989add38d7c3bad9d339d49ee812ef387a9",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "e94292df675fff8bf5b364eb7a27708f",
+          "sourceArrowRows": 0,
+          "entryTransposeRows": 0,
+          "committedRows": 33,
+          "files": 1,
+          "nativeWriter": false,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {}
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "e81e863fb0c71ff9f75d36ad9b564c40",
+          "sourceArrowRows": 16500,
+          "entryTransposeRows": 0,
+          "committedRows": 33,
+          "files": 1,
+          "nativeWriter": true,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {
+            "NativeSink": 1,
+            "NativeCalc": 31834,
+            "NativeAggregate": 18395,
+            "NativeJoin": 16334,
+            "NativeSort": 33
+          }
+        }
+      ],
+      "resultType": "ROW<`c_count` BIGINT NOT NULL, `custdist` BIGINT NOT NULL> NOT NULL",
+      "rows": 33,
+      "resultSha256": "bc7f97f7bc8ca7d557e63d643aa892ed7ff1bcba2a0c59835796519c048beb04",
+      "stockNanos": [
+        215181041
+      ],
+      "nativeNanos": [
+        153803625
+      ],
+      "stockRuntimeMs": [
+        169
+      ],
+      "nativeRuntimeMs": [
+        126
+      ],
+      "status": "passed",
+      "stockPlanSha256": "70957c581d1791a67450def1195ec66f198b7e4191ea94602d60859e8d526018",
+      "nativePlanSha256": "a6b7ea0f1dcb81eb66d7a8284ee5320d006675e110238b6e634016cd9828e31f",
+      "admissionSha256": "a19df4f701bf524502bc48b4e6237f11cc7eddd53fcaabaf1a984b8f525429c8"
+    },
+    {
+      "query": 14,
+      "sqlSha256": "a8b179c98ec22511cd9e4333d9ee3000eb89ca2cc83291824e76d71fabe88b2c",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "330db1bf0c35e1b3a000f62610e63eff",
+          "sourceArrowRows": 0,
+          "entryTransposeRows": 0,
+          "committedRows": 1,
+          "files": 1,
+          "nativeWriter": false,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {}
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "ddebbbd05790892fc2a471dad72d3f2e",
+          "sourceArrowRows": 62175,
+          "entryTransposeRows": 0,
+          "committedRows": 1,
+          "files": 1,
+          "nativeWriter": true,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {
+            "NativeAggregate": 723,
+            "NativeCalc": 60898,
+            "NativeSink": 1,
+            "NativeJoin": 2722
+          }
+        }
+      ],
+      "resultType": "ROW<`promo_revenue` DECIMAL(38, 6)> NOT NULL",
+      "rows": 1,
+      "resultSha256": "00d74dda8105046f3247bffec02cc305ba169e3bdc180c1167e9a55261149c83",
+      "stockNanos": [
+        158270292
+      ],
+      "nativeNanos": [
+        122544708
+      ],
+      "stockRuntimeMs": [
+        119
+      ],
+      "nativeRuntimeMs": [
+        93
+      ],
+      "status": "passed",
+      "stockPlanSha256": "4249eee2976b9c73f8665eb840727a39040bff6bbe156c8cad762067dfd859f1",
+      "nativePlanSha256": "8086ab98b02a06b0a46ad30dbd3013f2680509dbc232bca9a244257188c9d175",
+      "admissionSha256": "22520323fc64debdca979cdb73e79092eb26263143b1d9625fa9dd8792a72d95"
+    },
+    {
+      "query": 15,
+      "sqlSha256": "24ffeb12ad93550c3241dbea68868484c9ad6fe71d3185aeb49b844539b0ec27",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "52e0ad2926747f448646ddd7c962e6fb",
+          "sourceArrowRows": 0,
+          "entryTransposeRows": 0,
+          "committedRows": 1,
+          "files": 1,
+          "nativeWriter": false,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {}
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "2d051b764d895948a234a8d894e10866",
+          "sourceArrowRows": 120450,
+          "entryTransposeRows": 0,
+          "committedRows": 1,
+          "files": 1,
+          "nativeWriter": true,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {
+            "NativeCalc": 120552,
+            "NativeSink": 1,
+            "NativeJoin": 402,
+            "NativeAggregate": 4870,
+            "NativeSort": 2,
+            "NativeShareExecNode": 200
+          }
+        }
+      ],
+      "resultType": "ROW<`s_suppkey` BIGINT, `s_name` STRING, `s_address` STRING, `s_phone` STRING, `total_revenue` DECIMAL(38, 4)> NOT NULL",
+      "rows": 1,
+      "resultSha256": "71bf5a765d0300a567172c868ce9ad15ed37b7665c8555dbf4837c6e28c4a6c9",
+      "stockNanos": [
+        205011125
+      ],
+      "nativeNanos": [
+        186588167
+      ],
+      "stockRuntimeMs": [
+        141
+      ],
+      "nativeRuntimeMs": [
+        131
+      ],
+      "status": "passed",
+      "stockPlanSha256": "b96e4511298a48eadf842c6d1ce46a2268b7557b9f08d88ef829e6e13792bb24",
+      "nativePlanSha256": "e388955a7c63c8520d48be1bacc12fffa0c02f2fb429b092fa8a0065764e6d1e",
+      "admissionSha256": "c8016a544706f165a5982866e417afef48d5974a389f0795708f71146fb82a7c"
+    },
+    {
+      "query": 16,
+      "sqlSha256": "71a2bdd941e0fe9929daed3b93b988e6d666625b7ed7c70faa9678d3d5ce6079",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "93c34ac9fe711167517ca8ea21214454",
+          "sourceArrowRows": 0,
+          "entryTransposeRows": 0,
+          "committedRows": 296,
+          "files": 1,
+          "nativeWriter": false,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {}
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "a139a6fdbf8f22303ecd6fbc91062ed6",
+          "sourceArrowRows": 10100,
+          "entryTransposeRows": 0,
+          "committedRows": 296,
+          "files": 1,
+          "nativeWriter": true,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {
+            "NativeSink": 1,
+            "NativeCalc": 3296,
+            "NativeAggregate": 4141,
+            "NativeJoin": 9496,
+            "NativeSort": 296
+          }
+        }
+      ],
+      "resultType": "ROW<`p_brand` STRING, `p_type` STRING, `p_size` INT, `supplier_cnt` BIGINT NOT NULL> NOT NULL",
+      "rows": 296,
+      "resultSha256": "718deb3bb49714ea6070c923afc8df03db5bda71dbf350b7b1514cd87987cff4",
+      "stockNanos": [
+        265817125
+      ],
+      "nativeNanos": [
+        164074333
+      ],
+      "stockRuntimeMs": [
+        175
+      ],
+      "nativeRuntimeMs": [
+        115
+      ],
+      "status": "passed",
+      "stockPlanSha256": "6352cb8c8ea8b229626eb37430d614dd341bf7a0727f912c59436843bb300912",
+      "nativePlanSha256": "ac9b30b3c31d32df76b15673cac6c05b89786308b3957af6b35e6aa8b1aef102",
+      "admissionSha256": "c2d498a9b56551bfce0f6b099bc8451c3921e870e729723b8b072cd7bdc16415"
+    },
+    {
+      "query": 17,
+      "sqlSha256": "3bf63af45d8c0120013a1dc302df5a4d7923b12522ed10ce0d251922b118cd4b",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "b0cb13b9b1d6e730d0d84af387625d97",
+          "sourceArrowRows": 0,
+          "entryTransposeRows": 0,
+          "committedRows": 1,
+          "files": 1,
+          "nativeWriter": false,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {}
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "440f87e5d497400cce86ddf97ffdb4cf",
+          "sourceArrowRows": 122350,
+          "entryTransposeRows": 0,
+          "committedRows": 1,
+          "files": 1,
+          "nativeWriter": true,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {
+            "NativeAggregate": 62175,
+            "NativeCalc": 62176,
+            "NativeSink": 1,
+            "NativeJoin": 62176
+          }
+        }
+      ],
+      "resultType": "ROW<`avg_yearly` DECIMAL(38, 6)> NOT NULL",
+      "rows": 1,
+      "resultSha256": "15e47eee2b762359729cbeaaad535d9e3f135cb024af14f2ebe5912a92b310b8",
+      "stockNanos": [
+        256016375
+      ],
+      "nativeNanos": [
+        155310292
+      ],
+      "stockRuntimeMs": [
+        182
+      ],
+      "nativeRuntimeMs": [
+        113
+      ],
+      "status": "passed",
+      "stockPlanSha256": "a3e5c314b137787484c64d183bfef6aa09ab0859eedfc9c8262ab22434e93c42",
+      "nativePlanSha256": "88b4f576a6215c1c1a3df298fb3eb9533ca557e5c9a792aa6272c07049f5c37f",
+      "admissionSha256": "3835d38ee46ec6c2338a89ce0ec68a6afcd5ea297ff98b9d9a090ba717f77116"
+    },
+    {
+      "query": 18,
+      "sqlSha256": "99f8f2933f20acf8a17b3886cfd40418749d8a33cb33d126b11cf9e465f393d4",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "79c76af2c2c72327dbac2ed0c1ca82dd",
+          "sourceArrowRows": 0,
+          "entryTransposeRows": 0,
+          "committedRows": 2,
+          "files": 1,
+          "nativeWriter": false,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {}
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "3d0a3459e57267674fc4fe0745601002",
+          "sourceArrowRows": 136850,
+          "entryTransposeRows": 0,
+          "committedRows": 2,
+          "files": 1,
+          "nativeWriter": true,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {
+            "NativeAggregate": 75191,
+            "NativeSort": 4,
+            "NativeSink": 1,
+            "NativeCalc": 30016,
+            "NativeJoin": 91679,
+            "NativeShareExecNode": 120350
+          }
+        }
+      ],
+      "resultType": "ROW<`c_name` STRING, `c_custkey` BIGINT, `o_orderkey` BIGINT, `o_orderdate` DATE, `o_totalprice` DECIMAL(15, 2), `EXPR$5` DECIMAL(38, 2)> NOT NULL",
+      "rows": 2,
+      "resultSha256": "8641d57754a2a7445ded3ef70008835d876a278560e5efc78286ae83c4ff3703",
+      "stockNanos": [
+        343522666
+      ],
+      "nativeNanos": [
+        234203709
+      ],
+      "stockRuntimeMs": [
+        256
+      ],
+      "nativeRuntimeMs": [
+        156
+      ],
+      "status": "passed",
+      "stockPlanSha256": "1f6f9e03f44cb3589f4d606ef3c66102ae89ad9a9a3fbc97cb846a3fa1c03aba",
+      "nativePlanSha256": "c8e48fde85ac2fa18eef003264408be6344c7ceabdfad8aea53fe586df237016",
+      "admissionSha256": "e522766d6898aac662d14eb8b331c70f21c116aafbe0334bcc7ae56b4ef7484e"
+    },
+    {
+      "query": 19,
+      "sqlSha256": "8428fa6c46796c312c1eb99ff458dbd4587c201a5ebb7ed31208e68e34f42e5b",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "ef72b0c43760b430796c807dec6952ed",
+          "sourceArrowRows": 0,
+          "entryTransposeRows": 0,
+          "committedRows": 1,
+          "files": 1,
+          "nativeWriter": false,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {}
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "5ca2caccaaff00e23820819f50a67de4",
+          "sourceArrowRows": 62175,
+          "entryTransposeRows": 0,
+          "committedRows": 1,
+          "files": 1,
+          "nativeWriter": true,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {
+            "NativeAggregate": 2,
+            "NativeCalc": 62176,
+            "NativeSink": 1,
+            "NativeJoin": 1206
+          }
+        }
+      ],
+      "resultType": "ROW<`revenue` DECIMAL(38, 4)> NOT NULL",
+      "rows": 1,
+      "resultSha256": "7cc0e0c6b80be8fc2955ed742793f04b8b81129ea0d4d199aabffe3993d6c20d",
+      "stockNanos": [
+        380667083
+      ],
+      "nativeNanos": [
+        198011250
+      ],
+      "stockRuntimeMs": [
+        196
+      ],
+      "nativeRuntimeMs": [
+        121
+      ],
+      "status": "passed",
+      "stockPlanSha256": "ca5cc2b29a5544e49ac91788fca3806dbef82497373d1787e11afde34714b440",
+      "nativePlanSha256": "78280439fe515189770289c3671940fe3165f2a79b9dd0c4937df3d0fdfd4251",
+      "admissionSha256": "4f618a9caffe827baf875f03524ba7c446fecf1a84cb6493e3ffa469f050bc96"
+    },
+    {
+      "query": 20,
+      "sqlSha256": "4187d0ff2534a26399db48983cd9f4e1c5eb0283c4a43f791d38dfed85007e8d",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "e381374e59a402970cc97decaeaba694",
+          "sourceArrowRows": 0,
+          "entryTransposeRows": 0,
+          "committedRows": 1,
+          "files": 1,
+          "nativeWriter": false,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {}
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "29998c650f90c7e8dc9dc98071cee49d",
+          "sourceArrowRows": 70300,
+          "entryTransposeRows": 0,
+          "committedRows": 1,
+          "files": 1,
+          "nativeWriter": true,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {
+            "NativeCalc": 62249,
+            "NativeSink": 1,
+            "NativeSort": 1,
+            "NativeJoin": 13848,
+            "NativeAggregate": 15039
+          }
+        }
+      ],
+      "resultType": "ROW<`s_name` STRING, `s_address` STRING> NOT NULL",
+      "rows": 1,
+      "resultSha256": "4d22941cf4b8739bf46614e7b07d41e497b042dc565c71a65a30f4bf6e7cc778",
+      "stockNanos": [
+        387988750
+      ],
+      "nativeNanos": [
+        192561625
+      ],
+      "stockRuntimeMs": [
+        228
+      ],
+      "nativeRuntimeMs": [
+        117
+      ],
+      "status": "passed",
+      "stockPlanSha256": "3bc2067aaf9240fe61f7d6c9bbe771f21422fb7023adcd16c58b0d06cb4ee737",
+      "nativePlanSha256": "ce6c99350f18f2a706f652d22367423a6ac15f15c87664e99116084ea8f19351",
+      "admissionSha256": "14b4f6f6dc0346a4779dd612e1faa0b8706af3646d73dfe8b447d86d0b8c5e66"
+    },
+    {
+      "query": 21,
+      "sqlSha256": "07ae101f42fa177606cf17744335782723f50c4149ea0dcb02c528b9732b0c7a",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "0cba08d069c7518390ce081c2f4758e9",
+          "sourceArrowRows": 0,
+          "entryTransposeRows": 0,
+          "committedRows": 1,
+          "files": 1,
+          "nativeWriter": false,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {}
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "65276d3cb8a57d4793df8540b47eb67b",
+          "sourceArrowRows": 195650,
+          "entryTransposeRows": 0,
+          "committedRows": 1,
+          "files": 1,
+          "nativeWriter": true,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {
+            "NativeAggregate": 11,
+            "NativeSort": 2,
+            "NativeSink": 1,
+            "NativeCalc": 191802,
+            "NativeJoin": 237865,
+            "NativeShareExecNode": 120350
+          }
+        }
+      ],
+      "resultType": "ROW<`s_name` STRING, `numwait` BIGINT NOT NULL> NOT NULL",
+      "rows": 1,
+      "resultSha256": "0173745cbea9c4130c92ae1b92a990ca5ff07dd24d8b2d86c998d0be50997efc",
+      "stockNanos": [
+        342074416
+      ],
+      "nativeNanos": [
+        214814167
+      ],
+      "stockRuntimeMs": [
+        247
+      ],
+      "nativeRuntimeMs": [
+        144
+      ],
+      "status": "passed",
+      "stockPlanSha256": "c928a116b5abc8f2badab999bbff91ca421a89e3f19b90a341dbfe09fdaa943f",
+      "nativePlanSha256": "d27f060593bf50f0b5848edca394a17809c26350cbed1dde9c654d55a445bf08",
+      "admissionSha256": "0ab4e0c916feef98acd825a0bc96e8f911dd9bea57783cf0b3379de317a63fb6"
+    },
+    {
+      "query": 22,
+      "sqlSha256": "21b5e9cedbbb4bb9ee5a987ce9a901f9aaeb8736e96d7daf0ad3fbfea7632100",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "ff78849adb19adf51e2bdab946c78e91",
+          "sourceArrowRows": 0,
+          "entryTransposeRows": 0,
+          "committedRows": 7,
+          "files": 1,
+          "nativeWriter": false,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {}
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "ab0c2327ca77ac5cb5351d2f08df3712",
+          "sourceArrowRows": 18000,
+          "entryTransposeRows": 0,
+          "committedRows": 7,
+          "files": 1,
+          "nativeWriter": true,
+          "snapshot": 1,
+          "partitionKeys": [],
+          "partitionCount": 1,
+          "bucketMode": "BUCKET_UNAWARE",
+          "buckets": [
+            0
+          ],
+          "sinkCommitIncluded": true,
+          "readback": "stock Flink Paimon connector",
+          "nativeWorkRowsByFamily": {
+            "NativeAggregate": 482,
+            "NativeSink": 1,
+            "NativeJoin": 16646,
+            "NativeCalc": 2073,
+            "NativeSort": 87
+          }
+        }
+      ],
+      "resultType": "ROW<`cntrycode` STRING, `numcust` BIGINT NOT NULL, `totacctbal` DECIMAL(38, 2)> NOT NULL",
+      "rows": 7,
+      "resultSha256": "4264a833449813448998b6554531bcc23bb48102f910a9ef671e8d9a5ca19d06",
+      "stockNanos": [
+        249023959
+      ],
+      "nativeNanos": [
+        177828459
+      ],
+      "stockRuntimeMs": [
+        177
+      ],
+      "nativeRuntimeMs": [
+        129
+      ],
+      "status": "passed",
+      "stockPlanSha256": "799c3ff48fdedb56622314e33d1a7d75b06e2931c69ab362c9a7cd199438b6b7",
+      "nativePlanSha256": "b0598882fee323c3ff7ef056ba18f0b5e38f540ed8ab486d53f666b040d265ad",
+      "admissionSha256": "756f18c3dca17c4edb895b7f1c11124bcbc2aaa90831b69595c491dfc5552285"
+    }
+  ],
+  "paimon": {
+    "writer": "stock Flink Paimon connector, append tables, SNAPPY Parquet, outside timing",
+    "sourceCsvManifestSha256": "589155e5b0bf1ad5eb7e1e96cd2ad8b498e625d28549269e55ece31436f11e0d",
+    "tables": {
+      "customer": {
+        "committedRows": 1500,
+        "files": 1,
+        "nativeWriter": false,
+        "snapshot": 1,
+        "partitionKeys": [],
+        "partitionCount": 1,
+        "bucketMode": "BUCKET_UNAWARE",
+        "buckets": [
+          0
+        ],
+        "writerJobId": "35bc3e508e3103eab244725f32faab7e"
+      },
+      "orders": {
+        "committedRows": 15000,
+        "files": 1,
+        "nativeWriter": false,
+        "snapshot": 1,
+        "partitionKeys": [],
+        "partitionCount": 1,
+        "bucketMode": "BUCKET_UNAWARE",
+        "buckets": [
+          0
+        ],
+        "writerJobId": "e1c90be0567fa6180455312b6ef1cac9"
+      },
+      "lineitem": {
+        "committedRows": 60175,
+        "files": 1,
+        "nativeWriter": false,
+        "snapshot": 1,
+        "partitionKeys": [],
+        "partitionCount": 1,
+        "bucketMode": "BUCKET_UNAWARE",
+        "buckets": [
+          0
+        ],
+        "writerJobId": "bc99823df04a6ace63ddc112b315e6a1"
+      },
+      "part": {
+        "committedRows": 2000,
+        "files": 1,
+        "nativeWriter": false,
+        "snapshot": 1,
+        "partitionKeys": [],
+        "partitionCount": 1,
+        "bucketMode": "BUCKET_UNAWARE",
+        "buckets": [
+          0
+        ],
+        "writerJobId": "9e0d494162caf29734c85f48266f4608"
+      },
+      "partsupp": {
+        "committedRows": 8000,
+        "files": 1,
+        "nativeWriter": false,
+        "snapshot": 1,
+        "partitionKeys": [],
+        "partitionCount": 1,
+        "bucketMode": "BUCKET_UNAWARE",
+        "buckets": [
+          0
+        ],
+        "writerJobId": "9002440186b5983e829616387ea31440"
+      },
+      "supplier": {
+        "committedRows": 100,
+        "files": 1,
+        "nativeWriter": false,
+        "snapshot": 1,
+        "partitionKeys": [],
+        "partitionCount": 1,
+        "bucketMode": "BUCKET_UNAWARE",
+        "buckets": [
+          0
+        ],
+        "writerJobId": "564080d61f4ea0cff7842d911d8410ce"
+      },
+      "nation": {
+        "committedRows": 25,
+        "files": 1,
+        "nativeWriter": false,
+        "snapshot": 1,
+        "partitionKeys": [],
+        "partitionCount": 1,
+        "bucketMode": "BUCKET_UNAWARE",
+        "buckets": [
+          0
+        ],
+        "writerJobId": "bbfa29550b836b94a5659a4430473f73"
+      },
+      "region": {
+        "committedRows": 5,
+        "files": 1,
+        "nativeWriter": false,
+        "snapshot": 1,
+        "partitionKeys": [],
+        "partitionCount": 1,
+        "bucketMode": "BUCKET_UNAWARE",
+        "buckets": [
+          0
+        ],
+        "writerJobId": "0ddf72566a07a218df306e7da35c9833"
+      }
+    }
+  },
+  "sink": "Paimon append table; timing ends after final commit; stock readback outside timing",
+  "resultSemantics": "Declared SQL types and complete row multiset; Paimon tables are unordered",
+  "previousBoundaries": false,
+  "completeWorkload": true,
+  "purpose": "SF0.01 correctness and native-path control; timings are not a performance cohort"
+}

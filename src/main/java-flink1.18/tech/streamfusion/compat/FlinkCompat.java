@@ -202,12 +202,9 @@ public final class FlinkCompat {
   }
 
   public static java.util.List<org.apache.flink.table.planner.plan.abilities.sink.SinkAbilitySpec>
-      sinkAbilities(
-          org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink sink) {
+      sinkAbilities(org.apache.flink.table.planner.plan.nodes.calcite.Sink sink) {
     try {
-      var field =
-          org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink.class
-              .getDeclaredField("abilitySpecs");
+      var field = sink.getClass().getDeclaredField("abilitySpecs");
       field.setAccessible(true);
       return java.util.Arrays.asList(
           (org.apache.flink.table.planner.plan.abilities.sink.SinkAbilitySpec[]) field.get(sink));
