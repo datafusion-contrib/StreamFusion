@@ -21,6 +21,8 @@ also documents sharing exact-commit Java compilation across savepoint shards whi
 transferring native libraries separately, avoiding duplicate payloads in each Java archive.
 It also covers demand-started test clusters, pure Java preparation alongside native work,
 and smaller test-only native payloads while retaining full-symbol diagnostics.
+Upstream shared builds use the same ELF-verified stripping for their private native copies,
+retaining the original Cargo outputs and all Java payloads.
 Canonical worker metadata snapshots also omit the bundled native copies already loaded through
 the worker's explicit library path, avoiding repeated packing and hashing in every parent fork.
 Archive generation uses G1 independently of the workers' measured collector settings to avoid

@@ -998,12 +998,24 @@ Maven cache serves the injection-agent build. Both lines restore the ordinary CI
 `debug-jvm` Rust dependency cache at `native/target`, with matching debug and backtrace
 settings. Cargo builds current libraries from the isolated suite source against that target,
 then stages only the dynamic libraries reported by the successful current build into the
-suite's own native directory. The shared archive retains those libraries without transferring
-Cargo intermediates. Upstream jobs do not save additional Rust cache copies. Every run still
+suite's own native directory. Before packing, CI replaces those private native copies with
+debug-stripped test libraries, verifying their ELF identity and every allocated section against
+the current full-symbol originals. The shared Cargo target and Java payloads retain their
+original files. A per-library size manifest travels with the preparation diagnostics. The shared
+archive retains the smaller test libraries without transferring Cargo intermediates.
+Upstream jobs do not save additional Rust cache copies. Every run still
 validates current StreamFusion sources through Cargo. Each Flink line runs its own preparation
 and consumer jobs in a reusable workflow: 1.18 consumers need only the 1.18 preparation, and 2.2
 consumers need only the 2.2 preparation. Suite selection happens inside preparation, removing a
 separate runner allocation. The parent gate still requires both lines to succeed.
+
+The successful pre-stripping run 43324963308 used 14,956 runner-seconds versus the original
+14,121 seconds; summed download/verification steps rose from 682 to 1,255 seconds across
+14 consumers. Its actual Flink 2.2 archive was 2,996,228,021 bytes and contained 1,814,625,672
+uncompressed native-library bytes, 2,571,642,206 Maven-repository bytes and 128,211,445
+duplicate JAR bytes. This prioritizes the already verified native stripping technique over
+a new JAR-deduplication format. The integrated campaign must establish the archive reduction
+and full-suite behavior; the pre-stripping observations do not claim an upstream speedup.
 
 The Flink wrapper installs its pinned Maven distribution under
 `.flink-suite/<line>/maven-wrapper`, which travels in the shared build with executable bits preserved.

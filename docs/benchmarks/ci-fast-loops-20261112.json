@@ -2938,5 +2938,56 @@
         }
       }
     }
+  },
+  "upstream_archive_footprint": {
+    "run": 43324963308,
+    "head": "af5ab61cbb531f24ea3ace318de1d89ea121ded9",
+    "line": "2.2",
+    "archive_bytes": 2996228021,
+    "archive_sha256": "7631d5994447108c079e6bd353fef80d37e2a95263ecaba3cde5f7ffe24aea3f",
+    "total_file_bytes": 5051088173,
+    "groups": {
+      "Flink source and other inputs": {
+        "files": 24671,
+        "bytes": 198695865
+      },
+      "Flink build outputs": {
+        "files": 31951,
+        "bytes": 381944774
+      },
+      "Flink Git metadata": {
+        "files": 26,
+        "bytes": 55648009
+      },
+      "Maven repository": {
+        "files": 10849,
+        "bytes": 2571642206
+      },
+      "Other prepared inputs": {
+        "files": 80,
+        "bytes": 28531647
+      },
+      "StreamFusion native libraries": {
+        "files": 12,
+        "bytes": 1814625672
+      }
+    },
+    "jar_bytes": 2770564201,
+    "unique_jar_bytes": 2642352756,
+    "redundant_jar_bytes": 128211445,
+    "duplicate_jar_groups": 86,
+    "elapsed_seconds": 192.06423779192846,
+    "limits": "One actual successful prepared Flink2.2 build. Content hashes identify duplicate JAR bytes; potential transfer reduction requires a validated archive implementation. No files were unpacked or modified.",
+    "decision": "Apply existing allocated-section-preserving stripping to private upstream archive native copies; keep shared Cargo outputs and Java payloads intact. Avoid new JAR deduplication format. Integrated qualification required to measure actual archive reduction and full-suite behavior.",
+    "upstream_comparison": {
+      "baseline_run": 43116127235,
+      "baseline_runner_seconds": 14121,
+      "candidate_runner_seconds": 14956,
+      "baseline_elapsed_seconds": 5669,
+      "candidate_elapsed_seconds": 6023,
+      "baseline_download_verify_step_seconds": 682,
+      "candidate_download_verify_step_seconds": 1255,
+      "consumers": 14
+    }
   }
 }
