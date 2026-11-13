@@ -486,6 +486,22 @@ do not establish Flink 1.18 canonical interchange.
 
 ## Value-ordered append canonical state (partial)
 
+The resumed #569 implementation removes the initial INT/BIGINT/STRING and single-sort restriction
+from canonical rank binding. Existing scalar Arrow carriers now retain their released stock
+serializers across append, updating and retracting algorithms: narrow integers, floating values,
+BOOLEAN, CHAR/STRING, DECIMAL, DATE, TIME, timestamps, binary values and intervals. Multiple sort
+fields use the captured selectors/comparators without an artificial field-count cap. Constructed
+ROW/ARRAY/MAP/MULTISET retained schemas remain outside this binding; existing algorithm, TTL,
+bound, async/unaligned and processing-time-indicator gates stay independent.
+
+The new planner and component matrices include compact/wide decimals, timestamp precision nine,
+binary/interval carriers, signed-zero/NaN sort values and three-field sorting. Isolated DOUBLE
+and DECIMAL rank jobs retain independent final-table oracles, both engine orders, ordinary SQL
+and compiled plans, no-input returns, native checkpoint recovery and rescaling. Updating jobs
+also retain their original unique-key fields through the computed sort projection. These controls
+are authored but not yet run; qualification is deferred to the final six hours of the resumed
+one-day task. The historical passing counts below do not qualify this added scope.
+
 Normal Flink 2.2.1 SQL and portable stock compiled plans bind the released append lists and fast
 Top-1 winners automatically. Initial admission is AppendFast input, one sort column, INT/BIGINT/
 VARCHAR retained fields and start-one constant or variable ranges. Capture the real released
@@ -545,7 +561,7 @@ during canonical export. Fifty-two planner cases include variable-bound and reje
 controls. The native suite passes 1,241 tests with two existing ignores; shared Flink 1.18 code
 passes 125 processing/checkpoint controls without claiming stock canonical interchange there.
 
-**Pending for the append contract:** OFFSET, multiple sort columns, other retained types,
+**Pending for the append contract:** OFFSET, nested retained types, qualification of the new scalar/multiple-sort scope,
 async/unaligned state, broader shared/upstream-native graphs, full-job TTL expiry and the complete
 backend/version/connector/delivery matrix. Existing unbound native paths keep their own recovery
 representation; older unbound native checkpoint upgrades are not qualified here. All remain in
@@ -616,7 +632,7 @@ tests with two existing ignores. Shared Flink 1.18 foundation controls pass 125 
 common-node API also passes its 25 processing controls. Neither establishes 1.18 canonical interchange.
 
 TTL envelopes/cache write ages, independent variable bounds, preserved numeric tie-rank gaps,
-OFFSET, additional sort fields, wider native graphs and the broader schema/version/connector/
+OFFSET, qualification of the new scalar/multiple-sort scope, wider native graphs and the broader schema/version/connector/
 failure/delivery matrices remain open in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 Stock TTL restoration can retain nonconsecutive inner ranks; this TTL-disabled adapter rejects them
 rather than silently renumbering them. Older unbound native checkpoint upgrades remain unqualified.
@@ -743,7 +759,7 @@ those exact released references and exact continued stock changelogs. Other fixt
 independent SQL table oracle. Canonical handoff preserves the saved lists/counts/kinds; it does
 not repair released Flink's processing behavior or infer counters from an ideal table.
 
-Wider schemas, three or more sort fields, nullable variable bounds, broader native graphs and the
+Nested schemas, full qualification of the new scalar/arbitrary-sort scope, nullable variable bounds, broader native graphs and the
 full version/failure/delivery matrix remain open in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.
 

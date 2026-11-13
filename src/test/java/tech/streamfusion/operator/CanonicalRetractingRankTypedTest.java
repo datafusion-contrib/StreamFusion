@@ -31,7 +31,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import tech.streamfusion.Native;
 import tech.streamfusion.state.CanonicalStateBackend;
 import tech.streamfusion.state.CanonicalStateBackendFactory;
 import tech.streamfusion.state.StockRetractingTopNStateContract;
@@ -40,7 +39,9 @@ import tech.streamfusion.state.StockRetractingTopNStateContract;
 class CanonicalRetractingRankTypedTest {
   static Stream<Arguments> cases() {
     var cases = new ArrayList<Arguments>();
-    for (String shape : List.of("int", "string", "long", "not-null", "collision", "composite"))
+    for (String shape : Stream.concat(
+            Stream.of("int", "string", "long", "not-null", "collision", "composite", "three-sort"),
+            CanonicalRankScalarFixture.shapes()).collect(java.util.stream.Collectors.toList()))
       for (String mode :
           List.of("fixed", "offset", "variable", "fixed-ttl", "offset-ttl", "variable-ttl"))
         for (boolean rocks : new boolean[] {false, true})
@@ -178,7 +179,12 @@ class CanonicalRetractingRankTypedTest {
     Layout(String shape, boolean twoSorts) {
       this.shape = shape;
       RowType base;
-      if (shape.equals("composite")) {
+      if (shape.startsWith("scalar-")) {
+        base = RowType.of(CanonicalRankScalarFixture.type(shape),
+            CanonicalRankScalarFixture.type(shape), new VarCharType(100));
+        keys = new int[] {0};
+        score = 1;
+      } else if (shape.equals("composite")) {
         base = RowType.of(new IntType(), new VarCharType(100), new IntType(), new VarCharType(100));
         keys = new int[] {3, 2};
         score = 0;
@@ -211,18 +217,23 @@ class CanonicalRetractingRankTypedTest {
                   ? new IntType(false)
                   : new BigIntType(false)));
       type = new RowType(fields);
-      sorts = twoSorts ? new int[] {score, shape.equals("composite") ? 1 : 2} : new int[] {score};
+      sorts = shape.equals("three-sort") ? new int[] {score, 2, bound}
+          : twoSorts ? new int[] {score, shape.equals("composite") ? 1 : 2} : new int[] {score};
       ascending =
-          twoSorts
+          shape.equals("three-sort") ? new int[] {1, 0, 1} : twoSorts
               ? new int[] {shape.equals("long") ? 0 : 1, 0}
               : new int[] {shape.equals("long") ? 0 : 1};
-      nullsFirst = twoSorts ? new int[] {1, 0} : new int[] {1};
+      nullsFirst = shape.equals("three-sort") ? new int[] {1, 0, 1}
+          : twoSorts ? new int[] {1, 0} : new int[] {1};
     }
 
     RowData row(Integer key, Integer score, int id, int bound) {
       var label = StringData.fromString("row-😀-" + id);
       Object size =
           type.getTypeAt(this.bound).is(LogicalTypeRoot.INTEGER) ? (Object) bound : (long) bound;
+      if (shape.startsWith("scalar-"))
+        return GenericRowData.of(CanonicalRankScalarFixture.value(shape, key),
+            CanonicalRankScalarFixture.score(shape, score), label, size);
       if (shape.equals("composite"))
         return GenericRowData.of(
             score, label, key, key == null ? null : StringData.fromString("分区-" + key), size);
@@ -364,13 +375,6 @@ class CanonicalRetractingRankTypedTest {
     return harness;
   }
 
-  private static int[] descriptor(int length) {
-    var descriptor = new int[length + 1];
-    java.util.Arrays.fill(descriptor, -1);
-    descriptor[0] = Native.STOCK_KEY_PROJECTION;
-    return descriptor;
-  }
-
   private static void push(
       KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness,
       RowType type,
@@ -404,7 +408,7 @@ class CanonicalRetractingRankTypedTest {
         Layout layout, long start, boolean variable, long ttl, boolean before, boolean rank) {
       super(
           layout.keys,
-          descriptor(layout.keys.length),
+          tech.streamfusion.planner.FlinkKeyGroupUtils.stockKeyDescriptor(layout.type, layout.keys),
           layout.type,
           layout.sorts,
           layout.ascending,

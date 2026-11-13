@@ -36,7 +36,9 @@ class CanonicalAppendRankTypedTest {
   }
 
   private static Stream<Arguments> allCases() {
-    return Stream.of("released", "released-nn", "long", "string", "collision", "composite")
+    return Stream.concat(
+            Stream.of("released", "released-nn", "long", "string", "collision", "composite"),
+            CanonicalRankScalarFixture.shapes())
         .flatMap(
             shape ->
                 Stream.of(false, true)
@@ -61,7 +63,10 @@ class CanonicalAppendRankTypedTest {
   void typedRetainedRowsSurviveBothCanonicalDirections(
       String shape, boolean fast, boolean rocks, boolean ttl, boolean rank) throws Exception {
     RowType type =
-        shape.startsWith("released")
+        shape.startsWith("scalar-")
+            ? RowType.of(CanonicalRankScalarFixture.type(shape),
+                CanonicalRankScalarFixture.type(shape), new BigIntType())
+            : shape.startsWith("released")
             ? RowType.of(
                 new IntType(), new VarCharType(100), new IntType(!shape.equals("released-nn")))
             : RowType.of(
@@ -290,6 +295,9 @@ class CanonicalAppendRankTypedTest {
   }
 
   private static RowData row(String shape, Integer key, Integer score, int id) {
+    if (shape.startsWith("scalar-"))
+      return GenericRowData.of(CanonicalRankScalarFixture.value(shape, key),
+          CanonicalRankScalarFixture.score(shape, score), (long) id);
     if (shape.equals("composite"))
       return GenericRowData.of(
           (long) id,
@@ -328,24 +336,11 @@ class CanonicalAppendRankTypedTest {
       boolean rank,
       boolean rocks)
       throws Exception {
-    var comparator =
-        new GeneratedRecordComparator("", "", new Object[0]) {
-          @Override
-          public RecordComparator newInstance(ClassLoader loader) {
-            return (left, right) -> {
-              if (left.isNullAt(0)) return right.isNullAt(0) ? 0 : -1;
-              if (right.isNullAt(0)) return 1;
-              switch (type.getTypeAt(sort).getTypeRoot()) {
-                case INTEGER:
-                  return Integer.compare(left.getInt(0), right.getInt(0));
-                case BIGINT:
-                  return Long.compare(left.getLong(0), right.getLong(0));
-                default:
-                  return left.getString(0).compareTo(right.getString(0));
-              }
-            };
-          }
-        };
+    var comparator = org.apache.flink.table.planner.codegen.sort.ComparatorCodeGenerator.gen(
+        new Configuration(), CanonicalAppendRankTypedTest.class.getClassLoader(),
+        "CanonicalAppendTypedComparator", selector(type, sort).getProducedType().toRowType(),
+        org.apache.flink.table.planner.plan.nodes.exec.spec.SortSpec.builder()
+            .addField(0, true, false).build());
     AbstractTopNFunction function =
         fast
             ? new FastTop1Function(

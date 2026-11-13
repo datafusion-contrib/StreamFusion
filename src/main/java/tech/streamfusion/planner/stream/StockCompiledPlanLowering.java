@@ -3373,20 +3373,12 @@ final class StockCompiledPlanLowering {
     int[] keys = partition.getFieldIndices();
     ExecNode<?> input = stock.getInputEdges().get(0).getSource();
     RowType inputType = (RowType) input.getOutputType();
-    if (((updating || retracting)
-            ? sort.getFieldSize() < 1 || sort.getFieldSize() > 2
-            : sort.getFieldSize() != 1)
+    if (sort.getFieldSize() < 1
         || inputType.getChildren().stream()
             .anyMatch(
                 type ->
-                    !java.util.Set.of(
-                                LogicalTypeRoot.BIGINT,
-                                LogicalTypeRoot.INTEGER,
-                                LogicalTypeRoot.VARCHAR)
-                            .contains(type.getTypeRoot())
-                        && !(retracting
-                            && org.apache.flink.table.types.logical.utils.LogicalTypeChecks
-                                .isProctimeAttribute(type)))) return stock;
+                    type.is(LogicalTypeFamily.CONSTRUCTED)
+                        || !retracting && LogicalTypeChecks.isProctimeAttribute(type))) return stock;
     if (java.util.stream.IntStream.concat(
             Arrays.stream(keys), Arrays.stream(sort.getFieldIndices()))
         .anyMatch(

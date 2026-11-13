@@ -31,7 +31,6 @@ import org.apache.flink.types.RowKind;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import tech.streamfusion.Native;
 import tech.streamfusion.state.CanonicalStateBackend;
 import tech.streamfusion.state.CanonicalStateBackendFactory;
 import tech.streamfusion.state.StockUpdatingTopNStateContract;
@@ -39,7 +38,9 @@ import tech.streamfusion.state.StockUpdatingTopNStateContract;
 class CanonicalUpdateRankTypedTest {
   static Stream<Arguments> cases() {
     var cases = new ArrayList<Arguments>();
-    for (String shape : List.of("int", "string", "long", "not-null", "collision", "composite"))
+    for (String shape : Stream.concat(
+            Stream.of("int", "string", "long", "not-null", "collision", "composite", "three-sort"),
+            CanonicalRankScalarFixture.shapes()).collect(java.util.stream.Collectors.toList()))
       for (boolean fast : new boolean[] {false, true})
         for (boolean rocks : new boolean[] {false, true})
           for (boolean before : new boolean[] {false, true})
@@ -119,7 +120,13 @@ class CanonicalUpdateRankTypedTest {
 
     Layout(String shape, boolean twoSorts) {
       this.shape = shape;
-      if (shape.equals("composite")) {
+      if (shape.startsWith("scalar-")) {
+        type = RowType.of(CanonicalRankScalarFixture.type(shape),
+            CanonicalRankScalarFixture.type(shape), new VarCharType(100));
+        keys = new int[] {0};
+        rowKeys = new int[] {0, 2};
+        sort = 1;
+      } else if (shape.equals("composite")) {
         type = RowType.of(new IntType(), new VarCharType(100), new IntType(), new VarCharType(100));
         keys = new int[] {3, 2};
         rowKeys = new int[] {3, 1, 2};
@@ -145,11 +152,15 @@ class CanonicalUpdateRankTypedTest {
         rowKeys = new int[] {0, 2};
         sort = 1;
       }
-      sortColumns = twoSorts ? new int[] {sort, keys[0]} : new int[] {sort};
+      sortColumns = shape.equals("three-sort") ? new int[] {sort, 2, keys[0]}
+          : twoSorts ? new int[] {sort, keys[0]} : new int[] {sort};
     }
 
     RowData row(Integer key, Integer score, int id) {
       var label = StringData.fromString("row-😀-" + id);
+      if (shape.startsWith("scalar-"))
+        return GenericRowData.of(CanonicalRankScalarFixture.value(shape, key),
+            CanonicalRankScalarFixture.score(shape, score), label);
       if (shape.equals("composite"))
         return GenericRowData.of(
             score, label, key, key == null ? null : StringData.fromString("分区-" + key));
@@ -268,13 +279,6 @@ class CanonicalUpdateRankTypedTest {
     return harness;
   }
 
-  private static int[] descriptor(int[] columns) {
-    var descriptor = new int[columns.length + 1];
-    java.util.Arrays.fill(descriptor, -1);
-    descriptor[0] = Native.STOCK_KEY_PROJECTION;
-    return descriptor;
-  }
-
   private static void push(
       KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness,
       RowType type,
@@ -311,7 +315,7 @@ class CanonicalUpdateRankTypedTest {
     CanonicalRank(Layout layout, boolean fast, boolean before, boolean rank) {
       super(
           layout.keys,
-          descriptor(layout.keys),
+          tech.streamfusion.planner.FlinkKeyGroupUtils.stockKeyDescriptor(layout.type, layout.keys),
           layout.type,
           layout.sortColumns,
           ascending(layout.sortColumns.length),
@@ -321,7 +325,7 @@ class CanonicalUpdateRankTypedTest {
           rank,
           false,
           layout.rowKeys,
-          descriptor(layout.rowKeys),
+          tech.streamfusion.planner.FlinkKeyGroupUtils.stockKeyDescriptor(layout.type, layout.rowKeys),
           before,
           false,
           -1,

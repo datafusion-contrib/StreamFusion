@@ -24,7 +24,7 @@ class CanonicalRetractingRankAdmissionTest {
 
   @ParameterizedTest
   @MethodSource("cases")
-  void unqualifiedDirectChangelogRanksKeepTheirOriginalStockState(String mode, boolean compiled)
+  void scalarWidthsAndSortArityBindWhileUnsupportedBoundsKeepStockState(String mode, boolean compiled)
       throws Exception {
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", "true");
@@ -62,7 +62,8 @@ class CanonicalRetractingRankAdmissionTest {
                 planner.loadPlan(PlanReference.fromJsonString(plan.asJsonString())))
             : CanonicalRegularJoinPlanTest.translate(planner, query);
     var graph = CanonicalRegularJoinPlanTest.graph(planner, table, transforms);
-    assertFalse(
+    boolean admitted = mode.equals("wide") || mode.equals("three-sort");
+    assertEquals(admitted,
         graph.getStreamNodes().stream()
             .anyMatch(
                 node ->
@@ -70,7 +71,7 @@ class CanonicalRetractingRankAdmissionTest {
                         && ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator()
                             instanceof NativeColumnarTopNOperator),
         graph.getStreamingPlanAsJSON());
-    assertTrue(
+    assertEquals(!admitted,
         graph.getStreamNodes().stream()
             .anyMatch(
                 node -> {

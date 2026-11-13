@@ -330,6 +330,20 @@ public final class CanonicalJobWorker {
           if (!retainedMap)
             throw new AssertionError("Fixture did not retain a MAP payload in rank state");
         }
+        if (Files.exists(root.resolve("required-rank-strategy"))) {
+          String expected = Files.readString(root.resolve("required-rank-strategy")).trim();
+          var nodes = new org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper()
+              .readTree(portablePlan).path("nodes");
+          boolean matched = false;
+          for (var node : nodes)
+            if (node.path("type").asText().startsWith("stream-exec-rank_")) {
+              String actual = node.path("rankStrategy").path("type").asText();
+              if (!expected.equals(actual))
+                throw new AssertionError("Fixture selected " + actual + " instead of " + expected);
+              matched = true;
+            }
+          if (!matched) throw new AssertionError("Fixture contains no stock rank owner");
+        }
         explain = plan.explain(ExplainDetail.JSON_EXECUTION_PLAN);
         Files.writeString(root.resolve(stage + "-plan.txt"), explain);
       }
