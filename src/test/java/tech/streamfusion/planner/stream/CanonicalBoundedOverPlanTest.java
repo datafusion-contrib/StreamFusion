@@ -27,7 +27,7 @@ class CanonicalBoundedOverPlanTest {
     return Stream.of("processing-rows", "event-rows", "event-range")
         .flatMap(
             mode ->
-                Stream.of("BIGINT", "FLOAT", "DOUBLE", "DECIMAL(38,2)")
+                Stream.of("TINYINT", "SMALLINT", "INT", "BIGINT", "FLOAT", "DOUBLE", "DECIMAL(38,2)")
                     .flatMap(
                         type ->
                             Stream.of(false, true)

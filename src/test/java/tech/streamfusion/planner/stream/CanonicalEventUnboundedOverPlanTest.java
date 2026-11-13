@@ -14,7 +14,7 @@ class CanonicalEventUnboundedOverPlanTest {
     return Stream.of("event-unbounded-rows", "event-unbounded-range")
         .flatMap(
             mode ->
-                Stream.of("BIGINT", "FLOAT", "DOUBLE")
+                Stream.of("TINYINT", "SMALLINT", "INT", "BIGINT", "FLOAT", "DOUBLE")
                     .flatMap(
                         type ->
                             Stream.of(false, true)

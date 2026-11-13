@@ -110,7 +110,10 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
   }
 
   static boolean stockArithmeticValueType(org.apache.flink.table.types.logical.LogicalType type) {
-    return type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.BIGINT)
+    return type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.TINYINT)
+        || type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.SMALLINT)
+        || type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.INTEGER)
+        || type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.BIGINT)
         || type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.FLOAT)
         || type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.DOUBLE)
         || type instanceof org.apache.flink.table.types.logical.DecimalType

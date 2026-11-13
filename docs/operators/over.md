@@ -1579,6 +1579,14 @@ one millisecond. Benchmarking remains deferred.
 
 ### Automatic bounded arithmetic state binding (partial)
 
+TINYINT/SMALLINT/INT values now use their existing native arithmetic codes in the stock binding,
+alongside BIGINT/FLOAT/DOUBLE and the existing bounded decimal scope. Raw SUM fields retain their
+declared width and wrapping behavior; AVG retains its widened BIGINT sum and independent count.
+The adapter still transfers raw accumulators rather than replaying retained rows. Shared planner,
+operator and typed event-time job controls now include these integral values on both releases.
+This added scope is implemented but awaits the final six-hour test window of the resumed #569
+timebox; it is not included in the historical passing counts below.
+
 The resumed #569 implementation also binds existing scalar partition-key carriers in composite
 keys: TINYINT/SMALLINT/INT/BIGINT, BOOLEAN, CHAR/STRING, DECIMAL, DATE, TIME and timestamp types.
 The shared stock key descriptor supplies key-group hashing and timestamp precision to native

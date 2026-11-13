@@ -18,10 +18,11 @@ class CanonicalTypedKeyEventOverJobTest extends CanonicalEventUnboundedOverJobTe
 
   private static Stream<Arguments> cases(boolean recovery) {
     return CanonicalTestMatrix.select(Stream.of("rows", "range")
-        .flatMap(frame -> Stream.of("INT", "STRING")
-            .flatMap(type -> IntStream.rangeClosed(1, FlinkPlanCompat.unboundedOverVersion())
+        .flatMap(frame -> Stream.of("INT:BIGINT", "STRING:BIGINT", "BIGINT:TINYINT",
+                "BIGINT:SMALLINT", "BIGINT:INT")
+            .flatMap(types -> IntStream.rangeClosed(1, FlinkPlanCompat.unboundedOverVersion())
                 .boxed().flatMap(version -> eventCases(frame, false, false, recovery)
-                    .map(args -> Arguments.of(frame + ":" + type + ":" + version,
+                    .map(args -> Arguments.of(frame + ":" + types + ":" + version,
                         args.get()[1], args.get()[2], args.get()[3], args.get()[4]))))));
   }
 
@@ -34,9 +35,10 @@ class CanonicalTypedKeyEventOverJobTest extends CanonicalEventUnboundedOverJobTe
   Path prepare(String name, String kind, String mode, boolean ordinary) throws Exception {
     var fields = kind.split(":");
     var root = super.prepare(name, fields[0], mode, ordinary);
-    Files.writeString(root.resolve("unbounded-over-version"), fields[2]);
+    Files.writeString(root.resolve("unbounded-over-version"), fields[3]);
     Files.writeString(root.resolve("input-columns.sql"),
-        Files.readString(root.resolve("input-columns.sql")).replace("k BIGINT", "k " + fields[1]));
+        Files.readString(root.resolve("input-columns.sql"))
+            .replace("k BIGINT", "k " + fields[1]).replace("v BIGINT", "v " + fields[2]));
     Files.writeString(root.resolve("query.sql"),
         Files.readString(root.resolve("query.sql")).replace("SELECT k,", "SELECT CAST(k AS BIGINT),"));
     return root;

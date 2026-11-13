@@ -64,7 +64,7 @@ class CanonicalEventUnboundedOverInteropTest {
   }
 
   private static Stream<Arguments> allModes() {
-    return Stream.of("BIGINT", "FLOAT", "DOUBLE")
+    return Stream.of("TINYINT", "SMALLINT", "INT", "BIGINT", "FLOAT", "DOUBLE")
         .flatMap(
             type ->
                 Stream.of(false, true)
@@ -949,9 +949,7 @@ class CanonicalEventUnboundedOverInteropTest {
               .map(
                   column -> {
                     var logical = argumentType.getTypeAt(column);
-                    return logical.is(LogicalTypeRoot.FLOAT)
-                        ? 6
-                        : logical.is(LogicalTypeRoot.DOUBLE) ? 1 : 0;
+                    return CanonicalOverValueFixture.nativeCode(logical);
                   })
               .toArray();
       assertArrayEquals(
@@ -1065,12 +1063,7 @@ class CanonicalEventUnboundedOverInteropTest {
     RowData row(Long key, Long value, long timestamp) {
       var row = new GenericRowData(input.getFieldCount());
       CanonicalOverKeyFixture.set(row, input, key);
-      Object number = value;
-      if (value != null && input.getTypeAt(1).is(LogicalTypeRoot.FLOAT))
-        number = value.floatValue();
-      else if (value != null && input.getTypeAt(1).is(LogicalTypeRoot.DOUBLE))
-        number = value.doubleValue();
-      row.setField(1, number);
+      row.setField(1, CanonicalOverValueFixture.number(input.getTypeAt(1), value));
       row.setField(timeColumn, TimestampData.fromEpochMillis(timestamp));
       return row;
     }

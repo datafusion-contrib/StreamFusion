@@ -89,7 +89,8 @@ class CanonicalUnboundedOverAdmissionTest {
             .filter(NativeOverAggregateOperator.class::isInstance)
             .collect(java.util.stream.Collectors.toList());
     boolean event = mode.startsWith("legacy-event-");
-    boolean admitted = event || mode.equals("integer-key") || mode.equals("composite-key");
+    boolean admitted = event || mode.equals("integer-key") || mode.equals("composite-key")
+        || mode.equals("integer-value");
     if (admitted) {
       assertEquals(1, nativeOwners.size(), graph.getStreamingPlanAsJSON());
       assertInstanceOf(

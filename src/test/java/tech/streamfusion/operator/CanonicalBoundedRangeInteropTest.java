@@ -52,7 +52,7 @@ class CanonicalBoundedRangeInteropTest {
 
   private static Stream<Arguments> allModes() {
     var out = new ArrayList<Arguments>();
-    for (String type : List.of("BIGINT", "FLOAT", "DOUBLE", "DECIMAL(38,2)"))
+    for (String type : List.of("TINYINT", "SMALLINT", "INT", "BIGINT", "FLOAT", "DOUBLE", "DECIMAL(38,2)"))
       for (boolean keyless : new boolean[] {false, true})
         for (boolean stock : new boolean[] {false, true})
           for (boolean nativeStore : new boolean[] {false, true})
@@ -718,12 +718,7 @@ class CanonicalBoundedRangeInteropTest {
               .map(
                   column -> {
                     var logical = arguments.getTypeAt(column);
-                    if (logical instanceof DecimalType) {
-                      var d = (DecimalType) logical;
-                      return NativeWindowOperatorCore.decimalCode(d.getPrecision(), d.getScale());
-                    }
-                    if (logical.is(LogicalTypeRoot.FLOAT)) return 6;
-                    return logical.is(LogicalTypeRoot.DOUBLE) ? 1 : 0;
+                    return CanonicalOverValueFixture.nativeCode(logical);
                   })
               .toArray();
       kinds =
@@ -928,16 +923,7 @@ class CanonicalBoundedRangeInteropTest {
         }
         assertTrue(logical.is(LogicalTypeFamily.NUMERIC), input.asSummaryString());
         if (value == null) continue;
-        Object datum = value;
-        if (logical.is(LogicalTypeRoot.FLOAT)) datum = value.floatValue();
-        else if (logical.is(LogicalTypeRoot.DOUBLE)) datum = value.doubleValue();
-        else if (logical instanceof DecimalType) {
-          var d = (DecimalType) logical;
-          datum =
-              DecimalData.fromBigDecimal(
-                  java.math.BigDecimal.valueOf(value), d.getPrecision(), d.getScale());
-        }
-        row.setField(i, datum);
+        row.setField(i, CanonicalOverValueFixture.number(logical, value));
       }
       return row;
     }

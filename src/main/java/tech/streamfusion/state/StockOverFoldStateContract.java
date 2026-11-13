@@ -76,7 +76,10 @@ public final class StockOverFoldStateContract implements StockStateContract {
   }
 
   private static boolean numeric(LogicalType type) {
-    return type.is(LogicalTypeRoot.BIGINT)
+    return type.is(LogicalTypeRoot.TINYINT)
+        || type.is(LogicalTypeRoot.SMALLINT)
+        || type.is(LogicalTypeRoot.INTEGER)
+        || type.is(LogicalTypeRoot.BIGINT)
         || type.is(LogicalTypeRoot.FLOAT)
         || type.is(LogicalTypeRoot.DOUBLE);
   }

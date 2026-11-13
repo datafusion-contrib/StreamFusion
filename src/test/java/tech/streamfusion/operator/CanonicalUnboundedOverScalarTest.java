@@ -55,7 +55,7 @@ import tech.streamfusion.state.StockOverFoldStateContract;
 
 class CanonicalUnboundedOverScalarTest {
   static Stream<Arguments> cases() {
-    return Stream.of("BIGINT", "FLOAT", "DOUBLE")
+    return Stream.of("TINYINT", "SMALLINT", "INT", "BIGINT", "FLOAT", "DOUBLE")
         .flatMap(
             type ->
                 Stream.of(false, true)
@@ -175,6 +175,48 @@ class CanonicalUnboundedOverScalarTest {
       stock.initializeState(returned);
       stock.open();
       assertEquals(original, raw(stock));
+    }
+    assertEquals(allocated, NativeAllocator.SHARED.getAllocatedMemory());
+  }
+
+  static Stream<Arguments> integralBoundaries() {
+    return Stream.of(Arguments.of("TINYINT", 127L), Arguments.of("SMALLINT", 32767L),
+            Arguments.of("INT", 2147483647L))
+        .flatMap(args -> Stream.of(false, true)
+            .map(rocks -> Arguments.of(args.get()[0], args.get()[1], rocks)));
+  }
+
+  @ParameterizedTest
+  @MethodSource("integralBoundaries")
+  void overflowedNarrowSumAndWidenedAverageRemainIndependentAcrossHandoffs(
+      String type, long maximum, boolean rocks) throws Exception {
+    var plan = new Plan(type, true, false, 0);
+    var prefix = List.of(plan.row(1L, maximum), plan.row(1L, 1L));
+    var suffix = List.of(plan.row(1L, -1L), plan.row(1L, null), plan.row(1L, 2L));
+    long allocated = NativeAllocator.SHARED.getAllocatedMemory();
+    try (var stock = plan.stock(rocks); var source = plan.nativeHarness(rocks)) {
+      stock.open();
+      source.open();
+      time(stock, 100);
+      time(source, 100);
+      assertEquals(plan.stockInput(stock, prefix), plan.nativeInput(source, prefix));
+      var state = snapshot(source);
+      var original = snapshot(stock);
+      try (var returned = plan.stock(rocks); var nativeAgain = plan.nativeHarness(rocks)) {
+        returned.initializeState(state);
+        nativeAgain.initializeState(original);
+        returned.open();
+        nativeAgain.open();
+        assertEquals(raw(stock), raw(returned), "sum width and AVG sum/count are stock bytes");
+        var expected = plan.stockInput(stock, suffix);
+        assertFalse(expected.isEmpty());
+        assertEquals(expected, plan.stockInput(returned, suffix));
+        assertEquals(expected, plan.nativeInput(nativeAgain, suffix));
+        assertEquals(expected, plan.nativeInput(source, suffix));
+      } finally {
+        state.discardState();
+        original.discardState();
+      }
     }
     assertEquals(allocated, NativeAllocator.SHARED.getAllocatedMemory());
   }
@@ -320,9 +362,7 @@ class CanonicalUnboundedOverScalarTest {
               .map(
                   column -> {
                     var logical = input.getTypeAt(column);
-                    return logical.is(LogicalTypeRoot.FLOAT)
-                        ? 6
-                        : logical.is(LogicalTypeRoot.DOUBLE) ? 1 : 0;
+                    return CanonicalOverValueFixture.nativeCode(logical);
                   })
               .toArray();
       assertArrayEquals(
@@ -407,12 +447,7 @@ class CanonicalUnboundedOverScalarTest {
     RowData row(Long key, Long value) {
       var row = new GenericRowData(input.getFieldCount());
       CanonicalOverKeyFixture.set(row, input, key);
-      Object number = value;
-      if (value != null && input.getTypeAt(1).is(LogicalTypeRoot.FLOAT))
-        number = value.floatValue();
-      else if (value != null && input.getTypeAt(1).is(LogicalTypeRoot.DOUBLE))
-        number = value.doubleValue();
-      row.setField(1, number);
+      row.setField(1, CanonicalOverValueFixture.number(input.getTypeAt(1), value));
       return row;
     }
 
