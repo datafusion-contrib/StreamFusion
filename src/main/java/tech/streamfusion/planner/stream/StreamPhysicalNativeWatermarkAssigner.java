@@ -4,6 +4,7 @@ import java.util.List;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelTraitSet;
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.RelWriter;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNode;
@@ -27,6 +28,7 @@ public class StreamPhysicalNativeWatermarkAssigner extends StreamPhysicalNativeS
 
   private final int rowtimeColumn;
   private final WatermarkExpression expression;
+  private final boolean preserveBoundaries;
 
   public StreamPhysicalNativeWatermarkAssigner(
       RelOptCluster cluster,
@@ -35,9 +37,31 @@ public class StreamPhysicalNativeWatermarkAssigner extends StreamPhysicalNativeS
       RelDataType outputRowType,
       int rowtimeColumn,
       WatermarkExpression expression) {
+    this(cluster, traitSet, input, outputRowType, rowtimeColumn, expression, true);
+  }
+
+  private StreamPhysicalNativeWatermarkAssigner(
+      RelOptCluster cluster,
+      RelTraitSet traitSet,
+      RelNode input,
+      RelDataType outputRowType,
+      int rowtimeColumn,
+      WatermarkExpression expression,
+      boolean preserveBoundaries) {
     super(cluster, traitSet, input, outputRowType);
     this.rowtimeColumn = rowtimeColumn;
     this.expression = expression;
+    this.preserveBoundaries = preserveBoundaries;
+  }
+
+  StreamPhysicalNativeWatermarkAssigner wholeBatches() {
+    return new StreamPhysicalNativeWatermarkAssigner(
+        getCluster(), getTraitSet(), getInput(), outputRowType, rowtimeColumn, expression, false);
+  }
+
+  @Override
+  public RelWriter explainTerms(RelWriter writer) {
+    return super.explainTerms(writer).itemIf("watermarkGranularity", "batch", !preserveBoundaries);
   }
 
   @Override
@@ -48,7 +72,13 @@ public class StreamPhysicalNativeWatermarkAssigner extends StreamPhysicalNativeS
   @Override
   public RelNode copy(RelTraitSet traitSet, List<RelNode> inputs) {
     return new StreamPhysicalNativeWatermarkAssigner(
-        getCluster(), traitSet, inputs.get(0), outputRowType, rowtimeColumn, expression);
+        getCluster(),
+        traitSet,
+        inputs.get(0),
+        outputRowType,
+        rowtimeColumn,
+        expression,
+        preserveBoundaries);
   }
 
   @Override
@@ -59,7 +89,7 @@ public class StreamPhysicalNativeWatermarkAssigner extends StreamPhysicalNativeS
         FlinkTypeFactory$.MODULE$.toLogicalRowType(getRowType()),
         getRelDetailedDescription(),
         rowtimeColumn,
-        expression);
+        expression,
+        preserveBoundaries);
   }
 }
-

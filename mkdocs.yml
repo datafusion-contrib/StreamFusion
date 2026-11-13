@@ -147,6 +147,7 @@ nav:
       - Nested Java scalars: benchmarks/nested-scalars.md
       - Decimal expressions: benchmarks/decimal-expressions.md
       - Fast Iceberg I/O loop: benchmarks/iceberg-io.md
+      - Four-partition Hudi Nexmark: benchmarks/hudi-nexmark.md
       - Iceberg streaming results: benchmarks/iceberg-optimized-20261017/README.md
       - Kafka to Iceberg results: benchmarks/kafka-iceberg-final-20261017/README.md
       - Basic type coverage: benchmarks/basic-type-coverage.md
@@ -224,6 +225,7 @@ nav:
       - Kafka timestamps as fixed JSON syntax: optimizations/kafka-timestamp-fixed-json.md
       - Post-exchange batch coalescing: optimizations/post-exchange-coalescing.md
       - Bounded Arrow batch sizing: optimizations/bounded-batch-sizing.md
+      - Hudi unobserved watermarks: optimizations/hudi-unobserved-watermarks.md
       - Bounded join and subplan planning: optimizations/bounded-join-planning.md
       - DATE predicates: optimizations/date-predicates.md
       - Native Parquet source: optimizations/native-parquet-source.md

@@ -349,8 +349,16 @@ those reports have `inventory` status and do not qualify as a passing gate.
 `HudiExpandedCoverageTest` covers partitioned reads, residual predicates, nested
 COW payloads and four MOR writers over two commits. `HudiMorSinkTest` compares
 update-before and precombine behavior with the original writer and exercises the
-shared native sink materializer. Expanded performance qualification remains in
-progress; earlier one-writer measurements do not qualify the expanded matrix.
+shared native sink materializer. The [four-partition Hudi Nexmark harness](../benchmarks/hudi-nexmark.md)
+adds full-row stock readback and checks the actual Parquet encoder. Expanded
+matrix performance validation is ongoing; the earlier one-writer measurements
+above do not establish performance for the expanded matrix.
+
+The terminal sink does not observe watermarks. When only native Calcs without
+`CURRENT_WATERMARK` separate it from an assigner, the planner retains whole
+Arrow batches instead of splitting at unobservable eager emissions. Windows,
+other intervening operators and watermark-observing Calcs retain the exact
+per-row boundaries. The watermark expression and NULL validation remain intact.
 
 `NativeHudiSourceTest` uses stock Hudi SQL writes, compares stock/native SQL results,
 and requires the native source plan. It checks projection/NULLs, restored logical
