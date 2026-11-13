@@ -29,6 +29,8 @@ import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.calcite.sql.type.SqlTypeName;
 import tech.streamfusion.operator.EncodedPredicate;
 import tech.streamfusion.operator.WatermarkExpression;
+import tech.streamfusion.planner.common.CalcOutputTypeCheck;
+import tech.streamfusion.planner.common.EncodedExpression;
 
 /**
  * Encodes a {@link RexNode} into the compact pre-order form the native engine decodes (see {@link
@@ -38,7 +40,7 @@ import tech.streamfusion.operator.WatermarkExpression;
  * parity; an unsupported node makes the whole encode fail (returning null), so the containing
  * operator falls back to Flink.
  */
-final class RexExpression {
+final class RexExpression implements EncodedExpression {
   // UnicodeDecoder replaced U+FFFE on JDK 11; newer JDKs preserve it as a character.
   private static final boolean REPLACE_REVERSED_UTF16_BOM =
       new String(new byte[] {(byte) 0xff, (byte) 0xfe}, java.nio.charset.StandardCharsets.UTF_16BE)
@@ -205,31 +207,38 @@ final class RexExpression {
 
   private RexExpression() {}
 
-  boolean requiresWholeStructInputs() {
+  @Override
+  public boolean requiresWholeStructInputs() {
     return rowFusion;
   }
 
-  int jvmExpressionCount() {
+  @Override
+  public int jvmExpressionCount() {
     return udfs.size();
   }
 
-  List<String> jvmExpressionDetails() {
+  @Override
+  public List<String> jvmExpressionDetails() {
     return List.copyOf(jvmExpressionDetails);
   }
 
-  boolean requiresCollectionRepresentation() {
+  @Override
+  public boolean requiresCollectionRepresentation() {
     return preserveCollections;
   }
 
-  boolean requiresOriginalStringInputs() {
+  @Override
+  public boolean requiresOriginalStringInputs() {
     return kinds.contains(KIND_CERTIFIED_BUILTIN);
   }
 
-  boolean supportsStructuredInput() {
+  @Override
+  public boolean supportsStructuredInput() {
     return preserveCollections || skipMapKeyCaches;
   }
 
-  Set<Integer> referencedInputs() {
+  @Override
+  public Set<Integer> referencedInputs() {
     Set<Integer> inputs = new LinkedHashSet<>();
     for (int i = 0; i < kinds.size(); i++) {
       if (kinds.get(i) == KIND_INPUT_REF) inputs.add(payload.get(i));
@@ -285,17 +294,7 @@ final class RexExpression {
    * operator, or {@link EncodedPredicate#NONE} when there is no predicate.
    */
   static EncodedPredicate toEncodedPredicate(RexExpression predicate) {
-    if (predicate == null) {
-      return EncodedPredicate.NONE;
-    }
-    return new EncodedPredicate(
-        predicate.kinds(),
-        predicate.payload(),
-        predicate.childCounts(),
-        predicate.longs(),
-        predicate.doubles(),
-        predicate.strings(),
-        predicate.udfBinding());
+    return ExpressionPlanning.predicate(predicate);
   }
 
   /**
@@ -493,7 +492,7 @@ final class RexExpression {
               : "ROW metadata requires Flink's whole-Calc evaluation";
       return new CalcEncoding(encoder, encoder.emitRowCalc(calc));
     }
-    if (CollectionValueIdentity.requiresStringCarrierEvaluation(calc)) {
+    if (CollectionExpressionSemantics.requiresStringCarrierEvaluation(calc)) {
       encoder.jvmExecutionReason = "owned string carriers require generated scalar evaluation";
       return new CalcEncoding(encoder, encoder.emitRowCalc(calc));
     }
@@ -519,7 +518,8 @@ final class RexExpression {
       supported = encoder.emitRowCalc(calc);
     }
     boolean metadataTypeMismatch = false;
-    boolean representation = CollectionValueIdentity.requiresGeneratedEvaluation(calc.getProgram());
+    boolean representation =
+        CollectionExpressionSemantics.requiresGeneratedEvaluation(calc.getProgram());
     if (supported && !encoder.rowFusion) {
       boolean requiresFixedBinary = encoder.requiresFixedBinaryRow(calc.getProgram());
       if (requiresFixedBinary) {
@@ -1242,10 +1242,12 @@ final class RexExpression {
     rowFusion = true;
     RexProgram program = calc.getProgram();
     boolean collectionProgram =
-        CollectionValueIdentity.requiresStringCarrierEvaluation(calc)
+        CollectionExpressionSemantics.requiresStringCarrierEvaluation(calc)
             || (usesCollectionFunctions(program) || usesCollectionScalarUdf(program))
-            && program.getExprList().stream()
-                .anyMatch(expression -> CollectionValueIdentity.sensitive(expression.getType()));
+                && program.getExprList().stream()
+                    .anyMatch(
+                        expression ->
+                            CollectionExpressionSemantics.sensitive(expression.getType()));
     preserveCollections = collectionProgram || containsSqlJson(program);
     List<RexNode> arguments = new ArrayList<>();
     List<org.apache.flink.table.types.logical.LogicalType> types = new ArrayList<>();
@@ -1371,15 +1373,18 @@ final class RexExpression {
     return reason != null ? reason : "unsupported Calc expression";
   }
 
-  List<String> nativeFunctionCalls() {
+  @Override
+  public List<String> nativeFunctionCalls() {
     return List.copyOf(nativeFunctionCalls);
   }
 
-  List<String> jvmFunctionCalls() {
+  @Override
+  public List<String> jvmFunctionCalls() {
     return List.copyOf(jvmFunctionCalls);
   }
 
-  String jvmExecutionReason() {
+  @Override
+  public String jvmExecutionReason() {
     return jvmExecutionReason != null
         ? jvmExecutionReason
         : "host-exact or scalar-UDF implementation selected";
@@ -1430,25 +1435,30 @@ final class RexExpression {
   }
 
   /** The pre-order node index of each projection tree's root. */
-  int[] projectionRoots() {
+  @Override
+  public int[] projectionRoots() {
     return toIntArray(projectionRoots);
   }
 
-  boolean isVariableBinaryProjection(int index) {
+  @Override
+  public boolean isVariableBinaryProjection(int index) {
     return variableBinaryProjections.contains(index);
   }
 
-  boolean isBinaryStringProjection(int index) {
+  @Override
+  public boolean isBinaryStringProjection(int index) {
     return binaryStringProjections.contains(index);
   }
 
   /** The condition tree's root node index, or -1 if the Calc has no condition. */
-  int conditionRoot() {
+  @Override
+  public int conditionRoot() {
     return conditionRoot;
   }
 
   /** The Calc's output column names, in order. */
-  String[] outputNames() {
+  @Override
+  public String[] outputNames() {
     return outputNames;
   }
 
@@ -1459,7 +1469,8 @@ final class RexExpression {
    * Nested field access is encoded by name and the pruned fields keep their names, so it is
    * unaffected.
    */
-  RexExpression remapInputs(int[] map) {
+  @Override
+  public RexExpression remapInputs(int[] map) {
     for (int i = 0; i < kinds.size(); i++) {
       if (kinds.get(i) == KIND_INPUT_REF) {
         payload.set(i, map[payload.get(i)]);
@@ -1468,15 +1479,18 @@ final class RexExpression {
     return this;
   }
 
-  int[] kinds() {
+  @Override
+  public int[] kinds() {
     return toIntArray(kinds);
   }
 
-  int[] payload() {
+  @Override
+  public int[] payload() {
     return toIntArray(payload);
   }
 
-  boolean exceedsTreeDepth(int limit) {
+  @Override
+  public boolean exceedsTreeDepth(int limit) {
     int[] pending = new int[limit];
     int depth = 0;
     for (int children : childCounts) {
@@ -1488,11 +1502,13 @@ final class RexExpression {
     return false;
   }
 
-  int[] childCounts() {
+  @Override
+  public int[] childCounts() {
     return toIntArray(childCounts);
   }
 
-  long[] longs() {
+  @Override
+  public long[] longs() {
     long[] out = new long[longs.size()];
     for (int i = 0; i < out.length; i++) {
       out[i] = longs.get(i);
@@ -1500,7 +1516,8 @@ final class RexExpression {
     return out;
   }
 
-  double[] doubles() {
+  @Override
+  public double[] doubles() {
     double[] out = new double[doubles.size()];
     for (int i = 0; i < out.length; i++) {
       out[i] = doubles.get(i);
@@ -1508,7 +1525,8 @@ final class RexExpression {
     return out;
   }
 
-  String[] strings() {
+  @Override
+  public String[] strings() {
     return strings.toArray(new String[0]);
   }
 
@@ -1526,7 +1544,8 @@ final class RexExpression {
   }
 
   /** The UDF registrations this encoded expression needs, to carry into the operator. */
-  tech.streamfusion.operator.NativeUdf.Binding udfBinding() {
+  @Override
+  public tech.streamfusion.operator.NativeUdf.Binding udfBinding() {
     return new tech.streamfusion.operator.NativeUdf.Binding(
         udfs.toArray(new tech.streamfusion.operator.NativeUdf.Descriptor[0]),
         toIntArray(udfIdSlots),
@@ -1790,9 +1809,9 @@ final class RexExpression {
     var type = args.get(0).getType();
     return type.getSqlTypeName() == SqlTypeName.ARRAY
         && type.getComponentType().isNullable()
-        && !CollectionValueIdentity.fixedBinary(type)
+        && !CollectionExpressionSemantics.fixedBinary(type)
         && nestedFieldSupported(type.getComponentType(), true)
-        && CollectionValueIdentity.sensitive(type);
+        && CollectionExpressionSemantics.sensitive(type);
   }
 
   private static boolean nativeStringArray(RelDataType type) {
@@ -1958,7 +1977,7 @@ final class RexExpression {
     if (type.getSqlTypeName() == SqlTypeName.MAP
         && type.getKeyType().isNullable()
         && type.getValueType().isNullable()
-        && !CollectionValueIdentity.fixedBinary(type)
+        && !CollectionExpressionSemantics.fixedBinary(type)
         && nestedFieldSupported(type.getKeyType(), true)
         && nestedFieldSupported(type.getValueType(), true)) return true;
     if (type.getSqlTypeName() != SqlTypeName.MAP || !type.getValueType().isNullable())
@@ -1977,11 +1996,11 @@ final class RexExpression {
 
   private static boolean readsOnlyMapValues(RexNode projection) {
     return (projection instanceof RexInputRef || projection instanceof RexLiteral)
-            && !CollectionValueIdentity.sensitive(projection.getType())
+            && !CollectionExpressionSemantics.sensitive(projection.getType())
         || projection instanceof RexCall
             && ((RexCall) projection).getOperator().getName().equals("MAP_VALUES")
             && ((RexCall) projection).getOperands().get(0) instanceof RexInputRef
-            && !CollectionValueIdentity.sensitive(projection.getType())
+            && !CollectionExpressionSemantics.sensitive(projection.getType())
             && nativeInputMapProjection((RexCall) projection);
   }
 
@@ -2913,7 +2932,7 @@ final class RexExpression {
       }
       if (!args.get(0).getType().getComponentType().isNullable())
         return reject(functionName + " uses Flink evaluation for NOT NULL array elements");
-      if (CollectionValueIdentity.fixedBinary(args.get(0).getType()))
+      if (CollectionExpressionSemantics.fixedBinary(args.get(0).getType()))
         return reject(functionName + " does not admit fixed BINARY array elements");
       if (nativeRepresentedArrayOperation(call)) preserveCollections = true;
       return emitBuiltinCall(call, maximum == 1 ? 169 : 170);

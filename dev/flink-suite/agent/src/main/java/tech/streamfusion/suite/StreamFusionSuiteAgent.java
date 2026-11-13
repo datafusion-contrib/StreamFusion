@@ -1,9 +1,9 @@
 package tech.streamfusion.suite;
 
 import static net.bytebuddy.matcher.ElementMatchers.isAnnotatedWith;
-import static net.bytebuddy.matcher.ElementMatchers.isDeclaredBy;
 import static net.bytebuddy.matcher.ElementMatchers.isBridge;
 import static net.bytebuddy.matcher.ElementMatchers.isConstructor;
+import static net.bytebuddy.matcher.ElementMatchers.isDeclaredBy;
 import static net.bytebuddy.matcher.ElementMatchers.isPrivate;
 import static net.bytebuddy.matcher.ElementMatchers.nameEndsWith;
 import static net.bytebuddy.matcher.ElementMatchers.nameStartsWith;
@@ -202,9 +202,9 @@ public final class StreamFusionSuiteAgent {
                         .on(named("createPipeline").and(takesArguments(4)))))
         .type(
             namedOneOf(
-                "tech.streamfusion.planner.PhysicalPlanScan",
-                "tech.streamfusion.planner.BatchPlanScan",
-                "tech.streamfusion.planner.StockCompiledPlanLowering"))
+                "tech.streamfusion.planner.stream.StreamPlanScan",
+                "tech.streamfusion.planner.batch.BatchPlanScan",
+                "tech.streamfusion.planner.stream.StockCompiledPlanLowering"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
                 builder
@@ -218,7 +218,7 @@ public final class StreamFusionSuiteAgent {
                                             .and(
                                                 isDeclaredBy(
                                                     named(
-                                                        "tech.streamfusion.planner.BatchPlanScan")))))))
+                                                        "tech.streamfusion.planner.batch.BatchPlanScan")))))))
         .type(
             namedOneOf(
                 "tech.streamfusion.state.StockGroupTypedStateContract",

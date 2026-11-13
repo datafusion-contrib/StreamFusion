@@ -11,7 +11,9 @@ import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.Native;
 import tech.streamfusion.arrow.MapListRepresentation;
-import tech.streamfusion.operator.MiniBatchMetrics.FlushReason;
+import tech.streamfusion.operator.stream.MiniBatchBoundary;
+import tech.streamfusion.operator.stream.MiniBatchMetrics;
+import tech.streamfusion.operator.stream.MiniBatchMetrics.FlushReason;
 import tech.streamfusion.state.RocksDBNativeStateSupport;
 
 /**

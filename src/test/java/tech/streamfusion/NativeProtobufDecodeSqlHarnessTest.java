@@ -6,12 +6,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 import java.util.function.Supplier;
-import tech.streamfusion.proto.Complex;
-import tech.streamfusion.proto.BroadTypes;
-import tech.streamfusion.proto.EventColor;
-import tech.streamfusion.proto.Row;
-import tech.streamfusion.proto.Scalars;
-import tech.streamfusion.proto.WithNested;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
@@ -23,22 +17,28 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
+import tech.streamfusion.proto.BroadTypes;
+import tech.streamfusion.proto.Complex;
+import tech.streamfusion.proto.EventColor;
+import tech.streamfusion.proto.Row;
+import tech.streamfusion.proto.Scalars;
+import tech.streamfusion.proto.WithNested;
 
 /**
  * End-to-end parity tests for the protobuf native-decode path: a {@code CREATE TABLE ...
- * 'connector'='kafka', 'format'='protobuf'} with a {@code protobuf.message-class-name} routes through
- * the planner to {@link tech.streamfusion.planner.StreamPhysicalNativeKafkaDecode} — Flink
- * consumes the raw messages and a native operator decodes them straight to Arrow against the
+ * 'connector'='kafka', 'format'='protobuf'} with a {@code protobuf.message-class-name} routes
+ * through the planner to {@link tech.streamfusion.planner.stream.StreamPhysicalNativeKafkaDecode} —
+ * Flink consumes the raw messages and a native operator decodes them straight to Arrow against the
  * descriptor reflectively extracted from the generated class.
  *
- * <p>Each case uses {@link NativeParity#assertParity} to compare the native decode against Flink's own
- * {@code protobuf} format. Covered: a flat scalar message, a nested message (ROW column), and a message
- * with repeated and map fields (ARRAY/MAP columns), plus unsigned/fixed values, bytes, enums, and a
- * well-known Timestamp represented as Flink's nested ROW. Complex columns are read through scalar
- * projections so Flink and native results can be compared directly.
+ * <p>Each case uses {@link NativeParity#assertParity} to compare the native decode against Flink's
+ * own {@code protobuf} format. Covered: a flat scalar message, a nested message (ROW column), and a
+ * message with repeated and map fields (ARRAY/MAP columns), plus unsigned/fixed values, bytes,
+ * enums, and a well-known Timestamp represented as Flink's nested ROW. Complex columns are read
+ * through scalar projections so Flink and native results can be compared directly.
  *
- * <p>All fields are set to non-default values, so proto3's missing-field semantics don't enter. Opt-in
- * via {@code SF_BENCHMARK=true} (Docker for Testcontainers Kafka).
+ * <p>All fields are set to non-default values, so proto3's missing-field semantics don't enter.
+ * Opt-in via {@code SF_BENCHMARK=true} (Docker for Testcontainers Kafka).
  */
 @EnabledIfEnvironmentVariable(named = "SF_BENCHMARK", matches = "true")
 class NativeProtobufDecodeSqlHarnessTest {
@@ -59,7 +59,8 @@ class NativeProtobufDecodeSqlHarnessTest {
           environment(
               brokers,
               "pb-scalars",
-              "i32 INT, i64 BIGINT, flag BOOLEAN, f32 FLOAT, f64 DOUBLE, text STRING, si32 INT, si64 BIGINT",
+              "i32 INT, i64 BIGINT, flag BOOLEAN, f32 FLOAT, f64 DOUBLE, text STRING, si32 INT,"
+                  + " si64 BIGINT",
               PKG + ".Scalars"),
           "SELECT * FROM t");
 
@@ -79,7 +80,8 @@ class NativeProtobufDecodeSqlHarnessTest {
           environment(
               brokers,
               "pb-complex",
-              "id BIGINT, nums ARRAY<BIGINT>, tags MAP<STRING, BIGINT>, nested ROW<id BIGINT, name STRING, score DOUBLE>",
+              "id BIGINT, nums ARRAY<BIGINT>, tags MAP<STRING, BIGINT>, nested ROW<id BIGINT, name"
+                  + " STRING, score DOUBLE>",
               PKG + ".Complex"),
           "SELECT id, nums[1], nums[2], tags['a'], tags['b'], nested.id, nested.name FROM t");
     }
@@ -152,14 +154,13 @@ class NativeProtobufDecodeSqlHarnessTest {
           environment(
               brokers,
               "pb-generated-nexmark",
-              "event_type INT, "
-                  + "person ROW<id BIGINT, name STRING, emailAddress STRING, creditCard STRING, "
-                  + "city STRING, state STRING, `dateTime` BIGINT, extra STRING>, "
-                  + "auction ROW<id BIGINT, itemName STRING, description STRING, initialBid BIGINT, "
-                  + "reserve BIGINT, `dateTime` BIGINT, expires BIGINT, seller BIGINT, category BIGINT, "
-                  + "extra STRING>, "
-                  + "bid ROW<auction BIGINT, bidder BIGINT, price BIGINT, channel STRING, url STRING, "
-                  + "`dateTime` BIGINT, extra STRING>, `dateTime` BIGINT",
+              "event_type INT, person ROW<id BIGINT, name STRING, emailAddress STRING, creditCard"
+                  + " STRING, city STRING, state STRING, `dateTime` BIGINT, extra STRING>, auction"
+                  + " ROW<id BIGINT, itemName STRING, description STRING, initialBid BIGINT,"
+                  + " reserve BIGINT, `dateTime` BIGINT, expires BIGINT, seller BIGINT, category"
+                  + " BIGINT, extra STRING>, bid ROW<auction BIGINT, bidder BIGINT, price BIGINT,"
+                  + " channel STRING, url STRING, `dateTime` BIGINT, extra STRING>, `dateTime`"
+                  + " BIGINT",
               PKG + ".NexmarkEvent"),
           "SELECT * FROM t");
     }
@@ -249,8 +250,8 @@ class NativeProtobufDecodeSqlHarnessTest {
               + brokers
               + "', 'properties.group.id' = '"
               + topic
-              + "', 'scan.startup.mode' = 'earliest-offset', 'scan.bounded.mode' = 'latest-offset', "
-              + "'format' = 'protobuf', 'protobuf.message-class-name' = '"
+              + "', 'scan.startup.mode' = 'earliest-offset', 'scan.bounded.mode' = 'latest-offset',"
+              + " 'format' = 'protobuf', 'protobuf.message-class-name' = '"
               + messageClass
               + "')");
       return tEnv;

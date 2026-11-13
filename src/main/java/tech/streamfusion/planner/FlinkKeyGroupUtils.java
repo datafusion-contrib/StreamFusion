@@ -1,7 +1,5 @@
 package tech.streamfusion.planner;
 
-import tech.streamfusion.operator.ArrowBatch;
-import tech.streamfusion.operator.ArrowBatchSubtaskKeySelector;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.calcite.rel.type.RelDataType;
@@ -12,6 +10,8 @@ import org.apache.flink.runtime.state.KeyGroupRangeAssignment;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.transformations.OneInputTransformation;
 import org.apache.flink.streaming.api.transformations.TwoInputTransformation;
+import tech.streamfusion.operator.ArrowBatch;
+import tech.streamfusion.operator.ArrowBatchSubtaskKeySelector;
 
 /** Small planning-time helpers shared by the native exchange and raw keyed-state operators. */
 public final class FlinkKeyGroupUtils {
@@ -19,7 +19,7 @@ public final class FlinkKeyGroupUtils {
   private FlinkKeyGroupUtils() {}
 
   /** Logical timestamp precision per projected key, with {@code -1} for every other type. */
-  static int[] timestampPrecisions(RelDataType inputType, int[] keyColumns) {
+  public static int[] timestampPrecisions(RelDataType inputType, int[] keyColumns) {
     List<Integer> precisions = new ArrayList<>();
     for (int keyColumn : keyColumns) {
       appendTimestampPrecisions(
@@ -28,14 +28,14 @@ public final class FlinkKeyGroupUtils {
     return precisions.stream().mapToInt(Integer::intValue).toArray();
   }
 
-  static int[] timestampPrecisions(
+  public static int[] timestampPrecisions(
       org.apache.flink.table.types.logical.RowType inputType, int[] keys) {
     List<Integer> result = new ArrayList<>();
     for (int key : keys) appendTimestampPrecisions(inputType.getTypeAt(key), result);
     return result.stream().mapToInt(Integer::intValue).toArray();
   }
 
-  static int[] stockKeyDescriptor(
+  public static int[] stockKeyDescriptor(
       org.apache.flink.table.types.logical.RowType inputType, int[] keys) {
     int[] precisions = timestampPrecisions(inputType, keys);
     int[] descriptor = new int[precisions.length + 1];
@@ -88,12 +88,12 @@ public final class FlinkKeyGroupUtils {
   }
 
   /** The same default Flink uses for an unset keyed transformation's maximum parallelism. */
-  static int defaultMaxParallelism(int parallelism) {
+  public static int defaultMaxParallelism(int parallelism) {
     return KeyGroupRangeAssignment.computeDefaultMaxParallelism(parallelism);
   }
 
   /** Honors Flink's program-wide key-group count, falling back to Flink's normal default. */
-  static int maxParallelism(StreamExecutionEnvironment env, int parallelism) {
+  public static int maxParallelism(StreamExecutionEnvironment env, int parallelism) {
     int configured = env.getConfig().getMaxParallelism();
     return configured > 0 ? configured : defaultMaxParallelism(parallelism);
   }
@@ -108,11 +108,11 @@ public final class FlinkKeyGroupUtils {
   }
 
   /**
-   * Establishes the Flink keyed-operator context for a native keyed transformation. Raw keyed
-   * state uses the exchange's BinaryRow key groups; the selector maps each whole, single-key-group
+   * Establishes the Flink keyed-operator context for a native keyed transformation. Raw keyed state
+   * uses the exchange's BinaryRow key groups; the selector maps each whole, single-key-group
    * columnar batch to an ordinary JVM key in that exact group — no managed keyed state reads it.
    */
-  static void applyColumnarKeying(
+  public static void applyColumnarKeying(
       OneInputTransformation<ArrowBatch, ArrowBatch> transformation, int maxParallelism) {
     transformation.setMaxParallelism(maxParallelism);
     transformation.setStateKeySelector(
@@ -120,7 +120,7 @@ public final class FlinkKeyGroupUtils {
     transformation.setStateKeyType(Types.INT);
   }
 
-  static void applyColumnarKeying(
+  public static void applyColumnarKeying(
       TwoInputTransformation<ArrowBatch, ArrowBatch, ArrowBatch> transformation,
       int maxParallelism) {
     KeySelector<ArrowBatch, Integer> stateKeySelector =

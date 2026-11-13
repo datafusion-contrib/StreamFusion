@@ -61,13 +61,13 @@
             <plugin><groupId>org.codehaus.mojo</groupId><artifactId>exec-maven-plugin</artifactId></plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId>
-                <configuration><includes><include>tech/streamfusion/iceberg/**/*.java</include><include>tech/streamfusion/planner/*Iceberg*.java</include></includes></configuration>
+                <configuration><includes><include>tech/streamfusion/iceberg/**/*.java</include><include>tech/streamfusion/planner/**/*Iceberg*.java</include></includes></configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId><artifactId>maven-javadoc-plugin</artifactId>
                 <configuration><sourceFileIncludes>
                     <sourceFileInclude>tech/streamfusion/iceberg/**/*.java</sourceFileInclude>
-                    <sourceFileInclude>tech/streamfusion/planner/*Iceberg*.java</sourceFileInclude>
+                    <sourceFileInclude>tech/streamfusion/planner/**/*Iceberg*.java</sourceFileInclude>
                 </sourceFileIncludes></configuration>
             </plugin>
             <plugin>

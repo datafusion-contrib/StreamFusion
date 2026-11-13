@@ -14,6 +14,7 @@ import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.table.types.logical.LogicalTypeRoot;
 import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.arrow.ArrowConversion;
+import tech.streamfusion.operator.window.stream.FlinkWindowMetrics;
 
 /**
  * The final-result layer of the window operator core: adds {@link #emitFinal}, which fetches the

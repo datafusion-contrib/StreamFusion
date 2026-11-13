@@ -14,6 +14,7 @@ import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.Native;
 import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.compat.FlinkStreamOperator;
+import tech.streamfusion.operator.batch.BoundedArrowOutput;
 
 /** DataFusion's bounded hash join, with input demand driven by Flink's batch task. */
 public final class NativeBatchJoinOperator extends FlinkStreamOperator<ArrowBatch>

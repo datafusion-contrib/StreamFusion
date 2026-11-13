@@ -6,7 +6,101 @@ admit additional SQL operators. Whole-query admission remains mandatory.
 
 ## Execution
 
+Stateless Calc, union, retained-view sharing and row/Arrow conversion build their
+transformations in `planner.common`. Streaming entry nodes retain their existing
+public names and `StreamExecNode` markers; batch nodes compose the mode-neutral
+implementation under `BatchExecNode`. The batch wrapper and transformation contexts
+retain their existing identifiers and allocation order. Historical `stream-exec-*`
+context names in the shared implementation are compatibility identities, not mode
+admission. Batch-specific file-source lowering is injected at the conversion boundary
+after the complete batch reuse graph is known. Both modes use the same source-reuse
+configuration policy, without calling the other mode's scan.
+
+The batch planner, scan, physical/exec nodes, graph boundary rewrites and operator
+specifications live in `planner.batch`. The public `NativePlanner.installBatch`
+return type and root-package `BatchPlanScan` remain as compatibility entry points.
+Expression encoding stays shared: `ExpressionPlanning` exposes admission and
+predicate construction through `common.EncodedExpression`, while the mutable
+encoder stays internal. Common type probes, explain metadata and the single
+reuse-barrier counter serve both modes. Runtime mode remains independent of source
+boundedness. Planner organization leaves installed runtime operator identities,
+JNI entry points and serializer snapshots intact; runtime helpers are organized
+by the responsibilities described below.
+
+Streaming scan, rewrite context, matchers and physical/exec implementations live
+in `planner.stream`. Both Flink lines use the shared stream planner and canonical
+graph binding implementation; released API differences remain in compatibility
+adapters, and version-specific sink nodes retain the same mode package. Optional
+connector modules use that package too. Root `PhysicalPlanScan` remains the public
+installation return type; it inherits the one `stream.StreamPlanScan` implementation.
+Historical public stateless mode-marker entries and connector service-provider
+names remain compatibility entry points. Source-sharing identity prefixes, node
+contexts and transformation names keep their previous values. Compiler and
+documentation source filters cover both compatibility entries and nested
+connector implementations, preserving deployment artifact ownership.
+
+Optional connector planner extensions also use the common explain metadata and
+reuse-barrier counter. Their module-owned source sets must import those shared
+contracts explicitly, including the Flink 1.18-only Hudi and Paimon 1.0 modules.
+The contracts remain in the connector-neutral runtime payload; they do not pull
+optional connector implementations into core.
+Hudi's columnar sink matchers and execution nodes follow the stream package too;
+its runtime commit filter uses the public shared expression contract rather than
+the package-private encoder. Connector service-provider names remain unchanged.
+
+Expression admission reads producer representation and aliasing through
+`common.ExpressionInput`, rather than recognizing streaming physical-node classes.
+The streaming graph retains responsibility for proving those properties; unknown
+columnar producers keep the existing collection fallback. Shared collection and
+string expression rules remain separate from stream graph-boundary checks. Both
+modes consume `common.EncodedExpression` for input pruning and remapping, keeping
+the mutable expression encoder internal.
+
+Optional connector rules contribute `common.StreamRule` definitions through the
+existing `NativePlannerExtension` service. Their callbacks receive only
+`common.StreamPlanningContext` services for admission diagnostics, source reuse
+and original-node/state eligibility. The stream scan owns rule ordering,
+changelog/configuration gates, probe-failure caching and substitution counts.
+Provider discovery still publishes a contribution atomically and excludes its
+sharing hooks when registration fails. Connector rules do not need access to the
+scan's mutable rewrite state or a shared Java package.
+
+`PlannerModeBoundaryTest` checks compiled batch/common dependencies, including
+method bodies, to reject streaming ExecNodes and reverse common-to-batch coupling.
+SQL regression checks retain positive native consumption, the existing perimeter
+transpose count and historical simplified task names. The packaged loader tests
+exercise both planning modes through the isolated deployment payload.
+
+## Runtime responsibilities and compatibility
+
+Java runtime helpers follow operator responsibilities: `operator.aggregate.stream`
+owns JVM accumulator caching and logical bundle evaluation, `operator.window.stream`
+owns window time translation and aggregate/rank metrics, and `operator.join.stream`
+owns window-join metrics. Logical mini-batch boundaries and metrics shared by
+changelog operators live in `operator.stream`; they are streaming contracts even
+when their inputs arrive as Arrow batches. `operator.batch` owns the bounded native
+output handoff used by sort, aggregate and join.
+
+Only non-serializable implementation helpers move. Their references in deployed
+operators remain private and transient. Serializable operators keep their existing
+class names, inheritance and configuration field placement, including bounded
+EOF/input-demand adapters and streaming timer/checkpoint adapters. Arrow transport,
+allocator authority, JNI callback classes, state descriptors and serializer
+snapshots keep their shared identities. The layout does not duplicate kernels,
+introduce extra calls or alter the stream/batch lifecycle. The compatibility test
+compares all 73 pre-refactor operator serialization descriptors captured from
+upstream `e1d71357c`, before moving runtime helpers. The descriptor inventory must
+match that baseline on both released Flink lines, including upstream canonical-state
+changes merged before this reorganization. Existing SQL, ownership and recovery
+tests exercise their runtime behavior.
+
 One bounded DataFusion execution owns persistent input/output streams for the task.
+The Rust `engine::batch` module owns bounded execution, task scheduling, sort,
+aggregate and join plans. Its sibling modules retain shared expression semantics,
+Arrow/JNI transport, memory authority and streaming state. The batch module keeps
+the existing JNI exports and native library boundary; this organization does not
+change execution algorithms, admission or add a scheduler.
+
 Each input has one pending Arrow batch, explicit EOF, producer backpressure and
 separate reader/driver wakeups. An empty input slot means pending, not completion.
 Offering another batch into an occupied slot fails rather than extending a queue.

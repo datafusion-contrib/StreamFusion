@@ -6,6 +6,7 @@ import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.Native;
+import tech.streamfusion.operator.window.stream.WindowTimeDomain;
 import tech.streamfusion.state.RocksDBNativeStateSupport;
 
 /**

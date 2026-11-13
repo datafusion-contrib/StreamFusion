@@ -210,6 +210,7 @@ jobs:
           python3 -m unittest discover -s bin -p 'test_profile_canonical_ci.py'
           python3 -m unittest discover -s bin -p 'test_profile_runtime_ci.py'
           python3 -m unittest discover -s bin -p 'test_ci_jfr.py'
+          python3 -m unittest discover -s bin -p 'test_bench_jvm_previous.py'
           python3 -m unittest discover -s bin -p 'test_package_release.py'
           python3 -m unittest discover -s bin -p 'test_build_release.py'
 

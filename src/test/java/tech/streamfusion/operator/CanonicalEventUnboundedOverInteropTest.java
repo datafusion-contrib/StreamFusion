@@ -719,7 +719,7 @@ class CanonicalEventUnboundedOverInteropTest {
     final int timeColumn;
     final boolean rows;
     final long ttl;
-    final tech.streamfusion.planner.OverConstantArguments constants;
+    final tech.streamfusion.planner.stream.OverConstantArguments constants;
 
     Plan(String type, boolean rows, boolean global, long ttl) throws Exception {
       this(type, rows, global, ttl, false);
@@ -829,7 +829,7 @@ class CanonicalEventUnboundedOverInteropTest {
               .map(index -> index - input.getFieldCount())
               .collect(java.util.stream.Collectors.toSet());
       constants =
-          tech.streamfusion.planner.OverConstantArguments.create(
+          tech.streamfusion.planner.stream.OverConstantArguments.create(
                   spec.getConstants(),
                   calls.stream().anyMatch(call -> call.getArgList().isEmpty()),
                   referenced)

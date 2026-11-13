@@ -62,8 +62,8 @@
                 <version>3.13.0</version>
                 <configuration><includes>
                     <include>tech/streamfusion/orc/**/*.java</include>
-                    <include>tech/streamfusion/planner/OrcPlannerExtension.java</include>
-                    <include>tech/streamfusion/planner/OrcSinkTranslator.java</include>
+                    <include>tech/streamfusion/planner/**/OrcPlannerExtension.java</include>
+                    <include>tech/streamfusion/planner/**/OrcSinkTranslator.java</include>
                 </includes></configuration>
             </plugin>
         </plugins>

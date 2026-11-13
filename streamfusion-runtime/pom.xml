@@ -89,18 +89,18 @@
                 <configuration>
                     <excludes>
                         <exclude>tech/streamfusion/fluss/**</exclude>
-                        <exclude>tech/streamfusion/planner/*Fluss*.java</exclude>
+                        <exclude>tech/streamfusion/planner/**/*Fluss*.java</exclude>
                         <!-- Delta is an opt-in module with its own connector dependencies. -->
                         <exclude>tech/streamfusion/delta/**</exclude>
-                        <exclude>tech/streamfusion/planner/DeltaPlannerExtension.java</exclude>
-                        <exclude>tech/streamfusion/planner/DeltaSinkMatcher.java</exclude>
-                        <exclude>tech/streamfusion/planner/NativeDeltaSinkExecNode.java</exclude>
-                        <exclude>tech/streamfusion/planner/StreamPhysicalNativeDeltaSink.java</exclude>
+                        <exclude>tech/streamfusion/planner/**/DeltaPlannerExtension.java</exclude>
+                        <exclude>tech/streamfusion/planner/**/DeltaSinkMatcher.java</exclude>
+                        <exclude>tech/streamfusion/planner/**/NativeDeltaSinkExecNode.java</exclude>
+                        <exclude>tech/streamfusion/planner/**/StreamPhysicalNativeDeltaSink.java</exclude>
                         <!-- Paimon likewise ships as its own module against the Paimon connector. -->
                         <exclude>tech/streamfusion/paimon/**</exclude>
-                        <exclude>tech/streamfusion/planner/Paimon*.java</exclude>
-                        <exclude>tech/streamfusion/planner/NativePaimon*.java</exclude>
-                        <exclude>tech/streamfusion/planner/StreamPhysicalNativePaimon*.java</exclude>
+                        <exclude>tech/streamfusion/planner/**/Paimon*.java</exclude>
+                        <exclude>tech/streamfusion/planner/**/NativePaimon*.java</exclude>
+                        <exclude>tech/streamfusion/planner/**/StreamPhysicalNativePaimon*.java</exclude>
                     </excludes>
                 </configuration>
             </plugin>

@@ -10,7 +10,7 @@ on:
       - 'src/main/java/tech/streamfusion/operator/*Jvm*'
       - 'src/main/java/tech/streamfusion/operator/ArrowToRowDataOperator.java'
       - 'src/main/java/tech/streamfusion/arrow/**'
-      - 'src/main/java/tech/streamfusion/planner/*Jvm*'
+      - 'src/main/java/tech/streamfusion/planner/**/*Jvm*'
       - 'src/main/java-flink*/tech/streamfusion/compat/JvmAggregateCompat.java'
       - 'src/test/java/tech/streamfusion/*JvmAggregate*'
       - 'src/test/java/tech/streamfusion/*JvmOver*'

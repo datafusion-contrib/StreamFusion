@@ -8,19 +8,22 @@ import org.apache.calcite.rel.core.Union;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.RexCall;
 import org.apache.calcite.rex.RexFieldAccess;
+import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
-import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalCalc;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink;
 
-/** Keeps sensitive Java UTF-16 results inside a generated expression or at the final output boundary. */
-final class JsonStringIdentity {
+/**
+ * Keeps sensitive Java UTF-16 results inside a generated expression or at the final output
+ * boundary.
+ */
+public final class JsonStringIdentity {
   private JsonStringIdentity() {}
 
-  static boolean containsSensitiveString(RexNode expression) {
+  public static boolean containsSensitiveString(RexNode expression) {
     if (expression instanceof RexLiteral
         && !((RexLiteral) expression).isNull()
         && SqlTypeFamily.CHARACTER.contains(((RexLiteral) expression).getType())) {
@@ -86,7 +89,7 @@ final class JsonStringIdentity {
     return finalUnionJsonInputs(root, finalOutput) == null;
   }
 
-  static Set<RelNode> finalUnionJsonInputs(RelNode root, boolean finalOutput) {
+  public static Set<RelNode> finalUnionJsonInputs(RelNode root, boolean finalOutput) {
     Set<RelNode> calcs = Collections.newSetFromMap(new IdentityHashMap<>());
     return collectUnionProjections(root, null, finalOutput, finalOutput, calcs) ? calcs : null;
   }
@@ -158,7 +161,7 @@ final class JsonStringIdentity {
                 .getOperands().stream().anyMatch(JsonStringIdentity::containsBinaryString));
   }
 
-  static boolean projectsBinaryString(RelNode node) {
+  public static boolean projectsBinaryString(RelNode node) {
     if (node instanceof StreamPhysicalCalc) {
       StreamPhysicalCalc calc = ((StreamPhysicalCalc) node);
 
@@ -171,7 +174,7 @@ final class JsonStringIdentity {
     return node.getInputs().stream().anyMatch(JsonStringIdentity::projectsBinaryString);
   }
 
-  static boolean containsCharacter(RelDataType type) {
+  public static boolean containsCharacter(RelDataType type) {
     if (SqlTypeFamily.CHARACTER.contains(type)) return true;
     if (type.getComponentType() != null && containsCharacter(type.getComponentType())) return true;
     if (type.getKeyType() != null && containsCharacter(type.getKeyType())) return true;

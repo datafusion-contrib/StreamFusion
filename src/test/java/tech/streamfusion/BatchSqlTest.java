@@ -13,6 +13,39 @@ import org.junit.jupiter.api.Test;
 
 class BatchSqlTest {
   @Test
+  void sharedTransformationsKeepSimplifiedNamesAndOnlyPerimeterTransposes() throws Exception {
+    Configuration config = new Configuration();
+    config.setString("pipeline.operator-chaining.enabled", "false");
+    config.setString("table.exec.simplify-operator-name-enabled", "true");
+    try (var metrics = new RecoveryExecutionMetrics()) {
+      metrics.setAsContext(config, 1, 0);
+      var nativeEnv = environment(true, 13, config);
+      String sql =
+          "SELECT SHA2(CAST(id AS STRING), 256) FROM input WHERE id < 5 UNION ALL "
+              + "SELECT SHA2(CAST(id AS STRING), 256) FROM input WHERE id >= 5";
+      nativeEnv.executeSql("CREATE TABLE output(v STRING) WITH ('connector'='blackhole')");
+      String plan = nativeEnv.explainSql("INSERT INTO output " + sql);
+      String physical =
+          plan.substring(
+              plan.indexOf("== Optimized Physical Plan =="),
+              plan.indexOf("== Optimized Execution Plan =="));
+      assertEquals(2, physical.split("RowDataToArrow", -1).length - 1, physical);
+      assertEquals(1, physical.split("ArrowToRowData", -1).length - 1, physical);
+      assertEquals(collect(environment(false, 13, config), sql), collect(nativeEnv, sql));
+      RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeCalc");
+      for (String operator : List.of("RowDataToArrow", "ArrowToRowData")) {
+        var names = metrics.taskNames(operator);
+        assertFalse(names.isEmpty(), operator);
+        assertTrue(
+            names.stream().allMatch(name -> name.startsWith(operator + "ExecNode[")),
+            names.toString());
+      }
+    } finally {
+      tech.streamfusion.compat.FlinkTestContexts.clearForRemoteSubmission();
+    }
+  }
+
+  @Test
   void parallelBoundedInputsPreserveResults() throws Exception {
     try (var metrics = new RecoveryExecutionMetrics()) {
       metrics.setAsContext(new Configuration(), 2, 0);

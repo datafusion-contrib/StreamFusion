@@ -8,7 +8,7 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalC
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink;
 
 /** Legacy binary casts and Flink 1.18 ENCODE can return bytes beyond their declared fixed width. */
-final class LegacyBinaryResults {
+public final class LegacyBinaryResults {
   private LegacyBinaryResults() {}
 
   static boolean containsEncode(RexNode node) {
@@ -50,7 +50,7 @@ final class LegacyBinaryResults {
     return false;
   }
 
-  static boolean crossesBoundary(RelNode node, boolean finalOutput) {
+  public static boolean crossesBoundary(RelNode node, boolean finalOutput) {
     for (RelNode input : node.getInputs()) {
       if (projects(input) && !(node instanceof StreamPhysicalSink)) return true;
       if (crossesBoundary(input, true)) return true;
@@ -58,7 +58,7 @@ final class LegacyBinaryResults {
     return projects(node) && !finalOutput;
   }
 
-  static boolean reachesSink(RelNode node) {
+  public static boolean reachesSink(RelNode node) {
     return projects(node) || node.getInputs().stream().anyMatch(LegacyBinaryResults::reachesSink);
   }
 }

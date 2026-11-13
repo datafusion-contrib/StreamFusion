@@ -59,15 +59,15 @@
                 <version>3.13.0</version>
                 <configuration><includes>
                     <include>tech/streamfusion/kafka/**/*.java</include>
-                    <include>tech/streamfusion/planner/KafkaPlannerExtension.java</include>
-                    <include>tech/streamfusion/planner/KafkaTables.java</include>
-                    <include>tech/streamfusion/planner/KeyedDecodeSpec.java</include>
-                    <include>tech/streamfusion/planner/KafkaSinkMatcher.java</include>
-                    <include>tech/streamfusion/planner/KafkaSinkTranslator.java</include>
-                    <include>tech/streamfusion/planner/NativeKafkaDecodeExecNode.java</include>
-                    <include>tech/streamfusion/planner/NativeKafkaSinkExecNode.java</include>
-                    <include>tech/streamfusion/planner/StreamPhysicalNativeKafkaDecode.java</include>
-                    <include>tech/streamfusion/planner/StreamPhysicalNativeKafkaSink.java</include>
+                    <include>tech/streamfusion/planner/**/KafkaPlannerExtension.java</include>
+                    <include>tech/streamfusion/planner/**/KafkaTables.java</include>
+                    <include>tech/streamfusion/planner/**/KeyedDecodeSpec.java</include>
+                    <include>tech/streamfusion/planner/**/KafkaSinkMatcher.java</include>
+                    <include>tech/streamfusion/planner/**/KafkaSinkTranslator.java</include>
+                    <include>tech/streamfusion/planner/**/NativeKafkaDecodeExecNode.java</include>
+                    <include>tech/streamfusion/planner/**/NativeKafkaSinkExecNode.java</include>
+                    <include>tech/streamfusion/planner/**/StreamPhysicalNativeKafkaDecode.java</include>
+                    <include>tech/streamfusion/planner/**/StreamPhysicalNativeKafkaSink.java</include>
                 </includes><excludes>
                     <exclude>tech/streamfusion/kafka/ConfluentSchemaRegistry.java</exclude>
                 </excludes></configuration>

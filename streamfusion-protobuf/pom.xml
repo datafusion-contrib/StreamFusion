@@ -19,7 +19,7 @@
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
-            </plugin><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version><configuration><includes><include>tech/streamfusion/format/protobuf/**/*.java</include><include>tech/streamfusion/planner/ProtobufDescriptors.java</include></includes></configuration></plugin></plugins></build>
+            </plugin><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version><configuration><includes><include>tech/streamfusion/format/protobuf/**/*.java</include><include>tech/streamfusion/planner/**/ProtobufDescriptors.java</include></includes></configuration></plugin></plugins></build>
 
     <!-- Universal releases package the payloads staged for each supported platform. -->
     <profiles>

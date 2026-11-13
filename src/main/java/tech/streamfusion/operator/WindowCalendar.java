@@ -2,6 +2,7 @@ package tech.streamfusion.operator;
 
 import java.time.ZoneId;
 import org.apache.flink.table.runtime.util.TimeWindowUtil;
+import tech.streamfusion.operator.window.stream.WindowTimeDomain;
 
 /**
  * Released-Flink timer conversion for native state whose window bounds are local wall-clock values.

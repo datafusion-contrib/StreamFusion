@@ -247,8 +247,10 @@ name, and fallback controls require zero native operators. This compatibility ch
 only metric-name recognition; workloads, timing and the pinned baseline stay unchanged.
 
 Previous-runtime diagnostics copy the current benchmark fixtures together with their test-only
-timing helper. The recorded fixture hashes include that helper, so the immutable baseline can
-compile the current instrumentation without copying any production implementation from the candidate.
+timing and metrics helpers and the selected Flink line's local-context adapter. All copied files
+are hashed, including dependencies absent from the historical checkout, so the immutable baseline
+can compile the current instrumentation without copying any production implementation from the
+candidate. The fixture-copy regression checks both supported Flink lines.
 
 ## Shared debug native libraries
 
@@ -793,6 +795,15 @@ one canonical invocation failed during that metadata-generator crash; its aggreg
 Its full upstream suite 43284074933 passed all 19 jobs. These observations preserve the failed
 qualification and do not establish a successful whole-CI speedup. The repaired candidate still
 requires both complete merge gates and full canonical invocation/outcome comparison.
+
+The isolated canonical job worker exits explicitly after its job, native-work
+checks and try-with-resources cluster cleanup complete. A Flink 2.2/JDK 11
+checkpoint worker finished that work in about seven seconds but retained an idle
+non-daemon Pekko metrics dispatcher, keeping the JVM alive until the four-minute
+process timeout. Success exits with status zero; any job, assertion or cleanup
+failure still prints its original stack and exits nonzero. The process regression
+injects a lingering non-daemon thread and checks both outcomes and completed cleanup.
+The timeout and all result, state-transfer and native-execution checks are unchanged.
 
 Kafka checkpoint handoffs wait for the fixture sink's external commit before cancelling the
 completed checkpoint leg. The coordinator's checkpoint future can complete before the committer
