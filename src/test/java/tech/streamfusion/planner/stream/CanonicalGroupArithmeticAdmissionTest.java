@@ -80,7 +80,8 @@ class CanonicalGroupArithmeticAdmissionTest {
       assertEquals(2, mapNames.length);
       assertNull(mapNames[0]);
       assertNotNull(mapNames[1]);
-    } else if (java.util.Set.of("distinct", "filter", "composite", "floating", "integer")
+    } else if (java.util.Set.of(
+            "distinct", "filter", "composite", "floating", "integer", "mini", "two-phase")
         .contains(mode)) {
       assertEquals(1, nativeOwners.size(), graph.getStreamingPlanAsJSON());
       var operator = nativeOwners.get(0);
@@ -95,6 +96,12 @@ class CanonicalGroupArithmeticAdmissionTest {
               .getFieldCount());
       var views = (java.util.List<?>) GroupAggregateStockTestFixture.field(contract, "views");
       assertEquals(mode.equals("distinct") ? 1 : 0, views.size());
+      if (mini) {
+        assertEquals(true, GroupAggregateStockTestFixture.field(operator, "miniBatch"));
+        assertEquals(
+            mode.equals("two-phase"),
+            GroupAggregateStockTestFixture.field(contract, "globalMerge"));
+      }
       if (mode.equals("filter"))
         assertTrue(
             java.util.Arrays.stream(

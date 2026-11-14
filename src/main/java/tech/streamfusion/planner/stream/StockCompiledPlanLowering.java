@@ -2752,13 +2752,17 @@ final class StockCompiledPlanLowering {
     var original = (OneInputTransformation<?, ?>) transformation;
     if (!(original.getOperatorFactory() instanceof SimpleOperatorFactory)) return stock;
     var operator = ((SimpleOperatorFactory<?>) original.getOperatorFactory()).getOperator();
-    if (!(operator instanceof org.apache.flink.streaming.api.operators.KeyedProcessOperator))
-      return stock;
-    var function =
-        ((org.apache.flink.streaming.api.operators.KeyedProcessOperator<?, ?, ?>) operator)
-            .getUserFunction();
-    if (function.getClass()
-        != org.apache.flink.table.runtime.operators.aggregate.GroupAggFunction.class) return stock;
+    boolean miniBatch = operator.getClass()
+        == org.apache.flink.table.runtime.operators.bundle.KeyedMapBundleOperator.class;
+    Object function;
+    if (miniBatch) function = releasedField(operator, "function");
+    else if (operator instanceof org.apache.flink.streaming.api.operators.KeyedProcessOperator)
+      function = ((org.apache.flink.streaming.api.operators.KeyedProcessOperator<?, ?, ?>) operator)
+          .getUserFunction();
+    else return stock;
+    if (function.getClass() != (miniBatch
+        ? org.apache.flink.table.runtime.operators.aggregate.MiniBatchGroupAggFunction.class
+        : org.apache.flink.table.runtime.operators.aggregate.GroupAggFunction.class)) return stock;
     JsonNode definition = definitions.get(stock.getId());
     int[] keys = reader.forType(int[].class).readValue(definition.path("grouping"));
     ExecNode<?> input = stock.getInputEdges().get(0).getSource();
@@ -2943,10 +2947,22 @@ final class StockCompiledPlanLowering {
       slot += width;
     }
     if (actual != size || slot != accumulatorTypes.length) return stock;
-    var ttl = (org.apache.flink.api.common.state.StateTtlConfig) FlinkPlanCompat.stateTtl(function);
+    if (miniBatch && Arrays.stream(kinds).noneMatch(kind -> kind == 38 || kind == 39)) return stock;
+    var ttl = miniBatch
+        ? org.apache.flink.table.runtime.util.StateConfigUtil.createTtlConfig(
+            ((Number) releasedField(function, "stateRetentionTime")).longValue())
+        : (org.apache.flink.api.common.state.StateTtlConfig) FlinkPlanCompat.stateTtl(function);
     long retention = ttl.isEnabled() ? FlinkPlanCompat.ttlMillis(ttl) : 0;
     config.setString("table.exec.state.ttl", retention + " ms");
-    config.setString("table.exec.mini-batch.enabled", "false");
+    config.setString("table.exec.mini-batch.enabled", Boolean.toString(miniBatch));
+    if (miniBatch) {
+      var trigger = releasedField(operator, "bundleTrigger");
+      if (trigger.getClass()
+          != org.apache.flink.table.runtime.operators.bundle.trigger.CountBundleTrigger.class)
+        return stock;
+      config.setString("table.exec.mini-batch.size",
+          Long.toString(((Number) releasedField(trigger, "maxCount")).longValue()));
+    }
     var selector =
         (org.apache.flink.table.runtime.keyselector.RowDataKeySelector)
             original.getStateKeySelector();

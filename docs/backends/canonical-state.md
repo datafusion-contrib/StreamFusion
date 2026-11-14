@@ -2542,3 +2542,9 @@ transfers for required INT/BIGINT arguments with TTL disabled. It preserves the 
 count, shared membership-map serializers and null-state descriptor. Both-release component and
 clean-worker controls are written but unexecuted. Nullable arguments, TTL, event/bounded frames
 and other DISTINCT forms remain outside this extension; see the OVER page for its exact scope.
+
+
+Retracting GROUP BY MIN/MAX additionally captures the existing one-phase mini-batch owner and
+count trigger for the already bound integral/date/time/boolean map views. New raw-state and
+clean-worker continuation/recovery/rescale controls await both-release execution. Filtered and
+local/global extrema keep their existing gates, and the native state format is unchanged.

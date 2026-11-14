@@ -27,7 +27,7 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
   final RowType accumulatorType, outputType, inputType;
   final int[] kinds, scalarFields, countFields, valueColumns, keyColumns;
   final int maximum;
-  final boolean before;
+  final boolean before, miniBatch;
   final long ttl;
 
   @SuppressWarnings("unchecked")
@@ -83,6 +83,24 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
       boolean global,
       String valueSqlType)
       throws Exception {
+    this(mode, rocks, ttl, beforePolicy, append, integerKey, global, valueSqlType, false);
+  }
+
+  @SuppressWarnings("unchecked")
+  GroupAggregateStockTestFixture(
+      String mode,
+      boolean rocks,
+      long ttl,
+      Boolean beforePolicy,
+      boolean append,
+      boolean integerKey,
+      boolean global,
+      String valueSqlType,
+      boolean miniBatch)
+      throws Exception {
+    this.miniBatch = miniBatch;
+    if (miniBatch && beforePolicy != null)
+      throw new IllegalArgumentException("Use the captured mini-batch before-image policy");
     if (!valueSqlType.equals("BIGINT")
         && ((!mode.equals("extrema") && !mode.equals("counted-extrema")) || append))
       throw new IllegalArgumentException("Typed fixture requires retracting extrema");
@@ -111,7 +129,11 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", "false");
     var table = NativePlannerTestEnvironment.create(config);
-    table.getConfig().set("table.exec.mini-batch.enabled", "false");
+    table.getConfig().set("table.exec.mini-batch.enabled", Boolean.toString(miniBatch));
+    if (miniBatch) {
+      table.getConfig().set("table.exec.mini-batch.size", "10000");
+      table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");
+    }
     table.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
     table.getConfig().set("table.exec.state.ttl", ttl + " ms");
     table.registerCatalog(
@@ -178,15 +200,27 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
     var node =
         graph.getStreamNodes().stream()
             .filter(
-                n ->
-                    n.getOperatorFactory() instanceof SimpleOperatorFactory
-                        && ((SimpleOperatorFactory<?>) n.getOperatorFactory()).getOperator()
-                            instanceof KeyedProcessOperator
-                        && ((KeyedProcessOperator<?, ?, ?>)
-                                    ((SimpleOperatorFactory<?>) n.getOperatorFactory())
-                                        .getOperator())
-                                .getUserFunction()
-                            instanceof GroupAggFunction)
+                n -> {
+                  if (!(n.getOperatorFactory() instanceof SimpleOperatorFactory)) return false;
+                  var candidate = ((SimpleOperatorFactory<?>) n.getOperatorFactory()).getOperator();
+                  if (miniBatch) {
+                    if (!(candidate
+                        instanceof
+                        org.apache.flink.table.runtime.operators.bundle.KeyedMapBundleOperator))
+                      return false;
+                    try {
+                      return field(candidate, "function")
+                          instanceof
+                          org.apache.flink.table.runtime.operators.aggregate
+                              .MiniBatchGroupAggFunction;
+                    } catch (Exception failure) {
+                      throw new RuntimeException(failure);
+                    }
+                  }
+                  return candidate instanceof KeyedProcessOperator
+                      && ((KeyedProcessOperator<?, ?, ?>) candidate).getUserFunction()
+                          instanceof GroupAggFunction;
+                })
             .findFirst()
             .orElseThrow(() -> new AssertionError(graph.getStreamingPlanAsJSON()));
     inputType =
@@ -200,9 +234,12 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
             "Stock global owner must be singleton with maximum parallelism one");
     }
     var operator =
-        (KeyedProcessOperator<RowData, RowData, RowData>)
+        (org.apache.flink.streaming.api.operators.OneInputStreamOperator<RowData, RowData>)
             ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator();
-    var plannedFunction = operator.getUserFunction();
+    var plannedFunction =
+        miniBatch
+            ? field(operator, "function")
+            : ((KeyedProcessOperator<?, ?, ?>) operator).getUserFunction();
     if (beforePolicy != null) {
       var generated =
           (org.apache.flink.table.runtime.generated.GeneratedAggsHandleFunction)
@@ -222,7 +259,10 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
           new KeyedProcessOperator<>(
               new GroupAggFunction(generated, equaliser, acc, counter, beforePolicy, ttl));
     }
-    function = operator.getUserFunction();
+    function =
+        miniBatch
+            ? field(operator, "function")
+            : ((KeyedProcessOperator<?, ?, ?>) operator).getUserFunction();
     selector = (RowDataKeySelector) node.getStatePartitioners()[0];
     accumulatorType = RowType.of((LogicalType[]) field(function, "accTypes"));
     outputType = RowType.of((LogicalType[]) field(node.getTypeSerializerOut(), "types"));

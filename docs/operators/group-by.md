@@ -3982,3 +3982,16 @@ empty group removal, repeated switches and native recovery on both stores. Clean
 also cover hidden liveness counts, partial bundle barriers and rescaling with a separate final
 COUNT oracle. All additions await both-release execution in the local testing window; no new
 passing cohort or performance result is claimed.
+
+
+The existing retracting MIN/MAX map-view contract additionally binds drained one-phase
+mini-batches for its integral/date/time/boolean values. Capture uses the actual released
+MiniBatchGroupAggFunction, retention and count trigger, preserving stock view serializers and
+hidden input-row counters. Local/global extrema and filtered extrema remain gated. No native
+state format or new aggregate algorithm is introduced.
+
+New raw-state/changelog controls include duplicate minima, unmatched removal debts, empty-group
+recreation, both engine orders and native checkpoint recovery; ordinary/portable planner controls
+capture the original trigger and retention. Clean-worker jobs add no-input returns and rescaling
+with a separate MIN/MAX oracle. These additions await both-release execution, and earlier eager
+extrema results do not qualify the new mini-batch scope.

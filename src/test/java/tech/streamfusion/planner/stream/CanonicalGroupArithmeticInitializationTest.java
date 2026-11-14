@@ -436,8 +436,8 @@ class CanonicalGroupArithmeticInitializationTest {
           new int[0],
           -1,
           fixture.before,
-          false,
-          -1,
+          fixture.miniBatch,
+          fixture.miniBatch ? 10000 : -1,
           fixture.ttl,
           FlinkKeyGroupUtils.stockKeyDescriptor(fixture.inputType, fixture.keyColumns),
           fixture.maximum);
