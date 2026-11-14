@@ -80,7 +80,6 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     *ty != DataType::Int64
                 }
             })
-            || self.mini_batch
             || self.stock_append_only == Some(true)
             || self.record_count_column >= 0
             || self
@@ -93,7 +92,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             || !self.deferred_batches.is_empty()
         {
             return Err(DataFusionError::Execution(
-                "stock MIN/MAX requires qualified per-record retracting state".into(),
+                "stock MIN/MAX requires qualified retracting state".into(),
             ));
         }
         self.stock_extrema = true;
@@ -292,12 +291,29 @@ mod tests {
     }
 
     #[test]
+    fn drained_mini_batches_share_the_retracting_view_contract() {
+        let mut owner = GroupAggregator::new(vec![38, 39], vec![0; 2], vec![1; 2], vec![0], true)
+            .with_mini_batch();
+        owner.configure_stock_extrema(&[38, 39]).unwrap();
+        assert_eq!(
+            owner.update(&input(1, Some(7), 0), 100).unwrap().num_rows(),
+            0
+        );
+        assert_eq!(owner.flush_mini_batch().unwrap().num_rows(), 1);
+        assert_eq!(
+            owner.update(&input(1, Some(7), 3), 200).unwrap().num_rows(),
+            0
+        );
+        assert_eq!(owner.flush_mini_batch().unwrap().num_rows(), 1);
+        assert_eq!(owner.store.iter().count(), 0);
+    }
+
+    #[test]
     fn invalid_modes_cannot_enable_view_aware_header_expiry() {
-        for mode in ["mini", "filter", "append", "kinds"] {
+        for mode in ["filter", "append", "kinds"] {
             let mut owner =
                 GroupAggregator::new(vec![38, 39], vec![0; 2], vec![1; 2], vec![0], true);
             match mode {
-                "mini" => owner = owner.with_mini_batch(),
                 "filter" => owner = owner.with_filter_columns(vec![1, 1]),
                 "append" => owner.stock_append_only = Some(true),
                 _ => {}

@@ -4021,12 +4021,15 @@ are unexecuted and await Flink 1.18/2.2 qualification; historical counts above d
 The optional local pairwise selector also applies to grouped complete-job providers; default/CI
 execution retains every original invocation. No performance claim is added.
 
-Variable-key extrema export also bounds resident header and companion batches by 1,024 records
+Variable-key extrema export also bounds resident header and companion batches by 256 records
 and four MiB of payload estimates, plus one oversized record. This prevents a hot large key from
 being copied across an entire entry chunk. Both stores reserve conversion capacity before Arrow
 allocation, then retain the same reservation through the synchronous C Data receiver, avoiding a
 duplicate charge. Failure and denial release temporary charges and retain source state. Existing
 RocksDB raw-reader bounds and per-record working sets remain separate. Authored native controls
 cover a two-MiB hot key, denial before allocation, receiver failure/retry and reservation release;
-these controls remain unexecuted. The scalar-key planner fixture also retains released TIME(0)
-normalization for SQL TIME declarations.
+Java and clean-worker qualification remains pending. The 256-record export quantum keeps the
+pre-allocation conversion allowance within the existing 128-KiB small-pool control; imported
+frames retain their 1,024-record protocol limit. Drained mini-batches use the same retracting
+view contract, while pending bundles still fail direct export. Logical schema fixtures use the
+released Table API for interval columns that SQL DDL cannot declare.

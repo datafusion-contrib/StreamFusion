@@ -1,6 +1,7 @@
 use super::*;
 
 const CHUNK_ROWS: usize = 1024;
+const EXPORT_ROWS: usize = 256;
 const CHUNK_BYTES: usize = 4 * 1024 * 1024;
 type Work = Option<datafusion::execution::memory_pool::MemoryReservation>;
 
@@ -146,7 +147,7 @@ fn visit_chunk(
     receiver: &mut impl FnMut(FrameKind, RecordBatch, &mut Work) -> Result<(), DataFusionError>,
 ) -> Result<(), DataFusionError> {
     emit_headers(kinds, ttl, groups, work, receiver)?;
-    let mut entries = Vec::with_capacity(CHUNK_ROWS);
+    let mut entries = Vec::with_capacity(EXPORT_ROWS);
     let mut bytes = 0usize;
     for &(key, state) in groups {
         for (index, aggregate) in state.aggs.iter().enumerate() {
@@ -170,7 +171,7 @@ fn visit_chunk(
                 }
                 entries.push((key, index as i64, number, *count, written));
                 bytes = bytes.saturating_add(next);
-                if entries.len() == CHUNK_ROWS {
+                if entries.len() == EXPORT_ROWS {
                     emit_entries(&entries, work, receiver)?;
                     entries.clear();
                     bytes = 0;
@@ -199,7 +200,7 @@ impl GroupAggregator {
         mut receiver: impl FnMut(FrameKind, RecordBatch, &mut Work) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
         self.check_stock_transfer()?;
-        let mut groups = Vec::with_capacity(CHUNK_ROWS);
+        let mut groups = Vec::with_capacity(EXPORT_ROWS);
         let mut bytes = 0usize;
         for entry in self.store.iter() {
             let (key, _) = entry;
@@ -214,7 +215,7 @@ impl GroupAggregator {
             }
             groups.push(entry);
             bytes = bytes.saturating_add(next);
-            if groups.len() == CHUNK_ROWS {
+            if groups.len() == EXPORT_ROWS {
                 visit_chunk(&self.kinds, self.ttl_ms > 0, &groups, work, &mut receiver)?;
                 groups.clear();
                 bytes = 0;
@@ -532,7 +533,7 @@ impl GroupAggregator<RocksGroupStore> {
         let kinds = &self.kinds;
         let ttl = self.ttl_ms > 0;
         self.store
-            .for_each_canonical_header_batch(CHUNK_ROWS, |rows| {
+            .for_each_canonical_header_batch(EXPORT_ROWS, |rows| {
                 let rows = rows
                     .iter()
                     .map(|(key, state)| (key, state))
@@ -548,7 +549,7 @@ impl GroupAggregator<RocksGroupStore> {
                 .canonical_multiset_position((aggregate + 1) as u8)
                 .ok_or_else(|| invalid("missing mapped companion table"))?;
             self.store
-                .for_each_canonical_timed_multiset_batch(position, CHUNK_ROWS, |rows| {
+                .for_each_canonical_timed_multiset_batch(position, EXPORT_ROWS, |rows| {
                     let entries = rows
                         .iter()
                         .map(|(key, value, count, written)| {
