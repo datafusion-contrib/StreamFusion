@@ -15,8 +15,6 @@
   "available_processors": 10,
   "heap_max_bytes": 8589934592,
   "native_task_off_heap_capacity_bytes": 51539607552,
-  "native_tree_before": "b6c72788246067524c2a4fa89c2e830f9483f3cf",
-  "native_tree_after": "ace335bf1960426f153952c9ab9759e52e48aafb",
   "method": "One warmup, three rotating measured trials per engine, release libraries, process-scoped caffeinate -is, unchanged SQL/corpus and resources. Each Maven invocation succeeded after full-value, encoder and zero-native-resource cleanup checks.",
   "state_backend_smoke": [
     {
@@ -450,6 +448,790 @@
           "validation": "full-value multiset"
         }
       ]
+    },
+    {
+      "stage": "before-dirty",
+      "variant": "deadline-cache-repeat",
+      "summary": {
+        "stock": {
+          "median_ms": 1289.481625,
+          "min_ms": 1146.916833,
+          "max_ms": 1340.472833
+        },
+        "previous": {
+          "median_ms": 7634.550917,
+          "min_ms": 7502.15425,
+          "max_ms": 8473.6885
+        },
+        "native": {
+          "median_ms": 10039.103834,
+          "min_ms": 8528.337417,
+          "max_ms": 10479.12025
+        }
+      },
+      "provenance": {
+        "base_commit": "f5e5fd566a32914197623d473146eeba0a0b3fa6",
+        "modified_native_files": {},
+        "libraries": {
+          "libstreamfusion.dylib": "962c47cd575fa1717bd4e31562a9b97274b1feaa6089998dbe9a7f78a4833b8c",
+          "libstreamfusion_parquet.dylib": "8b87c89e15b90d7afe509d0ccdcf61eda5f92f3b7ee028630e579907a220e2db"
+        }
+      },
+      "observations": [
+        {
+          "query": "q5",
+          "engine": "stock",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 1289.481625,
+          "wall_milliseconds": 1289.488,
+          "started_at_utc": "2026-11-14T15:23:13.682139Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "previous",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 7634.550917,
+          "wall_milliseconds": 7634.579,
+          "started_at_utc": "2026-11-14T15:23:15.335240Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "native",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 8528.337417,
+          "wall_milliseconds": 8528.392,
+          "started_at_utc": "2026-11-14T15:23:23.603230Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "native",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 10039.103834,
+          "wall_milliseconds": 10039.135,
+          "started_at_utc": "2026-11-14T15:23:32.856858Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "stock",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 1340.472833,
+          "wall_milliseconds": 1340.501,
+          "started_at_utc": "2026-11-14T15:23:43.272524Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "previous",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 8473.6885,
+          "wall_milliseconds": 8473.744,
+          "started_at_utc": "2026-11-14T15:23:45.127931Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "previous",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 7502.15425,
+          "wall_milliseconds": 7502.179,
+          "started_at_utc": "2026-11-14T15:23:54.221857Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "native",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 10479.12025,
+          "wall_milliseconds": 10479.155,
+          "started_at_utc": "2026-11-14T15:24:02.269731Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "stock",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 1146.916833,
+          "wall_milliseconds": 1146.923,
+          "started_at_utc": "2026-11-14T15:24:13.305220Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        }
+      ]
+    },
+    {
+      "stage": "after-dirty",
+      "variant": "rejected-dirty-markers",
+      "summary": {
+        "stock": {
+          "median_ms": 1324.56725,
+          "min_ms": 1318.940083,
+          "max_ms": 1333.705083
+        },
+        "previous": {
+          "median_ms": 8530.382583,
+          "min_ms": 7604.740583,
+          "max_ms": 8834.910375
+        },
+        "native": {
+          "median_ms": 8578.10775,
+          "min_ms": 8576.921375,
+          "max_ms": 10333.433291
+        }
+      },
+      "provenance": {
+        "base_commit": "f5e5fd566a32914197623d473146eeba0a0b3fa6",
+        "modified_native_files": {
+          "native/engine/src/state/rocks_store/window_agg_store.rs": "b7edc3ce2c95f62ec241086a384da8707169aa33fd9b2c56fca6d0cc0fc4e9c1",
+          "native/engine/src/window_agg.rs": "f81d3b26e9a064a8d8d56a5f0d4b39efbd34c54fa33edcb223962eb713afe144",
+          "native/engine/src/window_agg/canonical.rs": "2e94fa10ed834dc8daacb954f77b77d29f757c9c6e86bbe4dd6c80c585d9a9b0",
+          "native/engine/src/window_agg/canonical/tests.rs": "254a16ba88526f9c8b7585c1d1ae23cc275d9e987b58e82c1d8edca8d4c2d381",
+          "native/engine/src/window_agg/shared.rs": "86b99aec2398485881ce29708980e7f374d8160fa18ae8e696fc5cc85486226f"
+        },
+        "libraries": {
+          "libstreamfusion.dylib": "7e6836eef608e28afd711ec4472c5f960b663cf87718327f512464d6e93f0075",
+          "libstreamfusion_parquet.dylib": "8b87c89e15b90d7afe509d0ccdcf61eda5f92f3b7ee028630e579907a220e2db"
+        }
+      },
+      "observations": [
+        {
+          "query": "q5",
+          "engine": "stock",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 1318.940083,
+          "wall_milliseconds": 1318.947,
+          "started_at_utc": "2026-11-14T15:24:54.830474Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "previous",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 8530.382583,
+          "wall_milliseconds": 8530.414,
+          "started_at_utc": "2026-11-14T15:24:56.532407Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "native",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 10333.433291,
+          "wall_milliseconds": 10333.515,
+          "started_at_utc": "2026-11-14T15:25:05.692626Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "native",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 8578.10775,
+          "wall_milliseconds": 8578.136,
+          "started_at_utc": "2026-11-14T15:25:16.458502Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "stock",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 1333.705083,
+          "wall_milliseconds": 1333.733,
+          "started_at_utc": "2026-11-14T15:25:25.419196Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "previous",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 7604.740583,
+          "wall_milliseconds": 7604.801,
+          "started_at_utc": "2026-11-14T15:25:27.127937Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "previous",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 8834.910375,
+          "wall_milliseconds": 8834.94,
+          "started_at_utc": "2026-11-14T15:25:35.321940Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "native",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 8576.921375,
+          "wall_milliseconds": 8576.95,
+          "started_at_utc": "2026-11-14T15:25:44.748728Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "stock",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 1324.56725,
+          "wall_milliseconds": 1324.573,
+          "started_at_utc": "2026-11-14T15:25:53.682032Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        }
+      ]
+    },
+    {
+      "stage": "after-seek",
+      "variant": "intermediate-per-group-seeks",
+      "summary": {
+        "stock": {
+          "median_ms": 1320.374958,
+          "min_ms": 1126.727875,
+          "max_ms": 1328.769291
+        },
+        "previous": {
+          "median_ms": 8191.946708,
+          "min_ms": 7226.128916,
+          "max_ms": 8547.049584
+        },
+        "native": {
+          "median_ms": 9137.123875,
+          "min_ms": 7662.1795,
+          "max_ms": 9257.315792
+        }
+      },
+      "provenance": {
+        "base_commit": "f5e5fd566a32914197623d473146eeba0a0b3fa6",
+        "modified_native_files": {
+          "native/engine/src/state/rocks_store/window_agg_store.rs": "0e33abd4b8fb30a5cdd6b0db5d368de7860021d8443be3a97b08825b523846ea",
+          "native/engine/src/window_agg/shared.rs": "66c88c37857aec8525fbe5e58cf81d21dcb4fbfd945d817b8aaba89cc09344b7"
+        },
+        "libraries": {
+          "libstreamfusion.dylib": "9d4b6e11c74e98feae47f6650a5183bc74810d36718433ed98db3565ce23ebd1",
+          "libstreamfusion_parquet.dylib": "8b87c89e15b90d7afe509d0ccdcf61eda5f92f3b7ee028630e579907a220e2db"
+        }
+      },
+      "observations": [
+        {
+          "query": "q5",
+          "engine": "stock",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 1328.769291,
+          "wall_milliseconds": 1328.778,
+          "started_at_utc": "2026-11-14T15:45:22.162512Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "previous",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 7226.128916,
+          "wall_milliseconds": 7226.158,
+          "started_at_utc": "2026-11-14T15:45:23.866086Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "native",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 9137.123875,
+          "wall_milliseconds": 9137.183,
+          "started_at_utc": "2026-11-14T15:45:31.556922Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "native",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 9257.315792,
+          "wall_milliseconds": 9257.35,
+          "started_at_utc": "2026-11-14T15:45:41.130560Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "stock",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 1126.727875,
+          "wall_milliseconds": 1126.772,
+          "started_at_utc": "2026-11-14T15:45:50.775866Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "previous",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 8547.049584,
+          "wall_milliseconds": 8547.094,
+          "started_at_utc": "2026-11-14T15:45:52.255620Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "previous",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 8191.946708,
+          "wall_milliseconds": 8191.98,
+          "started_at_utc": "2026-11-14T15:46:01.242681Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "native",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 7662.1795,
+          "wall_milliseconds": 7662.212,
+          "started_at_utc": "2026-11-14T15:46:10.035343Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "stock",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 1320.374958,
+          "wall_milliseconds": 1320.386,
+          "started_at_utc": "2026-11-14T15:46:18.193645Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        }
+      ]
+    },
+    {
+      "stage": "after-cursor",
+      "variant": "single-cursor",
+      "summary": {
+        "stock": {
+          "median_ms": 1267.483042,
+          "min_ms": 1218.539958,
+          "max_ms": 1315.817375
+        },
+        "previous": {
+          "median_ms": 7593.123625,
+          "min_ms": 7201.002083,
+          "max_ms": 8117.808291
+        },
+        "native": {
+          "median_ms": 8004.3635,
+          "min_ms": 7895.102541,
+          "max_ms": 8025.528833
+        }
+      },
+      "provenance": {
+        "base_commit": "f5e5fd566a32914197623d473146eeba0a0b3fa6",
+        "modified_native_files": {
+          "native/engine/src/state/rocks_store/window_agg_store.rs": "813f4fb22ad12ba295ddc67607a22b11b6c8d16d92c39b1a2bdb1f1cb343e64b",
+          "native/engine/src/window_agg/shared.rs": "66c88c37857aec8525fbe5e58cf81d21dcb4fbfd945d817b8aaba89cc09344b7"
+        },
+        "libraries": {
+          "libstreamfusion.dylib": "e78e0a2f66b4899943c556c8be43d23c57fa14ff20b78a8988ad0b97d12d9c45",
+          "libstreamfusion_parquet.dylib": "8b87c89e15b90d7afe509d0ccdcf61eda5f92f3b7ee028630e579907a220e2db"
+        }
+      },
+      "observations": [
+        {
+          "query": "q5",
+          "engine": "stock",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 1267.483042,
+          "wall_milliseconds": 1267.491,
+          "started_at_utc": "2026-11-14T16:12:13.044058Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "previous",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 7593.123625,
+          "wall_milliseconds": 7593.154,
+          "started_at_utc": "2026-11-14T16:12:14.722193Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "native",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 7895.102541,
+          "wall_milliseconds": 7895.153,
+          "started_at_utc": "2026-11-14T16:12:22.879966Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "native",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 8025.528833,
+          "wall_milliseconds": 8025.559,
+          "started_at_utc": "2026-11-14T16:12:31.208643Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "stock",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 1218.539958,
+          "wall_milliseconds": 1218.546,
+          "started_at_utc": "2026-11-14T16:12:39.593189Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "previous",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 8117.808291,
+          "wall_milliseconds": 8117.847,
+          "started_at_utc": "2026-11-14T16:12:41.167642Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "previous",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 7201.002083,
+          "wall_milliseconds": 7201.029,
+          "started_at_utc": "2026-11-14T16:12:49.722321Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "native",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 8004.3635,
+          "wall_milliseconds": 8004.392,
+          "started_at_utc": "2026-11-14T16:12:57.511312Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "stock",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 1315.817375,
+          "wall_milliseconds": 1315.824,
+          "started_at_utc": "2026-11-14T16:13:05.879671Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        }
+      ]
     }
   ],
   "backend": "rocksdb",
@@ -458,5 +1240,642 @@
   "hardware": {
     "cpu_model": "Apple M4",
     "physical_memory_bytes": 17179869184
+  },
+  "rejected_source": {
+    "source_base": "f5e5fd566",
+    "native_tree": "6947bc1107b918d5ade8eafd23026d2603a5c61f",
+    "patch": ".claude/wontdos/hudi-dirty-timer-markers.patch",
+    "patch_sha256": "bd13b140eb09f784acdfd76973eceff74659045362f0f6fa6be612141fdcbb88"
+  },
+  "intermediate_source": {
+    "source_base": "f5e5fd566",
+    "patch": ".claude/wontdos/hudi-per-group-window-seek.patch",
+    "patch_sha256": "43c2b3a042746b25046a352f092ae63fbba9141f6aece4aa39a828f941b9d71b"
+  },
+  "deadline_cache_profile": {
+    "status": "profiled",
+    "source_commit": "f5e5fd566",
+    "rows": 2000000,
+    "duration_seconds": 30,
+    "interval_ms": 10,
+    "summary": {
+      "samples": 23622,
+      "inclusive_frames": [
+        [
+          "[break_stack_range]",
+          22462,
+          95.09
+        ],
+        [
+          "org/apache/flink/runtime/taskmanager/Task$$Lambda$2983.0x0000007801e378b0.run",
+          22441,
+          95.0
+        ],
+        [
+          "org/apache/flink/runtime/taskmanager/Task.runWithSystemExitMonitoring",
+          22441,
+          95.0
+        ],
+        [
+          "org/apache/flink/streaming/runtime/tasks/mailbox/MailboxProcessor.runMailboxLoop",
+          22441,
+          95.0
+        ],
+        [
+          "org/apache/flink/runtime/taskmanager/Task.restoreAndInvoke",
+          22441,
+          95.0
+        ],
+        [
+          "org/apache/flink/streaming/runtime/tasks/StreamTask.runMailboxLoop",
+          22441,
+          95.0
+        ],
+        [
+          "org/apache/flink/streaming/runtime/tasks/StreamTask.invoke",
+          22441,
+          95.0
+        ],
+        [
+          "org/apache/flink/streaming/runtime/tasks/StreamTask$$Lambda$2778.0x0000007801de8000.runDefaultAction",
+          22329,
+          94.53
+        ],
+        [
+          "org/apache/flink/streaming/runtime/tasks/StreamTask.processInput",
+          22329,
+          94.53
+        ],
+        [
+          "org/apache/flink/streaming/runtime/io/StreamOneInputProcessor.processInput",
+          22326,
+          94.51
+        ],
+        [
+          "org/apache/flink/streaming/runtime/io/AbstractStreamTaskNetworkInput.emitNext",
+          17088,
+          72.34
+        ],
+        [
+          "org/apache/flink/streaming/runtime/io/AbstractStreamTaskNetworkInput.processElement",
+          16927,
+          71.66
+        ],
+        [
+          "org/apache/flink/streaming/runtime/watermarkstatus/StatusWatermarkValve.inputWatermark",
+          15464,
+          65.46
+        ],
+        [
+          "org/apache/flink/streaming/runtime/watermarkstatus/StatusWatermarkValve.findAndOutputNewMinWatermarkAcrossAlignedChannels",
+          15458,
+          65.44
+        ],
+        [
+          "tech/streamfusion/operator/NativeWindowOperatorCore.processWatermark",
+          13162,
+          55.72
+        ],
+        [
+          "org/apache/flink/streaming/runtime/tasks/OneInputStreamTask$StreamTaskNetworkOutput.emitWatermark",
+          12826,
+          54.3
+        ],
+        [
+          "tech/streamfusion/operator/NativeRowWindowOperatorCore.processWatermark",
+          12824,
+          54.29
+        ],
+        [
+          "tech/streamfusion/operator/NativeColumnarGlobalWindowAggregateOperator.emitClosedWindows",
+          12721,
+          53.85
+        ],
+        [
+          "tech/streamfusion/operator/NativeRowWindowOperatorCore.emitFinal",
+          12721,
+          53.85
+        ],
+        [
+          "rocksdb::DBIter::FindNextUserEntry",
+          12599,
+          53.34
+        ],
+        [
+          "rocksdb::DBIter::FindNextUserEntryInternal",
+          11767,
+          49.81
+        ],
+        [
+          "tech/streamfusion/operator/NativeWindowOperatorCore.flushHandle",
+          11401,
+          48.26
+        ],
+        [
+          "Java_tech_streamfusion_Native_flushTumblingAggregator",
+          11401,
+          48.26
+        ],
+        [
+          "tech/streamfusion/Native.flushRocksDBWindowAggregator",
+          11401,
+          48.26
+        ],
+        [
+          "streamfusion::window_agg::TumblingAggregator::flush",
+          11346,
+          48.03
+        ],
+        [
+          "rocksdb_iter_seek",
+          10945,
+          46.33
+        ],
+        [
+          "rocksdb::DBIter::Seek",
+          10942,
+          46.32
+        ],
+        [
+          "rocksdb::MergingIterator::NextAndGetResult",
+          8193,
+          34.68
+        ],
+        [
+          "rocksdb::MergingIterator::Next",
+          7476,
+          31.65
+        ],
+        [
+          "org/apache/flink/streaming/runtime/io/RecordProcessorUtils$$Lambda$2878.0x0000007801e09028.accept",
+          6446,
+          27.29
+        ],
+        [
+          "org/apache/flink/streaming/runtime/tasks/ChainingOutput.collect",
+          6209,
+          26.28
+        ],
+        [
+          "org/apache/flink/streaming/runtime/tasks/ChainingOutput.pushToOperator",
+          6209,
+          26.28
+        ],
+        [
+          "tech/streamfusion/operator/ColumnarRecordMetrics.emit",
+          6202,
+          26.26
+        ],
+        [
+          "tech/streamfusion/operator/NativeCalcOperator.processElement",
+          5802,
+          24.56
+        ],
+        [
+          "org/apache/flink/streaming/runtime/io/StreamTaskSourceInput.emitNext",
+          5238,
+          22.17
+        ],
+        [
+          "org/apache/flink/connector/base/source/reader/SourceReaderBase.pollNext",
+          5238,
+          22.17
+        ],
+        [
+          "org/apache/flink/streaming/api/operators/SourceOperator.emitNext",
+          5238,
+          22.17
+        ],
+        [
+          "org/apache/flink/streaming/api/operators/source/SourceOutputWithWatermarks.collect",
+          5236,
+          22.17
+        ],
+        [
+          "org/apache/flink/streaming/runtime/tasks/SourceOperatorStreamTask$AsyncDataOutputToOutput.emitRecord",
+          5236,
+          22.17
+        ],
+        [
+          "tech/streamfusion/hudi/NativeHudiSource$$Lambda$4966.0x0000007802455ef0.emitRecord",
+          5236,
+          22.17
+        ],
+        [
+          "tech/streamfusion/hudi/NativeHudiSource.lambda$createReader$0",
+          5236,
+          22.17
+        ],
+        [
+          "tech/streamfusion/operator/NativeColumnarWatermarkAssignerOperator.processElement",
+          5229,
+          22.14
+        ],
+        [
+          "rocksdb::BinaryHeap<rocksdb::MergingIterator::HeapItem*, rocksdb::MergingIterator::MinHeapItemComparator>::downheap",
+          3572,
+          15.12
+        ],
+        [
+          "org/apache/arrow/c/Data.exportVectorSchemaRoot",
+          3320,
+          14.05
+        ],
+        [
+          "org/apache/flink/streaming/runtime/io/RecordProcessorUtils$$Lambda$4146.0x00000078021e1ae0.accept",
+          3252,
+          13.77
+        ],
+        [
+          "org/apache/flink/streaming/runtime/io/RecordProcessorUtils.lambda$getRecordProcessor$0",
+          3252,
+          13.77
+        ],
+        [
+          "org/apache/flink/streaming/api/operators/AbstractStreamOperator.processWatermark",
+          3070,
+          13.0
+        ],
+        [
+          "org/apache/flink/streaming/runtime/io/StreamMultipleInputProcessor.processInput",
+          2872,
+          12.16
+        ],
+        [
+          "org/apache/flink/streaming/api/operators/AbstractStreamOperator.processWatermark1",
+          2630,
+          11.13
+        ],
+        [
+          "org/apache/flink/streaming/runtime/io/StreamTwoInputProcessorFactory$StreamTaskNetworkOutput.emitWatermark",
+          2630,
+          11.13
+        ],
+        [
+          "tech/streamfusion/operator/NativeWindowJoinOperator.flush",
+          2630,
+          11.13
+        ],
+        [
+          "tech/streamfusion/operator/NativeWindowJoinOperator.processWatermark",
+          2630,
+          11.13
+        ],
+        [
+          "Java_tech_streamfusion_Native_flushRocksDBWindowJoiner",
+          2552,
+          10.8
+        ],
+        [
+          "tech/streamfusion/Native.flushRocksDBWindowJoiner",
+          2552,
+          10.8
+        ],
+        [
+          "streamfusion::window_join::WindowJoiner::flush",
+          2551,
+          10.8
+        ],
+        [
+          "streamfusion::state::rocks_store::window_buffer::RocksWindowBuffer::take_closed_with_calendar",
+          2496,
+          10.57
+        ],
+        [
+          "rocksdb::BlockBasedTableIterator::NextAndGetResult",
+          2463,
+          10.43
+        ],
+        [
+          "rocksdb::MergingIterator::MinHeapItemComparator::operator()",
+          2302,
+          9.75
+        ],
+        [
+          "tech/streamfusion/operator/NativeColumnarLocalWindowAggregateOperator.processElement",
+          2240,
+          9.48
+        ],
+        [
+          "rocksdb::BlockBasedTableIterator::Next",
+          2224,
+          9.41
+        ],
+        [
+          "org/apache/arrow/c/Data.exportVector",
+          2094,
+          8.86
+        ],
+        [
+          "org/apache/arrow/c/ArrayExporter.export",
+          2094,
+          8.86
+        ],
+        [
+          "org/apache/arrow/memory/RootAllocator.buffer",
+          1900,
+          8.04
+        ],
+        [
+          "org/apache/arrow/memory/BaseAllocator.buffer",
+          1897,
+          8.03
+        ],
+        [
+          "rocksdb::DBIter::SeekToFirst",
+          1746,
+          7.39
+        ],
+        [
+          "streamfusion::state::rocks_store::database::StateDb::iterator",
+          1746,
+          7.39
+        ],
+        [
+          "tech/streamfusion/operator/NativeWindowOperatorCore.updateColumnar",
+          1554,
+          6.58
+        ],
+        [
+          "tech/streamfusion/operator/NativeWindowOperatorCore.updateColumnarInternal",
+          1550,
+          6.56
+        ],
+        [
+          "tlv_get_addr",
+          1493,
+          6.32
+        ],
+        [
+          "org/apache/arrow/memory/BaseAllocator.bufferWithoutReservation",
+          1412,
+          5.98
+        ],
+        [
+          "org/apache/arrow/memory/unsafe/UnsafeAllocationManager.<init>",
+          1388,
+          5.88
+        ],
+        [
+          "org/apache/arrow/memory/unsafe/UnsafeAllocationManager$1.create",
+          1388,
+          5.88
+        ],
+        [
+          "org/apache/arrow/memory/BaseAllocator.newAllocationManager",
+          1388,
+          5.88
+        ],
+        [
+          "org/apache/flink/streaming/runtime/tasks/OneInputStreamTask$StreamTaskNetworkOutput.emitRecord",
+          1249,
+          5.29
+        ],
+        [
+          "jni_NewGlobalRef",
+          1248,
+          5.28
+        ],
+        [
+          "org/apache/arrow/memory/BufferLedger.release",
+          1227,
+          5.19
+        ],
+        [
+          "org/apache/arrow/memory/BufferLedger.decrement",
+          1225,
+          5.19
+        ],
+        [
+          "org/apache/arrow/memory/AllocationManager.release",
+          1225,
+          5.19
+        ],
+        [
+          "_platform_memcmp",
+          1214,
+          5.14
+        ],
+        [
+          "rocksdb::DataBlockIter::NextImpl",
+          1127,
+          4.77
+        ]
+      ],
+      "leaf_frames": [
+        [
+          "tlv_get_addr",
+          1493,
+          6.32
+        ],
+        [
+          "rocksdb::BinaryHeap<rocksdb::MergingIterator::HeapItem*, rocksdb::MergingIterator::MinHeapItemComparator>::downheap",
+          1240,
+          5.25
+        ],
+        [
+          "_platform_memcmp",
+          1214,
+          5.14
+        ],
+        [
+          "rocksdb::DBIter::FindNextUserEntryInternal",
+          1178,
+          4.99
+        ],
+        [
+          "__psynch_mutexwait",
+          1005,
+          4.25
+        ],
+        [
+          "pthread_jit_write_protect_np",
+          961,
+          4.07
+        ],
+        [
+          "_platform_memmove",
+          901,
+          3.81
+        ],
+        [
+          "__psynch_cvwait",
+          730,
+          3.09
+        ],
+        [
+          "thread-local wrapper routine for rocksdb::perf_context",
+          726,
+          3.07
+        ],
+        [
+          "bool rocksdb::BlockIter<rocksdb::Slice>::ParseNextKey<rocksdb::DecodeEntry>",
+          687,
+          2.91
+        ],
+        [
+          "thread-local wrapper routine for rocksdb::perf_level",
+          563,
+          2.38
+        ],
+        [
+          "rocksdb::MergingIterator::FindNextVisibleKey",
+          531,
+          2.25
+        ],
+        [
+          "rocksdb::MergingIterator::MinHeapItemComparator::operator()",
+          475,
+          2.01
+        ],
+        [
+          "mach_absolute_time",
+          473,
+          2.0
+        ],
+        [
+          "org/apache/arrow/memory/AllocationManager.<init>",
+          466,
+          1.97
+        ],
+        [
+          "org/apache/arrow/memory/AllocationManager.release",
+          362,
+          1.53
+        ],
+        [
+          "rocksdb::MergingIterator::NextAndGetResult",
+          359,
+          1.52
+        ],
+        [
+          "rocksdb::ParseInternalKey",
+          343,
+          1.45
+        ],
+        [
+          "org/apache/arrow/memory/LowCostIdentityHashMap.getModuloHash",
+          290,
+          1.23
+        ],
+        [
+          "__fcntl",
+          272,
+          1.15
+        ],
+        [
+          "rocksdb::MergingIterator::Next",
+          244,
+          1.03
+        ],
+        [
+          "rocksdb::DBIter::ParseKey",
+          235,
+          0.99
+        ],
+        [
+          "rocksdb::BlockBasedTableIterator::Next",
+          232,
+          0.98
+        ],
+        [
+          "rocksdb::BlockIter<rocksdb::Slice>::UpdateKey",
+          226,
+          0.96
+        ],
+        [
+          "non-virtual thunk to rocksdb::(anonymous namespace)::BytewiseComparatorImpl::Compare",
+          201,
+          0.85
+        ],
+        [
+          "itable stub",
+          190,
+          0.8
+        ],
+        [
+          "stub:memcmp",
+          189,
+          0.8
+        ],
+        [
+          "stub:pthread_jit_write_protect_np",
+          188,
+          0.8
+        ],
+        [
+          "G1ParScanThreadState::do_copy_to_survivor_space",
+          179,
+          0.76
+        ],
+        [
+          "rocksdb::BlockBasedTableIterator::NextAndGetResult",
+          177,
+          0.75
+        ],
+        [
+          "rocksdb::(anonymous namespace)::BytewiseComparatorImpl::CompareWithoutTimestamp",
+          168,
+          0.71
+        ],
+        [
+          "nanov2_malloc_type",
+          150,
+          0.64
+        ],
+        [
+          "rocksdb::DBIter::TooManyInternalKeysSkipped",
+          150,
+          0.64
+        ],
+        [
+          "rocksdb::MemTableIterator::VerifyEntryChecksum",
+          137,
+          0.58
+        ],
+        [
+          "rocksdb::BlockBasedTableIterator::Valid",
+          133,
+          0.56
+        ],
+        [
+          "java/util/concurrent/ConcurrentHashMap.get",
+          132,
+          0.56
+        ],
+        [
+          "org/apache/arrow/vector/complex/AbstractStructVector.getChildren",
+          127,
+          0.54
+        ],
+        [
+          "stub:memcpy",
+          103,
+          0.44
+        ],
+        [
+          "rocksdb::MergingIterator::Valid",
+          103,
+          0.44
+        ],
+        [
+          "rocksdb::BlockBasedTableIterator::UpperBoundCheckResult",
+          103,
+          0.44
+        ]
+      ]
+    },
+    "note": "Inclusive CPU shares overlap; instrumented elapsed time is not a timing gate."
+  },
+  "single_cursor_native_checks": {
+    "window_agg": 80,
+    "window_join": 15,
+    "window_buffer": 5,
+    "failures": 0
+  },
+  "native_source_trees": {
+    "original": "b6c72788246067524c2a4fa89c2e830f9483f3cf",
+    "deadline_cache": "ace335bf1960426f153952c9ab9759e52e48aafb",
+    "single_cursor": "16d4c0052bb61c9a6c783bd03bdafc6c02fe9896"
   }
 }

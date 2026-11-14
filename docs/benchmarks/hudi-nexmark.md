@@ -217,6 +217,19 @@ All 99 affected native window/store tests pass, including canonical state transf
 These smaller complete jobs do not establish the two-million-event result or
 sustained throughput; those checks and full-matrix qualification remain pending.
 
+The subsequent cursor revision visits populated key groups through one iterator,
+seeks from the earliest live end, and skips accumulator namespaces when loading
+timers. A repeated deadline-cache baseline has medians of 1,289 ms stock,
+7,635 ms Hudi-disabled SF and 10,039 ms native. The cursor revision records
+1,267 / 7,593 / 8,004 ms respectively. Native ranges are 8,528–10,479 ms before
+and 7,895–8,026 ms after: a 1.25× median improvement. The combined improvement
+from the original 35,801 ms median is 4.47×, while stock is still 6.32× faster.
+All 100 affected native tests pass, including negative window ends, keyless
+timers and frozen read views. The same structured report now retains all 54
+timings across retained, intermediate and rejected variants. Per-timer dirty
+tracking was rejected after overlapping native ranges and a regression in the
+Hudi-disabled path; the first per-group-only seek variant was also inconclusive.
+
 ## Remaining bottleneck
 
 [Issue #663](https://github.com/datafusion-contrib/StreamFusion/issues/663)

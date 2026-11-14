@@ -373,8 +373,9 @@ heap configurations have geometric means of median speedups over stock Flink
 of 0.55× with mini-batching off and 0.64× with it on: simple I/O improves, but
 window and lookup paths remain substantially slower. These are baseline results
 before the shared persistent-window deadline optimization. A focused 200k-event
-Q5 RocksDB comparison improves its native median 3.54× while remaining 7.25×
-slower than stock. The two-million-event recheck and full matrix are pending;
+Q5 RocksDB comparison improves its native median 4.47× after deadline checks and
+bounded cursor reads, while remaining 6.32× slower than stock. The two-million-event
+recheck and full matrix are pending;
 the benchmark page retains all trial ranges and the draft's open performance
 disposition in [issue #663](https://github.com/datafusion-contrib/StreamFusion/issues/663).
 

@@ -87,6 +87,20 @@ retain source trees, library hashes, all ranges and positive RocksDB engagement.
 These are smaller complete-job measurements; the two-million-event recheck and
 full matrix remain pending.
 
+Firing and timer reads also reuse one snapshot-aware cursor across populated key
+groups. Fixed-grid seeks start at the known earliest live end, and timer reads
+jump over accumulator namespaces. This removes empty-group iterator setup and
+avoids copying values that will not fire. Regional deadline conversion retains
+its full candidate set. Negative ends, keyless timers and frozen views are covered.
+
+In the repeated 200k-event Q5 check, native improves from 10,039 ms
+(8,528–10,479) to 8,004 ms (7,895–8,026), or 1.25×. Stock is 1,267 ms and the
+Hudi-disabled path is 7,593 ms. The combined native improvement over the original
+35,801 ms median is 4.47×; it still loses to stock by 6.32×. All 100 affected
+native cases pass. Per-timer dirty markers and the initial per-group seek variant
+did not establish stable gains and were not retained; the structured report keeps
+their trials and source patches alongside the retained variants.
+
 Measured (Nexmark state-backend A/B, 200K events, parallelism 2, best of 1, vs Flink RocksDB):
 
 - q4: 1.41s → 1.30s (4.20x → 5.05x); with the old knob at 1 MiB (the pathology at small scale) the
