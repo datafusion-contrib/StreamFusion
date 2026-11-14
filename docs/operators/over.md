@@ -25,6 +25,20 @@ Event-time parity fixtures keep the watermark behind the entire input timestamp 
 end of input, so file enumeration order cannot introduce accidental late rows. Late-row tests
 control the input order separately.
 
+## Planning and canonical qualification
+
+Ordinary relational planning and portable stock-plan lowering normalize partition columns,
+ascending time order, time-attribute kind and ROWS/RANGE bounds into the same immutable window
+specification. The adapters retain their released bound conventions: relational literals carry a
+preceding magnitude, while the stock execution specification resolves a signed boundary through
+Flink's own helper. Native frame kind and offset come from that normalized specification.
+
+The stock OVER adapter separately qualifies canonical state: at most one BIGINT partition key,
+the existing arithmetic input types, exact released frame-function class and safe stored ROWS
+count. Its zero/CURRENT ROW handling, maximum-parallelism resolution, accumulator layout,
+retention, timer and identity bindings keep their existing constraints. Sharing frame semantics
+does not broaden those state-migration qualifications or change JVM aggregate routing.
+
 ## Scalar JVM aggregates
 
 Synchronous JVM `AggregateFunction` calls run behind Arrow input/output boundaries on

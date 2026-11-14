@@ -2,7 +2,6 @@ package tech.streamfusion.planner.stream;
 
 import java.util.ArrayList;
 import java.util.List;
-import org.apache.calcite.rel.RelFieldCollation;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Window;
 import org.apache.calcite.rel.type.RelDataType;
@@ -10,7 +9,6 @@ import org.apache.calcite.rex.RexCall;
 import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
-import org.apache.calcite.rex.RexWindowBound;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.calcite.sql.type.SqlTypeName;
@@ -38,119 +36,28 @@ final class OverAggregateMatcher {
     if (!ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) over.getInput())) {
       return "OVER: requires an insert-only input";
     }
+    var frame = windowSpec(over);
+    if (!frame.isAccepted()) return frame.reason();
     Window window = over.logicWindow();
-    if (window.groups.size() != 1) {
-      return "OVER: only a single window group";
-    }
     Window.Group group = window.groups.get(0);
-    RelDataType inputType = over.getInput().getRowType();
-    for (int key : group.keys.toArray()) {
-      if (!WindowAggregateMatcher.supportedGroupingKeyType(
-          inputType.getFieldList().get(key).getType().getSqlTypeName())) {
-        return "OVER: unsupported PARTITION BY key type for native scalar carriage";
-      }
-    }
-    if (!group.upperBound.isCurrentRow()) {
-      return "OVER: only frames ending at CURRENT ROW";
-    }
-    Integer order = orderColumn(group);
-    if (order == null) {
-      return "OVER: requires exactly one ascending time order column";
-    }
-    RelDataType orderType = inputType.getFieldList().get(order).getType();
-    boolean rowtimeOrder = FlinkTypeFactory$.MODULE$.isRowtimeIndicatorType(orderType);
-    boolean proctimeOrder = FlinkTypeFactory$.MODULE$.isProctimeIndicatorType(orderType);
-    if (!rowtimeOrder && !proctimeOrder) {
-      return "OVER: requires exactly one ascending event-time or proctime order column";
-    }
-    // Proctime is materialized as a fixed per-batch timestamp, so a frame measured by that
-    // wall-clock
-    // value has no meaningful definition; only the row-count (ROWS) and running (unbounded) frames
-    // are
-    // well-defined over proctime (they depend on arrival order, not the clock value).
-    if (proctimeOrder && !group.isRows && !group.lowerBound.isUnbounded()) {
-      return "OVER: a bounded RANGE frame over proctime is not supported (use ROWS or an event-time"
-          + " order)";
-    }
-    // Window functions (ROW_NUMBER) are computed per partition with no value column over the
-    // default
-    // ROWS UNBOUNDED PRECEDING frame.
-    if (allWindowFunctions(group)) {
-      if (group.lowerBound.isUnbounded() && group.lowerBound.isPreceding()) {
-        return null;
-      }
-      return "OVER: window functions need the UNBOUNDED PRECEDING .. CURRENT ROW frame";
-    }
-    if (valueColumns(window, group, inputType) == null) {
-      return "OVER: expected COUNT(*) or one supported argument per aggregate; direct AVG requires"
-          + " DECIMAL";
-    }
-    // Running ROWS and RANGE share the persistent fold; bounded frames retain their input slice.
-    if (!group.lowerBound.isPreceding()) {
-      return "OVER: frame must have a PRECEDING lower bound";
-    }
-    if (group.isRows) {
-      if (!group.lowerBound.isUnbounded()
-          && boundOffset(group.lowerBound, window, inputType.getFieldCount()) == null) {
-        return "OVER: ROWS lower bound must be UNBOUNDED PRECEDING or a constant preceding offset";
-      }
-    } else if (!group.lowerBound.isUnbounded()
-        && boundOffset(group.lowerBound, window, inputType.getFieldCount()) == null) {
-      return "OVER: bounded RANGE frame must be BETWEEN INTERVAL n PRECEDING AND CURRENT ROW";
-    }
+    if (!allWindowFunctions(group) && valueColumns(window, group, over.getInput().getRowType()) == null)
+      return "OVER: expected COUNT(*) or one supported argument per aggregate; direct AVG requires DECIMAL";
     return null;
   }
 
-  /**
-   * Frame shape code matching the native side: 0 = RANGE unbounded preceding (running fold), 1 =
-   * bounded ROWS, 2 = bounded RANGE, 3 = ROWS unbounded preceding (per-row running fold).
-   */
-  static int frameKind(StreamPhysicalOverAggregate over) {
-    Window.Group group = over.logicWindow().groups.get(0);
-    if (allWindowFunctions(group)) {
-      return 0;
-    }
-    if (group.isRows) {
-      return group.lowerBound.isUnbounded() ? 3 : 1;
-    }
-    return group.lowerBound.isUnbounded() ? 0 : 2;
-  }
-
-  /**
-   * The bounded-frame offset: n preceding rows (ROWS) or the preceding interval in millis (RANGE).
-   */
-  static long frameOffset(StreamPhysicalOverAggregate over) {
+  private static tech.streamfusion.planner.common.Admission<OverWindowSpec> windowSpec(
+      StreamPhysicalOverAggregate over) {
     Window window = over.logicWindow();
-    Window.Group group = window.groups.get(0);
-    if (allWindowFunctions(group) || group.lowerBound.isUnbounded()) {
-      return 0;
-    }
-    Long offset =
-        boundOffset(group.lowerBound, window, over.getInput().getRowType().getFieldCount());
-    return offset == null ? 0 : offset;
+    boolean ranking = window.groups.size() == 1 && allWindowFunctions(window.groups.get(0));
+    return OverWindowSpec.physical(window, over.getInput().getRowType(), ranking);
   }
 
-  /**
-   * The constant offset of a {@code n PRECEDING} bound, or null if it is not a numeric constant.
-   * The planner hoists the literal into {@link Window#constants} and the bound references it as an
-   * input ref past the input columns (index {@code inputFieldCount + constantIndex}).
-   */
-  private static Long boundOffset(RexWindowBound bound, Window window, int inputFieldCount) {
-    RexNode offset = bound.getOffset();
-    RexLiteral literal = null;
-    if (offset instanceof RexLiteral) {
-      literal = (RexLiteral) offset;
-    } else if (offset instanceof RexInputRef) {
-      int constant = ((RexInputRef) offset).getIndex() - inputFieldCount;
-      if (constant >= 0 && constant < window.constants.size()) {
-        literal = window.constants.get(constant);
-      }
-    }
-    if (literal == null) {
-      return null;
-    }
-    Number value = literal.getValueAs(Long.class);
-    return value == null ? null : value.longValue();
+  static int frameKind(StreamPhysicalOverAggregate over) {
+    return windowSpec(over).value().frameKind();
+  }
+
+  static long frameOffset(StreamPhysicalOverAggregate over) {
+    return windowSpec(over).value().offset();
   }
 
   /** Whether every aggregate in the group is a supported non-aggregate window function. */
@@ -177,21 +84,7 @@ final class OverAggregateMatcher {
     }
   }
 
-  /**
-   * The single ascending ORDER BY column index, or null if the order is not a lone ascending key.
-   */
-  private static Integer orderColumn(Window.Group group) {
-    List<RelFieldCollation> collations = group.orderKeys.getFieldCollations();
-    if (collations.size() != 1
-        || collations.get(0).getDirection() != RelFieldCollation.Direction.ASCENDING) {
-      return null;
-    }
-    return collations.get(0).getFieldIndex();
-  }
 
-  /**
-   * One value-column index per admitted aggregate argument, or null for an unsupported kind/type.
-   */
   private static int[] valueColumns(Window window, Window.Group group, RelDataType inputType) {
     List<Window.RexWinAggCall> aggCalls = group.aggCalls;
     if (aggCalls.isEmpty()) {
@@ -262,12 +155,12 @@ final class OverAggregateMatcher {
   }
 
   static int timeColumn(StreamPhysicalOverAggregate over) {
-    return orderColumn(over.logicWindow().groups.get(0));
+    return OverWindowSpec.ascendingOrderColumn(over.logicWindow().groups.get(0));
   }
 
   /** Whether the OVER orders by processing time (arrival order) rather than a rowtime. */
   static boolean isProctime(StreamPhysicalOverAggregate over) {
-    Integer order = orderColumn(over.logicWindow().groups.get(0));
+    Integer order = OverWindowSpec.ascendingOrderColumn(over.logicWindow().groups.get(0));
     return order != null
         && FlinkTypeFactory$.MODULE$.isProctimeIndicatorType(
             over.getInput().getRowType().getFieldList().get(order).getType());
@@ -396,7 +289,8 @@ final class OverAggregateMatcher {
   }
 
   static RelNode substitute(StreamPhysicalOverAggregate over, PlanContext ctx) {
-    int[] keyColumns = OverAggregateMatcher.keyColumns(over);
+    OverWindowSpec frame = windowSpec(over).value();
+    int[] keyColumns = frame.keyColumns();
     RelNode input = ctx.columnarInput(over.getInputs().get(0), keyColumns);
     int inputArity = input.getRowType().getFieldCount();
     List<RexLiteral> constants = new ArrayList<>(over.logicWindow().constants);
@@ -453,14 +347,14 @@ final class OverAggregateMatcher {
             over.getTraitSet(),
             input,
             physicalOutputType,
-            OverAggregateMatcher.timeColumn(over),
+            frame.timeColumn(),
             OverAggregateMatcher.valueColumnIndices(over),
             keyColumns,
             OverAggregateMatcher.valueTypeCodes(over),
             OverAggregateMatcher.kinds(over),
-            OverAggregateMatcher.frameKind(over),
-            OverAggregateMatcher.frameOffset(over),
-            OverAggregateMatcher.isProctime(over));
+            frame.frameKind(),
+            frame.offset(),
+            frame.processingTime());
     if (constantCount == 0) {
       return nativeOver;
     }

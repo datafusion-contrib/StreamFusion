@@ -38,6 +38,15 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
   private byte[] constantValues;
   private boolean eventCleanupTimers;
 
+  NativeOverAggExecNode(
+      ReadableConfig tableConfig, InputProperty inputProperty, RowType outputType,
+      String description, OverWindowSpec window, int[] valueColumns, int[] valueTypes,
+      int[] aggregateKinds, int[] keyTimestampPrecisions) {
+    this(tableConfig, inputProperty, outputType, description, window.timeColumn(), valueColumns,
+        window.keyColumns(), valueTypes, aggregateKinds, window.frameKind(), window.offset(),
+        window.processingTime(), keyTimestampPrecisions);
+  }
+
   public NativeOverAggExecNode(
       ReadableConfig tableConfig,
       InputProperty inputProperty,
