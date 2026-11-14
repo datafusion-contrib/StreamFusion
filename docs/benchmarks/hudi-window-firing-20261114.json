@@ -1,0 +1,462 @@
+{
+  "status": "passed",
+  "scope": "Focused 200k-event Q5 complete-job comparison; does not qualify the full two-million-event matrix.",
+  "rows": 200000,
+  "input_bids": 184000,
+  "parallelism": 4,
+  "source_partitions": 4,
+  "sink_partition_modulus": 4,
+  "checkpoint_ms": 1000,
+  "warmups": 1,
+  "runs": 3,
+  "object_reuse": true,
+  "jdk": "17.0.17+10",
+  "architecture": "aarch64",
+  "available_processors": 10,
+  "heap_max_bytes": 8589934592,
+  "native_task_off_heap_capacity_bytes": 51539607552,
+  "native_tree_before": "b6c72788246067524c2a4fa89c2e830f9483f3cf",
+  "native_tree_after": "ace335bf1960426f153952c9ab9759e52e48aafb",
+  "method": "One warmup, three rotating measured trials per engine, release libraries, process-scoped caffeinate -is, unchanged SQL/corpus and resources. Each Maven invocation succeeded after full-value, encoder and zero-native-resource cleanup checks.",
+  "state_backend_smoke": [
+    {
+      "rocksdb_opened": true,
+      "mini_batch": false,
+      "engine": "stock",
+      "query": "q4"
+    },
+    {
+      "rocksdb_opened": true,
+      "mini_batch": false,
+      "engine": "previous",
+      "query": "q4"
+    },
+    {
+      "rocksdb_opened": true,
+      "mini_batch": false,
+      "engine": "native",
+      "query": "q4"
+    }
+  ],
+  "native_checks": {
+    "window_agg": 79,
+    "window_join": 15,
+    "window_buffer": 5,
+    "failures": 0
+  },
+  "profile_diagnostic": {
+    "status": "profiled",
+    "rows": 2000000,
+    "samples": 19743,
+    "duration_seconds": 30,
+    "interval_ms": 10,
+    "inclusive_frames": {
+      "tech/streamfusion/Native.flushRocksDBWindowAggregator": 14097,
+      "tech/streamfusion/operator/NativeWindowJoinOperator.flush": 2918,
+      "rocksdb::DBIter::FindNextUserEntryInternal": 14476,
+      "rocksdb::DBIter::FindNextUserEntry": 15634,
+      "rocksdb_iter_seek": 13598
+    },
+    "note": "Before optimization. Inclusive shares can overlap. Instrumented elapsed time does not qualify a speedup."
+  },
+  "comparisons": [
+    {
+      "stage": "before-small",
+      "summary": {
+        "stock": {
+          "median_ms": 1390.305584,
+          "min_ms": 1345.638334,
+          "max_ms": 1565.650333
+        },
+        "previous": {
+          "median_ms": 25769.003083,
+          "min_ms": 24502.909875,
+          "max_ms": 30935.435875
+        },
+        "native": {
+          "median_ms": 35801.151291,
+          "min_ms": 35071.846666,
+          "max_ms": 41816.760917
+        }
+      },
+      "provenance": {
+        "base_commit": "c69f6671c3d46e331ee1337f76a0e34b01893090",
+        "modified_native_files": {},
+        "libraries": {
+          "libstreamfusion.dylib": "46ae3ca0b0933a51809923f0b1c050ea6c8674b8c718af926e92da6cd44b60cc",
+          "libstreamfusion_parquet.dylib": "8b87c89e15b90d7afe509d0ccdcf61eda5f92f3b7ee028630e579907a220e2db"
+        }
+      },
+      "observations": [
+        {
+          "query": "q5",
+          "engine": "stock",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 1390.305584,
+          "wall_milliseconds": 1390.304,
+          "started_at_utc": "2026-11-14T14:41:19.390525Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "previous",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 24502.909875,
+          "wall_milliseconds": 24502.849,
+          "started_at_utc": "2026-11-14T14:41:21.166324Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "native",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 35801.151291,
+          "wall_milliseconds": 35801.126,
+          "started_at_utc": "2026-11-14T14:41:46.377286Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "native",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 41816.760917,
+          "wall_milliseconds": 41816.652,
+          "started_at_utc": "2026-11-14T14:42:22.729601Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "stock",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 1345.638334,
+          "wall_milliseconds": 1345.636,
+          "started_at_utc": "2026-11-14T14:43:05.228533Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "previous",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 25769.003083,
+          "wall_milliseconds": 25768.967,
+          "started_at_utc": "2026-11-14T14:43:06.933103Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "previous",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 30935.435875,
+          "wall_milliseconds": 30935.357,
+          "started_at_utc": "2026-11-14T14:43:33.328246Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "native",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 35071.846666,
+          "wall_milliseconds": 35071.754,
+          "started_at_utc": "2026-11-14T14:44:04.960608Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "stock",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 1565.650333,
+          "wall_milliseconds": 1565.649,
+          "started_at_utc": "2026-11-14T14:44:40.532342Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        }
+      ]
+    },
+    {
+      "stage": "after-small",
+      "summary": {
+        "stock": {
+          "median_ms": 1396.507084,
+          "min_ms": 1246.940292,
+          "max_ms": 1643.26475
+        },
+        "previous": {
+          "median_ms": 7647.957583,
+          "min_ms": 7604.597125,
+          "max_ms": 8504.776708
+        },
+        "native": {
+          "median_ms": 10118.939791,
+          "min_ms": 8845.782166,
+          "max_ms": 10900.393375
+        }
+      },
+      "provenance": {
+        "base_commit": "c69f6671c3d46e331ee1337f76a0e34b01893090",
+        "modified_native_files": {
+          "native/engine/src/state/rocks_store/window_agg_store.rs": "23ee908cd6af5f61c28706c5db2b7933f86c4599f060b8d59d437a4028fd5aac",
+          "native/engine/src/state/rocks_store/window_buffer.rs": "1032b7fc916b18c95a5d9f64bf9fd3deb42a8fa7592a5fa158fd276b831ff841",
+          "native/engine/src/window_agg.rs": "81095ca891ab2b888589daa2facb52e84934d23c0e83e1b488161f08267f8d8b",
+          "native/engine/src/window_agg/canonical.rs": "93ff199b409496aa88f78a9c470f879f2d4bacd43db59416dfd87775b3ef34c8",
+          "native/engine/src/window_agg/canonical/tests.rs": "38af284ba26d626b1cb6115f3628f01ffa391e6a7393a8805ea4de8c7c8aec3e",
+          "native/engine/src/window_agg/shared.rs": "3ad5832bb37bf58e5293f62b61dc6c32a145850b870f91b96325be0783266b2d"
+        },
+        "libraries": {
+          "libstreamfusion.dylib": "962c47cd575fa1717bd4e31562a9b97274b1feaa6089998dbe9a7f78a4833b8c",
+          "libstreamfusion_parquet.dylib": "8b87c89e15b90d7afe509d0ccdcf61eda5f92f3b7ee028630e579907a220e2db"
+        }
+      },
+      "observations": [
+        {
+          "query": "q5",
+          "engine": "stock",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 1643.26475,
+          "wall_milliseconds": 1643.262,
+          "started_at_utc": "2026-11-14T14:45:21.212095Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "previous",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 8504.776708,
+          "wall_milliseconds": 8504.758,
+          "started_at_utc": "2026-11-14T14:45:23.277284Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "native",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 10900.393375,
+          "wall_milliseconds": 10900.389,
+          "started_at_utc": "2026-11-14T14:45:32.508333Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "native",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 10118.939791,
+          "wall_milliseconds": 10118.914,
+          "started_at_utc": "2026-11-14T14:45:43.862786Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "stock",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 1396.507084,
+          "wall_milliseconds": 1396.505,
+          "started_at_utc": "2026-11-14T14:45:54.353154Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "previous",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 7647.957583,
+          "wall_milliseconds": 7647.939,
+          "started_at_utc": "2026-11-14T14:45:56.152716Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "previous",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 7604.597125,
+          "wall_milliseconds": 7604.59,
+          "started_at_utc": "2026-11-14T14:46:04.396426Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "native",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 8845.782166,
+          "wall_milliseconds": 8845.763,
+          "started_at_utc": "2026-11-14T14:46:12.587323Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "stock",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 1246.940292,
+          "wall_milliseconds": 1246.939,
+          "started_at_utc": "2026-11-14T14:46:21.795978Z",
+          "output_rows": 20000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        }
+      ]
+    }
+  ],
+  "backend": "rocksdb",
+  "mini_batch": false,
+  "full_matrix_qualified": false,
+  "hardware": {
+    "cpu_model": "Apple M4",
+    "physical_memory_bytes": 17179869184
+  }
+}

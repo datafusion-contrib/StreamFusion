@@ -64,7 +64,10 @@ performance claims. Structured observations are written to
 `-Dsf.hudi.benchmark.output=...`. Temporary tables and sorted comparison files
 are removed after each run.
 
-The remaining configurations are undergoing qualification. macOS power logs confirmed repeated host
+The completed heap configurations below are the baseline before persistent-window
+deadline caching. The first RocksDB campaign stopped during Q5 to prioritize its
+performance regression. The full matrix will be requalified after focused tuning.
+macOS power logs confirmed repeated host
 suspensions during the earlier campaign, and a later previous-path Q10 run failed
 with an expired Hudi commit heartbeat. The earlier full-value comparisons remain
 correctness evidence; their timings are retained as diagnostics and do not qualify
@@ -94,7 +97,7 @@ The matrix records the exact planner rejection for this query and configuration;
 it supplies no timing or parity claim for q7. The original schema and SQL remain
 unchanged. Other planner errors fail the run.
 
-## Completed heap configurations
+## Baseline heap configurations
 
 Both heap-state configurations passed on an Apple M4 (10 available processors,
 16 GiB physical memory), JDK 17.0.17, with 8 GiB maximum heap and the shared test
@@ -105,8 +108,8 @@ within this report, not with the README's Kafka results from another machine.
 
 [Structured observations, CPU profile summary and memory context](hudi-nexmark-20261114.json)
 retain all 396 timed observations, both stock q7 rejections and the full configuration.
-The overall report is marked `partial`: the two RocksDB configurations remain
-in progress. All 21 deterministic queries passed full-value multiset comparison
+The overall report is marked `partial`: the two RocksDB configurations are incomplete.
+All 21 deterministic queries passed full-value multiset comparison
 in each completed configuration; q12 passed processing-time count invariants.
 Payload encoders and final native resource cleanup passed. The largest
 wall/monotonic clock discrepancy was 14.0 ms.
@@ -122,7 +125,8 @@ performance disposition remains open in issue #663.
 The first configuration ran at `0037e0bfa`; the second ran with the `197d45bfd`
 MOR reader fix, which preserves physical field layouts. The measured COW source,
 append/MOR sinks, engine, codecs and harness are unchanged between these revisions.
-Remaining configurations use that reader fix and record their own source revisions.
+The subsequent persistent-window deadline optimization has separate measurements
+below and is not included in these baseline tables.
 
 Values below are median milliseconds with minimum–maximum across three measured
 trials per engine, following one warmup. A ratio below one means native is slower.
@@ -185,7 +189,35 @@ Geometric mean: 0.554× stock, 7.513× previous SF.
 
 Geometric mean: 0.640× stock, 8.780× previous SF.
 
-### Remaining bottleneck
+## Persistent-window deadline optimization
+
+A focused Q5 RocksDB CPU capture attributed 71.4% of 19,743 samples to aggregate
+firing and 14.8% to window-join firing. The shared state implementation now uses
+the earliest pending end to avoid firing scans before any window is due. Inserts
+lower that bound; restore and timer import rebuild it. Watermark positions,
+late-row decisions, payload representations and checkpoint formats are unchanged.
+Regional calendar firing retains its existing path.
+
+The unchanged Q5 query at 200k events, four source/sink tasks, RocksDB and
+mini-batching off compares the preserved old library with the updated release
+library. Each uses one warmup and three rotating trials per engine, full-value
+readback, encoder checks and final native cleanup.
+
+| Engine | Before median ms (range) | After median ms (range) |
+| --- | ---: | ---: |
+| Stock | 1,390.3 (1,345.6–1,565.7) | 1,396.5 (1,246.9–1,643.3) |
+| Previous SF boundaries | 25,769.0 (24,502.9–30,935.4) | 7,648.0 (7,604.6–8,504.8) |
+| Native Hudi boundaries | 35,801.2 (35,071.8–41,816.8) | 10,118.9 (8,845.8–10,900.4) |
+
+The native median improves **3.54×**, but remains **7.25× slower than stock**.
+The previous-boundary path also benefits because the optimization is shared engine
+state code. [All 18 timings, source trees, library hashes and CPU diagnostic](hudi-window-firing-20261114.json)
+are retained. A separate smoke checks actual RocksDB databases for all three engines.
+All 99 affected native window/store tests pass, including canonical state transfer.
+These smaller complete jobs do not establish the two-million-event result or
+sustained throughput; those checks and full-matrix qualification remain pending.
+
+## Remaining bottleneck
 
 [Issue #663](https://github.com/datafusion-contrib/StreamFusion/issues/663)
 tracks the remaining eager-watermark, handoff and allocation work.

@@ -120,6 +120,10 @@ impl TumblingAggregator {
         batch: &RecordBatch,
         arity: usize,
     ) -> Result<(), DataFusionError> {
+        #[cfg(feature = "rocksdb-state")]
+        {
+            self.slice_deadline_known = false;
+        }
         if !self.shared_slices {
             return Err(invalid("independent windows have no shared timer ledger"));
         }
@@ -775,6 +779,10 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreTumblingCanonicalWat
         };
         aggregator.current_watermark = progress;
         #[cfg(feature = "rocksdb-state")]
+        {
+            aggregator.slice_deadline_known = false;
+        }
+        #[cfg(feature = "rocksdb-state")]
         if let Some(store) = &mut aggregator.store {
             store.adopt_restored(progress, i64::MIN);
         }
@@ -811,6 +819,10 @@ impl crate::state::canonical_memory::CanonicalMemoryState for TumblingAggregator
         target.current_watermark = self.current_watermark;
         target.timer_watermark_uninitialized = self.timer_watermark_uninitialized;
         target.next_timer_deadline = self.next_timer_deadline;
+        #[cfg(feature = "rocksdb-state")]
+        {
+            target.slice_deadline_known = false;
+        }
         target.canonical_distinct = self.canonical_distinct.clone();
         let factories = self
             .aggregates

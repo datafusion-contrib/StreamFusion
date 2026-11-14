@@ -58,6 +58,35 @@ The store now follows Flink's write path with the batching advantage kept:
 The `streamfusion.state.rocksdb.write-buffer-mb` knob and the memory-pressure flush are deleted;
 there is no StreamFusion-specific state memory tuning.
 
+## Window firing scans
+
+Fixed-grid persistent window aggregates and window joins retain the earliest pending
+window end as transient control metadata. Inserts lower that bound when an earlier
+window arrives. A watermark before the bound, or a proven empty store, avoids the
+RocksDB firing scan. Shared-window aggregates retain the earliest pending timer end
+after a firing and update it as input registers timers. This follows the earliest-bin
+advance check in Arroyo's sliding window operator. Window results and downstream
+watermark positions retain their existing order.
+
+Restore and canonical timer import invalidate the cached bound; the next firing
+rebuilds it from persisted state. Regional calendar windows retain their original
+deadline conversion and scanning path. The cache contains no payloads and changes
+neither the persisted format nor checkpoint ownership.
+
+A two-million-event, four-partition Hudi Q5 CPU diagnostic attributed 71.4% of
+19,743 samples to persistent window-aggregate flushing and 14.8% to window-join
+flushing; these inclusive shares are diagnostic rather than measured speedups.
+The focused 200k-event Q5 comparison uses one warmup and three rotating trials
+per engine. The native median falls from 35,801 ms (35,072–41,817) to 10,119 ms
+(8,846–10,900), a 3.54× improvement. Stock medians remain 1,390 / 1,397 ms;
+the updated native path is still 7.25× slower than stock. The shared-state fix
+also reduces the previous StreamFusion boundary's median from 25,769 to 7,648 ms.
+All 99 affected native tests pass, including timer import and heap/RocksDB state
+transfer. [Structured trials and diagnostic](../benchmarks/hudi-window-firing-20261114.json)
+retain source trees, library hashes, all ranges and positive RocksDB engagement.
+These are smaller complete-job measurements; the two-million-event recheck and
+full matrix remain pending.
+
 Measured (Nexmark state-backend A/B, 200K events, parallelism 2, best of 1, vs Flink RocksDB):
 
 - q4: 1.41s → 1.30s (4.20x → 5.05x); with the old knob at 1 MiB (the pathology at small scale) the

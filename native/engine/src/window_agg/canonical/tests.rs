@@ -61,6 +61,7 @@ fn shared_panes_and_cumulative_prefixes_continue_across_native_stores() {
                     );
                     source.update(&shared_input(keyless, 0, 45)).unwrap();
                     source.flush(2000).unwrap();
+                    assert_eq!(target.flush(2000).unwrap().num_rows(), 0);
                     copy_shared(&mut source, &mut target, keyless);
                     let suffix = shared_input(keyless, 45, 50);
                     source.update(&suffix).unwrap();
@@ -72,6 +73,43 @@ fn shared_panes_and_cumulative_prefixes_continue_across_native_stores() {
                         );
                     }
                 }
+            }
+        }
+    }
+}
+
+#[test]
+fn shared_firing_tracks_earlier_input_between_watermarks() {
+    for cumulative in [false, true] {
+        for keyless in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let mut reference = shared(None, keyless, cumulative, true);
+            let mut operator = shared(Some(directory.path()), keyless, cumulative, true);
+            let timed = |time| {
+                let batch = input(keyless, true, 1, 1);
+                let mut columns = batch.columns().to_vec();
+                *columns.last_mut().unwrap() = Arc::new(Int64Array::from(vec![time]));
+                RecordBatch::try_new(batch.schema(), columns).unwrap()
+            };
+            for value in [&mut reference, &mut operator] {
+                assert_eq!(value.flush(0).unwrap().num_rows(), 0);
+                value.update(&timed(5100)).unwrap();
+                assert_eq!(value.flush(1000).unwrap().num_rows(), 0);
+                value.update(&timed(1100)).unwrap();
+            }
+            for watermark in [1500, 1999, 2000, 2500, 3000, 6000] {
+                assert_eq!(
+                    rows(&reference.flush(watermark).unwrap()),
+                    rows(&operator.flush(watermark).unwrap())
+                );
+            }
+            reference.update(&timed(7100)).unwrap();
+            operator.update(&timed(7100)).unwrap();
+            for watermark in [7999, 8000, 10000, i64::MAX] {
+                assert_eq!(
+                    rows(&reference.flush(watermark).unwrap()),
+                    rows(&operator.flush(watermark).unwrap())
+                );
             }
         }
     }

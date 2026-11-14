@@ -331,6 +331,10 @@ pub(crate) struct TumblingAggregator {
     stock_partial_buffer: Option<partial_buffer::PartialBuffer>,
     calendar: Option<WindowCalendar>,
     next_timer_deadline: i64,
+    #[cfg(feature = "rocksdb-state")]
+    next_slice_end: Option<i64>,
+    #[cfg(feature = "rocksdb-state")]
+    slice_deadline_known: bool,
     shared_slices: bool,
     legacy_slices: bool,
     timer_watermark_uninitialized: bool,
@@ -418,6 +422,10 @@ impl TumblingAggregator {
             stock_partial_buffer: None,
             calendar: None,
             next_timer_deadline: i64::MIN,
+            #[cfg(feature = "rocksdb-state")]
+            next_slice_end: None,
+            #[cfg(feature = "rocksdb-state")]
+            slice_deadline_known: false,
             shared_slices: false,
             legacy_slices: false,
             timer_watermark_uninitialized: false,

@@ -527,8 +527,9 @@ The [four-partition Hudi Nexmark matrix](benchmarks/hudi-nexmark.md) retains the
 shared query SQL and two-million-event Kafka corpus with Hudi tables at both
 ends. Completed heap/off and heap/on configurations have geometric means of
 median speedups of 0.55× / 0.64× stock Flink and 7.51× / 8.78× previous
-StreamFusion boundaries. Window and lookup regressions remain; both RocksDB
-configurations are still undergoing qualification. Full-value checks,
+StreamFusion boundaries. These baseline results precede persistent-window tuning;
+the linked report includes a focused Q5 before/after comparison, and full-matrix
+requalification remains pending. Full-value checks,
 processing-time exceptions, ranges, profiling evidence and host memory context
 are recorded on that page.
 
