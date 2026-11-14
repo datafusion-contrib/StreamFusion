@@ -4,6 +4,7 @@ use arrow::array::UInt8Array;
 use streamfusion_bridge::timestamp::{timestamp_array, TimestampColumn, TimestampValue};
 
 mod canonical;
+mod output;
 mod partial_buffer;
 mod shared;
 #[cfg(test)]
@@ -1316,103 +1317,120 @@ impl TumblingAggregator {
         }
     }
 
-    /// Finalizes and removes closed windows, emitting
-    /// `[key, window_start, window_end, result0..resultN-1]`. The end is carried explicitly since
-    /// cumulative windows sharing a start differ by it; each result column takes the aggregate's
-    /// own output type.
+    /// Compatibility helper for callers that require a single batch. Production emits bounded
+    /// batches directly to the synchronous host receiver through `flush_to`.
     pub(crate) fn flush(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
+        let mut batches = Vec::new();
+        self.flush_to(watermark, &mut |batch| {
+            batches.push(batch);
+            Ok(())
+        })?;
+        if let Some(first) = batches.first() {
+            Ok(arrow::compute::concat_batches(
+                &first.schema(),
+                batches.iter(),
+            )?)
+        } else {
+            Ok(self.final_batch(
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                self.aggregates
+                    .iter()
+                    .map(WindowResultColumn::new)
+                    .collect(),
+            ))
+        }
+    }
+
+    pub(crate) fn flush_to(
+        &mut self,
+        watermark: i64,
+        consume: &mut dyn FnMut(RecordBatch) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
         self.require_complete_canonical_import()?;
         self.snapshot_cache = None;
         self.current_watermark = self.current_watermark.max(watermark);
         self.timer_watermark_uninitialized = false;
         if self.shared_slices {
-            return self.flush_shared(watermark);
+            return self.flush_shared_to(watermark, consume);
         }
         #[cfg(feature = "rocksdb-state")]
         if self.store.is_some() {
-            return self.flush_store(watermark);
+            return self.flush_store_to(watermark, consume);
         }
-        let mut keys: Vec<OwnedRow> = Vec::new();
-        let mut starts = Vec::new();
-        let mut ends = Vec::new();
-        let mut results: Vec<_> = self
-            .aggregates
-            .iter()
-            .map(WindowResultColumn::new)
-            .collect();
+        let mut output = output::WindowOutput::new(self);
         for end in self.closed_windows(watermark) {
             let window = self.windows.remove(&end).expect("window present");
-            let start = window.start;
-            let mut group: Vec<(OwnedRow, Vec<Box<dyn Accumulator>>)> =
-                window.keys.into_iter().collect();
-            group.sort_by(|(a, _), (b, _)| a.cmp(b));
-            for (key, mut accumulators) in group {
+            let mut groups = window.keys.into_iter().collect::<Vec<_>>();
+            groups.sort_by(|(left, _), (right, _)| left.cmp(right));
+            for (key, mut accumulators) in groups {
                 self.forget_group_bytes(&key, &accumulators);
-                if !Self::group_is_live(self.live_count, &mut accumulators)? {
-                    continue;
-                }
-                keys.push(key);
-                starts.push(start);
-                ends.push(end);
-                for (i, accumulator) in accumulators.iter_mut().enumerate() {
-                    results[i].push(accumulator.as_mut())?;
+                self.memory.account_shrink();
+                if Self::group_is_live(self.live_count, &mut accumulators)? {
+                    output.push(self, key, window.start, end, &mut accumulators, consume)?;
                 }
             }
         }
-        self.memory.account_shrink();
-        Ok(self.final_batch(keys, starts, ends, results))
+        output.emit(self, consume)
     }
 
-    /// Persistent-state firing: the store removes and returns every closed (window, key) group in
-    /// window-end order, then the memory path's key order — every fired group leaves the store, so
-    /// a closed window can never re-fire after a restore.
     #[cfg(feature = "rocksdb-state")]
-    fn flush_store(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
+    fn flush_store_to(
+        &mut self,
+        watermark: i64,
+        consume: &mut dyn FnMut(RecordBatch) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
         if self.buffers_store_updates() {
             self.write_store_groups(false, Some(watermark))?;
         } else {
             self.write_through_store()?;
         }
-        let fired = self
-            .store
-            .as_mut()
-            .expect("window-aggregate rocksdb store")
-            .take_closed_with_calendar(watermark, self.calendar.as_ref())?;
-        self.next_timer_deadline = self
-            .store
-            .as_ref()
-            .unwrap()
+        let mut store = self.store.take().expect("window-aggregate rocksdb store");
+        let mut output = output::WindowOutput::new(self);
+        let result = store.visit_closed_batches(
+            watermark,
+            self.calendar.as_ref(),
+            self.memory.temporary_reservation(),
+            output::OUTPUT_ROWS,
+            output::OUTPUT_BYTES,
+            &mut |groups| {
+                if groups.is_empty() {
+                    return output.emit(self, consume);
+                }
+                for group in groups {
+                    let mut accumulators = self.accumulators_from_scalars(&group.state);
+                    if !Self::group_is_live(self.live_count, &mut accumulators)? {
+                        continue;
+                    }
+                    let key = self
+                        .key_converter
+                        .as_ref()
+                        .expect("window store key converter")
+                        .parser()
+                        .parse(&group.key)
+                        .owned();
+                    output.push(
+                        self,
+                        key,
+                        group.start,
+                        group.end,
+                        &mut accumulators,
+                        consume,
+                    )?;
+                }
+                Ok(())
+            },
+        );
+        self.next_timer_deadline = store
             .next_exclusive_end()
             .into_iter()
             .chain(self.windows.keys().next().copied())
             .min()
             .map_or(i64::MIN, |end| end.saturating_sub(1));
-        let mut keys: Vec<OwnedRow> = Vec::with_capacity(fired.len());
-        let mut starts = Vec::with_capacity(fired.len());
-        let mut ends = Vec::with_capacity(fired.len());
-        let mut results: Vec<_> = self
-            .aggregates
-            .iter()
-            .map(WindowResultColumn::new)
-            .collect();
-        let converter = self
-            .key_converter
-            .as_ref()
-            .expect("window store key converter");
-        let parser = converter.parser();
-        for group in &fired {
-            let mut accumulators = self.accumulators_from_scalars(&group.state);
-            if !Self::group_is_live(self.live_count, &mut accumulators)? {
-                continue;
-            }
-            keys.push(parser.parse(&group.key).owned());
-            starts.push(group.start);
-            ends.push(group.end);
-            for (i, accumulator) in accumulators.iter_mut().enumerate() {
-                results[i].push(accumulator.as_mut())?;
-            }
-        }
-        Ok(self.final_batch(keys, starts, ends, results))
+        self.store = Some(store);
+        result?;
+        output.emit(self, consume)
     }
 
     fn group_is_live(
@@ -2975,5 +2993,23 @@ pub extern "system" fn Java_tech_streamfusion_Native_setFixedWindowFinalWindows<
     crate::bridge::jni_guard(env, move |_env| {
         let aggregator = unsafe { &mut *(handle as *mut TumblingAggregator) };
         aggregator.set_final_windows(enabled != 0);
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_flushTumblingAggregatorBatches<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    watermark: jlong,
+    receiver: jni::objects::JObject<'local>,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let aggregator = unsafe { &mut *(handle as *mut TumblingAggregator) };
+        if let Err(error) = aggregator.flush_to(watermark, &mut |batch| {
+            emit_record_batch(&mut env, &receiver, batch)
+        }) {
+            throw_memory_limit(&mut env, &error.to_string());
+        }
     })
 }

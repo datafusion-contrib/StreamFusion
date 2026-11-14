@@ -1357,6 +1357,13 @@ public final class Native {
   public static native void flushTumblingAggregator(
       long handle, long watermarkMillis, long outArrayAddress, long outSchemaAddress);
 
+  /** Synchronously emits row- and byte-bounded closed-window batches before returning. */
+  public static native void flushTumblingAggregatorBatches(
+      long handle, long watermarkMillis, BatchReceiver receiver);
+
+  public static native void flushRocksDBWindowAggregatorBatches(
+      long handle, long watermarkMillis, BatchReceiver receiver);
+
   /** Releases an aggregator handle and its native state. */
   public static native void closeTumblingAggregator(long handle);
 

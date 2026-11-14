@@ -5,6 +5,7 @@ import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.Native;
+import tech.streamfusion.operator.window.stream.WindowTimeDomain;
 import tech.streamfusion.state.RocksDBNativeStateSupport;
 
 /**
@@ -355,6 +356,16 @@ public class NativeColumnarWindowAggregateOperator extends NativeRowWindowOperat
   @Override
   protected void flushPending() {
     // Each batch is folded into the aggregator as it arrives; nothing is buffered here.
+  }
+
+  @Override
+  protected void flushBatches(long watermark, Native.BatchReceiver receiver) {
+    watermark = WindowTimeDomain.closeThreshold(watermark, 0);
+    if (directRocksDBState()) {
+      Native.flushRocksDBWindowAggregatorBatches(handle, watermark, receiver);
+    } else {
+      Native.flushTumblingAggregatorBatches(handle, watermark, receiver);
+    }
   }
 
   @Override

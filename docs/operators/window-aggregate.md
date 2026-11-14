@@ -1969,3 +1969,26 @@ disk spool. Past shared slices retain their released semantics; expired unshared
 remain excluded from native installation. Accumulator and shared-timer transfers share a
 1,024-row and four-MiB payload estimate, allowing an oversized value. No whole-job timer or
 owner set is retained in Java heap. Native checkpoint formats and operator admission are unchanged.
+
+## Bounded fixed-window firing
+
+Single-phase and global aligned window aggregates (including shared-slice HOP and CUMULATE)
+synchronously emit Arrow output in batches of at most 1,024 rows with a 4 MiB estimated
+working-size target. A single larger row remains a necessary minimum. Reservations can force
+smaller batches. This bounds the output retained by a watermark flush while preserving its
+existing (deadline, window end, grouping key) order. The downstream watermark is forwarded only
+after all due batches have been emitted; no pending cursor crosses a successful mailbox call or
+checkpoint barrier. A receiver failure fails the task, and recovery uses the preceding completed
+checkpoint.
+
+Direct RocksDB fixed windows merge key-group iterators in that same order instead of loading
+all due payloads into a vector. Iterator indices compare pinned keys, avoiding copies of one
+wide key per key group. Regional calendar firing inventories distinct window ends and their
+released-Flink deadlines, including future ends, without retaining their row payloads. That
+metadata, merge cursors and decode/output workspaces use the shared off-heap authority. The
+largest individual group and the window-end/key-group inventory remain working-memory floors.
+The memory backend still sorts the keys of its current resident window before emission.
+
+This changes the execution boundary, not supported SQL, state encodings or recovery routing.
+Session windows, window rank and local partial-output batches retain their existing independent
+firing paths. No mailbox continuations or background state mutation are introduced.

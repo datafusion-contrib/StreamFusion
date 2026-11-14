@@ -4169,3 +4169,16 @@ pub extern "system" fn Java_tech_streamfusion_Native_rocksdbIntervalJoinerTimerD
             .timer_deadline() as jlong
     })
 }
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_flushRocksDBWindowAggregatorBatches<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    watermark: jlong,
+    receiver: jni::objects::JObject<'local>,
+) {
+    crate::window_agg::Java_tech_streamfusion_Native_flushTumblingAggregatorBatches(
+        env, _class, handle, watermark, receiver,
+    )
+}

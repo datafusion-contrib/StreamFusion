@@ -2,6 +2,7 @@ package tech.streamfusion;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -132,6 +133,64 @@ class StatefulTumblingTest {
       } finally {
         Native.closeTumblingAggregator(handle);
       }
+    }
+  }
+
+  @Test
+  void boundedReceiverPreservesWindowOrderAcrossMultipleArrowHandoffs() {
+    try (BufferAllocator allocator = new RootAllocator();
+        CDataDictionaryProvider provider = new CDataDictionaryProvider()) {
+      long handle = Native.createTumblingAggregator(1000, 1000, new int[] {0}, new int[] {0}, UNBOUNDED);
+      try {
+        long[] timestamps = new long[2051];
+        long[] values = new long[2051];
+        for (int i = 0; i < values.length; i++) {
+          timestamps[i] = i * 1000L;
+          values[i] = i + 1;
+        }
+        update(allocator, provider, handle, timestamps, values);
+        List<Long> starts = new ArrayList<>();
+        int[] batches = {0};
+        Native.flushTumblingAggregatorBatches(handle, Long.MAX_VALUE, (arrayAddress, schemaAddress) -> {
+          try (ArrowArray array = ArrowArray.wrap(arrayAddress);
+              ArrowSchema schema = ArrowSchema.wrap(schemaAddress);
+              VectorSchemaRoot result = Data.importVectorSchemaRoot(allocator, array, schema, provider)) {
+            batches[0]++;
+            assertTrue(result.getRowCount() <= 1024);
+            BigIntVector windowStart = (BigIntVector) result.getVector("window_start");
+            BigIntVector total = (BigIntVector) result.getVector("result0");
+            for (int i = 0; i < result.getRowCount(); i++) {
+              assertEquals(starts.size() + 1L, total.get(i));
+              starts.add(windowStart.get(i));
+            }
+          }
+        });
+        assertEquals(3, batches[0]);
+        assertEquals(2051, starts.size());
+        for (int i = 0; i < starts.size(); i++) assertEquals(i * 1000L, starts.get(i));
+        Native.flushTumblingAggregatorBatches(handle, Long.MAX_VALUE,
+            (array, schema) -> { throw new AssertionError("closed windows re-emitted"); });
+      } finally {
+        Native.closeTumblingAggregator(handle);
+      }
+    }
+  }
+
+  @Test
+  void boundedReceiverFailurePreservesTheJavaExceptionAndReleasesArrowOwnership() {
+    try (BufferAllocator allocator = new RootAllocator();
+        CDataDictionaryProvider provider = new CDataDictionaryProvider()) {
+      long handle = Native.createTumblingAggregator(1000, 1000, new int[] {0}, new int[] {0}, UNBOUNDED);
+      try {
+        update(allocator, provider, handle, new long[] {0, 1000}, new long[] {1, 2});
+        IllegalStateException failure = new IllegalStateException("receiver stopped");
+        assertSame(failure, assertThrows(IllegalStateException.class,
+            () -> Native.flushTumblingAggregatorBatches(handle, Long.MAX_VALUE,
+                (array, schema) -> { throw failure; })));
+      } finally {
+        Native.closeTumblingAggregator(handle);
+      }
+      assertEquals(0, allocator.getAllocatedMemory());
     }
   }
 

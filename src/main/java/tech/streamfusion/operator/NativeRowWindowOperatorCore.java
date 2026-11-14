@@ -13,6 +13,7 @@ import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.table.types.logical.LogicalTypeRoot;
 import org.apache.flink.table.types.logical.RowType;
+import tech.streamfusion.Native;
 import tech.streamfusion.operator.window.stream.FlinkWindowMetrics;
 
 /**
@@ -87,7 +88,7 @@ public abstract class NativeRowWindowOperatorCore extends NativeWindowOperatorCo
   }
 
   /**
-   * Emits the windows the watermark has closed as one Arrow batch in the output row order {@code
+   * Emits the windows the watermark has closed as Arrow batches in the output row order {@code
    * [key?, agg0..aggN-1, window_start, window_end]}. The native flush carries keys in their natural
    * type (int widened to int64, timestamps as component pairs), the aggregate results already in
    * their output Arrow type, and the two window bounds as int64 epoch millis; this reshapes them
@@ -96,63 +97,75 @@ public abstract class NativeRowWindowOperatorCore extends NativeWindowOperatorCo
    * emitted for an empty flush.
    */
   protected final void emitFinal(long watermark, int[] keyTypes) {
-    int keyCount = keyTypes.length;
-    int aggregates = aggregateCount();
+    flushBatches(watermark, (arrayAddress, schemaAddress) -> {
+      if (Thread.currentThread().isInterrupted()) {
+        throw new java.util.concurrent.CancellationException("native window firing interrupted");
+      }
+      try (ArrowArray array = ArrowArray.wrap(arrayAddress);
+          ArrowSchema schema = ArrowSchema.wrap(schemaAddress);
+          VectorSchemaRoot flush = Data.importVectorSchemaRoot(allocator, array, schema, dictionaries)) {
+        emitFinalBatch(flush, keyTypes.length);
+      }
+    });
+  }
+
+  protected void flushBatches(long watermark, Native.BatchReceiver receiver) {
     try (ArrowArray array = ArrowArray.allocateNew(allocator);
         ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
       flushHandle(watermark, array.memoryAddress(), schema.memoryAddress());
-      try (VectorSchemaRoot flush =
-          Data.importVectorSchemaRoot(allocator, array, schema, dictionaries)) {
-        int n = flush.getRowCount();
-        if (n == 0) {
-          return;
-        }
-        VectorSchemaRoot out =
-            VectorSchemaRoot.create(runtimeOptions().arrowSchema(outputType), allocator);
-        int properties = outputType.getFieldCount() - keyCount - aggregates;
-        boolean transferBuffers = properties == 0;
-        boolean emitted = false;
-        try {
-          if (!transferBuffers) out.allocateNew();
-          for (int j = 0; j < keyCount; j++) {
-            copyKeyColumn(flush.getVector("key" + j), out.getVector(j), n, transferBuffers);
-          }
-          for (int a = 0; a < aggregates; a++) {
-            if (transferBuffers) {
-              transferColumn(flush.getVector("result" + a), out.getVector(keyCount + a));
-            } else {
-              copyColumn(flush.getVector("result" + a), out.getVector(keyCount + a), n);
-            }
-          }
-          // Window properties follow the keys and aggregates. TVF aggregates carry start/end.
-          // Legacy
-          // group windows carry none, or start/end plus rowtime/proctime attributes in Flink's
-          // order.
-          int base = keyCount + aggregates;
-          if (properties == 1) {
-            throw new IllegalStateException("window output cannot contain exactly one property");
-          }
-          BigIntVector starts = (BigIntVector) flush.getVector("window_start");
-          BigIntVector ends = (BigIntVector) flush.getVector("window_end");
-          if (properties >= 2) {
-            fillLocalTimestamps(starts, out.getVector(base), isLtz(base), n);
-            fillLocalTimestamps(ends, out.getVector(base + 1), isLtz(base + 1), n);
-          }
-          if (properties >= 3 && isEventTimeWindow()) {
-            fillLocalTimestamps(ends, out.getVector(base + 2), isLtz(base + 2), n, -1L);
-          } else if (properties >= 3) {
-            fillTimestampNulls(out.getVector(base + 2), n);
-          }
-          if (properties >= 4) {
-            fillTimestampNulls(out.getVector(base + 3), n);
-          }
-          out.setRowCount(n);
-          ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(out));
-          emitted = true;
-        } finally {
-          if (!emitted) out.close();
+      receiver.accept(array.memoryAddress(), schema.memoryAddress());
+    }
+  }
+
+  private void emitFinalBatch(VectorSchemaRoot flush, int keyCount) {
+    int aggregates = aggregateCount();
+    int n = flush.getRowCount();
+    if (n == 0) {
+      return;
+    }
+    VectorSchemaRoot out = VectorSchemaRoot.create(runtimeOptions().arrowSchema(outputType), allocator);
+    int properties = outputType.getFieldCount() - keyCount - aggregates;
+    boolean transferBuffers = properties == 0;
+    boolean emitted = false;
+    try {
+      if (!transferBuffers) out.allocateNew();
+      for (int j = 0; j < keyCount; j++) {
+        copyKeyColumn(flush.getVector("key" + j), out.getVector(j), n, transferBuffers);
+      }
+      for (int a = 0; a < aggregates; a++) {
+        if (transferBuffers) {
+          transferColumn(flush.getVector("result" + a), out.getVector(keyCount + a));
+        } else {
+          copyColumn(flush.getVector("result" + a), out.getVector(keyCount + a), n);
         }
       }
+      // Window properties follow the keys and aggregates. TVF aggregates carry start/end.
+      // Legacy
+      // group windows carry none, or start/end plus rowtime/proctime attributes in Flink's
+      // order.
+      int base = keyCount + aggregates;
+      if (properties == 1) {
+        throw new IllegalStateException("window output cannot contain exactly one property");
+      }
+      BigIntVector starts = (BigIntVector) flush.getVector("window_start");
+      BigIntVector ends = (BigIntVector) flush.getVector("window_end");
+      if (properties >= 2) {
+        fillLocalTimestamps(starts, out.getVector(base), isLtz(base), n);
+        fillLocalTimestamps(ends, out.getVector(base + 1), isLtz(base + 1), n);
+      }
+      if (properties >= 3 && isEventTimeWindow()) {
+        fillLocalTimestamps(ends, out.getVector(base + 2), isLtz(base + 2), n, -1L);
+      } else if (properties >= 3) {
+        fillTimestampNulls(out.getVector(base + 2), n);
+      }
+      if (properties >= 4) {
+        fillTimestampNulls(out.getVector(base + 3), n);
+      }
+      out.setRowCount(n);
+      ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(out));
+      emitted = true;
+    } finally {
+      if (!emitted) out.close();
     }
   }
 
