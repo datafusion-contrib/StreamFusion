@@ -3,6 +3,88 @@ use super::*;
 
 #[cfg(feature = "rocksdb-state")]
 #[test]
+fn nullable_text_memberships_keep_utf8_equality_across_store_handoffs() {
+    let input = |values: Vec<Option<&str>>| {
+        RecordBatch::try_from_iter(vec![
+            (
+                "k",
+                Arc::new(Int64Array::from(vec![Some(1), Some(1), Some(2), None])) as ArrayRef,
+            ),
+            ("v", Arc::new(StringArray::from(values)) as ArrayRef),
+            ("rt", Arc::new(Int64Array::from(vec![0; 4])) as ArrayRef),
+        ])
+        .unwrap()
+    };
+    let prefix = input(vec![Some("λ-雪"), None, None, Some("😀")]);
+    let create = |persistent, path: &std::path::Path| {
+        let mut owner =
+            OverWindowAggregator::new(vec![3], vec![103], 2, vec![1], vec![0], 3, 0, true)
+                .with_key_timestamp_precisions(vec![i32::MIN, -1]);
+        if persistent {
+            let store = crate::state::RocksOverAggStore::create(
+                crate::state::RocksStoreConfig {
+                    table_dir: path.to_str().unwrap().into(),
+                    max_parallelism: 128,
+                    options_json: include_str!("../../../../benches/fixtures/rocks-options.json")
+                        .into(),
+                    ttl_ms: 0,
+                    shared_resources: 0,
+                },
+                &owner.inner.store_state_types(),
+                &[],
+                &[DataType::Utf8],
+                prefix.schema(),
+                0..=127,
+            )
+            .unwrap();
+            owner = owner.with_store(store, vec![DataType::Int64]);
+        }
+        owner.bind_canonical_distinct(0).unwrap();
+        owner
+    };
+    for from_store in [false, true] {
+        for to_store in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let mut source = create(from_store, &directory.path().join("source"));
+            let mut target = create(to_store, &directory.path().join("target"));
+            source.push_proctime(prefix.clone(), 100).unwrap();
+            source
+                .visit_canonical_folds(|batch| target.import_canonical_folds(&batch))
+                .unwrap();
+            source
+                .visit_canonical_distinct(0, |batch| target.import_canonical_distinct(0, &batch))
+                .unwrap();
+            target.finish_canonical_distinct().unwrap();
+            for (values, counts) in [
+                (
+                    vec![Some("λ-雪"), Some(""), None, Some("😀")],
+                    vec![1, 2, 0, 1],
+                ),
+                (
+                    vec![Some(""), Some("λ-雪"), Some("λ-雪"), Some("雪")],
+                    vec![2, 2, 1, 2],
+                ),
+            ] {
+                let expected = source.push_proctime(input(values.clone()), 500).unwrap();
+                let actual = target.push_proctime(input(values), 500).unwrap();
+                assert_eq!(expected, actual);
+                assert_eq!(
+                    actual
+                        .column(3)
+                        .as_any()
+                        .downcast_ref::<Int64Array>()
+                        .unwrap()
+                        .values()
+                        .as_ref(),
+                    counts.as_slice()
+                );
+            }
+        }
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
 fn represented_row_partitions_share_nullable_memberships_across_live_and_restored_transports() {
     let descriptor = [i32::MIN, -1, -1, -1];
     let input = |binary, prefix| {

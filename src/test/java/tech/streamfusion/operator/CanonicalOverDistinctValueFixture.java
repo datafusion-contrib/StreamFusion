@@ -12,6 +12,8 @@ public final class CanonicalOverDistinctValueFixture {
         "INT",
         "BIGINT",
         "BOOLEAN",
+        "CHAR(32)",
+        "VARCHAR(100)",
         "DECIMAL(18,4)",
         "DECIMAL(38,7)",
         "DATE",

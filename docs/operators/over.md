@@ -2104,9 +2104,18 @@ decimal precision/scale and temporal fractions are retained. DISTINCT SUM/SUM0/A
 integral-only here. New scalar raw-state/native-recovery and planner controls include both
 nullability forms, with separate clean-stock BOOLEAN, wide-decimal and nanosecond timestamp
 COUNT fixtures and independent cardinality oracles. These controls await both-release execution.
-Text, floating and complex DISTINCT arguments remain outside this binding. Unqualified ordinary
+Floating and complex DISTINCT arguments remain outside this binding. Unqualified ordinary
 native contexts keep their existing processing/checkpoint route without canonical interchange
 credit; portable stock plans retain their stock OVER owner for those contexts.
+
+COUNT DISTINCT additionally binds the existing CHAR/VARCHAR UTF-8 membership codec, with the
+same clock, frame and TTL gates. Preflight requires valid UTF-8 and a Java string cache, when
+present, that decodes to exactly those bytes. This keeps membership equality independent of
+cache representation before either fold or membership state mutates. Inconsistent Java caches
+can exist only in heap state; RocksDB has already materialized the serialized bytes. Malformed
+UTF-8 is rejected on either backend with the source retained. New nullable/shared-view,
+overlapping-capture and clean-worker text controls await both-release execution; arithmetic
+DISTINCT remains integral-only. No native state format changes or performance claims are added.
 
 Bounded and unbounded scalar, ROW-key and DISTINCT component captures additionally guard the native snapshot
 entry points. They reject raw partition serialization or a nonempty native checkpoint directory

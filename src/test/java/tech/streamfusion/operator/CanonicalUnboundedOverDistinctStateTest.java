@@ -139,8 +139,21 @@ class CanonicalUnboundedOverDistinctStateTest {
 
   static Stream<Arguments> malformedCases() {
     return Stream.of(
-            "bits", "count", "null", "orphan", "sum", "average", "null-bits", "null-orphan")
-        .flatMap(mode -> Stream.of(false, true).map(rocks -> Arguments.of(mode, rocks)));
+            "bits",
+            "count",
+            "null",
+            "orphan",
+            "sum",
+            "average",
+            "null-bits",
+            "null-orphan",
+            "text-cache",
+            "text-bytes")
+        .flatMap(
+            mode ->
+                Stream.of(false, true)
+                    .filter(rocks -> !rocks || !mode.equals("text-cache"))
+                    .map(rocks -> Arguments.of(mode, rocks)));
   }
 
   @ParameterizedTest
@@ -150,14 +163,16 @@ class CanonicalUnboundedOverDistinctStateTest {
       throws Exception {
     var plan =
         new CanonicalUnboundedOverScalarTest.Plan(
-            mode.startsWith("null-") ? "BIGINT" : "BIGINT NOT NULL",
+            mode.startsWith("text-")
+                ? "VARCHAR(100) NOT NULL"
+                : mode.startsWith("null-") ? "BIGINT" : "BIGINT NOT NULL",
             true,
             false,
             0,
             "BIGINT",
             false,
             false,
-            false,
+            mode.startsWith("text-"),
             true);
     try (var source = plan.stock(rocks);
         var target = plan.nativeHarness(rocks)) {
@@ -200,7 +215,15 @@ class CanonicalUnboundedOverDistinctStateTest {
               VoidNamespaceSerializer.INSTANCE,
               new ValueStateDescriptor<>(view + "_null_state", serializers.getValueSerializer()));
       backend.setCurrentKey(plan.selector.getKey(plan.row(1L, 7L)));
-      if (mode.equals("bits")) map.put(7L, 1L << plan.kinds.length);
+      if (mode.startsWith("text-")) {
+        map.remove(CanonicalOverValueFixture.number(plan.input.getTypeAt(1), 7L));
+        map.put(
+            mode.equals("text-cache")
+                ? org.apache.flink.table.data.StringData.fromString("\ud800")
+                : org.apache.flink.table.data.StringData.fromBytes(
+                    new byte[] {(byte) 0xc0, (byte) 0xaf}),
+            1L);
+      } else if (mode.equals("bits")) map.put(7L, 1L << plan.kinds.length);
       else if (mode.equals("count")) map.remove(7L);
       else if (mode.equals("null")) marker.update(1L);
       else if (mode.equals("null-bits")) marker.update(1L << plan.kinds.length);

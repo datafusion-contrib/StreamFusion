@@ -40,5 +40,9 @@ COUNT also reuses existing decimal, BOOLEAN and date/time/timestamp membership c
 internal key data types keep their released serializers (including DecimalData and TimestampData);
 preflight checks typed members, exact cardinality and nullable-marker ownership. Arithmetic views
 keep the integral restriction, so no decimal arithmetic history is reconstructed from membership.
-Text/floating/complex membership and wider clock/TTL contracts remain unbound. Unqualified
+CHAR/VARCHAR COUNT uses the existing UTF-8 member codec. Before insertion, text preflight rejects
+malformed UTF-8 and Java caches inconsistent with their serialized bytes. Valid caches are
+equivalent to UTF-8 equality; invalid caches can survive in heap state but have already been
+materialized by RocksDB. The source remains intact on rejection, and no text arithmetic history
+is reconstructed. Floating/complex membership and wider clock/TTL contracts remain unbound. Unqualified
 ordinary native processing is not counted as canonical qualification.

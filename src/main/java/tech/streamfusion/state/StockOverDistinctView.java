@@ -91,6 +91,8 @@ public final class StockOverDistinctView implements Serializable {
   public static boolean supportsCountValueType(LogicalType type) {
     return supportsValueType(type)
         || type.is(LogicalTypeRoot.BOOLEAN)
+        || type.is(LogicalTypeRoot.CHAR)
+        || type.is(LogicalTypeRoot.VARCHAR)
         || type.is(LogicalTypeRoot.DECIMAL)
         || type.is(LogicalTypeRoot.DATE)
         || type.is(LogicalTypeRoot.TIME_WITHOUT_TIME_ZONE)
@@ -112,6 +114,9 @@ public final class StockOverDistinctView implements Serializable {
         return value instanceof Long;
       case BOOLEAN:
         return value instanceof Boolean;
+      case CHAR:
+      case VARCHAR:
+        return losslessString(value);
       case DECIMAL:
         if (!(value instanceof org.apache.flink.table.data.DecimalData)) return false;
         var decimal = (org.apache.flink.table.data.DecimalData) value;
@@ -124,6 +129,23 @@ public final class StockOverDistinctView implements Serializable {
         return value instanceof org.apache.flink.table.data.TimestampData;
       default:
         return false;
+    }
+  }
+
+  private static boolean losslessString(Object value) {
+    if (!(value instanceof org.apache.flink.table.data.binary.BinaryStringData)) return false;
+    var string = (org.apache.flink.table.data.binary.BinaryStringData) value;
+    try {
+      var decoded =
+          java.nio.charset.StandardCharsets.UTF_8
+              .newDecoder()
+              .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+              .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+              .decode(java.nio.ByteBuffer.wrap(string.toBytes()))
+              .toString();
+      return string.getJavaObject() == null || string.getJavaObject().equals(decoded);
+    } catch (java.nio.charset.CharacterCodingException malformed) {
+      return false;
     }
   }
 
