@@ -87,9 +87,15 @@ class BatchExtremaSqlTest {
       String plain =
           tech.streamfusion.planner.NativePlanner.explain(
               extrema, "SELECT MIN(d),MAX(tm) FROM extrema");
-      assertTrue(
-          plain.contains("batch aggregate: standalone pipeline has no verified speedup"), plain);
-      assertFalse(plain.contains("NativeAggregate("), plain);
+      assertTrue(plain.contains("NativeAggregate("), plain);
+      var result = extrema.executeSql("SELECT MIN(d),MAX(tm) FROM extrema");
+      String job = result.getJobClient().orElseThrow().getJobID().toString();
+      assertEquals(
+          BatchSortSqlTest.collect(
+              environment(false, 3, new Configuration(), 3)
+                  .executeSql("SELECT MIN(d),MAX(tm) FROM extrema")),
+          BatchSortSqlTest.collect(result));
+      assertTrue(metrics.recordsIn(job, "NativeAggregate") >= 3);
     } finally {
       tech.streamfusion.compat.FlinkTestContexts.clearForRemoteSubmission();
     }

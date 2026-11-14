@@ -240,6 +240,13 @@ optimization, obtain explicit maintainer agreement on the tradeoff, document its
 issue, and keep stock Flink as the default for the affected cases until the tradeoff is accepted or performance
 is demonstrated.
 
+**Batch SQL admission follows compatibility, not performance heuristics.** The maintainer has
+explicitly removed the batch operator/expression performance whitelist. Admit compatible fully
+columnar batch computation, including standalone scalar jobs, global reductions and sorted limits,
+without requiring a qualifying expression, operator or source. Keep semantic/type/runtime checks
+and explicit disable switches. Retain and report unfavorable measurements; do not reintroduce
+performance-only planner gates to suppress those workloads.
+
 **Aggregate/window coverage completion is time-boxed.** For the maintainer's original eleven
 aggregate/window context items, profile a slow case and allow at most two measured optimization
 passes. The maintainer has accepted shipping correctness-verified groundwork after those passes,

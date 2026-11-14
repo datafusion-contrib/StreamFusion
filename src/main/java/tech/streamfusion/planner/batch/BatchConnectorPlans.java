@@ -25,14 +25,6 @@ final class BatchConnectorPlans {
     providers = NativePlannerExtensions.load(loader).extensions();
   }
 
-  boolean hasNativeSource(RelNode node) {
-    if (!(node instanceof BatchPhysicalTableSourceScan)) return false;
-    for (var provider : providers)
-      if (provider.planBatchSource((BatchPhysicalTableSourceScan) node, config) != null)
-        return true;
-    return false;
-  }
-
   List<RelNode> lower(List<RelNode> roots) {
     if (!NativeConfig.nativeEnabled()) return roots;
     var result = new ArrayList<RelNode>();

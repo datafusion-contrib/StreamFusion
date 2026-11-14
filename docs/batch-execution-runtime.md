@@ -287,8 +287,7 @@ sink fails once, then recovers all 2,051 sorted rows from the completed blocking
 Arrow shuffle: native sort/exit reach attempt 1 while producers stay on attempt 0.
 The packaged loader executes the same multi-batch sort through its isolated payload.
 Unchanged upstream integer and STRING-key fixtures require positive native work
-on both supported Flink lines. Standalone sorted-limit fixtures retain their
-explicit performance fallback.
+on both supported Flink lines. Standalone sorted-limit fixtures require positive native sort work.
 
 The [sort benchmarks](benchmarks/batch-sort-groundwork.md) report separate prepared
 operation and complete-job measurements. Complete jobs retain scans, both transposes,
@@ -298,8 +297,9 @@ these queries was whole-query stock Flink fallback.
 Global SQL aggregate controls additionally replay completed partial states after a
 final consumer failure, with producers remaining on their first attempt. The
 packaged payload executes both populated and empty aggregate results. The
-[aggregate comparisons](benchmarks/batch-aggregates.md) record rejected standalone
-candidates and admitted compositions; only the latter qualify current SQL islands.
+[aggregate comparisons](benchmarks/batch-aggregates.md) retain historical standalone
+regressions and composition gains. Current admission is based on compatibility;
+standalone reductions no longer require a qualifying composition.
 
 Fixed-width extrema controls additionally compare every typed replay result to
 stock Flink after consumer failure. The producer attempt remains zero while the

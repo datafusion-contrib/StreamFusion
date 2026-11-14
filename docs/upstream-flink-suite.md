@@ -36,13 +36,15 @@ The profile also includes the released `flink-table-common` test JAR: the Table
 API aggregate fixture uses its `LegacyRowExtension`. This remains test-only.
 Flink 1.18 additionally needs its released Scala Table bridge on the test classpath.
 
-The batch Calc contracts require stock fallback for `testManySelectWithFilter` and
-`testFilterOnInteger` under the measured scalar-boundary rule, and positive native
-work for `testUserDefinedScalarFunction`. Both runtime-route scope files retain
-those host/native expectations. Pass the current suite agent through
-`sf.extraJvmArgs`, with fresh `streamfusion.flink-suite.native-reports` and
+The batch Calc contracts require positive native work for
+`testManySelectWithFilter`, `testFilterOnInteger`, `testUserDefinedScalarFunction`
+and the contracted standalone DATE comparisons. Both runtime-route scope files
+require native execution for these methods. Batch compute admission uses semantic
+compatibility and whole-query columnar composition, without an operator/expression
+performance whitelist. Pass the current suite agent through `sf.extraJvmArgs`,
+with fresh `streamfusion.flink-suite.native-reports` and
 `streamfusion.flink-suite.sql-inventory` directories. A passing upstream assertion
-without those native/fallback witnesses is not acceleration evidence.
+without native/fallback witnesses is not execution evidence.
 
 The unchanged released batch SQL `MiscITCase` adds two positive sort contracts:
 `testNullOrdering` consumes 18 native rows across six queries and
@@ -53,32 +55,28 @@ successful processing; merely constructing a native plan is insufficient.
 [Sort validation evidence](benchmarks/results/batch-sort-sql-20261109.json) retains
 per-job success, batch graph types and positive native work from the focused runs.
 
-The released `SortLimitITCase` runs unchanged on both lines. Four signed-integer
-methods and the STRING-key `testOrderByLimitBehindField` require the standalone
-sorted-limit performance fallback. `testOrderBehindField` requires positive native
-sort work (21 rows) on both host lines. Candidate runs before the cost
-gate passed all assertions with positive bounded-sort work; those witnesses are
-labelled candidate-only, not current admission. Local composed SHA2/sorted-limit
-controls exercise the admitted native path. Private helper overloads of test method
-names are excluded from execution-contract advice, so the outer JUnit invocation
-owns one scope. No helper SQL or assertion is changed.
+The released `SortLimitITCase` runs unchanged on both lines. All six contracted
+methods require positive `NativeBatchSortOperator` work, including standalone
+signed-integer and STRING-key limits. Historical witnesses from the performance
+whitelist retain their original revision/route. Local controls compare standalone
+limits through multiple output batches, offsets, NULLs and empty input. Private
+helper overloads of test method names are excluded from execution-contract advice,
+so the outer JUnit invocation owns one scope. No helper SQL or assertion is changed.
 
-Released `HashAggITCase` and `SortAggITCase` now each contract the inherited
+Released `HashAggITCase` and `SortAggITCase` each contract the inherited
 `testAggWithoutGroups`, `testAggregationWithoutGroupby` and `testCountStar` methods.
-They require the exact standalone aggregate performance fallback; runtime routes
-remain `batch_host_only`. Candidate native observations are retained separately
-from current admission. The agent instruments the declaring aggregate base, then
-resolves each witness to the concrete JUnit fixture identity, so inherited methods
-cannot silently escape the contract or attach to the wrong class. Empty SUM/AVG
-fixtures are parity controls without fabricated positive-input credit.
+They require positive `NativeBatchAggregateOperator` work and native runtime routes.
+The agent instruments the declaring aggregate base, then resolves each witness to
+the concrete JUnit fixture identity, so inherited methods cannot silently escape
+the contract or attach to the wrong class. Empty SUM/AVG fixtures are parity
+controls without fabricated positive-input credit.
 
 The unchanged batch Table API `AggregationITCase.testAggregationTypes` requires
-`batch aggregate: standalone pipeline has no verified speedup` on both lines.
-`testWorkingAggregationDataTypes` includes unsupported floating-point AVG and requires
-`batch aggregate: SUM/SUM0/AVG require signed integers or DECIMAL; MIN/MAX require signed integers, BOOLEAN, DECIMAL, DATE or TIME`.
-Both are `batch_host_only` controls. Separate local SQL/operator controls establish
-positive native work for admitted fixed-width extrema and typed blocking-shuffle
-replay against the stock result.
+positive native aggregate work on both lines. `testWorkingAggregationDataTypes`
+includes unsupported floating-point AVG and still requires
+`batch aggregate: SUM/SUM0/AVG require signed integers or DECIMAL; MIN/MAX require signed integers, BOOLEAN, DECIMAL, DATE or TIME`
+and a `batch_host_only` route. Local SQL/operator controls also cover fixed-width
+extrema and typed blocking-shuffle replay against the stock result.
 
 Released HashAgg `testTwoPhasesAggregation`, `testNullGroupKeyAggregation` and
 `testGroupByOnly` require positive `NativeBatchAggregateOperator` work on both
@@ -2111,9 +2109,8 @@ these exact display names. The observer instruments both batch join input method
 result parity or unrelated native Calc work cannot satisfy the join contract.
 
 The unchanged batch date fixtures `CalcITCase#testDateCompareWithDateString` and
-`#testDateEqualsWithDateString` retain explicit standalone-Calc performance
-fallback contracts on both supported lines. Their exact runtime-route cases are
-`batch_host_only`; these passing oracle fixtures receive no native-work credit.
+`#testDateEqualsWithDateString` require positive native Calc work on both supported
+lines. Their exact runtime-route cases require `native` execution.
 Separate admitted-pipeline DATE controls verify native work and absence of
 registered Java predicate evaluators.
 

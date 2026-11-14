@@ -117,17 +117,17 @@ same complete-job boundaries/resources apply.
 | 1,000,000 | 0 / 64 | yes | 245.23 [225.10–257.72] | 149.05 [139.04–151.71] | 1.65× |
 | 2,000,000 | 1,023 / 16,384 | yes | 463.09 [449.46–524.65] | 293.84 [285.84–297.01] | 1.58× |
 
-**Standalone sorted limits remain stock.** Their prepared single-key operations
-are faster, but the complete two-key jobs did not establish a gain. The larger
-candidate was slower, and a 4,096-row batching diagnostic still lost (175/204 ms
-stock/native). A sorted limit therefore does not qualify an island by itself;
-it can compose with the existing SHA2, unrestricted-sort or accepted UDF rules.
-This preserves the scalar admission design without a performance opt-in.
+Standalone compatible sorted limits are now admitted without a performance
+whitelist. The historical complete two-key jobs above did not establish a gain:
+the larger candidate was slower, and a 4,096-row batching diagnostic still lost
+(175/204 ms stock/native). Removing the admission heuristic does not establish a
+new performance improvement; these unfavorable measurements remain applicable
+evidence for optimization work.
 
 [Sorted-limit evidence](results/batch-sorted-limit-20261109.json) retains every
 trial, ranges, the rejected candidates and the batching diagnostic. Previous
 StreamFusion behavior was stock fallback for all these sorted-limit queries,
-including the now-admitted compositions. These local results do not establish
+including the measured compositions. These local results do not establish
 remote-network throughput or performance for other types, key counts or limits.
 
 ## Environment and reproduction
