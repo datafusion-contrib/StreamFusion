@@ -1825,6 +1825,8 @@ final class StockCompiledPlanLowering {
     for (int i = 0; i < calls.size(); i++) {
       var call = calls.get(i);
       if (call.isDistinct()
+              && (bounded || !processing || retention > 0
+                  || call.getAggregation().getKind() != SqlKind.COUNT)
           || call.isApproximate()
           || call.filterArg >= 0
           || !call.getCollation().getFieldCollations().isEmpty()
@@ -1857,6 +1859,7 @@ final class StockCompiledPlanLowering {
               : call.getArgList().get(0);
       if (columns[i] < 0 || columns[i] >= argumentType.getFieldCount()) return stock;
       var type = argumentType.getTypeAt(columns[i]);
+      if (call.isDistinct()) kinds[i] += 100;
       if (!NativeOverAggExecNode.stockFoldValueType(kinds[i], type)) return stock;
       types[i] =
           WindowAggregateMatcher.windowValueTypeCode(
@@ -1873,8 +1876,7 @@ final class StockCompiledPlanLowering {
             bounded,
             true,
             true);
-    if (infos.distinctInfos().length != 0
-        || infos.getActualAggregateInfos().length != calls.size()
+    if (infos.getActualAggregateInfos().length != calls.size()
         || Arrays.stream(infos.aggInfos()).anyMatch(info -> info.viewSpecs().length != 0))
       return stock;
     var generated =
@@ -1900,12 +1902,30 @@ final class StockCompiledPlanLowering {
     var keyType = (RowType) selector.getProducedType().toLogicalType();
     StockStateContract contract;
     try {
+      var distinctViews = new ArrayList<tech.streamfusion.state.StockOverDistinctView>();
+      for (var distinct : infos.distinctInfos()) {
+        if (bounded || !processing || retention > 0 || distinct.excludeAcc()
+            || distinct.consumeRetraction() || distinct.dataViewSpec().isEmpty()) return stock;
+        int[] slots = new int[distinct.aggIndexes().size()];
+        for (int index = 0; index < slots.length; index++) {
+          slots[index] = (Integer) distinct.aggIndexes().apply(index);
+          if (slots[index] < 0 || slots[index] >= kinds.length || kinds[slots[index]] != 103)
+            return stock;
+        }
+        var view = distinct.dataViewSpec().get();
+        distinctViews.add(new tech.streamfusion.state.StockOverDistinctView(
+            view.getStateId(), keyType, distinct.keyType().getLogicalType(),
+            org.apache.flink.table.runtime.typeutils.ExternalSerializer.of(view.getKeyDataType()),
+            org.apache.flink.table.runtime.typeutils.ExternalSerializer.of(view.getValueDataType()),
+            slots));
+      }
       int hiddenCount = infos.countStarInserted() ? infos.getIndexOfCountStar() : -1;
       contract =
           !bounded
               ? processing
                   ? new tech.streamfusion.state.StockOverFoldStateContract(
-                      serializer, keyType, RowType.of(generated), kinds, widths, retention > 0)
+                      serializer, keyType, RowType.of(generated), kinds, widths, retention > 0,
+                      distinctViews)
                   : new tech.streamfusion.state.StockOverEventFoldStateContract(
                       serializer,
                       keyType,

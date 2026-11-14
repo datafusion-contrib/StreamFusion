@@ -2535,3 +2535,10 @@ GROUP BY non-DISTINCT COUNT additionally binds existing binary, interval and nes
 readers to the unchanged BIGINT accumulator, including filtered eager/one-phase/two-phase paths.
 New plan/raw-state/clean-worker controls await both-release execution. DISTINCT views, grouping
 key representations and other aggregate argument restrictions are unchanged.
+
+
+A pending OVER extension binds existing unbounded processing-time COUNT DISTINCT membership
+transfers for required INT/BIGINT arguments with TTL disabled. It preserves the released raw
+count, shared membership-map serializers and null-state descriptor. Both-release component and
+clean-worker controls are written but unexecuted. Nullable arguments, TTL, event/bounded frames
+and other DISTINCT forms remain outside this extension; see the OVER page for its exact scope.

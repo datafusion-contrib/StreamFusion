@@ -368,7 +368,8 @@ class CanonicalUnboundedOverScalarTest {
   }
 
   static Map<String, String> raw(
-      org.apache.flink.streaming.util.AbstractStreamOperatorTestHarness<?> harness) throws Exception {
+      org.apache.flink.streaming.util.AbstractStreamOperatorTestHarness<?> harness)
+      throws Exception {
     var backend = (CheckpointableKeyedStateBackend<?>) harness.getOperator().getKeyedStateBackend();
     var resources = backend.savepoint().getSnapshotResources();
     try (AutoCloseable release = resources::release) {
@@ -431,6 +432,20 @@ class CanonicalUnboundedOverScalarTest {
         boolean extrema,
         boolean countOnly)
         throws Exception {
+      this(type, rows, global, ttl, keyType, composite, extrema, countOnly, false);
+    }
+
+    Plan(
+        String type,
+        boolean rows,
+        boolean global,
+        long ttl,
+        String keyType,
+        boolean composite,
+        boolean extrema,
+        boolean countOnly,
+        boolean distinct)
+        throws Exception {
       this.rows = rows;
       this.ttl = ttl;
       this.countOnly = countOnly;
@@ -469,7 +484,7 @@ class CanonicalUnboundedOverScalarTest {
               .compilePlanSql(
                   "INSERT INTO scalar_output SELECT k,v,"
                       + (countOnly
-                          ? "COUNT(v) OVER w"
+                          ? "COUNT(" + (distinct ? "DISTINCT " : "") + "v) OVER w"
                           : extrema
                               ? "MIN(v) OVER w,MAX(v) OVER w,COUNT(v) OVER w"
                               : "SUM(v) OVER w,COUNT(v) OVER w,AVG(v) OVER w")
@@ -511,7 +526,7 @@ class CanonicalUnboundedOverScalarTest {
               false,
               true,
               true);
-      assertEquals(0, infos.distinctInfos().length);
+      assertEquals(distinct ? 1 : 0, infos.distinctInfos().length);
       assertFalse(infos.countStarInserted());
       int[] widths =
           Arrays.stream(infos.getActualAggregateInfos())
@@ -529,7 +544,7 @@ class CanonicalUnboundedOverScalarTest {
                       case MAX:
                         return 2;
                       case COUNT:
-                        return 3;
+                        return call.isDistinct() ? 103 : 3;
                       case AVG:
                         return 4;
                       case SUM0:
@@ -553,6 +568,23 @@ class CanonicalUnboundedOverScalarTest {
               .map(org.apache.flink.table.types.DataType::getLogicalType)
               .toArray(LogicalType[]::new),
           accumulator.getChildren().toArray(LogicalType[]::new));
+      var views = new ArrayList<tech.streamfusion.state.StockOverDistinctView>();
+      for (var membership : infos.distinctInfos()) {
+        var view = membership.dataViewSpec().get();
+        int[] slots = new int[membership.aggIndexes().size()];
+        for (int index = 0; index < slots.length; index++)
+          slots[index] = (Integer) membership.aggIndexes().apply(index);
+        views.add(
+            new tech.streamfusion.state.StockOverDistinctView(
+                view.getStateId(),
+                selector.getProducedType().toRowType(),
+                membership.keyType().getLogicalType(),
+                org.apache.flink.table.runtime.typeutils.ExternalSerializer.of(
+                    view.getKeyDataType()),
+                org.apache.flink.table.runtime.typeutils.ExternalSerializer.of(
+                    view.getValueDataType()),
+                slots));
+      }
       contract =
           new StockOverFoldStateContract(
               selector.getProducedType().toSerializer(),
@@ -560,7 +592,8 @@ class CanonicalUnboundedOverScalarTest {
               accumulator,
               kinds,
               widths,
-              ttl > 0);
+              ttl > 0,
+              views);
     }
 
     ExecNode<?> node() throws Exception {

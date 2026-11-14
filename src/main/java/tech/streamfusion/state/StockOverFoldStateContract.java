@@ -35,6 +35,7 @@ public final class StockOverFoldStateContract implements StockStateContract {
   private final int[] kinds, widths;
   private final int[] nativeFields, decimalSumCounts;
   private final boolean ttl;
+  private final List<StockOverDistinctView> views;
   private final RowData.FieldGetter[] keyGetters, valueGetters;
 
   public StockOverFoldStateContract(
@@ -44,17 +45,45 @@ public final class StockOverFoldStateContract implements StockStateContract {
       int[] kinds,
       int[] widths,
       boolean ttl) {
+    this(keys, keyType, accumulatorType, kinds, widths, ttl, List.of());
+  }
+
+  public StockOverFoldStateContract(
+      TypeSerializer<RowData> keys,
+      RowType keyType,
+      RowType accumulatorType,
+      int[] kinds,
+      int[] widths,
+      boolean ttl,
+      List<StockOverDistinctView> views) {
+    this.views = List.copyOf(views);
+    boolean[] distinct = new boolean[kinds.length];
+    if (ttl && !views.isEmpty())
+      throw new IllegalArgumentException("OVER DISTINCT TTL lifetimes are not bound");
+    for (var view : views) view.validateAggregates(kinds, distinct);
+    for (int index = 0; index < kinds.length; index++)
+      if (kinds[index] >= 100 && !distinct[index])
+        throw new IllegalArgumentException("OVER DISTINCT membership view is missing");
     this.keys = keys.duplicate();
     this.keyType = keyType;
     this.accumulatorType = accumulatorType;
-    this.kinds = kinds.clone();
+    this.kinds = Arrays.stream(kinds).map(kind -> kind >= 100 ? kind - 100 : kind).toArray();
+    kinds = this.kinds;
     this.widths = widths.clone();
     this.ttl = ttl;
     if (keyType.getChildren().stream().anyMatch(type -> !supportsPartitionKey(type))
         || kinds.length == 0
         || kinds.length != widths.length
-        || Arrays.stream(widths).sum() != accumulatorType.getFieldCount())
+        || Arrays.stream(widths).sum() + views.size() != accumulatorType.getFieldCount())
       throw new IllegalArgumentException("Unqualified unbounded OVER key or accumulator layout");
+    int scalarCount = Arrays.stream(widths).sum();
+    for (int field = scalarCount; field < accumulatorType.getFieldCount(); field++) {
+      var type = accumulatorType.getTypeAt(field);
+      if (!(type instanceof org.apache.flink.table.types.logical.RawType)
+          || !(((org.apache.flink.table.types.logical.RawType<?>) type).getTypeSerializer()
+              instanceof org.apache.flink.table.dataview.NullSerializer))
+        throw new IllegalArgumentException("Unqualified OVER DISTINCT placeholder");
+    }
     int slot = 0;
     for (int i = 0; i < kinds.length; i++) {
       boolean extreme = kinds[i] == 1 || kinds[i] == 2;
@@ -71,8 +100,8 @@ public final class StockOverFoldStateContract implements StockStateContract {
     var fields = new ArrayList<RowType.RowField>();
     for (int i = 0; i < keyType.getFieldCount(); i++)
       fields.add(new RowType.RowField("key" + i, keyType.getTypeAt(i).copy(true)));
-    nativeFields = new int[accumulatorType.getFieldCount()];
-    decimalSumCounts = new int[accumulatorType.getFieldCount()];
+    nativeFields = new int[scalarCount];
+    decimalSumCounts = new int[scalarCount];
     Arrays.fill(decimalSumCounts, -1);
     slot = 0;
     int nativeSlot = 0;
@@ -92,7 +121,7 @@ public final class StockOverFoldStateContract implements StockStateContract {
     fields.add(new RowType.RowField("__over_retention_stamp", new BigIntType(false)));
     bridge = new RowType(fields);
     keyGetters = getters(keyType, 0);
-    valueGetters = getters(accumulatorType, 0);
+    valueGetters = Arrays.copyOf(getters(accumulatorType, 0), scalarCount);
   }
 
   private static boolean numeric(LogicalType type) {
@@ -148,7 +177,16 @@ public final class StockOverFoldStateContract implements StockStateContract {
 
   @Override
   public Map<String, StateDescriptor.Type> stateDescriptors() {
-    return Map.of(STATE, StateDescriptor.Type.VALUE);
+    var result = new java.util.LinkedHashMap<String, StateDescriptor.Type>();
+    result.put(STATE, StateDescriptor.Type.VALUE);
+    for (var view : views)
+      view.stateDescriptors()
+          .forEach(
+              (name, type) -> {
+                if (result.putIfAbsent(name, type) != null)
+                  throw new IllegalArgumentException("Duplicate OVER DISTINCT state name: " + name);
+              });
+    return Map.copyOf(result);
   }
 
   @Override
@@ -216,7 +254,7 @@ public final class StockOverFoldStateContract implements StockStateContract {
   @Override
   public org.apache.flink.runtime.state.SavepointResources<RowData> snapshot(
       StockSnapshotContext context, long handle, boolean persistent) throws Exception {
-    if (persistent)
+    if (persistent && views.isEmpty())
       return context.nativeValue(
           STATE,
           new RowDataSerializer(accumulatorType),
@@ -231,6 +269,7 @@ public final class StockOverFoldStateContract implements StockStateContract {
   public void exportState(
       CheckpointableKeyedStateBackend<RowData> backend, long handle, boolean persistent)
       throws Exception {
+    configureNativeState(handle, persistent);
     clear(backend);
     var state = state(backend);
     visit(
@@ -240,6 +279,12 @@ public final class StockOverFoldStateContract implements StockStateContract {
           backend.setCurrentKey(key);
           state.update(value, written);
         });
+    for (var view : views) view.exportState(backend, handle);
+  }
+
+  @Override
+  public void configureNativeState(long handle, boolean persistent) {
+    for (var view : views) view.configure(handle);
   }
 
   private void visit(
@@ -258,7 +303,7 @@ public final class StockOverFoldStateContract implements StockStateContract {
           RowData.createFieldGetter(accumulatorType.getTypeAt(i).copy(true), nativeFields[i]);
     return (row, receiver) -> {
       var key = copy(row, keyGetters);
-      var accumulator = new GenericRowData(nativeFields.length);
+      var accumulator = new GenericRowData(accumulatorType.getFieldCount());
       for (int i = 0; i < nativeFields.length; i++) {
         boolean emptySum = decimalSumCounts[i] >= 0 && row.getLong(decimalSumCounts[i]) == 0;
         accumulator.setField(i, emptySum ? null : getters[i].getFieldOrNull(row));
@@ -275,13 +320,21 @@ public final class StockOverFoldStateContract implements StockStateContract {
       CheckpointableKeyedStateBackend<RowData> backend, long handle, boolean persistent)
       throws Exception {
     StockStateInventory.validate(backend, stateDescriptors(), Set.of(), keys);
+    configureNativeState(handle, persistent);
     requireEmpty(handle);
     transferState(backend, handle, true);
+    int[] scalarFields = new int[kinds.length];
+    for (int index = 1; index < kinds.length; index++)
+      scalarFields[index] = scalarFields[index - 1] + widths[index - 1];
+    for (var view : views) view.validate(backend, state(backend), scalarFields, this::validateKey);
     transferState(backend, handle, false);
+    for (var view : views) view.importState(backend, handle);
+    if (!views.isEmpty()) Native.finishOverCanonicalDistinct(handle);
     clear(backend);
   }
 
   void requireEmpty(long handle) {
+    for (var view : views) view.requireEmpty(handle);
     Native.exportOverFoldCanonical(
         handle,
         (array, schema) ->

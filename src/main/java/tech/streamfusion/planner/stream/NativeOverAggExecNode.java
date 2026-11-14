@@ -92,7 +92,8 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
                         && kind != 3
                         && kind != 4
                         && kind != 22
-                        && (bounded || kind != 1 && kind != 2))) return false;
+                        && (bounded || kind != 1 && kind != 2)
+                        && (bounded || !proctime || kind != 103))) return false;
     var input = (RowType) getInputEdges().get(0).getOutputType();
     if (java.util.Arrays.stream(keyColumns)
         .anyMatch(
@@ -120,6 +121,10 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
 
   static boolean stockFoldValueType(
       int kind, org.apache.flink.table.types.logical.LogicalType type) {
+    if (kind == 103)
+      return !type.isNullable()
+          && (type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.INTEGER)
+              || type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.BIGINT));
     if (kind == 3)
       return !type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.BINARY)
           && tech.streamfusion.operator.RowDataArrowConverter.supports(RowType.of(type));

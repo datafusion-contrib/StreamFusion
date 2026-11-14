@@ -2045,3 +2045,26 @@ so unsupported datagen generators do not mask the state contract. Additional unb
 jobs cover binary/ARRAY/ROW/nested-MAP values, NULL arguments, ordinary/portable submissions,
 empty returns, native checkpoints and keyed rescaling with independent final counts. All new
 controls await execution on Flink 1.18 and 2.2; historical passing cohorts do not qualify them.
+
+
+## Additional unbounded DISTINCT binding awaiting qualification
+
+The Java canonical binding now connects the existing native membership transfer for unbounded
+processing-time COUNT DISTINCT over required INT/BIGINT arguments, with state TTL disabled.
+ROWS and RANGE use the released scalar accumulator plus its actual shared DISTINCT MAP view,
+stock external serializers and null-state descriptor. Memberships and raw counts transfer
+separately without replay. Complete cardinality and membership-bit validation precedes native
+insertion, and failed preflight retains the source state. Memory and RocksDB capture reuse the
+existing live-state readers; no new native checkpoint format is introduced.
+
+Nullable DISTINCT arguments remain outside this extension because their stock NULL-membership
+marker needs its own native representation. TTL, event-time and bounded DISTINCT, other argument
+types, filtered DISTINCT and other DISTINCT aggregate kinds retain their existing gates.
+
+New actual-stock controls cover exact raw state, continued duplicate suppression, no-input
+returns, native checkpoint recovery, both stores and keyed/global ownership. Malformed bitsets,
+cardinality mismatches, NULL markers and membership-only orphan keys must reject before mutation;
+a repaired source can retry into the same empty target. Clean-worker jobs add ordinary/portable
+submission, both engine orders and rescaling, with independent counts. These controls await
+Flink 1.18 and 2.2 execution in the final local window. Historical passing counts above do not
+qualify this new binding, and no performance claim is made.
