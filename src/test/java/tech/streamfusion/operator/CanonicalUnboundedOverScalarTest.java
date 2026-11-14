@@ -396,6 +396,7 @@ class CanonicalUnboundedOverScalarTest {
     final boolean rows;
     final long ttl;
     final boolean countOnly;
+    final boolean distinct;
     final boolean binaryRowKeys;
 
     Plan(String type, boolean rows, boolean global, long ttl) throws Exception {
@@ -446,6 +447,7 @@ class CanonicalUnboundedOverScalarTest {
       this.rows = rows;
       this.ttl = ttl;
       this.countOnly = countOnly;
+      this.distinct = distinct;
       var config = new Configuration();
       config.setString("streamfusion.native.enabled", "false");
       config.setString("table.exec.state.ttl", ttl + " ms");
@@ -672,7 +674,11 @@ class CanonicalUnboundedOverScalarTest {
     RowData row(Long key, Long value) {
       var row = new GenericRowData(input.getFieldCount());
       CanonicalOverKeyFixture.set(row, input, key);
-      row.setField(1, CanonicalOverValueFixture.number(input.getTypeAt(1), value));
+      row.setField(
+          1,
+          distinct && countOnly
+              ? CanonicalOverDistinctValueFixture.number(input.getTypeAt(1), value)
+              : CanonicalOverValueFixture.number(input.getTypeAt(1), value));
       return row;
     }
 

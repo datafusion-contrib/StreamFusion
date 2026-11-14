@@ -2555,13 +2555,18 @@ and DISTINCT extrema remain outside this extension; see the OVER page for its ex
 COUNT DISTINCT additionally binds the existing decimal, boolean and date/time/timestamp member
 codecs while retaining the stock BIGINT scalar. Typed preflight and nullable/raw-recovery controls,
 plus independent clean-stock boolean/decimal/nanosecond timestamp jobs, await both-release
-execution. DISTINCT arithmetic remains integral-only; floating/complex members and the
+execution. DISTINCT arithmetic remains integral-only; complex members and the
 existing clock/TTL exclusions remain outside this binding.
 
 COUNT DISTINCT also has a pending CHAR/VARCHAR binding to the existing UTF-8 member codec.
 Preflight rejects malformed bytes and inconsistent Java caches before native mutation. Source
 state remains intact on failure; native memory/RocksDB handoffs, nullable raw-state/recovery,
 overlapping writers and a complete clean-stock text job await both-release execution.
+
+FLOAT/DOUBLE COUNT DISTINCT additionally reuses existing boxed membership equality: signed zeros
+stay distinct and NaN payloads canonicalize in memory and RocksDB. New exact-count controls,
+raw/recovery and complete-job fixtures remain pending. Floating DISTINCT arithmetic retains its
+existing gate; no native state field is added.
 
 Pending bounded and unbounded OVER controls also forbid intermediate native snapshot entry points during
 canonical capture and check the counter after writer completion, while retaining ordinary

@@ -91,6 +91,8 @@ public final class StockOverDistinctView implements Serializable {
   public static boolean supportsCountValueType(LogicalType type) {
     return supportsValueType(type)
         || type.is(LogicalTypeRoot.BOOLEAN)
+        || type.is(LogicalTypeRoot.FLOAT)
+        || type.is(LogicalTypeRoot.DOUBLE)
         || type.is(LogicalTypeRoot.CHAR)
         || type.is(LogicalTypeRoot.VARCHAR)
         || type.is(LogicalTypeRoot.DECIMAL)
@@ -114,6 +116,10 @@ public final class StockOverDistinctView implements Serializable {
         return value instanceof Long;
       case BOOLEAN:
         return value instanceof Boolean;
+      case FLOAT:
+        return value instanceof Float;
+      case DOUBLE:
+        return value instanceof Double;
       case CHAR:
       case VARCHAR:
         return losslessString(value);

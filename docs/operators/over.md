@@ -2104,7 +2104,7 @@ decimal precision/scale and temporal fractions are retained. DISTINCT SUM/SUM0/A
 integral-only here. New scalar raw-state/native-recovery and planner controls include both
 nullability forms, with separate clean-stock BOOLEAN, wide-decimal and nanosecond timestamp
 COUNT fixtures and independent cardinality oracles. These controls await both-release execution.
-Floating and complex DISTINCT arguments remain outside this binding. Unqualified ordinary
+Complex DISTINCT arguments remain outside this binding. Unqualified ordinary
 native contexts keep their existing processing/checkpoint route without canonical interchange
 credit; portable stock plans retain their stock OVER owner for those contexts.
 
@@ -2116,6 +2116,13 @@ can exist only in heap state; RocksDB has already materialized the serialized by
 UTF-8 is rejected on either backend with the source retained. New nullable/shared-view,
 overlapping-capture and clean-worker text controls await both-release execution; arithmetic
 DISTINCT remains integral-only. No native state format changes or performance claims are added.
+
+FLOAT/DOUBLE COUNT DISTINCT also binds the existing boxed-value codec. Native sets and RocksDB
+member keys preserve both signed zeros and canonicalize NaN payloads, matching stock Float/Double
+map-key equality and serializers. No floating sum is reconstructed from membership; floating
+SUM/SUM0/AVG DISTINCT remains outside the Java binding. New direct-store, raw-state, no-input,
+native-recovery, writer and clean-worker count controls include signed zeros, distinct NaN payloads,
+infinities and NULL-only owners. These controls are unexecuted and await both-release qualification.
 
 Bounded and unbounded scalar, ROW-key and DISTINCT component captures additionally guard the native snapshot
 entry points. They reject raw partition serialization or a nonempty native checkpoint directory

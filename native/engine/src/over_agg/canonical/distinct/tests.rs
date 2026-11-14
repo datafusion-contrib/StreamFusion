@@ -3,6 +3,133 @@ use super::*;
 
 #[cfg(feature = "rocksdb-state")]
 #[test]
+fn floating_count_memberships_preserve_boxed_zero_and_nan_equality_between_stores() {
+    for (data_type, code) in [(DataType::Float32, 6), (DataType::Float64, 1)] {
+        let input = |suffix| {
+            let values: ArrayRef = if data_type == DataType::Float32 {
+                Arc::new(Float32Array::from(if suffix {
+                    vec![
+                        Some(f32::from_bits(0xffc00022)),
+                        Some(-0.0),
+                        Some(0.0),
+                        Some(1.0),
+                        Some(-0.0),
+                        Some(f32::NAN),
+                    ]
+                } else {
+                    vec![
+                        Some(-0.0),
+                        Some(0.0),
+                        Some(f32::from_bits(0x7fc00011)),
+                        None,
+                        None,
+                        Some(f32::INFINITY),
+                    ]
+                }))
+            } else {
+                Arc::new(Float64Array::from(if suffix {
+                    vec![
+                        Some(f64::from_bits(0xfff8000000000022)),
+                        Some(-0.0),
+                        Some(0.0),
+                        Some(1.0),
+                        Some(-0.0),
+                        Some(f64::NAN),
+                    ]
+                } else {
+                    vec![
+                        Some(-0.0),
+                        Some(0.0),
+                        Some(f64::from_bits(0x7ff8000000000011)),
+                        None,
+                        None,
+                        Some(f64::INFINITY),
+                    ]
+                }))
+            };
+            RecordBatch::try_from_iter(vec![
+                (
+                    "k",
+                    Arc::new(Int64Array::from(vec![
+                        Some(1),
+                        Some(1),
+                        Some(1),
+                        Some(1),
+                        Some(2),
+                        None,
+                    ])) as ArrayRef,
+                ),
+                ("v", values),
+                ("rt", Arc::new(Int64Array::from(vec![0; 6])) as ArrayRef),
+            ])
+            .unwrap()
+        };
+        let create = |persistent, path: &std::path::Path| {
+            let mut owner =
+                OverWindowAggregator::new(vec![code], vec![103], 2, vec![1], vec![0], 3, 0, true)
+                    .with_key_timestamp_precisions(vec![i32::MIN, -1]);
+            if persistent {
+                let store = crate::state::RocksOverAggStore::create(
+                    crate::state::RocksStoreConfig {
+                        table_dir: path.to_str().unwrap().into(),
+                        max_parallelism: 128,
+                        options_json: include_str!(
+                            "../../../../benches/fixtures/rocks-options.json"
+                        )
+                        .into(),
+                        ttl_ms: 0,
+                        shared_resources: 0,
+                    },
+                    &owner.inner.store_state_types(),
+                    &[],
+                    &[data_type.clone()],
+                    input(false).schema(),
+                    0..=127,
+                )
+                .unwrap();
+                owner = owner.with_store(store, vec![DataType::Int64]);
+            }
+            owner.bind_canonical_distinct(0).unwrap();
+            owner
+        };
+        let counts = |batch: &RecordBatch| {
+            batch
+                .column(3)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap()
+                .values()
+                .to_vec()
+        };
+        for from_store in [false, true] {
+            for to_store in [false, true] {
+                let directory = tempfile::tempdir().unwrap();
+                let mut source = create(from_store, &directory.path().join("source"));
+                let mut target = create(to_store, &directory.path().join("target"));
+                assert_eq!(
+                    counts(&source.push_proctime(input(false), 100).unwrap()),
+                    vec![1, 2, 3, 3, 0, 1]
+                );
+                source
+                    .visit_canonical_folds(|batch| target.import_canonical_folds(&batch))
+                    .unwrap();
+                source
+                    .visit_canonical_distinct(0, |batch| {
+                        target.import_canonical_distinct(0, &batch)
+                    })
+                    .unwrap();
+                target.finish_canonical_distinct().unwrap();
+                let expected = source.push_proctime(input(true), 500).unwrap();
+                let actual = target.push_proctime(input(true), 500).unwrap();
+                assert_eq!(expected, actual);
+                assert_eq!(counts(&actual), vec![3, 3, 3, 4, 1, 2]);
+            }
+        }
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
 fn nullable_text_memberships_keep_utf8_equality_across_store_handoffs() {
     let input = |values: Vec<Option<&str>>| {
         RecordBatch::try_from_iter(vec![

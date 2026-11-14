@@ -13,7 +13,7 @@ import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.TimestampType;
 import org.apache.flink.table.types.logical.utils.LogicalTypeParser;
 import org.apache.flink.types.RowKind;
-import tech.streamfusion.operator.CanonicalOverValueFixture;
+import tech.streamfusion.operator.CanonicalOverDistinctValueFixture;
 
 abstract class CanonicalScalarOverDistinctCountJobTest
     extends CanonicalUnboundedOverNullableDistinctJobTest {
@@ -33,7 +33,7 @@ abstract class CanonicalScalarOverDistinctCountJobTest
           GenericRowData.ofKind(
               RowKind.valueOf(cells[0]),
               cells[1].equals("null") ? null : Long.valueOf(cells[1]),
-              CanonicalOverValueFixture.number(
+              CanonicalOverDistinctValueFixture.number(
                   valueType, cells[2].equals("null") ? null : Long.valueOf(cells[2])),
               TimestampData.fromEpochMillis(Long.parseLong(cells[3])));
       var buffer = new DataOutputSerializer(256);

@@ -36,7 +36,9 @@ class CanonicalOverDistinctPlanTest {
                             !mode.equals("sum") && !mode.equals("avg")
                                 || tech.streamfusion.operator.CanonicalOverDistinctValueFixture
                                     .integral(type)
-                                || type.startsWith("DECIMAL"))
+                                || type.startsWith("DECIMAL")
+                                || type.equals("FLOAT")
+                                || type.equals("DOUBLE"))
                     .flatMap(
                         mode ->
                             Stream.of(false, true)

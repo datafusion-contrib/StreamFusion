@@ -44,5 +44,8 @@ CHAR/VARCHAR COUNT uses the existing UTF-8 member codec. Before insertion, text 
 malformed UTF-8 and Java caches inconsistent with their serialized bytes. Valid caches are
 equivalent to UTF-8 equality; invalid caches can survive in heap state but have already been
 materialized by RocksDB. The source remains intact on rejection, and no text arithmetic history
-is reconstructed. Floating/complex membership and wider clock/TTL contracts remain unbound. Unqualified
+is reconstructed. FLOAT/DOUBLE COUNT also reuses the existing boxed membership codec: both zero
+signs remain separate, while NaN payloads canonicalize as they do in Flink's boxed keys and
+serializers. Floating DISTINCT arithmetic remains unbound. Complex membership and wider clock/TTL
+contracts remain unbound. Unqualified
 ordinary native processing is not counted as canonical qualification.
