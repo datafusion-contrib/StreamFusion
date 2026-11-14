@@ -3,6 +3,7 @@ use crate::*;
 
 mod canonical;
 mod collection_agg;
+mod stock_bundle;
 mod stock_merge;
 mod stock_typed;
 use collection_agg::{is_collection, CollectionState};
@@ -2201,7 +2202,10 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         }
         self.snapshot_cache = None;
         self.last_input_ms = now_ms;
-        if self.mini_batch && self.ttl_ms > 0 && !self.draining_deferred {
+        if self.mini_batch
+            && (self.ttl_ms > 0 || self.stock_retracting_bundle())
+            && !self.draining_deferred
+        {
             return self.update_regular(batch, now_ms);
         }
         if let Some(output) = self.try_update_single_append(batch, now_ms)? {
@@ -2229,7 +2233,10 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             .collect();
         self.snapshot_cache = None;
         self.last_input_ms = now_ms;
-        if self.mini_batch && self.ttl_ms > 0 && !self.draining_deferred {
+        if self.mini_batch
+            && (self.ttl_ms > 0 || self.stock_retracting_bundle())
+            && !self.draining_deferred
+        {
             // The host reads retained global state only when its temporary bundle is merged.
             let mut added = batch.get_array_memory_size() + std::mem::size_of::<RecordBatch>();
             let mut encoder = BinaryRowBatchEncoder::new(
@@ -3537,11 +3544,18 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
         let batches = std::mem::take(&mut self.deferred_batches);
-        self.deferred_keys = HashMap::default();
         self.draining_deferred = true;
+        let stock_bundle = self.stock_retracting_bundle();
         let result = (|| {
+            if stock_bundle {
+                self.drain_stock_retracting_bundle(&batches, now_ms)?;
+            }
             for (batch, bytes) in batches {
-                let result = self.update(&batch, now_ms);
+                let result = if stock_bundle {
+                    Ok(RecordBatch::new_empty(Arc::new(Schema::empty())))
+                } else {
+                    self.update(&batch, now_ms)
+                };
                 drop(batch);
                 self.deferred_bytes -= bytes;
                 if self.memory.tracking() {
@@ -3553,6 +3567,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             Ok::<(), DataFusionError>(())
         })();
         self.draining_deferred = false;
+        self.deferred_keys = HashMap::default();
         if self.memory.tracking() {
             self.memory.forget(self.deferred_bytes);
         }
@@ -3566,6 +3581,8 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             return self.finish_single_append();
         }
         if !self.mini_batch || self.staged_order.is_empty() {
+            self.store.end_bundle()?;
+            self.memory.account_shrink();
             return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
         }
         let mut order = std::mem::take(&mut self.staged_order);

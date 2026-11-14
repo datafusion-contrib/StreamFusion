@@ -4033,3 +4033,14 @@ pre-allocation conversion allowance within the existing 128-KiB small-pool contr
 frames retain their 1,024-record protocol limit. Drained mini-batches use the same retracting
 view contract, while pending bundles still fail direct export. Logical schema fixtures use the
 released Table API for interval columns that SQL DDL cannot declare.
+
+Bound one-phase retracting mini-batches follow the released 1.18/2.2 whole-bundle early return
+when a key has only unmatched retractions and no live accumulator. Their buffered Arrow rows
+are grouped in the released binary-key HashMap order before applying state changes; later keys
+remain untouched after that return. A later insertion for the same key in the bundle prevents
+the early return. The existing deferred-input buffers and task reservation cover this work,
+including TTL reads at bundle drainage. Two-phase merges retain their independent contract.
+
+Ordinary grouped owners with non-compact DECIMAL or precise TIMESTAMP grouping fields likewise
+use the captured stock template when direct ordinary binding cannot retain that key layout.
+Canonical qualification remains scoped to the existing supported aggregate/state contracts.
