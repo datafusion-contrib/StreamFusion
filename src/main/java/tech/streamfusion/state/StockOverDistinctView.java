@@ -82,6 +82,10 @@ public final class StockOverDistinctView implements Serializable {
   }
 
   public static boolean supportsValueType(LogicalType type) {
+    return integral(type) || type.is(LogicalTypeRoot.FLOAT) || type.is(LogicalTypeRoot.DOUBLE);
+  }
+
+  private static boolean integral(LogicalType type) {
     return type.is(LogicalTypeRoot.TINYINT)
         || type.is(LogicalTypeRoot.SMALLINT)
         || type.is(LogicalTypeRoot.INTEGER)
@@ -312,7 +316,8 @@ public final class StockOverDistinctView implements Serializable {
               for (int slot = 0; slot < aggregates.length; slot++) {
                 if ((flags >>> slot & 1) == 0) continue;
                 counts[slot]++;
-                if (kinds[aggregates[slot]] != 3)
+                if (kinds[aggregates[slot]] != 3
+                    && integral(bridge.getTypeAt(keyType.getFieldCount())))
                   sums[slot] += ((Number) entry.getKey()).longValue();
               }
             }
@@ -329,19 +334,42 @@ public final class StockOverDistinctView implements Serializable {
                 && value.getLong(field + (kind == 4 ? 1 : 0)) != counts[slot])
               throw new IllegalStateException("OVER DISTINCT scalar and membership count differ");
             if (kind != 3) {
+              var type = accumulatorType.getTypeAt(field);
+              Object actual =
+                  RowData.createFieldGetter(type.copy(true), field).getFieldOrNull(value);
+              if (!integral(bridge.getTypeAt(keyType.getFieldCount()))) {
+                validateFloatingScalar(type, actual, kind, counts[slot]);
+                continue;
+              }
               Object expected =
                   kind == 0 && counts[slot] == 0
                       ? null
                       : sumValue(accumulatorType.getTypeAt(field), sums[slot]);
-              Object actual =
-                  RowData.createFieldGetter(accumulatorType.getTypeAt(field).copy(true), field)
-                      .getFieldOrNull(value);
               if (!java.util.Objects.equals(expected, actual))
                 throw new IllegalStateException("OVER DISTINCT scalar and membership sum differ");
             }
           }
         }
       }
+  }
+
+  private static void validateFloatingScalar(LogicalType type, Object sum, int kind, long count) {
+    if (!type.is(LogicalTypeRoot.FLOAT) && !type.is(LogicalTypeRoot.DOUBLE))
+      throw new IllegalStateException("Invalid OVER DISTINCT floating accumulator type");
+    if (kind == 0) {
+      if ((count == 0) != (sum == null))
+        throw new IllegalStateException("OVER DISTINCT sum emptiness differs from membership");
+    } else if (sum == null)
+      throw new IllegalStateException("NULL in a required OVER DISTINCT floating sum");
+    // Membership is unordered. Preserve the recorded IEEE addition history instead of replaying it.
+    if (count == 0 && kind != 0) {
+      boolean positiveZero =
+          type.is(LogicalTypeRoot.FLOAT)
+              ? sum instanceof Float && Float.floatToRawIntBits((Float) sum) == 0
+              : sum instanceof Double && Double.doubleToRawLongBits((Double) sum) == 0;
+      if (!positiveZero)
+        throw new IllegalStateException("OVER DISTINCT empty floating sum is not positive zero");
+    }
   }
 
   private long validateFlags(Object value) {

@@ -2050,7 +2050,7 @@ controls await execution on Flink 1.18 and 2.2; historical passing cohorts do no
 ## Additional unbounded DISTINCT binding awaiting qualification
 
 The Java canonical binding now connects the existing native membership transfer for unbounded
-processing-time COUNT/SUM/SUM0/AVG DISTINCT over TINYINT/SMALLINT/INT/BIGINT arguments, with state TTL disabled.
+processing-time COUNT/SUM/SUM0/AVG DISTINCT over TINYINT/SMALLINT/INT/BIGINT/FLOAT/DOUBLE arguments, with state TTL disabled.
 ROWS and RANGE use the released scalar accumulator plus its actual shared DISTINCT MAP view,
 stock external serializers and null-state descriptor. Memberships and raw counts transfer
 separately without replay. Complete cardinality, wrapping integral sum and membership-bit validation precedes native
@@ -2101,7 +2101,7 @@ TINYINT arithmetic fixture adds continuation and rescaling. These additions rema
 COUNT DISTINCT also binds existing decimal, BOOLEAN, DATE, TIME and TIMESTAMP/LTZ membership
 codecs. The stock BIGINT cardinality stays independent of typed members and nullable markers;
 decimal precision/scale and temporal fractions are retained. DISTINCT SUM/SUM0/AVG remain
-integral-only here. New scalar raw-state/native-recovery and planner controls include both
+numeric-only here, with decimal arithmetic unbound. New scalar raw-state/native-recovery and planner controls include both
 nullability forms, with separate clean-stock BOOLEAN, wide-decimal and nanosecond timestamp
 COUNT fixtures and independent cardinality oracles. These controls await both-release execution.
 Complex DISTINCT arguments remain outside this binding. Unqualified ordinary
@@ -2115,14 +2115,19 @@ cache representation before either fold or membership state mutates. Inconsisten
 can exist only in heap state; RocksDB has already materialized the serialized bytes. Malformed
 UTF-8 is rejected on either backend with the source retained. New nullable/shared-view,
 overlapping-capture and clean-worker text controls await both-release execution; arithmetic
-DISTINCT remains integral-only. No native state format changes or performance claims are added.
+DISTINCT retains its numeric whitelist. No native state format changes or performance claims are added.
 
 FLOAT/DOUBLE COUNT DISTINCT also binds the existing boxed-value codec. Native sets and RocksDB
 member keys preserve both signed zeros and canonicalize NaN payloads, matching stock Float/Double
-map-key equality and serializers. No floating sum is reconstructed from membership; floating
-SUM/SUM0/AVG DISTINCT remains outside the Java binding. New direct-store, raw-state, no-input,
+map-key equality and serializers. FLOAT/DOUBLE SUM/SUM0/AVG DISTINCT now binds the existing raw
+floating accumulators as well. No floating sum is reconstructed from unordered membership:
+addition order and cancellation history remain in the recorded sum, while AVG cardinality is
+checked independently. Empty SUM must be NULL; empty SUM0/AVG raw sums must be positive zero. New direct-store, raw-state, no-input,
 native-recovery, writer and clean-worker count controls include signed zeros, distinct NaN payloads,
-infinities and NULL-only owners. These controls are unexecuted and await both-release qualification.
+infinities and NULL-only owners. Additional arithmetic controls cover cancellation history,
+corrupt empty/missing sums and a complete DOUBLE arithmetic job with fractional independent
+oracles. Complete OVER job comparisons retain committed record bytes before applying their
+typed independent final-value oracle. These controls are unexecuted and await both-release qualification.
 
 Bounded and unbounded scalar, ROW-key and DISTINCT component captures additionally guard the native snapshot
 entry points. They reject raw partition serialization or a nonempty native checkpoint directory
@@ -2161,7 +2166,7 @@ New raw-state controls cover mixed generic/binary input, both stores, native rec
 native controls cross both stores with 2,051 keys. Ordinary/portable full jobs include clean
 stock handoffs and keyed rescaling with nested, padded ROW keys and string extrema. Component
 controls also combine ROW and standalone string partition keys. All controls await both-release
-execution. The same selective key schema now applies to integral DISTINCT membership views,
+execution. The same selective key schema now applies to bound DISTINCT membership views,
 including nullable markers and standalone string companion keys. Membership import normalizes
 its leading key columns before comparing with the fold codec. New native controls use 2,051
 mixed generic/binary ROW keys, NULL-only owners and all store pairs; raw-state and clean-stock

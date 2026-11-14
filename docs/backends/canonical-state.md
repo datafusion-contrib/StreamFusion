@@ -2544,7 +2544,7 @@ key representations and other aggregate argument restrictions are unchanged.
 
 
 A pending OVER extension binds existing unbounded processing-time COUNT/SUM/SUM0/AVG DISTINCT membership
-transfers for TINYINT/SMALLINT/INT/BIGINT arguments with TTL disabled. It preserves the released raw
+transfers for TINYINT/SMALLINT/INT/BIGINT/FLOAT/DOUBLE arguments with TTL disabled. It preserves the released raw
 counts, wrapping integral sums, shared membership-map serializers and null-state descriptor. Both-release component and
 clean-worker controls are written but unexecuted. Nullable arguments retain independent NULL
 membership without contributing to scalar sums/counts; existing nullable member-list/table
@@ -2555,7 +2555,7 @@ and DISTINCT extrema remain outside this extension; see the OVER page for its ex
 COUNT DISTINCT additionally binds the existing decimal, boolean and date/time/timestamp member
 codecs while retaining the stock BIGINT scalar. Typed preflight and nullable/raw-recovery controls,
 plus independent clean-stock boolean/decimal/nanosecond timestamp jobs, await both-release
-execution. DISTINCT arithmetic remains integral-only; complex members and the
+execution. Decimal DISTINCT arithmetic, complex members and the
 existing clock/TTL exclusions remain outside this binding.
 
 COUNT DISTINCT also has a pending CHAR/VARCHAR binding to the existing UTF-8 member codec.
@@ -2565,8 +2565,11 @@ overlapping writers and a complete clean-stock text job await both-release execu
 
 FLOAT/DOUBLE COUNT DISTINCT additionally reuses existing boxed membership equality: signed zeros
 stay distinct and NaN payloads canonicalize in memory and RocksDB. New exact-count controls,
-raw/recovery and complete-job fixtures remain pending. Floating DISTINCT arithmetic retains its
-existing gate; no native state field is added.
+raw/recovery and complete-job fixtures remain pending. FLOAT/DOUBLE DISTINCT arithmetic also
+binds existing raw sums/counts, retaining IEEE addition history instead of replaying unordered
+members. Preflight checks exact AVG cardinality and empty-sum invariants. Cancellation, signed
+zero/NaN, malformed floating sums and fractional clean-worker arithmetic controls are authored
+but unexecuted; no native state field is added.
 
 Pending bounded and unbounded OVER controls also forbid intermediate native snapshot entry points during
 canonical capture and check the counter after writer completion, while retaining ordinary
@@ -2631,7 +2634,7 @@ New raw-state/native-recovery and clean-stock job controls await both-release qu
 The selective schema preserves original-byte metadata only on ROW partition columns, admitting
 standalone string companion keys and string accumulator fields without changing their existing
 representation. These combinations also have pending raw-state and clean-stock controls.
-Integral DISTINCT membership views now share that selective key schema, including NULL markers;
+Bound DISTINCT membership views now share that selective key schema, including NULL markers;
 leading membership keys normalize before native installation. New cross-store/native, raw-state
 and clean-stock job controls for these combined owners await both-release execution.
 Event/bounded ROW keys and collection descendants remain gated.

@@ -29,6 +29,12 @@ public final class CanonicalOverDistinctValueFixture {
         .anyMatch(type -> sql.equals(type) || sql.equals(type + " NOT NULL"));
   }
 
+  public static boolean arithmetic(String sql) {
+    return integral(sql)
+        || Stream.of("FLOAT", "DOUBLE")
+            .anyMatch(type -> sql.equals(type) || sql.equals(type + " NOT NULL"));
+  }
+
   public static Object number(org.apache.flink.table.types.logical.LogicalType type, Long value) {
     if (value == null) return null;
     if (type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.FLOAT)) {

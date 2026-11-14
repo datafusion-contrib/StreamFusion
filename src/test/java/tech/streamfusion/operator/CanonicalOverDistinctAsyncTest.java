@@ -42,7 +42,7 @@ class CanonicalOverDistinctAsyncTest {
             represented ? CanonicalRowKeyFixture.sql(true) : "BIGINT",
             composite,
             false,
-            !CanonicalOverDistinctValueFixture.integral(type),
+            !CanonicalOverDistinctValueFixture.arithmetic(type),
             true);
     var expected = new OperatorSubtaskState[2];
     var captures = new CanonicalOverSnapshotTestSupport.Capture[2];

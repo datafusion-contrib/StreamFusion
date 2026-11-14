@@ -676,7 +676,7 @@ class CanonicalUnboundedOverScalarTest {
       CanonicalOverKeyFixture.set(row, input, key);
       row.setField(
           1,
-          distinct && countOnly
+          distinct
               ? CanonicalOverDistinctValueFixture.number(input.getTypeAt(1), value)
               : CanonicalOverValueFixture.number(input.getTypeAt(1), value));
       return row;
@@ -720,7 +720,8 @@ class CanonicalUnboundedOverScalarTest {
     }
 
     private String value(RowData row) {
-      if (countOnly || binaryRowKeys) return CanonicalOverValueFixture.serialized(row, output);
+      if (countOnly || binaryRowKeys || distinct)
+        return CanonicalOverValueFixture.serialized(row, output);
       var values = new ArrayList<String>();
       for (int i = 0; i < output.getFieldCount(); i++) {
         if (i == timeColumn)

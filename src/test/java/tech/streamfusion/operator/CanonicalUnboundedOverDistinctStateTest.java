@@ -37,7 +37,7 @@ class CanonicalUnboundedOverDistinctStateTest {
           for (boolean rocks : new boolean[] {false, true})
             for (boolean first : new boolean[] {false, true})
               for (boolean arithmetic : new boolean[] {false, true})
-                if (!arithmetic || CanonicalOverDistinctValueFixture.integral(type))
+                if (!arithmetic || CanonicalOverDistinctValueFixture.arithmetic(type))
                   cases.add(Arguments.of(type, rows, global, rocks, first, arithmetic));
     return tech.streamfusion.CanonicalTestMatrix.select(cases.stream());
   }
@@ -74,6 +74,11 @@ class CanonicalUnboundedOverDistinctStateTest {
       if (CanonicalOverDistinctValueFixture.integral(type)) {
         prefix.add(plan.row(1L, edge));
         prefix.add(plan.row(1L, 1L));
+      }
+      if (arithmetic && !CanonicalOverDistinctValueFixture.integral(type)) {
+        prefix.add(plan.row(4L, 10000000000000000L));
+        prefix.add(plan.row(4L, 1L));
+        prefix.add(plan.row(4L, -10000000000000000L));
       }
       if (!type.contains("NOT NULL")) {
         prefix.add(plan.row(1L, null));
@@ -148,7 +153,13 @@ class CanonicalUnboundedOverDistinctStateTest {
             "null-bits",
             "null-orphan",
             "text-cache",
-            "text-bytes")
+            "text-bytes",
+            "float-empty-average",
+            "double-empty-average",
+            "float-empty-sum",
+            "double-empty-sum",
+            "float-missing-sum",
+            "double-missing-sum")
         .flatMap(
             mode ->
                 Stream.of(false, true)
@@ -163,9 +174,13 @@ class CanonicalUnboundedOverDistinctStateTest {
       throws Exception {
     var plan =
         new CanonicalUnboundedOverScalarTest.Plan(
-            mode.startsWith("text-")
-                ? "VARCHAR(100) NOT NULL"
-                : mode.startsWith("null-") ? "BIGINT" : "BIGINT NOT NULL",
+            mode.startsWith("float-")
+                ? "FLOAT"
+                : mode.startsWith("double-")
+                    ? "DOUBLE"
+                    : mode.startsWith("text-")
+                        ? "VARCHAR(100) NOT NULL"
+                        : mode.startsWith("null-") ? "BIGINT" : "BIGINT NOT NULL",
             true,
             false,
             0,
@@ -178,7 +193,11 @@ class CanonicalUnboundedOverDistinctStateTest {
         var target = plan.nativeHarness(rocks)) {
       source.open();
       target.open();
-      plan.stockInput(source, List.of(plan.row(1L, 7L), plan.row(1L, 8L)));
+      plan.stockInput(
+          source,
+          mode.contains("-empty-")
+              ? List.of(plan.row(1L, null), plan.row(1L, null))
+              : List.of(plan.row(1L, 7L), plan.row(1L, 8L)));
       var valid = snapshot(source);
       var backend =
           (CheckpointableKeyedStateBackend<RowData>) source.getOperator().getKeyedStateBackend();
@@ -252,10 +271,16 @@ class CanonicalUnboundedOverDistinctStateTest {
                   .getFieldOrNull(current));
         int field = 0;
         for (int kind : plan.kinds) {
-          if (kind == (mode.equals("sum") ? 100 : 104)) break;
+          if (kind == (mode.equals("sum") || mode.endsWith("-sum") ? 100 : 104)) break;
           field += kind == 104 || kind == 4 ? 2 : 1;
         }
-        corrupt.setField(field, current.getLong(field) + 1);
+        if (mode.endsWith("missing-sum")) corrupt.setField(field, null);
+        else if (mode.startsWith("float-")) {
+          if (mode.endsWith("average")) corrupt.setField(field, -0.0d);
+          else corrupt.setField(field, 0.0f);
+        } else if (mode.startsWith("double-"))
+          corrupt.setField(field, mode.endsWith("average") ? -0.0d : 0.0d);
+        else corrupt.setField(field, current.getLong(field) + 1);
         accumulator.update(corrupt);
       }
       var invalid = raw(source);

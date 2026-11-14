@@ -98,7 +98,7 @@ class CanonicalOverDistinctPlanTest {
             || mode.equals("nullable")
             || mode.equals("independent")
             || (mode.equals("sum") || mode.equals("avg"))
-                && tech.streamfusion.operator.CanonicalOverDistinctValueFixture.integral(type);
+                && tech.streamfusion.operator.CanonicalOverDistinctValueFixture.arithmetic(type);
     var bound = new java.util.ArrayList<Object>();
     for (var owner : owners) if (field(owner, "stockStateContract") != null) bound.add(owner);
     assertEquals(admitted ? 1 : 0, bound.size(), graph.getStreamingPlanAsJSON());
