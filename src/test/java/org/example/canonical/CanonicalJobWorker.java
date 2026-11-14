@@ -237,6 +237,11 @@ public final class CanonicalJobWorker {
       if (Files.exists(root.resolve("nested-join-checksum")))
         table.createTemporarySystemFunction(
             "nested_checksum", CanonicalFixtureFactory.NestedJoinChecksum.class);
+      if (Files.exists(root.resolve("nested-rank-checksum")))
+        table.createTemporarySystemFunction("rank_checksum",
+            Files.readString(root.resolve("nested-rank-checksum")).trim().equals("map")
+                ? CanonicalFixtureFactory.NestedRankChecksum.class
+                : CanonicalFixtureFactory.NestedRowRankChecksum.class);
       registerInput(
           table, root, "input_table", "input.csv", ready, limit, fixedConnectorParallelism);
       if (twoInputs)

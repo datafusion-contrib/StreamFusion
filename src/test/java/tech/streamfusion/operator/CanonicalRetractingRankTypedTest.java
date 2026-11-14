@@ -41,7 +41,7 @@ class CanonicalRetractingRankTypedTest {
     var cases = new ArrayList<Arguments>();
     for (String shape : Stream.concat(
             Stream.of("int", "string", "long", "not-null", "collision", "composite", "three-sort"),
-            CanonicalRankScalarFixture.shapes()).collect(java.util.stream.Collectors.toList()))
+            Stream.concat(CanonicalRankScalarFixture.shapes(), CanonicalRankPayloadFixture.shapes(false))).collect(java.util.stream.Collectors.toList()))
       for (String mode :
           List.of("fixed", "offset", "variable", "fixed-ttl", "offset-ttl", "variable-ttl"))
         for (boolean rocks : new boolean[] {false, true})
@@ -179,7 +179,12 @@ class CanonicalRetractingRankTypedTest {
     Layout(String shape, boolean twoSorts) {
       this.shape = shape;
       RowType base;
-      if (shape.startsWith("scalar-")) {
+      if (shape.startsWith("payload-")) {
+        base = RowType.of(new BigIntType(), new BigIntType(), new VarCharType(100),
+            CanonicalRankPayloadFixture.type(shape));
+        keys = new int[] {0};
+        score = 1;
+      } else if (shape.startsWith("scalar-")) {
         base = RowType.of(CanonicalRankScalarFixture.type(shape),
             CanonicalRankScalarFixture.type(shape), new VarCharType(100));
         keys = new int[] {0};
@@ -231,6 +236,10 @@ class CanonicalRetractingRankTypedTest {
       var label = StringData.fromString("row-😀-" + id);
       Object size =
           type.getTypeAt(this.bound).is(LogicalTypeRoot.INTEGER) ? (Object) bound : (long) bound;
+      if (shape.startsWith("payload-"))
+        return GenericRowData.of(key == null ? null : key.longValue(),
+            score == null ? null : score.longValue(), label,
+            CanonicalRankPayloadFixture.value(shape, id), size);
       if (shape.startsWith("scalar-"))
         return GenericRowData.of(CanonicalRankScalarFixture.value(shape, key),
             CanonicalRankScalarFixture.score(shape, score), label, size);

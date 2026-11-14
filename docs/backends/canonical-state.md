@@ -21,7 +21,7 @@ pages. Historical cohorts are not silently requalified against each newer librar
 | --- | --- | --- |
 | [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Arithmetic, typed scalar/shared COUNT DISTINCT and append numeric SUM DISTINCT, append extrema, integral/date/time/boolean retracting MIN/MAX, append scalar and local/global DISTINCT mini-batches, and captured managed UDFs; one-phase retracting scalar/COUNT DISTINCT mini-batches awaiting qualification | Wider types/keys, remaining retracting mini-batches, wider UDF contracts, other views/phases and failures |
 | [Deduplication](../operators/deduplication.md#canonical-state-adapter) | Automatic eager and buffered contracts, selected mini-batch and TTL modes | Remaining schemas/emission variants and full failure matrix |
-| [Top-N / First-N / LIMIT](../operators/top-n.md#first-n-canonical-handoffs) | Automatic first-N, append, updating and retracting rank subsets; wider scalar/arbitrary-sort binding awaiting qualification | Algorithm-specific bounds, TTL, nested retained types and complete new-scope qualification |
+| [Top-N / First-N / LIMIT](../operators/top-n.md#first-n-canonical-handoffs) | Automatic first-N, append, updating and retracting rank subsets; wider scalar/arbitrary-sort and nested-payload binding awaiting qualification | Algorithm-specific bounds, TTL, constructed key/sort types and complete new-scope qualification |
 | [Regular joins](../operators/joins/regular-join.md) | Automatic qualified stock layouts and complete-job handoffs; nested payload binding awaiting qualification | Wider uniqueness, mini-batch, schema and TTL combinations |
 | [Fixed windows](../operators/window-aggregate.md#stock-canonical-savepoint-interoperability) | Automatic binding, namespaced/DISTINCT state and selected complete-job handoffs | Complete phase/type/view and failure matrix |
 | [Sessions](../operators/window-aggregate.md) | Automatic partitioned TVF and legacy event/processing-time SESSION binding, operator recovery and selected complete-job handoffs | Native unpartitioned SESSION TVF assignment and wider merging/timer/recovery matrix |
@@ -2349,3 +2349,13 @@ existing native decimal precisions/scales. New compact/wide-scale planner, opera
 clean-worker continuation/recovery/rescale fixtures await testing on both Flink releases.
 The compatibility source fixture parses declared scalar types so narrow integers, strings and
 decimals retain their physical representation; nested rows continue using its binary protocol.
+
+## Rank payload binding awaiting qualification
+
+Existing rank state codecs now bind retained ROW/ARRAY payloads with scalar partition, sort and
+update keys. Append-only rank additionally admits MAP/MULTISET descendants through its existing
+tagged Arrow representation. Updating map-bearing inputs retain the established equality fallback
+tracked separately in #437. New planner and component controls retain full nested rows across
+append, updating and retracting state; clean-worker append/retract jobs combine the full payload
+and computed rank in a user function to prevent payload pruning. Both-direction continuation,
+no-input, native checkpoint and rescale cases await testing on both supported release lines.

@@ -38,7 +38,7 @@ class CanonicalAppendRankTypedTest {
   private static Stream<Arguments> allCases() {
     return Stream.concat(
             Stream.of("released", "released-nn", "long", "string", "collision", "composite"),
-            CanonicalRankScalarFixture.shapes())
+            Stream.concat(CanonicalRankScalarFixture.shapes(), CanonicalRankPayloadFixture.shapes(true)))
         .flatMap(
             shape ->
                 Stream.of(false, true)
@@ -63,7 +63,9 @@ class CanonicalAppendRankTypedTest {
   void typedRetainedRowsSurviveBothCanonicalDirections(
       String shape, boolean fast, boolean rocks, boolean ttl, boolean rank) throws Exception {
     RowType type =
-        shape.startsWith("scalar-")
+        shape.startsWith("payload-")
+            ? RowType.of(new BigIntType(), new BigIntType(), CanonicalRankPayloadFixture.type(shape))
+            : shape.startsWith("scalar-")
             ? RowType.of(CanonicalRankScalarFixture.type(shape),
                 CanonicalRankScalarFixture.type(shape), new BigIntType())
             : shape.startsWith("released")
@@ -295,6 +297,9 @@ class CanonicalAppendRankTypedTest {
   }
 
   private static RowData row(String shape, Integer key, Integer score, int id) {
+    if (shape.startsWith("payload-"))
+      return GenericRowData.of(key == null ? null : key.longValue(),
+          score == null ? null : score.longValue(), CanonicalRankPayloadFixture.value(shape, id));
     if (shape.startsWith("scalar-"))
       return GenericRowData.of(CanonicalRankScalarFixture.value(shape, key),
           CanonicalRankScalarFixture.score(shape, score), (long) id);

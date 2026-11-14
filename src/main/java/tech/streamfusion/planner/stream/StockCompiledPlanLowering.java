@@ -3377,8 +3377,12 @@ final class StockCompiledPlanLowering {
         || inputType.getChildren().stream()
             .anyMatch(
                 type ->
-                    type.is(LogicalTypeFamily.CONSTRUCTED)
-                        || !retracting && LogicalTypeChecks.isProctimeAttribute(type))) return stock;
+                    !retracting && LogicalTypeChecks.isProctimeAttribute(type))
+        || !scalarFields(inputType, keys)
+        || !scalarFields(inputType, sort.getFieldIndices())
+        || updating && !scalarFields(inputType, rowKeys)
+        || (updating || retracting)
+            && tech.streamfusion.arrow.MapListRepresentation.containsMap(inputType)) return stock;
     if (java.util.stream.IntStream.concat(
             Arrays.stream(keys), Arrays.stream(sort.getFieldIndices()))
         .anyMatch(
@@ -3527,8 +3531,8 @@ final class StockCompiledPlanLowering {
         || !RowDataArrowConverter.supports(outputType)
         || !ArrowRowTypeSupport.supportsFields(leftType, leftKeys)
         || !ArrowRowTypeSupport.supportsFields(rightType, rightKeys)
-        || !scalarJoinKeys(leftType, leftKeys)
-        || !scalarJoinKeys(rightType, rightKeys)) return stock;
+        || !scalarFields(leftType, leftKeys)
+        || !scalarFields(rightType, rightKeys)) return stock;
     var originalJoin = stockNodes.get(stock.getId());
     if (tech.streamfusion.arrow.MapListRepresentation.containsMap(leftType)
             && !stockProducesOnlyInserts(originalJoin.getInputEdges().get(0).getSource())
@@ -3957,8 +3961,8 @@ final class StockCompiledPlanLowering {
         || !RowDataArrowConverter.supports(outputType)
         || !ArrowRowTypeSupport.supportsFields(leftType, leftKeys)
         || !ArrowRowTypeSupport.supportsFields(rightType, rightKeys)
-        || !scalarJoinKeys(leftType, leftKeys)
-        || !scalarJoinKeys(rightType, rightKeys)) return stock;
+        || !scalarFields(leftType, leftKeys)
+        || !scalarFields(rightType, rightKeys)) return stock;
     for (LogicalType time : List.of(leftType.getTypeAt(leftTime), rightType.getTypeAt(rightTime)))
       if (!(time.is(LogicalTypeRoot.BIGINT)
           || (time.is(LogicalTypeRoot.TIMESTAMP_WITHOUT_TIME_ZONE)
@@ -4086,8 +4090,8 @@ final class StockCompiledPlanLowering {
         || !RowDataArrowConverter.supports(outputType)
         || !ArrowRowTypeSupport.supportsFields(leftType, leftKeys)
         || !ArrowRowTypeSupport.supportsFields(rightType, rightKeys)
-        || !scalarJoinKeys(leftType, leftKeys)
-        || !scalarJoinKeys(rightType, rightKeys)) return stock;
+        || !scalarFields(leftType, leftKeys)
+        || !scalarFields(rightType, rightKeys)) return stock;
     var config = new Configuration(planner.getTableConfig().getConfiguration());
     FlinkPlanCompat.persistedConfig(stock).toMap().forEach(config::setString);
     if (config
@@ -4242,8 +4246,8 @@ final class StockCompiledPlanLowering {
         || !RowDataArrowConverter.supports(leftType)
         || !RowDataArrowConverter.supports(rightType)
         || !RowDataArrowConverter.supports(outputType)
-        || !scalarJoinKeys(leftType, leftKeys)
-        || !scalarJoinKeys(rightType, rightKeys)
+        || !scalarFields(leftType, leftKeys)
+        || !scalarFields(rightType, rightKeys)
         || !ArrowRowTypeSupport.supportsFields(leftType, leftKeys)
         || !ArrowRowTypeSupport.supportsFields(rightType, rightKeys)) return stock;
     for (boolean filter : joinSpec.getFilterNulls()) if (!filter) return stock;
@@ -4385,7 +4389,7 @@ final class StockCompiledPlanLowering {
     return Arrays.stream(keys).anyMatch(key -> containsRow(type.getTypeAt(key)));
   }
 
-  private static boolean scalarJoinKeys(RowType type, int[] keys) {
+  private static boolean scalarFields(RowType type, int[] keys) {
     return Arrays.stream(keys)
         .noneMatch(key -> type.getTypeAt(key).is(LogicalTypeFamily.CONSTRUCTED));
   }

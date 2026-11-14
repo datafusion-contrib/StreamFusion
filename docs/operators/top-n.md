@@ -490,12 +490,17 @@ The resumed #569 implementation removes the initial INT/BIGINT/STRING and single
 from canonical rank binding. Existing scalar Arrow carriers now retain their released stock
 serializers across append, updating and retracting algorithms: narrow integers, floating values,
 BOOLEAN, CHAR/STRING, DECIMAL, DATE, TIME, timestamps, binary values and intervals. Multiple sort
-fields use the captured selectors/comparators without an artificial field-count cap. Constructed
-ROW/ARRAY/MAP/MULTISET retained schemas remain outside this binding; existing algorithm, TTL,
-bound, async/unaligned and processing-time-indicator gates stay independent.
+fields use the captured selectors/comparators without an artificial field-count cap. Retained
+ROW/ARRAY payloads also bind through the existing codecs while partition/sort/update keys remain
+scalar. Append-only rank additionally retains MAP/MULTISET descendants in its tagged Arrow
+representation; updating inputs with map descendants keep the existing retraction fallback.
+Algorithm, TTL, bound, async/unaligned and processing-time-indicator gates stay independent.
 
 The new planner and component matrices include compact/wide decimals, timestamp precision nine,
-binary/interval carriers, signed-zero/NaN sort values and three-field sorting. Isolated DOUBLE
+binary/interval carriers, signed-zero/NaN sort values, three-field sorting and nested payloads.
+Nested operator controls cover all three algorithms, with append-only MAP payloads. New
+clean-worker append/retract jobs consume the entire nested value together with the computed
+rank in a normal user function, preventing projection from hiding retained-payload coverage. Isolated DOUBLE
 and DECIMAL rank jobs retain independent final-table oracles, both engine orders, ordinary SQL
 and compiled plans, no-input returns, native checkpoint recovery and rescaling. Updating jobs
 also retain their original unique-key fields through the computed sort projection. These controls
@@ -561,7 +566,7 @@ during canonical export. Fifty-two planner cases include variable-bound and reje
 controls. The native suite passes 1,241 tests with two existing ignores; shared Flink 1.18 code
 passes 125 processing/checkpoint controls without claiming stock canonical interchange there.
 
-**Pending for the append contract:** OFFSET, nested retained types, qualification of the new scalar/multiple-sort scope,
+**Pending for the append contract:** OFFSET, constructed partition/sort keys, qualification of the new scalar/multiple-sort/nested-payload scope,
 async/unaligned state, broader shared/upstream-native graphs, full-job TTL expiry and the complete
 backend/version/connector/delivery matrix. Existing unbound native paths keep their own recovery
 representation; older unbound native checkpoint upgrades are not qualified here. All remain in

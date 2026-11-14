@@ -747,6 +747,35 @@ public final class CanonicalFixtureFactory
     public void close() {}
   }
 
+  public static final class NestedRankChecksum extends org.apache.flink.table.functions.ScalarFunction {
+    public Long eval(
+        @org.apache.flink.table.annotation.DataTypeHint(NestedJoinChecksum.TYPE)
+            org.apache.flink.types.Row row,
+        Long rank) {
+      return NestedJoinChecksum.checksum(row) * 31 + rank;
+    }
+  }
+
+  public static final class NestedRowRankChecksum extends org.apache.flink.table.functions.ScalarFunction {
+    public static final String TYPE = "ROW<a ARRAY<BIGINT>,r ROW<v BIGINT,s STRING>>";
+
+    public Long eval(
+        @org.apache.flink.table.annotation.DataTypeHint(TYPE) org.apache.flink.types.Row row,
+        Long rank) {
+      if (row == null) return -7 * 31 + rank;
+      Object[] array = (Object[]) row.getField(0);
+      long result = 17;
+      if (array != null)
+        for (Object value : array) result = result * 37 + (value == null ? -1 : (Long) value);
+      var nested = (org.apache.flink.types.Row) row.getField(1);
+      if (nested != null) {
+        result = result * 41 + (nested.getField(0) == null ? -5 : (Long) nested.getField(0));
+        result += nested.getField(1) == null ? -11 : nested.getField(1).hashCode();
+      }
+      return result * 31 + rank;
+    }
+  }
+
   public static final class NestedJoinChecksum
       extends org.apache.flink.table.functions.ScalarFunction {
     public static final String TYPE =
