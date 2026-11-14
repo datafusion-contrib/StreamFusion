@@ -6,7 +6,7 @@
       "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testSelectStar",
       "display_name": "testSelectStar()",
       "count": 1,
-      "route": "batch_host_only"
+      "route": "native"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.sql.CalcITCase#testLongProjectionList",
@@ -48,7 +48,7 @@
       "test": "org.apache.flink.table.planner.runtime.batch.sql.TableSinkITCase#testCollectSinkConfiguration",
       "display_name": "testCollectSinkConfiguration()",
       "count": 1,
-      "route": "host_failure"
+      "route": "job_failure"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testGroupByAgg",
@@ -1044,13 +1044,13 @@
       "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testManySelectWithFilter",
       "display_name": "testManySelectWithFilter()",
       "count": 1,
-      "route": "batch_host_only"
+      "route": "native"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testFilterOnInteger",
       "display_name": "testFilterOnInteger()",
       "count": 1,
-      "route": "batch_host_only"
+      "route": "native"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testUserDefinedScalarFunction",
@@ -1080,31 +1080,31 @@
       "test": "org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByWithOffsetAndFetch",
       "display_name": "testOrderByWithOffsetAndFetch()",
       "count": 1,
-      "route": "batch_host_only"
+      "route": "native"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByLimit",
       "display_name": "testOrderByLimit()",
       "count": 1,
-      "route": "batch_host_only"
+      "route": "native"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByLessThanOffset",
       "display_name": "testOrderByLessThanOffset()",
       "count": 1,
-      "route": "batch_host_only"
+      "route": "native"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByRepeatedFields",
       "display_name": "testOrderByRepeatedFields()",
       "count": 1,
-      "route": "batch_host_only"
+      "route": "native"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByLimitBehindField",
       "display_name": "testOrderByLimitBehindField()",
       "count": 1,
-      "route": "batch_host_only"
+      "route": "native"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderBehindField",
@@ -1116,43 +1116,43 @@
       "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testAggWithoutGroups",
       "display_name": "testAggWithoutGroups()",
       "count": 1,
-      "route": "batch_host_only"
+      "route": "native"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testAggregationWithoutGroupby",
       "display_name": "testAggregationWithoutGroupby()",
       "count": 1,
-      "route": "batch_host_only"
+      "route": "native"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testCountStar",
       "display_name": "testCountStar()",
       "count": 1,
-      "route": "batch_host_only"
+      "route": "native"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testAggWithoutGroups",
       "display_name": "testAggWithoutGroups()",
       "count": 1,
-      "route": "batch_host_only"
+      "route": "native"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testAggregationWithoutGroupby",
       "display_name": "testAggregationWithoutGroupby()",
       "count": 1,
-      "route": "batch_host_only"
+      "route": "native"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testCountStar",
       "display_name": "testCountStar()",
       "count": 1,
-      "route": "batch_host_only"
+      "route": "native"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.batch.table.AggregationITCase#testAggregationTypes",
       "display_name": "testAggregationTypes()",
       "count": 1,
-      "route": "batch_host_only"
+      "route": "native"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.batch.table.AggregationITCase#testWorkingAggregationDataTypes",
@@ -1224,13 +1224,13 @@
       "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateCompareWithDateString",
       "display_name": "testDateCompareWithDateString()",
       "count": 1,
-      "route": "batch_host_only"
+      "route": "native"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateEqualsWithDateString",
       "display_name": "testDateEqualsWithDateString()",
       "count": 1,
-      "route": "batch_host_only"
+      "route": "native"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.batch.sql.CodeSplitITCase#testManyIns",

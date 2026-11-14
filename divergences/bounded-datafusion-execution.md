@@ -49,6 +49,17 @@ process authority; there is no separate operator cap or unbounded pool. The
 the blocking Arrow shuffle/replay controls used for SQL admission.
 
 
+## Batch admission
+
+Batch compute admission uses verified semantic/type/operator compatibility and
+whole-query columnar composition. It does not estimate performance by recognizing
+SHA2, sorts, joins, grouped reductions, decimal SUM, user functions or native
+sources. Compatible standalone scalar pipelines, global reductions and sorted
+limits therefore execute natively too. Historical slower complete-job comparisons
+remain documented; they no longer select the execution engine. Connector boundary
+admission remains independent. Explicit master/per-operator switches and all
+correctness, representation, memory and deployment capability checks remain.
+
 ## Bounded global aggregation
 
 Reference-first sources for aggregate state were Arroyo's planner

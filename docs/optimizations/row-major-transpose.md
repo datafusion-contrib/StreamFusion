@@ -32,7 +32,8 @@ registration. This avoids one unnecessary timer per partially filled batch while
 preserving the final short batch. Batch parity and unchained-stage controls cover
 the lifecycle. No isolated speedup is claimed; the complete
 [batch scalar investigation](../benchmarks/batch-scalars.md) still found cheap
-arithmetic slower than stock Flink, and that standalone path retains fallback.
+arithmetic slower than stock Flink. Standalone batch admission now follows
+compatibility; this historical regression is not a planner gate.
 
 ## Rejected alternative
 

@@ -9,8 +9,6 @@ import org.apache.calcite.rel.RelFieldCollation;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Sort;
 import org.apache.calcite.rel.type.RelDataType;
-import org.apache.calcite.rex.RexCall;
-import org.apache.calcite.rex.RexVisitorImpl;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalCalc;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalExchange;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalGroupAggregateBase;
@@ -26,11 +24,9 @@ import org.apache.flink.table.planner.plan.optimize.program.BatchOptimizeContext
 import org.apache.flink.table.planner.plan.optimize.program.FlinkOptimizeProgram;
 import org.apache.flink.table.planner.plan.utils.SortUtil;
 import org.apache.flink.table.planner.utils.ShortcutUtils;
-import org.apache.flink.table.runtime.functions.scalar.BuiltInScalarFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import tech.streamfusion.Native;
-import tech.streamfusion.compat.FlinkCompat;
 import tech.streamfusion.planner.ColumnarOutput;
 import tech.streamfusion.planner.ExpressionPlanning;
 import tech.streamfusion.planner.NativeConfig;
@@ -42,12 +38,6 @@ import tech.streamfusion.planner.common.NativeRelDigests;
 
 /** Whitelist-first batch substitution; every interior computation must remain columnar. */
 public class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext> {
-  static final String SCALAR_COST_FALLBACK =
-      "batch Calc: standalone scalar pipeline has no verified speedup";
-  static final String SORT_LIMIT_COST_FALLBACK =
-      "batch sort limit: standalone pipeline has no verified speedup";
-  static final String AGGREGATE_COST_FALLBACK =
-      "batch aggregate: standalone pipeline has no verified speedup";
   private static final Logger LOG = LoggerFactory.getLogger(BatchPlanScan.class);
   private final List<String> reasons = new ArrayList<>();
   private final List<String> operators = new ArrayList<>();
@@ -75,13 +65,11 @@ public class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext>
   }
 
   List<RelNode> optimizeRoots(List<RelNode> roots) {
-    return optimizeRoots(roots, node -> false, java.util.function.UnaryOperator.identity());
+    return optimizeRoots(roots, java.util.function.UnaryOperator.identity());
   }
 
   List<RelNode> optimizeRoots(
-      List<RelNode> roots,
-      java.util.function.Predicate<RelNode> nativeSource,
-      java.util.function.UnaryOperator<List<RelNode>> connectorBoundaries) {
+      List<RelNode> roots, java.util.function.UnaryOperator<List<RelNode>> connectorBoundaries) {
     reasons.clear();
     operators.clear();
     substitutions = 0;
@@ -107,14 +95,6 @@ public class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext>
                   .head();
         }
         admitted = admit(candidate, true, expressions, sorts, aggregates, false);
-        if (admitted
-            && (!expressions.isEmpty() || !sorts.isEmpty() || !aggregates.isEmpty())
-            && !amortizesRowBoundaries(candidate, expressions, false, false, false, nativeSource))
-          admitted =
-              decline(
-                  sorts.keySet().stream().anyMatch(node -> node instanceof BatchPhysicalSortLimit)
-                      ? SORT_LIMIT_COST_FALLBACK
-                      : aggregates.isEmpty() ? SCALAR_COST_FALLBACK : AGGREGATE_COST_FALLBACK);
       } catch (NoClassDefFoundError
           | NoSuchMethodError
           | NoSuchFieldError
@@ -133,58 +113,6 @@ public class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext>
     }
     for (String reason : reasons) LOG.info("StreamFusion batch fallback: {}", reason);
     return connectorBoundaries.apply(result);
-  }
-
-  private static boolean amortizesRowBoundaries(
-      RelNode node,
-      Map<RelNode, EncodedExpression> expressions,
-      boolean qualified,
-      boolean userFunction,
-      boolean joined,
-      java.util.function.Predicate<RelNode> nativeSource) {
-    if (node instanceof BatchPhysicalJoinBase) {
-      joined = true;
-      qualified = true;
-    }
-    // Work above a global reduction cannot amortize its input boundary. Verified keyed reductions
-    // qualify independently; each UNION branch must still contain a qualifying operation.
-    if (node instanceof BatchPhysicalGroupAggregateBase) {
-      var aggregate = (BatchPhysicalGroupAggregateBase) node;
-      qualified = joined || aggregate.grouping().length != 0;
-      var calls = aggregate.getAggCallList();
-      for (int index = 0; index < calls.size(); index++)
-        qualified |=
-            calls.apply(index).getAggregation().getKind() == org.apache.calcite.sql.SqlKind.SUM
-                && calls.apply(index).getType().getSqlTypeName()
-                    == org.apache.calcite.sql.type.SqlTypeName.DECIMAL;
-    }
-    EncodedExpression expression = expressions.get(node);
-    qualified |= node instanceof BatchPhysicalSort;
-    if (expression != null) {
-      qualified |= expression.nativeFunctionCalls().contains("SHA2");
-      userFunction |= hasUserFunction((BatchPhysicalCalc) node);
-    }
-    if (node.getInputs().isEmpty()) return qualified || userFunction || nativeSource.test(node);
-    for (RelNode input : node.getInputs()) {
-      if (!amortizesRowBoundaries(
-          input, expressions, qualified, userFunction, joined, nativeSource)) return false;
-    }
-    return true;
-  }
-
-  private static boolean hasUserFunction(BatchPhysicalCalc calc) {
-    boolean[] found = {false};
-    var visitor =
-        new RexVisitorImpl<Void>(true) {
-          @Override
-          public Void visitCall(RexCall call) {
-            var function = FlinkCompat.scalarFunction(call.getOperator());
-            if (function != null && !(function instanceof BuiltInScalarFunction)) found[0] = true;
-            return super.visitCall(call);
-          }
-        };
-    calc.getProgram().getExprList().forEach(expression -> expression.accept(visitor));
-    return found[0];
   }
 
   private boolean admit(

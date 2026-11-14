@@ -2,8 +2,10 @@
 
 This local investigation compares complete Flink **batch** jobs with the initial
 DataFusion-backed scalar candidate. Current coverage and fallback policy live in
-[Batch SQL](../operators/batch.md). The candidate's cheap standalone paths are not
-enabled by default after these measurements.
+[Batch SQL](../operators/batch.md). Standalone compatible paths are now enabled
+without a performance whitelist.
+These historical measurements include regressions and do not imply a speedup
+for every admitted query.
 
 The benchmark uses Flink 2.2.1, JDK 17.0.17, DataFusion 54, Arrow 58.4.1 and an
 Apple M4 with ten CPUs and 16 GiB RAM. Rust uses the workspace release profile
@@ -57,10 +59,11 @@ the deficit. Timer removal was not isolated in a controlled speedup experiment.
 
 ## Reproduction
 
-With the final admission policy, the two-million-row SHA-256 repeat measured stock
+With the historical performance whitelist, the two-million-row SHA-256 repeat
+measured stock
 median **1,334.4 ms** (1,287.3–1,438.3) against native **896.3 ms**
 (873.0–928.9), **1.49×** stock/native. Both cheap controls used stock fallback and
-recorded zero native work. This repeat checks the final admitted route; it is not
+recorded zero native work. This repeat checked the then-admitted route; it is not
 a measurement of the batch-size or timer changes in isolation.
 
 A later final-source SHA-256 repeat retained wider variation: stock median
@@ -79,9 +82,10 @@ Build the release native library with the Maven `bench` profile, then run
 `sf.batch.bench.rows`, `sf.batch.bench.warmups`, `sf.batch.bench.trials` and
 `sf.batch.bench.query` (`arithmetic`, `hash`, `strings`, `udf`, or `all`) as JVM properties.
 Pass them through `sf.extraJvmArgs`. Each printed `BATCH_BENCH` line retains all
-trials, actual admission route and Flink-reported job runtimes. Current rejected
-queries compare stock against the enabled planner's stock fallback; they do not
-recreate the historical unrestricted candidate.
+trials, actual admission route and Flink-reported job runtimes. The current planner
+runs compatible arithmetic, hash, string and UDF pipelines
+natively. Earlier trials that report stock fallback retain their original meaning;
+they predate removal of the performance whitelist.
 
 Optional `sf.batch.bench.profile` names a local output prefix for an operation-only
 JFR recording. Profiling is separate from authoritative unprofiled measurements.

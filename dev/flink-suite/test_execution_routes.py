@@ -142,6 +142,27 @@ class RuntimeRoutesTest(unittest.TestCase):
         job.pop('job_status')
         self.assertEqual('unclassified', self.classify({'failed': job}))
 
+    def test_failed_native_job_receives_failure_route_without_success_credit(self):
+        success = self.job([self.SOURCE, self.CALC, self.SINK], {'NativeCalcOperator': 1})
+        success['graph']['job_type'] = 'BATCH'
+        failure = copy.deepcopy(success)
+        failure.update(status='RESULT_FAILED', job_status='FAILED',
+                       application_statuses=['FAILED'], native_work={})
+        self.assertEqual('job_failure', self.classify({'failure': failure}))
+        self.assertEqual('job_failure', self.classify({'success': success, 'failure': failure}))
+        failure['native_work'] = {'NativeCalcOperator': 1}
+        self.assertEqual('job_failure', self.classify({'failure': failure}))
+        failure['native_work'] = {'OtherNativeOperator': 1}
+        self.assertEqual('unclassified', self.classify({'failure': failure}))
+        failure['native_work'] = {}
+        for status in ('FINISHED', 'CANCELED', 'SUSPENDED'):
+            with self.subTest(status=status):
+                failure['job_status'] = status
+                self.assertEqual('unclassified', self.classify({'failure': failure}))
+        failure['job_status'] = 'FAILED'
+        failure['graph']['nodes'][1]['operator_class'] = 'unknown.Operator'
+        self.assertEqual('unclassified', self.classify({'failure': failure}))
+
     def test_unmatched_results_and_malformed_statuses_cannot_establish_a_route(self):
         job = self.job([self.SOURCE, self.SINK])
         row = dict(outcome='passed', native_work={}, jobs={'job': job},
