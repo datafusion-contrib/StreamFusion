@@ -2050,7 +2050,7 @@ controls await execution on Flink 1.18 and 2.2; historical passing cohorts do no
 ## Additional unbounded DISTINCT binding awaiting qualification
 
 The Java canonical binding now connects the existing native membership transfer for unbounded
-processing-time COUNT/SUM/SUM0/AVG DISTINCT over TINYINT/SMALLINT/INT/BIGINT/FLOAT/DOUBLE arguments, with state TTL disabled.
+processing-time COUNT/SUM/SUM0/AVG DISTINCT over TINYINT/SMALLINT/INT/BIGINT/FLOAT/DOUBLE/DECIMAL arguments, with state TTL disabled.
 ROWS and RANGE use the released scalar accumulator plus its actual shared DISTINCT MAP view,
 stock external serializers and null-state descriptor. Memberships and raw counts transfer
 separately without replay. Complete cardinality, wrapping integral sum and membership-bit validation precedes native
@@ -2101,7 +2101,7 @@ TINYINT arithmetic fixture adds continuation and rescaling. These additions rema
 COUNT DISTINCT also binds existing decimal, BOOLEAN, DATE, TIME and TIMESTAMP/LTZ membership
 codecs. The stock BIGINT cardinality stays independent of typed members and nullable markers;
 decimal precision/scale and temporal fractions are retained. DISTINCT SUM/SUM0/AVG remain
-numeric-only here, with decimal arithmetic unbound. New scalar raw-state/native-recovery and planner controls include both
+numeric-only here. New scalar raw-state/native-recovery and planner controls include both
 nullability forms, with separate clean-stock BOOLEAN, wide-decimal and nanosecond timestamp
 COUNT fixtures and independent cardinality oracles. These controls await both-release execution.
 Complex DISTINCT arguments remain outside this binding. Unqualified ordinary
@@ -2128,6 +2128,15 @@ infinities and NULL-only owners. Additional arithmetic controls cover cancellati
 corrupt empty/missing sums and a complete DOUBLE arithmetic job with fractional independent
 oracles. Complete OVER job comparisons retain committed record bytes before applying their
 typed independent final-value oracle. These controls are unexecuted and await both-release qualification.
+
+DECIMAL SUM/SUM0/AVG DISTINCT also binds existing raw arithmetic fields. The released nullable
+SUM omits its count; its exact native auxiliary count is recovered from non-NULL membership
+bits, independently of whether the sum is NULL. SUM's overflowed NULL can restart on the next
+new value, while AVG/SUM0 retain overflow. No sum is derived from unordered members. Preflight
+checks decimal carrier precision/scale, AVG cardinality and initial empty fields. New complete
+raw-state, no-input, overflow-continuation and native-recovery controls cover both stores and
+engine orders; a clean-worker wide-decimal job uses fractional independent oracles. These are
+unexecuted and await both-release qualification. Scale-38 factory restrictions remain unchanged.
 
 Bounded and unbounded scalar, ROW-key and DISTINCT component captures additionally guard the native snapshot
 entry points. They reject raw partition serialization or a nonempty native checkpoint directory

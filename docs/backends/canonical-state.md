@@ -2544,7 +2544,7 @@ key representations and other aggregate argument restrictions are unchanged.
 
 
 A pending OVER extension binds existing unbounded processing-time COUNT/SUM/SUM0/AVG DISTINCT membership
-transfers for TINYINT/SMALLINT/INT/BIGINT/FLOAT/DOUBLE arguments with TTL disabled. It preserves the released raw
+transfers for TINYINT/SMALLINT/INT/BIGINT/FLOAT/DOUBLE/DECIMAL arguments with TTL disabled. It preserves the released raw
 counts, wrapping integral sums, shared membership-map serializers and null-state descriptor. Both-release component and
 clean-worker controls are written but unexecuted. Nullable arguments retain independent NULL
 membership without contributing to scalar sums/counts; existing nullable member-list/table
@@ -2555,7 +2555,7 @@ and DISTINCT extrema remain outside this extension; see the OVER page for its ex
 COUNT DISTINCT additionally binds the existing decimal, boolean and date/time/timestamp member
 codecs while retaining the stock BIGINT scalar. Typed preflight and nullable/raw-recovery controls,
 plus independent clean-stock boolean/decimal/nanosecond timestamp jobs, await both-release
-execution. Decimal DISTINCT arithmetic, complex members and the
+execution. Complex members and the
 existing clock/TTL exclusions remain outside this binding.
 
 COUNT DISTINCT also has a pending CHAR/VARCHAR binding to the existing UTF-8 member codec.
@@ -2570,6 +2570,12 @@ binds existing raw sums/counts, retaining IEEE addition history instead of repla
 members. Preflight checks exact AVG cardinality and empty-sum invariants. Cancellation, signed
 zero/NaN, malformed floating sums and fractional clean-worker arithmetic controls are authored
 but unexecuted; no native state field is added.
+
+DECIMAL DISTINCT arithmetic additionally preserves existing raw SUM/SUM0/AVG fields. Membership
+bits recover SUM's omitted native count without interpreting an overflowed NULL as an empty set.
+SUM restart and latched AVG/SUM0 overflow remain separate from cardinality. Typed preflight,
+empty-field rejection, actual-stock overflow/recovery and fractional wide-decimal complete-job
+controls are authored but unexecuted on either release. No native persisted field is added.
 
 Pending bounded and unbounded OVER controls also forbid intermediate native snapshot entry points during
 canonical capture and check the counter after writer completion, while retaining ordinary

@@ -6,7 +6,7 @@ accumulator, map view and external serializers. Comet's execution utilities and 
 supply the moved C Data ownership pattern; imported/exported roots are scoped before errors
 propagate. No new JNI entry point or native checkpoint format is needed.
 
-The Java arithmetic binding covers TINYINT/SMALLINT/INT/BIGINT/FLOAT/DOUBLE COUNT/SUM/SUM0/AVG DISTINCT in
+The Java arithmetic binding covers TINYINT/SMALLINT/INT/BIGINT/FLOAT/DOUBLE/DECIMAL COUNT/SUM/SUM0/AVG DISTINCT in
 TTL-disabled unbounded processing-time ROWS/RANGE frames. COUNT additionally uses the scalar
 member codecs described below. Nullable arguments retain stock's NULL
 membership marker independently of the scalar count/sum. Memory holds a presence flag alongside
@@ -38,7 +38,12 @@ descendant and processing/TTL gates remain shared with the fold binding.
 
 COUNT also reuses existing decimal, BOOLEAN and date/time/timestamp membership codecs. Captured
 internal key data types keep their released serializers (including DecimalData and TimestampData);
-preflight checks typed members, exact cardinality and nullable-marker ownership. Decimal arithmetic views remain unbound; no decimal arithmetic history is reconstructed from membership.
+preflight checks typed members, exact cardinality and nullable-marker ownership. Decimal arithmetic retains raw SUM/SUM0/AVG fields rather than reconstructing addition history.
+The exact auxiliary count omitted by stock nullable SUM comes from non-NULL membership bits;
+an overflowed NULL is distinct from an empty membership set. SUM can restart after NULL, while
+AVG/SUM0 preserve overflow. Decimal precision/scale, AVG counts and empty initial fields validate
+before mutation. Both-release overflow/raw-state/recovery and fractional full-job controls are
+also authored but unexecuted.
 CHAR/VARCHAR COUNT uses the existing UTF-8 member codec. Before insertion, text preflight rejects
 malformed UTF-8 and Java caches inconsistent with their serialized bytes. Valid caches are
 equivalent to UTF-8 equality; invalid caches can survive in heap state but have already been

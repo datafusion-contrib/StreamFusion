@@ -31,6 +31,7 @@ public final class CanonicalOverDistinctValueFixture {
 
   public static boolean arithmetic(String sql) {
     return integral(sql)
+        || sql.startsWith("DECIMAL(")
         || Stream.of("FLOAT", "DOUBLE")
             .anyMatch(type -> sql.equals(type) || sql.equals(type + " NOT NULL"));
   }

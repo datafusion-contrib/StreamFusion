@@ -75,7 +75,7 @@ class CanonicalUnboundedOverDistinctStateTest {
         prefix.add(plan.row(1L, edge));
         prefix.add(plan.row(1L, 1L));
       }
-      if (arithmetic && !CanonicalOverDistinctValueFixture.integral(type)) {
+      if (arithmetic && (type.startsWith("FLOAT") || type.startsWith("DOUBLE"))) {
         prefix.add(plan.row(4L, 10000000000000000L));
         prefix.add(plan.row(4L, 1L));
         prefix.add(plan.row(4L, -10000000000000000L));
@@ -159,7 +159,9 @@ class CanonicalUnboundedOverDistinctStateTest {
             "float-empty-sum",
             "double-empty-sum",
             "float-missing-sum",
-            "double-missing-sum")
+            "double-missing-sum",
+            "decimal-empty-average",
+            "decimal-empty-sum")
         .flatMap(
             mode ->
                 Stream.of(false, true)
@@ -174,13 +176,15 @@ class CanonicalUnboundedOverDistinctStateTest {
       throws Exception {
     var plan =
         new CanonicalUnboundedOverScalarTest.Plan(
-            mode.startsWith("float-")
-                ? "FLOAT"
-                : mode.startsWith("double-")
-                    ? "DOUBLE"
-                    : mode.startsWith("text-")
-                        ? "VARCHAR(100) NOT NULL"
-                        : mode.startsWith("null-") ? "BIGINT" : "BIGINT NOT NULL",
+            mode.startsWith("decimal-")
+                ? "DECIMAL(38,2)"
+                : mode.startsWith("float-")
+                    ? "FLOAT"
+                    : mode.startsWith("double-")
+                        ? "DOUBLE"
+                        : mode.startsWith("text-")
+                            ? "VARCHAR(100) NOT NULL"
+                            : mode.startsWith("null-") ? "BIGINT" : "BIGINT NOT NULL",
             true,
             false,
             0,
@@ -274,7 +278,12 @@ class CanonicalUnboundedOverDistinctStateTest {
           if (kind == (mode.equals("sum") || mode.endsWith("-sum") ? 100 : 104)) break;
           field += kind == 104 || kind == 4 ? 2 : 1;
         }
-        if (mode.endsWith("missing-sum")) corrupt.setField(field, null);
+        if (mode.startsWith("decimal-"))
+          corrupt.setField(
+              field,
+              org.apache.flink.table.data.DecimalData.fromBigDecimal(
+                  java.math.BigDecimal.ONE, 38, 2));
+        else if (mode.endsWith("missing-sum")) corrupt.setField(field, null);
         else if (mode.startsWith("float-")) {
           if (mode.endsWith("average")) corrupt.setField(field, -0.0d);
           else corrupt.setField(field, 0.0f);

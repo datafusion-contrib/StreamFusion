@@ -3,6 +3,116 @@ use super::*;
 
 #[cfg(feature = "rocksdb-state")]
 #[test]
+fn decimal_overflow_history_transfers_without_replaying_distinct_members() {
+    let input = |keys: Vec<i64>, values: Vec<Option<i128>>| {
+        let rows = keys.len();
+        RecordBatch::try_from_iter(vec![
+            ("k", Arc::new(Int64Array::from(keys)) as ArrayRef),
+            (
+                "v",
+                Arc::new(
+                    arrow::array::Decimal128Array::from(values)
+                        .with_precision_and_scale(38, 2)
+                        .unwrap(),
+                ) as ArrayRef,
+            ),
+            ("rt", Arc::new(Int64Array::from(vec![0; rows])) as ArrayRef),
+        ])
+        .unwrap()
+    };
+    let prefix = input(
+        vec![1, 1, 1, 2],
+        vec![
+            Some(crate::aggregates::DECIMAL128_MAX - 1),
+            Some(1),
+            None,
+            None,
+        ],
+    );
+    let create = |persistent, path: &std::path::Path| {
+        let mut owner = OverWindowAggregator::new(
+            vec![5802; 4],
+            vec![100, 103, 104, 122],
+            2,
+            vec![1; 4],
+            vec![0],
+            3,
+            0,
+            true,
+        )
+        .with_key_timestamp_precisions(vec![i32::MIN, -1]);
+        if persistent {
+            let store = crate::state::RocksOverAggStore::create(
+                crate::state::RocksStoreConfig {
+                    table_dir: path.to_str().unwrap().into(),
+                    max_parallelism: 128,
+                    options_json: include_str!("../../../../benches/fixtures/rocks-options.json")
+                        .into(),
+                    ttl_ms: 0,
+                    shared_resources: 0,
+                },
+                &owner.inner.store_state_types(),
+                &[],
+                &vec![DataType::Decimal128(38, 2); 4],
+                prefix.schema(),
+                0..=127,
+            )
+            .unwrap();
+            owner = owner.with_store(store, vec![DataType::Int64]);
+        }
+        for index in 0..4 {
+            owner.bind_canonical_distinct(index).unwrap();
+        }
+        owner
+    };
+    for from_store in [false, true] {
+        for to_store in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let mut source = create(from_store, &directory.path().join("source"));
+            let mut target = create(to_store, &directory.path().join("target"));
+            let original = source.push_proctime(prefix.clone(), 100).unwrap();
+            for column in [3, 5, 6] {
+                assert!(original.column(column).is_null(1));
+            }
+            source
+                .visit_canonical_folds(|batch| target.import_canonical_folds(&batch))
+                .unwrap();
+            for index in 0..4 {
+                source
+                    .visit_canonical_distinct(index, |batch| {
+                        target.import_canonical_distinct(index, &batch)
+                    })
+                    .unwrap();
+            }
+            target.finish_canonical_distinct().unwrap();
+            let suffix = input(
+                vec![1, 1, 1, 2],
+                vec![
+                    Some(crate::aggregates::DECIMAL128_MAX - 1),
+                    Some(1),
+                    Some(700),
+                    Some(300),
+                ],
+            );
+            let expected = source.push_proctime(suffix.clone(), 500).unwrap();
+            let actual = target.push_proctime(suffix, 500).unwrap();
+            assert_eq!(rows_of(&[expected]), rows_of(&[actual.clone()]));
+            assert_eq!(
+                ScalarValue::try_from_array(actual.column(3), 2).unwrap(),
+                ScalarValue::Decimal128(Some(700), 38, 2)
+            );
+            assert_eq!(
+                ScalarValue::try_from_array(actual.column(4), 2).unwrap(),
+                ScalarValue::Int64(Some(3))
+            );
+            assert!(actual.column(5).is_null(2));
+            assert!(actual.column(6).is_null(2));
+        }
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
 fn floating_folds_and_memberships_preserve_zero_and_nan_between_stores() {
     for (data_type, code) in [(DataType::Float32, 6), (DataType::Float64, 1)] {
         for kinds in [vec![103], vec![100, 103, 104, 122]] {

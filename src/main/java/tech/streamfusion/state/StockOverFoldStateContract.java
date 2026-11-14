@@ -33,7 +33,7 @@ public final class StockOverFoldStateContract implements StockStateContract {
   private final TypeSerializer<RowData> keys;
   private final RowType keyType, accumulatorType, bridge;
   private final int[] kinds, widths;
-  private final int[] nativeFields, decimalSumCounts;
+  private final int[] nativeFields, decimalSumCounts, decimalSumAggregates;
   private final boolean ttl, preserveRowKeys;
   private final List<StockOverDistinctView> views;
   private final RowData.FieldGetter[] keyGetters, valueGetters;
@@ -123,7 +123,9 @@ public final class StockOverFoldStateContract implements StockStateContract {
       fields.add(new RowType.RowField("key" + i, keyType.getTypeAt(i).copy(true)));
     nativeFields = new int[scalarCount];
     decimalSumCounts = new int[scalarCount];
+    decimalSumAggregates = new int[scalarCount];
     Arrays.fill(decimalSumCounts, -1);
+    Arrays.fill(decimalSumAggregates, -1);
     slot = 0;
     int nativeSlot = 0;
     for (int i = 0; i < kinds.length; i++) {
@@ -135,6 +137,7 @@ public final class StockOverFoldStateContract implements StockStateContract {
       }
       if (kinds[i] == 0 && accumulatorType.getTypeAt(slot).is(LogicalTypeRoot.DECIMAL)) {
         decimalSumCounts[slot] = keyType.getFieldCount() + nativeSlot;
+        if (distinct[i]) decimalSumAggregates[slot] = i;
         fields.add(new RowType.RowField("state" + nativeSlot++, new BigIntType()));
       }
       slot += widths[i];
@@ -407,9 +410,19 @@ public final class StockOverFoldStateContract implements StockStateContract {
         for (int i = 0; i < valueGetters.length; i++)
           row.setField(nativeFields[i], valueGetters[i].getFieldOrNull(value));
         for (int i = 0; i < decimalSumCounts.length; i++)
-          if (decimalSumCounts[i] >= 0)
-            // Stock nullable SUM has no count; native needs only presence to emit this scalar.
-            row.setField(decimalSumCounts[i], value.isNullAt(i) ? 0L : 1L);
+          if (decimalSumCounts[i] >= 0) {
+            // Stock SUM omits its count. DISTINCT membership can recover it without replaying sums.
+            long count = value.isNullAt(i) ? 0L : 1L;
+            if (decimalSumAggregates[i] >= 0) {
+              count = -1;
+              for (var view : views) {
+                count = view.cardinality(backend, decimalSumAggregates[i]);
+                if (count >= 0) break;
+              }
+              if (count < 0) throw new IllegalStateException("Missing decimal DISTINCT SUM view");
+            }
+            row.setField(decimalSumCounts[i], count);
+          }
         row.setField(bridge.getFieldCount() - 1, stored.getLastAccessTimestamp());
         rows.add(row);
         if (rows.size() == CHUNK_ROWS) {

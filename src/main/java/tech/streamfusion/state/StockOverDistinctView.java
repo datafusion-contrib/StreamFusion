@@ -82,7 +82,10 @@ public final class StockOverDistinctView implements Serializable {
   }
 
   public static boolean supportsValueType(LogicalType type) {
-    return integral(type) || type.is(LogicalTypeRoot.FLOAT) || type.is(LogicalTypeRoot.DOUBLE);
+    return integral(type)
+        || type.is(LogicalTypeRoot.FLOAT)
+        || type.is(LogicalTypeRoot.DOUBLE)
+        || type.is(LogicalTypeRoot.DECIMAL);
   }
 
   private static boolean integral(LogicalType type) {
@@ -337,6 +340,10 @@ public final class StockOverDistinctView implements Serializable {
               var type = accumulatorType.getTypeAt(field);
               Object actual =
                   RowData.createFieldGetter(type.copy(true), field).getFieldOrNull(value);
+              if (bridge.getTypeAt(keyType.getFieldCount()).is(LogicalTypeRoot.DECIMAL)) {
+                validateDecimalScalar(type, actual, kind, counts[slot]);
+                continue;
+              }
               if (!integral(bridge.getTypeAt(keyType.getFieldCount()))) {
                 validateFloatingScalar(type, actual, kind, counts[slot]);
                 continue;
@@ -351,6 +358,28 @@ public final class StockOverDistinctView implements Serializable {
           }
         }
       }
+  }
+
+  private static void validateDecimalScalar(LogicalType type, Object sum, int kind, long count) {
+    if (!(type instanceof org.apache.flink.table.types.logical.DecimalType))
+      throw new IllegalStateException("Invalid OVER DISTINCT decimal accumulator type");
+    var decimalType = (org.apache.flink.table.types.logical.DecimalType) type;
+    if (sum != null) {
+      if (!(sum instanceof org.apache.flink.table.data.DecimalData))
+        throw new IllegalStateException("Invalid OVER DISTINCT decimal accumulator");
+      var decimal = (org.apache.flink.table.data.DecimalData) sum;
+      if (decimal.precision() != decimalType.getPrecision()
+          || decimal.scale() != decimalType.getScale())
+        throw new IllegalStateException("OVER DISTINCT decimal accumulator type changed");
+    }
+    if (count == 0) {
+      boolean initialized = kind != 0;
+      if (initialized
+          ? sum == null
+              || ((org.apache.flink.table.data.DecimalData) sum).toBigDecimal().signum() != 0
+          : sum != null) throw new IllegalStateException("OVER DISTINCT empty decimal sum changed");
+    }
+    // Overflow is historical state: SUM restarts after NULL, whereas AVG and SUM0 retain it.
   }
 
   private static void validateFloatingScalar(LogicalType type, Object sum, int kind, long count) {
@@ -379,6 +408,19 @@ public final class StockOverDistinctView implements Serializable {
     if (flags == 0 || aggregates.length < Long.SIZE && flags >>> aggregates.length != 0)
       throw new IllegalStateException("Invalid OVER DISTINCT membership bits");
     return flags;
+  }
+
+  long cardinality(CheckpointableKeyedStateBackend<RowData> backend, int aggregate)
+      throws Exception {
+    int slot = -1;
+    for (int index = 0; index < aggregates.length; index++)
+      if (aggregates[index] == aggregate) slot = index;
+    if (slot < 0) return -1;
+    long count = 0;
+    var entries = state(backend).entries();
+    if (entries != null)
+      for (var entry : entries) if ((validateFlags(entry.getValue()) >>> slot & 1) != 0) count++;
+    return count;
   }
 
   void importState(CheckpointableKeyedStateBackend<RowData> backend, long handle) throws Exception {
