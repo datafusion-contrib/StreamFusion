@@ -93,13 +93,14 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
       boolean cleanupEnabled) {
     if ((processingRows || eventRows) && precedingRows <= 0)
       throw new IllegalArgumentException("Bounded ROWS width must be positive");
-    if (eventRows && (processingRows || cleanupEnabled))
-      throw new IllegalArgumentException("Event ROWS processing cleanup is not qualified");
+    if (eventRows && processingRows)
+      throw new IllegalArgumentException("Bounded ROWS cannot use both time domains");
     this.processingRows = processingRows;
     this.eventRows = eventRows;
     this.precedingRows = precedingRows;
     this.cleanupEnabled = cleanupEnabled;
-    cleanupState = processingRows ? "ProcTimeBoundedRowsOverCleanupTime" : "cleanupTsState";
+    cleanupState = processingRows ? "ProcTimeBoundedRowsOverCleanupTime"
+        : eventRows ? "RowTimeBoundedRowsOverCleanupTime" : "cleanupTsState";
     this.keys = keys;
     this.keyType = keyType;
     this.inputType = inputType;
@@ -215,7 +216,7 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
             ? StockStateInventory.Timer.empty(VoidNamespaceSerializer.INSTANCE)
             : StockStateInventory.Timer.consumed(VoidNamespaceSerializer.INSTANCE),
         PROCESSING,
-        processingRows && cleanupEnabled
+        (processingRows || eventRows) && cleanupEnabled
             ? StockStateInventory.Timer.consumed(VoidNamespaceSerializer.INSTANCE)
             : StockStateInventory.Timer.empty(VoidNamespaceSerializer.INSTANCE));
   }
@@ -223,6 +224,7 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
   @Override
   public void configureNativeState(long handle, boolean persistent) {
     Native.bindOverCanonicalFrameInputs(handle);
+    if (eventRows && cleanupEnabled) Native.bindOverEventCleanupTimers(handle);
   }
 
   private void bind(CheckpointableKeyedStateBackend<RowData> backend) {
@@ -445,7 +447,19 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
             });
         return;
       }
-      if (eventRows) return;
+      if (eventRows) {
+        if (cleanupEnabled)
+          StockOverCallbacks.export(
+              backend, handle, keyType,
+              (owner, kind, timestamp) -> {
+                if (kind == StockOverCallbacks.CLEANUP)
+                  scalar(backend, cleanupState).update(timestamp);
+                else if (kind == StockOverCallbacks.PROCESSING)
+                  processing.add(new TimerHeapInternalTimer<>(timestamp, owner, VoidNamespace.INSTANCE));
+                else throw new IllegalArgumentException("Unexpected event ROWS callback");
+              });
+        return;
+      }
       if (tech.streamfusion.compat.FlinkStateBackendCompat.serializesKeyedValues(backend)) {
         StockOverCallbacks.export(
             backend,
@@ -521,7 +535,7 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
 
   private static final class Partition {
     final BinaryRowData key;
-    long bucketCount, retainedRows, pendingBuckets, timerCount;
+    long bucketCount, retainedRows, pendingBuckets, timerCount, cleanupTimerCount;
     Long lastProcessed;
     RowData accumulator;
     Long cleanup, last, count, smallest;
@@ -548,27 +562,35 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
     lists.capture(backend, INPUT, keys);
     bind(backend);
     partitions.collectOwners(backend, stateDescriptors().keySet());
-    try (var iterator =
-        StockTimerSnapshot.<RowData, VoidNamespace>iterator(
-            backend, processingRows ? PROCESSING : EVENTS)) {
-      while (iterator.hasNext()) {
-        var timer = iterator.next();
-        if (timer.getNamespace() != VoidNamespace.INSTANCE)
-          throw new IllegalArgumentException("Unknown bounded OVER timer namespace");
-        partitions.addOwner(timer.getKey());
-        if (!partitions.add(1, timer.getKey(), timer.getTimestamp()))
-          throw new IllegalArgumentException("Duplicate bounded OVER timer");
-      }
-    }
-    if (!(processingRows ? events : processing).isEmpty())
+    collectTimers(backend, partitions, processingRows ? PROCESSING : EVENTS, 1);
+    if (eventRows && cleanupEnabled) collectTimers(backend, partitions, PROCESSING, 3);
+    else if (!(processingRows ? events : processing).isEmpty())
       throw new IllegalArgumentException("Unexpected bounded OVER timer domain");
     try (var owners = partitions.owners()) {
       while (owners.hasNext()) {
         var partition = readPartition(backend, partitions, lists, owners.next());
         transferFrames(lists, handle, partition, true);
-        if (!processingRows && !eventRows)
+        if (!processingRows && (!eventRows || cleanupEnabled))
           transferProtocol(partitions, lists, handle, partition, persistent, true);
         transferPending(lists, handle, partition, true);
+      }
+    }
+  }
+
+  private void collectTimers(
+      CheckpointableKeyedStateBackend<RowData> backend,
+      StockStateSpool partitions,
+      String domain,
+      int table)
+      throws Exception {
+    try (var iterator = StockTimerSnapshot.<RowData, VoidNamespace>iterator(backend, domain)) {
+      while (iterator.hasNext()) {
+        var timer = iterator.next();
+        if (timer.getNamespace() != VoidNamespace.INSTANCE)
+          throw new IllegalArgumentException("Unknown bounded OVER timer namespace");
+        partitions.addOwner(timer.getKey());
+        if (!partitions.add(table, timer.getKey(), timer.getTimestamp()))
+          throw new IllegalArgumentException("Duplicate bounded OVER timer");
       }
     }
   }
@@ -581,6 +603,7 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
       throws Exception {
     var partition = new Partition(new RowDataSerializer(keyType).toBinaryRow(owner).copy());
     partition.timerCount = partitions.count(1, owner);
+    partition.cleanupTimerCount = partitions.count(3, owner);
     var accSerializer = new RowDataSerializer(accumulatorType);
     backend.setCurrentKey(partition.key);
     partition.cleanup = cleanupEnabled ? scalar(backend, cleanupState).value() : null;
@@ -652,6 +675,11 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
         throw new IllegalArgumentException("Event ROWS counter/cutoff/frame ownership changed");
       if (partition.timerCount != partition.pendingBuckets)
         throw new IllegalArgumentException("Event ROWS timer ownership changed");
+      if (partition.cleanupTimerCount > 1
+          || (partition.cleanupTimerCount == 1
+              && (partition.cleanup == null || !partitions.contains(3, owner, partition.cleanup)))
+          || (cleanupEnabled && partition.bucketCount != 0 && partition.cleanup == null))
+        throw new IllegalArgumentException("Event ROWS cleanup/timer ownership changed");
       if (partition.accumulator != null
           && hiddenCount >= 0
           && (partition.accumulator.isNullAt(hiddenCount)
@@ -770,7 +798,17 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
           protocolType,
           List.of(metadata),
           false);
-    } else if (!eventRows) {
+    } else if (eventRows) {
+      if (cleanupEnabled) {
+        var writer = new StockOverCallbacks.Writer(handle, keyType, validating);
+        if (partition.cleanup != null) {
+          writer.append(partition.key, StockOverCallbacks.CLEANUP, partition.cleanup);
+          if (partitions.contains(3, partition.key, partition.cleanup))
+            writer.append(partition.key, StockOverCallbacks.PROCESSING, partition.cleanup);
+        }
+        writer.finish();
+      }
+    } else {
       var writer = new StockOverCallbacks.Writer(handle, keyType, validating);
       writer.append(partition.key, StockOverCallbacks.OWNER, partition.bucketCount);
       if (partition.cleanup != null)

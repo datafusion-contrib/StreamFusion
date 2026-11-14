@@ -1781,7 +1781,6 @@ final class StockCompiledPlanLowering {
       retention = ttl.isEnabled() ? FlinkPlanCompat.ttlMillis(ttl) : 0;
       config.setString("table.exec.state.ttl", retention + " ms");
     }
-    if (bounded && !processing && group.isRows() && retention > 1) return stock;
     var calls = group.getAggCalls();
     if (calls.isEmpty()) return stock;
     boolean countStar =
@@ -1923,7 +1922,8 @@ final class StockCompiledPlanLowering {
                           hiddenCount,
                           constants.get().type(),
                           constants.get().encodedValues(),
-                          offset + 1)
+                          offset + 1,
+                          retention > 1)
                       : new tech.streamfusion.state.StockOverRangeStateContract(
                           serializer,
                           keyType,
@@ -1961,7 +1961,8 @@ final class StockCompiledPlanLowering {
             .withStateMaxParallelism(maximum);
     if (constants.get().type().getFieldCount() > 0)
       over.withConstantArguments(constants.get().type(), constants.get().encodedValues());
-    if (!bounded && !processing && retention > 1) over.withEventTimeCleanupTimers();
+    if (!processing && (!bounded || group.isRows()) && retention > 1)
+      over.withEventTimeCleanupTimers();
     connect(exchange, over);
     bindings.put(over, new StockBinding(stock.getId(), stockUids.get(stock.getId()), contract));
     columnar.add(over);

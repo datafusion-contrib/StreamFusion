@@ -1542,8 +1542,9 @@ processes without StreamFusion dependencies, exercise both transposes, switch in
 re-export before new input and recover an ordinary native checkpoint before returning to stock.
 This is arithmetic RANGE coverage. Processing-time arithmetic ROWS now has its own stock
 counter/bucket/cleanup contract; event-time arithmetic ROWS without processing cleanup now has
-its own counter/cutoff contract. Event-time ROWS cleanup, additional bounded views, unbounded
-planner consolidation and the remaining #569 matrix are still required.
+its own counter/cutoff contract. Processing cleanup for event-time ROWS is now implemented and
+awaits qualification, while additional bounded views, unbounded planner consolidation and the
+remaining #569 matrix are still required.
 Benchmarking remains deferred.
 
 
@@ -1551,8 +1552,8 @@ Benchmarking remains deferred.
 
 The bounded event-time ROWS adapter transfers released Flink 2.2.1 `accState`, full timestamp
 buckets in `inputState`, `processedCountState`, `lastTriggeringTsState` and Void event timers.
-It supports SUM, SUM0, COUNT and AVG without DISTINCT or selection views and with processing-time
-cleanup disabled. Raw accumulator fields transfer directly; retained rows are never replayed to
+It supports SUM, SUM0, COUNT and AVG without DISTINCT or selection views. The previously qualified
+mode disables processing cleanup; the new cleanup extension below awaits testing. Raw accumulator fields transfer directly; retained rows are never replayed to
 reconstruct a sum or average. Pending peers preserve arrival order within each timestamp bucket.
 
 In this mode, the processed counter equals the smaller of the retained input count and frame
@@ -1570,11 +1571,15 @@ cutoffs, accumulators, input rows and timers, and unowned descriptors. These con
 released stock operators and serializers.
 
 Normal SQL and portable compiled plans bind this arithmetic mode while retaining the stock
-submission plan and operator identity. Processing-time cleanup for event-time ROWS, bounded views,
-full rescaling and version matrices, and the remaining issue acceptance criteria are still required in
-[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Until its cleanup protocol is
-qualified, the portable planner retains the stock event-time ROWS operator when retention exceeds
-one millisecond. Benchmarking remains deferred.
+submission plan and operator identity. The resumed #569 implementation also binds processing
+cleanup: it transfers `RowTimeBoundedRowsOverCleanupTime` and its independently armed processing
+callback through the existing flat callback protocol. Pending input defers cleanup and re-arms
+from the actual clock; idle cleanup clears the frame and per-key admission cutoff, while late-only
+keys retain their cleanup ownership. Ordinary native checkpoints preserve armed and unarmed
+deadlines. New stock/operator/planner/job controls await qualification on both release lines;
+the new full-job cases use an hour-long retention and do not establish exact wall-clock expiry.
+Bounded views and the complete rescale/version/failure matrix remain open under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.
 
 
 ### Automatic bounded arithmetic state binding (partial)
@@ -1612,7 +1617,8 @@ Its state binding therefore starts from the original stock template, like the qu
 bindings, and supplies constants through the native operator's internal constant columns.
 The displayed and serialized submission plan stays stock Flink; runtime transposes remain ordinary
 boundaries. Unbounded contracts outside the processing-time scalar mode below, selection, DISTINCT/view,
-remaining key/type and event-time ROWS cleanup contracts are outside this binding. Unaligned checkpoints and asynchronous state are
+remaining key/type contracts are outside this binding. The new event-time ROWS cleanup extension
+awaits qualification as described above. Unaligned checkpoints and asynchronous state are
 also excluded. The general native OVER processing coverage above does not establish stock
 canonical interchange for those additional contracts.
 
@@ -1806,8 +1812,9 @@ including compilation of the common operator/contract code. That run established
 regression coverage. The V1 canonical qualification below adds actual stock/native handoffs;
 overlapping cohorts are not added cumulatively.
 
-Flink 2.2 explicitly configured for legacy V1, unbounded DECIMAL, DISTINCT/views, wider keys/payloads, bounded event-ROWS
-processing cleanup and the wider rescale/version/failure/connector matrix remain unfinished in
+Explicit V1 on Flink 2.2, wider scalar keys/payloads and bounded event-ROWS processing cleanup
+now have authored binding extensions awaiting qualification. Unbounded DECIMAL, DISTINCT/views
+and the wider rescale/version/failure/connector matrix remain unfinished in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking stays deferred.
 
 ## Canonical capture on both Flink lines

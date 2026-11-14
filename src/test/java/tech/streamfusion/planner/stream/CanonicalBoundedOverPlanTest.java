@@ -39,9 +39,7 @@ class CanonicalBoundedOverPlanTest {
                                                     Stream.of("DISABLED", "ALWAYS")
                                                         .flatMap(
                                                             uids ->
-                                                                (mode.equals("event-rows")
-                                                                        ? Stream.of(0L)
-                                                                        : Stream.of(0L, 1000L))
+                                                                Stream.of(0L, 1000L)
                                                                     .map(
                                                                         ttl ->
                                                                             Arguments.of(

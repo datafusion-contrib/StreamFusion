@@ -117,9 +117,7 @@ impl OverWindowAggregator {
             });
             if let Some(armed) = armed {
                 assert!(
-                    self.range_offset().is_none()
-                        && !self.proctime
-                        && matches!(self.inner, OverInner::Aggregates(_)),
+                    self.event_cleanup_shape(),
                     "event cleanup ownership on another protocol"
                 );
                 assert_eq!(armed.null_count(), 0, "NULL cleanup ownership");
@@ -178,9 +176,7 @@ impl OverWindowAggregator {
         });
         if let Some(armed) = armed {
             assert!(
-                self.range_offset().is_none()
-                    && !self.proctime
-                    && matches!(self.inner, OverInner::Aggregates(_)),
+                self.event_cleanup_shape(),
                 "event cleanup ownership on another protocol"
             );
             assert_eq!(armed.null_count(), 0, "NULL cleanup ownership");

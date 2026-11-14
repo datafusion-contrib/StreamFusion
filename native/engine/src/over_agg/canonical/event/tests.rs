@@ -947,8 +947,12 @@ fn event_cleanup_binding_rejects_other_protocols_without_mutation() {
     }
     let mut bounded = OverWindowAggregator::new(vec![1], vec![0], 2, vec![1], vec![0], 1, 2, false)
         .with_state_retention(1000);
-    assert!(bounded.bind_event_cleanup_timers().is_err());
-    assert!(!bounded.event_cleanup_external_timers);
+    bounded.bind_event_cleanup_timers().unwrap();
+    assert!(bounded.event_cleanup_external_timers);
+    let mut range = OverWindowAggregator::new(vec![1], vec![0], 2, vec![1], vec![0], 2, 2, false)
+        .with_state_retention(1000);
+    assert!(range.bind_event_cleanup_timers().is_err());
+    assert!(!range.event_cleanup_external_timers);
 }
 
 #[cfg(feature = "rocksdb-state")]

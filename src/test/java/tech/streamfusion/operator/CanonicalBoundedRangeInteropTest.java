@@ -794,7 +794,8 @@ class CanonicalBoundedRangeInteropTest {
             hiddenCount,
             constants.type(),
             constants.encodedValues(),
-            offset + 1L);
+            offset + 1L,
+            ttl > 1);
       if (processingRows)
         return new StockOverProcessingRowsStateContract(
             selector.getProducedType().toSerializer(),
@@ -877,6 +878,7 @@ class CanonicalBoundedRangeInteropTest {
               ttl,
               input,
               128);
+      if (eventRows && ttl > 1) operator.withEventTimeCleanupTimers();
       if (constants.type().getFieldCount() > 0)
         operator.withConstantArguments(constants.type(), constants.encodedValues());
       var contract = contract();

@@ -86,15 +86,7 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
                                             .unboundedOverVersion()))))
         || bounded && proctime && frameKind == 2
         || java.util.Arrays.stream(aggregateKinds)
-            .anyMatch(kind -> kind != 0 && kind != 3 && kind != 4 && kind != 22)
-        || !proctime
-            && frameKind == 1
-            && getPersistedConfig()
-                    .get(
-                        org.apache.flink.table.api.config.ExecutionConfigOptions
-                            .IDLE_STATE_RETENTION)
-                    .toMillis()
-                > 1) return false;
+            .anyMatch(kind -> kind != 0 && kind != 3 && kind != 4 && kind != 22)) return false;
     var input = (RowType) getInputEdges().get(0).getOutputType();
     if (java.util.Arrays.stream(keyColumns).anyMatch(key ->
         !tech.streamfusion.state.StockOverFoldStateContract.supportsPartitionKey(

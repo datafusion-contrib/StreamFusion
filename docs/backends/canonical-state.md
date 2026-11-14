@@ -27,7 +27,7 @@ pages. Historical cohorts are not silently requalified against each newer librar
 | [Sessions](../operators/window-aggregate.md) | Automatic partitioned TVF and legacy event/processing-time SESSION binding, operator recovery and selected complete-job handoffs | Native unpartitioned SESSION TVF assignment and wider merging/timer/recovery matrix |
 | [Window rank](../operators/top-n.md#window-rank-canonical-interchange-partial) | Automatic event-time retained sort-list, timer and watermark binding | Wider bounds/types, processing-time projection and failure/delivery matrix |
 | [Window deduplication](../operators/deduplication.md#window-deduplication-canonical-interchange-partial) | Automatic event-time winner, timer and watermark binding | Wider winner/types, processing-time projection and failure/delivery matrix |
-| [OVER](../operators/over.md#automatic-bounded-arithmetic-state-binding-partial) | Bounded arithmetic, processing-time unbounded scalar and event-time unbounded scalar contracts with automatic binding; narrow integral values, scalar/composite keys and explicit 2.2 V1 implementations awaiting qualification | Remaining keys/types, DISTINCT/views, bounded event-ROWS cleanup and complete new-scope qualification |
+| [OVER](../operators/over.md#automatic-bounded-arithmetic-state-binding-partial) | Bounded arithmetic, processing-time unbounded scalar and event-time unbounded scalar contracts with automatic binding; narrow integral values, scalar/composite keys and explicit 2.2 V1 implementations and bounded event-ROWS cleanup awaiting qualification | Remaining keys/types, DISTINCT/views and complete new-scope qualification |
 | [Changelog normalization](../operators/changelog-normalize.md#canonical-savepoint-adapter) | Automatic retained-row/TTL contract and complete jobs | Wider keys, mini-batches, consumers and failure matrix |
 | [Interval joins](../operators/joins/interval-join.md#complete-job-handoff-matrix) | Event/proctime state, four join kinds and selected complete-job/rescale matrices; nested binding awaiting qualification | Wider schemas, cleanup edges and remaining ordinary-SQL combinations |
 | [Temporal joins](../operators/joins/temporal-join.md#complete-job-handoff-matrix) | Qualified INNER/LEFT history/probe/timer state and complete jobs; nested binding awaiting qualification | Legacy proctime variant, wider schemas and commit-failure matrix |
@@ -2324,3 +2324,15 @@ map view as native input. No new join semantics are introduced. New planner and 
 fixtures cover full nested rows, duplicate/NULL inputs, continued and empty handoffs, native
 checkpoint recovery and keyed rescaling. These additions await local qualification on both
 released Flink lines; earlier scalar evidence above does not establish this wider scope.
+
+## Bounded event-time ROWS cleanup awaiting qualification
+
+Canonical binding now includes the released processing cleanup value and independent processing
+callback for existing bounded arithmetic event-time ROWS execution. The shared external callback
+mode preserves pending-row deferral, exact retained deadlines, late-only owners and idle frame/
+cutoff removal. The flat callback bridge carries armed state separately from a retained deadline;
+raw frame accumulators and event timers retain their existing protocol. Import validates both
+timer domains before installing state. New controls exercise both directions, overdue callbacks,
+pending/processed/empty cuts, native checkpoints, corrupt cleanup ownership, ordinary/compiled
+jobs and keyed rescaling. Testing on Flink 1.18 and 2.2 remains deferred to the final six-hour
+window. This adds canonical compatibility without introducing a new execution operator.

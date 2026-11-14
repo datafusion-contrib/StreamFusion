@@ -81,8 +81,8 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
   }
 
   public NativeOverAggregateOperator withEventTimeCleanupTimers() {
-    if (proctime || (frameKind != 0 && frameKind != 3) || stateTtlMillis <= 1)
-      throw new IllegalArgumentException("Event cleanup requires retained unbounded rowtime OVER");
+    if (proctime || (frameKind != 0 && frameKind != 1 && frameKind != 3) || stateTtlMillis <= 1)
+      throw new IllegalArgumentException("Event cleanup requires retained rowtime OVER");
     eventCleanupTimers = true;
     return this;
   }

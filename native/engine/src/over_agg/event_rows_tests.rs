@@ -75,6 +75,78 @@ fn frames(op: &OverWindowAggregator) -> Vec<RecordBatch> {
 
 #[cfg(feature = "rocksdb-state")]
 #[test]
+fn bounded_rows_cleanup_defers_pending_and_restores_its_original_deadline() {
+    for keyless in [false, true] {
+        for from_store in [false, true] {
+            for to_store in [false, true] {
+                let directory = tempfile::tempdir().unwrap();
+                let mut source = operator(keyless, 2, from_store, &directory.path().join("source"))
+                    .with_state_retention(1000);
+                source.bind_canonical_frame_inputs().unwrap();
+                source.bind_event_cleanup_timers().unwrap();
+                source.push(batch(vec![10], vec![Some(3)]), 100).unwrap();
+                assert_eq!(source.flush(10, 100).unwrap().num_rows(), 1);
+                source.push(batch(vec![40], vec![Some(7)]), 100).unwrap();
+                assert_eq!(source.next_event_cleanup().unwrap(), Some(1600));
+                source.fire_event_cleanup(1600, 1800).unwrap();
+                assert_eq!(source.next_event_cleanup().unwrap(), Some(3300));
+                let snapshots = if from_store {
+                    source
+                        .canonical_partitions(8, if keyless { &[] } else { &[-1] })
+                        .unwrap()
+                } else {
+                    source.snapshot_partitions(8, if keyless { &[] } else { &[-1] })
+                }
+                .into_values()
+                .collect::<Vec<_>>();
+                let mut target = if to_store {
+                    let mut target = operator(keyless, 2, true, &directory.path().join("target"))
+                        .with_state_retention(1000);
+                    target.import_partitions(&snapshots).unwrap();
+                    target.adopt_store_retention(1800).unwrap();
+                    target
+                } else {
+                    OverWindowAggregator::restore_partitions(
+                        vec![0; 2],
+                        vec![0, 3],
+                        2,
+                        vec![1; 2],
+                        if keyless { vec![] } else { vec![0] },
+                        1,
+                        2,
+                        false,
+                        &snapshots,
+                        1000,
+                        1800,
+                    )
+                    .with_memory_budget(64 << 20)
+                    .unwrap()
+                };
+                target.bind_event_cleanup_timers().unwrap();
+                target.bind_canonical_frame_inputs().unwrap();
+                assert_eq!(target.next_event_cleanup().unwrap(), Some(3300));
+                assert_eq!(frames(&source), frames(&target));
+                assert_eq!(
+                    source.flush(40, 1800).unwrap(),
+                    target.flush(40, 1800).unwrap()
+                );
+                target.fire_event_cleanup(3300, 3300).unwrap();
+                assert!(frames(&target).is_empty());
+                assert_eq!(target.next_event_cleanup().unwrap(), None);
+                target.push(batch(vec![20], vec![Some(5)]), 3300).unwrap();
+                let output = target.flush(50, 3300).unwrap();
+                assert_eq!(output.num_rows(), 1);
+                assert_eq!(
+                    ScalarValue::try_from_array(output.column(3), 0).unwrap(),
+                    ScalarValue::Int64(Some(5))
+                );
+            }
+        }
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
 fn maximum_bucket_originals_and_raw_arithmetic_survive_native_backend_transfers() {
     for keyless in [false, true] {
         for offset in [0, 2] {
