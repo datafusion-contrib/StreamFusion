@@ -16,7 +16,7 @@ import tech.streamfusion.operator.NativeColumnarTopNOperator;
 
 class CanonicalUpdateRankAdmissionTest {
   static Stream<Arguments> rejected() {
-    return Stream.of("ttl", "offset", "three-sort", "wide", "variable")
+    return Stream.of("ttl", "offset-ttl", "variable")
         .flatMap(mode -> Stream.of(false, true).map(compiled -> Arguments.of(mode, compiled)));
   }
 
@@ -26,26 +26,21 @@ class CanonicalUpdateRankAdmissionTest {
       throws Exception {
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", "true");
-    config.setString("table.exec.state.ttl", mode.equals("ttl") ? "1 h" : "0 ms");
+    config.setString("table.exec.state.ttl", mode.endsWith("ttl") ? "1 h" : "0 ms");
     var table = NativePlannerTestEnvironment.create(config);
     table.executeSql("CREATE TABLE input_table(k BIGINT,v BIGINT) WITH ('connector'='datagen')");
     table.executeSql(
         "CREATE TABLE output_table(k BIGINT,v BIGINT,n BIGINT) WITH ('connector'='blackhole')");
     String group =
         "SELECT k,v,COUNT(*) AS c"
-            + (mode.equals("wide") ? ",SUM(CAST(v AS DOUBLE)) AS d" : "")
             + (mode.equals("variable") ? ",COALESCE(MOD(ABS(k),3)+1,2) AS b" : "")
             + " FROM input_table GROUP BY k,v";
     String query =
-        "INSERT INTO output_table SELECT k,"
-            + (mode.equals("wide") ? "CAST(d AS BIGINT)" : "v")
-            + ",rn FROM (SELECT *,"
-            + "ROW_NUMBER() OVER (PARTITION BY k ORDER BY c DESC"
-            + (mode.equals("three-sort") ? ",k,v" : "")
-            + ") AS rn FROM ("
+        "INSERT INTO output_table SELECT k,v,rn FROM (SELECT *,"
+            + "ROW_NUMBER() OVER (PARTITION BY k ORDER BY c DESC) AS rn FROM ("
             + group
             + ")) WHERE "
-            + (mode.equals("offset") ? "rn>=2 AND " : "")
+            + (mode.equals("offset-ttl") ? "rn>=2 AND " : "")
             + "rn<="
             + (mode.equals("variable") ? "b" : "3");
     var planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();

@@ -41,3 +41,10 @@ migration. A TTL-disabled canonical projection must omit that internal clock, si
 serializer has no age envelope. Preserve raw restore semantics and emit zero only in the qualified
 canonical wire contract. The initial process matrix caught four failures from forwarding that
 clock; focused memory/Rocks restore tests and the corrected full 120-job cohort pass.
+
+
+The pending #569 extension admits constant updating OFFSET on Flink 1.18 and 2.2, reusing this
+projection without adding metadata: stock and native retain the hidden prefix in the same map.
+Exact changelog, tie, checkpoint and rescale controls are written but not yet executed. Keep TTL
+and variable bounds gated; consecutive tie positions are still required. This extension changes
+canonical binding of an existing native range, not its ordinary execution algorithm.

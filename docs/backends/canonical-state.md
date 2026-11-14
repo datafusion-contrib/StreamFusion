@@ -2511,3 +2511,9 @@ the stock binary key bytes, so generic live keys and binary restored keys share 
 emitted markers. The codec fields and persistent tables are unchanged. Mixed-representation,
 pending/marker restore, native recovery and original-age TTL controls await execution. This
 buffered extension admits scalar/ROW descendants; collection-bearing ROW keys remain gated.
+
+
+Updating Top-N additionally binds constant OFFSET ranges through the existing complete retained-row
+projection, including hidden-prefix rows and equal-sort positions. No serializer or native state
+format changes. New raw/changelog, recovery and clean-worker controls await both-release execution;
+TTL and variable updating bounds remain gated. See the Top-N page for the exact pending scope.

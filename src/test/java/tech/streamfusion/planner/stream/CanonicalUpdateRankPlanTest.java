@@ -25,19 +25,19 @@ import tech.streamfusion.state.StockUpdatingTopNStateContract;
 class CanonicalUpdateRankPlanTest {
   static Stream<Arguments> cases() {
     var cases = new ArrayList<Arguments>();
-    for (int limit : new int[] {1, 3})
+    for (int[] range : new int[][] {{1, 1}, {1, 3}, {2, 3}, {3, 3}})
       for (boolean compiled : new boolean[] {false, true})
         for (boolean keyless : new boolean[] {false, true})
           for (boolean rank : new boolean[] {false, true})
             for (boolean twoSorts : new boolean[] {false, true})
-              cases.add(Arguments.of(limit, compiled, keyless, rank, twoSorts));
-    return cases.stream();
+              cases.add(Arguments.of(range[0], range[1], compiled, keyless, rank, twoSorts));
+    return tech.streamfusion.CanonicalTestMatrix.select(cases.stream());
   }
 
   @ParameterizedTest
   @MethodSource("cases")
   void normalSubmissionCapturesTheReleasedRankContract(
-      int limit, boolean compiled, boolean keyless, boolean rank, boolean twoSorts)
+      int start, int limit, boolean compiled, boolean keyless, boolean rank, boolean twoSorts)
       throws Exception {
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", "true");
@@ -62,7 +62,8 @@ class CanonicalUpdateRankPlanTest {
             + (twoSorts ? ",v ASC NULLS FIRST" : "")
             + ") AS rn FROM (SELECT k,v,COUNT(*) AS c FROM input_table"
             + " GROUP BY k,v)) WHERE rn<="
-            + limit;
+            + limit
+            + (start == 1 ? "" : " AND rn>=" + start);
     var planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
     var plan = compiled ? table.compilePlanSql(query) : null;
     String json = plan == null ? "" : plan.asJsonString();
@@ -92,6 +93,8 @@ class CanonicalUpdateRankPlanTest {
         Map.<String, Object>of(
                 "limit",
                 (long) limit,
+                "offset",
+                (long) start - 1,
                 "outputRankNumber",
                 rank && limit != 1,
                 "stateTtlMillis",

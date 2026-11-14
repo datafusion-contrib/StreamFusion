@@ -3389,7 +3389,8 @@ final class StockCompiledPlanLowering {
       if (constant.getRankStart() < 1
           || constant.getRankEnd() < constant.getRankStart()
           || (!retracting
-              && (constant.getRankStart() != 1 || constant.getRankEnd() > Integer.MAX_VALUE)))
+              && ((!updating && constant.getRankStart() != 1)
+                  || constant.getRankEnd() > Integer.MAX_VALUE)))
         return stock;
       offset = constant.getRankStart() - 1;
       limit = constant.getRankEnd();

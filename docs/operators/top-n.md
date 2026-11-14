@@ -913,3 +913,18 @@ checkpoint recovery before firing. Clean-worker jobs include continued input and
 retain the payload with a user function, and compare committed effects against an independent
 window/payload oracle. This exercises existing execution and state codecs; no processing-time
 canonical window-selection contract or new input semantics is introduced.
+
+
+## Additional updating constant ranges awaiting qualification
+
+Canonical binding now includes constant UpdateFast OFFSET ranges on both supported Flink lines,
+with TTL disabled and a signed-32-bit rank end. The existing native ranker retains the skipped
+prefix and the stock `data-state-with-update` tuple layout already includes those rows and their
+equal-sort positions. Export and import therefore use the same direct projection as start-one
+ranges; no new persisted state or replay path is introduced. AppendFast OFFSET keeps its separate
+admission gate, and variable updating bounds and TTL/cache ages remain unqualified.
+
+New controls cover exact stock changelogs with hidden/projected rank, both before-image policies,
+tied keys, nested retained rows, native checkpoint recovery, ordinary/portable SQL and complete-job
+handoff/rescaling with an independent visible-range oracle. These controls await execution in the
+local testing window. Earlier passing counts above apply to their original start-one scope.

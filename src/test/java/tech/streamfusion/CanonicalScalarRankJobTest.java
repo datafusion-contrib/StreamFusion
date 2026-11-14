@@ -24,26 +24,50 @@ class CanonicalScalarRankJobTest {
   @TempDir Path directory;
 
   static Stream<Arguments> cases() {
-    return CanonicalTestMatrix.select(Stream.of("append", "update", "retract")
-        .flatMap(algorithm -> Stream.of("DOUBLE", "DECIMAL(38,4)")
-            .flatMap(type -> CanonicalGroupArithmeticJobTest.cases()
-                .map(args -> Arguments.of(algorithm, type, args.get()[0], args.get()[1],
-                    args.get()[2], args.get()[3])))));
+    return CanonicalTestMatrix.select(
+        Stream.of("append", "update", "retract")
+            .flatMap(
+                algorithm ->
+                    Stream.of("DOUBLE", "DECIMAL(38,4)")
+                        .flatMap(
+                            type ->
+                                CanonicalGroupArithmeticJobTest.cases()
+                                    .map(
+                                        args ->
+                                            Arguments.of(
+                                                algorithm,
+                                                type,
+                                                args.get()[0],
+                                                args.get()[1],
+                                                args.get()[2],
+                                                args.get()[3])))));
   }
 
   @ParameterizedTest
   @MethodSource("cases")
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void scalarSortAndPayloadStateContinuesAcrossBothEnginesAndRescaling(
-      String algorithm, String type, String mode, boolean ordinary,
-      boolean nativeFirst, String backend) throws Exception {
+      String algorithm,
+      String type,
+      String mode,
+      boolean ordinary,
+      boolean nativeFirst,
+      String backend)
+      throws Exception {
     var baseline = prepare("baseline", algorithm, type, mode, ordinary);
     var switched = prepare("switched", algorithm, type, mode, ordinary);
-    new CanonicalJobRunner(directory).verifyJoinSwitch(baseline, switched, nativeFirst,
-        backend, mode, algorithm.equals("update") ? "GroupAgg,TopN" : "TopN");
+    new CanonicalJobRunner(directory)
+        .verifyJoinSwitch(
+            baseline,
+            switched,
+            nativeFirst,
+            backend,
+            mode,
+            algorithm.equals("update") ? "GroupAgg,TopN" : "TopN");
     var output = RowType.of(new BigIntType(), new BigIntType(), new BigIntType());
     var actual = new HashMap<String, Long>();
-    for (String row : CanonicalFixtureFactory.committedRows(switched.resolve("committed"), output)) {
+    for (String row :
+        CanonicalFixtureFactory.committedRows(switched.resolve("committed"), output)) {
       var cells = row.split("\\|", -1);
       long delta = cells[0].equals("+I") || cells[0].equals("+U") ? 1 : -1;
       actual.merge(cells[1] + "|" + cells[2] + "|" + cells[3], delta, Long::sum);
@@ -54,10 +78,15 @@ class CanonicalScalarRankJobTest {
       for (String stage : List.of("prefix", "middle", "suffix"))
         assertTrue(Files.exists(switched.resolve(stage + "-ordinary-sql-verified")));
       assertFalse(Files.exists(switched.resolve("plan.json")));
-    } else assertFalse(Files.readString(switched.resolve("plan.json")).contains("tech.streamfusion"));
+    } else
+      assertFalse(Files.readString(switched.resolve("plan.json")).contains("tech.streamfusion"));
   }
 
-  private Path prepare(String name, String algorithm, String type, String mode, boolean ordinary)
+  int firstRank() {
+    return 1;
+  }
+
+  Path prepare(String name, String algorithm, String type, String mode, boolean ordinary)
       throws Exception {
     var root = directory.resolve(name);
     Files.createDirectories(root);
@@ -65,21 +94,36 @@ class CanonicalScalarRankJobTest {
     if (!algorithm.equals("retract")) Files.createFile(root.resolve("insert-only"));
     Files.writeString(root.resolve("input-columns.sql"), "k BIGINT,v BIGINT,id BIGINT,p BIGINT");
     Files.writeString(root.resolve("uid-generation"), "DISABLED");
-    Files.writeString(root.resolve("native-operator"),
-        "NativeColumnarTopN,RowDataToArrow,ArrowToRowData");
-    Files.writeString(root.resolve("native-input-families"),
+    Files.writeString(
+        root.resolve("native-operator"), "NativeColumnarTopN,RowDataToArrow,ArrowToRowData");
+    Files.writeString(
+        root.resolve("native-input-families"),
         algorithm.equals("update") ? "GroupAgg,TopN" : "TopN");
     Files.writeString(root.resolve("required-plan-node"), "stream-exec-rank");
-    Files.writeString(root.resolve("required-rank-strategy"), algorithm.equals("append")
-        ? "AppendFast" : algorithm.equals("update") ? "UpdateFast" : "Retract");
-    String source = algorithm.equals("update")
-        ? "(SELECT k,v,id,p,COUNT(*) AS c FROM input_table GROUP BY k,v,id,p)" : "input_table";
-    String order = (algorithm.equals("update") ? "c DESC," : "")
-        + "CAST(v AS " + type + ") ASC NULLS LAST,p DESC,id ASC"
-        + (algorithm.equals("update") ? ",v ASC NULLS LAST" : "");
-    Files.writeString(root.resolve("query.sql"),
+    Files.writeString(
+        root.resolve("required-rank-strategy"),
+        algorithm.equals("append")
+            ? "AppendFast"
+            : algorithm.equals("update") ? "UpdateFast" : "Retract");
+    String source =
+        algorithm.equals("update")
+            ? "(SELECT k,v,id,p,COUNT(*) AS c FROM input_table GROUP BY k,v,id,p)"
+            : "input_table";
+    String order =
+        (algorithm.equals("update") ? "c DESC," : "")
+            + "CAST(v AS "
+            + type
+            + ") ASC NULLS LAST,p DESC,id ASC"
+            + (algorithm.equals("update") ? ",v ASC NULLS LAST" : "");
+    Files.writeString(
+        root.resolve("query.sql"),
         "INSERT INTO output_table SELECT k,id,rn FROM (SELECT *,ROW_NUMBER() OVER"
-            + " (PARTITION BY k ORDER BY " + order + ") AS rn FROM " + source + ") WHERE rn<=3");
+            + " (PARTITION BY k ORDER BY "
+            + order
+            + ") AS rn FROM "
+            + source
+            + ") WHERE rn<=3 AND rn>="
+            + firstRank());
     var rows = new ArrayList<String>();
     int keys = mode.equals("rescale") ? 64 : 2;
     if (mode.equals("rescale")) Files.createFile(root.resolve("disable-chaining"));
@@ -96,14 +140,15 @@ class CanonicalScalarRankJobTest {
         }
         int id = key * 10 + (algorithm.equals("append") ? round : member);
         int secondary = (member + key) % 5;
-        rows.add(change + "," + (key == 0 ? "null" : key) + "," + score + "," + id + "," + secondary);
+        rows.add(
+            change + "," + (key == 0 ? "null" : key) + "," + score + "," + id + "," + secondary);
       }
     }
     Files.write(root.resolve("input.csv"), rows);
     return root;
   }
 
-  private static Map<String, Long> expected(Path root, String algorithm) throws Exception {
+  private Map<String, Long> expected(Path root, String algorithm) throws Exception {
     var multiplicities = new HashMap<List<String>, Long>();
     for (String line : Files.readAllLines(root.resolve("input.csv"))) {
       var cells = line.split(",", -1);
@@ -114,21 +159,28 @@ class CanonicalScalarRankJobTest {
       if (count == 0) multiplicities.remove(row);
     }
     var groups = new HashMap<String, List<List<String>>>();
-    multiplicities.forEach((row, count) -> {
-      int copies = algorithm.equals("update") ? 1 : Math.toIntExact(count);
-      for (int copy = 0; copy < copies; copy++)
-        groups.computeIfAbsent(row.get(0), ignored -> new ArrayList<>()).add(row);
-    });
+    multiplicities.forEach(
+        (row, count) -> {
+          int copies = algorithm.equals("update") ? 1 : Math.toIntExact(count);
+          for (int copy = 0; copy < copies; copy++)
+            groups.computeIfAbsent(row.get(0), ignored -> new ArrayList<>()).add(row);
+        });
     Comparator<List<String>> order = Comparator.comparingLong(row -> Long.parseLong(row.get(1)));
-    order = order.thenComparing(Comparator.<List<String>>comparingLong(
-        row -> Long.parseLong(row.get(3))).reversed())
-        .thenComparingLong(row -> Long.parseLong(row.get(2)));
+    order =
+        order
+            .thenComparing(
+                Comparator.<List<String>>comparingLong(row -> Long.parseLong(row.get(3)))
+                    .reversed())
+            .thenComparingLong(row -> Long.parseLong(row.get(2)));
     if (algorithm.equals("update"))
-      order = Comparator.<List<String>>comparingLong(multiplicities::get).reversed().thenComparing(order);
+      order =
+          Comparator.<List<String>>comparingLong(multiplicities::get)
+              .reversed()
+              .thenComparing(order);
     var result = new HashMap<String, Long>();
     for (var rows : groups.values()) {
       rows.sort(order);
-      for (int index = 0; index < Math.min(3, rows.size()); index++) {
+      for (int index = firstRank() - 1; index < Math.min(3, rows.size()); index++) {
         var row = rows.get(index);
         result.merge(row.get(0) + "|" + row.get(2) + "|" + (index + 1), 1L, Long::sum);
       }
