@@ -19,6 +19,32 @@ ENGINES = {"stock", "previous", "native"}
 REJECTION = "Incomparable types: TIMESTAMP_LTZ(3) and TIMESTAMP(3) NOT NULL"
 
 
+def run_logged(command, environment, log):
+    process = subprocess.Popen(command, cwd=ROOT, env=environment, stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, start_new_session=True)
+    try:
+        with process.stdout:
+            for line in process.stdout:
+                log.write(line)
+                if line.startswith(b"[hudi-nexmark]"):
+                    print(line.decode("utf-8", errors="replace").rstrip("\r\n"), flush=True)
+        return process.wait()
+    except BaseException:
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait()
+        raise
+
+
 def validate(report, backend, mini_batch):
     expected = Counter((query, engine, trial) for query in QUERIES
                        for engine in ENGINES for trial in range(3))
@@ -110,19 +136,8 @@ def run(args):
                    f"-Dsf.hudi.benchmark.output={report}",
                    f'-Dsf.extraJvmArgs=-Djava.library.path="{libraries}"'
                    f' -Djava.io.tmpdir="{temporary}" -Duser.timezone=UTC -Dfile.encoding=UTF-8']
-        with (output / "maven.log").open("w") as log:
-            process = subprocess.Popen(command, cwd=ROOT, env=environment, stdout=log,
-                                       stderr=subprocess.STDOUT, start_new_session=True)
-            try:
-                code = process.wait()
-            except BaseException:
-                os.killpg(process.pid, signal.SIGTERM)
-                try:
-                    process.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    os.killpg(process.pid, signal.SIGKILL)
-                    process.wait()
-                raise
+        with (output / "maven.log").open("wb") as log:
+            code = run_logged(command, environment, log)
         result["exit_code"] = code
         if report.exists():
             result["report"] = json.loads(report.read_text())

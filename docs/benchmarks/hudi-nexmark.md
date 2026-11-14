@@ -38,6 +38,11 @@ commit, producer, platform, library hashes and every trial remain in the artifac
 Generated runtime tables are removed on success and failure. Focused and full
 modes have separate workflow concurrency groups; run the required CI, upstream
 Flink and docs gates for the final candidate after recording the results.
+Each full configuration has a six-hour limit on slower hosted CPUs. The
+launcher forwards the existing per-query/engine progress lines to the job console
+while retaining the complete byte-for-byte Maven log, including failure output.
+The selected queries, warmups, trials, resources and measured boundaries remain
+the fixed matrix above; the timeout does not exclude slow controls or partial runs.
 
 The first [isolated comparison](hudi-java-comparison-20261114.json) passed on Linux
 x86-64 with four available processors, JDK 17.0.21, 200k events, heap state and
