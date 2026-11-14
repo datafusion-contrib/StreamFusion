@@ -356,3 +356,10 @@ remain at the same ordinals, and typed reconstruction preserves nested ROW state
 
 Temporary arrays for missing optional ROW transport fields are reserved against the existing
 operator memory pool before allocation and released after the batch is consumed.
+
+ROW-bearing input mirrors Flink’s serialized keyBy boundary before entering the retained
+row codec. A reusable serializer and Arrow writer establish the same owned ROW bytes for
+live input and canonical imports, so transport presence cannot split one stock multiset row
+into separate native candidates. Temporary Java serialization workspace is reserved before
+conversion, and the scoped Arrow root is released after synchronous C-data handover.
+Primitive input follows the existing columnar export path.

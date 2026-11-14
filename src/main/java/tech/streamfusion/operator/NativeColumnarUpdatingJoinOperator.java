@@ -367,10 +367,16 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractNativeStatefulOp
   private void joinOpen(VectorSchemaRoot in, boolean left) {
     BufferAllocator inAllocator =
         in.getFieldVectors().isEmpty() ? allocator : in.getFieldVectors().get(0).getAllocator();
-    try (ArrowArray inArray = ArrowArray.allocateNew(inAllocator);
+    try (SerializedJoinInput prepared =
+            SerializedJoinInput.prepare(in, left ? leftType : rightType);
+        ArrowArray inArray = ArrowArray.allocateNew(inAllocator);
         ArrowSchema inSchema = ArrowSchema.allocateNew(inAllocator)) {
       Data.exportVectorSchemaRoot(
-          inAllocator, MapListRepresentation.forExport(in), dictionaries, inArray, inSchema);
+          inAllocator,
+          MapListRepresentation.forExport(prepared.root()),
+          dictionaries,
+          inArray,
+          inSchema);
       // Flink's TtlTimeProvider clock: the processing-time service is System.currentTimeMillis in
       // production and harness-controlled in tests, so expiry is deterministic to test.
       long now = getProcessingTimeService().getCurrentProcessingTime();
