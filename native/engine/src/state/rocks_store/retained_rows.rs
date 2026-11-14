@@ -20,6 +20,7 @@ impl RetainedRows {
             DataType::Struct(fields) => fields
                 .iter()
                 .all(|field| Self::supported(std::slice::from_ref(field.data_type()))),
+            DataType::UInt16 => true,
             _ => rocks_row_supported(std::slice::from_ref(ty)),
         })
     }

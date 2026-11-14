@@ -2693,3 +2693,7 @@ headers and companion entries, with an oversized-record allowance. A conversion 
 precedes Arrow allocation and remains attached through the same synchronous receiver, including
 native RocksDB conversion. New hot two-MiB-key, denied-build and failed-receiver/retry controls
 are authored but unexecuted; no native state field or stock serializer changes.
+
+The retained-row codec also accepts the internal unsigned 16-bit UTF-16 cache child used by
+represented ROW keys. This is a transport implementation field, not additional SQL scalar
+admission; encoded logical row bytes, nested kinds and stock serializers remain unchanged.
