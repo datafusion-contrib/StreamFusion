@@ -2687,3 +2687,9 @@ state, while preserving variable bytes opaquely. New eager/mini-batch raw-state,
 ordinary/portable admission and compact/variable two-key jobs are authored but unexecuted.
 Worker checks require both physical key fields on the actual bound extrema contract, and the
 complete jobs retain independent final-value oracles. Existing historical cohorts remain separate.
+
+Pending variable-key extrema export additionally uses row/estimated-byte limits for resident
+headers and companion entries, with an oversized-record allowance. A conversion reservation
+precedes Arrow allocation and remains attached through the same synchronous receiver, including
+native RocksDB conversion. New hot two-MiB-key, denied-build and failed-receiver/retry controls
+are authored but unexecuted; no native state field or stock serializer changes.

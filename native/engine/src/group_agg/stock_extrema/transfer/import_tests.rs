@@ -26,6 +26,97 @@ fn replace(batch: &RecordBatch, index: usize, column: ArrayRef) -> RecordBatch {
 }
 
 #[test]
+fn frame_reservations_deny_before_build_and_release_after_receiver_failure() {
+    let denied = owner().with_state_ttl(0).with_memory_budget(1024).unwrap();
+    let mut work = denied.memory.temporary_reservation();
+    assert!(matches!(
+        emit_frame(
+            FrameKind::Headers,
+            1 << 20,
+            1,
+            8,
+            &mut work,
+            || panic!("denied frame reached allocation"),
+            &mut |_, _, _| panic!("denied frame reached receiver")
+        ),
+        Err(DataFusionError::ResourcesExhausted(_))
+    ));
+    assert_eq!(work.as_ref().unwrap().size(), 0);
+    let source = owner().with_state_ttl(0).with_memory_budget(16384).unwrap();
+    let mut work = source.memory.temporary_reservation();
+    let build = || {
+        RecordBatch::try_from_iter(vec![("x", Arc::new(Int64Array::from(vec![7])) as ArrayRef)])
+            .map_err(DataFusionError::from)
+    };
+    let result = emit_frame(
+        FrameKind::Headers,
+        8,
+        1,
+        1,
+        &mut work,
+        build,
+        &mut |_, batch, work| {
+            assert_eq!(work.as_ref().unwrap().size(), batch.get_array_memory_size());
+            Err(invalid("receiver stopped"))
+        },
+    );
+    assert!(result.unwrap_err().to_string().contains("receiver stopped"));
+    assert_eq!(work.as_ref().unwrap().size(), 0);
+    emit_frame(
+        FrameKind::Headers,
+        8,
+        1,
+        1,
+        &mut work,
+        build,
+        &mut |_, _, _| Ok(()),
+    )
+    .unwrap();
+    assert_eq!(work.as_ref().unwrap().size(), 0);
+}
+
+#[test]
+fn hot_variable_keys_cannot_multiply_one_entry_frame_beyond_its_byte_bound() {
+    let key = "x".repeat(2 * 1024 * 1024);
+    let mut source = owner()
+        .with_state_ttl(0)
+        .with_memory_budget(16 << 20)
+        .unwrap();
+    for value in 0..16 {
+        let input = RecordBatch::try_from_iter(vec![
+            (
+                "key",
+                Arc::new(StringArray::from(vec![key.as_str()])) as ArrayRef,
+            ),
+            ("value", Arc::new(Int64Array::from(vec![value])) as ArrayRef),
+            (
+                ROW_KIND_COLUMN,
+                Arc::new(Int8Array::from(vec![0])) as ArrayRef,
+            ),
+        ])
+        .unwrap();
+        source.update(&input, 0).unwrap();
+    }
+    let before = source.snapshot();
+    let mut headers = 0;
+    let mut entries = 0;
+    source
+        .visit_stock_extrema(|kind, batch| {
+            assert_eq!(batch.num_rows(), 1);
+            assert!(batch.get_array_memory_size() < 5 * 1024 * 1024);
+            match kind {
+                FrameKind::Headers => headers += batch.num_rows(),
+                FrameKind::Entries => entries += batch.num_rows(),
+            }
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(headers, 1);
+    assert_eq!(entries, 32);
+    assert_eq!(source.snapshot(), before);
+}
+
+#[test]
 fn variable_binary_row_keys_retain_complete_extrema_state_and_reject_unaligned_frames() {
     let input = |key: Option<&str>, value: Option<i64>, kind: i8| {
         RecordBatch::try_from_iter(vec![

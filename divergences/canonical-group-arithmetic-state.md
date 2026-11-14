@@ -84,3 +84,10 @@ responsible for the stock schema. No value carrier, timer, TTL or native state f
 Actual-stock raw-state, nullable/65-column keys, native recovery and eager/mini-batch clean-worker
 controls are authored but remain unexecuted on both releases. Constructed
 keys retain their explicit gate under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+Variable-key extrema conversion follows Comet's moved C Data ownership with one temporary
+reservation through allocation and synchronous handover. Resident header/entry chunks have
+both row and estimated-byte bounds, plus an oversized-record working set, so one hot large
+key cannot expand across a full row-count chunk. Native RocksDB reuses its existing bounded raw
+reader and the same charged conversion helper. Failure/denial release charges without changing
+the source. Authored hot-key and reservation failure/retry controls remain unexecuted.

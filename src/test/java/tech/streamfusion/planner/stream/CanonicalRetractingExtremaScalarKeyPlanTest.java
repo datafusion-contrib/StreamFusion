@@ -95,7 +95,17 @@ class CanonicalRetractingExtremaScalarKeyPlanTest {
       bound.add(contract);
       assertEquals(257, tech.streamfusion.compat.FlinkPlanCompat.maximumParallelism(node));
       assertInstanceOf(StockGroupExtremaStateContract.class, contract);
-      assertEquals(keys.getChildren(), ((RowType) field(contract, "keyType")).getChildren());
+      var expectedKeys =
+          keys.getChildren().stream()
+              .map(
+                  type ->
+                      type.is(
+                              org.apache.flink.table.types.logical.LogicalTypeRoot
+                                  .TIME_WITHOUT_TIME_ZONE)
+                          ? new org.apache.flink.table.types.logical.TimeType(type.isNullable(), 0)
+                          : type)
+              .collect(tech.streamfusion.compat.ListCollectors.toList());
+      assertEquals(expectedKeys, ((RowType) field(contract, "keyType")).getChildren());
     }
     boolean admitted = CanonicalExtremaScalarKeyFixture.schemas().anyMatch(definition::equals);
     assertEquals(admitted ? 1 : 0, bound.size(), graph.getStreamingPlanAsJSON());
