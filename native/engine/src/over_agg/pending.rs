@@ -31,7 +31,7 @@ impl OverWindowAggregator {
             if payload.len() != logical.len()
                 || payload.iter().zip(&logical).any(|((_, left), right)| {
                     left.metadata() != right.metadata()
-                        || !same_logical_type(left.data_type(), right.data_type())
+                        || !crate::owned::same_logical_type(left.data_type(), right.data_type())
                 })
             {
                 return Err(DataFusionError::Execution(format!(
@@ -84,37 +84,6 @@ impl OverWindowAggregator {
         }
         self.buffered = aligned;
         Ok(())
-    }
-}
-
-// Arrow Java and retained row reconstruction use different names for a List's
-// physical child (element, $data$, items, entries). Those names have no SQL
-// meaning. ROW field names, nullability, dictionaries and extension metadata do.
-fn same_logical_field(left: &Field, right: &Field, element: bool) -> bool {
-    let mut expected = left.clone().with_data_type(right.data_type().clone());
-    if element {
-        expected = expected.with_name(right.name());
-    }
-    expected == *right && same_logical_type(left.data_type(), right.data_type())
-}
-
-fn same_logical_type(left: &DataType, right: &DataType) -> bool {
-    if left == right {
-        return true;
-    }
-    match (left, right) {
-        (DataType::List(left), DataType::List(right)) => same_logical_field(left, right, true),
-        (DataType::Map(left, left_sorted), DataType::Map(right, right_sorted)) => {
-            left_sorted == right_sorted && same_logical_field(left, right, true)
-        }
-        (DataType::Struct(left), DataType::Struct(right)) => {
-            left.len() == right.len()
-                && left
-                    .iter()
-                    .zip(right)
-                    .all(|(left, right)| same_logical_field(left, right, false))
-        }
-        _ => false,
     }
 }
 

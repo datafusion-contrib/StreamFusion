@@ -214,3 +214,7 @@ nullability, independently from the upstream transformation's output declaration
 VALUE_STATE/MAP_STATE strategies map to their public VALUE/MAP names, and legacy empty matching
 key arrays retain the released full-row matching semantics. Connector and helper translation
 continues through the stock sink on both release lines.
+
+Live materializer batches reconcile physical list-child aliases with the bound canonical
+schema over shared buffers before TTL cleanup or candidate mutation. Logical ROW names,
+metadata, nullability, and value types must still match.

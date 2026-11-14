@@ -175,3 +175,8 @@ independent. New ordinary/compiled planner and clean-stock-worker fixtures keep 
 payloads through the join, with NULL parents, NULL descendants, Unicode map keys and duplicate
 rows. The authored fixtures cover continued input, no-input re-export, native checkpoints and
 1 → 3 → 2 rescaling; qualification on Flink 1.18 and 2.2 is pending.
+
+The persistent window-join buffer uses the shared retained-row codec for payloads,
+including nested MAP fields. MAP input keeps its declared Arrow representation;
+only the private storage codec uses the equivalent list layout and reconstructs
+the requested schema when reading rows. Join-key admission is unchanged.
