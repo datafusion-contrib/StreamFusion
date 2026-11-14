@@ -19,7 +19,7 @@ pages. Historical cohorts are not silently requalified against each newer librar
 
 | Family | Current stock-interchange scope | Main remaining work |
 | --- | --- | --- |
-| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Arithmetic, typed scalar/shared COUNT DISTINCT and append numeric SUM DISTINCT, append extrema, integral/date/time/boolean retracting MIN/MAX, append scalar and local/global DISTINCT mini-batches, and captured managed UDFs; ROW keys, validity-only COUNT arguments, one-phase decimal SUM/AVG, one-phase retracting scalar/COUNT DISTINCT/extrema, fixed composite extrema keys and two-phase retracting scalar mini-batches awaiting qualification | Wider types/keys, remaining retracting mini-batches, wider UDF contracts, other views/phases and failures |
+| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Arithmetic, typed scalar/shared COUNT DISTINCT and append numeric SUM DISTINCT, append extrema, integral/date/time/boolean retracting MIN/MAX, append scalar and local/global DISTINCT mini-batches, and captured managed UDFs; ROW keys, validity-only COUNT arguments, one-phase decimal SUM/AVG, one-phase retracting scalar/COUNT DISTINCT/extrema, scalar/composite extrema keys and two-phase retracting scalar mini-batches awaiting qualification | Wider types/keys, remaining retracting mini-batches, wider UDF contracts, other views/phases and failures |
 | [Deduplication](../operators/deduplication.md#canonical-state-adapter) | Automatic eager and buffered contracts, selected mini-batch and TTL modes; ROW-key binding awaiting qualification | Remaining schemas/emission variants and full failure matrix |
 | [Top-N / First-N / LIMIT](../operators/top-n.md#first-n-canonical-handoffs) | Automatic first-N, append, updating and retracting rank subsets; wider scalar/arbitrary-sort, nested payloads, ROW partitions, updating OFFSET and first-bound state awaiting qualification | Algorithm-specific bounds, TTL, constructed sort types, independent ROW unique keys and complete new-scope qualification |
 | [Regular joins](../operators/joins/regular-join.md) | Automatic qualified stock layouts and complete-job handoffs; nested payload binding awaiting qualification | Wider uniqueness, mini-batch, schema and TTL combinations |
@@ -2678,10 +2678,12 @@ and payloads, retaining signed-zero partition identity and NaN/zero payload bits
 no-input returns and continuation. These authored append/Top-1 controls exercise both orders and
 stores and remain unexecuted on both releases; they do not qualify floating sort policies.
 
-Retracting GROUP BY MIN/MAX additionally admits existing fixed-width scalar and composite key
-codecs, retaining complete BinaryRow key bytes in the current header/map protocol. This includes
-compact DECIMAL and millisecond TIMESTAMP/LTZ; variable-width and constructed keys remain gated.
-New eager/mini-batch raw-state, no-input, 65-column/null-bitmap, TTL and native-recovery controls,
-ordinary/portable admission checks and clean-worker two-key jobs are authored but unexecuted.
+Retracting GROUP BY MIN/MAX additionally admits existing scalar and composite key codecs,
+retaining complete fixed/variable BinaryRow key bytes in the current header/map protocol. This
+includes string/binary, wide DECIMAL and nanosecond TIMESTAMP/LTZ; constructed keys remain gated.
+The transfer checks the minimum fixed prefix and eight-byte alignment, matching typed grouped
+state, while preserving variable bytes opaquely. New eager/mini-batch raw-state, no-input,
+65-column/null-bitmap, TTL and native-recovery controls, native long-key/unaligned-frame checks,
+ordinary/portable admission and compact/variable two-key jobs are authored but unexecuted.
 Worker checks require both physical key fields on the actual bound extrema contract, and the
 complete jobs retain independent final-value oracles. Existing historical cohorts remain separate.

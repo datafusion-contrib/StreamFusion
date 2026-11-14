@@ -25,7 +25,7 @@ import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.NativeAllocator;
 import tech.streamfusion.operator.RowDataArrowConverter;
 
-class CanonicalRetractingExtremaFixedKeyStateTest {
+class CanonicalRetractingExtremaScalarKeyStateTest {
   private final List<OperatorSubtaskState> snapshots = new ArrayList<>();
 
   @AfterEach
@@ -35,7 +35,7 @@ class CanonicalRetractingExtremaFixedKeyStateTest {
 
   static Stream<Arguments> cases() {
     return tech.streamfusion.CanonicalTestMatrix.select(
-        CanonicalExtremaFixedKeyFixture.schemas()
+        CanonicalExtremaScalarKeyFixture.schemas()
             .flatMap(
                 schema ->
                     Stream.of(false, true)
@@ -71,9 +71,9 @@ class CanonicalRetractingExtremaFixedKeyStateTest {
 
   @ParameterizedTest
   @MethodSource("cases")
-  void completeFixedKeyBytesAndViewsSurviveBothOrdersAndRecovery(
+  void completeScalarKeyBytesAndViewsSurviveBothOrdersAndRecovery(
       String schema, boolean mini, boolean rocks, boolean first, long ttl) throws Exception {
-    var keys = CanonicalExtremaFixedKeyFixture.schema(schema);
+    var keys = CanonicalExtremaScalarKeyFixture.schema(schema);
     var prefix =
         List.of(
             row(keys, 7L, 7L, RowKind.INSERT),
@@ -146,7 +146,7 @@ class CanonicalRetractingExtremaFixedKeyStateTest {
   }
 
   private static RowData row(RowType keys, Long key, Long value, RowKind kind) {
-    return CanonicalExtremaFixedKeyFixture.row(keys, key, value, kind);
+    return CanonicalExtremaScalarKeyFixture.row(keys, key, value, kind);
   }
 
   private static List<RowData> physical(List<RowData> rows, RowType type) {

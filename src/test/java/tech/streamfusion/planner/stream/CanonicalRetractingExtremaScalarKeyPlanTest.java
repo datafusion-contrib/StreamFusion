@@ -17,17 +17,12 @@ import tech.streamfusion.NativePlannerTestEnvironment;
 import tech.streamfusion.operator.NativeColumnarGroupAggregateOperator;
 import tech.streamfusion.state.StockGroupExtremaStateContract;
 
-class CanonicalRetractingExtremaFixedKeyPlanTest {
+class CanonicalRetractingExtremaScalarKeyPlanTest {
   static Stream<Arguments> cases() {
     return tech.streamfusion.CanonicalTestMatrix.select(
         Stream.concat(
-                CanonicalExtremaFixedKeyFixture.schemas(),
-                Stream.of(
-                    "VARCHAR(100)",
-                    "DECIMAL(19,4)",
-                    "TIMESTAMP(9)",
-                    "ROW<x BIGINT>",
-                    "ARRAY<BIGINT>"))
+                CanonicalExtremaScalarKeyFixture.schemas(),
+                Stream.of("ROW<x BIGINT>", "ARRAY<BIGINT>", "ROW<x BIGINT,y VARCHAR(10)>"))
             .flatMap(
                 schema ->
                     Stream.of(false, true)
@@ -45,9 +40,9 @@ class CanonicalRetractingExtremaFixedKeyPlanTest {
 
   @ParameterizedTest
   @MethodSource("cases")
-  void onlyCompleteFixedKeyCodecsBindReleasedExtremaViews(
+  void onlyCompleteScalarKeyCodecsBindReleasedExtremaViews(
       String definition, boolean compiled, boolean mini, long ttl) throws Exception {
-    var keys = CanonicalExtremaFixedKeyFixture.schema(definition);
+    var keys = CanonicalExtremaScalarKeyFixture.schema(definition);
     String fields =
         java.util.stream.IntStream.range(0, keys.getFieldCount())
             .mapToObj(index -> "k" + index + " " + keys.getTypeAt(index).asSerializableString())
@@ -102,7 +97,7 @@ class CanonicalRetractingExtremaFixedKeyPlanTest {
       assertInstanceOf(StockGroupExtremaStateContract.class, contract);
       assertEquals(keys.getChildren(), ((RowType) field(contract, "keyType")).getChildren());
     }
-    boolean admitted = CanonicalExtremaFixedKeyFixture.schemas().anyMatch(definition::equals);
+    boolean admitted = CanonicalExtremaScalarKeyFixture.schemas().anyMatch(definition::equals);
     assertEquals(admitted ? 1 : 0, bound.size(), graph.getStreamingPlanAsJSON());
     assertFalse(portable.contains("tech.streamfusion"));
     if (compiled) assertEquals(portable, plan.asJsonString());

@@ -8,11 +8,11 @@ class CanonicalCompositeExtremaKeyJobTest extends CanonicalRetractingExtremaJobT
   @Override
   Path prepare(String name, String mode, boolean ordinary) throws Exception {
     var root = super.prepare(name, mode, ordinary);
-    Files.writeString(root.resolve("input-columns.sql"), "ka SMALLINT,kb DECIMAL(18,2),v BIGINT");
+    Files.writeString(root.resolve("input-columns.sql"), keyColumns());
     var input = new ArrayList<String>();
     for (String line : Files.readAllLines(root.resolve("input.csv"))) {
       var cells = line.split(",", -1);
-      input.add(cells[0] + "," + cells[1] + "," + cells[1] + "," + cells[2]);
+      input.add(cells[0] + "," + firstKey(cells[1]) + "," + cells[1] + "," + cells[2]);
     }
     Files.write(root.resolve("input.csv"), input);
     Files.writeString(
@@ -21,5 +21,13 @@ class CanonicalCompositeExtremaKeyJobTest extends CanonicalRetractingExtremaJobT
             + " ka,kb");
     Files.writeString(root.resolve("required-extrema-key-fields"), "2");
     return root;
+  }
+
+  String keyColumns() {
+    return "ka SMALLINT,kb DECIMAL(18,2),v BIGINT";
+  }
+
+  String firstKey(String value) {
+    return value;
   }
 }

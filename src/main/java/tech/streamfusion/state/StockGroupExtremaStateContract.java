@@ -80,7 +80,7 @@ public final class StockGroupExtremaStateContract implements StockStateContract 
         || Arrays.stream(kinds).noneMatch(StockGroupExtremaStateContract::mapped))
       throw new IllegalArgumentException("Invalid extrema field mapping");
     if (keyType.getChildren().stream().anyMatch(type -> !supportsKeyType(type)))
-      throw new IllegalArgumentException("Extrema requires fixed-width scalar group keys");
+      throw new IllegalArgumentException("Extrema requires scalar group keys");
     boolean[] covered = new boolean[accumulatorType.getFieldCount()];
     cover(covered, recordCountField, LogicalTypeRoot.BIGINT);
     var names = new java.util.HashSet<String>();
@@ -168,12 +168,14 @@ public final class StockGroupExtremaStateContract implements StockStateContract 
       case TIME_WITHOUT_TIME_ZONE:
       case INTERVAL_YEAR_MONTH:
       case INTERVAL_DAY_TIME:
-        return true;
+      case CHAR:
+      case VARCHAR:
+      case BINARY:
+      case VARBINARY:
       case DECIMAL:
-        return ((org.apache.flink.table.types.logical.DecimalType) type).getPrecision() <= 18;
       case TIMESTAMP_WITHOUT_TIME_ZONE:
       case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
-        return org.apache.flink.table.types.logical.utils.LogicalTypeChecks.getPrecision(type) <= 3;
+        return true;
       default:
         return false;
     }

@@ -75,11 +75,12 @@ raw keyed RocksDB visit live state directly; existing ordinary checkpoint format
 This wider extrema binding still excludes composite keys, other retained types/views/phases and
 the full connector/failure/version matrix. Benchmarking stays deferred under #569.
 
-The retracting-extrema header/map protocol also reuses its existing complete fixed-width
-BinaryRow key carrier for scalar and composite grouping keys. Admission now permits fixed
-primitive fields, compact decimal values and compact millisecond timestamps; it does not relax
-the native exact fixed-key-length validation. Captured Flink selectors/serializers remain
+The retracting-extrema header/map protocol also reuses its complete BinaryRow key carrier for
+scalar and composite grouping keys. Admission permits fixed primitive fields, string/binary,
+compact/wide decimal and precise timestamps. Key validation checks the minimum fixed prefix
+and eight-byte alignment, matching the existing typed-group adapter; variable bytes remain
+opaque instead of being reconstructed through value conversion. Captured Flink selectors/serializers remain
 responsible for the stock schema. No value carrier, timer, TTL or native state field is added.
 Actual-stock raw-state, nullable/65-column keys, native recovery and eager/mini-batch clean-worker
-controls are authored but remain unexecuted on both releases. Variable-width and constructed
+controls are authored but remain unexecuted on both releases. Constructed
 keys retain their explicit gate under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).

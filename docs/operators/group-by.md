@@ -3398,7 +3398,7 @@ await qualification. Actual generated accumulator fields, hidden record counts, 
 serializers, TTL policy, stock identities and maximum parallelism come from the released owner.
 The captured TIME schema uses the released planner's resolved precision zero; declared TIME(0)
 and TIME(3) queries are tested separately. Arithmetic slots sharing this contract remain BIGINT.
-Variable-width grouping keys, other value schemas, DISTINCT/views, aggregate phases and
+Constructed grouping keys, other value schemas, DISTINCT/views, aggregate phases and
 asynchronous/unaligned owners remain outside this structured binding.
 
 Each cached selection and map-size counter remains independent of the retained value-to-signed-
@@ -3997,25 +3997,26 @@ capture the original trigger and retention. Clean-worker jobs add no-input retur
 with a separate MIN/MAX oracle. These additions await both-release execution, and earlier eager
 extrema results do not qualify the new mini-batch scope.
 
-## Fixed-width retracting extrema keys awaiting qualification
+## Scalar and composite retracting extrema keys awaiting qualification
 
-The existing header/map transfer now admits fixed-width scalar grouping codecs and composites,
-including arbitrary key counts: integer widths, FLOAT/DOUBLE, BOOLEAN, DATE/TIME, intervals,
-compact DECIMAL with precision at most 18 and TIMESTAMP/LTZ with precision at most 3. The native
-transfer already validates the complete fixed BinaryRow key, including its null bitmap; the
-binding retains actual released selectors, serializer metadata, owner IDs and maximum parallelism.
+The existing header/map transfer now admits scalar grouping codecs and composites, including
+arbitrary key counts: integer widths, FLOAT/DOUBLE, BOOLEAN, DATE/TIME, intervals, CHAR/VARCHAR,
+binary values, compact/wide DECIMAL and TIMESTAMP/LTZ including nanosecond precision. The native
+transfer validates the complete BinaryRow key's minimum fixed prefix and eight-byte alignment,
+matching the typed group adapter; variable bytes stay opaque and retain their original encoding.
+The binding retains released selectors, serializer metadata, owner IDs and maximum parallelism.
 This widens key admission for existing eager and one-phase mini-batch retracting MIN/MAX without
-changing the signed value carrier, independent headers/map entries, TTL or native state format.
-Variable-width strings/binary, wide DECIMAL, higher-precision timestamps and constructed keys
-remain outside this extension.
+changing signed value carriers, independent headers/map entries, TTL or native state format.
+Constructed ROW/ARRAY/MAP/MULTISET keys remain outside this extension.
 
 Authored actual-stock controls cover complete raw state, opposite signed-zero and NaN keys,
 nullable composite components, a 65-column key crossing a null-bitmap boundary, both engine
 orders/stores, no-input returns, retractions, TTL expiry and native checkpoint recovery. Ordinary
-and portable planner controls require the actual fixed key schema and reject variable-width or
-constructed schemas. Clean-stock jobs use independent SMALLINT/compact-DECIMAL physical key
-columns, check both fields on the bound extrema contract in every native worker and retain
-independent final-value oracles through eager/mini-batch handoffs and rescaling. These controls
+and portable planner controls require the actual scalar key schema and reject constructed
+schemas. Clean-stock jobs use independent SMALLINT/compact-DECIMAL or non-inline VARCHAR/wide-DECIMAL
+physical key columns, check both fields on the bound extrema contract in every native worker and
+retain independent final-value oracles through eager/mini-batch handoffs and rescaling. Native
+controls additionally preserve long UTF-8 keys and reject unaligned frames without mutation. These controls
 are unexecuted and await Flink 1.18/2.2 qualification; historical counts above do not qualify them.
 The optional local pairwise selector also applies to grouped complete-job providers; default/CI
 execution retains every original invocation. No performance claim is added.

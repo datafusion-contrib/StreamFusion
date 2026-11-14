@@ -193,7 +193,7 @@ impl<S: ExtremaStore> GroupAggregator<S> {
 
     fn stock_transfer_key(&self, bytes: &[u8]) -> bool {
         let fixed = (self.key_columns.len() + 8).div_ceil(64) * 8 + self.key_columns.len() * 8;
-        bytes.len() == fixed && bytes[0] == 0
+        bytes.len() >= fixed && bytes.len() % 8 == 0 && bytes[0] == 0
     }
 
     pub(in crate::group_agg) fn transfer_stock_extrema(

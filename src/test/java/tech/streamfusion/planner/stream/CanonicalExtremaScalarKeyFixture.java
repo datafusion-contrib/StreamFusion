@@ -10,8 +10,8 @@ import org.apache.flink.table.types.logical.utils.LogicalTypeParser;
 import org.apache.flink.types.RowKind;
 import tech.streamfusion.operator.CanonicalOverDistinctValueFixture;
 
-final class CanonicalExtremaFixedKeyFixture {
-  private CanonicalExtremaFixedKeyFixture() {}
+final class CanonicalExtremaScalarKeyFixture {
+  private CanonicalExtremaScalarKeyFixture() {}
 
   static Stream<String> schemas() {
     return Stream.of(
@@ -31,7 +31,16 @@ final class CanonicalExtremaFixedKeyFixture {
         "INTERVAL DAY TO SECOND(3)",
         "SMALLINT|BOOLEAN|DECIMAL(18,4)",
         "TIMESTAMP(3)|DATE|FLOAT|INTERVAL YEAR TO MONTH",
-        "wide-composite");
+        "wide-composite",
+        "VARCHAR(100)",
+        "CHAR(32)",
+        "BINARY(8)",
+        "VARBINARY(64)",
+        "DECIMAL(19,4)",
+        "DECIMAL(38,7)",
+        "TIMESTAMP(9)",
+        "TIMESTAMP_LTZ(9)",
+        "VARCHAR(100)|DECIMAL(38,7)|TIMESTAMP_LTZ(9)");
   }
 
   static RowType schema(String definition) {
@@ -52,9 +61,18 @@ final class CanonicalExtremaFixedKeyFixture {
     for (int field = 0; field < keys.getFieldCount(); field++)
       row.setField(
           field,
-          CanonicalOverDistinctValueFixture.number(
-              keys.getTypeAt(field), key == null || field % 3 == 1 && key == 10 ? null : key));
+          value(keys.getTypeAt(field), key == null || field % 3 == 1 && key == 10 ? null : key));
     row.setField(keys.getFieldCount(), value);
     return row;
+  }
+
+  private static Object value(LogicalType type, Long value) {
+    if (value != null && type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.BINARY)) {
+      int size = ((org.apache.flink.table.types.logical.BinaryType) type).getLength();
+      var bytes = new byte[size];
+      for (int index = 0; index < size; index++) bytes[index] = (byte) (value >>> (index % 8 * 8));
+      return bytes;
+    }
+    return CanonicalOverDistinctValueFixture.number(type, value);
   }
 }
