@@ -26,6 +26,21 @@ def complete(backend="memory", mini_batch=False):
 
 
 class HudiMatrixTest(unittest.TestCase):
+    def test_retry_selection_preserves_successful_configurations(self):
+        pairs = {(item["backend"], item["mini_batch"])
+                 for item in bench.configurations("all")}
+        self.assertEqual({("memory", "false"), ("memory", "true"),
+                          ("rocksdb", "false"), ("rocksdb", "true")}, pairs)
+        self.assertEqual([{"backend": "memory", "mini_batch": "false"},
+                          {"backend": "rocksdb", "mini_batch": "false"}],
+                         bench.configurations("off"))
+        for backend, mini in pairs:
+            self.assertEqual([{"backend": backend, "mini_batch": mini}],
+                             bench.configurations(f"{backend}-{mini}"))
+        for invalid in ["", "none", "memory", "rocksdb-false,memory-false"]:
+            with self.assertRaises(ValueError):
+                bench.configurations(invalid)
+
     def test_all_four_configurations_retain_every_engine_query_and_trial(self):
         for backend in ["memory", "rocksdb"]:
             for mini_batch in [False, True]:

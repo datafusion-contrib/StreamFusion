@@ -19,6 +19,19 @@ ENGINES = {"stock", "previous", "native"}
 REJECTION = "Incomparable types: TIMESTAMP_LTZ(3) and TIMESTAMP(3) NOT NULL"
 
 
+def configurations(selection):
+    pairs = [{"backend": backend, "mini_batch": mini}
+             for backend in ["memory", "rocksdb"] for mini in ["false", "true"]]
+    if selection == "all":
+        return pairs
+    selected = [pair for pair in pairs
+                if selection == f'{pair["backend"]}-{pair["mini_batch"]}'
+                or selection == "off" and pair["mini_batch"] == "false"]
+    if not selected:
+        raise ValueError("Unknown Hudi matrix configuration selection")
+    return selected
+
+
 def run_logged(command, environment, log):
     process = subprocess.Popen(command, cwd=ROOT, env=environment, stdout=subprocess.PIPE,
                                stderr=subprocess.STDOUT, start_new_session=True)

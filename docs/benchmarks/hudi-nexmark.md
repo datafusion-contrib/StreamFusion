@@ -30,6 +30,12 @@ isolated jobs: heap/RocksDB × mini-batching off/on. Native source/toolchain inp
 must match the producer, its release-build step must have succeeded, and its
 library artifact must still be available. Each job downloads those same libraries
 and records their hashes. No native rebuild is required for Java-only follow-ups.
+`hudi_configurations=all` retains the default four configurations. For retries,
+`off` selects both mini-batching-off configurations; `memory-false`, `memory-true`,
+`rocksdb-false` or `rocksdb-true` selects one complete configuration. These selections
+retain every query, engine, warmup and trial within that configuration. Preserve
+successful configurations and rerun only unfinished ones; partial query reports
+do not satisfy the complete-configuration and final native-cleanup gates.
 
 `bin/bench-hudi-matrix.py` checks all 198 timing identities plus the exact Q7 stock
 planner exclusion per configuration, full-value/count validation, fixed resources,
@@ -56,7 +62,9 @@ queries are:
 | memory | 1.27× | 10.28× | 17/22 |
 | rocksdb | 1.32× | 8.10× | 17/22 |
 
-The two mini-batching-off configurations are still pending. This is not a
+The two mini-batching-off configurations reached the original three-hour job
+limit and retain partial diagnostics; they have not qualified. Their retries use
+the longer limit and retain the two successful configurations. This is not a
 complete matrix or a measured before/after comparison with the earlier heap
 runs. Compare engines within each configuration: these are isolated Linux
 x86-64 runners with four available processors, about 15.6 GiB physical memory
