@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 import net.bytebuddy.agent.builder.AgentBuilder;
 import net.bytebuddy.asm.Advice;
@@ -335,6 +336,7 @@ public final class StreamFusionSuiteAgent {
             namedOneOf(
                 "tech.streamfusion.operator.NativeCalcOperator",
                 "tech.streamfusion.operator.NativeBoundedBatchOperator",
+                "tech.streamfusion.operator.NativeBatchLimitOperator",
                 "tech.streamfusion.operator.NativeBatchJoinOperator",
                 "tech.streamfusion.operator.NativeLookupJoinOperator",
                 "tech.streamfusion.operator.NativeAsyncLookupJoinOperator",
@@ -955,7 +957,9 @@ public final class StreamFusionSuiteAgent {
                         .and(takesArguments(List.class, boolean.class))
                         .or(
                             named("optimizeRoots")
-                                .and(takesArguments(List.class, UnaryOperator.class)))));
+                                .and(
+                                    takesArguments(
+                                        List.class, UnaryOperator.class, Predicate.class)))));
   }
 
   public static final class RecordNodeFallback {
