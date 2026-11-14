@@ -1,91 +1,6 @@
+use super::super::ordered_scan::{compare_key_group_suffix, MergedKeyGroups};
 use super::*;
-use rocksdb::DBRawIteratorWithThreadMode;
 use std::collections::BTreeSet;
-
-/// The heap contains iterator indices, so comparing heads borrows RocksDB's pinned keys rather
-/// than copying a potentially wide grouping key for every key group.
-struct GroupMerge<'a> {
-    readers: Vec<DBRawIteratorWithThreadMode<'a, DB>>,
-    prefixes: Vec<Vec<u8>>,
-    heap: Vec<usize>,
-    key_offset: usize,
-}
-
-impl<'a> GroupMerge<'a> {
-    fn new(db: &'a StateDb, key_groups: std::ops::RangeInclusive<i32>, end: Option<i64>) -> Self {
-        let mut merge = Self {
-            readers: Vec::new(),
-            prefixes: Vec::new(),
-            heap: Vec::new(),
-            key_offset: if end.is_some() { KEY_PREFIX_LEN } else { 4 },
-        };
-        for group in key_groups {
-            let mut prefix = group.to_be_bytes().to_vec();
-            if let Some(end) = end {
-                prefix.extend_from_slice(&biased_window_end(end));
-            }
-            let mut reader = db.raw_iterator();
-            reader.seek(&prefix);
-            let present = reader.key().is_some_and(|key| key.starts_with(&prefix));
-            merge.readers.push(reader);
-            merge.prefixes.push(prefix);
-            if present {
-                merge.heap.push(merge.readers.len() - 1);
-                let mut child = merge.heap.len() - 1;
-                while child > 0 {
-                    let parent = (child - 1) / 2;
-                    if !merge.less(merge.heap[child], merge.heap[parent]) {
-                        break;
-                    }
-                    merge.heap.swap(child, parent);
-                    child = parent;
-                }
-            }
-        }
-        merge
-    }
-
-    fn less(&self, left: usize, right: usize) -> bool {
-        let left_key = &self.readers[left].key().unwrap()[self.key_offset..];
-        let right_key = &self.readers[right].key().unwrap()[self.key_offset..];
-        (left_key, left) < (right_key, right)
-    }
-
-    fn first(&self) -> Option<(&[u8], &[u8])> {
-        let reader = &self.readers[*self.heap.first()?];
-        Some((reader.key().unwrap(), reader.value().unwrap()))
-    }
-
-    fn advance(&mut self) {
-        let index = self.heap[0];
-        self.readers[index].next();
-        if !self.readers[index]
-            .key()
-            .is_some_and(|key| key.starts_with(&self.prefixes[index]))
-        {
-            self.heap.swap_remove(0);
-        }
-        let mut parent = 0;
-        while parent * 2 + 1 < self.heap.len() {
-            let mut child = parent * 2 + 1;
-            if child + 1 < self.heap.len() && self.less(self.heap[child + 1], self.heap[child]) {
-                child += 1;
-            }
-            if !self.less(self.heap[child], self.heap[parent]) {
-                break;
-            }
-            self.heap.swap(child, parent);
-            parent = child;
-        }
-    }
-
-    fn status(&self) -> Result<(), DataFusionError> {
-        for reader in &self.readers {
-            reader.status().map_err(re)?;
-        }
-        Ok(())
-    }
-}
 
 impl RocksWindowAggStore {
     /// Merge key-group scans in the memory backend's (deadline, end, group-key) order. Only
@@ -158,7 +73,13 @@ impl RocksWindowAggStore {
                 }
                 work.try_resize(overhead)?;
             }
-            let mut merge = GroupMerge::new(&db, self.key_groups.clone(), end);
+            let tail = end.map(biased_window_end);
+            let mut merge = MergedKeyGroups::new(
+                &db,
+                self.key_groups.clone(),
+                tail.as_ref().map_or(&[], |tail| tail.as_slice()),
+                compare_key_group_suffix,
+            );
             let mut rows = Vec::new();
             let mut row_bytes = 0usize;
             while let Some((key, value)) = merge.first() {

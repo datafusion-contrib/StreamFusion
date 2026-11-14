@@ -414,3 +414,8 @@ copying the result into the DSO's allocator. The snapshot registry still uses re
 identities, including symlinks. This avoids returning a host library's allocated path to a different
 allocator during ordinary RocksDB initialization or asynchronous snapshot lookup. The release
 image SQL smoke exercises this path with the production allocator enabled.
+
+Ordered native scans merge pinned iterator heads using a heap of indices. A scan comparator
+requires each input range to already be monotonic under that comparison; layouts with an
+unbiased signed field split its negative and nonnegative spans into separate ranges. This
+preserves logical ordering without copying an entire key or payload backlog into the merge.

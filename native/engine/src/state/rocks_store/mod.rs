@@ -17,6 +17,7 @@ mod canonical_transfer;
 pub(crate) use canonical_snapshot::{RocksCanonicalSnapshot, RocksReadSnapshot};
 mod decoded_cache;
 pub(crate) mod legacy_snapshot;
+pub(crate) mod ordered_scan;
 mod raw_store;
 pub(crate) mod retained_rows;
 pub(crate) mod window_memberships;
