@@ -1270,6 +1270,9 @@ matrix and rejects incomplete trial identities, missing actual RocksDB engagemen
 or changed validation/settings. The [Hudi benchmark guide](benchmarks/hudi-nexmark.md)
 documents the workload and evidence. Full and focused modes have separate
 concurrency groups; observe the account-wide capacity rules before dispatching.
+Producer commits already present locally are verified without another shallow
+fetch, preserving the history of shared developer checkouts. Source comparison
+still runs for both existing and newly fetched producer commits.
 
 Before a dispatch, inspect active workflows across the fork and reuse their handles. Keep
 optional diagnostics separate from the candidate's full qualification campaign. When another

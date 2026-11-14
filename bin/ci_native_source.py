@@ -48,7 +48,10 @@ def verify(repository, run_id, release_hudi=False):
     sha = run["head_sha"]
     if not re.fullmatch(r"[0-9a-f]{40}", sha):
         raise ValueError("Invalid native source commit")
-    subprocess.run(["git", "fetch", "--no-tags", "--filter=blob:none", "--depth=1", "origin", sha], check=True)
+    present = subprocess.run(["git", "cat-file", "-e", f"{sha}^{{commit}}"],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+    if not present:
+        subprocess.run(["git", "fetch", "--no-tags", "--filter=blob:none", "--depth=1", "origin", sha], check=True)
     subprocess.run(["git", "diff", "--exit-code", sha, "HEAD", "--", *INPUTS], check=True)
     if release_hudi:
         artifact = f"hudi-release-native-{sha}"

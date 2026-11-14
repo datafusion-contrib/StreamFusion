@@ -40,8 +40,8 @@ class NativeSourceTest(unittest.TestCase):
                 patch.object(source.subprocess, "run") as run:
             self.assertEqual("debug-native-" + sha, source.verify("owner/repo", 123))
             self.assertIn("per_page=20&page=2", api.call_args_list[-1].args[0])
-            self.assertEqual("fetch", run.call_args_list[0].args[0][1])
-            diff = run.call_args_list[1].args[0]
+            self.assertEqual("fetch", run.call_args_list[1].args[0][1])
+            diff = run.call_args_list[-1].args[0]
             self.assertEqual(["git", "diff", "--exit-code", sha, "HEAD", "--", *source.INPUTS], diff)
 
     def test_failed_producer_and_changed_native_inputs_cannot_be_reused(self):
@@ -54,7 +54,7 @@ class NativeSourceTest(unittest.TestCase):
             run.assert_not_called()
         producer["conclusion"] = "success"
         with patch.object(source, "api", side_effect=[{"head_sha": sha}, {"jobs": [producer]}]), \
-                patch.object(source.subprocess, "run", side_effect=[None, subprocess.CalledProcessError(1, "git diff")]):
+                patch.object(source.subprocess, "run", side_effect=[subprocess.CompletedProcess([], 1), None, subprocess.CalledProcessError(1, "git diff")]):
             with self.assertRaises(subprocess.CalledProcessError):
                 source.verify("owner/repo", 123)
 
@@ -66,7 +66,7 @@ class NativeSourceTest(unittest.TestCase):
         responses = [{"head_sha": sha}, {"jobs": [producer]}, {"artifacts": [artifact]}]
         with patch.object(source, "api", side_effect=responses), patch.object(source.subprocess, "run") as run:
             self.assertEqual(artifact["name"], source.verify("owner/repo", 123, release_hudi=True))
-            self.assertEqual("diff", run.call_args_list[1].args[0][1])
+            self.assertEqual("diff", run.call_args_list[-1].args[0][1])
         artifact["expired"] = True
         with patch.object(source, "api", side_effect=responses), patch.object(source.subprocess, "run"):
             with self.assertRaisesRegex(ValueError, "missing or expired"):
@@ -76,6 +76,17 @@ class NativeSourceTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "did not build"):
                 source.verify("owner/repo", 123, release_hudi=True)
             run.assert_not_called()
+
+    def test_existing_commit_skips_shallow_fetch_but_still_verifies_inputs(self):
+        sha = "a" * 40
+        responses = [{"head_sha": sha}, {"jobs": [{"name": "Shared debug native libraries",
+                                                   "conclusion": "success"}]}]
+        with patch.object(source, "api", side_effect=responses), \
+                patch.object(source.subprocess, "run", side_effect=[subprocess.CompletedProcess([], 0), None]) as run:
+            self.assertEqual("debug-native-" + sha, source.verify("owner/repo", 123))
+            commands = [call.args[0] for call in run.call_args_list]
+            self.assertEqual(["cat-file", "diff"], [command[1] for command in commands])
+            self.assertEqual(["git", "diff", "--exit-code", sha, "HEAD", "--", *source.INPUTS], commands[-1])
 
 
 if __name__ == "__main__":
