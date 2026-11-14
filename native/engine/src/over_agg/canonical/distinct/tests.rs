@@ -1,6 +1,85 @@
 use super::super::tests::{batch, rows_of};
 use super::*;
 
+#[cfg(feature = "rocksdb-state")]
+#[test]
+fn represented_row_partitions_share_nullable_memberships_across_live_and_restored_transports() {
+    let descriptor = [i32::MIN, -1, -1, -1];
+    let input = |binary, prefix| {
+        let input = crate::flink_key::represented_row_key_fixture(2051, binary, 0);
+        let mut columns = input.columns().clone();
+        columns[2] = Arc::new(Int64Array::from_iter(
+            (0..2051).map(|key| (!prefix || key % 2 != 0).then_some(key as i64)),
+        ));
+        let mut fields = input
+            .schema()
+            .fields()
+            .iter()
+            .map(|field| field.as_ref().clone())
+            .collect::<Vec<_>>();
+        fields[2] = Field::new("v", DataType::Int64, true);
+        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap()
+    };
+    let create = |persistent, path: &std::path::Path| {
+        let schema =
+            crate::flink_key::canonical_stock_row_key_batch(input(false, false), &[0], &descriptor)
+                .unwrap()
+                .schema();
+        let mut owner =
+            OverWindowAggregator::new(vec![0], vec![103], 1, vec![2], vec![0], 3, 0, true)
+                .with_key_timestamp_precisions(descriptor.to_vec())
+                .with_memory_budget(64 << 20)
+                .unwrap();
+        if persistent {
+            let store = crate::state::RocksOverAggStore::create(
+                crate::state::RocksStoreConfig {
+                    table_dir: path.to_str().unwrap().into(),
+                    max_parallelism: 128,
+                    options_json: include_str!("../../../../benches/fixtures/rocks-options.json")
+                        .into(),
+                    ttl_ms: 0,
+                    shared_resources: 0,
+                },
+                &owner.inner.store_state_types(),
+                &[],
+                &[DataType::Int64],
+                schema.clone(),
+                0..=127,
+            )
+            .unwrap();
+            owner = owner.with_store(store, vec![schema.field(0).data_type().clone()]);
+        }
+        owner.bind_canonical_distinct(0).unwrap();
+        owner
+    };
+    for from_store in [false, true] {
+        for to_store in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let mut source = create(from_store, &directory.path().join("source"));
+            let mut target = create(to_store, &directory.path().join("target"));
+            source.push_proctime(input(false, true), 100).unwrap();
+            source
+                .visit_canonical_folds(|batch| target.import_canonical_folds(&batch))
+                .unwrap();
+            source
+                .visit_canonical_distinct(0, |batch| target.import_canonical_distinct(0, &batch))
+                .unwrap();
+            target.finish_canonical_distinct().unwrap();
+            for binary in [true, false] {
+                let expected = source.push_proctime(input(binary, false), 500).unwrap();
+                let actual = target.push_proctime(input(!binary, false), 500).unwrap();
+                assert_eq!(expected, actual);
+                let counts = actual
+                    .column(3)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap();
+                assert!(counts.values().iter().all(|&count| count == 1));
+            }
+        }
+    }
+}
+
 #[test]
 fn null_history_is_recorded_only_for_bound_processing_folds_without_ttl() {
     for bound in [false, true] {

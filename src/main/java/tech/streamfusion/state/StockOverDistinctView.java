@@ -25,7 +25,6 @@ import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.Native;
 import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.operator.NativeAllocator;
-import tech.streamfusion.operator.RowDataArrowConverter;
 
 /** Released integral DISTINCT memberships alongside an unbounded scalar fold. */
 public final class StockOverDistinctView implements Serializable {
@@ -35,6 +34,11 @@ public final class StockOverDistinctView implements Serializable {
   private final TypeSerializer<Object> values, bits;
   private final int[] aggregates;
   private final RowType keyType, bridge;
+
+  private org.apache.arrow.vector.types.pojo.Schema bridgeSchema() {
+    return ArrowConversion.toBinaryRowKeySchema(
+        bridge, java.util.stream.IntStream.range(0, keyType.getFieldCount()).toArray());
+  }
 
   @SuppressWarnings("unchecked")
   public StockOverDistinctView(
@@ -125,7 +129,7 @@ public final class StockOverDistinctView implements Serializable {
               var root =
                   Data.importVectorSchemaRoot(
                       NativeAllocator.SHARED, array, schema, NativeAllocator.DICTIONARIES)) {
-            var expected = ArrowConversion.toArrowSchema(bridge).getFields();
+            var expected = bridgeSchema().getFields();
             if (root.getRowCount() > CHUNK_ROWS || root.getFieldVectors().size() != expected.size())
               throw new IllegalStateException("OVER DISTINCT transfer arity changed");
             for (int field = 0; field < expected.size(); field++)
@@ -312,7 +316,7 @@ public final class StockOverDistinctView implements Serializable {
   }
 
   private void transfer(long handle, int aggregate, List<RowData> rows) {
-    try (var root = RowDataArrowConverter.write(rows, bridge, NativeAllocator.SHARED);
+    try (var root = StockKeyedRowSchema.write(rows, bridge, bridgeSchema());
         var array = ArrowArray.allocateNew(NativeAllocator.SHARED);
         var schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
       Data.exportVectorSchemaRoot(

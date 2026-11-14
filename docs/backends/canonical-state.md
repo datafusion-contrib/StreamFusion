@@ -2574,7 +2574,10 @@ New raw-state/native-recovery and clean-stock job controls await both-release qu
 The selective schema preserves original-byte metadata only on ROW partition columns, admitting
 standalone string companion keys and string accumulator fields without changing their existing
 representation. These combinations also have pending raw-state and clean-stock controls.
-Event/bounded ROW keys, collection descendants and DISTINCT/ROW combinations remain gated.
+Integral DISTINCT membership views now share that selective key schema, including NULL markers;
+leading membership keys normalize before native installation. New cross-store/native, raw-state
+and clean-stock job controls for these combined owners await both-release execution.
+Event/bounded ROW keys and collection descendants remain gated.
 This does not qualify historical native
 checkpoint upgrades with changed physical ROW transports.
 

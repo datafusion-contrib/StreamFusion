@@ -82,6 +82,7 @@ class CanonicalOverRowKeyPlanTest {
         mode.equals("rows")
             || mode.equals("range")
             || mode.equals("ttl")
+            || mode.equals("distinct")
             || mode.equals("string-key")
             || mode.equals("string-min");
     assertEquals(admitted ? 1 : 0, owners.size(), graph.getStreamingPlanAsJSON());

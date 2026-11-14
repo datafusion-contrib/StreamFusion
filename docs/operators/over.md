@@ -2103,6 +2103,11 @@ New raw-state controls cover mixed generic/binary input, both stores, native rec
 native controls cross both stores with 2,051 keys. Ordinary/portable full jobs include clean
 stock handoffs and keyed rescaling with nested, padded ROW keys and string extrema. Component
 controls also combine ROW and standalone string partition keys. All controls await both-release
-execution. Event/bounded ROW partition keys, collection descendants and DISTINCT with ROW keys
-remain gated. Historical native checkpoints with a different physical ROW transport are not qualified
+execution. The same selective key schema now applies to integral DISTINCT membership views,
+including nullable markers and standalone string companion keys. Membership import normalizes
+its leading key columns before comparing with the fold codec. New native controls use 2,051
+mixed generic/binary ROW keys, NULL-only owners and all store pairs; raw-state and clean-stock
+arithmetic jobs add canonical/native recovery and rescaling. These combinations also await both
+release lines. Event/bounded ROW partition keys and collection descendants remain gated.
+Historical native checkpoints with a different physical ROW transport are not qualified
 as an upgrade path by this same-build work.

@@ -27,3 +27,10 @@ from cardinality, and Java preflight checks their bit domain and scalar owner be
 changes. Required arguments reject any NULL marker. The released non-null RAW view placeholder
 uses the same NullSerializer byte representation as the grouped-state adapter. This extension
 does not reconstruct NULL history absent from older unbound native checkpoints.
+
+ROW partition columns reuse the fold's selective original-byte schema in the membership view.
+Only those columns receive binary ROW metadata; scalar companion keys and membership values
+keep their existing carriers. Import normalizes the leading key columns before matching the
+native fold's Arrow codec. This preserves reserved bytes and nested kinds across generic/live and
+binary/restored forms without changing stock serializers or adding a replay phase. Scalar/ROW
+descendant and processing/TTL gates remain shared with the fold binding.

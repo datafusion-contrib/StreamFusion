@@ -19,6 +19,10 @@ class CanonicalUnboundedOverRowKeyJobTest extends CanonicalUnboundedOverJobTest 
     return false;
   }
 
+  boolean distinct() {
+    return false;
+  }
+
   @Override
   Path prepare(String name, String kind, String mode, boolean ordinary) throws Exception {
     var root = super.prepare(name, kind, mode, ordinary);
@@ -64,7 +68,9 @@ class CanonicalUnboundedOverRowKeyJobTest extends CanonicalUnboundedOverJobTest 
         "INSERT INTO output_table SELECT k.i,"
             + (stringExtrema()
                 ? "CAST(MIN(v) OVER w AS BIGINT),CAST(MAX(v) OVER w AS BIGINT)"
-                : "SUM(v) OVER w,AVG(v) OVER w")
+                : distinct()
+                    ? "SUM(DISTINCT v) OVER w,AVG(DISTINCT v) OVER w"
+                    : "SUM(v) OVER w,AVG(v) OVER w")
             + " FROM input_table"
             + " WINDOW w AS (PARTITION BY k ORDER BY pt "
             + (kind.equals("rows") ? "ROWS" : "RANGE")

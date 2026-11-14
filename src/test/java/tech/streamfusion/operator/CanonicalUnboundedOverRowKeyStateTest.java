@@ -30,10 +30,11 @@ class CanonicalUnboundedOverRowKeyStateTest {
           for (boolean rocks : new boolean[] {false, true})
             for (boolean rows : new boolean[] {false, true})
               for (long ttl : new long[] {0, 1000})
-                for (boolean extrema : new boolean[] {false, true})
+                for (String mode : new String[] {"arithmetic", "string", "distinct"})
                   for (boolean composite : new boolean[] {false, true})
-                    cases.add(
-                        Arguments.of(nested, kind, padding, rocks, rows, ttl, extrema, composite));
+                    if (!mode.equals("distinct") || ttl == 0)
+                      cases.add(
+                          Arguments.of(nested, kind, padding, rocks, rows, ttl, mode, composite));
     return tech.streamfusion.CanonicalTestMatrix.select(cases.stream());
   }
 
@@ -62,18 +63,20 @@ class CanonicalUnboundedOverRowKeyStateTest {
       boolean rocks,
       boolean rows,
       long ttl,
-      boolean extrema,
+      String mode,
       boolean composite)
       throws Exception {
     var plan =
         new CanonicalUnboundedOverScalarTest.Plan(
-            extrema ? "VARCHAR(100)" : "BIGINT",
+            mode.equals("string") ? "VARCHAR(100)" : "BIGINT",
             rows,
             false,
             ttl,
             CanonicalRowKeyFixture.sql(nested),
             composite,
-            extrema);
+            mode.equals("string"),
+            false,
+            mode.equals("distinct"));
     try (var reference = plan.stock(!rocks);
         var owner = plan.nativeHarness(rocks)) {
       reference.open();

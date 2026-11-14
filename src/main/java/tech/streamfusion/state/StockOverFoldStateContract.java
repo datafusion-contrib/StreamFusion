@@ -71,7 +71,7 @@ public final class StockOverFoldStateContract implements StockStateContract {
     this.preserveRowKeys = preserveRowKeys;
     this.views = List.copyOf(views);
     boolean rowKeys = keyType.getChildren().stream().anyMatch(StockKeyedRowSchema::containsRow);
-    if (rowKeys && (!preserveRowKeys || !views.isEmpty()))
+    if (rowKeys && !preserveRowKeys)
       throw new IllegalArgumentException("Unqualified processing OVER ROW partition layout");
     boolean[] distinct = new boolean[kinds.length];
     if (ttl && !views.isEmpty())

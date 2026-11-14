@@ -216,6 +216,12 @@ impl OverWindowAggregator {
                 "invalid DISTINCT membership schema or NULL element",
             ));
         }
+        let batch = crate::flink_key::canonical_stock_row_key_batch(
+            batch.clone(),
+            &(0..arity).collect::<Vec<_>>(),
+            &self.key_timestamp_precisions,
+        )?;
+        let batch = &batch;
         let independent = self.independent_distinct_ttl();
         if !self.canonical_distinct_loading && !independent {
             return Err(invalid("DISTINCT membership has no pending fold restore"));
