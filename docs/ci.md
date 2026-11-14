@@ -1648,6 +1648,16 @@ the longer canonical job. The short cold-cache probe, including construction for
 showed no elapsed-time benefit over first-tier compilation; those measurements remain in the
 evidence file. Complete CI establishes the amortized benefit across its full test selection.
 
+Runtime profilers and the CI follow-up boundary checks execute the reactor `test` lifecycle
+with the precompiled-Java profile, skip dependency tests, and explicitly enable runtime tests.
+This reuses the exact compiled owner modules and refreshes reactor artifacts/resources without
+installing project snapshots or recompiling sources. A standalone `surefire:test` invocation
+cannot resolve those owner artifacts from a prior Maven invocation, even with `-am`; it can
+otherwise fail resolution or load an installed build instead. Release benchmark workflows that
+install the complete candidate first can still use their existing direct Surefire commands.
+Profiler elapsed time includes this Maven lifecycle overhead; historical direct-Surefire timings
+above retain their original boundary and are not fresh measurements of the current harness.
+
 Locally, first compile the default runtime with `mvn -pl streamfusion-runtime -am test-compile`
 and a matching native build. Then run
 `python3 bin/profile-canonical-ci.py --output /path/to/new-evidence-directory --repetitions 3 --cds`.

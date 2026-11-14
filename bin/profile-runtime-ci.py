@@ -13,6 +13,7 @@ import subprocess
 import time
 import xml.etree.ElementTree as ET
 
+import ci_java_build
 import ci_jfr
 
 
@@ -113,7 +114,8 @@ def profile(output, repetitions, line, parallel=False, jfr=False, hotspots=False
                               f"settings={temporary / 'runtime.jfc'},dumponexit=true")
                 command.extend([f"-Dtest={','.join('tech.streamfusion.' + name for name in selection)}", f"-Dsf.testForks={forks}",
                                 "-Dsf.testReuseForks=false", f"-Dsf.extraJvmArgs={extra}",
-                                f"-Dsurefire.reportNameSuffix={suffix}", "surefire:test@default-test"])
+                                f"-Dsurefire.reportNameSuffix={suffix}"])
+                command.extend(ci_java_build.runtime_test_arguments())
                 if hotspots:
                     fixture_directory = temporary / "fixture-timings"
                     command.append(f"-Dsf.fixtureTimingsDirectory={fixture_directory}")

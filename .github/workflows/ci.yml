@@ -269,7 +269,8 @@ jobs:
           -Dsf.testForks=2
           -Dsf.testReuseForks=false
           "-Dsf.extraJvmArgs=-Xmx4g -Djava.library.path=$GITHUB_WORKSPACE/native/target/debug -Dstreamfusion.experimental.temporalScalarUdfs=true -Dstreamfusion.experimental.jvmAccumulatorCacheEntries=65536 -Dstreamfusion.experimental.borrowedStringExit=true"
-          surefire:test@default-test
+          -am test -Dsf.ci.precompiledJava=true -DskipTests=true -Dsf.runtime.tests.skip=false
+          -Dsf.protobuf.checkStaleness=true -Dsurefire.failIfNoSpecifiedTests=false
 
       - name: Check deployed Java 11 bytecode including embedded payloads
         if: matrix.shard == 1

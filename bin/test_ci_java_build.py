@@ -181,6 +181,7 @@ org.junit.jupiter.api.Assertions.assertFalse(Boolean.getBoolean("fixture.fail"))
                 result = subprocess.run(["mvn", "-B", "-ntp", "-pl", "streamfusion-runtime", "-am", *options],
                                         cwd=where, text=True, capture_output=True, timeout=120)
                 self.assertEqual(success, result.returncode == 0, result.stdout + result.stderr)
+                return result
 
             run(root, "test", "-DskipTests=true")
             shutil.copytree(root, consumer, ignore=shutil.ignore_patterns("target"))
@@ -204,8 +205,21 @@ org.junit.jupiter.api.Assertions.assertFalse(Boolean.getBoolean("fixture.fail"))
                 self.assertFalse(list((consumer / module / "target/surefire-reports").glob("*-other-shard.xml")))
             runtime_report = consumer / "streamfusion-runtime/target/surefire-reports/TEST-example.CanonicalExampleJobTest-other-shard.xml"
             self.assertEqual("2", ET.parse(runtime_report).getroot().get("tests"))
-            run(consumer, "test", "-Dsf.ci.precompiledJava=true", "-DskipTests=true", "-Dsf.runtime.tests.skip=false",
-                "-Dfixture.fail=true", success=False)
+            # Direct Surefire cannot resolve owners from an earlier Maven invocation, even with -am.
+            # Offline mode proves no locally installed or remote fixture artifacts supply them.
+            missing = run(consumer, "-o", "surefire:test@default-test", "-DskipTests=true", "-Dsf.runtime.tests.skip=false",
+                          "-Dsurefire.failIfNoSpecifiedTests=false", "-Dtest=CanonicalExampleJobTest", success=False)
+            self.assertIn("Could not resolve dependencies", missing.stdout + missing.stderr)
+            self.assertIn("shared-build-fixture:streamfusion-core:jar:1", missing.stdout + missing.stderr)
+            # The shared profiling/cache invocation resolves those exact existing classes through
+            # the lifecycle; source compilation would fail, so cached classes must be retained.
+            run(consumer, *build.runtime_test_arguments(), "-Dtest=CanonicalExampleJobTest",
+                "-Dsurefire.reportNameSuffix=direct-goal")
+            direct_report = consumer / "streamfusion-runtime/target/surefire-reports/TEST-example.CanonicalExampleJobTest-direct-goal.xml"
+            self.assertEqual("2", ET.parse(direct_report).getroot().get("tests"))
+            for module in build.MODULES[:2]:
+                self.assertFalse(list((consumer / module / "target/surefire-reports").glob("*-direct-goal.xml")))
+            run(consumer, *build.runtime_test_arguments(), "-Dfixture.fail=true", success=False)
 
 
 if __name__ == "__main__":

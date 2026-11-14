@@ -20,6 +20,13 @@ MODULES = (
 )
 
 
+def runtime_test_arguments():
+    """Reuse compiled owners in the reactor while running only runtime tests."""
+    return ["-am", "test", "-Dsf.ci.precompiledJava=true", "-Dnative.build.skip=true",
+            "-Dsf.protobuf.checkStaleness=true", "-DskipTests=true", "-Dsf.runtime.tests.skip=false",
+            "-Dsurefire.failIfNoSpecifiedTests=false"]
+
+
 def identity(root, line):
     subprocess.run(["git", "-C", str(root), "diff", "--exit-code", "HEAD", "--"], check=True)
     java = str(Path(os.environ["JAVA_HOME"]) / "bin/java") if os.environ.get("JAVA_HOME") else "java"
