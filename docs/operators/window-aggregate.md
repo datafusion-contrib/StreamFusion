@@ -36,6 +36,14 @@ canonical serializers do not gain fields. New raw-state/rebuild and physical-bat
 await execution. This is a parity correction for existing native shapes, with no performance
 claim; both-release qualification remains pending.
 
+Additional single-phase full-job fixtures cover TUMBLE/HOP/CUMULATE and the released SESSION
+variant on each line, both engine orders and stores, ordinary/portable plans, empty returns,
+native checkpoints and source/keyed rescaling. They compare complete committed row bytes to
+an independent nullable floating fold, including negative-zero-only groups, NULL-only owners
+and values near the exact-integer limit. Both transposes and transactional stock writers remain
+in the jobs. These controls are authored but unexecuted; local/global floating job qualification
+is separate.
+
 Legacy SESSION reuses the released `window-aggs`, `session-window-mapping` and window timer
 serializers. Ordinary SQL and compiled plans bind the original owner and key-group maximum,
 including a singleton maximum for global sessions. The binding checks the actual assigner,

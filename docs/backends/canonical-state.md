@@ -2488,3 +2488,8 @@ Existing window/session floating SUM preserves its first nullable value on canon
 and ordinary checkpoint rebuild, including negative zero, then folds in arrival order. FLOAT
 and DOUBLE retain their single-field state layout. New raw-state controls await execution;
 the correction is not a new operator or performance qualification.
+
+New single-phase floating-window job fixtures compare committed serialized rows with an
+independent window/session oracle, retaining negative-zero bits, NULL-only state, source
+progress and transactional writers across the standard handoff/recovery/rescale modes.
+They await both-release qualification; no passing cohort is claimed yet.
