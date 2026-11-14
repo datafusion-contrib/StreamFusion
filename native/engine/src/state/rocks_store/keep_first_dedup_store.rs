@@ -77,10 +77,7 @@ impl RocksKeepFirstDedupStore {
                 "keep-first dedup row shape not supported by RocksDB".into(),
             ));
         }
-        let key_types: Vec<DataType> = partition_columns
-            .iter()
-            .map(|&column| schema.field(column).data_type().clone())
-            .collect();
+        let key_types = crate::flink_key::stock_row_key_types(&schema, partition_columns);
         let opened = open_shared_db(
             &config,
             &[

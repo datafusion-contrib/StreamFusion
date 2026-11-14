@@ -28,7 +28,10 @@ fn represented_row_keys_share_candidates_and_markers_across_raw_recovery() {
             }
             let directory = tempfile::tempdir().unwrap();
             let binary = represented_row_batch(count, true, 1000);
-            let generic = represented_row_batch(count, false, 900);
+            let generic = crate::flink_key::row_key_fixture_with_list_label(
+                represented_row_batch(count, false, 900),
+                "$data$",
+            );
             let mut source = KeepFirstDeduplicator::new(vec![0], 1)
                 .with_key_timestamp_precisions(descriptor.clone())
                 .with_state_ttl(1000);

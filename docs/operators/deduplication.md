@@ -262,6 +262,13 @@ kinds and authoritative stock binary bytes. Matching generic, binary and nested-
 therefore address the same emitted marker and pending winner. The shared native fixture now
 emits actual Java class flags; this correction remains pending both-release execution.
 
+Buffered keep-first also shares the normalizer's strict internal UTF-16 list-label equivalence
+(`unit`/`$data$`). Live input and imported candidates retain their full value/cache buffers while
+reconciling that network alias to the bound payload schema. Its decodable key codec uses one fixed
+label in memory, canonical marker transfers and RocksDB initialization. Other child names, types,
+metadata and nullability remain strict. New network/canonical/marker/native-recovery controls
+are authored and unexecuted on both release lines.
+
 Stock-bound buffered keep-first keys normalize their transient Arrow representation before
 decodable row encoding: every non-NULL ROW has its original or stock-encoded owned bytes,
 while redundant nested ownership and string caches do not distinguish the same stock key.

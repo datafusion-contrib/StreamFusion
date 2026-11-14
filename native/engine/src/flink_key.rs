@@ -81,10 +81,26 @@ pub(crate) fn stock_row_key_columns(
                 };
                 let mut normalized = clear_row_transports(row);
                 normalized[binary] = owned;
-                represented_row(row, column, normalized)
+                canonical_row_transport_fields(&represented_row(row, column, normalized))
             })
             .collect(),
     )
+}
+
+pub(crate) fn stock_row_key_types(schema: &Schema, key_columns: &[usize]) -> Vec<DataType> {
+    key_columns
+        .iter()
+        .map(|&index| {
+            let data_type = schema.field(index).data_type();
+            if row_binary_field(data_type).is_some() {
+                canonical_row_transport_fields(&new_empty_array(data_type))
+                    .data_type()
+                    .clone()
+            } else {
+                data_type.clone()
+            }
+        })
+        .collect()
 }
 
 fn represented_row(row: &StructArray, original: &ArrayRef, columns: Vec<ArrayRef>) -> ArrayRef {
@@ -1307,7 +1323,7 @@ pub(crate) fn canonical_stock_row_key_batch(
     };
     let mut columns = batch.columns().to_vec();
     for (&index, key) in key_columns.iter().zip(keys) {
-        columns[index] = canonical_row_transport_fields(&key);
+        columns[index] = key;
     }
     if columns
         .iter()
@@ -1385,11 +1401,58 @@ fn canonical_row_transport_fields(column: &ArrayRef) -> ArrayRef {
 }
 
 #[cfg(test)]
+pub(crate) fn row_key_fixture_with_list_label(batch: RecordBatch, label: &str) -> RecordBatch {
+    fn renamed(data_type: &DataType, label: &str) -> DataType {
+        match data_type {
+            DataType::Struct(fields) => DataType::Struct(
+                fields
+                    .iter()
+                    .map(|field| {
+                        Arc::new(
+                            field
+                                .as_ref()
+                                .clone()
+                                .with_data_type(renamed(field.data_type(), label)),
+                        )
+                    })
+                    .collect(),
+            ),
+            DataType::List(field) if field.data_type() == &DataType::UInt16 => {
+                DataType::List(Arc::new(field.as_ref().clone().with_name(label)))
+            }
+            _ => data_type.clone(),
+        }
+    }
+    let mut columns = batch.columns().to_vec();
+    columns[0] = streamfusion_bridge::timestamp::cast_array(
+        &columns[0],
+        &renamed(columns[0].data_type(), label),
+    )
+    .unwrap();
+    let mut fields = batch
+        .schema()
+        .fields()
+        .iter()
+        .map(|field| field.as_ref().clone())
+        .collect::<Vec<_>>();
+    fields[0] = fields[0]
+        .clone()
+        .with_data_type(columns[0].data_type().clone());
+    RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap()
+}
+
+#[cfg(test)]
 pub(crate) fn represented_row_key_fixture(count: usize, binary: bool, time: i64) -> RecordBatch {
     use arrow::array::{BinaryArray, Int8Array, ListArray, StructArray};
     use arrow::datatypes::UInt16Type;
     let java = ListArray::from_iter_primitive::<UInt16Type, _, _>(
         (0..count).map(|_| (!binary).then_some(vec![Some(0x03bbu16)])),
+    );
+    let java = ListArray::new(
+        Arc::new(Field::new("unit", DataType::UInt16, false)),
+        java.offsets().clone(),
+        java.values().clone(),
+        java.nulls().cloned(),
     );
     let string_fields = vec![
         Arc::new(Field::new("utf8", DataType::Utf8, true).with_metadata(

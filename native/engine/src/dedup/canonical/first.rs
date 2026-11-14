@@ -50,18 +50,18 @@ impl KeepFirstDeduplicator {
             if previous
                 .fields()
                 .iter()
-                .map(|f| f.data_type())
-                .ne(schema.fields().iter().map(|f| f.data_type()))
+                .map(|f| crate::logical_input::canonical_list_labels(f.data_type()))
+                .ne(schema
+                    .fields()
+                    .iter()
+                    .map(|f| crate::logical_input::canonical_list_labels(f.data_type())))
             {
                 return Err(invalid("row schema changed"));
             }
         }
         if self.key_converter.is_none() {
-            self.key_types = self
-                .partition_columns
-                .iter()
-                .map(|&key| schema.field(key).data_type().clone())
-                .collect();
+            self.key_types =
+                crate::flink_key::stock_row_key_types(&schema, &self.partition_columns);
             let fields = if self.key_types.is_empty() {
                 vec![SortField::new(DataType::Boolean)]
             } else {
@@ -116,11 +116,16 @@ impl KeepFirstDeduplicator {
                     .iter()
                     .position(|&key| key == column)
                     .map_or_else(
-                        || new_null_array(field.data_type(), stamps.len()),
-                        |key| keys[key].clone(),
+                        || Ok(new_null_array(field.data_type(), stamps.len())),
+                        |key| {
+                            streamfusion_bridge::timestamp::cast_array(
+                                &keys[key],
+                                field.data_type(),
+                            )
+                        },
                     )
             })
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
         let fields = schema
             .fields()
             .iter()
@@ -209,18 +214,23 @@ impl KeepFirstDeduplicator {
         if stamps.null_count() != 0 {
             return Err(invalid("null marker timestamp"));
         }
+        let bound_schema = self.schema.as_ref().unwrap();
         let row_schema = if markers {
             Arc::new(Schema::new(
-                schema
+                bound_schema
                     .fields()
                     .iter()
                     .map(|f| f.as_ref().clone().with_nullable(true))
                     .collect::<Vec<_>>(),
             ))
         } else {
-            schema.clone()
+            bound_schema.clone()
         };
-        let rows = RecordBatch::try_new(row_schema, batch.columns()[..arity].to_vec())?;
+        let columns = crate::logical_input::reconcile_columns(
+            &batch.columns()[..arity],
+            row_schema.fields(),
+        )?;
+        let rows = RecordBatch::try_new(row_schema, columns)?;
         for &column in &self.partition_columns {
             if !schema.field(column).is_nullable() && rows.column(column).null_count() != 0 {
                 return Err(invalid("NULL in a non-null key"));
@@ -414,6 +424,63 @@ pub extern "system" fn Java_tech_streamfusion_Native_validateBufferedDeduplicato
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn represented_keys_keep_pending_rows_and_markers_across_network_labels() {
+        use crate::flink_key::{represented_row_key_fixture, row_key_fixture_with_list_label};
+        let descriptor = vec![i32::MIN, -1, -1, -1];
+        for persistent in [false, true] {
+            #[cfg(not(feature = "rocksdb-state"))]
+            if persistent {
+                continue;
+            }
+            let directory = tempfile::tempdir().unwrap();
+            let input = represented_row_key_fixture(2, false, 100);
+            let network = row_key_fixture_with_list_label(input.clone(), "$data$");
+            let mut source = KeepFirstDeduplicator::new(vec![0], 1)
+                .with_key_timestamp_precisions(descriptor.clone());
+            #[cfg(feature = "rocksdb-state")]
+            if persistent {
+                let store = crate::state::RocksKeepFirstDedupStore::create(
+                    crate::state::RocksStoreConfig {
+                        table_dir: directory.path().join("source").to_str().unwrap().into(),
+                        max_parallelism: 128,
+                        options_json: include_str!("../../../benches/fixtures/rocks-options.json")
+                            .into(),
+                        ttl_ms: 0,
+                        shared_resources: 0,
+                    },
+                    input.schema(),
+                    &[0],
+                )
+                .unwrap();
+                source = source.with_store(store);
+            }
+            source.canonical_first_schema(input.schema()).unwrap();
+            source.push(&network, 0).unwrap();
+            let mut target = KeepFirstDeduplicator::new(vec![0], 1)
+                .with_key_timestamp_precisions(descriptor.clone());
+            target.canonical_first_schema(network.schema()).unwrap();
+            source
+                .visit_canonical_first(&network.schema(), false, |batch| {
+                    target.import_canonical_first(&batch, input.schema(), false, false)
+                })
+                .unwrap();
+            target.push(&input, 0).unwrap();
+            assert_eq!(target.flush(100, 0).unwrap().num_rows(), 2);
+            assert_eq!(source.flush(100, 0).unwrap().num_rows(), 2);
+            let mut marked = KeepFirstDeduplicator::new(vec![0], 1)
+                .with_key_timestamp_precisions(descriptor.clone());
+            marked.canonical_first_schema(network.schema()).unwrap();
+            source
+                .visit_canonical_first(&input.schema(), true, |batch| {
+                    marked.import_canonical_first(&batch, network.schema(), true, false)
+                })
+                .unwrap();
+            marked.push(&input, 0).unwrap();
+            assert_eq!(marked.flush(100, 0).unwrap().num_rows(), 0);
+        }
+    }
 
     fn schema() -> SchemaRef {
         Arc::new(Schema::new(vec![

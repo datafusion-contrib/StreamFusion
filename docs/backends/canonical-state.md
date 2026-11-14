@@ -2575,6 +2575,13 @@ Logical nested row kinds and original binary bytes are preserved. Shared native 
 carry actual Java binary/nested class flags, preventing identical stock keys from splitting solely
 because of their transport class; this correction awaits execution with the new state matrices.
 
+The shared insert-only input boundary now reconciles the existing internal UTF-16 `unit`/`$data$`
+network alias without clearing payload buffers. Buffered keep-first uses that same strict schema
+equivalence for canonical candidates and one fixed label for decodable ROW keys, including native
+RocksDB initialization and emitted markers. Normalization reuses the existing normalizer rule;
+other schema differences still reject. New buffer-preservation and network/recovery controls await
+execution on both releases.
+
 
 Retracting GROUP BY MIN/MAX additionally captures the existing one-phase mini-batch owner and
 count trigger for the already bound integral/date/time/boolean map views. New raw-state and
