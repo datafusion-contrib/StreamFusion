@@ -190,3 +190,9 @@ alongside successful continuation sequences. Canonical conversion must preserve 
 and indexes rather than rebuild an apparently equivalent ordered list. The original stock protocol
 controls establish this failure boundary; no successful continuation is claimed for that failing
 released sequence. Benchmarking remains deferred for #569.
+
+The automatic hook keeps the materializer's original maximum parallelism for state and key-group
+routing. Its stateless transpose/split helpers instead also cover the upstream source's declared
+parallelism and maximum, so a narrower sink does not impose its state-owner limit on the source
+side of the exchange. Writer/committer translation still belongs to the released stock sink.
+This topology refinement remains part of the pending two-release qualification.

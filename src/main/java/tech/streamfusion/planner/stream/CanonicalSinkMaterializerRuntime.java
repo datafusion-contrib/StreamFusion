@@ -34,8 +34,12 @@ final class CanonicalSinkMaterializerRuntime implements CanonicalSinkIdentities 
   private OneInputTransformation<ArrowBatch, ArrowBatch> materializer;
 
   CanonicalSinkMaterializerRuntime(
-      OneInputTransformation<?, ?> original, RowType type, int maximum,
-      long ttl, String strategy, ReadableConfig strategyConfig,
+      OneInputTransformation<?, ?> original,
+      RowType type,
+      int maximum,
+      long ttl,
+      String strategy,
+      ReadableConfig strategyConfig,
       StockSinkMaterializerStateContract contract) {
     this.original = original;
     this.type = type;
@@ -47,35 +51,63 @@ final class CanonicalSinkMaterializerRuntime implements CanonicalSinkIdentities 
   }
 
   Transformation<RowData> apply(
-      Transformation<RowData> input, int[] keys, int parallelism,
-      ExecNodeConfig config, RowType physicalType, int[] upsertKeys,
+      Transformation<RowData> input,
+      int[] keys,
+      int parallelism,
+      ExecNodeConfig config,
+      RowType physicalType,
+      int[] upsertKeys,
       boolean parallelismConfigured) {
     if (!type.equals(physicalType))
       throw new IllegalStateException("Captured sink materializer input type changed");
     int[] descriptor = FlinkKeyGroupUtils.stockKeyDescriptor(type, keys);
-    var entry = new OneInputTransformation<>(input, "RowDataToArrow",
-        SimpleOperatorFactory.of(new RowDataToArrowOperator(
-            type, NativeConfig.transposeBatchRows(config, 1024), true, null)),
-        ArrowBatchTypeInformation.INSTANCE, input.getParallelism(), false);
-    entry.setMaxParallelism(maximum);
-    var split = new OneInputTransformation<>(entry, "sink-materializer-key-split",
-        SimpleOperatorFactory.of(new SplitByKeyGroupOperator(keys, descriptor, maximum)),
-        ArrowBatchTypeInformation.INSTANCE, entry.getParallelism(), false);
-    split.setMaxParallelism(maximum);
+    int inputMaximum =
+        Math.max(maximum, Math.max(input.getParallelism(), input.getMaxParallelism()));
+    var entry =
+        new OneInputTransformation<>(
+            input,
+            "RowDataToArrow",
+            SimpleOperatorFactory.of(
+                new RowDataToArrowOperator(
+                    type, NativeConfig.transposeBatchRows(config, 1024), true, null)),
+            ArrowBatchTypeInformation.INSTANCE,
+            input.getParallelism(),
+            false);
+    entry.setMaxParallelism(inputMaximum);
+    var split =
+        new OneInputTransformation<>(
+            entry,
+            "sink-materializer-key-split",
+            SimpleOperatorFactory.of(new SplitByKeyGroupOperator(keys, descriptor, maximum)),
+            ArrowBatchTypeInformation.INSTANCE,
+            entry.getParallelism(),
+            false);
+    split.setMaxParallelism(inputMaximum);
     var partition = new PartitionTransformation<>(split, new ColumnarKeyGroupPartitioner(maximum));
     partition.setParallelism(parallelism);
     partition.setMaxParallelism(maximum);
-    var operator = SinkMaterializerFactory.createCanonical(
-        type, keys, descriptor, upsertKeys, ttl, maximum, strategy, strategyConfig);
+    var operator =
+        SinkMaterializerFactory.createCanonical(
+            type, keys, descriptor, upsertKeys, ttl, maximum, strategy, strategyConfig);
     operator.setStockStateContract(contract);
-    materializer = new OneInputTransformation<>(partition, "NativeSinkMaterializer",
-        SimpleOperatorFactory.of(operator), ArrowBatchTypeInformation.INSTANCE,
-        parallelism, parallelismConfigured);
+    materializer =
+        new OneInputTransformation<>(
+            partition,
+            "NativeSinkMaterializer",
+            SimpleOperatorFactory.of(operator),
+            ArrowBatchTypeInformation.INSTANCE,
+            parallelism,
+            parallelismConfigured);
     if (original.getUid() != null) materializer.setUid(original.getUid());
     FlinkKeyGroupUtils.applyColumnarKeying(materializer, maximum);
-    var exit = new OneInputTransformation<>(materializer, "ArrowToRowData",
-        SimpleOperatorFactory.of(new ArrowToRowDataOperator(type)), InternalTypeInfo.of(type),
-        parallelism, parallelismConfigured);
+    var exit =
+        new OneInputTransformation<>(
+            materializer,
+            "ArrowToRowData",
+            SimpleOperatorFactory.of(new ArrowToRowDataOperator(type)),
+            InternalTypeInfo.of(type),
+            parallelism,
+            parallelismConfigured);
     exit.setMaxParallelism(maximum);
     helpers.add(entry.getId());
     helpers.add(split.getId());

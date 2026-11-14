@@ -2446,3 +2446,8 @@ COUNT over the same scalar argument types uses its existing non-null reader and 
 BIGINT accumulator, allowing mixed MIN/MAX/COUNT folds without a numeric-only argument gate.
 The new typed component fixtures feed both engines the same serialized physical rows so
 timestamp precision and string representation are aligned at the boundary.
+
+Automatic sink-materializer helpers retain a maximum parallelism large enough for their upstream
+input. The native state owner and exchange continue using the captured materializer maximum;
+source-side transpose/split helpers must not inherit a smaller sink-side limit. This refinement
+is awaiting qualification with the automatic materializer extension.
