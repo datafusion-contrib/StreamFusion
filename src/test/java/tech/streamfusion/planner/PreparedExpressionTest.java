@@ -64,6 +64,30 @@ class PreparedExpressionTest {
   }
 
   @Test
+  void oneWholeCalcRootRetainsRepresentationFlagsForEveryOutputField() {
+    var rex = new RexBuilder(new JavaTypeFactoryImpl());
+    var source = RexExpression.encodeProjections(
+        List.of(rex.makeLiteral("first"), rex.makeLiteral("second"), rex.makeLiteral("third")),
+        List.of("a", "b", "c"));
+    // A whole-Calc evaluator has one row-valued expression root and several logical outputs.
+    var wholeCalc = (tech.streamfusion.planner.common.EncodedExpression)
+        java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
+            new Class<?>[] {tech.streamfusion.planner.common.EncodedExpression.class},
+            (proxy, method, arguments) -> {
+              if (method.getName().equals("projectionRoots")) return new int[] {0};
+              if (method.getName().equals("isBinaryStringProjection")) return (int) arguments[0] == 2;
+              if (method.getName().equals("isVariableBinaryProjection")) return (int) arguments[0] == 1;
+              return method.invoke(source, arguments);
+            });
+    var prepared = PreparedExpression.copyOf(wholeCalc);
+    assertEquals(1, prepared.projectionRoots().length);
+    assertTrue(prepared.isBinaryStringProjection(2));
+    assertTrue(prepared.isVariableBinaryProjection(1));
+    assertFalse(prepared.isBinaryStringProjection(0));
+    assertTrue(prepared.remapInputs(new int[0]).isBinaryStringProjection(2));
+  }
+
+  @Test
   void snapshotRetainsNativeTreeDepthAndFunctionMetadata() {
     var types = new JavaTypeFactoryImpl();
     var rex = new RexBuilder(types);

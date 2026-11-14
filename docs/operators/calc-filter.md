@@ -43,7 +43,9 @@ Ordinary streaming, bounded batch and stock compiled-plan Calc lowering share an
 Calc specification for the native result-type contract. Its expression pools, output names and
 representation requirements are fixed after admission. Input pruning creates a separate expression
 with remapped references, including whole-Calc JVM input coordinates; it cannot alter a sibling's
-prepared program. Each constructed operator receives its own unopened JVM-function binding.
+prepared program. Whole-Calc representation flags remain attached to every logical output field,
+even when one row-valued evaluator root produces several columns. Each constructed operator
+receives its own unopened JVM-function binding.
 Batch and stock compiled-plan paths retain their existing, stricter boundary and state admission.
 Processing-time projection fusion prepares its changed candidate separately and retains the
 original admitted plan if fusion is unsupported. Optional-probe failures still yield to later

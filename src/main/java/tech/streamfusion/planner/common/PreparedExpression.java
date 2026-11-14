@@ -57,9 +57,10 @@ public final class PreparedExpression implements EncodedExpression {
     collectionRepresentation = expression.requiresCollectionRepresentation();
     originalStringInputs = expression.requiresOriginalStringInputs();
     structuredInput = expression.supportsStructuredInput();
-    binaryStringProjections = new boolean[projectionRoots.length];
-    variableBinaryProjections = new boolean[projectionRoots.length];
-    for (int i = 0; i < projectionRoots.length; i++) {
+    int outputCount = Math.max(projectionRoots.length, outputNames.length);
+    binaryStringProjections = new boolean[outputCount];
+    variableBinaryProjections = new boolean[outputCount];
+    for (int i = 0; i < outputCount; i++) {
       binaryStringProjections[i] = expression.isBinaryStringProjection(i);
       variableBinaryProjections[i] = expression.isVariableBinaryProjection(i);
     }
