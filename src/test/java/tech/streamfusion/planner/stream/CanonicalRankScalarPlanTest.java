@@ -122,11 +122,12 @@ class CanonicalRankScalarPlanTest {
     var operator = ((SimpleOperatorFactory<?>) owner.getOperatorFactory()).getOperator();
     var contract = GroupAggregateStockTestFixture.field(operator, "stockStateContract");
     assertInstanceOf(
-        mode.equals("append")
-            ? StockAppendTopNStateContract.class
-            : mode.equals("update")
-                ? StockUpdatingTopNStateContract.class
-                : StockRetractingTopNStateContract.class,
+        (Class<?>)
+            (mode.equals("append")
+                ? StockAppendTopNStateContract.class
+                : mode.equals("update")
+                    ? StockUpdatingTopNStateContract.class
+                    : StockRetractingTopNStateContract.class),
         contract);
     assertEquals(3, ((int[]) GroupAggregateStockTestFixture.field(operator, "sortIndices")).length);
     assertEquals(257, tech.streamfusion.compat.FlinkPlanCompat.maximumParallelism(owner));

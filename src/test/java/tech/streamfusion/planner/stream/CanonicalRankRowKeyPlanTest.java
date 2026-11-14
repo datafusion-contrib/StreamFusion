@@ -95,11 +95,12 @@ class CanonicalRankRowKeyPlanTest {
       var owner = owners.get(0);
       var contract = field(owner, "stockStateContract");
       assertInstanceOf(
-          algorithm.equals("append")
-              ? StockAppendTopNStateContract.class
-              : algorithm.equals("update")
-                  ? StockUpdatingTopNStateContract.class
-                  : StockRetractingTopNStateContract.class,
+          (Class<?>)
+              (algorithm.equals("append")
+                  ? StockAppendTopNStateContract.class
+                  : algorithm.equals("update")
+                      ? StockUpdatingTopNStateContract.class
+                      : StockRetractingTopNStateContract.class),
           contract);
       assertArrayEquals(
           (int[]) field(owner, "partitionColumns"), (int[]) field(contract, "partitionColumns"));

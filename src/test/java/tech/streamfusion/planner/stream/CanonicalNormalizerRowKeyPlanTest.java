@@ -126,7 +126,8 @@ class CanonicalNormalizerRowKeyPlanTest {
                 node ->
                     node.getOperatorFactory() instanceof SimpleOperatorFactory
                         && ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator()
-                            instanceof tech.streamfusion.operator.NativeColumnarGroupAggOperator),
+                            instanceof
+                            tech.streamfusion.operator.NativeColumnarGroupAggregateOperator),
         "The neighboring retracting aggregate must bind its own stock-compatible state");
     var hashes = new StreamGraphHasherV2().traverseStreamGraphAndGenerateHashes(graph);
     assertTrue(registrations.containsKey(new OperatorID(hashes.get(owner.getId())).toString()));

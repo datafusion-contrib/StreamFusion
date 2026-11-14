@@ -191,7 +191,8 @@ final class FirstNCanonicalTestSupport {
   }
 
   static OperatorSubtaskState snapshot(
-      KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> harness) throws Exception {
+      org.apache.flink.streaming.util.AbstractStreamOperatorTestHarness<?> harness)
+      throws Exception {
     return harness
         .snapshotWithLocalState(1, 1800, SavepointType.savepoint(SavepointFormatType.CANONICAL))
         .getJobManagerOwnedState();

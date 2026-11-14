@@ -23,7 +23,7 @@ abstract class CanonicalScalarOverDistinctCountJobTest
   @Override
   Path prepare(String name, String kind, String mode, boolean ordinary) throws Exception {
     var root = super.prepare(name, kind, mode, ordinary);
-    var valueType = LogicalTypeParser.parse(argumentType());
+    var valueType = LogicalTypeParser.parse(argumentType(), getClass().getClassLoader());
     var serializer =
         new RowDataSerializer(RowType.of(new BigIntType(), valueType, new TimestampType(3)));
     var encoded = new ArrayList<String>();

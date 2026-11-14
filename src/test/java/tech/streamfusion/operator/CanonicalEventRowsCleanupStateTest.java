@@ -62,7 +62,7 @@ class CanonicalEventRowsCleanupStateTest {
             new org.apache.flink.streaming.api.operators.TimerHeapInternalTimer<>(
                 1601, key, org.apache.flink.runtime.state.VoidNamespace.INSTANCE));
       }
-      saved = CanonicalBoundedRangeInteropTest.snapshot(stock);
+      saved = CanonicalOverSnapshotTestSupport.snapshot(stock, 1, 100);
       target.initializeState(saved);
       assertThrows(Exception.class, target::open);
     } finally {
@@ -133,7 +133,7 @@ class CanonicalEventRowsCleanupStateTest {
               Native.nextOverEventCleanup(
                   ((NativeOverAggregateOperator) source.getOperator()).handle));
         }
-        fromStock = CanonicalBoundedRangeInteropTest.snapshot(reference);
+        fromStock = CanonicalOverSnapshotTestSupport.snapshot(reference, 1, 100);
         if (checkpoint) {
           source.prepareSnapshotPreBarrier(2);
           var saved = source.snapshot(2, 0);
@@ -141,11 +141,11 @@ class CanonicalEventRowsCleanupStateTest {
             recovered.setProcessingTime(phase == 0 ? 100 : phase == 3 ? 3300 : 1800);
             recovered.initializeState(saved);
             recovered.open();
-            fromNative = CanonicalBoundedRangeInteropTest.snapshot(recovered);
+            fromNative = CanonicalOverSnapshotTestSupport.snapshot(recovered, 1, 100);
           } finally {
             saved.discardState();
           }
-        } else fromNative = CanonicalBoundedRangeInteropTest.snapshot(source);
+        } else fromNative = CanonicalOverSnapshotTestSupport.snapshot(source, 1, 100);
       }
       try (var returned = plan.stock(!stockStore);
           var imported = plan.nativeHarness(!nativeStore)) {

@@ -133,7 +133,7 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
         groupKeys == null
             ? RowType.of(
                 org.apache.flink.table.types.logical.utils.LogicalTypeParser.parse(
-                    integerKey ? "INT" : "BIGINT"))
+                    integerKey ? "INT" : "BIGINT", getClass().getClassLoader()))
             : groupKeys;
     keyColumns =
         global

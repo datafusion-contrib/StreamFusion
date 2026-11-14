@@ -204,7 +204,8 @@ class CanonicalUnboundedOverDistinctStateTest {
               : List.of(plan.row(1L, 7L), plan.row(1L, 8L)));
       var valid = snapshot(source);
       var backend =
-          (CheckpointableKeyedStateBackend<RowData>) source.getOperator().getKeyedStateBackend();
+          (CheckpointableKeyedStateBackend<RowData>)
+              source.getOperator().<RowData>getKeyedStateBackend();
       String view =
           plan.contract.stateDescriptors().entrySet().stream()
               .filter(
@@ -221,9 +222,10 @@ class CanonicalUnboundedOverDistinctStateTest {
           if (meta.getName().equals(view))
             serializers =
                 (org.apache.flink.api.common.typeutils.base.MapSerializer<Object, Object>)
-                    new org.apache.flink.runtime.state.RegisteredKeyValueStateBackendMetaInfo<
-                            Object, Object>(meta)
-                        .getStateSerializer();
+                    (org.apache.flink.api.common.typeutils.TypeSerializer<?>)
+                        new org.apache.flink.runtime.state.RegisteredKeyValueStateBackendMetaInfo<
+                                Object, Object>(meta)
+                            .getStateSerializer();
       }
       assertNotNull(serializers);
       var map =
@@ -314,7 +316,7 @@ class CanonicalUnboundedOverDistinctStateTest {
         repaired.open();
         var repairedBackend =
             (CheckpointableKeyedStateBackend<RowData>)
-                repaired.getOperator().getKeyedStateBackend();
+                repaired.getOperator().<RowData>getKeyedStateBackend();
         plan.contract.importState(repairedBackend, handle, rocks);
         try (var reference = plan.stock(!rocks)) {
           reference.initializeState(valid);

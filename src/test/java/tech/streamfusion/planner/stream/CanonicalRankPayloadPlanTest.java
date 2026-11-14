@@ -87,11 +87,12 @@ class CanonicalRankPayloadPlanTest {
       var operator = ((SimpleOperatorFactory<?>) owners.get(0).getOperatorFactory()).getOperator();
       var contract = GroupAggregateStockTestFixture.field(operator, "stockStateContract");
       assertInstanceOf(
-          algorithm.equals("append")
-              ? StockAppendTopNStateContract.class
-              : algorithm.equals("update")
-                  ? StockUpdatingTopNStateContract.class
-                  : StockRetractingTopNStateContract.class,
+          (Class<?>)
+              (algorithm.equals("append")
+                  ? StockAppendTopNStateContract.class
+                  : algorithm.equals("update")
+                      ? StockUpdatingTopNStateContract.class
+                      : StockRetractingTopNStateContract.class),
           contract);
       var type = (RowType) GroupAggregateStockTestFixture.field(operator, "rowType");
       assertTrue(

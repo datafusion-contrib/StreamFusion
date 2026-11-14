@@ -100,9 +100,10 @@ class CanonicalUnboundedOverAdmissionTest {
     if (admitted) {
       assertEquals(1, nativeOwners.size(), graph.getStreamingPlanAsJSON());
       assertInstanceOf(
-          event
-              ? tech.streamfusion.state.StockOverEventFoldStateContract.class
-              : tech.streamfusion.state.StockOverFoldStateContract.class,
+          (Class<?>)
+              (event
+                  ? tech.streamfusion.state.StockOverEventFoldStateContract.class
+                  : tech.streamfusion.state.StockOverFoldStateContract.class),
           GroupAggregateStockTestFixture.field(nativeOwners.get(0), "stockStateContract"));
       if (event)
         assertEquals(

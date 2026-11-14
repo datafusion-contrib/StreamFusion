@@ -51,7 +51,10 @@ final class CanonicalExtremaScalarKeyFixture {
               .toArray(LogicalType[]::new));
     return RowType.of(
         java.util.Arrays.stream(definition.split("\\|"))
-            .map(LogicalTypeParser::parse)
+            .map(
+                sql ->
+                    LogicalTypeParser.parse(
+                        sql, CanonicalExtremaScalarKeyFixture.class.getClassLoader()))
             .toArray(LogicalType[]::new));
   }
 

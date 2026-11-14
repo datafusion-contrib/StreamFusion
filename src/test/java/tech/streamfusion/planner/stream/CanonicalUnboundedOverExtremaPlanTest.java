@@ -101,7 +101,8 @@ class CanonicalUnboundedOverExtremaPlanTest {
     assertArrayEquals(
         new int[] {1, 2}, (int[]) GroupAggregateStockTestFixture.field(owner, "aggregateKinds"));
     assertInstanceOf(
-        event ? StockOverEventFoldStateContract.class : StockOverFoldStateContract.class,
+        (Class<?>)
+            (event ? StockOverEventFoldStateContract.class : StockOverFoldStateContract.class),
         GroupAggregateStockTestFixture.field(owner, "stockStateContract"));
     assertFalse(portable.contains("tech.streamfusion"));
     if (compiled) assertEquals(portable, plan.asJsonString());

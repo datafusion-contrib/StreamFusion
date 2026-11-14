@@ -88,7 +88,8 @@ class CanonicalDedupRowKeyPlanTest {
     boolean buffered =
         mode.equals("row-first") && !mini && tech.streamfusion.compat.CanonicalTestCompat.flink22();
     assertInstanceOf(
-        buffered ? StockBufferedDedupStateContract.class : StockDedupStateContract.class,
+        (Class<?>)
+            (buffered ? StockBufferedDedupStateContract.class : StockDedupStateContract.class),
         GroupAggregateStockTestFixture.field(owners.get(0), "stockStateContract"));
     if (buffered)
       assertEquals(true, GroupAggregateStockTestFixture.field(owners.get(0), "binaryRowKeys"));
