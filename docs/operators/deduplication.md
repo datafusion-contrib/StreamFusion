@@ -270,6 +270,10 @@ label in memory, canonical marker transfers and RocksDB initialization. Other ch
 metadata and nullability remain strict. New network/canonical/marker/native-recovery controls
 are authored and pending full qualification on both release lines.
 
+Eager capture also reconciles the existing physical list-child labels of represented ROW
+caches after a network exchange. Logical ROW names, cache element types and nullability stay
+strict; the retained row bytes and checkpoint encoding are unchanged.
+
 Stock-bound buffered keep-first keys normalize their transient Arrow representation before
 decodable row encoding: every non-NULL ROW has its original or stock-encoded owned bytes,
 while redundant nested ownership and string caches do not distinguish the same stock key.
