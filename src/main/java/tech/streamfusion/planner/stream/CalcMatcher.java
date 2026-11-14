@@ -10,8 +10,10 @@ import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
 import tech.streamfusion.planner.CollectionExpressionSemantics;
 import tech.streamfusion.planner.ColumnarOutput;
 import tech.streamfusion.planner.ExpressionPlanning;
+import tech.streamfusion.planner.common.Admission;
 import tech.streamfusion.planner.common.CalcOutputTypeCheck;
 import tech.streamfusion.planner.common.EncodedExpression;
+import tech.streamfusion.planner.common.StreamRule.PreparedPlan;
 
 /**
  * Recognizes a general {@link Calc} the native engine can run — an optional condition plus
@@ -30,25 +32,48 @@ final class CalcMatcher {
   }
 
   static boolean matches(Calc calc, boolean javaJsonInput) {
-    if (CollectionExpressionSemantics.unverifiedInput(calc)) return false;
-    RexProgram program = calc.getProgram();
-    // A condition with an all-column-reference projection is the filter path's case; leave it
-    // there.
-    if (program.getCondition() != null
-        && allInputRefs(program)
-        && FilterCalcMatcher.matches(calc)) {
-      return false;
+    return prepareExpression(calc, javaJsonInput).isAccepted();
+  }
+
+  static Admission<PreparedPlan> prepare(Calc calc, PlanContext ctx) {
+    boolean javaJsonInput = ctx.requiresJavaJsonInput(calc);
+    Admission<EncodedExpression> expression = prepareExpression(calc, javaJsonInput);
+    if (!expression.isAccepted())
+      return expression.status() == Admission.Status.NO_MATCH
+          ? Admission.noMatch() : Admission.declined(expression.reason());
+    Calc candidate = mergeProcessingTimeProjection(calc);
+    if (candidate != calc) {
+      Admission<EncodedExpression> merged = prepareExpression(candidate, javaJsonInput);
+      if (merged.isAccepted()) {
+        calc = candidate;
+        expression = merged;
+      }
     }
+    Calc preparedCalc = calc;
+    EncodedExpression preparedExpression = expression.value();
+    return Admission.accepted(() -> substitute(preparedCalc, preparedExpression, ctx));
+  }
+
+  private static Admission<EncodedExpression> prepareExpression(Calc calc, boolean javaJsonInput) {
+    if (CollectionExpressionSemantics.unverifiedInput(calc))
+      return Admission.declined(
+          "Calc: collection input representation is unverified for this columnar producer");
+    RexProgram program = calc.getProgram();
+    // The filter's column-transfer projection avoids evaluating identity expressions.
+    if (program.getCondition() != null && allInputRefs(program) && FilterCalcMatcher.matches(calc))
+      return Admission.noMatch();
     if (!FilterCalcMatcher.convertibleRow(
         calc.getInput().getRowType(),
-        ExpressionPlanning.containsGeneratedCollectionFunction(calc.getProgram()))) {
-      return false;
-    }
-    EncodedExpression encoded = ExpressionPlanning.encodeCalc(calc, javaJsonInput);
-    return encoded != null
-        && FilterCalcMatcher.convertibleRow(
-            calc.getInput().getRowType(), encoded.supportsStructuredInput())
-        && outputTypeMismatch(calc, encoded) == null;
+        ExpressionPlanning.containsGeneratedCollectionFunction(program)))
+      return Admission.declined("Calc: unsupported input column type");
+    Admission<EncodedExpression> encoded = ExpressionPlanning.prepareCalc(calc, javaJsonInput);
+    if (!encoded.isAccepted()) return Admission.declined("Calc: " + encoded.reason());
+    if (!FilterCalcMatcher.convertibleRow(
+        calc.getInput().getRowType(), encoded.value().supportsStructuredInput()))
+      return Admission.declined(
+          "Calc: unsupported input column type outside a preserving collection program");
+    String mismatch = outputTypeMismatch(calc, encoded.value());
+    return mismatch == null ? encoded : Admission.declined("Calc: " + mismatch);
   }
 
   private static String outputTypeMismatch(Calc calc, EncodedExpression encoded) {
@@ -72,8 +97,11 @@ final class CalcMatcher {
   }
 
   static RelNode substitute(Calc calc, PlanContext ctx) {
-    boolean javaJsonInput = ctx.requiresJavaJsonInput(calc);
-    calc = mergeProcessingTimeProjection(calc);
+    Admission<PreparedPlan> prepared = prepare(calc, ctx);
+    return prepared.isAccepted() ? prepared.value().build() : null;
+  }
+
+  private static RelNode substitute(Calc calc, EncodedExpression encoded, PlanContext ctx) {
     RelNode input = calc.getInputs().get(0);
     if (input instanceof StreamPhysicalNativeFilter
         && input.getInput(0) instanceof StreamPhysicalNativeUnnest
@@ -108,7 +136,6 @@ final class CalcMatcher {
             .withProjection(calc.getTraitSet(), calc.getRowType(), projection);
       }
     }
-    EncodedExpression encoded = ExpressionPlanning.encodeCalc(calc, javaJsonInput);
     ctx.functionExecution("NativeCalc", encoded);
     if (input instanceof StreamPhysicalNativeUnnest) {
       var used = CalcProjectionPruner.wholeFields(calc, encoded);
@@ -207,9 +234,7 @@ final class CalcMatcher {
     var merged =
         org.apache.calcite.rex.RexProgramBuilder.mergePrograms(
             calc.getProgram(), program, calc.getCluster().getRexBuilder());
-    var candidate = calc.copy(calc.getTraitSet(), lower.getInput(), merged);
-    var encoded = ExpressionPlanning.encodeCalc(candidate);
-    return encoded != null && outputTypeMismatch(candidate, encoded) == null ? candidate : calc;
+    return calc.copy(calc.getTraitSet(), lower.getInput(), merged);
   }
 
   /**
@@ -217,25 +242,7 @@ final class CalcMatcher {
    * first un-admitted node, or an expression whose native result type disagrees with the plan.
    */
   static String unsupportedReason(Calc calc) {
-    String reason = reason(calc);
-    return "Calc: " + (reason != null ? reason : "unsupported Calc expression");
-  }
-
-  private static String reason(Calc calc) {
-    if (CollectionExpressionSemantics.unverifiedInput(calc))
-      return "collection input representation is unverified for this columnar producer";
-    if (!FilterCalcMatcher.convertibleRow(
-        calc.getInput().getRowType(),
-        ExpressionPlanning.containsGeneratedCollectionFunction(calc.getProgram()))) {
-      return "unsupported input column type";
-    }
-    EncodedExpression encoded = ExpressionPlanning.encodeCalc(calc);
-    if (encoded != null
-        && !FilterCalcMatcher.convertibleRow(
-            calc.getInput().getRowType(), encoded.supportsStructuredInput()))
-      return "unsupported input column type outside a preserving collection program";
-    return encoded == null
-        ? ExpressionPlanning.reasonForCalc(calc)
-        : outputTypeMismatch(calc, encoded);
+    String reason = prepareExpression(calc, false).reason();
+    return reason != null ? reason : "Calc: unsupported Calc expression";
   }
 }

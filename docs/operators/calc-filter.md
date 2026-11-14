@@ -35,6 +35,13 @@ batches and batches carrying a row-kind column; Calc caches each schema separate
 those row kinds through projections and filters. Row-to-Arrow boundaries also retain actual
 retractions received from a source that advertised insert-only output.
 
+The streaming Calc rule prepares its expression plan and declared-result-type check once for
+one candidate. Construction and fallback diagnostics consume that same admission decision;
+explaining a declined Calc does not repeat expression generation or optional native probes.
+Processing-time projection fusion prepares its changed candidate separately and retains the
+original admitted plan if fusion is unsupported. Optional-probe failures still yield to later
+rules, while failures constructing an admitted operator propagate.
+
 Planning logs the final function-engine assignments for admitted Calc/filter operators at INFO
 by default, including Calcs admitted while lowering a stock compiled plan. Repeated identical
 assignments within a pass are combined with their occurrence count. Distinct SQL function, UDF

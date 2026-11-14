@@ -7,7 +7,9 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalExchange;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalGlobalGroupAggregate;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalLocalGroupAggregate;
+import tech.streamfusion.planner.common.Admission;
 import tech.streamfusion.planner.common.EncodedExpression;
+import tech.streamfusion.planner.common.StreamRule.PreparedPlan;
 
 /**
  * The services a {@link Substitution} needs from the scan that runs it: rewriting a keyed host
@@ -24,6 +26,18 @@ final class PlanContext implements tech.streamfusion.planner.common.StreamPlanni
   private final Map<RelNode, RelNode> originals = new IdentityHashMap<>();
   private final Map<RelNode, StreamPhysicalGlobalGroupAggregate> globalGroups =
       new IdentityHashMap<>();
+
+  private final Map<RelNode, Map<Substitution<?>, Admission<PreparedPlan>>> admissions =
+      new IdentityHashMap<>();
+
+  Admission<PreparedPlan> admission(Substitution<?> entry, RelNode node) {
+    var decisions = admissions.get(node);
+    return decisions == null ? null : decisions.get(entry);
+  }
+
+  void admission(Substitution<?> entry, RelNode node, Admission<PreparedPlan> decision) {
+    admissions.computeIfAbsent(node, ignored -> new IdentityHashMap<>()).put(entry, decision);
+  }
 
   private final Map<RelNode, Map<Substitution<?>, String>> probeFailures = new IdentityHashMap<>();
 

@@ -496,10 +496,7 @@ public class StreamPlanScan implements FlinkOptimizeProgram<StreamOptimizeContex
             .reason(CalcMatcher::unsupportedReason)
             .changelogSafe());
     entries.add(
-        Substitution.of(StreamPhysicalCalc.class, "calc", CalcMatcher::substitute)
-            .matchingWithContext(
-                (calc, ctx) -> CalcMatcher.matches(calc, ctx.requiresJavaJsonInput(calc)))
-            .reason(CalcMatcher::unsupportedReason)
+        Substitution.preparing(StreamPhysicalCalc.class, "calc", CalcMatcher::prepare)
             .changelogSafe());
 
     // Changelog normalization (upsert / duplicate-bearing source → regular changelog): keep the

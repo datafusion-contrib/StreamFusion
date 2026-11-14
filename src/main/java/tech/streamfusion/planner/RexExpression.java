@@ -30,6 +30,7 @@ import org.apache.calcite.sql.type.SqlTypeName;
 import tech.streamfusion.operator.EncodedPredicate;
 import tech.streamfusion.operator.WatermarkExpression;
 import tech.streamfusion.planner.common.CalcOutputTypeCheck;
+import tech.streamfusion.planner.common.Admission;
 import tech.streamfusion.planner.common.EncodedExpression;
 
 /**
@@ -307,17 +308,24 @@ final class RexExpression implements EncodedExpression {
   }
 
   static RexExpression encodeCalc(Calc calc, boolean javaJsonInput) {
+    Admission<RexExpression> prepared = prepareCalc(calc, javaJsonInput);
+    return prepared.isAccepted() ? prepared.value() : null;
+  }
+
+  static Admission<RexExpression> prepareCalc(Calc calc, boolean javaJsonInput) {
     CalcEncoding encoded = tryEncodeCalc(calc);
-    if (javaJsonInput && encoded.supported()) {
-      RexExpression encoder = encoded.encoder();
-      if (encoder.rowFusion || !encoder.jvmFunctionCalls.isEmpty()) return null;
+    if (!encoded.supported()) return Admission.declined(encoded.encoder().reasonOrDefault());
+    RexExpression encoder = encoded.encoder();
+    if (javaJsonInput) {
+      if (encoder.rowFusion || !encoder.jvmFunctionCalls.isEmpty())
+        return Admission.declined("JSON string identity requires native scalar evaluation");
       for (int root : encoder.projectionRoots) {
         if (encoder.kinds.get(root) == KIND_CALL && encoder.payload.get(root) == 141)
           encoder.payload.set(root, 202);
       }
       encoder.preserveCollections = true;
     }
-    return encoded.supported() ? encoded.encoder() : null;
+    return Admission.accepted(encoder);
   }
 
   static RexExpression encodeUnnestOperand(Calc calc) {

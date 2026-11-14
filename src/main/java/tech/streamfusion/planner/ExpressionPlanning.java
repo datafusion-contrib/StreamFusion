@@ -9,6 +9,7 @@ import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexProgram;
 import tech.streamfusion.operator.EncodedPredicate;
+import tech.streamfusion.planner.common.Admission;
 import tech.streamfusion.planner.common.EncodedExpression;
 
 /** Shared expression admission without exposing the mutable encoder or stream rewrite rules. */
@@ -26,6 +27,10 @@ public final class ExpressionPlanning {
       boolean recursiveContainers) {
     return new JvmFunctionCodeGeneratorContext(
         config, classLoader, defaultClassLoaderTerm, recursiveContainers);
+  }
+
+  public static Admission<EncodedExpression> prepareCalc(Calc calc, boolean javaJsonInput) {
+    return RexExpression.prepareCalc(calc, javaJsonInput).map(expression -> expression);
   }
 
   public static EncodedExpression encodeCalc(Calc calc) {

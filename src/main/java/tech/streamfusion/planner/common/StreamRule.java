@@ -1,5 +1,6 @@
 package tech.streamfusion.planner.common;
 
+import java.util.function.BiFunction;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -12,9 +13,16 @@ public final class StreamRule<T extends RelNode> {
     RelNode plan(T node, StreamPlanningContext context);
   }
 
+  /** Construction runs after admission, outside recoverable optional-probe handling. */
+  @FunctionalInterface
+  public interface PreparedPlan {
+    RelNode build();
+  }
+
   private final Class<T> shape;
   private final String operatorKey;
   private final Planner<T> planner;
+  private BiFunction<T, StreamPlanningContext, Admission<PreparedPlan>> preparation;
   private Predicate<T> shapeMatching = node -> true;
   private BiPredicate<T, StreamPlanningContext> matching = (node, context) -> true;
   private Predicate<T> owns = node -> true;
@@ -36,6 +44,23 @@ public final class StreamRule<T extends RelNode> {
 
   public static <T extends RelNode> StreamRule<T> of(Class<T> shape, Planner<T> planner) {
     return of(shape, null, planner);
+  }
+
+  public static <T extends RelNode> StreamRule<T> preparing(
+      Class<T> shape,
+      String operatorKey,
+      BiFunction<T, StreamPlanningContext, Admission<PreparedPlan>> preparation) {
+    StreamRule<T> rule = new StreamRule<>(shape, operatorKey, null);
+    rule.preparation = java.util.Objects.requireNonNull(preparation);
+    return rule;
+  }
+
+  public boolean preparesAdmission() {
+    return preparation != null;
+  }
+
+  public Admission<PreparedPlan> prepare(T node, StreamPlanningContext context) {
+    return java.util.Objects.requireNonNull(preparation.apply(node, context));
   }
 
   public StreamRule<T> shaped(Predicate<T> predicate) {

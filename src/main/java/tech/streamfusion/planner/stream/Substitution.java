@@ -1,11 +1,14 @@
 package tech.streamfusion.planner.stream;
 
+import java.util.function.BiFunction;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import org.apache.calcite.rel.RelNode;
 import tech.streamfusion.planner.NativeConfig;
+import tech.streamfusion.planner.common.Admission;
 import tech.streamfusion.planner.common.NativeProbeFailure;
+import tech.streamfusion.planner.common.StreamRule.PreparedPlan;
 import tech.streamfusion.planner.common.StreamRule;
 
 /**
@@ -54,6 +57,14 @@ final class Substitution<T extends RelNode> {
    */
   static <T extends RelNode> Substitution<T> of(Class<T> shape, Planner<T> planner) {
     return new Substitution<>(shape, null, planner);
+  }
+
+  static <T extends RelNode> Substitution<T> preparing(
+      Class<T> shape,
+      String operatorKey,
+      BiFunction<T, PlanContext, Admission<PreparedPlan>> preparation) {
+    return new Substitution<>(StreamRule.preparing(
+        shape, operatorKey, (node, context) -> preparation.apply(node, (PlanContext) context)));
   }
 
   /** Structural ownership only: never initialize an optional native probe here. */
@@ -137,8 +148,12 @@ final class Substitution<T extends RelNode> {
       ctx.decline(disabledReason(rule.operatorKey()));
       return node;
     }
+    Admission<PreparedPlan> admission = null;
     try {
-      if (!rule.matches(typed, ctx)) {
+      if (rule.preparesAdmission()) {
+        admission = preparedAdmission(typed, ctx);
+        if (!admission.isAccepted()) return null;
+      } else if (!rule.matches(typed, ctx)) {
         return null;
       }
     } catch (NoClassDefFoundError
@@ -153,12 +168,21 @@ final class Substitution<T extends RelNode> {
       ctx.decline(ctx.keyedStateUnsupportedReason());
       return node;
     }
-    RelNode planned = rule.plan(typed, ctx);
+    RelNode planned = admission != null ? admission.value().build() : rule.plan(typed, ctx);
     if (planned != null) {
       ctx.substituted();
       return planned;
     }
     return rule.yieldsOnDecline() ? null : node;
+  }
+
+  private Admission<PreparedPlan> preparedAdmission(T node, PlanContext ctx) {
+    Admission<PreparedPlan> decision = ctx.admission(this, node);
+    if (decision == null) {
+      decision = rule.prepare(node, ctx);
+      ctx.admission(this, node, decision);
+    }
+    return decision;
   }
 
   /** How a matched operator kept on the host by config reports itself. */
@@ -186,7 +210,9 @@ final class Substitution<T extends RelNode> {
       if (rule.operatorKey() != null && !NativeConfig.operatorEnabled(rule.operatorKey())) {
         return disabledReason(rule.operatorKey());
       }
-      return rule.reason(typed);
+      return rule.preparesAdmission()
+          ? preparedAdmission(typed, ctx).reason()
+          : rule.reason(typed);
     } catch (NoClassDefFoundError
         | NoSuchMethodError
         | NoSuchFieldError
