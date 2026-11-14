@@ -130,7 +130,8 @@ class CanonicalJobRunner {
         Path profiles = Path.of(profileDirectory);
         Files.createDirectories(profiles);
         Path recording =
-            Files.createTempFile(profiles, (nativeRun ? "native-" : "stock-") + stage + "-", ".jfr");
+            Files.createTempFile(
+                profiles, (nativeRun ? "native-" : "stock-") + stage + "-", ".jfr");
         command.add(
             1, "-XX:StartFlightRecording=settings=profile,dumponexit=true,filename=" + recording);
       }
@@ -196,7 +197,13 @@ class CanonicalJobRunner {
       Path baseline, Path switched, boolean nativeFirst, String backend, String mode, String family)
       throws Exception {
     var type = RowType.of(new BigIntType(), new BigIntType(), new BigIntType());
-    verifyJoinSwitch(baseline, switched, nativeFirst, backend, mode, family,
+    verifyJoinSwitch(
+        baseline,
+        switched,
+        nativeFirst,
+        backend,
+        mode,
+        family,
         root -> CanonicalFixtureFactory.committedRows(root.resolve("committed"), type));
   }
 
@@ -206,7 +213,12 @@ class CanonicalJobRunner {
   }
 
   void verifyJoinSwitch(
-      Path baseline, Path switched, boolean nativeFirst, String backend, String mode, String family,
+      Path baseline,
+      Path switched,
+      boolean nativeFirst,
+      String backend,
+      String mode,
+      String family,
       CommittedRows output)
       throws Exception {
     var fixture = fixtureJar();
@@ -259,9 +271,7 @@ class CanonicalJobRunner {
         nativeFirst ? backend : "hashmap");
     var expected = output.read(baseline).stream().sorted().toArray();
     assertTrue(expected.length > 0);
-    assertArrayEquals(
-        expected,
-        output.read(switched).stream().sorted().toArray());
+    assertArrayEquals(expected, output.read(switched).stream().sorted().toArray());
     for (String stage : List.of("prefix", "middle")) {
       if (mode.equals("checkpoint") && stage.equals("prefix")) continue;
       var savepoint =

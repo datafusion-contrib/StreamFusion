@@ -412,14 +412,18 @@ final class StockCompiledPlanLowering {
           (RowType) node.getInputEdges().get(0).getOutputType(),
           ((NativeFirstNExecNode) node).stateKeyColumns());
     if (node instanceof NativeColumnarGroupAggExecNode)
-      return rowKeys((RowType) node.getOutputType(),
-          java.util.stream.IntStream.range(0,
-              ((NativeColumnarGroupAggExecNode) node).groupingKeyCount()).toArray());
+      return rowKeys(
+          (RowType) node.getOutputType(),
+          java.util.stream.IntStream.range(
+                  0, ((NativeColumnarGroupAggExecNode) node).groupingKeyCount())
+              .toArray());
     if (node instanceof NativeChangelogNormalizeExecNode)
-      return rowKeys((RowType) node.getOutputType(),
+      return rowKeys(
+          (RowType) node.getOutputType(),
           ((NativeChangelogNormalizeExecNode) node).stateKeyColumns());
     return node instanceof NativeDeduplicateExecNode
-        && rowKeys((RowType) node.getOutputType(), ((NativeDeduplicateExecNode) node).stateKeyColumns());
+        && rowKeys(
+            (RowType) node.getOutputType(), ((NativeDeduplicateExecNode) node).stateKeyColumns());
   }
 
   private static boolean stockOverNeedsBinaryRows(ExecNode<?> node) {
@@ -1831,7 +1835,8 @@ final class StockCompiledPlanLowering {
                         .RowTimeRangeBoundedPrecedingFunction.class;
     int eventTimeVersion = FlinkPlanCompat.unboundedOverVersion();
     if (function.getClass() != expected) {
-      if (bounded || processing
+      if (bounded
+          || processing
           || function.getClass() != FlinkPlanCompat.eventUnboundedOver(group.isRows(), 1))
         return stock;
       eventTimeVersion = 1;
@@ -1960,8 +1965,12 @@ final class StockCompiledPlanLowering {
     try {
       var distinctViews = new ArrayList<tech.streamfusion.state.StockOverDistinctView>();
       for (var distinct : infos.distinctInfos()) {
-        if (bounded || !processing || retention > 0 || distinct.excludeAcc()
-            || distinct.consumeRetraction() || distinct.dataViewSpec().isEmpty()) return stock;
+        if (bounded
+            || !processing
+            || retention > 0
+            || distinct.excludeAcc()
+            || distinct.consumeRetraction()
+            || distinct.dataViewSpec().isEmpty()) return stock;
         int[] slots = new int[distinct.aggIndexes().size()];
         for (int index = 0; index < slots.length; index++) {
           slots[index] = (Integer) distinct.aggIndexes().apply(index);
@@ -2822,17 +2831,21 @@ final class StockCompiledPlanLowering {
     var original = (OneInputTransformation<?, ?>) transformation;
     if (!(original.getOperatorFactory() instanceof SimpleOperatorFactory)) return stock;
     var operator = ((SimpleOperatorFactory<?>) original.getOperatorFactory()).getOperator();
-    boolean miniBatch = operator.getClass()
-        == org.apache.flink.table.runtime.operators.bundle.KeyedMapBundleOperator.class;
+    boolean miniBatch =
+        operator.getClass()
+            == org.apache.flink.table.runtime.operators.bundle.KeyedMapBundleOperator.class;
     Object function;
     if (miniBatch) function = releasedField(operator, "function");
     else if (operator instanceof org.apache.flink.streaming.api.operators.KeyedProcessOperator)
-      function = ((org.apache.flink.streaming.api.operators.KeyedProcessOperator<?, ?, ?>) operator)
-          .getUserFunction();
+      function =
+          ((org.apache.flink.streaming.api.operators.KeyedProcessOperator<?, ?, ?>) operator)
+              .getUserFunction();
     else return stock;
-    if (function.getClass() != (miniBatch
-        ? org.apache.flink.table.runtime.operators.aggregate.MiniBatchGroupAggFunction.class
-        : org.apache.flink.table.runtime.operators.aggregate.GroupAggFunction.class)) return stock;
+    if (function.getClass()
+        != (miniBatch
+            ? org.apache.flink.table.runtime.operators.aggregate.MiniBatchGroupAggFunction.class
+            : org.apache.flink.table.runtime.operators.aggregate.GroupAggFunction.class))
+      return stock;
     JsonNode definition = definitions.get(stock.getId());
     int[] keys = reader.forType(int[].class).readValue(definition.path("grouping"));
     ExecNode<?> input = stock.getInputEdges().get(0).getSource();
@@ -3018,10 +3031,11 @@ final class StockCompiledPlanLowering {
     }
     if (actual != size || slot != accumulatorTypes.length) return stock;
     if (miniBatch && Arrays.stream(kinds).noneMatch(kind -> kind == 38 || kind == 39)) return stock;
-    var ttl = miniBatch
-        ? org.apache.flink.table.runtime.util.StateConfigUtil.createTtlConfig(
-            ((Number) releasedField(function, "stateRetentionTime")).longValue())
-        : (org.apache.flink.api.common.state.StateTtlConfig) FlinkPlanCompat.stateTtl(function);
+    var ttl =
+        miniBatch
+            ? org.apache.flink.table.runtime.util.StateConfigUtil.createTtlConfig(
+                ((Number) releasedField(function, "stateRetentionTime")).longValue())
+            : (org.apache.flink.api.common.state.StateTtlConfig) FlinkPlanCompat.stateTtl(function);
     long retention = ttl.isEnabled() ? FlinkPlanCompat.ttlMillis(ttl) : 0;
     config.setString("table.exec.state.ttl", retention + " ms");
     config.setString("table.exec.mini-batch.enabled", Boolean.toString(miniBatch));
@@ -3030,7 +3044,8 @@ final class StockCompiledPlanLowering {
       if (trigger.getClass()
           != org.apache.flink.table.runtime.operators.bundle.trigger.CountBundleTrigger.class)
         return stock;
-      config.setString("table.exec.mini-batch.size",
+      config.setString(
+          "table.exec.mini-batch.size",
           Long.toString(((Number) releasedField(trigger, "maxCount")).longValue()));
     }
     var selector =
@@ -3169,9 +3184,12 @@ final class StockCompiledPlanLowering {
     RowType inputType = (RowType) input.getOutputType();
     if (!RowDataArrowConverter.supports(inputType)
         || !ArrowRowTypeSupport.supportsFields(inputType, keys)) return stock;
-    if (buffered && Arrays.stream(keys)
-        .anyMatch(key -> containsRow(inputType.getTypeAt(key))
-            && !scalarOrRowKey(inputType.getTypeAt(key)))) return stock;
+    if (buffered
+        && Arrays.stream(keys)
+            .anyMatch(
+                key ->
+                    containsRow(inputType.getTypeAt(key))
+                        && !scalarOrRowKey(inputType.getTypeAt(key)))) return stock;
     Configuration config = new Configuration(planner.getTableConfig().getConfiguration());
     FlinkPlanCompat.persistedConfig(stock).toMap().forEach(config::setString);
     if (Boolean.parseBoolean(config.getString("execution.checkpointing.unaligned.enabled", "false"))
@@ -3211,7 +3229,9 @@ final class StockCompiledPlanLowering {
                     serializer, keyType, inputType, presenceOnly, rowtimeColumn, retention);
     int maximum = stockMaximum(original);
     var exchange =
-        (NativeColumnarExchangeExecNode) canonicalJoinInput(input, config, inputType, keys, true, false, rowKeys(inputType, keys));
+        (NativeColumnarExchangeExecNode)
+            canonicalJoinInput(
+                input, config, inputType, keys, true, false, rowKeys(inputType, keys));
     exchange.withStateMaxParallelism(maximum);
     var dedup =
         new NativeDeduplicateExecNode(
@@ -3413,8 +3433,9 @@ final class StockCompiledPlanLowering {
         new tech.streamfusion.state.StockFirstNStateContract(serializer, keyType, ttl.isEnabled());
     int maximum = stockMaximum(original);
     var exchange =
-        (NativeColumnarExchangeExecNode) canonicalJoinInput(input, config, inputType, keys, true,
-            false, rowKeys(inputType, keys));
+        (NativeColumnarExchangeExecNode)
+            canonicalJoinInput(
+                input, config, inputType, keys, true, false, rowKeys(inputType, keys));
     exchange.withStateMaxParallelism(maximum);
     var first =
         new NativeFirstNExecNode(
@@ -3497,8 +3518,7 @@ final class StockCompiledPlanLowering {
           || constant.getRankEnd() < constant.getRankStart()
           || (!retracting
               && ((!updating && constant.getRankStart() != 1)
-                  || constant.getRankEnd() > Integer.MAX_VALUE)))
-        return stock;
+                  || constant.getRankEnd() > Integer.MAX_VALUE))) return stock;
       offset = constant.getRankStart() - 1;
       limit = constant.getRankEnd();
     } else if (range instanceof org.apache.flink.table.runtime.operators.rank.VariableRankRange) {
@@ -3895,8 +3915,10 @@ final class StockCompiledPlanLowering {
   }
 
   private ExecNode<?> lowerSinkMaterializer(
-      StreamExecSink stock, JsonNode definition,
-      org.apache.flink.table.connector.ChangelogMode mode, Configuration config)
+      StreamExecSink stock,
+      JsonNode definition,
+      org.apache.flink.table.connector.ChangelogMode mode,
+      Configuration config)
       throws IOException {
     if (!nativeKeyedState
         || !NativeConfig.operatorEnabled("sinkMaterializer")
@@ -3908,34 +3930,44 @@ final class StockCompiledPlanLowering {
       return stock;
     var original = sinkMaterializer(stock);
     if (original == null
-        || !(original.getStateKeyType() instanceof org.apache.flink.table.runtime.typeutils.InternalTypeInfo)
-        || !(original.getOutputType() instanceof org.apache.flink.table.runtime.typeutils.InternalTypeInfo)
-        || !(original.getStateKeySelector() instanceof org.apache.flink.table.runtime.keyselector.RowDataKeySelector))
-      return stock;
-    var inputType = ((org.apache.flink.table.runtime.typeutils.InternalTypeInfo<?>)
-        original.getOutputType()).toRowType();
-    var materializerKeyType = ((org.apache.flink.table.runtime.typeutils.InternalTypeInfo<?>)
-        original.getStateKeyType()).toRowType();
+        || !(original.getStateKeyType()
+            instanceof org.apache.flink.table.runtime.typeutils.InternalTypeInfo)
+        || !(original.getOutputType()
+            instanceof org.apache.flink.table.runtime.typeutils.InternalTypeInfo)
+        || !(original.getStateKeySelector()
+            instanceof org.apache.flink.table.runtime.keyselector.RowDataKeySelector)) return stock;
+    var inputType =
+        ((org.apache.flink.table.runtime.typeutils.InternalTypeInfo<?>) original.getOutputType())
+            .toRowType();
+    var materializerKeyType =
+        ((org.apache.flink.table.runtime.typeutils.InternalTypeInfo<?>) original.getStateKeyType())
+            .toRowType();
     if (!RowDataArrowConverter.supports(inputType)
-        || materializerKeyType.getChildren().stream()
-            .anyMatch(type -> !scalarOrRowKey(type)))
+        || materializerKeyType.getChildren().stream().anyMatch(type -> !scalarOrRowKey(type)))
       return stock;
-    int[] upsertKeys = definition.path("inputUpsertKey").isArray()
-        ? reader.forType(int[].class).readValue(definition.path("inputUpsertKey")) : null;
+    int[] upsertKeys =
+        definition.path("inputUpsertKey").isArray()
+            ? reader.forType(int[].class).readValue(definition.path("inputUpsertKey"))
+            : null;
     if (upsertKeys != null
-        && (upsertKeys.length == 0 || Arrays.stream(upsertKeys)
-            .anyMatch(index -> index < 0 || index >= inputType.getFieldCount()
-                || !scalarOrRowKey(inputType.getTypeAt(index))))) return stock;
+        && (upsertKeys.length == 0
+            || Arrays.stream(upsertKeys)
+                .anyMatch(
+                    index ->
+                        index < 0
+                            || index >= inputType.getFieldCount()
+                            || !scalarOrRowKey(inputType.getTypeAt(index))))) return stock;
     var operator = ((SimpleOperatorFactory<?>) original.getOperatorFactory()).getOperator();
     String strategy;
     long ttl;
     var strategyConfig = new Configuration();
-    if (operator.getClass() == org.apache.flink.table.runtime.operators.sink.SinkUpsertMaterializer.class) {
+    if (operator.getClass()
+        == org.apache.flink.table.runtime.operators.sink.SinkUpsertMaterializer.class) {
       strategy = "LEGACY";
       if (!Arrays.equals(upsertKeys, (int[]) releasedField(operator, "inputUpsertKey")))
         return stock;
-      var retention = (org.apache.flink.api.common.state.StateTtlConfig)
-          releasedField(operator, "ttlConfig");
+      var retention =
+          (org.apache.flink.api.common.state.StateTtlConfig) releasedField(operator, "ttlConfig");
       ttl = retention.isEnabled() ? FlinkPlanCompat.ttlMillis(retention) : 0;
     } else {
       var parameters = releasedField(operator, "stateParameters");
@@ -3960,20 +3992,37 @@ final class StockCompiledPlanLowering {
       }
     }
     @SuppressWarnings("unchecked")
-    var keyInfo = (org.apache.flink.table.runtime.typeutils.InternalTypeInfo<RowData>)
-        original.getStateKeyType();
-    var contract = new tech.streamfusion.state.StockSinkMaterializerStateContract(
-        keyInfo.createSerializer(FlinkPlanCompat.serializerConfig(planner.getExecEnv().getConfig())),
-        keyInfo.toRowType(), inputType, upsertKeys,
-        tech.streamfusion.state.StockSinkMaterializerStateContract.Strategy.valueOf(strategy), ttl);
-    List<StateMetadata> metadata = definition.path("state").isArray()
-        ? Arrays.asList(reader.forType(StateMetadata[].class)
-            .<StateMetadata[]>readValue(definition.path("state"))) : null;
-    var runtime = new CanonicalSinkMaterializerRuntime(original, inputType,
-        stockMaximum(original), ttl, strategy, strategyConfig, contract);
-    var sink = new NativeCanonicalSinkExecNode(stock,
-        new ExecNodeContext(definition.path("type").asText()), mode, upsertKeys,
-        strategy, metadata, runtime);
+    var keyInfo =
+        (org.apache.flink.table.runtime.typeutils.InternalTypeInfo<RowData>)
+            original.getStateKeyType();
+    var contract =
+        new tech.streamfusion.state.StockSinkMaterializerStateContract(
+            keyInfo.createSerializer(
+                FlinkPlanCompat.serializerConfig(planner.getExecEnv().getConfig())),
+            keyInfo.toRowType(),
+            inputType,
+            upsertKeys,
+            tech.streamfusion.state.StockSinkMaterializerStateContract.Strategy.valueOf(strategy),
+            ttl);
+    List<StateMetadata> metadata =
+        definition.path("state").isArray()
+            ? Arrays.asList(
+                reader
+                    .forType(StateMetadata[].class)
+                    .<StateMetadata[]>readValue(definition.path("state")))
+            : null;
+    var runtime =
+        new CanonicalSinkMaterializerRuntime(
+            original, inputType, stockMaximum(original), ttl, strategy, strategyConfig, contract);
+    var sink =
+        new NativeCanonicalSinkExecNode(
+            stock,
+            new ExecNodeContext(definition.path("type").asText()),
+            mode,
+            upsertKeys,
+            strategy,
+            metadata,
+            runtime);
     connect(stock.getInputEdges().get(0).getSource(), sink);
     bindings.put(sink, new StockBinding(stock.getId(), stockUids.get(stock.getId()), null));
     return sink;
@@ -3987,7 +4036,8 @@ final class StockCompiledPlanLowering {
 
   private OneInputTransformation<?, ?> sinkMaterializer(StreamExecSink stock) {
     var originalNode = stockNodes.get(stock.getId());
-    var boundary = stockTransformations.get(originalNode.getInputEdges().get(0).getSource().getId());
+    var boundary =
+        stockTransformations.get(originalNode.getInputEdges().get(0).getSource().getId());
     var pending = new ArrayDeque<Transformation<?>>();
     pending.add(stockTransformations.get(stock.getId()));
     var visited = Collections.newSetFromMap(new IdentityHashMap<Transformation<?>, Boolean>());
@@ -3998,8 +4048,11 @@ final class StockCompiledPlanLowering {
       if (transformation instanceof OneInputTransformation) {
         var one = (OneInputTransformation<?, ?>) transformation;
         if (one.getOperatorFactory() instanceof SimpleOperatorFactory) {
-          String name = ((SimpleOperatorFactory<?>) one.getOperatorFactory())
-              .getOperator().getClass().getName();
+          String name =
+              ((SimpleOperatorFactory<?>) one.getOperatorFactory())
+                  .getOperator()
+                  .getClass()
+                  .getName();
           if (name.equals("org.apache.flink.table.runtime.operators.sink.SinkUpsertMaterializer")
               || name.equals(
                   "org.apache.flink.table.runtime.operators.sink.SinkUpsertMaterializerV2")) {
@@ -4701,8 +4754,9 @@ final class StockCompiledPlanLowering {
             var owner = sink.materializerTransformation();
             transformation = owner;
             contract = sink.materializerContract();
-            operator = (AbstractNativeStatefulOperator<?>)
-                ((SimpleOperatorFactory<?>) owner.getOperatorFactory()).getOperator();
+            operator =
+                (AbstractNativeStatefulOperator<?>)
+                    ((SimpleOperatorFactory<?>) owner.getOperatorFactory()).getOperator();
           } else {
             if (contract == null) return;
             transformation = ((ExecNodeBase<?>) node).getTransformation();

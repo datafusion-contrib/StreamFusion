@@ -99,8 +99,10 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
     this.eventRows = eventRows;
     this.precedingRows = precedingRows;
     this.cleanupEnabled = cleanupEnabled;
-    cleanupState = processingRows ? "ProcTimeBoundedRowsOverCleanupTime"
-        : eventRows ? "RowTimeBoundedRowsOverCleanupTime" : "cleanupTsState";
+    cleanupState =
+        processingRows
+            ? "ProcTimeBoundedRowsOverCleanupTime"
+            : eventRows ? "RowTimeBoundedRowsOverCleanupTime" : "cleanupTsState";
     this.keys = keys;
     this.keyType = keyType;
     this.inputType = inputType;
@@ -450,12 +452,15 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
       if (eventRows) {
         if (cleanupEnabled)
           StockOverCallbacks.export(
-              backend, handle, keyType,
+              backend,
+              handle,
+              keyType,
               (owner, kind, timestamp) -> {
                 if (kind == StockOverCallbacks.CLEANUP)
                   scalar(backend, cleanupState).update(timestamp);
                 else if (kind == StockOverCallbacks.PROCESSING)
-                  processing.add(new TimerHeapInternalTimer<>(timestamp, owner, VoidNamespace.INSTANCE));
+                  processing.add(
+                      new TimerHeapInternalTimer<>(timestamp, owner, VoidNamespace.INSTANCE));
                 else throw new IllegalArgumentException("Unexpected event ROWS callback");
               });
         return;

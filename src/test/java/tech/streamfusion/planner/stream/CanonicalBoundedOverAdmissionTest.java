@@ -82,8 +82,10 @@ class CanonicalBoundedOverAdmissionTest {
             .map(node -> ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator())
             .filter(NativeOverAggregateOperator.class::isInstance)
             .collect(java.util.stream.Collectors.toList());
-    boolean admitted = java.util.Set.of("unbounded", "event-cleanup", "integer-value",
-        "integer-key", "composite-key").contains(mode);
+    boolean admitted =
+        java.util.Set.of(
+                "unbounded", "event-cleanup", "integer-value", "integer-key", "composite-key")
+            .contains(mode);
     if (admitted) {
       assertEquals(1, nativeOwners.size(), graph.getStreamingPlanAsJSON());
       assertInstanceOf(

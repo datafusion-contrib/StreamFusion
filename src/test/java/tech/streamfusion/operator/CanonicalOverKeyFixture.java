@@ -16,14 +16,29 @@ public final class CanonicalOverKeyFixture {
 
   public static Stream<String> types() {
     return Stream.of(
-        "TINYINT", "SMALLINT", "INT", "BIGINT", "BOOLEAN", "STRING", "CHAR(32)",
-        "DATE", "TIME(3)", "TIMESTAMP(3)", "TIMESTAMP_LTZ(3)", "DECIMAL(38,4)");
+        "TINYINT",
+        "SMALLINT",
+        "INT",
+        "BIGINT",
+        "BOOLEAN",
+        "STRING",
+        "CHAR(32)",
+        "DATE",
+        "TIME(3)",
+        "TIMESTAMP(3)",
+        "TIMESTAMP_LTZ(3)",
+        "DECIMAL(38,4)");
   }
 
   static Stream<Arguments> stores() {
-    return types().flatMap(type -> Stream.of(false, true)
-        .flatMap(composite -> Stream.of(false, true)
-            .map(rocks -> Arguments.of(type, composite, rocks))));
+    return types()
+        .flatMap(
+            type ->
+                Stream.of(false, true)
+                    .flatMap(
+                        composite ->
+                            Stream.of(false, true)
+                                .map(rocks -> Arguments.of(type, composite, rocks))));
   }
 
   static void set(GenericRowData row, RowType input, Long key) {
@@ -57,7 +72,9 @@ public final class CanonicalOverKeyFixture {
       case DECIMAL:
         var decimal = (DecimalType) type;
         return DecimalData.fromBigDecimal(
-            BigDecimal.valueOf(key, decimal.getScale()), decimal.getPrecision(), decimal.getScale());
+            BigDecimal.valueOf(key, decimal.getScale()),
+            decimal.getPrecision(),
+            decimal.getScale());
       default:
         throw new AssertionError(type);
     }

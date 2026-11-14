@@ -58,7 +58,8 @@ public class NativeColumnarDeduplicateOperator extends AbstractNativeStatefulOpe
 
   private long withInputSchema(java.util.function.LongUnaryOperator action) {
     return binaryRowKeys
-        ? withRowSchema(tech.streamfusion.arrow.ArrowConversion.toBinaryRowKeySchema(rowType), action)
+        ? withRowSchema(
+            tech.streamfusion.arrow.ArrowConversion.toBinaryRowKeySchema(rowType), action)
         : withRowSchema(rowType, action);
   }
 
@@ -71,8 +72,7 @@ public class NativeColumnarDeduplicateOperator extends AbstractNativeStatefulOpe
   // the typed RocksDB data plane.
   @Override
   protected boolean usesDirectRocksDBState() {
-    return withInputSchema(s -> Native.rocksdbKeepFirstDeduplicatorSupported(s) ? 1L : 0L)
-        != 0L;
+    return withInputSchema(s -> Native.rocksdbKeepFirstDeduplicatorSupported(s) ? 1L : 0L) != 0L;
   }
 
   @Override

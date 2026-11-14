@@ -356,8 +356,11 @@ public final class StockJoinStateContract implements StockStateContract {
           ArrowArray array = ArrowArray.allocateNew(NativeAllocator.SHARED);
           ArrowSchema schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
         Data.exportVectorSchemaRoot(
-            NativeAllocator.SHARED, tech.streamfusion.arrow.MapListRepresentation.forExport(root),
-            NativeAllocator.DICTIONARIES, array, schema);
+            NativeAllocator.SHARED,
+            tech.streamfusion.arrow.MapListRepresentation.forExport(root),
+            NativeAllocator.DICTIONARIES,
+            array,
+            schema);
         if (validateOnly)
           Native.validateUpdatingJoinCanonical(
               handle, persistent, left, array.memoryAddress(), schema.memoryAddress());

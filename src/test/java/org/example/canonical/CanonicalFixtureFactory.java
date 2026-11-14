@@ -472,7 +472,8 @@ public final class CanonicalFixtureFactory
               : InputStatus.NOTHING_AVAILABLE;
     }
 
-    private static Object scalar(org.apache.flink.table.types.logical.LogicalType type, String value) {
+    private static Object scalar(
+        org.apache.flink.table.types.logical.LogicalType type, String value) {
       if (value.equals("null")) return null;
       switch (type.getTypeRoot()) {
         case TINYINT:
@@ -747,7 +748,8 @@ public final class CanonicalFixtureFactory
     public void close() {}
   }
 
-  public static final class NestedRankChecksum extends org.apache.flink.table.functions.ScalarFunction {
+  public static final class NestedRankChecksum
+      extends org.apache.flink.table.functions.ScalarFunction {
     public Long eval(
         @org.apache.flink.table.annotation.DataTypeHint(NestedJoinChecksum.TYPE)
             org.apache.flink.types.Row row,
@@ -756,7 +758,8 @@ public final class CanonicalFixtureFactory
     }
   }
 
-  public static final class NestedRowRankChecksum extends org.apache.flink.table.functions.ScalarFunction {
+  public static final class NestedRowRankChecksum
+      extends org.apache.flink.table.functions.ScalarFunction {
     public static final String TYPE = "ROW<a ARRAY<BIGINT>,r ROW<v BIGINT,s STRING>>";
 
     public Long eval(
@@ -797,7 +800,8 @@ public final class CanonicalFixtureFactory
       var map = (java.util.Map<String, Long>) row.getField(1);
       if (map != null)
         for (var entry : map.entrySet())
-          result += entry.getKey().hashCode() * 19L + (entry.getValue() == null ? -3 : entry.getValue());
+          result +=
+              entry.getKey().hashCode() * 19L + (entry.getValue() == null ? -3 : entry.getValue());
       var nested = (org.apache.flink.types.Row) row.getField(2);
       if (nested != null) {
         var value = (Long) nested.getField(0);
@@ -984,9 +988,11 @@ public final class CanonicalFixtureFactory
   public static List<byte[]> committedRecords(Path directory) throws IOException {
     List<byte[]> result = new ArrayList<>();
     try (var files = Files.list(directory)) {
-      for (Path file : files
-          .filter(path -> path.getFileName().toString().startsWith("transaction-"))
-          .sorted().collect(java.util.stream.Collectors.toList())) {
+      for (Path file :
+          files
+              .filter(path -> path.getFileName().toString().startsWith("transaction-"))
+              .sorted()
+              .collect(java.util.stream.Collectors.toList())) {
         WriterState state = new RowsSerializer().deserialize(1, Files.readAllBytes(file));
         result.addAll(state.rows);
       }

@@ -46,12 +46,17 @@ public final class CanonicalTestCompat {
   }
 
   public static org.apache.flink.streaming.api.functions.KeyedProcessFunction<
-      org.apache.flink.table.data.RowData, org.apache.flink.table.data.RowData,
-      org.apache.flink.table.data.RowData> bufferedDedup(
-          org.apache.flink.table.runtime.typeutils.InternalTypeInfo<org.apache.flink.table.data.RowData> type,
-          long retention, int timeColumn) {
-    return new org.apache.flink.table.runtime.operators.deduplicate.RowTimeDeduplicateKeepFirstRowFunction(
-        type, retention, timeColumn);
+          org.apache.flink.table.data.RowData,
+          org.apache.flink.table.data.RowData,
+          org.apache.flink.table.data.RowData>
+      bufferedDedup(
+          org.apache.flink.table.runtime.typeutils.InternalTypeInfo<
+                  org.apache.flink.table.data.RowData>
+              type,
+          long retention,
+          int timeColumn) {
+    return new org.apache.flink.table.runtime.operators.deduplicate
+        .RowTimeDeduplicateKeepFirstRowFunction(type, retention, timeColumn);
   }
 
   public static Object ticker(java.util.function.LongSupplier clock) {

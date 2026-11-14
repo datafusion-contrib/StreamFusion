@@ -13,19 +13,25 @@ import org.apache.flink.table.types.logical.*;
 import org.example.canonical.CanonicalFixtureFactory;
 
 public final class CanonicalNestedJoinFixture {
-  public static final RowType PAYLOAD = RowType.of(
-      new LogicalType[] {new ArrayType(new BigIntType()),
-          new MapType(new VarCharType(VarCharType.MAX_LENGTH), new BigIntType()),
-          RowType.of(new BigIntType(), new VarCharType(VarCharType.MAX_LENGTH))},
-      new String[] {"a", "m", "r"});
-  public static final RowType INPUT = RowType.of(
-      new LogicalType[] {new BigIntType(), new BigIntType(), PAYLOAD},
-      new String[] {"k", "v", "p"});
+  public static final RowType PAYLOAD =
+      RowType.of(
+          new LogicalType[] {
+            new ArrayType(new BigIntType()),
+            new MapType(new VarCharType(VarCharType.MAX_LENGTH), new BigIntType()),
+            RowType.of(new BigIntType(), new VarCharType(VarCharType.MAX_LENGTH))
+          },
+          new String[] {"a", "m", "r"});
+  public static final RowType INPUT =
+      RowType.of(
+          new LogicalType[] {new BigIntType(), new BigIntType(), PAYLOAD},
+          new String[] {"k", "v", "p"});
 
   private CanonicalNestedJoinFixture() {}
 
   public static String columns(boolean primaryKey) {
-    return "k BIGINT" + (primaryKey ? " NOT NULL" : "") + ",v BIGINT,p "
+    return "k BIGINT"
+        + (primaryKey ? " NOT NULL" : "")
+        + ",v BIGINT,p "
         + CanonicalFixtureFactory.NestedJoinChecksum.TYPE
         + ",rt AS TO_TIMESTAMP_LTZ(v,3),WATERMARK FOR rt AS rt - INTERVAL '1' DAY"
         + (primaryKey ? ",PRIMARY KEY(k) NOT ENFORCED" : "");
@@ -45,24 +51,34 @@ public final class CanonicalNestedJoinFixture {
       right = "right_input_table FOR SYSTEM_TIME AS OF l.rt AS r";
     }
     return "INSERT INTO output_table SELECT l.k,l.v,nested_checksum(l.p,r.p) FROM "
-        + left + " JOIN " + right + " ON " + condition;
+        + left
+        + " JOIN "
+        + right
+        + " ON "
+        + condition;
   }
 
   public static Path prepare(Path root, String family, boolean rescale) throws Exception {
     Files.createDirectories(root);
     Files.writeString(root.resolve("input-columns.sql"), columns(false));
-    Files.writeString(root.resolve("right_input_table-columns.sql"),
-        columns(family.equals("TemporalJoin")));
+    Files.writeString(
+        root.resolve("right_input_table-columns.sql"), columns(family.equals("TemporalJoin")));
     Files.writeString(root.resolve("query.sql"), query(family));
     Files.createFile(root.resolve("insert-only"));
     Files.createFile(root.resolve("nested-join-checksum"));
     Files.createFile(root.resolve("wait-native-input"));
-    Files.writeString(root.resolve("required-plan-node"), "stream-exec-"
-        + (family.equals("UpdatingJoin") ? "join"
-            : family.equals("IntervalJoin") ? "interval-join"
-                : family.equals("TemporalJoin") ? "temporal-join" : "window-join"));
-    Files.writeString(root.resolve("native-operator"),
-        "Native" + (family.equals("UpdatingJoin") ? "ColumnarUpdatingJoin" : family)
+    Files.writeString(
+        root.resolve("required-plan-node"),
+        "stream-exec-"
+            + (family.equals("UpdatingJoin")
+                ? "join"
+                : family.equals("IntervalJoin")
+                    ? "interval-join"
+                    : family.equals("TemporalJoin") ? "temporal-join" : "window-join"));
+    Files.writeString(
+        root.resolve("native-operator"),
+        "Native"
+            + (family.equals("UpdatingJoin") ? "ColumnarUpdatingJoin" : family)
             + ",RowDataToArrow,ArrowToRowData");
     Files.writeString(root.resolve("native-input-families"), family);
     var left = new ArrayList<String>();
@@ -74,10 +90,24 @@ public final class CanonicalNestedJoinFixture {
           right.add((key + 1) + "," + (round * 1000 + 90 + key));
         }
     } else {
-      left.addAll(List.of("1,110", "1,110", "2,130", "null,140", "3,1150", "2,1250",
-          "9,2400", "1,2500", "2,3100", "5,3200", "null,3300", "1,3400"));
-      right.addAll(List.of("1,100", "1,110", "4,120", "2,125", "3,1100", "2,1250",
-          "9,2400", "1,2600", "2,3000", "6,3200", "1,3350", "1,3450"));
+      left.addAll(
+          List.of(
+              "1,110",
+              "1,110",
+              "2,130",
+              "null,140",
+              "3,1150",
+              "2,1250",
+              "9,2400",
+              "1,2500",
+              "2,3100",
+              "5,3200",
+              "null,3300",
+              "1,3400"));
+      right.addAll(
+          List.of(
+              "1,100", "1,110", "4,120", "2,125", "3,1100", "2,1250", "9,2400", "1,2600", "2,3000",
+              "6,3200", "1,3350", "1,3450"));
     }
     write(root, "input", left);
     write(root, "right-input", right);
@@ -127,7 +157,8 @@ public final class CanonicalNestedJoinFixture {
           if (rv <= value) latest = Math.max(latest, rv);
         } else if (family.equals("UpdatingJoin")
             || family.equals("IntervalJoin") && Math.abs(value - rv) <= 1000
-            || family.equals("WindowJoin") && Math.floorDiv(value, 3000) == Math.floorDiv(rv, 3000)) {
+            || family.equals("WindowJoin")
+                && Math.floorDiv(value, 3000) == Math.floorDiv(rv, 3000)) {
           expected.add(result(left[0], value, rv));
         }
       }

@@ -9,7 +9,8 @@ class CanonicalRetractingMiniBatchDistinctJobTest extends CanonicalRetractingMin
   @Override
   Path prepare(String name, String mode, boolean ordinary) throws Exception {
     var root = super.prepare(name, mode, ordinary);
-    Files.writeString(root.resolve("query.sql"),
+    Files.writeString(
+        root.resolve("query.sql"),
         "INSERT INTO output_table SELECT k,COUNT(DISTINCT v),SUM(v) FROM input_table GROUP BY k");
     return root;
   }

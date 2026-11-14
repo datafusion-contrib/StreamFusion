@@ -19,12 +19,25 @@ final class NativeCanonicalSinkExecNode extends StreamExecSink implements Canoni
   private final CanonicalSinkMaterializerRuntime runtime;
 
   NativeCanonicalSinkExecNode(
-      StreamExecSink stock, ExecNodeContext context, ChangelogMode changelog,
-      int[] upsertKeys, String strategy, List<StateMetadata> metadata,
+      StreamExecSink stock,
+      ExecNodeContext context,
+      ChangelogMode changelog,
+      int[] upsertKeys,
+      String strategy,
+      List<StateMetadata> metadata,
       CanonicalSinkMaterializerRuntime runtime) {
-    super(stock.getId(), context, stock.getPersistedConfig(), stock.getTableSinkSpec(), changelog,
-        true, metadata, upsertKeys, stock.getInputProperties(),
-        stock.getOutputType(), stock.getDescription());
+    super(
+        stock.getId(),
+        context,
+        stock.getPersistedConfig(),
+        stock.getTableSinkSpec(),
+        changelog,
+        true,
+        metadata,
+        upsertKeys,
+        stock.getInputProperties(),
+        stock.getOutputType(),
+        stock.getDescription());
     this.runtime = runtime;
     setCompiled(true);
   }
@@ -32,9 +45,12 @@ final class NativeCanonicalSinkExecNode extends StreamExecSink implements Canoni
   @Override
   protected TransformationMetadata createTransformationMeta(String name, ExecNodeConfig config) {
     return config.shouldSetUid()
-        ? new TransformationMetadata(createTransformationUid(name, config),
-            createTransformationName(config), createTransformationDescription(config))
-        : new TransformationMetadata(createTransformationName(config), createTransformationDescription(config));
+        ? new TransformationMetadata(
+            createTransformationUid(name, config),
+            createTransformationName(config),
+            createTransformationDescription(config))
+        : new TransformationMetadata(
+            createTransformationName(config), createTransformationDescription(config));
   }
 
   @Override
@@ -49,9 +65,15 @@ final class NativeCanonicalSinkExecNode extends StreamExecSink implements Canoni
 
   @Override
   protected Transformation<RowData> applyUpsertMaterialize(
-      Transformation<RowData> input, int[] keys, int parallelism, ExecNodeConfig config,
-      ClassLoader loader, RowType type, int[] upsertKeys) {
-    return runtime.apply(input, keys, parallelism, config, type, upsertKeys, sinkParallelismConfigured);
+      Transformation<RowData> input,
+      int[] keys,
+      int parallelism,
+      ExecNodeConfig config,
+      ClassLoader loader,
+      RowType type,
+      int[] upsertKeys) {
+    return runtime.apply(
+        input, keys, parallelism, config, type, upsertKeys, sinkParallelismConfigured);
   }
 
   @Override

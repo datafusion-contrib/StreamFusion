@@ -21,8 +21,20 @@ public final class StockOverEventRowsStateContract extends StockBoundedOverState
       RowType constants,
       byte[] constantBytes,
       long precedingRows) {
-    this(keys, keyType, inputType, accumulatorType, keyColumns, timeColumn, kinds, widths,
-        hiddenCount, constants, constantBytes, precedingRows, false);
+    this(
+        keys,
+        keyType,
+        inputType,
+        accumulatorType,
+        keyColumns,
+        timeColumn,
+        kinds,
+        widths,
+        hiddenCount,
+        constants,
+        constantBytes,
+        precedingRows,
+        false);
   }
 
   public StockOverEventRowsStateContract(

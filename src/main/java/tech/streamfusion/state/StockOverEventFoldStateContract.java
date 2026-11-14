@@ -74,8 +74,17 @@ public final class StockOverEventFoldStateContract implements StockStateContract
       byte[] constantBytes,
       boolean cleanupEnabled) {
     this(
-        keys, keyType, inputType, accumulatorType, keyColumns, timeColumn, kinds, widths,
-        constants, constantBytes, cleanupEnabled,
+        keys,
+        keyType,
+        inputType,
+        accumulatorType,
+        keyColumns,
+        timeColumn,
+        kinds,
+        widths,
+        constants,
+        constantBytes,
+        cleanupEnabled,
         tech.streamfusion.compat.FlinkPlanCompat.unboundedOverVersion());
   }
 
@@ -93,7 +102,8 @@ public final class StockOverEventFoldStateContract implements StockStateContract
       boolean cleanupEnabled,
       int version) {
     if (!tech.streamfusion.compat.FlinkPlanCompat.supportsUnboundedOverVersion(version))
-      throw new IllegalArgumentException("Unsupported event-time unbounded OVER version: " + version);
+      throw new IllegalArgumentException(
+          "Unsupported event-time unbounded OVER version: " + version);
     pollingTimers = version == 1;
     folds = new StockOverFoldStateContract(keys, keyType, accumulatorType, kinds, widths, false);
     this.keyType = keyType;

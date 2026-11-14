@@ -162,8 +162,8 @@ public class NativeDeduplicateExecNode extends ExecNodeBase<ArrowBatch>
                 stateTtlMillis,
                 maxParallelism);
     if (stockBufferedState
-        && java.util.Arrays.stream(partitionColumns).anyMatch(column -> containsRow(
-            ((RowType) getOutputType()).getTypeAt(column))))
+        && java.util.Arrays.stream(partitionColumns)
+            .anyMatch(column -> containsRow(((RowType) getOutputType()).getTypeAt(column))))
       ((NativeColumnarDeduplicateOperator) operator).withBinaryRowKeys();
     OneInputTransformation<ArrowBatch, ArrowBatch> transformation =
         ExecNodeUtil.createOneInputTransformation(

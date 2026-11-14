@@ -27,7 +27,16 @@ class CanonicalBoundedOverPlanTest {
     return Stream.of("processing-rows", "event-rows", "event-range")
         .flatMap(
             mode ->
-                Stream.of("TINYINT", "SMALLINT", "INT", "BIGINT", "FLOAT", "DOUBLE", "DECIMAL(18,2)", "DECIMAL(38,2)", "DECIMAL(38,20)")
+                Stream.of(
+                        "TINYINT",
+                        "SMALLINT",
+                        "INT",
+                        "BIGINT",
+                        "FLOAT",
+                        "DOUBLE",
+                        "DECIMAL(18,2)",
+                        "DECIMAL(38,2)",
+                        "DECIMAL(38,20)")
                     .flatMap(
                         type ->
                             Stream.of(false, true)
@@ -101,7 +110,15 @@ class CanonicalBoundedOverPlanTest {
       boolean starAndLiteral,
       boolean proctimePayload)
       throws Exception {
-    assertPlan(mode, type, keyless, compiled, uids, ttl, starAndLiteral, proctimePayload,
+    assertPlan(
+        mode,
+        type,
+        keyless,
+        compiled,
+        uids,
+        ttl,
+        starAndLiteral,
+        proctimePayload,
         tech.streamfusion.compat.FlinkPlanCompat.unboundedOverVersion());
   }
 
@@ -116,8 +133,18 @@ class CanonicalBoundedOverPlanTest {
       boolean proctimePayload,
       int version)
       throws Exception {
-    assertPlan(mode, type, keyless, compiled, uids, ttl, starAndLiteral, proctimePayload,
-        version, "BIGINT", false);
+    assertPlan(
+        mode,
+        type,
+        keyless,
+        compiled,
+        uids,
+        ttl,
+        starAndLiteral,
+        proctimePayload,
+        version,
+        "BIGINT",
+        false);
   }
 
   void assertPlan(
@@ -142,13 +169,17 @@ class CanonicalBoundedOverPlanTest {
     config.setString("table.exec.unbounded-over.version", Integer.toString(version));
     var table = NativePlannerTestEnvironment.create(config);
     table.executeSql(
-        "CREATE TABLE over_input(k " + keyType + ",v "
+        "CREATE TABLE over_input(k "
+            + keyType
+            + ",v "
             + type
             + (composite ? ",k2 BIGINT" : "")
             + ",rt TIMESTAMP(3),pt AS PROCTIME(),WATERMARK FOR rt AS rt) WITH"
             + " ('connector'='datagen')");
     table.executeSql(
-        "CREATE TABLE over_output(k " + keyType + ",v "
+        "CREATE TABLE over_output(k "
+            + keyType
+            + ",v "
             + type
             + ",rt TIMESTAMP(3),s "
             + type

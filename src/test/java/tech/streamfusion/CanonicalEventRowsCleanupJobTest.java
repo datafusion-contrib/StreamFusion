@@ -17,7 +17,10 @@ class CanonicalEventRowsCleanupJobTest extends CanonicalBoundedOverJobTest {
   private static Stream<Arguments> cases(boolean recovery) {
     return CanonicalGroupArithmeticJobTest.cases()
         .filter(args -> recovery != args.get()[0].equals("continue"))
-        .map(args -> Arguments.of("event-rows", args.get()[0], args.get()[1], args.get()[2], args.get()[3]));
+        .map(
+            args ->
+                Arguments.of(
+                    "event-rows", args.get()[0], args.get()[1], args.get()[2], args.get()[3]));
   }
 
   @Override

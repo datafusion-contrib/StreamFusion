@@ -83,7 +83,8 @@ public final class CanonicalJobWorker {
             : 1;
     String fixedConnectorParallelism =
         Files.exists(root.resolve("rescale")) && !Files.exists(root.resolve("rescale-materializer"))
-            ? ",'parallelism'='1'" : "";
+            ? ",'parallelism'='1'"
+            : "";
     Configuration config = new Configuration();
     config.setString("execution.target", "local");
     config.setString("restart-strategy.type", "none");
@@ -186,9 +187,11 @@ public final class CanonicalJobWorker {
             .set("table.exec.state.ttl", Files.readString(root.resolve("state-ttl")).trim());
       }
       if (Files.exists(root.resolve("unbounded-over-version")))
-        table.getConfig().set(
-            "table.exec.unbounded-over.version",
-            Files.readString(root.resolve("unbounded-over-version")).trim());
+        table
+            .getConfig()
+            .set(
+                "table.exec.unbounded-over.version",
+                Files.readString(root.resolve("unbounded-over-version")).trim());
       boolean twoPhase = Files.exists(root.resolve("two-phase-mini-batch"));
       boolean miniBatch = twoPhase || Files.exists(root.resolve("one-phase-mini-batch"));
       table.getConfig().set("table.exec.mini-batch.enabled", Boolean.toString(miniBatch));
@@ -238,7 +241,8 @@ public final class CanonicalJobWorker {
         table.createTemporarySystemFunction(
             "nested_checksum", CanonicalFixtureFactory.NestedJoinChecksum.class);
       if (Files.exists(root.resolve("nested-rank-checksum")))
-        table.createTemporarySystemFunction("rank_checksum",
+        table.createTemporarySystemFunction(
+            "rank_checksum",
             Files.readString(root.resolve("nested-rank-checksum")).trim().equals("map")
                 ? CanonicalFixtureFactory.NestedRankChecksum.class
                 : CanonicalFixtureFactory.NestedRowRankChecksum.class);
@@ -253,13 +257,17 @@ public final class CanonicalJobWorker {
             rightReady,
             limit,
             fixedConnectorParallelism);
-      String outputColumns = Files.exists(root.resolve("output-columns.sql"))
-          ? Files.readString(root.resolve("output-columns.sql"))
-          : "k BIGINT, n BIGINT, total BIGINT"
-              + (sinkMaterializer || Files.exists(root.resolve("upsert-sink"))
-                  ? ",PRIMARY KEY(k) NOT ENFORCED" : "");
+      String outputColumns =
+          Files.exists(root.resolve("output-columns.sql"))
+              ? Files.readString(root.resolve("output-columns.sql"))
+              : "k BIGINT, n BIGINT, total BIGINT"
+                  + (sinkMaterializer || Files.exists(root.resolve("upsert-sink"))
+                      ? ",PRIMARY KEY(k) NOT ENFORCED"
+                      : "");
       table.executeSql(
-          "CREATE TABLE output_table (" + outputColumns + ") WITH ("
+          "CREATE TABLE output_table ("
+              + outputColumns
+              + ") WITH ("
               + "'connector'='canonical-fixture','output'='"
               + sql(root.resolve("committed"))
               + "','upsert'='"
@@ -353,8 +361,10 @@ public final class CanonicalJobWorker {
         }
         if (Files.exists(root.resolve("required-rank-strategy"))) {
           String expected = Files.readString(root.resolve("required-rank-strategy")).trim();
-          var nodes = new org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper()
-              .readTree(portablePlan).path("nodes");
+          var nodes =
+              new org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper()
+                  .readTree(portablePlan)
+                  .path("nodes");
           boolean matched = false;
           for (var node : nodes)
             if (node.path("type").asText().startsWith("stream-exec-rank_")) {

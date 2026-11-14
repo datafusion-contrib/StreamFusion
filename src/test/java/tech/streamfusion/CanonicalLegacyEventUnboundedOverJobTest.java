@@ -16,8 +16,10 @@ class CanonicalLegacyEventUnboundedOverJobTest extends CanonicalEventUnboundedOv
 
   private static Stream<Arguments> cases(boolean recovery) {
     return Stream.of("rows", "range")
-        .flatMap(frame -> Stream.of(false, true)
-            .flatMap(cleanup -> eventCases(frame, cleanup, false, recovery)));
+        .flatMap(
+            frame ->
+                Stream.of(false, true)
+                    .flatMap(cleanup -> eventCases(frame, cleanup, false, recovery)));
   }
 
   @Override

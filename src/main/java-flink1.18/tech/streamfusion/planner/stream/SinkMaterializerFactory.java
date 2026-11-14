@@ -8,8 +8,14 @@ final class SinkMaterializerFactory {
   private SinkMaterializerFactory() {}
 
   static NativeSinkMaterializer createCanonical(
-      RowType type, int[] keys, int[] precisions, int[] upsertKeys, long ttl, int groups,
-      String strategy, ReadableConfig config) {
+      RowType type,
+      int[] keys,
+      int[] precisions,
+      int[] upsertKeys,
+      long ttl,
+      int groups,
+      String strategy,
+      ReadableConfig config) {
     if (!strategy.equals("LEGACY"))
       throw new IllegalArgumentException("Flink 1.18 has no V2 sink materializer");
     return new NativeSinkMaterializer(keys, precisions, upsertKeys, ttl, groups);

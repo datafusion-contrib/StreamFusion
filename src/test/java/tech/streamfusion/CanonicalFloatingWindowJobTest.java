@@ -106,7 +106,7 @@ class CanonicalFloatingWindowJobTest {
                   ? "HOP(TABLE input_table,DESCRIPTOR(rt),INTERVAL '1' SECOND,INTERVAL '3' SECOND)"
                   : shape.equals("CUMULATE")
                       ? "CUMULATE(TABLE input_table,DESCRIPTOR(rt),INTERVAL '1' SECOND,INTERVAL '3'"
-                            + " SECOND)"
+                          + " SECOND)"
                       : "TUMBLE(TABLE input_table,DESCRIPTOR(rt),INTERVAL '3' SECOND)";
       source = "TABLE(" + assignment + ") GROUP BY k,window_start,window_end";
     }

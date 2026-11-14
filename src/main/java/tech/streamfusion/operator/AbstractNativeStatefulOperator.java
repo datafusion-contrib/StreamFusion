@@ -651,11 +651,7 @@ public abstract class AbstractNativeStatefulOperator<OUT>
   protected static long withRowSchema(
       org.apache.arrow.vector.types.pojo.Schema inputSchema, LongUnaryOperator call) {
     try (ArrowSchema schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
-      Data.exportSchema(
-          NativeAllocator.SHARED,
-          inputSchema,
-          NativeAllocator.DICTIONARIES,
-          schema);
+      Data.exportSchema(NativeAllocator.SHARED, inputSchema, NativeAllocator.DICTIONARIES, schema);
       return call.applyAsLong(schema.memoryAddress());
     }
   }

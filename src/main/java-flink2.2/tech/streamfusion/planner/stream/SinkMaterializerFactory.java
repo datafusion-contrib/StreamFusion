@@ -13,10 +13,23 @@ final class SinkMaterializerFactory {
   private SinkMaterializerFactory() {}
 
   static NativeSinkMaterializer createCanonical(
-      RowType type, int[] keys, int[] precisions, int[] upsertKeys, long ttl, int groups,
-      String strategy, ReadableConfig config) {
-    return create(type, keys, precisions, upsertKeys, ttl, groups,
-        SinkUpsertMaterializeStrategy.valueOf(strategy), config);
+      RowType type,
+      int[] keys,
+      int[] precisions,
+      int[] upsertKeys,
+      long ttl,
+      int groups,
+      String strategy,
+      ReadableConfig config) {
+    return create(
+        type,
+        keys,
+        precisions,
+        upsertKeys,
+        ttl,
+        groups,
+        SinkUpsertMaterializeStrategy.valueOf(strategy),
+        config);
   }
 
   static NativeSinkMaterializer create(

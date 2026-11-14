@@ -163,7 +163,8 @@ public final class NativeStreamPlanner extends StreamPlanner {
     if (StockCompiledPlanLowering.hasOrdinarySinkMaterializer(graph))
       return StockCompiledPlanLowering.hasUnqualifiedConnectorState(
               graph, getFlinkContext().getClassLoader())
-          ? graph : runtimeGraph(graph.stock);
+          ? graph
+          : runtimeGraph(graph.stock);
     if (!StockCompiledPlanLowering.containsNativeNodes(graph)) return runtimeGraph(graph.stock);
     if (StockCompiledPlanLowering.hasUnqualifiedConnectorState(
         graph, getFlinkContext().getClassLoader())) return graph;

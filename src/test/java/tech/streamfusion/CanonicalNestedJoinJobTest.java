@@ -22,12 +22,34 @@ class CanonicalNestedJoinJobTest {
   static Stream<Arguments> cases() {
     return CanonicalTestMatrix.select(
         Stream.of("UpdatingJoin", "IntervalJoin", "TemporalJoin", "WindowJoin")
-            .flatMap(family -> Stream.of(false, true)
-                .flatMap(nativeFirst -> Stream.of("hashmap", "rocksdb")
-                    .flatMap(backend -> Stream.of(false, true)
-                        .flatMap(compiled -> Stream.of("continuation", "no-input", "checkpoint", "rescale")
-                            .filter(mode -> !mode.equals("checkpoint") || nativeFirst)
-                            .map(mode -> Arguments.of(family, nativeFirst, backend, compiled, mode)))))));
+            .flatMap(
+                family ->
+                    Stream.of(false, true)
+                        .flatMap(
+                            nativeFirst ->
+                                Stream.of("hashmap", "rocksdb")
+                                    .flatMap(
+                                        backend ->
+                                            Stream.of(false, true)
+                                                .flatMap(
+                                                    compiled ->
+                                                        Stream.of(
+                                                                "continuation",
+                                                                "no-input",
+                                                                "checkpoint",
+                                                                "rescale")
+                                                            .filter(
+                                                                mode ->
+                                                                    !mode.equals("checkpoint")
+                                                                        || nativeFirst)
+                                                            .map(
+                                                                mode ->
+                                                                    Arguments.of(
+                                                                        family,
+                                                                        nativeFirst,
+                                                                        backend,
+                                                                        compiled,
+                                                                        mode)))))));
   }
 
   @ParameterizedTest
@@ -36,10 +58,12 @@ class CanonicalNestedJoinJobTest {
   void completeNestedPayloadsContinueInCleanStockWorkers(
       String family, boolean nativeFirst, String backend, boolean compiled, String mode)
       throws Exception {
-    var baseline = CanonicalNestedJoinFixture.prepare(
-        directory.resolve("baseline"), family, mode.equals("rescale"));
-    var switched = CanonicalNestedJoinFixture.prepare(
-        directory.resolve("switched"), family, mode.equals("rescale"));
+    var baseline =
+        CanonicalNestedJoinFixture.prepare(
+            directory.resolve("baseline"), family, mode.equals("rescale"));
+    var switched =
+        CanonicalNestedJoinFixture.prepare(
+            directory.resolve("switched"), family, mode.equals("rescale"));
     if (!compiled)
       for (var root : List.of(baseline, switched)) Files.createFile(root.resolve("ordinary-sql"));
     new CanonicalJobRunner(directory)

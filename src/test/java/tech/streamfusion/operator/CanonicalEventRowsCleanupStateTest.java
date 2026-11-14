@@ -25,31 +25,42 @@ class CanonicalEventRowsCleanupStateTest {
     var plan = new CanonicalBoundedRangeInteropTest.Plan("BIGINT", false, false, true, 2, 1000);
     OperatorSubtaskState saved = null;
     long allocated = NativeAllocator.SHARED.getAllocatedMemory();
-    try (var stock = plan.stock(rocks); var target = plan.nativeHarness(rocks)) {
+    try (var stock = plan.stock(rocks);
+        var target = plan.nativeHarness(rocks)) {
       stock.open();
       stock.setProcessingTime(100);
       var row = plan.row(1L, 7, 1000);
       plan.pushStock(stock, row);
       var backend = stock.getOperator().<org.apache.flink.table.data.RowData>getKeyedStateBackend();
-      var key = plan.selector.getKey(new org.apache.flink.table.runtime.typeutils.RowDataSerializer(
-          plan.input).toBinaryRow(row).copy());
+      var key =
+          plan.selector.getKey(
+              new org.apache.flink.table.runtime.typeutils.RowDataSerializer(plan.input)
+                  .toBinaryRow(row)
+                  .copy());
       backend.setCurrentKey(key);
-      var cleanup = backend.getPartitionedState(
-          org.apache.flink.runtime.state.VoidNamespace.INSTANCE,
-          org.apache.flink.runtime.state.VoidNamespaceSerializer.INSTANCE,
-          new org.apache.flink.api.common.state.ValueStateDescriptor<>(
-              "RowTimeBoundedRowsOverCleanupTime",
-              org.apache.flink.api.common.typeutils.base.LongSerializer.INSTANCE));
+      var cleanup =
+          backend.getPartitionedState(
+              org.apache.flink.runtime.state.VoidNamespace.INSTANCE,
+              org.apache.flink.runtime.state.VoidNamespaceSerializer.INSTANCE,
+              new org.apache.flink.api.common.state.ValueStateDescriptor<>(
+                  "RowTimeBoundedRowsOverCleanupTime",
+                  org.apache.flink.api.common.typeutils.base.LongSerializer.INSTANCE));
       if (mode.equals("missing-value")) cleanup.clear();
       else if (mode.equals("wrong-deadline")) cleanup.update(1601L);
       else {
-        var timers = ((org.apache.flink.runtime.state.CheckpointableKeyedStateBackend<org.apache.flink.table.data.RowData>) backend)
-            .create("_timer_state/processing_user-timers",
-                new org.apache.flink.streaming.api.operators.TimerSerializer<>(
-                    new org.apache.flink.table.runtime.typeutils.RowDataSerializer(plan.keyType),
-                    org.apache.flink.runtime.state.VoidNamespaceSerializer.INSTANCE));
-        timers.add(new org.apache.flink.streaming.api.operators.TimerHeapInternalTimer<>(
-            1601, key, org.apache.flink.runtime.state.VoidNamespace.INSTANCE));
+        var timers =
+            ((org.apache.flink.runtime.state.CheckpointableKeyedStateBackend<
+                        org.apache.flink.table.data.RowData>)
+                    backend)
+                .create(
+                    "_timer_state/processing_user-timers",
+                    new org.apache.flink.streaming.api.operators.TimerSerializer<>(
+                        new org.apache.flink.table.runtime.typeutils.RowDataSerializer(
+                            plan.keyType),
+                        org.apache.flink.runtime.state.VoidNamespaceSerializer.INSTANCE));
+        timers.add(
+            new org.apache.flink.streaming.api.operators.TimerHeapInternalTimer<>(
+                1601, key, org.apache.flink.runtime.state.VoidNamespace.INSTANCE));
       }
       saved = CanonicalBoundedRangeInteropTest.snapshot(stock);
       target.initializeState(saved);
@@ -75,7 +86,11 @@ class CanonicalEventRowsCleanupStateTest {
   @ParameterizedTest
   @MethodSource("cases")
   void pendingDeferralsLateOnlyOwnersAndExpiredCutoffsSurviveBothDirections(
-      String type, boolean keyless, boolean stockStore, boolean nativeStore, int phase,
+      String type,
+      boolean keyless,
+      boolean stockStore,
+      boolean nativeStore,
+      int phase,
       boolean checkpoint)
       throws Exception {
     var plan = new CanonicalBoundedRangeInteropTest.Plan(type, keyless, false, true, 2, 1000);
@@ -100,8 +115,10 @@ class CanonicalEventRowsCleanupStateTest {
         if (phase > 0) {
           reference.setProcessingTime(1800);
           source.setProcessingTime(1800);
-          assertArrayEquals(new long[] {3300}, Native.nextOverEventCleanup(
-              ((NativeOverAggregateOperator) source.getOperator()).handle));
+          assertArrayEquals(
+              new long[] {3300},
+              Native.nextOverEventCleanup(
+                  ((NativeOverAggregateOperator) source.getOperator()).handle));
         }
         if (phase > 1) {
           reference.processWatermark(new Watermark(40));
@@ -111,8 +128,10 @@ class CanonicalEventRowsCleanupStateTest {
         if (phase > 2) {
           reference.setProcessingTime(3300);
           source.setProcessingTime(3300);
-          assertArrayEquals(new long[0], Native.nextOverEventCleanup(
-              ((NativeOverAggregateOperator) source.getOperator()).handle));
+          assertArrayEquals(
+              new long[0],
+              Native.nextOverEventCleanup(
+                  ((NativeOverAggregateOperator) source.getOperator()).handle));
         }
         fromStock = CanonicalBoundedRangeInteropTest.snapshot(reference);
         if (checkpoint) {
@@ -156,7 +175,8 @@ class CanonicalEventRowsCleanupStateTest {
         returned.processWatermark(new Watermark(50));
         imported.processWatermark(new Watermark(50));
         expected = plan.stockOutput(reference);
-        assertFalse(expected.isEmpty(), "Expired cutoff must admit a later arrival at an earlier time");
+        assertFalse(
+            expected.isEmpty(), "Expired cutoff must admit a later arrival at an earlier time");
         assertEquals(expected, plan.stockOutput(returned));
         assertEquals(expected, plan.nativeOutput(imported));
       }

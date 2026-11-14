@@ -46,10 +46,15 @@ public final class CanonicalTestCompat {
   }
 
   public static org.apache.flink.streaming.api.functions.KeyedProcessFunction<
-      org.apache.flink.table.data.RowData, org.apache.flink.table.data.RowData,
-      org.apache.flink.table.data.RowData> bufferedDedup(
-          org.apache.flink.table.runtime.typeutils.InternalTypeInfo<org.apache.flink.table.data.RowData> type,
-          long retention, int timeColumn) {
+          org.apache.flink.table.data.RowData,
+          org.apache.flink.table.data.RowData,
+          org.apache.flink.table.data.RowData>
+      bufferedDedup(
+          org.apache.flink.table.runtime.typeutils.InternalTypeInfo<
+                  org.apache.flink.table.data.RowData>
+              type,
+          long retention,
+          int timeColumn) {
     throw new UnsupportedOperationException("Flink 1.18 uses eager event-time first-row state");
   }
 
