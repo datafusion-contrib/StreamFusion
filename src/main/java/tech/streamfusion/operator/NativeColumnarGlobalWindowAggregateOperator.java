@@ -21,6 +21,8 @@ import tech.streamfusion.state.RocksDBNativeStateSupport;
  */
 public class NativeColumnarGlobalWindowAggregateOperator extends NativeRowWindowOperatorCore
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
+  private static final long serialVersionUID = 8288312663607978645L;
+
 
   private final int[] keyTypes;
   private final boolean cumulative;

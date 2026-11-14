@@ -27,6 +27,26 @@ public final class ColumnarRecordMetrics {
     countRows(metrics.getIOMetricGroup().getNumRecordsOutCounter(), rows);
   }
 
+  /** Transfers a fresh output root, releasing it immediately if the receiver never claims it. */
+  static void emitOwned(
+      Output<StreamRecord<ArrowBatch>> output,
+      OperatorMetricGroup metrics,
+      org.apache.arrow.vector.VectorSchemaRoot root) {
+    ArrowBatch batch = null;
+    try {
+      batch = new ArrowBatch(root);
+      emit(output, metrics, batch);
+    } catch (RuntimeException | Error failure) {
+      try {
+        if (batch == null) root.close();
+        else batch.closeUnclaimed();
+      } catch (RuntimeException | Error cleanup) {
+        failure.addSuppressed(cleanup);
+      }
+      throw failure;
+    }
+  }
+
   /** Forwards an existing record while charging the logical rows carried by it. */
   public static <T> void forward(
       Output<StreamRecord<T>> output,

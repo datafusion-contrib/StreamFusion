@@ -27,6 +27,8 @@ import tech.streamfusion.operator.window.stream.FlinkWindowMetrics;
  * inserted by the planner at the island perimeter.
  */
 public abstract class NativeRowWindowOperatorCore extends NativeWindowOperatorCore<ArrowBatch> {
+  private static final long serialVersionUID = 1257052797006630588L;
+
 
 
   private final RowType outputType;
@@ -162,8 +164,8 @@ public abstract class NativeRowWindowOperatorCore extends NativeWindowOperatorCo
         fillTimestampNulls(out.getVector(base + 3), n);
       }
       out.setRowCount(n);
-      ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(out));
       emitted = true;
+      ColumnarRecordMetrics.emitOwned(output, getMetricGroup(), out);
     } finally {
       if (!emitted) out.close();
     }

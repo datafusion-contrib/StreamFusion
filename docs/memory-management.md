@@ -65,7 +65,10 @@ Stateful operators register reservations, native handles, predicate bindings and
 they acquire them in a task-thread resource scope. Cleanup releases dependent resources first
 and attempts every release, even if another release fails. Later failures are suppressed on the
 first exception. Canonical readers close before native state, and the host operator closes even
-after failed native teardown. Calc/filter bindings and partially initialized state use the same
+after failed native teardown. Fresh window output roots are released immediately if downstream emission fails before claiming
+them; roots already claimed downstream keep their transferred ownership. Runtime operator
+serialization identifiers remain frozen when bounded-output hooks are added.
+Calc/filter bindings and partially initialized state use the same
 ownership rule. These scopes are transient; they do not change deployed operator fields or state
 encodings. They do not dispose task-thread native handles from a concurrent cancellation callback.
 
