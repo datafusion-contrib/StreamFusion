@@ -3958,3 +3958,10 @@ raw sum with its independent count. Existing shared COUNT DISTINCT views continu
 own stock descriptors. New compact/wide-scale controls compare raw stock bytes, post-overflow
 continuation, native checkpoint recovery and full-job effects. Both released Flink lines remain
 awaiting qualification; decimal global partials and extrema are still outside this adapter.
+
+Local bundles with the stock projection descriptor and represented ROW keys now group by the
+stock binary key encoder. Optional owned-byte/string transport children no longer split one
+stock key into multiple local partials. Scalar and ordinary Arrow-row key paths retain their
+existing selection. A floating-sum regression mixes logical and owned ROW representations in
+single-row and whole-batch input, across repeated flushes; one stock key must keep one fold in
+arrival order. Execution of this new control remains deferred to the qualification window.

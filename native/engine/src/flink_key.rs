@@ -12,6 +12,24 @@ const DEFAULT_SEED: u32 = 42;
 const MAX_INLINE_BYTES: usize = 7;
 const STOCK_KEY_PROJECTION: i32 = i32::MIN;
 
+pub(crate) fn binary_row_payload(data_type: &DataType) -> bool {
+    let field = |field: &Field| {
+        field
+            .metadata()
+            .get("streamfusion.nested-row-binary")
+            .is_some_and(|value| value == "1")
+            || binary_row_payload(field.data_type())
+    };
+    match data_type {
+        DataType::Struct(fields) => fields.iter().any(|child| field(child)),
+        DataType::List(child)
+        | DataType::LargeList(child)
+        | DataType::FixedSizeList(child, _)
+        | DataType::Map(child, _) => field(child),
+        _ => false,
+    }
+}
+
 pub(crate) fn represented_string(data_type: &DataType) -> bool {
     matches!(data_type, DataType::Struct(fields)
         if (2..=3).contains(&fields.len())

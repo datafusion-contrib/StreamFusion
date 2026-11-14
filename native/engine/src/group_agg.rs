@@ -4662,7 +4662,7 @@ pub(crate) struct LocalGroupAggregator {
     cached_state_bytes: usize,
     key_converter: Option<RowConverter>,
     key_batches: Vec<RecordBatch>,
-    scalar_key_mode: Option<bool>,
+    key_mode: Option<LocalKeyMode>,
     key_types: Vec<DataType>,
     pub(crate) memory: OperatorMemory,
 }
@@ -4672,6 +4672,13 @@ struct LocalGroupEntry {
     states: Vec<GroupAggState>,
     key_batch: usize,
     key_row: usize,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LocalKeyMode {
+    Scalar,
+    ArrowRow,
+    FlinkBinary,
 }
 
 enum LocalGroupKey {
@@ -4839,7 +4846,7 @@ impl LocalGroupAggregator {
             cached_state_bytes: 0,
             key_converter: None,
             key_batches: Vec::new(),
-            scalar_key_mode: None,
+            key_mode: None,
             key_types: Vec::new(),
             memory: OperatorMemory::unaccounted(),
         }
@@ -5103,9 +5110,26 @@ impl LocalGroupAggregator {
         // Arrow-row amortizes key encoding across a real bundle. For a stream of single-row physical
         // batches, preserve the cheaper direct ScalarValue path. Pin the representation until flush
         // so later physical batches in the same logical bundle probe the same state map.
-        let scalar_key_mode = *self.scalar_key_mode.get_or_insert(n == 1);
-        let arrow_keys =
-            (!scalar_key_mode).then(|| encode_keys(&mut self.key_converter, &key_arrays, n));
+        // Optional ROW transport children must not split one stock binary key into several groups.
+        let key_mode = *self.key_mode.get_or_insert_with(|| {
+            if self.key_timestamp_precisions.first() == Some(&i32::MIN)
+                && key_arrays
+                    .iter()
+                    .any(|array| crate::flink_key::binary_row_payload(array.data_type()))
+            {
+                LocalKeyMode::FlinkBinary
+            } else if n == 1 {
+                LocalKeyMode::Scalar
+            } else {
+                LocalKeyMode::ArrowRow
+            }
+        });
+        let scalar_key_mode = key_mode == LocalKeyMode::Scalar;
+        let arrow_keys = (key_mode == LocalKeyMode::ArrowRow)
+            .then(|| encode_keys(&mut self.key_converter, &key_arrays, n));
+        let mut binary_keys = (key_mode == LocalKeyMode::FlinkBinary).then(|| {
+            BinaryRowBatchEncoder::new(batch, &self.key_columns, &self.key_timestamp_precisions)
+        });
         let mut group_hashes = (!self.ordered_view_groups.is_empty()
             || self.kinds.iter().any(|&kind| list_agg::is_merge(kind)))
         .then(|| {
@@ -5227,8 +5251,13 @@ impl LocalGroupAggregator {
                     .get_mut(&key)
                     .expect("scalar key present")
             } else {
-                let row_key = arrow_keys.as_ref().expect("arrow keys configured").row(row);
-                let key = row_key.as_ref();
+                let row_key;
+                let key = if let Some(encoder) = &mut binary_keys {
+                    encoder.encode(row)
+                } else {
+                    row_key = arrow_keys.as_ref().expect("arrow keys configured").row(row);
+                    row_key.as_ref()
+                };
                 if !self.states.contains_key(key) {
                     let init = self.new_states(append_only);
                     let owned = ByteKey::from(key);
@@ -5501,7 +5530,7 @@ impl LocalGroupAggregator {
         let states = std::mem::take(&mut self.states);
         let scalar_states = std::mem::take(&mut self.scalar_states);
         let key_batches = std::mem::take(&mut self.key_batches);
-        let scalar_key_mode = self.scalar_key_mode.take().unwrap_or(false);
+        let scalar_key_mode = self.key_mode.take() == Some(LocalKeyMode::Scalar);
         let mut fields = key_fields(&self.key_types);
         let mut columns: Vec<ArrayRef> = if scalar_key_mode {
             let keys: Vec<GroupKey> = order

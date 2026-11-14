@@ -2468,3 +2468,8 @@ Bounded decimal SUM uses the existing nullable decimal accumulator at creation s
 raw sum is NULL, while a previously initialized sum can retain zero after eviction. Raw-state
 controls distinguish those cases across all three admitted bounded time/frame modes and both
 stores. The schema stays unchanged; two-release execution remains deferred to qualification.
+
+For represented ROW keys, the stock local GROUP BY boundary uses binary-key equality before
+producing partials, so optional transport children do not split a stock group and reorder its
+floating fold. New mixed-representation/repeated-flush controls await local execution. This
+reuses the key encoder already used by the retained global state; no persisted format changes.

@@ -5,23 +5,7 @@ mod pending;
 use crate::*;
 use pending::PendingRows;
 
-fn binary_row_payload(data_type: &DataType) -> bool {
-    let field = |field: &Field| {
-        field
-            .metadata()
-            .get("streamfusion.nested-row-binary")
-            .is_some_and(|value| value == "1")
-            || binary_row_payload(field.data_type())
-    };
-    match data_type {
-        DataType::Struct(fields) => fields.iter().any(|child| field(child)),
-        DataType::List(child)
-        | DataType::LargeList(child)
-        | DataType::FixedSizeList(child, _)
-        | DataType::Map(child, _) => field(child),
-        _ => false,
-    }
-}
+use crate::flink_key::binary_row_payload;
 
 const INDEX_PENDING_THRESHOLD: usize = 1024;
 

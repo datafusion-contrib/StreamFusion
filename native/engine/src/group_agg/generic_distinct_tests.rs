@@ -3,6 +3,71 @@ use super::*;
 use arrow::array::Float64Array;
 use std::hash::{Hash, Hasher};
 
+#[test]
+fn local_bundles_group_generic_and_owned_row_representations_by_stock_bytes() {
+    use arrow::array::{BinaryArray, Int8Array, StructArray};
+    let mut encoded = vec![0u8; 16];
+    encoded[8..].copy_from_slice(&1i64.to_le_bytes());
+    let fields = vec![
+        Arc::new(Field::new("value", DataType::Int64, true)),
+        Arc::new(Field::new("owned", DataType::Binary, true).with_metadata(
+            std::collections::HashMap::from([(
+                "streamfusion.nested-row-binary".into(),
+                "1".into(),
+            )]),
+        )),
+        Arc::new(Field::new("kind", DataType::Int8, true).with_metadata(
+            std::collections::HashMap::from([("streamfusion.nested-row-kind".into(), "1".into())]),
+        )),
+    ];
+    let key = Arc::new(StructArray::new(
+        fields.into(),
+        vec![
+            Arc::new(Int64Array::from(vec![1; 3])),
+            Arc::new(BinaryArray::from(vec![
+                None,
+                Some(encoded.as_slice()),
+                None,
+            ])),
+            Arc::new(Int8Array::from(vec![0; 3])),
+        ],
+        None,
+    ));
+    let batch = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![
+            Field::new("key", key.data_type().clone(), true),
+            Field::new("value", DataType::Float64, false),
+        ])),
+        vec![key, Arc::new(Float64Array::from(vec![1e16, 1.0, -1e16]))],
+    )
+    .unwrap();
+    for single in [false, true] {
+        let mut owner =
+            LocalGroupAggregator::new(vec![0], vec![1], vec![1], vec![], vec![0], vec![])
+                .with_key_timestamp_precisions(vec![i32::MIN, -1, -1]);
+        for _ in 0..2 {
+            if single {
+                for row in 0..batch.num_rows() {
+                    owner.update(&batch.slice(row, 1)).unwrap();
+                }
+            } else {
+                owner.update(&batch).unwrap();
+            }
+            let partial = owner.try_flush().unwrap();
+            assert_eq!(
+                partial.num_rows(),
+                1,
+                "optional representation must not create another local key"
+            );
+            assert_eq!(
+                ScalarValue::try_from_array(partial.column(1), 0).unwrap(),
+                ScalarValue::Float64(Some(0.0)),
+                "all rows fold in the stock key's arrival order"
+            );
+        }
+    }
+}
+
 fn hash(value: &ValueKey) -> u64 {
     let mut hash = std::collections::hash_map::DefaultHasher::new();
     value.hash(&mut hash);
