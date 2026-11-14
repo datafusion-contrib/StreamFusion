@@ -247,3 +247,10 @@ kinds, padding, NULLs, bundles, native checkpoint recovery, no-input returns and
 These changes await testing on both release lines during the final six-hour window of #569;
 earlier scalar evidence does not qualify this extension. MAP-bearing keys remain outside the
 existing Arrow key-codec admission. Benchmarking remains deferred.
+
+Additional window-selection payload controls await qualification on Flink 1.18 and 2.2. They
+retain complete nested ROW/ARRAY/MAP values through stock import, no-input return and native
+checkpoint recovery before firing. Clean-worker jobs include continued input and rescaling,
+retain the payload with a user function, and compare committed effects against an independent
+window/payload oracle. This exercises existing execution and state codecs; no processing-time
+canonical window-selection contract or new input semantics is introduced.

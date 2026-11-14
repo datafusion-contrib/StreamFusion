@@ -906,3 +906,10 @@ Another 37 shared Flink 1.18.1 checks pass; they establish common compilation, p
 checkpoint and clock regressions, not 1.18 canonical interchange. Earlier cohorts overlap this
 proof and are not cumulative counts of state schemas. Broader qualification remains in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569); benchmarking stays deferred.
+
+Additional window-selection payload controls await qualification on Flink 1.18 and 2.2. They
+retain complete nested ROW/ARRAY/MAP values through stock import, no-input return and native
+checkpoint recovery before firing. Clean-worker jobs include continued input and rescaling,
+retain the payload with a user function, and compare committed effects against an independent
+window/payload oracle. This exercises existing execution and state codecs; no processing-time
+canonical window-selection contract or new input semantics is introduced.

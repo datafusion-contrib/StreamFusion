@@ -141,7 +141,7 @@ public final class CanonicalNestedJoinFixture {
     return "+I|" + key + "|" + left + "|" + (checksum(left) * 31 + checksum(right));
   }
 
-  private static long checksum(long value) {
+  public static long checksum(long value) {
     if (value % 11 == 0) return -7;
     long result = ((17 * 37 + value) * 37 - 1) * 37 - value;
     result += "λ".hashCode() * 19L + value + 7 + "empty".hashCode() * 19L - 3;

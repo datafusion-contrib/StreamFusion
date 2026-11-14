@@ -2408,3 +2408,14 @@ decided after the complete bundle. Canonical import/export uses the existing typ
 contract and does not change native checkpoint formats. New raw-state/checkpoint controls and
 clean-worker two-phase jobs await testing on both released lines. Retracting DISTINCT global
 views remain excluded; append DISTINCT and one-phase signed views retain their existing paths.
+
+## Window selection payload controls awaiting qualification
+
+New window-rank and window-deduplication controls exercise existing retained ROW/ARRAY/MAP
+payload codecs without changing their representation or admission. Component controls compare
+complete serialized output rows after stock import, an immediate no-input return, native
+checkpoint recovery and eventual window firing, across fixed window shapes and both stores.
+Clean-worker jobs keep the complete nested payload through a user function, compare committed
+effects and check an independent window-selection/payload checksum oracle for continuation,
+empty returns, recovery and rescaling. Both Flink release lines await the final testing window;
+these authored controls do not extend earlier passing evidence.
