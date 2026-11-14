@@ -75,6 +75,28 @@ they are not isolated component timings or a matched speedup comparison. The
 and link the independently verified, versioned archive of folded stacks and logs.
 Repeated handoffs remain a target for profiling after the complete matrix.
 
+Historical development logs and diagnostics are preserved in a separate
+[versioned evidence archive](https://github.com/jordepic/StreamFusion-contrib/releases/tag/benchmark-evidence-hudi-development-20261114-866620764).
+It contains 327 files across multiple source revisions, including interrupted or
+withdrawn timings and rejected candidates. Their presence does not qualify those
+runs or the current full matrix. The release manifest records every member's size
+and SHA-256; the archive and all members were independently downloaded and verified
+before removing local raw copies. Retrieve it without running the archived inputs:
+
+```bash
+gh release download benchmark-evidence-hudi-development-20261114-866620764 \
+  --repo jordepic/StreamFusion-contrib --dir target/hudi-development-evidence
+python3 - <<'PY'
+from pathlib import Path
+import hashlib, json
+root = Path('target/hudi-development-evidence')
+bundle = json.loads((root / 'manifest.json').read_text())['bundle']
+assert hashlib.sha256((root / bundle['path']).read_bytes()).hexdigest() == bundle['sha256']
+PY
+tar -xzf target/hudi-development-evidence/hudi-development-evidence.tar.gz \
+  -C target/hudi-development-evidence
+```
+
 The fixture is a COW table partitioned by `sf_partition`, populated once using
 stock Hudi with a single ordered input and checkpoints disabled during seeding.
 Measured jobs retain one-second checkpoints. Each event retains its original schema and timestamp; the storage
