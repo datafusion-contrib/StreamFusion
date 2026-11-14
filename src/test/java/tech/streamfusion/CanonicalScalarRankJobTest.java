@@ -29,6 +29,7 @@ class CanonicalScalarRankJobTest {
             .flatMap(
                 algorithm ->
                     Stream.of("DOUBLE", "DECIMAL(38,4)")
+                        .filter(type -> !algorithm.equals("retract") || !type.equals("DOUBLE"))
                         .flatMap(
                             type ->
                                 CanonicalGroupArithmeticJobTest.cases()

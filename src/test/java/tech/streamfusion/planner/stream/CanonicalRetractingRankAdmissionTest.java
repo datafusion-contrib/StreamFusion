@@ -18,14 +18,14 @@ import tech.streamfusion.operator.NativeColumnarTopNOperator;
 
 class CanonicalRetractingRankAdmissionTest {
   static Stream<Arguments> cases() {
-    return Stream.of("wide", "three-sort", "nullable-bound", "unaligned")
+    return Stream.of("wide", "float", "decimal", "three-sort", "nullable-bound", "unaligned")
         .flatMap(mode -> Stream.of(false, true).map(compiled -> Arguments.of(mode, compiled)));
   }
 
   @ParameterizedTest
   @MethodSource("cases")
-  void scalarWidthsAndSortArityBindWhileUnsupportedBoundsKeepStockState(String mode, boolean compiled)
-      throws Exception {
+  void scalarWidthsAndSortArityBindWhileUnsupportedBoundsKeepStockState(
+      String mode, boolean compiled) throws Exception {
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", "true");
     if (mode.equals("unaligned"))
@@ -42,7 +42,11 @@ class CanonicalRetractingRankAdmissionTest {
     table.useCatalog("fixture_catalog");
     table.executeSql(
         "CREATE TABLE input_table(k BIGINT,v "
-            + (mode.equals("wide") ? "DOUBLE" : "BIGINT")
+            + (mode.equals("wide")
+                ? "DOUBLE"
+                : mode.equals("float")
+                    ? "FLOAT"
+                    : mode.equals("decimal") ? "DECIMAL(38,4)" : "BIGINT")
             + ",b BIGINT) WITH"
             + " ('connector'='canonical-fixture','input'='unused.csv','ready'='unused.ready')");
     table.useCatalog("default_catalog");
@@ -62,8 +66,9 @@ class CanonicalRetractingRankAdmissionTest {
                 planner.loadPlan(PlanReference.fromJsonString(plan.asJsonString())))
             : CanonicalRegularJoinPlanTest.translate(planner, query);
     var graph = CanonicalRegularJoinPlanTest.graph(planner, table, transforms);
-    boolean admitted = mode.equals("wide") || mode.equals("three-sort");
-    assertEquals(admitted,
+    boolean admitted = mode.equals("decimal") || mode.equals("three-sort");
+    assertEquals(
+        admitted,
         graph.getStreamNodes().stream()
             .anyMatch(
                 node ->
@@ -71,7 +76,8 @@ class CanonicalRetractingRankAdmissionTest {
                         && ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator()
                             instanceof NativeColumnarTopNOperator),
         graph.getStreamingPlanAsJSON());
-    assertEquals(!admitted,
+    assertEquals(
+        !admitted,
         graph.getStreamNodes().stream()
             .anyMatch(
                 node -> {

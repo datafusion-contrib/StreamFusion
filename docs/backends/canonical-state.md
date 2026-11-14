@@ -2583,3 +2583,9 @@ recovery, planner and clean-stock continuation/rescale controls await both-relea
 Scalar sort fields retain their existing encoding; ROW sort fields, collection keys and ROW
 unique-key columns outside the partition key remain gated. Existing bound/TTL algorithm gates
 still apply. See the Top-N page for the exact pending scope and historical-layout limitation.
+
+The pending scalar-rank widening preserves the native retracting FLOAT/DOUBLE sort guard at
+planning time. Stock comparator ties and binary map-key equality require independent floating
+representations, so those sorts keep stock canonical owners. Floating payload/partition types
+remain eligible. Explicit both-release fallback controls replace unqualified positive sort
+cases; non-floating scalar and ROW-partition matrices remain pending qualification.

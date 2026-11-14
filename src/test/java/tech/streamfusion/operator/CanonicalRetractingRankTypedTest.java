@@ -53,7 +53,11 @@ class CanonicalRetractingRankTypedTest {
                     "row-key-nested",
                     "row-key-padded"),
                 Stream.concat(
-                    CanonicalRankScalarFixture.shapes(), CanonicalRankPayloadFixture.shapes(false)))
+                    CanonicalRankScalarFixture.shapes()
+                        .filter(
+                            shape ->
+                                !shape.equals("scalar-float") && !shape.equals("scalar-double")),
+                    CanonicalRankPayloadFixture.shapes(false)))
             .collect(java.util.stream.Collectors.toList()))
       for (String mode :
           List.of("fixed", "offset", "variable", "fixed-ttl", "offset-ttl", "variable-ttl"))

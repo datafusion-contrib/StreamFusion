@@ -497,6 +497,14 @@ additionally retains MAP/MULTISET descendants in its tagged Arrow
 representation; updating inputs with map descendants keep the existing retraction fallback.
 Algorithm, TTL, bound, async/unaligned and processing-time-indicator gates stay independent.
 
+Retracting canonical sort keys retain the existing FLOAT/DOUBLE exclusion. The released sorted
+count map uses comparator ties while the independent row-list MapState uses binary key equality;
+signed zero and NaN therefore require separate key representations. Java admission now preserves
+the native state-mode guard at planning time, instead of accepting a plan that native initialization
+would reject. Floating retained payloads and scalar partition keys remain eligible. New explicit
+both-line planner controls pin this fallback; decimal and wider non-floating sorts remain in the
+positive continuation matrix. These controls await local execution.
+
 The new planner and component matrices include compact/wide decimals, timestamp precision nine,
 binary/interval carriers, signed-zero/NaN sort values, three-field sorting and nested payloads.
 Nested operator controls cover all three algorithms, with append-only MAP payloads. New
