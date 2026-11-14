@@ -265,8 +265,7 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
       RocksDBNativeStateSupport rocksdb, byte[][] restoredPartitions) {
     long now = getProcessingTimeService().getCurrentProcessingTime();
     if (updateFast()) {
-      return withMapListSchema(
-          rowType,
+      return withInputSchema(
           schemaAddress ->
               Native.createRocksDBUpdateFastTopNRanker(
                   partitionColumns,
@@ -296,8 +295,7 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
                   rocksdb.aligned(),
                   restoredPartitions));
     }
-    return withMapListSchema(
-        rowType,
+    return withInputSchema(
         schemaAddress ->
             Native.createRocksDBTopNRanker(
                 partitionColumns,
@@ -326,6 +324,16 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
                 rocksdb.keyGroupEnd(),
                 rocksdb.aligned(),
                 restoredPartitions));
+  }
+
+  private long withInputSchema(java.util.function.LongUnaryOperator action) {
+    return hasStockStateContract()
+        ? withRowSchema(
+            tech.streamfusion.arrow.MapListRepresentation.forIpc(
+                tech.streamfusion.arrow.ArrowConversion.toBinaryRowKeySchema(
+                    rowType, partitionColumns)),
+            action)
+        : withMapListSchema(rowType, action);
   }
 
   @Override

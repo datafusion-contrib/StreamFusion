@@ -56,7 +56,7 @@ final class StockRowBatch {
     this(type, mapLists, arrowSchema, (rows, array, schema) -> receiver.accept(array, schema));
   }
 
-  private StockRowBatch(
+  StockRowBatch(
       RowType type,
       boolean mapLists,
       org.apache.arrow.vector.types.pojo.Schema arrowSchema,

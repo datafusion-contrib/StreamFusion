@@ -2574,3 +2574,12 @@ representation. These combinations also have pending raw-state and clean-stock c
 Event/bounded ROW keys, collection descendants and DISTINCT/ROW combinations remain gated.
 This does not qualify historical native
 checkpoint upgrades with changed physical ROW transports.
+
+Value Top-N additionally has a pending selective ROW partition binding for append, retracting
+and updating algorithms. The original bytes are preserved only on partition ROW columns, and
+redundant transport caches normalize before retained payload encoding. Stock tuple/list/count
+serializers and native checkpoint fields remain unchanged. New raw-state, mixed-form, native
+recovery, planner and clean-stock continuation/rescale controls await both-release execution.
+Scalar sort fields retain their existing encoding; ROW sort fields, collection keys and ROW
+unique-key columns outside the partition key remain gated. Existing bound/TTL algorithm gates
+still apply. See the Top-N page for the exact pending scope and historical-layout limitation.

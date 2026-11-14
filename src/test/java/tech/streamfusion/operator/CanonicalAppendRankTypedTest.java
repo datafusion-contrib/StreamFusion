@@ -15,8 +15,6 @@ import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.streaming.util.KeyedOneInputStreamOperatorTestHarness;
 import org.apache.flink.table.data.*;
 import org.apache.flink.table.planner.plan.utils.KeySelectorUtil;
-import org.apache.flink.table.runtime.generated.GeneratedRecordComparator;
-import org.apache.flink.table.runtime.generated.RecordComparator;
 import org.apache.flink.table.runtime.keyselector.RowDataKeySelector;
 import org.apache.flink.table.runtime.operators.rank.*;
 import org.apache.flink.table.runtime.typeutils.InternalTypeInfo;
@@ -37,8 +35,11 @@ class CanonicalAppendRankTypedTest {
 
   private static Stream<Arguments> allCases() {
     return Stream.concat(
-            Stream.of("released", "released-nn", "long", "string", "collision", "composite"),
-            Stream.concat(CanonicalRankScalarFixture.shapes(), CanonicalRankPayloadFixture.shapes(true)))
+            Stream.concat(
+                Stream.of("released", "released-nn", "long", "string", "collision", "composite"),
+                CanonicalRankRowKeyFixture.shapes()),
+            Stream.concat(
+                CanonicalRankScalarFixture.shapes(), CanonicalRankPayloadFixture.shapes(true)))
         .flatMap(
             shape ->
                 Stream.of(false, true)
@@ -63,18 +64,25 @@ class CanonicalAppendRankTypedTest {
   void typedRetainedRowsSurviveBothCanonicalDirections(
       String shape, boolean fast, boolean rocks, boolean ttl, boolean rank) throws Exception {
     RowType type =
-        shape.startsWith("payload-")
-            ? RowType.of(new BigIntType(), new BigIntType(), CanonicalRankPayloadFixture.type(shape))
-            : shape.startsWith("scalar-")
-            ? RowType.of(CanonicalRankScalarFixture.type(shape),
-                CanonicalRankScalarFixture.type(shape), new BigIntType())
-            : shape.startsWith("released")
-            ? RowType.of(
-                new IntType(), new VarCharType(100), new IntType(!shape.equals("released-nn")))
-            : RowType.of(
-                shape.equals("long") ? new VarCharType(100) : new IntType(),
-                shape.equals("long") ? new BigIntType() : new VarCharType(100),
-                new VarCharType(100));
+        shape.startsWith("row-key")
+            ? RowType.of(CanonicalRankRowKeyFixture.type(shape), new BigIntType(), new BigIntType())
+            : shape.startsWith("payload-")
+                ? RowType.of(
+                    new BigIntType(), new BigIntType(), CanonicalRankPayloadFixture.type(shape))
+                : shape.startsWith("scalar-")
+                    ? RowType.of(
+                        CanonicalRankScalarFixture.type(shape),
+                        CanonicalRankScalarFixture.type(shape),
+                        new BigIntType())
+                    : shape.startsWith("released")
+                        ? RowType.of(
+                            new IntType(),
+                            new VarCharType(100),
+                            new IntType(!shape.equals("released-nn")))
+                        : RowType.of(
+                            shape.equals("long") ? new VarCharType(100) : new IntType(),
+                            shape.equals("long") ? new BigIntType() : new VarCharType(100),
+                            new VarCharType(100));
     if (shape.equals("collision"))
       type =
           RowType.of(
@@ -102,7 +110,8 @@ class CanonicalAppendRankTypedTest {
             new int[] {sort},
             fast,
             false,
-            ttl);
+            ttl,
+            key);
     try (var stock = stock(type, output, key, sort, retention, fast, rank, rocks);
         var nativeHarness =
             nativeHarness(type, key, sort, retention, fast, rank, rocks, contract)) {
@@ -122,6 +131,18 @@ class CanonicalAppendRankTypedTest {
       nativeHarness.open();
       assertEquals(
           rocks ? "rocksdb" : "memory", ((CanonicalRank) nativeHarness.getOperator()).storage());
+      if (shape.startsWith("row-key")) {
+        var saved = snapshot(nativeHarness);
+        try (var returned = stock(type, output, key, sort, retention, fast, rank, rocks)) {
+          returned.initializeState(saved);
+          returned.open();
+          assertEquals(
+              CanonicalUnboundedOverScalarTest.raw(stock),
+              CanonicalUnboundedOverScalarTest.raw(returned));
+        } finally {
+          saved.discardState();
+        }
+      }
       var suffix = List.of(row(shape, 1, 12, 6), row(shape, 2, 25, 7), row(shape, null, 35, 8));
       time(stock, 1800);
       feed(stock, type, suffix);
@@ -297,12 +318,21 @@ class CanonicalAppendRankTypedTest {
   }
 
   private static RowData row(String shape, Integer key, Integer score, int id) {
+    if (shape.startsWith("row-key"))
+      return GenericRowData.of(
+          CanonicalRankRowKeyFixture.key(shape, key, id),
+          score == null ? null : score.longValue(),
+          (long) id);
     if (shape.startsWith("payload-"))
-      return GenericRowData.of(key == null ? null : key.longValue(),
-          score == null ? null : score.longValue(), CanonicalRankPayloadFixture.value(shape, id));
+      return GenericRowData.of(
+          key == null ? null : key.longValue(),
+          score == null ? null : score.longValue(),
+          CanonicalRankPayloadFixture.value(shape, id));
     if (shape.startsWith("scalar-"))
-      return GenericRowData.of(CanonicalRankScalarFixture.value(shape, key),
-          CanonicalRankScalarFixture.score(shape, score), (long) id);
+      return GenericRowData.of(
+          CanonicalRankScalarFixture.value(shape, key),
+          CanonicalRankScalarFixture.score(shape, score),
+          (long) id);
     if (shape.equals("composite"))
       return GenericRowData.of(
           (long) id,
@@ -341,11 +371,15 @@ class CanonicalAppendRankTypedTest {
       boolean rank,
       boolean rocks)
       throws Exception {
-    var comparator = org.apache.flink.table.planner.codegen.sort.ComparatorCodeGenerator.gen(
-        new Configuration(), CanonicalAppendRankTypedTest.class.getClassLoader(),
-        "CanonicalAppendTypedComparator", selector(type, sort).getProducedType().toRowType(),
-        org.apache.flink.table.planner.plan.nodes.exec.spec.SortSpec.builder()
-            .addField(0, true, false).build());
+    var comparator =
+        org.apache.flink.table.planner.codegen.sort.ComparatorCodeGenerator.gen(
+            new Configuration(),
+            CanonicalAppendRankTypedTest.class.getClassLoader(),
+            "CanonicalAppendTypedComparator",
+            selector(type, sort).getProducedType().toRowType(),
+            org.apache.flink.table.planner.plan.nodes.exec.spec.SortSpec.builder()
+                .addField(0, true, false)
+                .build());
     AbstractTopNFunction function =
         fast
             ? new FastTop1Function(
@@ -449,7 +483,10 @@ class CanonicalAppendRankTypedTest {
     time(harness, now);
     harness.processElement(
         new StreamRecord<>(
-            new ArrowBatch(RowDataArrowConverter.write(rows, type, NativeAllocator.SHARED))));
+            new ArrowBatch(
+                CanonicalRankRowKeyFixture.required(type)
+                    ? CanonicalRowKeyFixture.arrow(rows, type, new int[] {0})
+                    : RowDataArrowConverter.write(rows, type, NativeAllocator.SHARED))));
     harness.prepareSnapshotPreBarrier(0);
   }
 

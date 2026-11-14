@@ -402,8 +402,13 @@ final class StockCompiledPlanLowering {
   }
 
   private static boolean needsBinaryRowKeyTemplate(ExecNode<?> node) {
+    if (node instanceof NativeColumnarTopNExecNode)
+      return rowKeys(
+          (RowType) node.getInputEdges().get(0).getOutputType(),
+          ((NativeColumnarTopNExecNode) node).stateKeyColumns());
     if (node instanceof NativeFirstNExecNode)
-      return rowKeys((RowType) node.getInputEdges().get(0).getOutputType(),
+      return rowKeys(
+          (RowType) node.getInputEdges().get(0).getOutputType(),
           ((NativeFirstNExecNode) node).stateKeyColumns());
     if (node instanceof NativeColumnarGroupAggExecNode)
       return rowKeys((RowType) node.getOutputType(),
@@ -3478,12 +3483,16 @@ final class StockCompiledPlanLowering {
     RowType inputType = (RowType) input.getOutputType();
     if (sort.getFieldSize() < 1
         || inputType.getChildren().stream()
-            .anyMatch(
-                type ->
-                    !retracting && LogicalTypeChecks.isProctimeAttribute(type))
-        || !scalarFields(inputType, keys)
+            .anyMatch(type -> !retracting && LogicalTypeChecks.isProctimeAttribute(type))
+        || Arrays.stream(keys).anyMatch(key -> !scalarOrRowKey(inputType.getTypeAt(key)))
         || !scalarFields(inputType, sort.getFieldIndices())
-        || updating && !scalarFields(inputType, rowKeys)
+        || updating
+            && Arrays.stream(rowKeys)
+                .anyMatch(
+                    key ->
+                        !scalarFields(inputType, new int[] {key})
+                            && (Arrays.stream(keys).noneMatch(partitionKey -> partitionKey == key)
+                                || !scalarOrRowKey(inputType.getTypeAt(key))))
         || (updating || retracting)
             && tech.streamfusion.arrow.MapListRepresentation.containsMap(inputType)) return stock;
     if (java.util.stream.IntStream.concat(
@@ -3538,7 +3547,8 @@ final class StockCompiledPlanLowering {
               (org.apache.flink.table.runtime.operators.rank.ComparableRecordComparator)
                   releasedField(function, "serializableComparator"),
               bound >= 0,
-              ttl.isEnabled());
+              ttl.isEnabled(),
+              keys);
     } else if (updating) {
       if (!ArrowRowTypeSupport.supportsFields(inputType, rowKeys)) return stock;
       var rowKeySelector =
@@ -3551,7 +3561,15 @@ final class StockCompiledPlanLowering {
                   releasedField(function, "rowKeySelector");
       contract =
           new tech.streamfusion.state.StockUpdatingTopNStateContract(
-              serializer, selector, rowKeySelector, sortSelector, keyType, inputType, top1, bound >= 0);
+              serializer,
+              selector,
+              rowKeySelector,
+              sortSelector,
+              keyType,
+              inputType,
+              top1,
+              bound >= 0,
+              keys);
     } else {
       contract =
           new tech.streamfusion.state.StockAppendTopNStateContract(
@@ -3563,11 +3581,14 @@ final class StockCompiledPlanLowering {
               sort.getFieldIndices(),
               top1,
               bound >= 0,
-              ttl.isEnabled());
+              ttl.isEnabled(),
+              keys);
     }
     int maximum = stockMaximum(original);
     var exchange =
-        (NativeColumnarExchangeExecNode) canonicalJoinInput(input, config, inputType, keys, true);
+        (NativeColumnarExchangeExecNode)
+            canonicalJoinInput(
+                input, config, inputType, keys, true, false, rowKeys(inputType, keys), keys);
     exchange.withStateMaxParallelism(maximum);
     var rank =
         new NativeColumnarTopNExecNode(

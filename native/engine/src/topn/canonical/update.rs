@@ -202,6 +202,12 @@ impl<S: KeyedStateStore<UpdatableTopNPartition>> UpdatableTopNRanker<S> {
     }
 
     fn validate_only(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
+        let canonical = canonical_partition_input(
+            batch,
+            &self.partition_columns,
+            &self.key_timestamp_precisions,
+        )?;
+        let batch = canonical.as_ref().unwrap_or(batch);
         let result = self.validate_canonical(batch, false).map(|_| ());
         let cleanup = self.groups.end_bundle();
         let accounted = account_topn_state(&mut self.memory, &mut self.groups, 0, || 0);
@@ -209,6 +215,12 @@ impl<S: KeyedStateStore<UpdatableTopNPartition>> UpdatableTopNRanker<S> {
     }
 
     fn import_canonical(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
+        let canonical = canonical_partition_input(
+            batch,
+            &self.partition_columns,
+            &self.key_timestamp_precisions,
+        )?;
+        let batch = canonical.as_ref().unwrap_or(batch);
         let validated = self.validate_canonical(batch, true);
         if validated.is_err() {
             let cleanup = self.groups.end_bundle();

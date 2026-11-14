@@ -46,6 +46,7 @@ public final class StockAppendTopNStateContract implements StockStateContract {
   private final RowType sortType;
   private final RowType bridgeType;
   private final int[] sortColumns;
+  private final int[] partitionColumns;
   private final boolean top1;
   private final boolean variableBound;
   private final boolean ttl;
@@ -60,6 +61,31 @@ public final class StockAppendTopNStateContract implements StockStateContract {
       boolean top1,
       boolean variableBound,
       boolean ttl) {
+    this(
+        keys,
+        keySelector,
+        sortSelector,
+        keyType,
+        rowType,
+        sortColumns,
+        top1,
+        variableBound,
+        ttl,
+        new int[0]);
+  }
+
+  public StockAppendTopNStateContract(
+      TypeSerializer<RowData> keys,
+      RowDataKeySelector keySelector,
+      RowDataKeySelector sortSelector,
+      RowType keyType,
+      RowType rowType,
+      int[] sortColumns,
+      boolean top1,
+      boolean variableBound,
+      boolean ttl,
+      int[] partitionColumns) {
+    this.partitionColumns = partitionColumns.clone();
     this.keys = keys;
     this.keySelector = keySelector;
     this.sortSelector = sortSelector;
@@ -152,7 +178,8 @@ public final class StockAppendTopNStateContract implements StockStateContract {
             }) {
       Data.exportSchema(
           NativeAllocator.SHARED,
-          MapListRepresentation.forIpc(ArrowConversion.toArrowSchema(rowType)),
+          MapListRepresentation.forIpc(
+              ArrowConversion.toBinaryRowKeySchema(rowType, partitionColumns)),
           NativeAllocator.DICTIONARIES,
           rowSchema);
       Native.exportAppendTopNCanonical(
@@ -232,7 +259,8 @@ public final class StockAppendTopNStateContract implements StockStateContract {
             }) {
       Data.exportSchema(
           NativeAllocator.SHARED,
-          MapListRepresentation.forIpc(ArrowConversion.toArrowSchema(rowType)),
+          MapListRepresentation.forIpc(
+              ArrowConversion.toBinaryRowKeySchema(rowType, partitionColumns)),
           NativeAllocator.DICTIONARIES,
           schema);
       Native.exportAppendTopNCanonical(
@@ -290,6 +318,7 @@ public final class StockAppendTopNStateContract implements StockStateContract {
         new StockRowBatch(
             bridgeType,
             true,
+            ArrowConversion.toBinaryRowKeySchema(bridgeType, partitionColumns),
             (transferred, array, schema) ->
                 importBatch(handle, persistent, transferred, validateOnly, array, schema));
     var ownerType =

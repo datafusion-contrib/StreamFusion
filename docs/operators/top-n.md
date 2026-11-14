@@ -491,8 +491,9 @@ from canonical rank binding. Existing scalar Arrow carriers now retain their rel
 serializers across append, updating and retracting algorithms: narrow integers, floating values,
 BOOLEAN, CHAR/STRING, DECIMAL, DATE, TIME, timestamps, binary values and intervals. Multiple sort
 fields use the captured selectors/comparators without an artificial field-count cap. Retained
-ROW/ARRAY payloads also bind through the existing codecs while partition/sort/update keys remain
-scalar. Append-only rank additionally retains MAP/MULTISET descendants in its tagged Arrow
+ROW/ARRAY payloads also bind through the existing codecs. The initial partition/sort/update key
+matrix is scalar; the pending ROW partition extension is described below. Append-only rank
+additionally retains MAP/MULTISET descendants in its tagged Arrow
 representation; updating inputs with map descendants keep the existing retraction fallback.
 Algorithm, TTL, bound, async/unaligned and processing-time-indicator gates stay independent.
 
@@ -922,7 +923,8 @@ with TTL disabled and a signed-32-bit rank end. The existing native ranker retai
 prefix and the stock `data-state-with-update` tuple layout already includes those rows and their
 equal-sort positions. Export and import therefore use the same direct projection as start-one
 ranges; no new persisted state or replay path is introduced. AppendFast OFFSET keeps its separate
-admission gate, and variable updating bounds and TTL/cache ages remain unqualified.
+admission gate. The variable-bound extension is described below; updating TTL/cache ages remain
+unqualified.
 
 New controls cover exact stock changelogs with hidden/projected rank, both before-image policies,
 tied keys, nested retained rows, native checkpoint recovery, ordinary/portable SQL and complete-job
@@ -955,3 +957,24 @@ hidden/projected rank, original-age TTL and native recovery. Clean-worker ROW-ke
 ordinary/portable submission, both engine orders, empty returns and rescaling with a separate
 arrival-count oracle. These additions await Flink 1.18 and 2.2 qualification; no performance
 result is claimed.
+
+## Value Top-N ROW partition keys awaiting qualification
+
+AppendFast, Retract and UpdateFast canonical binding now admit ROW partition columns with
+scalar/ROW descendants. Only the partition ROW columns receive original-byte metadata; scalar
+sort fields and other retained fields keep their existing Arrow encodings. Live input, direct
+stock transfer and persistent initialization use the same selective schema. The native rankers
+normalize redundant nested transport caches before encoding retained payloads, so restored and
+live generic/binary keys compare consistently while original ROW bytes, padding and nested kinds
+remain authoritative. Stock descriptors/serializers and native checkpoint record fields are
+unchanged. UpdateFast unique keys may include a ROW column already in the partition key.
+
+New controls compare complete raw stock state after no-input returns, mixed live representations,
+TTL where already admitted, tied scalar sorts, constant/variable bounds, updating OFFSET and
+private native recovery. Native raw recovery controls use all three algorithms and 2,051 keys.
+Clean-stock full jobs cover both stores/orders, ordinary/portable submission, native checkpoints,
+empty states/returns and keyed rescaling with an independent rank oracle; updating jobs require
+native work in both the ROW-key aggregate and rank owners. These additions await Flink 1.18 and
+2.2 execution. ROW sort fields, collection-bearing keys and independent ROW unique-key columns
+remain gated, as do the existing AppendFast OFFSET and updating TTL cases. This work does not
+qualify upgrades from historical native checkpoints with a different ROW transport shape.

@@ -51,6 +51,10 @@ public class NativeColumnarTopNExecNode extends ExecNodeBase<ArrowBatch>
     return rowKeyColumns != null;
   }
 
+  public int[] stateKeyColumns() {
+    return partitionColumns.clone();
+  }
+
   public NativeColumnarTopNExecNode withStateMaxParallelism(int maximum) {
     if (maximum < 1)
       throw new IllegalArgumentException("State maximum parallelism must be positive");

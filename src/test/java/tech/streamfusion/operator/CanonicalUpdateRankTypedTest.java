@@ -45,7 +45,8 @@ class CanonicalUpdateRankTypedTest {
 
   static Stream<Arguments> offsetCases() {
     var cases = new ArrayList<Arguments>();
-    for (String shape : new String[] {"int", "composite", "three-sort", "payload-row"})
+    for (String shape :
+        new String[] {"int", "composite", "three-sort", "payload-row", "row-key-padded"})
       for (int offset : new int[] {1, 2})
         for (boolean rocks : new boolean[] {false, true})
           for (boolean before : new boolean[] {false, true})
@@ -83,7 +84,16 @@ class CanonicalUpdateRankTypedTest {
     for (String shape :
         Stream.concat(
                 Stream.of(
-                    "int", "string", "long", "not-null", "collision", "composite", "three-sort"),
+                    "int",
+                    "string",
+                    "long",
+                    "not-null",
+                    "collision",
+                    "composite",
+                    "three-sort",
+                    "row-key",
+                    "row-key-nested",
+                    "row-key-padded"),
                 Stream.concat(
                     CanonicalRankScalarFixture.shapes(), CanonicalRankPayloadFixture.shapes(false)))
             .collect(java.util.stream.Collectors.toList()))
@@ -136,6 +146,14 @@ class CanonicalUpdateRankTypedTest {
       nativeHarness.open();
       assertEquals(
           rocks ? "rocksdb" : "memory", ((CanonicalRank) nativeHarness.getOperator()).storage());
+      if (shape.startsWith("row-key"))
+        try (var returned = stock(layout, output, fast, rocks, before, rank, offset)) {
+          returned.initializeState(snapshot(nativeHarness));
+          returned.open();
+          assertEquals(
+              CanonicalUnboundedOverScalarTest.raw(stock),
+              CanonicalUnboundedOverScalarTest.raw(returned));
+        }
       var suffix =
           List.of(
               layout.update(1, 5, 4),
@@ -191,7 +209,14 @@ class CanonicalUpdateRankTypedTest {
     Layout(String shape, boolean twoSorts) {
       this.shape = shape;
       variable = shape.startsWith("bound-");
-      if (variable) {
+      if (shape.startsWith("row-key")) {
+        type =
+            RowType.of(
+                CanonicalRankRowKeyFixture.type(shape), new BigIntType(), new VarCharType(100));
+        keys = new int[] {0};
+        rowKeys = new int[] {0, 2};
+        sort = 1;
+      } else if (variable) {
         type =
             RowType.of(
                 new IntType(),
@@ -249,11 +274,18 @@ class CanonicalUpdateRankTypedTest {
       sortColumns =
           shape.equals("three-sort")
               ? new int[] {sort, 2, keys[0]}
-              : twoSorts ? new int[] {sort, keys[0]} : new int[] {sort};
+              : twoSorts
+                  ? new int[] {sort, shape.startsWith("row-key") ? 2 : keys[0]}
+                  : new int[] {sort};
     }
 
     RowData row(Integer key, Integer score, int id) {
       var label = StringData.fromString("row-😀-" + id);
+      if (shape.startsWith("row-key"))
+        return GenericRowData.of(
+            CanonicalRankRowKeyFixture.key(shape, key, id),
+            score == null ? null : score.longValue(),
+            label);
       if (shape.startsWith("payload-"))
         return GenericRowData.of(
             key == null ? null : key.longValue(),
@@ -373,7 +405,8 @@ class CanonicalUpdateRankTypedTest {
             keyType,
             layout.type,
             fast,
-            layout.variable);
+            layout.variable,
+            layout.keys);
     var operator = new CanonicalRank(layout, fast, before, rank, offset);
     operator.setStockStateContract(contract);
     var harness =
@@ -405,7 +438,10 @@ class CanonicalUpdateRankTypedTest {
       throws Exception {
     harness.processElement(
         new StreamRecord<>(
-            new ArrowBatch(RowDataArrowConverter.write(rows, type, NativeAllocator.SHARED, true))));
+            new ArrowBatch(
+                CanonicalRankRowKeyFixture.required(type)
+                    ? CanonicalRowKeyFixture.arrow(rows, type, new int[] {0})
+                    : RowDataArrowConverter.write(rows, type, NativeAllocator.SHARED, true))));
     harness.prepareSnapshotPreBarrier(0);
   }
 

@@ -51,6 +51,7 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
   private final RowDataKeySelector rowKeySelector;
   private final RowDataKeySelector sortSelector;
   private final boolean top1, variable;
+  private final int[] partitionColumns;
 
   public StockUpdatingTopNStateContract(
       TypeSerializer<RowData> keys,
@@ -72,6 +73,29 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
       RowType rowType,
       boolean top1,
       boolean variable) {
+    this(
+        keys,
+        keySelector,
+        rowKeySelector,
+        sortSelector,
+        keyType,
+        rowType,
+        top1,
+        variable,
+        new int[0]);
+  }
+
+  public StockUpdatingTopNStateContract(
+      TypeSerializer<RowData> keys,
+      RowDataKeySelector keySelector,
+      RowDataKeySelector rowKeySelector,
+      RowDataKeySelector sortSelector,
+      RowType keyType,
+      RowType rowType,
+      boolean top1,
+      boolean variable,
+      int[] partitionColumns) {
+    this.partitionColumns = partitionColumns.clone();
     if (top1 && variable)
       throw new IllegalArgumentException("Variable rank requires updating tuple state");
     this.variable = variable;
@@ -166,7 +190,8 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
             }) {
       Data.exportSchema(
           NativeAllocator.SHARED,
-          MapListRepresentation.forIpc(ArrowConversion.toArrowSchema(rowType)),
+          MapListRepresentation.forIpc(
+              ArrowConversion.toBinaryRowKeySchema(rowType, partitionColumns)),
           NativeAllocator.DICTIONARIES,
           rowSchema);
       Native.exportUpdatingTopNCanonical(
@@ -245,7 +270,8 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
             }) {
       Data.exportSchema(
           NativeAllocator.SHARED,
-          MapListRepresentation.forIpc(ArrowConversion.toArrowSchema(rowType)),
+          MapListRepresentation.forIpc(
+              ArrowConversion.toBinaryRowKeySchema(rowType, partitionColumns)),
           NativeAllocator.DICTIONARIES,
           schema);
       Native.exportUpdatingTopNCanonical(
@@ -307,6 +333,7 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
         new StockRowBatch(
             bridgeType,
             true,
+            ArrowConversion.toBinaryRowKeySchema(bridgeType, partitionColumns),
             (transferred, array, schema) ->
                 importBatch(handle, persistent, transferred, validateOnly, array, schema));
     var ownerType =

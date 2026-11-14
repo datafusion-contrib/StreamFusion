@@ -162,6 +162,12 @@ impl<S: KeyedStateStore<TopNPartition>> TopNRanker<S> {
     }
 
     fn validate_only(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
+        let canonical = canonical_partition_input(
+            batch,
+            &self.partition_columns,
+            &self.key_timestamp_precisions,
+        )?;
+        let batch = canonical.as_ref().unwrap_or(batch);
         let validated = self.validate_canonical(batch).map(|_| ());
         let cleanup = self.groups.end_bundle();
         self.memory.record(self.groups.footprint_delta());
@@ -173,6 +179,12 @@ impl<S: KeyedStateStore<TopNPartition>> TopNRanker<S> {
     }
 
     fn import_canonical(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
+        let canonical = canonical_partition_input(
+            batch,
+            &self.partition_columns,
+            &self.key_timestamp_precisions,
+        )?;
+        let batch = canonical.as_ref().unwrap_or(batch);
         let CanonicalColumns {
             keys,
             bounds,

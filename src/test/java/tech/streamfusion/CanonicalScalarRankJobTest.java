@@ -98,6 +98,10 @@ class CanonicalScalarRankJobTest {
     return "(SELECT k,v,id,p,COUNT(*) AS c FROM input_table GROUP BY k,v,id,p)";
   }
 
+  Path oracleInput(Path root) {
+    return root.resolve("input.csv");
+  }
+
   Path prepare(String name, String algorithm, String type, String mode, boolean ordinary)
       throws Exception {
     var root = directory.resolve(name);
@@ -159,7 +163,7 @@ class CanonicalScalarRankJobTest {
 
   private Map<String, Long> expected(Path root, String algorithm) throws Exception {
     var multiplicities = new HashMap<List<String>, Long>();
-    for (String line : Files.readAllLines(root.resolve("input.csv"))) {
+    for (String line : Files.readAllLines(oracleInput(root))) {
       var cells = line.split(",", -1);
       var row = List.of(cells[1], cells[2], cells[3], cells[4]);
       long delta = cells[0].equals("INSERT") || cells[0].equals("UPDATE_AFTER") ? 1 : -1;

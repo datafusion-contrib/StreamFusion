@@ -253,6 +253,12 @@ impl<S: KeyedStateStore<TopNPartition>> RetractableTopNRanker<S> {
         batch: &RecordBatch,
         validating: bool,
     ) -> Result<(), DataFusionError> {
+        let canonical = canonical_partition_input(
+            batch,
+            &self.partition_columns,
+            &self.key_timestamp_precisions,
+        )?;
+        let batch = canonical.as_ref().unwrap_or(batch);
         let result = self.decode_retract(batch, !validating);
         let mut delta = 0isize;
         let result = result.map(|columns| {
