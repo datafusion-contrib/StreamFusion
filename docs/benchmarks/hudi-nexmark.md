@@ -64,54 +64,29 @@ performance claims. Structured observations are written to
 `-Dsf.hudi.benchmark.output=...`. Temporary tables and sorted comparison files
 are removed after each run.
 
-The complete expanded matrix is under validation. The two-million-event Q0
-comparison below completed one warmup and three rotating measured trials on
-JDK 17.0.17, aarch64, with four source/sink tasks, heap state, mini-batching off,
-object reuse on, an 8 GiB heap and the shared 48 GiB task off-heap budget.
-All trials verified the full multiset of 1,840,000 output bids, all four sink
-partitions and the expected encoder footer. The harness separately checks native
-resource cleanup when the complete matrix finishes.
+Timing qualification is being rerun. macOS power logs confirmed repeated host
+suspensions during the earlier campaign, and a later previous-path Q10 run failed
+with an expired Hudi commit heartbeat. The earlier full-value comparisons remain
+correctness evidence; their timings are retained as diagnostics and do not qualify
+speedups: [Q0](hudi-nexmark-q0-20261113.json),
+[Q1](hudi-nexmark-q1-20261113.json), and [Q4](hudi-nexmark-q4-20261113.json).
 
-| Engine | Median ms | Range ms |
-| --- | ---: | ---: |
-| Stock Flink | 1,080.5 | 1,007.0–2,011.6 |
-| Previous StreamFusion Hudi boundaries | 7,884.6 | 7,873.4–9,970.4 |
-| Native Hudi boundaries | 626.6 | 589.5–639.3 |
+Prevent system sleep throughout measurement. On macOS, prefix Maven with
+`caffeinate -is`; this assertion lasts only for that command and leaves the display
+policy unchanged. Each measured observation records its UTC start, monotonic
+elapsed time and wall-clock elapsed time. A clock gap of one second or more fails
+the run. The power guard is still necessary because host suspension also affects
+Hudi heartbeats and processing-time timers.
 
-For this configuration the native median is 1.72× faster than stock and 12.58×
-faster than the previous partitioned-table behavior. These are complete bounded
-job times, including commit visibility. The subsecond native times still include
-startup and do not establish steady-state throughput. The stock range also
-shows substantial variability. [All Q0 observations](hudi-nexmark-q0-20261113.json)
-retain every measured trial. This result does not qualify the remaining queries
-or state configurations; the small smoke runs establish correctness only.
-
-The same run completed Q1 with medians of 2,200.5 ms stock, 11,077.0 ms previous
-StreamFusion and 641.7 ms native (ranges 1,461.0–3,453.8, 9,283.4–11,996.4
-and 584.0–766.0 ms). Every trial compared all 1,840,000 output rows. Its
-[Q1 observations](hudi-nexmark-q1-20261113.json) retain the matching configuration
-and source/harness identity. This is a 3.43× median gain over stock in this
-bounded configuration; the wide stock range remains visible.
-
-Q4 completed the same two-million-event comparison across all four state and
-mini-batch configurations after the terminal watermark rewrite was extended
-through its regular join and non-windowed aggregates. All 36 measured results
-compared the complete 100-row output across four sink partitions. The six
-RocksDB warmups verified actual database creation. Final handle and reservation
-checks passed. Values below are median milliseconds (minimum–maximum).
-
-| State | Mini-batch | Stock | Previous | Native | Stock/native |
-| --- | --- | ---: | ---: | ---: | ---: |
-| memory | false | 4,824.1 (2,126.3–5,668.8) | 142,394.1 (86,414.8–234,831.6) | 2,683.9 (1,458.1–2,701.3) | 1.80× |
-| memory | true | 1,591.1 (1,419.8–1,809.8) | 49,789.4 (49,729.1–52,572.8) | 1,026.3 (898.2–1,202.4) | 1.55× |
-| rocksdb | false | 24,952.8 (6,566.1–29,171.8) | 83,838.4 (83,296.0–84,330.4) | 3,657.0 (3,373.5–3,686.5) | 6.82× |
-| rocksdb | true | 5,338.0 (4,553.7–7,394.6) | 52,620.7 (51,388.0–54,362.1) | 1,578.6 (1,519.4–1,653.0) | 3.38× |
-
-[All Q4 observations](hudi-nexmark-q4-20261113.json) retain every trial and
-resource setting. Stock RocksDB and the previous heap path have wide ranges;
-these bounded-job results do not establish sustained throughput. Q0/Q1 used
-source base `93077f8fb`; Q4 used the rebased `07fd1f0d4` native sources. Other
-queries remain under qualification.
+For focused CPU profiling, use `SF_HUDI_BENCH=true SF_HUDI_PROFILE=true` with
+`SF_MATRIX_QUERIES` selecting one deterministic query and one state/mini-batch
+configuration. Select `-Dtest=NexmarkHudiBenchmark#profileNativePipeline` with the
+same release profile. This mode computes a stock reference once, then repeats
+the native pipeline for `SF_WARMUP + SF_RUNS` iterations, checking full values,
+encoders and final native cleanup. It reports `profiled`, so diagnostic captures
+cannot be mistaken for a passed comparison matrix. It avoids repeating the slow
+previous engine while investigating an admitted native path; normal qualification
+continues to compare all three engines.
 
 Stock Flink 1.18.1 rejects the unchanged q7 query over the Kafka corpus's
 TIMESTAMP_LTZ rowtime when it compares that time with a TIMESTAMP window boundary.

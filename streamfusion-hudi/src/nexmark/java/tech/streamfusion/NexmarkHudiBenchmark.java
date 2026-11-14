@@ -19,6 +19,7 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.junit.jupiter.api.io.TempDir;
 import tech.streamfusion.planner.NativePlanner;
@@ -59,6 +60,7 @@ class NexmarkHudiBenchmark {
   }
 
   @Test
+  @DisabledIfEnvironmentVariable(named = "SF_HUDI_PROFILE", matches = "true")
   void fourPartitionSourceAndSinkMatrix() throws Exception {
     assertTrue(
         System.getProperty("java.library.path").contains("release"),
@@ -132,29 +134,26 @@ class NexmarkHudiBenchmark {
                         .assertSame(results.get(engine).rows, query.label + "/" + engine);
                 }
                 if (trial >= 0) {
-                  for (var entry : results.entrySet())
-                    observations.add(
-                        Map.of(
-                            "query",
-                            query.label,
-                            "engine",
-                            entry.getKey(),
-                            "backend",
-                            backend,
-                            "mini_batch",
-                            miniBatch,
-                            "trial",
-                            trial,
-                            "milliseconds",
-                            entry.getValue().milliseconds,
-                            "output_rows",
-                            entry.getValue().outputRows,
-                            "sink_partitions",
-                            entry.getValue().partitions,
-                            "validation",
-                            query.label.equals("q12")
-                                ? "processing-time bounded counts"
-                                : "full-value multiset"));
+                  for (var entry : results.entrySet()) {
+                    var result = entry.getValue();
+                    var observation = new LinkedHashMap<String, Object>();
+                    observation.put("query", query.label);
+                    observation.put("engine", entry.getKey());
+                    observation.put("backend", backend);
+                    observation.put("mini_batch", miniBatch);
+                    observation.put("trial", trial);
+                    observation.put("milliseconds", result.milliseconds);
+                    observation.put("wall_milliseconds", result.wallMilliseconds);
+                    observation.put("started_at_utc", result.startedAt);
+                    observation.put("output_rows", result.outputRows);
+                    observation.put("sink_partitions", result.partitions);
+                    observation.put(
+                        "validation",
+                        query.label.equals("q12")
+                            ? "processing-time bounded counts"
+                            : "full-value multiset");
+                    observations.add(observation);
+                  }
                   report();
                   System.out.println(
                       "[hudi-nexmark] "
@@ -177,6 +176,41 @@ class NexmarkHudiBenchmark {
       }
       status = "passed";
     } catch (Exception | AssertionError failure) {
+      status = "failed";
+      throw failure;
+    } finally {
+      report();
+    }
+  }
+
+  @Test
+  @EnabledIfEnvironmentVariable(named = "SF_HUDI_PROFILE", matches = "true")
+  void profileNativePipeline() throws Exception {
+    assertTrue(
+        System.getProperty("java.library.path").contains("release"), "Use release libraries");
+    var queries = NexmarkMatrixBenchmark.selectQueries();
+    assertEquals(1, queries.length, "Select one query with SF_MATRIX_QUERIES");
+    var query = queries[0];
+    assertFalse(
+        List.of("q7", "q12").contains(query.label),
+        "Select a deterministic stock-compatible query");
+    String backend = System.getenv().getOrDefault("SF_HUDI_BACKENDS", "memory");
+    String setting = System.getenv().getOrDefault("SF_HUDI_MINIBATCHES", "false");
+    assertTrue(List.of("memory", "rocksdb").contains(backend));
+    assertTrue(List.of("false", "true").contains(setting));
+    boolean miniBatch = Boolean.parseBoolean(setting);
+    try {
+      seed();
+      try (var expected = run(query, "stock", backend, miniBatch, false)) {
+        for (int iteration = 0; iteration < WARMUPS + RUNS; iteration++) {
+          System.out.printf("[hudi-profile] start %s iteration=%d%n", query.label, iteration);
+          try (var actual = run(query, "native", backend, miniBatch, false)) {
+            expected.rows.assertSame(actual.rows, "profile/" + query.label);
+          }
+        }
+      }
+      status = "profiled";
+    } catch (Exception | Error failure) {
       status = "failed";
       throw failure;
     } finally {
@@ -350,11 +384,22 @@ class NexmarkHudiBenchmark {
                   opened, () -> databaseOpened(stateDirectory))
               : null;
       double milliseconds;
+      double wallMilliseconds;
+      var startedAt = java.time.Instant.now();
       long start = System.nanoTime();
       try {
         tables.executeSql(insert).await();
         awaitCommits(target);
         milliseconds = (System.nanoTime() - start) / 1e6;
+        wallMilliseconds =
+            java.time.Duration.between(startedAt, java.time.Instant.now()).toNanos() / 1e6;
+        assertTrue(
+            Math.abs(wallMilliseconds - milliseconds) < 1000,
+            "Host clock gap: prevent system sleep before measuring; wall="
+                + wallMilliseconds
+                + " ms, monotonic="
+                + milliseconds
+                + " ms");
       } finally {
         if (watcher != null) {
           watcher.interrupt();
@@ -419,7 +464,14 @@ class NexmarkHudiBenchmark {
         }
         verifyEncoding(target, engine.equals("native"), outputRows);
         success = true;
-        return new Result(milliseconds, output, target, outputRows, partitions);
+        return new Result(
+            milliseconds,
+            wallMilliseconds,
+            startedAt.toString(),
+            output,
+            target,
+            outputRows,
+            partitions);
       } finally {
         if (!success) {
           output.close();
@@ -599,6 +651,8 @@ class NexmarkHudiBenchmark {
 
   private static final class Result implements AutoCloseable {
     final double milliseconds;
+    final double wallMilliseconds;
+    final String startedAt;
     final SortedOutput rows;
     final Path target;
     final long outputRows;
@@ -606,11 +660,15 @@ class NexmarkHudiBenchmark {
 
     Result(
         double milliseconds,
+        double wallMilliseconds,
+        String startedAt,
         SortedOutput rows,
         Path target,
         long outputRows,
         java.util.Set<Integer> partitions) {
       this.milliseconds = milliseconds;
+      this.wallMilliseconds = wallMilliseconds;
+      this.startedAt = startedAt;
       this.rows = rows;
       this.target = target;
       this.outputRows = outputRows;
