@@ -204,5 +204,53 @@ checks. Four native medians beat both controls; clustering was slower. Median mi
 | clustering insert | 394.1 (355.9–884.7) | 391.9 (322.1–479.7) | 471.9 (286.4–745.9) | 0.84× |
 
 These are short jobs on a shared Apple M4 host with 16 GiB RAM, and their ranges overlap.
-The clustering loss requires further profiling; these observations do not establish a
-general gain for every adapter and operation.
+The clustering loss was investigated separately below; these observations do not
+establish a general gain for every adapter and operation.
+
+### Rebased million-row cohort
+
+The optimized release runtime at `bdfa739c5`, based on compatibility admission in
+`918716ab8`, completed all 150 million-row jobs (three warmups/seven measured trials
+per engine and operation). All five native medians beat stock (1.03–1.31×) and the
+previous Java encoder (1.09–1.23×). UPDATE remains a narrow gain, and the trial ranges
+overlap. Resources and the seven physical input/output partitions match the method above.
+
+Median milliseconds (minimum–maximum):
+
+| Operation | Stock | Previous | Native encoding | Stock / native |
+| --- | ---: | ---: | ---: | ---: |
+| overwrite append | 405.0 (386.5–618.8) | 375.2 (336.6–400.5) | 310.1 (267.8–382.5) | 1.31× |
+| overwrite primary key | 653.7 (610.9–694.0) | 643.7 (551.0–784.6) | 522.8 (478.2–569.3) | 1.25× |
+| UPDATE | 513.2 (474.4–604.7) | 543.4 (528.2–836.3) | 500.3 (448.9–679.7) | 1.03× |
+| DELETE | 664.7 (576.9–1804.2) | 619.0 (558.5–714.0) | 519.5 (465.8–549.5) | 1.28× |
+| clustering insert | 805.0 (755.3–993.7) | 847.3 (712.1–956.6) | 714.3 (622.7–1078.9) | 1.13× |
+
+The corresponding Paimon 1.0.0/Flink 1.18.1/JDK 11.0.28 cohort at 250,000 rows also
+passed all 150 jobs. Every native median beat stock (1.08–1.44×) and previous encoding
+(1.07–1.30×). This is a separate version/size cohort; it does not replace the retained
+Paimon 2.0 clustering loss.
+
+| Operation | Stock | Previous | Native encoding | Stock / native |
+| --- | ---: | ---: | ---: | ---: |
+| overwrite append | 298.6 (204.6–318.5) | 270.0 (252.2–310.0) | 207.5 (189.3–230.3) | 1.44× |
+| overwrite primary key | 323.3 (282.8–403.3) | 317.2 (261.9–386.7) | 249.9 (224.5–311.6) | 1.29× |
+| UPDATE | 326.1 (296.7–361.6) | 324.0 (307.3–336.6) | 301.5 (286.1–384.4) | 1.08× |
+| DELETE | 350.4 (337.1–511.6) | 342.1 (332.6–367.9) | 299.3 (288.3–361.0) | 1.17× |
+| clustering insert | 331.1 (251.6–351.2) | 318.1 (264.8–341.5) | 288.1 (223.6–323.8) | 1.15× |
+
+### Clustering profile
+
+A separate JFR run repeated only clustering on Flink 1.18.1/Paimon 2.0.0 with
+250,000 input rows, three warmups and ten measured trials per engine. All 39 jobs
+passed exact stock-reader results and encoder checks. Profiled medians were
+396.8 ms stock, 372.9 ms previous and 338.5 ms native. The earlier loss did not
+reproduce; profiling overhead and host/JVM variation prevent treating this as a fix.
+
+Writer Java execution samples include Parquet dictionary/equality work on stock
+and previous paths, while native writers retain Paimon's Java sorting and hashing.
+Writer engine labels come from the benchmark output names; other task threads remain
+unattributed. Sparse samples over unequal-duration jobs do not establish component
+speedups or explain the earlier loss. Java still owns sorting, file IO and commits.
+The [structured profile](results/paimon-tpcds-diagnostics-20261114.json) retains every
+trial and separates Java execution from native-method samples. Full recordings and
+earlier failed or unfavorable cohorts are in the [verified evidence archive](tpcds.md#archived-evidence).

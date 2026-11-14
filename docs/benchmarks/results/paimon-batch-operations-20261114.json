@@ -11979,6 +11979,3070 @@
         "libstreamfusion_paimon.dylib": "20285416e612111e7d3d6823691d1a92756f2661959b78a91dd08a288cacf03d",
         "libstreamfusion_orc.dylib": "c1b965fecd914ed2822b05ebd1022504aae98d10fe9a9c26be57a58abdcac641"
       }
+    },
+    {
+      "javaVersion": "17.0.17",
+      "os": "Mac OS X aarch64",
+      "inputRows": 1000000,
+      "parallelism": 2,
+      "partitions": 7,
+      "nativeBytes": 536870912,
+      "sourceBatchRows": 8192,
+      "rowBatchRows": 4096,
+      "rowBatchMemoryThresholdBytes": 8388608,
+      "warmups": 3,
+      "trials": 7,
+      "previous": "Same native source/compute with paimonBatchEncoding disabled",
+      "timing": "SQL submission through successful final commit; fixture/validation excluded",
+      "observations": [
+        {
+          "operation": "overwrite-append",
+          "engine": "stock",
+          "trial": -3,
+          "elapsedNanos": 1813730250,
+          "netRuntimeMillis": 1181,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "previous",
+          "trial": -3,
+          "elapsedNanos": 934400083,
+          "netRuntimeMillis": 559,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "native",
+          "trial": -3,
+          "elapsedNanos": 415095208,
+          "netRuntimeMillis": 313,
+          "sourceRows": 1000000,
+          "nativeFiles": 7,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "previous",
+          "trial": -2,
+          "elapsedNanos": 407869250,
+          "netRuntimeMillis": 364,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "native",
+          "trial": -2,
+          "elapsedNanos": 301671208,
+          "netRuntimeMillis": 250,
+          "sourceRows": 1000000,
+          "nativeFiles": 7,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "stock",
+          "trial": -2,
+          "elapsedNanos": 392024500,
+          "netRuntimeMillis": 361,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "native",
+          "trial": -1,
+          "elapsedNanos": 332845833,
+          "netRuntimeMillis": 256,
+          "sourceRows": 1000000,
+          "nativeFiles": 7,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "stock",
+          "trial": -1,
+          "elapsedNanos": 472705625,
+          "netRuntimeMillis": 438,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "previous",
+          "trial": -1,
+          "elapsedNanos": 348190791,
+          "netRuntimeMillis": 319,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "stock",
+          "trial": 0,
+          "elapsedNanos": 618809292,
+          "netRuntimeMillis": 546,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "previous",
+          "trial": 0,
+          "elapsedNanos": 336627792,
+          "netRuntimeMillis": 304,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "native",
+          "trial": 0,
+          "elapsedNanos": 339006292,
+          "netRuntimeMillis": 245,
+          "sourceRows": 1000000,
+          "nativeFiles": 7,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "previous",
+          "trial": 1,
+          "elapsedNanos": 383115917,
+          "netRuntimeMillis": 331,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "native",
+          "trial": 1,
+          "elapsedNanos": 310145542,
+          "netRuntimeMillis": 277,
+          "sourceRows": 1000000,
+          "nativeFiles": 7,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "stock",
+          "trial": 1,
+          "elapsedNanos": 389286333,
+          "netRuntimeMillis": 341,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "native",
+          "trial": 2,
+          "elapsedNanos": 276405250,
+          "netRuntimeMillis": 246,
+          "sourceRows": 1000000,
+          "nativeFiles": 7,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "stock",
+          "trial": 2,
+          "elapsedNanos": 386482084,
+          "netRuntimeMillis": 356,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "previous",
+          "trial": 2,
+          "elapsedNanos": 400478958,
+          "netRuntimeMillis": 323,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "stock",
+          "trial": 3,
+          "elapsedNanos": 404989792,
+          "netRuntimeMillis": 350,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "previous",
+          "trial": 3,
+          "elapsedNanos": 362357083,
+          "netRuntimeMillis": 304,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "native",
+          "trial": 3,
+          "elapsedNanos": 267807209,
+          "netRuntimeMillis": 234,
+          "sourceRows": 1000000,
+          "nativeFiles": 7,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "previous",
+          "trial": 4,
+          "elapsedNanos": 375183833,
+          "netRuntimeMillis": 345,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "native",
+          "trial": 4,
+          "elapsedNanos": 382507417,
+          "netRuntimeMillis": 318,
+          "sourceRows": 1000000,
+          "nativeFiles": 7,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "stock",
+          "trial": 4,
+          "elapsedNanos": 461395375,
+          "netRuntimeMillis": 360,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "native",
+          "trial": 5,
+          "elapsedNanos": 375095750,
+          "netRuntimeMillis": 275,
+          "sourceRows": 1000000,
+          "nativeFiles": 7,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "stock",
+          "trial": 5,
+          "elapsedNanos": 397510958,
+          "netRuntimeMillis": 371,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "previous",
+          "trial": 5,
+          "elapsedNanos": 359229209,
+          "netRuntimeMillis": 309,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "stock",
+          "trial": 6,
+          "elapsedNanos": 405989125,
+          "netRuntimeMillis": 361,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "previous",
+          "trial": 6,
+          "elapsedNanos": 379047292,
+          "netRuntimeMillis": 330,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "native",
+          "trial": 6,
+          "elapsedNanos": 291677833,
+          "netRuntimeMillis": 243,
+          "sourceRows": 1000000,
+          "nativeFiles": 7,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "stock",
+          "trial": -3,
+          "elapsedNanos": 1020821250,
+          "netRuntimeMillis": 995,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "previous",
+          "trial": -3,
+          "elapsedNanos": 673841292,
+          "netRuntimeMillis": 570,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "native",
+          "trial": -3,
+          "elapsedNanos": 634851500,
+          "netRuntimeMillis": 530,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "previous",
+          "trial": -2,
+          "elapsedNanos": 633613750,
+          "netRuntimeMillis": 563,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "native",
+          "trial": -2,
+          "elapsedNanos": 487708584,
+          "netRuntimeMillis": 458,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "stock",
+          "trial": -2,
+          "elapsedNanos": 599256750,
+          "netRuntimeMillis": 565,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "native",
+          "trial": -1,
+          "elapsedNanos": 576402416,
+          "netRuntimeMillis": 497,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "stock",
+          "trial": -1,
+          "elapsedNanos": 702730625,
+          "netRuntimeMillis": 642,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "previous",
+          "trial": -1,
+          "elapsedNanos": 583274334,
+          "netRuntimeMillis": 546,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "stock",
+          "trial": 0,
+          "elapsedNanos": 692706542,
+          "netRuntimeMillis": 651,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "previous",
+          "trial": 0,
+          "elapsedNanos": 784588458,
+          "netRuntimeMillis": 748,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "native",
+          "trial": 0,
+          "elapsedNanos": 502717292,
+          "netRuntimeMillis": 437,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "previous",
+          "trial": 1,
+          "elapsedNanos": 643724667,
+          "netRuntimeMillis": 566,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "native",
+          "trial": 1,
+          "elapsedNanos": 511256917,
+          "netRuntimeMillis": 482,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "stock",
+          "trial": 1,
+          "elapsedNanos": 694023458,
+          "netRuntimeMillis": 653,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "native",
+          "trial": 2,
+          "elapsedNanos": 541569333,
+          "netRuntimeMillis": 475,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "stock",
+          "trial": 2,
+          "elapsedNanos": 615830542,
+          "netRuntimeMillis": 590,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "previous",
+          "trial": 2,
+          "elapsedNanos": 658618208,
+          "netRuntimeMillis": 596,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "stock",
+          "trial": 3,
+          "elapsedNanos": 653667083,
+          "netRuntimeMillis": 601,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "previous",
+          "trial": 3,
+          "elapsedNanos": 605342875,
+          "netRuntimeMillis": 576,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "native",
+          "trial": 3,
+          "elapsedNanos": 542904791,
+          "netRuntimeMillis": 513,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "previous",
+          "trial": 4,
+          "elapsedNanos": 645702792,
+          "netRuntimeMillis": 596,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "native",
+          "trial": 4,
+          "elapsedNanos": 569291166,
+          "netRuntimeMillis": 533,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "stock",
+          "trial": 4,
+          "elapsedNanos": 610934375,
+          "netRuntimeMillis": 581,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "native",
+          "trial": 5,
+          "elapsedNanos": 522799875,
+          "netRuntimeMillis": 490,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "stock",
+          "trial": 5,
+          "elapsedNanos": 669221208,
+          "netRuntimeMillis": 619,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "previous",
+          "trial": 5,
+          "elapsedNanos": 589428084,
+          "netRuntimeMillis": 534,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "stock",
+          "trial": 6,
+          "elapsedNanos": 645205125,
+          "netRuntimeMillis": 614,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "previous",
+          "trial": 6,
+          "elapsedNanos": 551047125,
+          "netRuntimeMillis": 514,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "native",
+          "trial": 6,
+          "elapsedNanos": 478185167,
+          "netRuntimeMillis": 451,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "update",
+          "engine": "stock",
+          "trial": -3,
+          "elapsedNanos": 683336500,
+          "netRuntimeMillis": 615,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 1000000
+        },
+        {
+          "operation": "update",
+          "engine": "previous",
+          "trial": -3,
+          "elapsedNanos": 577002041,
+          "netRuntimeMillis": 512,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 1000000
+        },
+        {
+          "operation": "update",
+          "engine": "native",
+          "trial": -3,
+          "elapsedNanos": 511031250,
+          "netRuntimeMillis": 435,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 1000000
+        },
+        {
+          "operation": "update",
+          "engine": "previous",
+          "trial": -2,
+          "elapsedNanos": 586549333,
+          "netRuntimeMillis": 498,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 1000000
+        },
+        {
+          "operation": "update",
+          "engine": "native",
+          "trial": -2,
+          "elapsedNanos": 516867709,
+          "netRuntimeMillis": 469,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 1000000
+        },
+        {
+          "operation": "update",
+          "engine": "stock",
+          "trial": -2,
+          "elapsedNanos": 637531958,
+          "netRuntimeMillis": 565,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 1000000
+        },
+        {
+          "operation": "update",
+          "engine": "native",
+          "trial": -1,
+          "elapsedNanos": 493842000,
+          "netRuntimeMillis": 446,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 1000000
+        },
+        {
+          "operation": "update",
+          "engine": "stock",
+          "trial": -1,
+          "elapsedNanos": 520601375,
+          "netRuntimeMillis": 495,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 1000000
+        },
+        {
+          "operation": "update",
+          "engine": "previous",
+          "trial": -1,
+          "elapsedNanos": 512133958,
+          "netRuntimeMillis": 486,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 1000000
+        },
+        {
+          "operation": "update",
+          "engine": "stock",
+          "trial": 0,
+          "elapsedNanos": 539356583,
+          "netRuntimeMillis": 459,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 1000000
+        },
+        {
+          "operation": "update",
+          "engine": "previous",
+          "trial": 0,
+          "elapsedNanos": 543380375,
+          "netRuntimeMillis": 479,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 1000000
+        },
+        {
+          "operation": "update",
+          "engine": "native",
+          "trial": 0,
+          "elapsedNanos": 526307542,
+          "netRuntimeMillis": 472,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 1000000
+        },
+        {
+          "operation": "update",
+          "engine": "previous",
+          "trial": 1,
+          "elapsedNanos": 536141625,
+          "netRuntimeMillis": 508,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 1000000
+        },
+        {
+          "operation": "update",
+          "engine": "native",
+          "trial": 1,
+          "elapsedNanos": 496838166,
+          "netRuntimeMillis": 470,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 1000000
+        },
+        {
+          "operation": "update",
+          "engine": "stock",
+          "trial": 1,
+          "elapsedNanos": 496390833,
+          "netRuntimeMillis": 469,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 1000000
+        },
+        {
+          "operation": "update",
+          "engine": "native",
+          "trial": 2,
+          "elapsedNanos": 457128125,
+          "netRuntimeMillis": 428,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 1000000
+        },
+        {
+          "operation": "update",
+          "engine": "stock",
+          "trial": 2,
+          "elapsedNanos": 511267958,
+          "netRuntimeMillis": 475,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 1000000
+        },
+        {
+          "operation": "update",
+          "engine": "previous",
+          "trial": 2,
+          "elapsedNanos": 673346375,
+          "netRuntimeMillis": 592,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 1000000
+        },
+        {
+          "operation": "update",
+          "engine": "stock",
+          "trial": 3,
+          "elapsedNanos": 533166458,
+          "netRuntimeMillis": 461,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 1000000
+        },
+        {
+          "operation": "update",
+          "engine": "previous",
+          "trial": 3,
+          "elapsedNanos": 538960666,
+          "netRuntimeMillis": 503,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 1000000
+        },
+        {
+          "operation": "update",
+          "engine": "native",
+          "trial": 3,
+          "elapsedNanos": 679735833,
+          "netRuntimeMillis": 620,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 1000000
+        },
+        {
+          "operation": "update",
+          "engine": "previous",
+          "trial": 4,
+          "elapsedNanos": 528156083,
+          "netRuntimeMillis": 466,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 1000000
+        },
+        {
+          "operation": "update",
+          "engine": "native",
+          "trial": 4,
+          "elapsedNanos": 448907291,
+          "netRuntimeMillis": 408,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 1000000
+        },
+        {
+          "operation": "update",
+          "engine": "stock",
+          "trial": 4,
+          "elapsedNanos": 604720042,
+          "netRuntimeMillis": 567,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 1000000
+        },
+        {
+          "operation": "update",
+          "engine": "native",
+          "trial": 5,
+          "elapsedNanos": 500289959,
+          "netRuntimeMillis": 428,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 1000000
+        },
+        {
+          "operation": "update",
+          "engine": "stock",
+          "trial": 5,
+          "elapsedNanos": 513167458,
+          "netRuntimeMillis": 475,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 1000000
+        },
+        {
+          "operation": "update",
+          "engine": "previous",
+          "trial": 5,
+          "elapsedNanos": 836261375,
+          "netRuntimeMillis": 788,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 1000000
+        },
+        {
+          "operation": "update",
+          "engine": "stock",
+          "trial": 6,
+          "elapsedNanos": 474425292,
+          "netRuntimeMillis": 449,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 1000000
+        },
+        {
+          "operation": "update",
+          "engine": "previous",
+          "trial": 6,
+          "elapsedNanos": 544924000,
+          "netRuntimeMillis": 490,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 1000000
+        },
+        {
+          "operation": "update",
+          "engine": "native",
+          "trial": 6,
+          "elapsedNanos": 504407708,
+          "netRuntimeMillis": 432,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 1000000
+        },
+        {
+          "operation": "delete",
+          "engine": "stock",
+          "trial": -3,
+          "elapsedNanos": 620831791,
+          "netRuntimeMillis": 585,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "delete",
+          "engine": "previous",
+          "trial": -3,
+          "elapsedNanos": 542897292,
+          "netRuntimeMillis": 506,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "delete",
+          "engine": "native",
+          "trial": -3,
+          "elapsedNanos": 563726667,
+          "netRuntimeMillis": 466,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "delete",
+          "engine": "previous",
+          "trial": -2,
+          "elapsedNanos": 570282625,
+          "netRuntimeMillis": 529,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "delete",
+          "engine": "native",
+          "trial": -2,
+          "elapsedNanos": 702045584,
+          "netRuntimeMillis": 658,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "delete",
+          "engine": "stock",
+          "trial": -2,
+          "elapsedNanos": 722859167,
+          "netRuntimeMillis": 677,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "delete",
+          "engine": "native",
+          "trial": -1,
+          "elapsedNanos": 498921834,
+          "netRuntimeMillis": 446,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "delete",
+          "engine": "stock",
+          "trial": -1,
+          "elapsedNanos": 649399500,
+          "netRuntimeMillis": 577,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "delete",
+          "engine": "previous",
+          "trial": -1,
+          "elapsedNanos": 615346375,
+          "netRuntimeMillis": 555,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "delete",
+          "engine": "stock",
+          "trial": 0,
+          "elapsedNanos": 648791500,
+          "netRuntimeMillis": 593,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "delete",
+          "engine": "previous",
+          "trial": 0,
+          "elapsedNanos": 649585250,
+          "netRuntimeMillis": 620,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "delete",
+          "engine": "native",
+          "trial": 0,
+          "elapsedNanos": 540666709,
+          "netRuntimeMillis": 487,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "delete",
+          "engine": "previous",
+          "trial": 1,
+          "elapsedNanos": 641171959,
+          "netRuntimeMillis": 594,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "delete",
+          "engine": "native",
+          "trial": 1,
+          "elapsedNanos": 549542417,
+          "netRuntimeMillis": 484,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "delete",
+          "engine": "stock",
+          "trial": 1,
+          "elapsedNanos": 874425291,
+          "netRuntimeMillis": 841,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "delete",
+          "engine": "native",
+          "trial": 2,
+          "elapsedNanos": 519519625,
+          "netRuntimeMillis": 490,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "delete",
+          "engine": "stock",
+          "trial": 2,
+          "elapsedNanos": 1804215625,
+          "netRuntimeMillis": 1694,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "delete",
+          "engine": "previous",
+          "trial": 2,
+          "elapsedNanos": 714019458,
+          "netRuntimeMillis": 652,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "delete",
+          "engine": "stock",
+          "trial": 3,
+          "elapsedNanos": 732226750,
+          "netRuntimeMillis": 704,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "delete",
+          "engine": "previous",
+          "trial": 3,
+          "elapsedNanos": 614310916,
+          "netRuntimeMillis": 585,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "delete",
+          "engine": "native",
+          "trial": 3,
+          "elapsedNanos": 530881416,
+          "netRuntimeMillis": 463,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "delete",
+          "engine": "previous",
+          "trial": 4,
+          "elapsedNanos": 558487125,
+          "netRuntimeMillis": 522,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "delete",
+          "engine": "native",
+          "trial": 4,
+          "elapsedNanos": 465818916,
+          "netRuntimeMillis": 431,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "delete",
+          "engine": "stock",
+          "trial": 4,
+          "elapsedNanos": 620282583,
+          "netRuntimeMillis": 589,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "delete",
+          "engine": "native",
+          "trial": 5,
+          "elapsedNanos": 496926000,
+          "netRuntimeMillis": 458,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "delete",
+          "engine": "stock",
+          "trial": 5,
+          "elapsedNanos": 664719750,
+          "netRuntimeMillis": 566,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "delete",
+          "engine": "previous",
+          "trial": 5,
+          "elapsedNanos": 570208208,
+          "netRuntimeMillis": 538,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "delete",
+          "engine": "stock",
+          "trial": 6,
+          "elapsedNanos": 576862916,
+          "netRuntimeMillis": 553,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "delete",
+          "engine": "previous",
+          "trial": 6,
+          "elapsedNanos": 618967292,
+          "netRuntimeMillis": 537,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "delete",
+          "engine": "native",
+          "trial": 6,
+          "elapsedNanos": 497210708,
+          "netRuntimeMillis": 466,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "cluster",
+          "engine": "stock",
+          "trial": -3,
+          "elapsedNanos": 1426223208,
+          "netRuntimeMillis": 1374,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "cluster",
+          "engine": "previous",
+          "trial": -3,
+          "elapsedNanos": 879670916,
+          "netRuntimeMillis": 843,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "cluster",
+          "engine": "native",
+          "trial": -3,
+          "elapsedNanos": 657968208,
+          "netRuntimeMillis": 624,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "cluster",
+          "engine": "previous",
+          "trial": -2,
+          "elapsedNanos": 731242875,
+          "netRuntimeMillis": 697,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "cluster",
+          "engine": "native",
+          "trial": -2,
+          "elapsedNanos": 658810834,
+          "netRuntimeMillis": 610,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "cluster",
+          "engine": "stock",
+          "trial": -2,
+          "elapsedNanos": 816412542,
+          "netRuntimeMillis": 794,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "cluster",
+          "engine": "native",
+          "trial": -1,
+          "elapsedNanos": 744205542,
+          "netRuntimeMillis": 695,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "cluster",
+          "engine": "stock",
+          "trial": -1,
+          "elapsedNanos": 845962208,
+          "netRuntimeMillis": 770,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "cluster",
+          "engine": "previous",
+          "trial": -1,
+          "elapsedNanos": 779633542,
+          "netRuntimeMillis": 751,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "cluster",
+          "engine": "stock",
+          "trial": 0,
+          "elapsedNanos": 823203500,
+          "netRuntimeMillis": 786,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "cluster",
+          "engine": "previous",
+          "trial": 0,
+          "elapsedNanos": 956555083,
+          "netRuntimeMillis": 936,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "cluster",
+          "engine": "native",
+          "trial": 0,
+          "elapsedNanos": 622695625,
+          "netRuntimeMillis": 600,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "cluster",
+          "engine": "previous",
+          "trial": 1,
+          "elapsedNanos": 712087250,
+          "netRuntimeMillis": 691,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "cluster",
+          "engine": "native",
+          "trial": 1,
+          "elapsedNanos": 644376625,
+          "netRuntimeMillis": 620,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "cluster",
+          "engine": "stock",
+          "trial": 1,
+          "elapsedNanos": 789901709,
+          "netRuntimeMillis": 767,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "cluster",
+          "engine": "native",
+          "trial": 2,
+          "elapsedNanos": 714310959,
+          "netRuntimeMillis": 692,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "cluster",
+          "engine": "stock",
+          "trial": 2,
+          "elapsedNanos": 840237375,
+          "netRuntimeMillis": 813,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "cluster",
+          "engine": "previous",
+          "trial": 2,
+          "elapsedNanos": 824280791,
+          "netRuntimeMillis": 802,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "cluster",
+          "engine": "stock",
+          "trial": 3,
+          "elapsedNanos": 805011334,
+          "netRuntimeMillis": 782,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "cluster",
+          "engine": "previous",
+          "trial": 3,
+          "elapsedNanos": 778781375,
+          "netRuntimeMillis": 754,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "cluster",
+          "engine": "native",
+          "trial": 3,
+          "elapsedNanos": 713024791,
+          "netRuntimeMillis": 653,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "cluster",
+          "engine": "previous",
+          "trial": 4,
+          "elapsedNanos": 847289125,
+          "netRuntimeMillis": 791,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "cluster",
+          "engine": "native",
+          "trial": 4,
+          "elapsedNanos": 890880041,
+          "netRuntimeMillis": 660,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "cluster",
+          "engine": "stock",
+          "trial": 4,
+          "elapsedNanos": 773772000,
+          "netRuntimeMillis": 745,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "cluster",
+          "engine": "native",
+          "trial": 5,
+          "elapsedNanos": 1078908541,
+          "netRuntimeMillis": 934,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "cluster",
+          "engine": "stock",
+          "trial": 5,
+          "elapsedNanos": 993698417,
+          "netRuntimeMillis": 950,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "cluster",
+          "engine": "previous",
+          "trial": 5,
+          "elapsedNanos": 862442875,
+          "netRuntimeMillis": 750,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "cluster",
+          "engine": "stock",
+          "trial": 6,
+          "elapsedNanos": 755266167,
+          "netRuntimeMillis": 734,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "cluster",
+          "engine": "previous",
+          "trial": 6,
+          "elapsedNanos": 871842125,
+          "netRuntimeMillis": 851,
+          "sourceRows": 1000000,
+          "nativeFiles": 0,
+          "validatedRows": 750000
+        },
+        {
+          "operation": "cluster",
+          "engine": "native",
+          "trial": 6,
+          "elapsedNanos": 890176584,
+          "netRuntimeMillis": 820,
+          "sourceRows": 1000000,
+          "nativeFiles": 14,
+          "validatedRows": 750000
+        }
+      ],
+      "flinkVersion": "2.2.1",
+      "paimonVersion": "2.1.0",
+      "nativeProfile": "release --features mimalloc",
+      "sourceRevision": "bdfa739c59699682cbd561c4140183afeb5464ee",
+      "heap": "8GiB",
+      "shuffle": "Arrow IPC",
+      "compression": "snappy",
+      "payload": "61\u201364 ASCII bytes, 4096 distinct strings, null every 17 rows",
+      "phase": "current bdfa after compatibility admission and source initialization",
+      "nativeLibrarySha256": {
+        "libstreamfusion.dylib": "6805c02879f5af1ebfc7d6c1c226813b2e423142a468346d63ac8f1da59c96e0",
+        "libstreamfusion_parquet.dylib": "abd1e2da8e9ae32bb60425b4b548d2dc71e70e3f936febfc55635f6221c241a7",
+        "libstreamfusion_paimon.dylib": "20285416e612111e7d3d6823691d1a92756f2661959b78a91dd08a288cacf03d",
+        "libstreamfusion_orc.dylib": "c1b965fecd914ed2822b05ebd1022504aae98d10fe9a9c26be57a58abdcac641"
+      }
+    },
+    {
+      "javaVersion": "11.0.28",
+      "os": "Mac OS X aarch64",
+      "inputRows": 250000,
+      "parallelism": 2,
+      "partitions": 7,
+      "nativeBytes": 536870912,
+      "sourceBatchRows": 8192,
+      "rowBatchRows": 4096,
+      "rowBatchMemoryThresholdBytes": 8388608,
+      "warmups": 3,
+      "trials": 7,
+      "previous": "Same native source/compute with paimonBatchEncoding disabled",
+      "timing": "SQL submission through successful final commit; fixture/validation excluded",
+      "observations": [
+        {
+          "operation": "overwrite-append",
+          "engine": "stock",
+          "trial": -3,
+          "elapsedNanos": 1641302042,
+          "netRuntimeMillis": 888,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "previous",
+          "trial": -3,
+          "elapsedNanos": 766493333,
+          "netRuntimeMillis": 434,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "native",
+          "trial": -3,
+          "elapsedNanos": 331599916,
+          "netRuntimeMillis": 283,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "previous",
+          "trial": -2,
+          "elapsedNanos": 307041084,
+          "netRuntimeMillis": 279,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "native",
+          "trial": -2,
+          "elapsedNanos": 237798125,
+          "netRuntimeMillis": 204,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "stock",
+          "trial": -2,
+          "elapsedNanos": 353267791,
+          "netRuntimeMillis": 326,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "native",
+          "trial": -1,
+          "elapsedNanos": 222876917,
+          "netRuntimeMillis": 194,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "stock",
+          "trial": -1,
+          "elapsedNanos": 265803583,
+          "netRuntimeMillis": 247,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "previous",
+          "trial": -1,
+          "elapsedNanos": 288404708,
+          "netRuntimeMillis": 268,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "stock",
+          "trial": 0,
+          "elapsedNanos": 299039750,
+          "netRuntimeMillis": 278,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "previous",
+          "trial": 0,
+          "elapsedNanos": 283985959,
+          "netRuntimeMillis": 262,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "native",
+          "trial": 0,
+          "elapsedNanos": 230312125,
+          "netRuntimeMillis": 204,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "previous",
+          "trial": 1,
+          "elapsedNanos": 310020709,
+          "netRuntimeMillis": 287,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "native",
+          "trial": 1,
+          "elapsedNanos": 191939875,
+          "netRuntimeMillis": 173,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "stock",
+          "trial": 1,
+          "elapsedNanos": 308584333,
+          "netRuntimeMillis": 293,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "native",
+          "trial": 2,
+          "elapsedNanos": 218091625,
+          "netRuntimeMillis": 199,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "stock",
+          "trial": 2,
+          "elapsedNanos": 204558542,
+          "netRuntimeMillis": 189,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "previous",
+          "trial": 2,
+          "elapsedNanos": 267038916,
+          "netRuntimeMillis": 251,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "stock",
+          "trial": 3,
+          "elapsedNanos": 284932750,
+          "netRuntimeMillis": 266,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "previous",
+          "trial": 3,
+          "elapsedNanos": 252202750,
+          "netRuntimeMillis": 237,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "native",
+          "trial": 3,
+          "elapsedNanos": 207524500,
+          "netRuntimeMillis": 177,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "previous",
+          "trial": 4,
+          "elapsedNanos": 260971750,
+          "netRuntimeMillis": 244,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "native",
+          "trial": 4,
+          "elapsedNanos": 218096083,
+          "netRuntimeMillis": 200,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "stock",
+          "trial": 4,
+          "elapsedNanos": 318471583,
+          "netRuntimeMillis": 300,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "native",
+          "trial": 5,
+          "elapsedNanos": 204575417,
+          "netRuntimeMillis": 183,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "stock",
+          "trial": 5,
+          "elapsedNanos": 266003791,
+          "netRuntimeMillis": 250,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "previous",
+          "trial": 5,
+          "elapsedNanos": 285833208,
+          "netRuntimeMillis": 261,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "stock",
+          "trial": 6,
+          "elapsedNanos": 298557459,
+          "netRuntimeMillis": 279,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "previous",
+          "trial": 6,
+          "elapsedNanos": 269985167,
+          "netRuntimeMillis": 249,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-append",
+          "engine": "native",
+          "trial": 6,
+          "elapsedNanos": 189302458,
+          "netRuntimeMillis": 176,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "stock",
+          "trial": -3,
+          "elapsedNanos": 559130666,
+          "netRuntimeMillis": 544,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "previous",
+          "trial": -3,
+          "elapsedNanos": 353998000,
+          "netRuntimeMillis": 340,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "native",
+          "trial": -3,
+          "elapsedNanos": 286751958,
+          "netRuntimeMillis": 273,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "previous",
+          "trial": -2,
+          "elapsedNanos": 340110583,
+          "netRuntimeMillis": 320,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "native",
+          "trial": -2,
+          "elapsedNanos": 320155208,
+          "netRuntimeMillis": 289,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "stock",
+          "trial": -2,
+          "elapsedNanos": 248596250,
+          "netRuntimeMillis": 238,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "native",
+          "trial": -1,
+          "elapsedNanos": 243836500,
+          "netRuntimeMillis": 231,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "stock",
+          "trial": -1,
+          "elapsedNanos": 314271750,
+          "netRuntimeMillis": 301,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "previous",
+          "trial": -1,
+          "elapsedNanos": 346877291,
+          "netRuntimeMillis": 332,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "stock",
+          "trial": 0,
+          "elapsedNanos": 372619459,
+          "netRuntimeMillis": 352,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "previous",
+          "trial": 0,
+          "elapsedNanos": 325971500,
+          "netRuntimeMillis": 310,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "native",
+          "trial": 0,
+          "elapsedNanos": 229425583,
+          "netRuntimeMillis": 216,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "previous",
+          "trial": 1,
+          "elapsedNanos": 386678292,
+          "netRuntimeMillis": 372,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "native",
+          "trial": 1,
+          "elapsedNanos": 232266292,
+          "netRuntimeMillis": 217,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "stock",
+          "trial": 1,
+          "elapsedNanos": 323263625,
+          "netRuntimeMillis": 310,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "native",
+          "trial": 2,
+          "elapsedNanos": 311597375,
+          "netRuntimeMillis": 285,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "stock",
+          "trial": 2,
+          "elapsedNanos": 403324625,
+          "netRuntimeMillis": 389,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "previous",
+          "trial": 2,
+          "elapsedNanos": 262917666,
+          "netRuntimeMillis": 250,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "stock",
+          "trial": 3,
+          "elapsedNanos": 282800000,
+          "netRuntimeMillis": 271,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "previous",
+          "trial": 3,
+          "elapsedNanos": 270031041,
+          "netRuntimeMillis": 255,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "native",
+          "trial": 3,
+          "elapsedNanos": 299358584,
+          "netRuntimeMillis": 280,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "previous",
+          "trial": 4,
+          "elapsedNanos": 317150958,
+          "netRuntimeMillis": 298,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "native",
+          "trial": 4,
+          "elapsedNanos": 224526042,
+          "netRuntimeMillis": 209,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "stock",
+          "trial": 4,
+          "elapsedNanos": 314458834,
+          "netRuntimeMillis": 301,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "native",
+          "trial": 5,
+          "elapsedNanos": 249907458,
+          "netRuntimeMillis": 236,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "stock",
+          "trial": 5,
+          "elapsedNanos": 371655708,
+          "netRuntimeMillis": 355,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "previous",
+          "trial": 5,
+          "elapsedNanos": 261946792,
+          "netRuntimeMillis": 252,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "stock",
+          "trial": 6,
+          "elapsedNanos": 322358084,
+          "netRuntimeMillis": 311,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "previous",
+          "trial": 6,
+          "elapsedNanos": 339236541,
+          "netRuntimeMillis": 328,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "overwrite-key",
+          "engine": "native",
+          "trial": 6,
+          "elapsedNanos": 254174834,
+          "netRuntimeMillis": 242,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "update",
+          "engine": "stock",
+          "trial": -3,
+          "elapsedNanos": 435440834,
+          "netRuntimeMillis": 369,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "update",
+          "engine": "previous",
+          "trial": -3,
+          "elapsedNanos": 430162417,
+          "netRuntimeMillis": 383,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "update",
+          "engine": "native",
+          "trial": -3,
+          "elapsedNanos": 424017917,
+          "netRuntimeMillis": 404,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "update",
+          "engine": "previous",
+          "trial": -2,
+          "elapsedNanos": 396327167,
+          "netRuntimeMillis": 366,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "update",
+          "engine": "native",
+          "trial": -2,
+          "elapsedNanos": 348107083,
+          "netRuntimeMillis": 316,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "update",
+          "engine": "stock",
+          "trial": -2,
+          "elapsedNanos": 405446167,
+          "netRuntimeMillis": 373,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "update",
+          "engine": "native",
+          "trial": -1,
+          "elapsedNanos": 353386417,
+          "netRuntimeMillis": 326,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "update",
+          "engine": "stock",
+          "trial": -1,
+          "elapsedNanos": 356140500,
+          "netRuntimeMillis": 336,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "update",
+          "engine": "previous",
+          "trial": -1,
+          "elapsedNanos": 327234375,
+          "netRuntimeMillis": 307,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "update",
+          "engine": "stock",
+          "trial": 0,
+          "elapsedNanos": 326120834,
+          "netRuntimeMillis": 304,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "update",
+          "engine": "previous",
+          "trial": 0,
+          "elapsedNanos": 323993250,
+          "netRuntimeMillis": 307,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "update",
+          "engine": "native",
+          "trial": 0,
+          "elapsedNanos": 305940958,
+          "netRuntimeMillis": 289,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "update",
+          "engine": "previous",
+          "trial": 1,
+          "elapsedNanos": 336595250,
+          "netRuntimeMillis": 311,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "update",
+          "engine": "native",
+          "trial": 1,
+          "elapsedNanos": 357220083,
+          "netRuntimeMillis": 340,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "update",
+          "engine": "stock",
+          "trial": 1,
+          "elapsedNanos": 361610208,
+          "netRuntimeMillis": 323,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "update",
+          "engine": "native",
+          "trial": 2,
+          "elapsedNanos": 301546916,
+          "netRuntimeMillis": 282,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "update",
+          "engine": "stock",
+          "trial": 2,
+          "elapsedNanos": 330356333,
+          "netRuntimeMillis": 313,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "update",
+          "engine": "previous",
+          "trial": 2,
+          "elapsedNanos": 313331958,
+          "netRuntimeMillis": 295,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "update",
+          "engine": "stock",
+          "trial": 3,
+          "elapsedNanos": 318457250,
+          "netRuntimeMillis": 302,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "update",
+          "engine": "previous",
+          "trial": 3,
+          "elapsedNanos": 307336750,
+          "netRuntimeMillis": 293,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "update",
+          "engine": "native",
+          "trial": 3,
+          "elapsedNanos": 286577958,
+          "netRuntimeMillis": 266,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "update",
+          "engine": "previous",
+          "trial": 4,
+          "elapsedNanos": 326929042,
+          "netRuntimeMillis": 309,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "update",
+          "engine": "native",
+          "trial": 4,
+          "elapsedNanos": 384370750,
+          "netRuntimeMillis": 368,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "update",
+          "engine": "stock",
+          "trial": 4,
+          "elapsedNanos": 332022875,
+          "netRuntimeMillis": 313,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "update",
+          "engine": "native",
+          "trial": 5,
+          "elapsedNanos": 299509625,
+          "netRuntimeMillis": 281,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "update",
+          "engine": "stock",
+          "trial": 5,
+          "elapsedNanos": 308016625,
+          "netRuntimeMillis": 291,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "update",
+          "engine": "previous",
+          "trial": 5,
+          "elapsedNanos": 328015875,
+          "netRuntimeMillis": 312,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "update",
+          "engine": "stock",
+          "trial": 6,
+          "elapsedNanos": 296691833,
+          "netRuntimeMillis": 283,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "update",
+          "engine": "previous",
+          "trial": 6,
+          "elapsedNanos": 311699958,
+          "netRuntimeMillis": 295,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "update",
+          "engine": "native",
+          "trial": 6,
+          "elapsedNanos": 286133083,
+          "netRuntimeMillis": 268,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 250000
+        },
+        {
+          "operation": "delete",
+          "engine": "stock",
+          "trial": -3,
+          "elapsedNanos": 353443292,
+          "netRuntimeMillis": 339,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 62500
+        },
+        {
+          "operation": "delete",
+          "engine": "previous",
+          "trial": -3,
+          "elapsedNanos": 329747292,
+          "netRuntimeMillis": 318,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 62500
+        },
+        {
+          "operation": "delete",
+          "engine": "native",
+          "trial": -3,
+          "elapsedNanos": 307661625,
+          "netRuntimeMillis": 295,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 62500
+        },
+        {
+          "operation": "delete",
+          "engine": "previous",
+          "trial": -2,
+          "elapsedNanos": 330566458,
+          "netRuntimeMillis": 318,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 62500
+        },
+        {
+          "operation": "delete",
+          "engine": "native",
+          "trial": -2,
+          "elapsedNanos": 307796333,
+          "netRuntimeMillis": 296,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 62500
+        },
+        {
+          "operation": "delete",
+          "engine": "stock",
+          "trial": -2,
+          "elapsedNanos": 345686917,
+          "netRuntimeMillis": 334,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 62500
+        },
+        {
+          "operation": "delete",
+          "engine": "native",
+          "trial": -1,
+          "elapsedNanos": 289729875,
+          "netRuntimeMillis": 277,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 62500
+        },
+        {
+          "operation": "delete",
+          "engine": "stock",
+          "trial": -1,
+          "elapsedNanos": 348191458,
+          "netRuntimeMillis": 337,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 62500
+        },
+        {
+          "operation": "delete",
+          "engine": "previous",
+          "trial": -1,
+          "elapsedNanos": 344579709,
+          "netRuntimeMillis": 333,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 62500
+        },
+        {
+          "operation": "delete",
+          "engine": "stock",
+          "trial": 0,
+          "elapsedNanos": 350361166,
+          "netRuntimeMillis": 336,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 62500
+        },
+        {
+          "operation": "delete",
+          "engine": "previous",
+          "trial": 0,
+          "elapsedNanos": 337868833,
+          "netRuntimeMillis": 325,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 62500
+        },
+        {
+          "operation": "delete",
+          "engine": "native",
+          "trial": 0,
+          "elapsedNanos": 296238833,
+          "netRuntimeMillis": 284,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 62500
+        },
+        {
+          "operation": "delete",
+          "engine": "previous",
+          "trial": 1,
+          "elapsedNanos": 339733666,
+          "netRuntimeMillis": 329,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 62500
+        },
+        {
+          "operation": "delete",
+          "engine": "native",
+          "trial": 1,
+          "elapsedNanos": 299283333,
+          "netRuntimeMillis": 286,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 62500
+        },
+        {
+          "operation": "delete",
+          "engine": "stock",
+          "trial": 1,
+          "elapsedNanos": 511634375,
+          "netRuntimeMillis": 500,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 62500
+        },
+        {
+          "operation": "delete",
+          "engine": "native",
+          "trial": 2,
+          "elapsedNanos": 303797041,
+          "netRuntimeMillis": 289,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 62500
+        },
+        {
+          "operation": "delete",
+          "engine": "stock",
+          "trial": 2,
+          "elapsedNanos": 371289875,
+          "netRuntimeMillis": 359,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 62500
+        },
+        {
+          "operation": "delete",
+          "engine": "previous",
+          "trial": 2,
+          "elapsedNanos": 354730125,
+          "netRuntimeMillis": 342,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 62500
+        },
+        {
+          "operation": "delete",
+          "engine": "stock",
+          "trial": 3,
+          "elapsedNanos": 365470833,
+          "netRuntimeMillis": 354,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 62500
+        },
+        {
+          "operation": "delete",
+          "engine": "previous",
+          "trial": 3,
+          "elapsedNanos": 342054625,
+          "netRuntimeMillis": 332,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 62500
+        },
+        {
+          "operation": "delete",
+          "engine": "native",
+          "trial": 3,
+          "elapsedNanos": 293873167,
+          "netRuntimeMillis": 280,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 62500
+        },
+        {
+          "operation": "delete",
+          "engine": "previous",
+          "trial": 4,
+          "elapsedNanos": 332621291,
+          "netRuntimeMillis": 320,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 62500
+        },
+        {
+          "operation": "delete",
+          "engine": "native",
+          "trial": 4,
+          "elapsedNanos": 360953750,
+          "netRuntimeMillis": 348,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 62500
+        },
+        {
+          "operation": "delete",
+          "engine": "stock",
+          "trial": 4,
+          "elapsedNanos": 340776875,
+          "netRuntimeMillis": 329,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 62500
+        },
+        {
+          "operation": "delete",
+          "engine": "native",
+          "trial": 5,
+          "elapsedNanos": 288299125,
+          "netRuntimeMillis": 277,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 62500
+        },
+        {
+          "operation": "delete",
+          "engine": "stock",
+          "trial": 5,
+          "elapsedNanos": 337072542,
+          "netRuntimeMillis": 326,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 62500
+        },
+        {
+          "operation": "delete",
+          "engine": "previous",
+          "trial": 5,
+          "elapsedNanos": 343689792,
+          "netRuntimeMillis": 331,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 62500
+        },
+        {
+          "operation": "delete",
+          "engine": "stock",
+          "trial": 6,
+          "elapsedNanos": 338177958,
+          "netRuntimeMillis": 326,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 62500
+        },
+        {
+          "operation": "delete",
+          "engine": "previous",
+          "trial": 6,
+          "elapsedNanos": 367901125,
+          "netRuntimeMillis": 355,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 62500
+        },
+        {
+          "operation": "delete",
+          "engine": "native",
+          "trial": 6,
+          "elapsedNanos": 325433041,
+          "netRuntimeMillis": 313,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 62500
+        },
+        {
+          "operation": "cluster",
+          "engine": "stock",
+          "trial": -3,
+          "elapsedNanos": 672397250,
+          "netRuntimeMillis": 629,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "cluster",
+          "engine": "previous",
+          "trial": -3,
+          "elapsedNanos": 337145584,
+          "netRuntimeMillis": 324,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "cluster",
+          "engine": "native",
+          "trial": -3,
+          "elapsedNanos": 292483000,
+          "netRuntimeMillis": 278,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "cluster",
+          "engine": "previous",
+          "trial": -2,
+          "elapsedNanos": 272889209,
+          "netRuntimeMillis": 257,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "cluster",
+          "engine": "native",
+          "trial": -2,
+          "elapsedNanos": 297840084,
+          "netRuntimeMillis": 285,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "cluster",
+          "engine": "stock",
+          "trial": -2,
+          "elapsedNanos": 347550417,
+          "netRuntimeMillis": 335,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "cluster",
+          "engine": "native",
+          "trial": -1,
+          "elapsedNanos": 294313083,
+          "netRuntimeMillis": 280,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "cluster",
+          "engine": "stock",
+          "trial": -1,
+          "elapsedNanos": 524276458,
+          "netRuntimeMillis": 514,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "cluster",
+          "engine": "previous",
+          "trial": -1,
+          "elapsedNanos": 286543917,
+          "netRuntimeMillis": 274,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "cluster",
+          "engine": "stock",
+          "trial": 0,
+          "elapsedNanos": 331093000,
+          "netRuntimeMillis": 321,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "cluster",
+          "engine": "previous",
+          "trial": 0,
+          "elapsedNanos": 326782209,
+          "netRuntimeMillis": 312,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "cluster",
+          "engine": "native",
+          "trial": 0,
+          "elapsedNanos": 315366667,
+          "netRuntimeMillis": 302,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "cluster",
+          "engine": "previous",
+          "trial": 1,
+          "elapsedNanos": 313093750,
+          "netRuntimeMillis": 299,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "cluster",
+          "engine": "native",
+          "trial": 1,
+          "elapsedNanos": 288079958,
+          "netRuntimeMillis": 276,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "cluster",
+          "engine": "stock",
+          "trial": 1,
+          "elapsedNanos": 280572375,
+          "netRuntimeMillis": 268,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "cluster",
+          "engine": "native",
+          "trial": 2,
+          "elapsedNanos": 278472417,
+          "netRuntimeMillis": 266,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "cluster",
+          "engine": "stock",
+          "trial": 2,
+          "elapsedNanos": 251564958,
+          "netRuntimeMillis": 242,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "cluster",
+          "engine": "previous",
+          "trial": 2,
+          "elapsedNanos": 341496000,
+          "netRuntimeMillis": 331,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "cluster",
+          "engine": "stock",
+          "trial": 3,
+          "elapsedNanos": 321230916,
+          "netRuntimeMillis": 311,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "cluster",
+          "engine": "previous",
+          "trial": 3,
+          "elapsedNanos": 318126500,
+          "netRuntimeMillis": 306,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "cluster",
+          "engine": "native",
+          "trial": 3,
+          "elapsedNanos": 227809625,
+          "netRuntimeMillis": 216,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "cluster",
+          "engine": "previous",
+          "trial": 4,
+          "elapsedNanos": 311866000,
+          "netRuntimeMillis": 300,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "cluster",
+          "engine": "native",
+          "trial": 4,
+          "elapsedNanos": 223559917,
+          "netRuntimeMillis": 213,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "cluster",
+          "engine": "stock",
+          "trial": 4,
+          "elapsedNanos": 341699000,
+          "netRuntimeMillis": 332,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "cluster",
+          "engine": "native",
+          "trial": 5,
+          "elapsedNanos": 323801250,
+          "netRuntimeMillis": 312,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "cluster",
+          "engine": "stock",
+          "trial": 5,
+          "elapsedNanos": 336236541,
+          "netRuntimeMillis": 323,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "cluster",
+          "engine": "previous",
+          "trial": 5,
+          "elapsedNanos": 330185333,
+          "netRuntimeMillis": 317,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "cluster",
+          "engine": "stock",
+          "trial": 6,
+          "elapsedNanos": 351245500,
+          "netRuntimeMillis": 341,
+          "sourceRows": 0,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "cluster",
+          "engine": "previous",
+          "trial": 6,
+          "elapsedNanos": 264826583,
+          "netRuntimeMillis": 255,
+          "sourceRows": 250000,
+          "nativeFiles": 0,
+          "validatedRows": 187500
+        },
+        {
+          "operation": "cluster",
+          "engine": "native",
+          "trial": 6,
+          "elapsedNanos": 298008125,
+          "netRuntimeMillis": 286,
+          "sourceRows": 250000,
+          "nativeFiles": 14,
+          "validatedRows": 187500
+        }
+      ],
+      "flinkVersion": "1.18.1",
+      "paimonVersion": "1.0.0",
+      "nativeProfile": "release --features mimalloc",
+      "sourceRevision": "bdfa739c59699682cbd561c4140183afeb5464ee",
+      "heap": "8GiB",
+      "shuffle": "Arrow IPC",
+      "compression": "snappy",
+      "payload": "61\u201364 ASCII bytes, 4096 distinct strings, null every 17 rows",
+      "phase": "current bdfa after compatibility admission and source initialization",
+      "nativeLibrarySha256": {
+        "libstreamfusion.dylib": "6805c02879f5af1ebfc7d6c1c226813b2e423142a468346d63ac8f1da59c96e0",
+        "libstreamfusion_parquet.dylib": "abd1e2da8e9ae32bb60425b4b548d2dc71e70e3f936febfc55635f6221c241a7",
+        "libstreamfusion_paimon.dylib": "20285416e612111e7d3d6823691d1a92756f2661959b78a91dd08a288cacf03d",
+        "libstreamfusion_orc.dylib": "c1b965fecd914ed2822b05ebd1022504aae98d10fe9a9c26be57a58abdcac641"
+      }
     }
   ],
   "initialObservations": [

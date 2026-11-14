@@ -63,6 +63,8 @@ class PaimonTpcdsBenchmark {
     int warmups = mode.equals("compare") ? Integer.getInteger("sf.tpcds.warmups", 3) : 0;
     int trials = mode.equals("compare") ? Integer.getInteger("sf.tpcds.trials", 7) : 1;
     long nativeBytes = Long.getLong("sf.tpcds.nativeBytes", 512L << 20);
+    boolean shuffleCompression =
+        Boolean.parseBoolean(System.getProperty("sf.tpcds.shuffleCompression", "true"));
     var manifest = resourceJson("manifest.json");
     var schema = resourceJson("schema.json");
     assertEquals(103, manifest.get("queries").size(), "Full upstream TPC-DS variant inventory");
@@ -76,6 +78,7 @@ class PaimonTpcdsBenchmark {
     report.put("schemaProvenance", schema);
     report.put("parallelism", parallelism);
     report.put("nativeBytes", nativeBytes);
+    report.put("shuffleCompression", shuffleCompression);
     report.put("warmups", warmups);
     report.put("trials", trials);
     report.put("javaVersion", System.getProperty("java.version"));
@@ -122,6 +125,9 @@ class PaimonTpcdsBenchmark {
     config.setString("table.optimizer.join-reorder-enabled", "true");
     config.setString("table.optimizer.join.broadcast-threshold", "10485760");
     config.setString("taskmanager.memory.managed.size", "1024m");
+    config.setString(
+        "taskmanager.network.blocking-shuffle.compression.enabled",
+        Boolean.toString(shuffleCompression));
     config.setString("taskmanager.memory.task.off-heap.size", nativeBytes + "b");
     config.setString("streamfusion.transpose.batchRows", "8192");
     var failures = new ArrayList<String>();
