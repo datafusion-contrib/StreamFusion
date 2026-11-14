@@ -6,7 +6,7 @@ accumulator, map view and external serializers. Comet's execution utilities and 
 supply the moved C Data ownership pattern; imported/exported roots are scoped before errors
 propagate. No new JNI entry point or native checkpoint format is needed.
 
-The Java binding is deliberately limited to INT/BIGINT COUNT/SUM/SUM0/AVG DISTINCT in
+The Java binding is deliberately limited to TINYINT/SMALLINT/INT/BIGINT COUNT/SUM/SUM0/AVG DISTINCT in
 TTL-disabled unbounded processing-time ROWS/RANGE frames. Nullable arguments retain stock's NULL
 membership marker independently of the scalar count/sum. Memory holds a presence flag alongside
 the non-NULL set; RocksDB stores a typed NULL in its existing membership table. Existing raw

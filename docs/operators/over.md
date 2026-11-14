@@ -2050,7 +2050,7 @@ controls await execution on Flink 1.18 and 2.2; historical passing cohorts do no
 ## Additional unbounded DISTINCT binding awaiting qualification
 
 The Java canonical binding now connects the existing native membership transfer for unbounded
-processing-time COUNT/SUM/SUM0/AVG DISTINCT over INT/BIGINT arguments, with state TTL disabled.
+processing-time COUNT/SUM/SUM0/AVG DISTINCT over TINYINT/SMALLINT/INT/BIGINT arguments, with state TTL disabled.
 ROWS and RANGE use the released scalar accumulator plus its actual shared DISTINCT MAP view,
 stock external serializers and null-state descriptor. Memberships and raw counts transfer
 separately without replay. Complete cardinality, wrapping integral sum and membership-bit validation precedes native
@@ -2086,6 +2086,11 @@ state, invalid bits/orphans and raw native recovery across both stores. Clean-st
 arithmetic jobs retain actual nullable source values with independent non-NULL distinct-set
 oracles. All are pending both-release execution. Historical native checkpoints that never
 recorded NULL membership do not gain that lost information through this same-build extension.
+
+The integral bridge retains Byte/Short/Integer/Long membership serializers and validates wrapping
+SUM fields at their declared width independently from the wider AVG sum. Component overflow and
+planner controls include every integer width and both nullability forms; a clean-stock nullable
+TINYINT arithmetic fixture adds continuation and rescaling. These additions remain unexecuted.
 
 ## Unbounded processing ROW partition keys awaiting qualification
 

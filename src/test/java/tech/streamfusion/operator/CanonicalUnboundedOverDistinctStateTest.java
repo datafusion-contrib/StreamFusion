@@ -28,7 +28,17 @@ class CanonicalUnboundedOverDistinctStateTest {
 
   static Stream<Arguments> cases() {
     var cases = new ArrayList<Arguments>();
-    for (String type : new String[] {"INT NOT NULL", "BIGINT NOT NULL", "INT", "BIGINT"})
+    for (String type :
+        new String[] {
+          "TINYINT NOT NULL",
+          "SMALLINT NOT NULL",
+          "INT NOT NULL",
+          "BIGINT NOT NULL",
+          "TINYINT",
+          "SMALLINT",
+          "INT",
+          "BIGINT"
+        })
       for (boolean rows : new boolean[] {false, true})
         for (boolean global : new boolean[] {false, true})
           for (boolean rocks : new boolean[] {false, true})
@@ -66,7 +76,12 @@ class CanonicalUnboundedOverDistinctStateTest {
     try (var reference = plan.stock(rocks);
         var owner = plan.nativeHarness(rocks)) {
       reference.open();
-      long edge = type.startsWith("INT") ? Integer.MAX_VALUE : Long.MAX_VALUE;
+      long edge =
+          type.startsWith("TINYINT")
+              ? Byte.MAX_VALUE
+              : type.startsWith("SMALLINT")
+                  ? Short.MAX_VALUE
+                  : type.startsWith("INT") ? Integer.MAX_VALUE : Long.MAX_VALUE;
       var prefix =
           new ArrayList<>(
               List.of(

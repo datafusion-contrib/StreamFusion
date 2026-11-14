@@ -2539,7 +2539,7 @@ key representations and other aggregate argument restrictions are unchanged.
 
 
 A pending OVER extension binds existing unbounded processing-time COUNT/SUM/SUM0/AVG DISTINCT membership
-transfers for INT/BIGINT arguments with TTL disabled. It preserves the released raw
+transfers for TINYINT/SMALLINT/INT/BIGINT arguments with TTL disabled. It preserves the released raw
 counts, wrapping integral sums, shared membership-map serializers and null-state descriptor. Both-release component and
 clean-worker controls are written but unexecuted. Nullable arguments retain independent NULL
 membership without contributing to scalar sums/counts; existing nullable member-list/table

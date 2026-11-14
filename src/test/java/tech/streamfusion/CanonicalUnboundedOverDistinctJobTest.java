@@ -13,6 +13,10 @@ class CanonicalUnboundedOverDistinctJobTest extends CanonicalUnboundedOverJobTes
     return true;
   }
 
+  String argumentType() {
+    return "BIGINT";
+  }
+
   static Stream<Arguments> continuedCases() {
     return CanonicalTestMatrix.select(CanonicalUnboundedOverJobTest.continuedCases());
   }
@@ -26,7 +30,10 @@ class CanonicalUnboundedOverDistinctJobTest extends CanonicalUnboundedOverJobTes
     var root = super.prepare(name, kind, mode, ordinary);
     Files.writeString(
         root.resolve("input-columns.sql"),
-        "k BIGINT,v BIGINT" + (requiredArgument() ? " NOT NULL" : "") + ",rt TIMESTAMP(3)");
+        "k BIGINT,v "
+            + argumentType()
+            + (requiredArgument() ? " NOT NULL" : "")
+            + ",rt TIMESTAMP(3)");
     var rows = new ArrayList<String>();
     for (String line : Files.readAllLines(root.resolve("input.csv"))) {
       var cells = line.split(",", -1);

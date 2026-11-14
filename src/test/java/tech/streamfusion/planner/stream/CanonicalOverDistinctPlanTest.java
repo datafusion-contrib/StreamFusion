@@ -18,7 +18,7 @@ import tech.streamfusion.state.StockOverFoldStateContract;
 
 class CanonicalOverDistinctPlanTest {
   static Stream<Arguments> cases() {
-    return Stream.of("INT", "BIGINT")
+    return Stream.of("TINYINT", "SMALLINT", "INT", "BIGINT")
         .flatMap(
             type ->
                 Stream.of("rows", "range", "nullable", "ttl", "event", "bounded", "sum", "avg")

@@ -48,7 +48,7 @@ public final class StockOverDistinctView implements Serializable {
       TypeSerializer<?> values,
       TypeSerializer<?> bits,
       int[] aggregates) {
-    if (!valueType.is(LogicalTypeRoot.INTEGER) && !valueType.is(LogicalTypeRoot.BIGINT)
+    if (!supportsValueType(valueType)
         || aggregates.length == 0
         || aggregates.length > Long.SIZE
         || java.util.Arrays.stream(aggregates).anyMatch(index -> index < 0)
@@ -76,6 +76,43 @@ public final class StockOverDistinctView implements Serializable {
 
   public static boolean supportsAggregate(int kind) {
     return kind == 100 || kind == 103 || kind == 104 || kind == 122;
+  }
+
+  public static boolean supportsValueType(LogicalType type) {
+    return type.is(LogicalTypeRoot.TINYINT)
+        || type.is(LogicalTypeRoot.SMALLINT)
+        || type.is(LogicalTypeRoot.INTEGER)
+        || type.is(LogicalTypeRoot.BIGINT);
+  }
+
+  private boolean validMember(Object value) {
+    switch (bridge.getTypeAt(keyType.getFieldCount()).getTypeRoot()) {
+      case TINYINT:
+        return value instanceof Byte;
+      case SMALLINT:
+        return value instanceof Short;
+      case INTEGER:
+        return value instanceof Integer;
+      case BIGINT:
+        return value instanceof Long;
+      default:
+        return false;
+    }
+  }
+
+  private static Object sumValue(LogicalType type, long sum) {
+    switch (type.getTypeRoot()) {
+      case TINYINT:
+        return (byte) sum;
+      case SMALLINT:
+        return (short) sum;
+      case INTEGER:
+        return (int) sum;
+      case BIGINT:
+        return sum;
+      default:
+        throw new IllegalStateException("Unqualified integral DISTINCT accumulator");
+    }
   }
 
   Map<String, StateDescriptor.Type> stateDescriptors() {
@@ -214,9 +251,7 @@ public final class StockOverDistinctView implements Serializable {
             for (var entry : entries) {
               if (entry.getKey() == null
                   || !(entry.getValue() instanceof Long)
-                  || (bridge.getTypeAt(keyType.getFieldCount()).is(LogicalTypeRoot.INTEGER)
-                      ? !(entry.getKey() instanceof Integer)
-                      : !(entry.getKey() instanceof Long)))
+                  || !validMember(entry.getKey()))
                 throw new IllegalStateException("Invalid OVER DISTINCT membership");
               long flags = validateFlags(entry.getValue());
               for (int slot = 0; slot < aggregates.length; slot++) {
@@ -241,9 +276,7 @@ public final class StockOverDistinctView implements Serializable {
               Object expected =
                   kind == 0 && counts[slot] == 0
                       ? null
-                      : accumulatorType.getTypeAt(field).is(LogicalTypeRoot.INTEGER)
-                          ? (Object) (int) sums[slot]
-                          : sums[slot];
+                      : sumValue(accumulatorType.getTypeAt(field), sums[slot]);
               Object actual =
                   RowData.createFieldGetter(accumulatorType.getTypeAt(field).copy(true), field)
                       .getFieldOrNull(value);
