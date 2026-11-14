@@ -34,7 +34,7 @@ public final class StockOverFoldStateContract implements StockStateContract {
   private final RowType keyType, accumulatorType, bridge;
   private final int[] kinds, widths;
   private final int[] nativeFields, decimalSumCounts;
-  private final boolean ttl;
+  private final boolean ttl, preserveRowKeys;
   private final List<StockOverDistinctView> views;
   private final RowData.FieldGetter[] keyGetters, valueGetters;
 
@@ -56,7 +56,29 @@ public final class StockOverFoldStateContract implements StockStateContract {
       int[] widths,
       boolean ttl,
       List<StockOverDistinctView> views) {
+    this(keys, keyType, accumulatorType, kinds, widths, ttl, views, false);
+  }
+
+  public StockOverFoldStateContract(
+      TypeSerializer<RowData> keys,
+      RowType keyType,
+      RowType accumulatorType,
+      int[] kinds,
+      int[] widths,
+      boolean ttl,
+      List<StockOverDistinctView> views,
+      boolean preserveRowKeys) {
+    this.preserveRowKeys = preserveRowKeys;
     this.views = List.copyOf(views);
+    boolean rowKeys = keyType.getChildren().stream().anyMatch(StockKeyedRowSchema::containsRow);
+    if (rowKeys
+        && (!preserveRowKeys
+            || !views.isEmpty()
+            || java.util.stream.Stream.concat(
+                    keyType.getChildren().stream(), accumulatorType.getChildren().stream())
+                .anyMatch(
+                    type -> type.is(LogicalTypeRoot.CHAR) || type.is(LogicalTypeRoot.VARCHAR))))
+      throw new IllegalArgumentException("Unqualified processing OVER ROW partition layout");
     boolean[] distinct = new boolean[kinds.length];
     if (ttl && !views.isEmpty())
       throw new IllegalArgumentException("OVER DISTINCT TTL lifetimes are not bound");
@@ -71,7 +93,12 @@ public final class StockOverFoldStateContract implements StockStateContract {
     kinds = this.kinds;
     this.widths = widths.clone();
     this.ttl = ttl;
-    if (keyType.getChildren().stream().anyMatch(type -> !supportsPartitionKey(type))
+    if (keyType.getChildren().stream()
+            .anyMatch(
+                type ->
+                    !(preserveRowKeys
+                        ? supportsProcessingPartitionKey(type)
+                        : supportsPartitionKey(type)))
         || kinds.length == 0
         || kinds.length != widths.length
         || Arrays.stream(widths).sum() + views.size() != accumulatorType.getFieldCount())
@@ -153,6 +180,19 @@ public final class StockOverFoldStateContract implements StockStateContract {
       default:
         return false;
     }
+  }
+
+  public static boolean supportsProcessingPartitionKey(LogicalType type) {
+    return type.is(LogicalTypeRoot.ROW)
+        ? type.getChildren().stream()
+            .allMatch(StockOverFoldStateContract::supportsProcessingPartitionKey)
+        : supportsPartitionKey(type);
+  }
+
+  private org.apache.arrow.vector.types.pojo.Schema bridgeSchema() {
+    return preserveRowKeys
+        ? StockKeyedRowSchema.schema(bridge, keyType)
+        : ArrowConversion.toArrowSchema(bridge);
   }
 
   public static boolean supportsExtremumType(LogicalType type) {
@@ -238,7 +278,7 @@ public final class StockOverFoldStateContract implements StockStateContract {
         var root =
             Data.importVectorSchemaRoot(
                 NativeAllocator.SHARED, array, schema, NativeAllocator.DICTIONARIES)) {
-      var expected = ArrowConversion.toArrowSchema(bridge).getFields();
+      var expected = bridgeSchema().getFields();
       if (root.getFieldVectors().size() != expected.size())
         throw new IllegalStateException("Unbounded OVER transfer arity changed");
       for (int i = 0; i < expected.size(); i++)
@@ -382,7 +422,10 @@ public final class StockOverFoldStateContract implements StockStateContract {
   }
 
   private void transfer(long handle, List<RowData> rows, boolean validating) {
-    try (var root = RowDataArrowConverter.write(rows, bridge, NativeAllocator.SHARED);
+    try (var root =
+            preserveRowKeys
+                ? StockKeyedRowSchema.write(rows, bridge, bridgeSchema())
+                : RowDataArrowConverter.write(rows, bridge, NativeAllocator.SHARED);
         var array = ArrowArray.allocateNew(NativeAllocator.SHARED);
         var schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
       Data.exportVectorSchemaRoot(

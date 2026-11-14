@@ -4647,6 +4647,11 @@ impl OverWindowAggregator {
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
         self.ensure_canonical_ready()?;
+        let batch = crate::flink_key::canonical_stock_row_key_batch(
+            batch,
+            &self.key_columns,
+            &self.key_timestamp_precisions,
+        )?;
         self.frame_clock = now_ms;
         #[cfg(feature = "rocksdb-state")]
         let batch = if self.store.is_some() {

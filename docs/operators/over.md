@@ -2068,3 +2068,21 @@ a repaired source can retry into the same empty target. Clean-worker jobs add or
 submission, both engine orders and rescaling, with independent counts. These controls await
 Flink 1.18 and 2.2 execution in the final local window. Historical passing counts above do not
 qualify this new binding, and no performance claim is made.
+
+## Unbounded processing ROW partition keys awaiting qualification
+
+The existing unbounded processing ROWS/RANGE fold can now bind ROW partition keys whose
+descendants use the supported scalar/ROW key types. Live input, raw accumulator transfer and
+persistent-store initialization share the binary ROW schema. Native fold keys retain the
+authoritative stock bytes while clearing redundant nested transport caches; optional UTF-16
+list child names are normalized before Arrow row encoding. Original padding and nested row
+kinds still distinguish stock keys. Accumulator serializers and native checkpoint fields are
+unchanged, and original per-value TTL stamps remain intact.
+
+New raw-state controls cover mixed generic/binary input, both stores, native recovery and TTL;
+native controls cross both stores with 2,051 keys. Ordinary/portable full jobs include clean
+stock handoffs and keyed rescaling with nested, padded ROW keys. All controls await both-release
+execution. Event/bounded ROW partition keys, collection descendants, DISTINCT with ROW keys,
+and combinations with standalone string partition keys or string accumulator fields remain
+gated. Historical native checkpoints with a different physical ROW transport are not qualified
+as an upgrade path by this same-build work.

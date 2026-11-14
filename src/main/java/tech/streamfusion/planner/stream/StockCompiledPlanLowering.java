@@ -1744,9 +1744,11 @@ final class StockCompiledPlanLowering {
     var inputType = (RowType) input.getOutputType();
     int[] keys = spec.getPartition().getFieldIndices(), order = group.getSort().getFieldIndices();
     boolean bounded = !group.getLowerBound().isUnbounded();
-    if (Arrays.stream(keys).anyMatch(key ->
-            !tech.streamfusion.state.StockOverFoldStateContract.supportsPartitionKey(
-                inputType.getTypeAt(key)))
+    if (Arrays.stream(keys)
+            .anyMatch(
+                key ->
+                    !tech.streamfusion.state.StockOverFoldStateContract
+                        .supportsProcessingPartitionKey(inputType.getTypeAt(key)))
         || order.length != 1
         || !group.getSort().getAscendingOrders()[0]
         || !(LogicalTypeChecks.isProctimeAttribute(inputType.getTypeAt(order[0]))
@@ -1756,6 +1758,8 @@ final class StockCompiledPlanLowering {
         || !group.getUpperBound().isCurrentRow()) return stock;
     if (!RowDataArrowConverter.supports(inputType)) return stock;
     boolean processing = LogicalTypeChecks.isProctimeAttribute(inputType.getTypeAt(order[0]));
+    boolean binaryRowKeys = rowKeys(inputType, keys);
+    if (binaryRowKeys && (!processing || bounded)) return stock;
     if (bounded && processing && !group.isRows()) return stock;
     long offset = 0;
     if (bounded) {
@@ -1927,8 +1931,14 @@ final class StockCompiledPlanLowering {
           !bounded
               ? processing
                   ? new tech.streamfusion.state.StockOverFoldStateContract(
-                      serializer, keyType, RowType.of(generated), kinds, widths, retention > 0,
-                      distinctViews)
+                      serializer,
+                      keyType,
+                      RowType.of(generated),
+                      kinds,
+                      widths,
+                      retention > 0,
+                      distinctViews,
+                      true)
                   : new tech.streamfusion.state.StockOverEventFoldStateContract(
                       serializer,
                       keyType,
@@ -1989,7 +1999,8 @@ final class StockCompiledPlanLowering {
     }
     int maximum = stockMaximum(original);
     var exchange =
-        (NativeColumnarExchangeExecNode) canonicalJoinInput(input, config, inputType, keys, true);
+        (NativeColumnarExchangeExecNode)
+            canonicalJoinInput(input, config, inputType, keys, true, false, binaryRowKeys);
     exchange.withStateMaxParallelism(maximum);
     var over =
         new NativeOverAggExecNode(

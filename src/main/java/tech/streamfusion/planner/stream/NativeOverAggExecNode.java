@@ -98,8 +98,11 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
     if (java.util.Arrays.stream(keyColumns)
         .anyMatch(
             key ->
-                !tech.streamfusion.state.StockOverFoldStateContract.supportsPartitionKey(
-                    input.getTypeAt(key)))) return false;
+                !(proctime && !bounded
+                    ? tech.streamfusion.state.StockOverFoldStateContract
+                        .supportsProcessingPartitionKey(input.getTypeAt(key))
+                    : tech.streamfusion.state.StockOverFoldStateContract.supportsPartitionKey(
+                        input.getTypeAt(key))))) return false;
     for (int i = 0; i < valueColumns.length; i++) {
       int column = valueColumns[i];
       if (column < 0 || column >= input.getFieldCount()) return false;

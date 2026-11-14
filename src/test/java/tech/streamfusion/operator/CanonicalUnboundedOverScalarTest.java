@@ -400,6 +400,7 @@ class CanonicalUnboundedOverScalarTest {
     final boolean rows;
     final long ttl;
     final boolean countOnly;
+    final boolean binaryRowKeys;
 
     Plan(String type, boolean rows, boolean global, long ttl) throws Exception {
       this(type, rows, global, ttl, "BIGINT", false);
@@ -452,8 +453,9 @@ class CanonicalUnboundedOverScalarTest {
       var config = new Configuration();
       config.setString("streamfusion.native.enabled", "false");
       config.setString("table.exec.state.ttl", ttl + " ms");
+      boolean customSource = countOnly || keyType.startsWith("ROW");
       var table =
-          countOnly
+          customSource
               ? NativePlannerTestEnvironment.create(
                   config, org.example.canonical.CanonicalFixtureFactory.class)
               : NativePlannerTestEnvironment.create(config);
@@ -464,7 +466,7 @@ class CanonicalUnboundedOverScalarTest {
               + type
               + (composite ? ",k2 BIGINT" : "")
               + ",pt AS PROCTIME()) WITH ("
-              + (countOnly
+              + (customSource
                   ? "'connector'='canonical-fixture','input'='unused.csv','insert-only'='true'"
                   : "'connector'='datagen'")
               + ")");
@@ -514,6 +516,13 @@ class CanonicalUnboundedOverScalarTest {
         if (candidate.path("id").asInt() == node.getId()) definition = candidate;
       var spec = reader.forType(OverSpec.class).<OverSpec>readValue(definition.path("overSpec"));
       partitions = spec.getPartition().getFieldIndices();
+      binaryRowKeys =
+          Arrays.stream(partitions)
+              .anyMatch(
+                  column ->
+                      input
+                          .getTypeAt(column)
+                          .is(org.apache.flink.table.types.logical.LogicalTypeRoot.ROW));
       var group = spec.getGroups().get(0);
       timeColumn = group.getSort().getFieldIndices()[0];
       var calls = group.getAggCalls();
@@ -593,7 +602,8 @@ class CanonicalUnboundedOverScalarTest {
               kinds,
               widths,
               ttl > 0,
-              views);
+              views,
+              true);
     }
 
     ExecNode<?> node() throws Exception {
@@ -687,11 +697,13 @@ class CanonicalUnboundedOverScalarTest {
       harness.processElement(
           new StreamRecord<>(
               new ArrowBatch(
-                  RowDataArrowConverter.write(
-                      CanonicalOverValueFixture.physicalRows(rows, input),
-                      input,
-                      NativeAllocator.SHARED,
-                      true))));
+                  binaryRowKeys
+                      ? CanonicalRowKeyFixture.arrow(rows, input)
+                      : RowDataArrowConverter.write(
+                          CanonicalOverValueFixture.physicalRows(rows, input),
+                          input,
+                          NativeAllocator.SHARED,
+                          true))));
       var out = new ArrayList<String>();
       for (var batch : harness.extractOutputValues())
         try (var root = batch.root()) {
@@ -703,7 +715,7 @@ class CanonicalUnboundedOverScalarTest {
     }
 
     private String value(RowData row) {
-      if (countOnly) return CanonicalOverValueFixture.serialized(row, output);
+      if (countOnly || binaryRowKeys) return CanonicalOverValueFixture.serialized(row, output);
       var values = new ArrayList<String>();
       for (int i = 0; i < output.getFieldCount(); i++) {
         if (i == timeColumn)

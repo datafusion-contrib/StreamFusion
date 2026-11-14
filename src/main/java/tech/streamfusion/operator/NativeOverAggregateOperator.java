@@ -47,6 +47,7 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
   private transient RowType nativeRowType;
   private transient org.apache.flink.table.data.RowData constantRow;
   private transient boolean mapListInput;
+  private transient boolean binaryRowKeys;
   private transient Counter numLateRecordsDropped;
   private transient long reportedLateRecords;
   private transient java.util.concurrent.ScheduledFuture<?> processingCleanup;
@@ -88,9 +89,11 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
   }
 
   public NativeOverAggregateOperator withEventTimeVersion(int version) {
-    if (proctime || (frameKind != 0 && frameKind != 3)
+    if (proctime
+        || (frameKind != 0 && frameKind != 3)
         || !tech.streamfusion.compat.FlinkPlanCompat.supportsUnboundedOverVersion(version))
-      throw new IllegalArgumentException("Unsupported event-time unbounded OVER version: " + version);
+      throw new IllegalArgumentException(
+          "Unsupported event-time unbounded OVER version: " + version);
     eventTimeVersion = version;
     return this;
   }
@@ -117,8 +120,7 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
     if (!proctime
         && (frameKind == 0 || frameKind == 3)
         && java.util.Arrays.stream(aggregateKinds).noneMatch(kind -> kind >= 10 && kind <= 12)
-        && eventTimeVersion == 1)
-      Native.bindOverEventPollingTimers(stateHandle);
+        && eventTimeVersion == 1) Native.bindOverEventPollingTimers(stateHandle);
   }
 
   public NativeOverAggregateOperator withConstantArguments(RowType type, byte[] values) {
@@ -155,6 +157,15 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
     mapListInput =
         tech.streamfusion.arrow.MapListRepresentation.requiredForCounts(
             nativeRowType(), valueColumns, aggregateKinds);
+    binaryRowKeys =
+        hasStockStateContract()
+            && proctime
+            && java.util.Arrays.stream(keyColumns)
+                .anyMatch(
+                    column ->
+                        rowType
+                            .getTypeAt(column)
+                            .is(org.apache.flink.table.types.logical.LogicalTypeRoot.ROW));
   }
 
   private VectorSchemaRoot constantBatch(int rows, BufferAllocator allocator) {
@@ -233,6 +244,12 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
   }
 
   private long withInputSchema(java.util.function.LongUnaryOperator call) {
+    if (binaryRowKeys) {
+      var schema = tech.streamfusion.arrow.ArrowConversion.toBinaryRowKeySchema(nativeRowType());
+      return withRowSchema(
+          mapListInput ? tech.streamfusion.arrow.MapListRepresentation.forIpc(schema) : schema,
+          call);
+    }
     return mapListInput
         ? withMapListSchema(nativeRowType(), call)
         : withRowSchema(nativeRowType(), call);

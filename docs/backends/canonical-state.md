@@ -2561,3 +2561,12 @@ First-N ROW-key binding additionally rebuilds the shared binary-row input repres
 ordinary SQL and stock portable plans. Restored raw counter keys and live keys therefore retain
 original nested kinds/bytes. New raw-counter, TTL, recovery and clean-worker rescale controls
 await both-release execution; the counter serializer and private native state format are unchanged.
+
+Unbounded processing-time OVER additionally binds scalar/ROW-descendant ROW partition keys.
+The live boundary, transient fold projection and persistent native initialization use the same
+owned binary ROW schema; redundant nested transport caches cannot split restored keys from
+live keys. Original bytes, padding, nested kinds and per-value TTL stamps remain authoritative.
+New raw-state/native-recovery and clean-stock job controls await both-release qualification.
+Event/bounded ROW keys, collection descendants, DISTINCT/ROW combinations and standalone string
+key or string accumulator combinations remain gated. This does not qualify historical native
+checkpoint upgrades with changed physical ROW transports.
