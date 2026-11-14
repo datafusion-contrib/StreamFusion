@@ -3,12 +3,18 @@ package tech.streamfusion.arrow;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
+import org.apache.arrow.c.ArrowArray;
+import org.apache.arrow.c.ArrowSchema;
+import org.apache.arrow.c.Data;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.ipc.message.ArrowFieldNode;
 import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.Schema;
+import tech.streamfusion.Native;
+import tech.streamfusion.format.ColumnarFileCodec;
+import tech.streamfusion.operator.NativeAllocator;
 
 /** A file sees SQL fields; internal nested RowKinds remain an execution-only sidecar. */
 public final class ArrowFileBatch implements AutoCloseable {
@@ -63,6 +69,44 @@ public final class ArrowFileBatch implements AutoCloseable {
         }
       }
       throw failure;
+    }
+  }
+
+  /** Gathers borrowed payloads in reference order; the returned root owns its selected columns. */
+  public static VectorSchemaRoot interleave(
+      List<VectorSchemaRoot> inputs, int[] sources, int[] positions) {
+    if (sources.length != positions.length)
+      throw new IllegalArgumentException("One source batch is required per selected row");
+    var arrays = new ArrayList<ArrowArray>();
+    var schemas = new ArrayList<ArrowSchema>();
+    var arrayAddresses = new long[inputs.size()];
+    var schemaAddresses = new long[inputs.size()];
+    try {
+      for (int i = 0; i < inputs.size(); i++) {
+        var array = ArrowArray.allocateNew(NativeAllocator.SHARED);
+        arrays.add(array);
+        var schema = ArrowSchema.allocateNew(NativeAllocator.SHARED);
+        schemas.add(schema);
+        Data.exportVectorSchemaRoot(
+            NativeAllocator.SHARED, inputs.get(i), NativeAllocator.DICTIONARIES, array, schema);
+        arrayAddresses[i] = array.memoryAddress();
+        schemaAddresses[i] = schema.memoryAddress();
+      }
+      return ColumnarFileCodec.importBatch(
+          (array, schema) -> {
+            Native.interleaveBatches(
+                arrayAddresses, schemaAddresses, sources, positions, array, schema);
+            return true;
+          });
+    } finally {
+      for (var array : arrays) {
+        if (array.snapshot().release != 0) array.release();
+        array.close();
+      }
+      for (var schema : schemas) {
+        if (schema.snapshot().release != 0) schema.release();
+        schema.close();
+      }
     }
   }
 

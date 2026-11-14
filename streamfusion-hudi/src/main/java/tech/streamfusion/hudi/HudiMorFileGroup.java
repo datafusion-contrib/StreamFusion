@@ -4,9 +4,6 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import org.apache.arrow.c.ArrowArray;
-import org.apache.arrow.c.ArrowSchema;
-import org.apache.arrow.c.Data;
 import org.apache.arrow.vector.TinyIntVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.configuration.Configuration;
@@ -30,9 +27,7 @@ import org.apache.hudi.util.FlinkClientUtil;
 import org.apache.hudi.util.FlinkWriteClients;
 import org.apache.hudi.util.HoodieSchemaConverter;
 import org.apache.hudi.util.StreamerUtil;
-import tech.streamfusion.Native;
 import tech.streamfusion.arrow.ArrowConversion;
-import tech.streamfusion.format.ColumnarFileCodec;
 import tech.streamfusion.operator.NativeAllocator;
 import tech.streamfusion.operator.RowDataArrowConverter;
 
@@ -162,68 +157,39 @@ final class HudiMorFileGroup implements AutoCloseable {
       int[] positions,
       int[] kinds,
       boolean streaming) {
-    List<ArrowArray> arrays = new ArrayList<>();
-    List<ArrowSchema> schemas = new ArrayList<>();
+    var needed = new java.util.LinkedHashMap<Integer, Integer>();
+    java.util.function.Function<Integer, Integer> nextSource = ignored -> needed.size();
+    for (int i = 0; i < sources.length; i++)
+      sources[i] = needed.computeIfAbsent(sources[i], nextSource);
+    var roots = new ArrayList<VectorSchemaRoot>();
+    for (int source : needed.keySet()) {
+      var input = inputs.get(source);
+      var vectors =
+          output.getFieldNames().stream()
+              .map(input.root::getVector)
+              .collect(java.util.stream.Collectors.toList());
+      roots.add(
+          new VectorSchemaRoot(
+              ArrowConversion.toArrowSchema(output), vectors, input.root.getRowCount()));
+    }
+    var selected = tech.streamfusion.arrow.ArrowFileBatch.interleave(roots, sources, positions);
+    if (!streaming) return selected;
+    var kind = new TinyIntVector(RowDataArrowConverter.ROW_KIND_COLUMN, NativeAllocator.SHARED);
     try {
-      var needed = new java.util.LinkedHashMap<Integer, Integer>();
-      java.util.function.Function<Integer, Integer> nextSource = ignored -> needed.size();
-      for (int i = 0; i < sources.length; i++)
-        sources[i] = needed.computeIfAbsent(sources[i], nextSource);
-      long[] arrayAddresses = new long[needed.size()];
-      long[] schemaAddresses = new long[needed.size()];
-      for (var selection : needed.entrySet()) {
-        int i = selection.getValue();
-        var input = inputs.get(selection.getKey());
-        var vectors =
-            output.getFieldNames().stream()
-                .map(input.root::getVector)
-                .collect(java.util.stream.Collectors.toList());
-        var projected =
-            new VectorSchemaRoot(
-                ArrowConversion.toArrowSchema(output), vectors, input.root.getRowCount());
-        var array = ArrowArray.allocateNew(NativeAllocator.SHARED);
-        arrays.add(array);
-        var schema = ArrowSchema.allocateNew(NativeAllocator.SHARED);
-        schemas.add(schema);
-        Data.exportVectorSchemaRoot(
-            NativeAllocator.SHARED, projected, NativeAllocator.DICTIONARIES, array, schema);
-        arrayAddresses[i] = array.memoryAddress();
-        schemaAddresses[i] = schema.memoryAddress();
-      }
-      var selected =
-          ColumnarFileCodec.importBatch(
-              (array, schema) -> {
-                Native.interleaveBatches(
-                    arrayAddresses, schemaAddresses, sources, positions, array, schema);
-                return true;
-              });
-      if (!streaming) return selected;
-      var kind = new TinyIntVector(RowDataArrowConverter.ROW_KIND_COLUMN, NativeAllocator.SHARED);
-      try {
-        kind.allocateNew(kinds.length);
-        for (int row = 0; row < kinds.length; row++) kind.setSafe(row, kinds[row]);
-        kind.setValueCount(kinds.length);
-        var vectors = new ArrayList<>(selected.getFieldVectors());
-        vectors.add(kind);
-        // Ownership of the selected payload vectors passes to this root.
-        return new VectorSchemaRoot(
-            vectors.stream().map(v -> v.getField()).collect(java.util.stream.Collectors.toList()),
-            vectors,
-            kinds.length);
-      } catch (Throwable failure) {
-        kind.close();
-        selected.close();
-        throw failure;
-      }
-    } finally {
-      for (var array : arrays) {
-        if (array.snapshot().release != 0) array.release();
-        array.close();
-      }
-      for (var schema : schemas) {
-        if (schema.snapshot().release != 0) schema.release();
-        schema.close();
-      }
+      kind.allocateNew(kinds.length);
+      for (int row = 0; row < kinds.length; row++) kind.setSafe(row, kinds[row]);
+      kind.setValueCount(kinds.length);
+      var vectors = new ArrayList<>(selected.getFieldVectors());
+      vectors.add(kind);
+      // Ownership of the selected payload vectors passes to this root.
+      return new VectorSchemaRoot(
+          vectors.stream().map(v -> v.getField()).collect(java.util.stream.Collectors.toList()),
+          vectors,
+          kinds.length);
+    } catch (Throwable failure) {
+      kind.close();
+      selected.close();
+      throw failure;
     }
   }
 

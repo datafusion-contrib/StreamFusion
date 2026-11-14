@@ -78,28 +78,13 @@ class HudiMorIOFactoryTest {
     List<HoodieRecord> records = new ArrayList<>();
     try (var first = batch(10);
         var second = batch(20)) {
-      var roots = List.of(first, second);
-      for (int b = 0; b < roots.size(); b++) {
-        var batch = new HudiAppendIOFactory.Batch(roots.get(b), TYPE);
-        for (int index : b == 0 ? new int[] {2, 0} : new int[] {1, 2}) {
-          var view = new HudiAppendIOFactory.Cursor(batch, batch.vectors);
-          view.setRowId(index);
-          String key = Long.toString(((BigIntVector) roots.get(b).getVector("id")).get(index));
-          var original =
-              new HoodieFlinkRecord(new HoodieKey(key, ""), HoodieOperation.INSERT, view);
-          records.add(
-              original.prependMetaFields(
-                  schema,
-                  writerSchema,
-                  new MetadataValues()
-                      .setCommitTime("20261110000000000")
-                      .setCommitSeqno("20261110000000000_0_" + records.size())
-                      .setRecordKey(key)
-                      .setPartitionPath("")
-                      .setFileName("file-group"),
-                  new Properties()));
-        }
-      }
+      var batches =
+          List.of(
+              new HudiAppendIOFactory.Batch(first, TYPE),
+              new HudiAppendIOFactory.Batch(second, TYPE));
+      for (int[] selected : new int[][] {{0, 2}, {1, 1}, {0, 0}, {1, 2}, {0, 2}})
+        records.add(
+            record(batches.get(selected[0]), selected[1], schema, writerSchema, records.size()));
       var hadoop = new org.apache.hadoop.conf.Configuration();
       hadoop.set(
           HoodieStorageConfig.HOODIE_IO_FACTORY_CLASS.key(), HudiMorIOFactory.class.getName());
@@ -117,13 +102,13 @@ class HudiMorIOFactoryTest {
         Files.write(file, encoded.toByteArray());
         var rows = new ParquetUtils().readAvroRecords(storage, new StoragePath(file.toUri()));
         assertEquals(
-            List.of(12L, 10L, 21L, 22L),
+            List.of(12L, 21L, 10L, 22L, 12L),
             rows.stream().map(row -> row.get("id")).collect(java.util.stream.Collectors.toList()));
         assertEquals("payload-12-\u00e9", rows.get(0).get("name").toString());
-        assertNull(rows.get(2).get("name"));
+        assertNull(rows.get(1).get("name"));
         assertEquals(false, rows.get(0).get("flag"));
-        assertNull(rows.get(1).get("flag"));
-        assertEquals(true, rows.get(2).get("flag"));
+        assertNull(rows.get(2).get("flag"));
+        assertEquals(true, rows.get(1).get("flag"));
         for (int i = 0; i < rows.size(); i++) {
           assertEquals(
               rows.get(i).get("id").toString(), rows.get(i).get("_hoodie_record_key").toString());
@@ -139,6 +124,66 @@ class HudiMorIOFactoryTest {
       assertEquals(10L, ((BigIntVector) first.getVector("id")).get(0));
       assertEquals(20L, ((BigIntVector) second.getVector("id")).get(0));
     }
+  }
+
+  @Test
+  void mixedBatchReferencesKeepMetadataOrderAcrossEncodingChunks() throws Exception {
+    var schema = HoodieSchemaConverter.convertToSchema(TYPE);
+    var writerSchema = HoodieSchemaUtils.addMetadataFields(schema);
+    try (var first = batch(10);
+        var second = batch(20)) {
+      var batches =
+          List.of(
+              new HudiAppendIOFactory.Batch(first, TYPE),
+              new HudiAppendIOFactory.Batch(second, TYPE));
+      var records = new ArrayList<HoodieRecord>();
+      for (int i = 0; i < 5001; i++)
+        records.add(record(batches.get(i % 2), i % 3, schema, writerSchema, i));
+      var hadoop = new org.apache.hadoop.conf.Configuration();
+      hadoop.set(
+          HoodieStorageConfig.HOODIE_IO_FACTORY_CLASS.key(), HudiMorIOFactory.class.getName());
+      try (var storage = new HoodieHadoopStorage(temporary.toUri().toString(), hadoop)) {
+        var block =
+            new HoodieFlinkParquetDataBlock(
+                records,
+                Map.of(HeaderMetadataType.SCHEMA, writerSchema.toString()),
+                HoodieRecord.RECORD_KEY_METADATA_FIELD,
+                "snappy",
+                0.1,
+                true);
+        Path file = temporary.resolve("mixed-log.parquet");
+        Files.write(file, block.getContentBytes(storage).toByteArray());
+        var rows = new ParquetUtils().readAvroRecords(storage, new StoragePath(file.toUri()));
+        assertEquals(5001, rows.size());
+        for (int i = 0; i < rows.size(); i++) {
+          assertEquals((i % 2 == 0 ? 10L : 20L) + i % 3, rows.get(i).get("id"));
+          assertEquals(
+              "20261110000000000_0_" + i, rows.get(i).get("_hoodie_commit_seqno").toString());
+        }
+      }
+    }
+  }
+
+  private static HoodieRecord record(
+      HudiAppendIOFactory.Batch batch,
+      int index,
+      org.apache.hudi.common.schema.HoodieSchema schema,
+      org.apache.hudi.common.schema.HoodieSchema writerSchema,
+      int sequence) {
+    var view = new HudiAppendIOFactory.Cursor(batch, batch.vectors);
+    view.setRowId(index);
+    String key = Long.toString(view.getLong(0));
+    var original = new HoodieFlinkRecord(new HoodieKey(key, ""), HoodieOperation.INSERT, view);
+    return original.prependMetaFields(
+        schema,
+        writerSchema,
+        new MetadataValues()
+            .setCommitTime("20261110000000000")
+            .setCommitSeqno("20261110000000000_0_" + sequence)
+            .setRecordKey(key)
+            .setPartitionPath("")
+            .setFileName("file-group"),
+        new Properties());
   }
 
   @Test

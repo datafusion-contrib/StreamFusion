@@ -115,7 +115,10 @@ final class HudiSinkMatcher {
         || input instanceof StreamPhysicalNativeMiniBatchAssigner)
       return terminalUpserts || appendOnly;
     if (input instanceof StreamPhysicalNativeColumnarGroupAggregate
-        || input instanceof StreamPhysicalNativeColumnarLocalGroupAggregate) return terminalUpserts;
+        || input instanceof StreamPhysicalNativeColumnarLocalGroupAggregate
+        || input instanceof StreamPhysicalNativeColumnarTopN) return terminalUpserts;
+    if (input instanceof StreamPhysicalNativeDeduplicate)
+      return terminalUpserts && !((StreamPhysicalNativeDeduplicate) input).requireWatermark();
     if (input instanceof StreamPhysicalNativeColumnarUpdatingJoin) {
       var join = (StreamPhysicalNativeColumnarUpdatingJoin) input;
       return (terminalUpserts || appendOnly && join.isInsertOnlyInnerJoin())

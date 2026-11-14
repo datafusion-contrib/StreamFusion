@@ -84,10 +84,17 @@ when a window or `CURRENT_WATERMARK` can observe them. Before a terminal Hudi si
 StreamFusion uses whole batches only across a proven chain of native Calcs that
 does not read the watermark. Append sinks also admit native exchanges, mini-batch
 assigners and inner joins whose inputs are insert-only. For MOR commit-time
-ordering with precombine, the
-proof also crosses native exchanges, mini-batch assigners, regular joins and
-non-windowed aggregates. User-function instances stop this broader proof;
+ordering with precombine, the proof also crosses native exchanges, mini-batch
+assigners, regular joins, non-windowed aggregates/ranking and deduplication that
+does not observe watermarks. Rowtime keep-first retains fine boundaries. User-function instances stop this broader proof;
 stateless generated built-ins without user dependencies do not. Event-time
 ordering and precombine-disabled writes retain their original flush positions.
 It still evaluates every candidate and rejects NULL rowtime. The planner copies this branch rather than changing shared producers;
 all unknown or watermark-sensitive downstream paths keep the existing boundaries.
+
+MOR log encoding now gathers bounded chunks of row references with the same
+shared Arrow interleave wrapper used by the file-group reader. Source-batch
+changes no longer force a tiny encoder call or a metadata array sized to the
+entire parent batch. The gather preserves iterator order and repeated payload
+positions; Hudi continues to select winners and construct deletes. Payloads are
+combined columnwise in Rust, and Java creates only Hudi metadata columns.

@@ -174,8 +174,10 @@ observed Hudi writing the previous row's version for a NULL delete version, whil
 the Arrow view preserves NULL. The adapter does not reproduce stale field bytes.
 
 The Parquet log boundary uses Hudi's original `HoodieFlinkParquetDataBlock`. The adapter
-borrows payload vectors, materializes only Java-generated metadata columns, and
-passes selected Arrow rows to the existing Rust Parquet encoder. Hudi retains log
+buffers up to 4,096 row references in Hudi iterator order. The shared Arrow
+interleave kernel gathers their payload columns in Rust, preserving order across
+source batches and repeated positions. Java builds only the five generated
+metadata columns for these dense rows; Rust encodes the combined Arrow batch. Hudi retains log
 framing, delete-block construction, append I/O and commits. Actual encoded footer
 metadata supplies column statistics; footer inspection borrows the in-memory
 encoded bytes through Hudi's existing in-memory input adapter. Tests cover nullable
@@ -358,12 +360,12 @@ The terminal sink does not observe watermarks. When only native Calcs without
 `CURRENT_WATERMARK` separate it from an assigner, the planner retains whole
 Arrow batches instead of splitting at unobservable eager emissions. Append sinks
 also admit native exchanges, mini-batch assigners and inner joins with insert-only
-inputs. For MOR with
-explicit commit-time ordering and precombine, this proof also crosses native
-exchanges, mini-batch assigners, regular joins and non-windowed aggregates without
-user functions. Event-time ordering and precombine-disabled writes retain their
-flush positions. Windows,
-unknown intervening operators and watermark-observing Calcs retain the exact
+inputs. For MOR with explicit commit-time ordering and precombine, this proof also crosses native
+exchanges, mini-batch assigners, regular joins, non-windowed aggregates/ranking
+and deduplication that does not observe watermarks, without user functions.
+Rowtime keep-first deduplication retains fine boundaries. Event-time ordering and
+precombine-disabled writes retain their flush positions. Windows, unknown
+intervening operators and watermark-observing Calcs retain the exact
 per-row boundaries. The watermark expression and NULL validation remain intact.
 
 `NativeHudiSourceTest` uses stock Hudi SQL writes, compares stock/native SQL results,
