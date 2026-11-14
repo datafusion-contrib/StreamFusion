@@ -234,6 +234,9 @@ public final class CanonicalJobWorker {
                     : CanonicalFixtureFactory.HistoryAggregate.class.getName())
                 + "'");
       }
+      if (Files.exists(root.resolve("nested-join-checksum")))
+        table.createTemporarySystemFunction(
+            "nested_checksum", CanonicalFixtureFactory.NestedJoinChecksum.class);
       registerInput(
           table, root, "input_table", "input.csv", ready, limit, fixedConnectorParallelism);
       if (twoInputs)

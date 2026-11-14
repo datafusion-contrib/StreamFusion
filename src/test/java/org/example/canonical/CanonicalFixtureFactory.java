@@ -718,6 +718,39 @@ public final class CanonicalFixtureFactory
     public void close() {}
   }
 
+  public static final class NestedJoinChecksum
+      extends org.apache.flink.table.functions.ScalarFunction {
+    public static final String TYPE =
+        "ROW<a ARRAY<BIGINT>,m MAP<STRING,BIGINT>,r ROW<v BIGINT,s STRING>>";
+
+    public Long eval(
+        @org.apache.flink.table.annotation.DataTypeHint(TYPE) org.apache.flink.types.Row left,
+        @org.apache.flink.table.annotation.DataTypeHint(TYPE) org.apache.flink.types.Row right) {
+      return checksum(left) * 31 + checksum(right);
+    }
+
+    private static long checksum(org.apache.flink.types.Row row) {
+      if (row == null) return -7;
+      long result = 17;
+      Object[] array = (Object[]) row.getField(0);
+      if (array != null)
+        for (Object value : array) result = result * 37 + (value == null ? -1 : (Long) value);
+      @SuppressWarnings("unchecked")
+      var map = (java.util.Map<String, Long>) row.getField(1);
+      if (map != null)
+        for (var entry : map.entrySet())
+          result += entry.getKey().hashCode() * 19L + (entry.getValue() == null ? -3 : entry.getValue());
+      var nested = (org.apache.flink.types.Row) row.getField(2);
+      if (nested != null) {
+        var value = (Long) nested.getField(0);
+        var text = (String) nested.getField(1);
+        result = result * 41 + (value == null ? -5 : value);
+        result += text == null ? -11 : text.hashCode();
+      }
+      return result;
+    }
+  }
+
   public static final class MergeHistoryAccumulator {
     public long sum;
     public long rows;

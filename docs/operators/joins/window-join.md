@@ -166,3 +166,12 @@ INNER TUMBLE/HOP/CUMULATE and keyed outer TUMBLE cases retain two custom sources
 sink and both transposes; actual native input, clean stock classpaths, stock-only metadata and
 external committed effects are checked. This extends submission coverage without qualifying
 wider key/type/version/failure/connector variants. Every operator family remains partial.
+
+### Nested canonical payload binding
+
+Canonical submission now retains existing native ROW/ARRAY/MAP payloads instead of rejecting
+every constructed non-key field. Join-key, time, predicate and backend admission remain
+independent. New ordinary/compiled planner and clean-stock-worker fixtures keep complete nested
+payloads through the join, with NULL parents, NULL descendants, Unicode map keys and duplicate
+rows. The authored fixtures cover continued input, no-input re-export, native checkpoints and
+1 → 3 → 2 rescaling; qualification on Flink 1.18 and 2.2 is pending.

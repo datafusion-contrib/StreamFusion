@@ -22,23 +22,24 @@ pages. Historical cohorts are not silently requalified against each newer librar
 | [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Arithmetic, typed scalar/shared COUNT DISTINCT and append numeric SUM DISTINCT, append extrema, integral/date/time/boolean retracting MIN/MAX, append scalar and local/global DISTINCT mini-batches, and captured managed UDFs; one-phase retracting scalar/COUNT DISTINCT mini-batches awaiting qualification | Wider types/keys, remaining retracting mini-batches, wider UDF contracts, other views/phases and failures |
 | [Deduplication](../operators/deduplication.md#canonical-state-adapter) | Automatic eager and buffered contracts, selected mini-batch and TTL modes | Remaining schemas/emission variants and full failure matrix |
 | [Top-N / First-N / LIMIT](../operators/top-n.md#first-n-canonical-handoffs) | Automatic first-N, append, updating and retracting rank subsets; wider scalar/arbitrary-sort binding awaiting qualification | Algorithm-specific bounds, TTL, nested retained types and complete new-scope qualification |
-| [Regular joins](../operators/joins/regular-join.md) | Automatic qualified stock layouts and complete-job handoffs | Wider uniqueness, mini-batch, schema and TTL combinations |
+| [Regular joins](../operators/joins/regular-join.md) | Automatic qualified stock layouts and complete-job handoffs; nested payload binding awaiting qualification | Wider uniqueness, mini-batch, schema and TTL combinations |
 | [Fixed windows](../operators/window-aggregate.md#stock-canonical-savepoint-interoperability) | Automatic binding, namespaced/DISTINCT state and selected complete-job handoffs | Complete phase/type/view and failure matrix |
 | [Sessions](../operators/window-aggregate.md) | Automatic partitioned TVF and legacy event/processing-time SESSION binding, operator recovery and selected complete-job handoffs | Native unpartitioned SESSION TVF assignment and wider merging/timer/recovery matrix |
 | [Window rank](../operators/top-n.md#window-rank-canonical-interchange-partial) | Automatic event-time retained sort-list, timer and watermark binding | Wider bounds/types, processing-time projection and failure/delivery matrix |
 | [Window deduplication](../operators/deduplication.md#window-deduplication-canonical-interchange-partial) | Automatic event-time winner, timer and watermark binding | Wider winner/types, processing-time projection and failure/delivery matrix |
 | [OVER](../operators/over.md#automatic-bounded-arithmetic-state-binding-partial) | Bounded arithmetic, processing-time unbounded scalar and event-time unbounded scalar contracts with automatic binding; narrow integral values, scalar/composite keys and explicit 2.2 V1 implementations awaiting qualification | Remaining keys/types, DISTINCT/views, bounded event-ROWS cleanup and complete new-scope qualification |
 | [Changelog normalization](../operators/changelog-normalize.md#canonical-savepoint-adapter) | Automatic retained-row/TTL contract and complete jobs | Wider keys, mini-batches, consumers and failure matrix |
-| [Interval joins](../operators/joins/interval-join.md#complete-job-handoff-matrix) | Event/proctime state, four join kinds and selected complete-job/rescale matrices | Wider schemas, cleanup edges and remaining ordinary-SQL combinations |
-| [Temporal joins](../operators/joins/temporal-join.md#complete-job-handoff-matrix) | Qualified INNER/LEFT history/probe/timer state and complete jobs | Legacy proctime variant, wider schemas and commit-failure matrix |
+| [Interval joins](../operators/joins/interval-join.md#complete-job-handoff-matrix) | Event/proctime state, four join kinds and selected complete-job/rescale matrices; nested binding awaiting qualification | Wider schemas, cleanup edges and remaining ordinary-SQL combinations |
+| [Temporal joins](../operators/joins/temporal-join.md#complete-job-handoff-matrix) | Qualified INNER/LEFT history/probe/timer state and complete jobs; nested binding awaiting qualification | Legacy proctime variant, wider schemas and commit-failure matrix |
 | [Event-time sort](../operators/event-time-sort.md#stock-compatible-canonical-interchange) | Automatic single ascending-rowtime contract and complete-job handoffs | Secondary sorting and wider schema/connector/failure/version matrices |
 | [Sink materialization](../operators/sink-upsert-materialize.md#canonical-interchange-qualification) | LEGACY contract on both releases; 2.2 VALUE/MAP/ADAPTIVE layouts; automatic BIGINT stock-sink binding awaiting qualification | Accelerated connector binding, wider types and complete new-job/writer-rescale qualification |
-| [Window joins](../operators/joins/window-join.md#stock-canonical-savepoint-interoperability) | Qualified event-time INNER/outer window layouts and complete jobs | Wider schemas/residuals and additional exchange/rescale combinations |
+| [Window joins](../operators/joins/window-join.md#stock-canonical-savepoint-interoperability) | Qualified event-time INNER/outer window layouts and complete jobs; nested binding awaiting qualification | Wider schemas/residuals and additional exchange/rescale combinations |
 
 ## Release parity and frozen scope
 
-The current scope freezes the admitted logical operator contracts above. It adds no operator,
-type, algorithm or canonical-state layout. Flink 1.18.1 and 2.2.1 compile the same planner and
+The historical release-parity baseline froze the admitted logical contracts. Resumed #569 work
+extends canonical binding only for operators and execution shapes StreamFusion already
+accelerates; new coverage is explicitly marked pending until tested on both releases. Flink 1.18.1 and 2.2.1 compile the same planner and
 conversion contracts; narrow release adapters select actual stock serializers and runtime owners.
 For SESSION, 1.18 uses the legacy group-window owner because it has no SESSION TVF. Event-time
 unbounded OVER uses V1 on 1.18 and V2 on 2.2. Sink materialization uses LEGACY on 1.18; VALUE,
@@ -1306,7 +1307,7 @@ assigners keep explicit original logical identities; they are not elided as tran
 When rewriting duplicates a shared stock calculation, filter or watermark role, equivalent copies
 with the same original input role collapse to one execution owner. Arrow sharing is then rebuilt
 for the actual fan-out. Missing or incompatible roles still reject canonical binding.
-Constructed payloads, unaligned exchange reassembly, asynchronous/changelog state backends,
+Unaligned exchange reassembly, asynchronous/changelog state backends,
 ambiguous rewrites and unqualified ordinary wide-key layouts retain their existing owners/routes.
 
 Fifty-six planner controls pass across six join kinds, three stock side layouts, both submission
@@ -2312,3 +2313,14 @@ write-batch copy before allocation. Keys and timer/counter ledgers allocate thei
 capacity once; batching occurs before adding an owner. A denied reservation keeps the dirty
 journal intact and writes nothing for that batch, so a fresh allowance can retry. The encoded
 formats and ordinary native recovery behavior remain unchanged.
+
+## Nested join binding awaiting qualification
+
+The canonical loader now binds existing native ROW/ARRAY/MAP retained payloads for regular,
+interval, event-time temporal and event-time window joins. Scalar join keys and each family’s
+existing time/predicate/backend restrictions remain. Regular joins retain the insert-only
+restriction for MAP/MULTISET descendants and import stock rows through the same tagged Arrow
+map view as native input. No new join semantics are introduced. New planner and clean-worker
+fixtures cover full nested rows, duplicate/NULL inputs, continued and empty handoffs, native
+checkpoint recovery and keyed rescaling. These additions await local qualification on both
+released Flink lines; earlier scalar evidence above does not establish this wider scope.
