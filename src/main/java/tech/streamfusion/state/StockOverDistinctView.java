@@ -18,7 +18,6 @@ import org.apache.flink.runtime.state.VoidNamespace;
 import org.apache.flink.runtime.state.VoidNamespaceSerializer;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
-import org.apache.flink.table.runtime.typeutils.RowDataSerializer;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.LogicalTypeRoot;
 import org.apache.flink.table.types.logical.RowType;
@@ -249,7 +248,7 @@ public final class StockOverDistinctView implements Serializable {
   void exportState(CheckpointableKeyedStateBackend<RowData> backend, long handle) throws Exception {
     var state = state(backend);
     var marker = nullState(backend);
-    var keySerializer = new RowDataSerializer(keyType);
+    var keySerializer = new StockKeyProjection(keyType);
     var getter =
         RowData.createFieldGetter(
             bridge.getTypeAt(keyType.getFieldCount()).copy(true), keyType.getFieldCount());
@@ -265,7 +264,7 @@ public final class StockOverDistinctView implements Serializable {
                   field,
                   RowData.createFieldGetter(keyType.getTypeAt(field).copy(true), field)
                       .getFieldOrNull(row));
-            backend.setCurrentKey(keySerializer.toBinaryRow(key).copy());
+            backend.setCurrentKey(keySerializer.project(key));
             Object member = getter.getFieldOrNull(row);
             if (member == null) {
               if (!bridge.getTypeAt(keyType.getFieldCount()).isNullable())

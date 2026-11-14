@@ -766,29 +766,45 @@ class CanonicalBoundedRangeInteropTest {
               ? NativePlannerTestEnvironment.create(
                   config, org.example.canonical.CanonicalFixtureFactory.class)
               : NativePlannerTestEnvironment.create(config);
-      table.executeSql(
-          "CREATE TABLE range_input(k "
-              + keySqlType
-              + ",v "
-              + type
-              + ",rt TIMESTAMP(3)"
-              + (composite ? ",k2 BIGINT" : "")
-              + (payload == null ? "" : ",payload " + payload)
-              + (processingRows ? ",pt AS PROCTIME()" : ",WATERMARK FOR rt AS rt")
-              + ") WITH ("
-              + (countOnly
-                  ? "'connector'='canonical-fixture','input'='unused.csv','insert-only'='true'"
-                  : "'connector'='datagen'")
-              + ")");
-      table.executeSql(
-          "CREATE TABLE range_output(k "
-              + keySqlType
-              + ",v "
-              + type
-              + ",rt TIMESTAMP(3)"
-              + (payload == null ? "" : ",payload " + payload)
-              + (countOnly ? ",n BIGINT" : ",s " + type + ",c BIGINT,a " + type)
-              + ") WITH ('connector'='blackhole')");
+      var inputSchema =
+          tech.streamfusion.CanonicalTestSchemas.columns(
+              "k", keySqlType, "v", type, "rt", "TIMESTAMP(3)");
+      if (composite) inputSchema.column("k2", org.apache.flink.table.api.DataTypes.BIGINT());
+      if (payload != null)
+        inputSchema.column(
+            "payload",
+            org.apache.flink.table.types.utils.TypeConversions.fromLogicalToDataType(
+                org.apache.flink.table.types.logical.utils.LogicalTypeParser.parse(
+                    payload, getClass().getClassLoader())));
+      if (processingRows) inputSchema.columnByExpression("pt", "PROCTIME()");
+      else inputSchema.watermark("rt", "rt");
+      var inputTable =
+          org.apache.flink.table.api.TableDescriptor.forConnector(
+                  countOnly ? "canonical-fixture" : "datagen")
+              .schema(inputSchema.build());
+      if (countOnly) inputTable.option("input", "unused.csv").option("insert-only", "true");
+      table.createTable("range_input", inputTable.build());
+      var outputSchema =
+          tech.streamfusion.CanonicalTestSchemas.columns(
+              "k", keySqlType, "v", type, "rt", "TIMESTAMP(3)");
+      if (payload != null)
+        outputSchema.column(
+            "payload",
+            org.apache.flink.table.types.utils.TypeConversions.fromLogicalToDataType(
+                org.apache.flink.table.types.logical.utils.LogicalTypeParser.parse(
+                    payload, getClass().getClassLoader())));
+      if (countOnly) outputSchema.column("n", org.apache.flink.table.api.DataTypes.BIGINT());
+      else {
+        var aggregateSchema =
+            tech.streamfusion.CanonicalTestSchemas.columns("s", type, "c", "BIGINT", "a", type)
+                .build();
+        outputSchema.fromSchema(aggregateSchema);
+      }
+      table.createTable(
+          "range_output",
+          org.apache.flink.table.api.TableDescriptor.forConnector("blackhole")
+              .schema(outputSchema.build())
+              .build());
       json =
           table
               .compilePlanSql(
@@ -1174,7 +1190,11 @@ class CanonicalBoundedRangeInteropTest {
       h.processElement(
           new StreamRecord<>(
               new ArrowBatch(
-                  RowDataArrowConverter.write(List.of(row), input, NativeAllocator.SHARED, true))));
+                  RowDataArrowConverter.write(
+                      CanonicalOverValueFixture.physicalRows(List.of(row), input),
+                      input,
+                      NativeAllocator.SHARED,
+                      true))));
     }
 
     void pushStock(KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> h, RowData row)

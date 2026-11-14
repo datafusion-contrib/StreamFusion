@@ -275,23 +275,31 @@ class CanonicalUnboundedOverDistinctStateTest {
               field,
               RowData.createFieldGetter(plan.accumulator.getTypeAt(field).copy(true), field)
                   .getFieldOrNull(current));
+        // Released plans rewrite AVG(DISTINCT) into shared SUM/COUNT calls.
+        int targetKind = mode.equals("average") ? 103 : 100;
         int field = 0;
+        boolean found = false;
         for (int kind : plan.kinds) {
-          if (kind == (mode.equals("sum") || mode.endsWith("-sum") ? 100 : 104)) break;
+          if (kind == targetKind || targetKind == 100 && kind == 122) {
+            found = true;
+            break;
+          }
           field += kind == 104 || kind == 4 ? 2 : 1;
         }
+        assertTrue(found, java.util.Arrays.toString(plan.kinds));
         if (mode.startsWith("decimal-"))
           corrupt.setField(
               field,
               org.apache.flink.table.data.DecimalData.fromBigDecimal(
                   java.math.BigDecimal.ONE, 38, 2));
         else if (mode.endsWith("missing-sum")) corrupt.setField(field, null);
-        else if (mode.startsWith("float-")) {
-          if (mode.endsWith("average")) corrupt.setField(field, -0.0d);
-          else corrupt.setField(field, 0.0f);
-        } else if (mode.startsWith("double-"))
-          corrupt.setField(field, mode.endsWith("average") ? -0.0d : 0.0d);
-        else corrupt.setField(field, current.getLong(field) + 1);
+        else if (mode.startsWith("float-") || mode.startsWith("double-")) {
+          if (plan.accumulator
+              .getTypeAt(field)
+              .is(org.apache.flink.table.types.logical.LogicalTypeRoot.FLOAT))
+            corrupt.setField(field, -0.0f);
+          else corrupt.setField(field, -0.0d);
+        } else corrupt.setField(field, current.getLong(field) + 1);
         accumulator.update(corrupt);
       }
       var invalid = raw(source);

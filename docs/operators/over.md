@@ -2191,3 +2191,27 @@ Native DISTINCT decimal SUM preflight distinguishes its empty initialized raw ze
 nonempty sum and an overflowed NULL. An empty initialized zero is valid only with zero
 membership cardinality; stock-facing nullable projection and the native auxiliary count still
 determine SQL NULL output. No arithmetic is replayed from the membership view.
+
+Fold, DISTINCT-view, retained-input and timer projection use the released binary key projection
+for nullable non-compact DECIMAL and precise TIMESTAMP keys. Their reserved NULL variable slots
+remain part of the serialized key and its key-group hash; a generic row serializer would omit
+those slots. Existing binary keys read from stock state retain their original representation.
+
+Bound OVER retained inputs use the existing tagged map-list carriage consistently for live
+input and canonical frame/pending-row import. This preserves nullable multiset elements and
+map entry order through the same Arrow representation at both boundaries. Stock MapData and
+canonical serializers retain their released forms.
+
+Bounded OVER stages timestamp bucket data and timer inventories in disjoint spill sections,
+including when event ROWS has both event callbacks and processing-time cleanup. Import validates
+each relationship before installing native state.
+
+Compact timestamp arguments retain their component representation in the live Arrow batch,
+matching retained rows and canonical pending input. The native timestamp reader consumes
+that representation directly, preserving the full millisecond range and sub-millisecond
+values without a second value buffer.
+
+Pending OVER batches reconcile Arrow’s physical list-child aliases (`element`, `$data$`,
+`items`, and `entries`) without copying value buffers. Logical ROW field names, child
+nullability, dictionary definitions, extension metadata, and scalar types must still match;
+a mismatch rejects the handoff before changing live pending state.

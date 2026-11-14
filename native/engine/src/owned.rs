@@ -26,3 +26,39 @@ pub(crate) fn own_array_data(
     }
     builder.build()
 }
+
+/// Reconciles nested schema metadata over shared buffers after the caller verifies
+/// logical compatibility. Retained row codecs also use this for Map's List storage.
+pub(crate) fn align_nested_data(
+    data: arrow::array::ArrayData,
+    ty: &DataType,
+) -> Result<arrow::array::ArrayData, DataFusionError> {
+    if data.data_type() == ty {
+        return Ok(data);
+    }
+    let children = match ty {
+        DataType::List(field) | DataType::Map(field, _) if data.child_data().len() == 1 => {
+            vec![align_nested_data(
+                data.child_data()[0].clone(),
+                field.data_type(),
+            )?]
+        }
+        DataType::Struct(fields) if fields.len() == data.child_data().len() => data
+            .child_data()
+            .iter()
+            .zip(fields)
+            .map(|(child, field)| align_nested_data(child.clone(), field.data_type()))
+            .collect::<Result<Vec<_>, _>>()?,
+        _ => {
+            return Err(DataFusionError::Execution(format!(
+                "nested array layout changed: {} -> {ty}",
+                data.data_type()
+            )))
+        }
+    };
+    data.into_builder()
+        .data_type(ty.clone())
+        .child_data(children)
+        .build()
+        .map_err(|error| DataFusionError::ArrowError(Box::new(error), None))
+}

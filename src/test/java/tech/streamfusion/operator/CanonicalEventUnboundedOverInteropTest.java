@@ -998,34 +998,54 @@ class CanonicalEventUnboundedOverInteropTest {
               ? NativePlannerTestEnvironment.create(
                   config, org.example.canonical.CanonicalFixtureFactory.class)
               : NativePlannerTestEnvironment.create(config);
-      table.executeSql(
-          "CREATE TABLE scalar_input(k "
-              + keyType
-              + ",v "
-              + type
-              + (requiredValue ? " NOT NULL" : "")
-              + (composite ? ",k2 BIGINT" : "")
-              + (payload == null ? "" : ",payload " + payload)
-              + ",rt TIMESTAMP_LTZ(3),"
-              + (proctime ? "pt AS PROCTIME()," : "")
-              + "WATERMARK FOR rt AS rt) WITH ("
-              + (countOnly
-                  ? "'connector'='canonical-fixture','input'='unused.csv','insert-only'='true'"
-                  : "'connector'='datagen'")
-              + ")");
-      table.executeSql(
-          "CREATE TABLE scalar_output(k "
-              + keyType
-              + ",v "
-              + type
-              + (payload == null ? "" : ",payload " + payload)
-              + (countOnly
-                  ? ",n BIGINT"
-                  : extrema
-                      ? ",lo " + type + ",hi " + type + ",n BIGINT"
-                      : ",s " + type + ",c BIGINT,a " + type)
-              + (proctime ? ",pt TIMESTAMP_LTZ(3)" : "")
-              + ") WITH ('connector'='blackhole')");
+      var inputSchema =
+          tech.streamfusion.CanonicalTestSchemas.columns(
+              "k",
+              keyType,
+              "v",
+              type + (requiredValue ? " NOT NULL" : ""),
+              "rt",
+              "TIMESTAMP_LTZ(3)");
+      if (composite) inputSchema.column("k2", org.apache.flink.table.api.DataTypes.BIGINT());
+      if (payload != null)
+        inputSchema.column(
+            "payload",
+            org.apache.flink.table.types.utils.TypeConversions.fromLogicalToDataType(
+                org.apache.flink.table.types.logical.utils.LogicalTypeParser.parse(
+                    payload, getClass().getClassLoader())));
+      if (proctime) inputSchema.columnByExpression("pt", "PROCTIME()");
+      inputSchema.watermark("rt", "rt");
+      var inputTable =
+          org.apache.flink.table.api.TableDescriptor.forConnector(
+                  countOnly ? "canonical-fixture" : "datagen")
+              .schema(inputSchema.build());
+      if (countOnly) inputTable.option("input", "unused.csv").option("insert-only", "true");
+      table.createTable("scalar_input", inputTable.build());
+      var outputSchema = tech.streamfusion.CanonicalTestSchemas.columns("k", keyType, "v", type);
+      if (payload != null)
+        outputSchema.column(
+            "payload",
+            org.apache.flink.table.types.utils.TypeConversions.fromLogicalToDataType(
+                org.apache.flink.table.types.logical.utils.LogicalTypeParser.parse(
+                    payload, getClass().getClassLoader())));
+      if (countOnly) outputSchema.column("n", org.apache.flink.table.api.DataTypes.BIGINT());
+      else
+        outputSchema.fromSchema(
+            tech.streamfusion.CanonicalTestSchemas.columns(
+                    extrema ? "lo" : "s",
+                    type,
+                    extrema ? "hi" : "c",
+                    extrema ? type : "BIGINT",
+                    extrema ? "n" : "a",
+                    extrema ? "BIGINT" : type)
+                .build());
+      if (proctime)
+        outputSchema.column("pt", org.apache.flink.table.api.DataTypes.TIMESTAMP_LTZ(3));
+      table.createTable(
+          "scalar_output",
+          org.apache.flink.table.api.TableDescriptor.forConnector("blackhole")
+              .schema(outputSchema.build())
+              .build());
       json =
           table
               .compilePlanSql(

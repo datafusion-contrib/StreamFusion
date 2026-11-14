@@ -4,8 +4,6 @@ import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
 import org.apache.arrow.memory.BufferAllocator;
-import org.apache.arrow.vector.FieldVector;
-import org.apache.arrow.vector.TimeStampMilliVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.metrics.Counter;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
@@ -13,7 +11,6 @@ import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.Native;
-import tech.streamfusion.arrow.TimestampAccessor;
 import tech.streamfusion.state.RocksDBNativeStateSupport;
 
 /**
@@ -156,7 +153,9 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
     super.beforeHandleCreation();
     mapListInput =
         tech.streamfusion.arrow.MapListRepresentation.requiredForCounts(
-            nativeRowType(), valueColumns, aggregateKinds);
+                nativeRowType(), valueColumns, aggregateKinds)
+            || hasStockStateContract()
+                && tech.streamfusion.arrow.MapListRepresentation.containsMap(nativeRowType());
     binaryRowKeys =
         hasStockStateContract()
             && proctime
@@ -439,7 +438,6 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
     VectorSchemaRoot in = element.getValue().root();
     BufferAllocator inAllocator =
         in.getFieldVectors().isEmpty() ? allocator : in.getFieldVectors().get(0).getAllocator();
-    java.util.List<FieldVector> compactCopies = new java.util.ArrayList<>();
     VectorSchemaRoot constants = null;
     VectorSchemaRoot prepared = in;
     try {
@@ -452,29 +450,8 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
         prepared = new VectorSchemaRoot(fields);
         prepared.setRowCount(in.getRowCount());
       }
-      java.util.List<FieldVector> columns = null;
-      for (int a = 0; a < valueColumns.length; a++) {
-        int code = valueTypes[a];
-        int column = valueColumns[a];
-        if (code < 1000 || code > 1003 || column < 0) continue;
-        if (columns == null) columns = new java.util.ArrayList<>(prepared.getFieldVectors());
-        if (columns.get(column) instanceof TimeStampMilliVector) continue;
-        FieldVector source = columns.get(column);
-        var target = new TimeStampMilliVector(source.getName(), inAllocator);
-        compactCopies.add(target);
-        target.allocateNew(in.getRowCount());
-        var timestamps = new TimestampAccessor(source);
-        for (int row = 0; row < in.getRowCount(); row++) {
-          if (timestamps.isNull(row)) target.setNull(row);
-          else target.set(row, timestamps.getMillis(row));
-        }
-        target.setValueCount(in.getRowCount());
-        columns.set(column, target);
-      }
-      if (columns != null) {
-        prepared = new VectorSchemaRoot(columns);
-        prepared.setRowCount(in.getRowCount());
-      }
+      // The native timestamp reader accepts the component representation directly.
+      // Keep it intact: pending rows and their persistent codec use this same schema.
       if (mapListInput) {
         var safeSchema = tech.streamfusion.arrow.MapListRepresentation.forIpc(prepared.getSchema());
         if (safeSchema != prepared.getSchema()) {
@@ -520,7 +497,6 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
         }
       }
     } finally {
-      for (FieldVector copy : compactCopies) copy.close();
       if (constants != null) constants.close();
       in.close();
     }

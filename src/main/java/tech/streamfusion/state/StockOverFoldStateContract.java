@@ -336,7 +336,7 @@ public final class StockOverFoldStateContract implements StockStateContract {
   }
 
   private StockNativeValueSnapshot.Decoder<RowData> decoder() {
-    var keyRows = new RowDataSerializer(keyType);
+    var keyRows = new StockKeyProjection(keyType);
     var getters = new RowData.FieldGetter[nativeFields.length];
     for (int i = 0; i < getters.length; i++)
       getters[i] =
@@ -353,8 +353,7 @@ public final class StockOverFoldStateContract implements StockStateContract {
             field, org.apache.flink.table.data.binary.BinaryRawValueData.fromBytes(new byte[] {0}));
       validateKey(key);
       validateAccumulator(accumulator);
-      receiver.write(
-          keyRows.toBinaryRow(key).copy(), accumulator, row.getLong(bridge.getFieldCount() - 1));
+      receiver.write(keyRows.project(key), accumulator, row.getLong(bridge.getFieldCount() - 1));
     };
   }
 

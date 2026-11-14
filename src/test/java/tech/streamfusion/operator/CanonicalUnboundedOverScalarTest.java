@@ -737,7 +737,8 @@ class CanonicalUnboundedOverScalarTest {
           new StreamRecord<>(
               new ArrowBatch(
                   binaryRowKeys
-                      ? CanonicalRowKeyFixture.arrow(rows, input, partitions)
+                      ? CanonicalRowKeyFixture.arrow(
+                          CanonicalOverValueFixture.physicalRows(rows, input), input, partitions)
                       : RowDataArrowConverter.write(
                           CanonicalOverValueFixture.physicalRows(rows, input),
                           input,

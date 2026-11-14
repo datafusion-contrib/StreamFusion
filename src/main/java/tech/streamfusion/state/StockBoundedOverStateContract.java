@@ -267,7 +267,7 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
   private BinaryRowData key(RowData row) {
     var key = new GenericRowData(keyColumns.length);
     for (int i = 0; i < keyColumns.length; i++) key.setField(i, get(row, inputType, keyColumns[i]));
-    return new RowDataSerializer(keyType).toBinaryRow(key).copy();
+    return new StockKeyProjection(keyType).project(key);
   }
 
   private static Object get(RowData row, RowType type, int index) {
@@ -323,7 +323,11 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
         var array = ArrowArray.allocateNew(NativeAllocator.SHARED);
         var schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
       Data.exportVectorSchemaRoot(
-          NativeAllocator.SHARED, root, NativeAllocator.DICTIONARIES, array, schema);
+          NativeAllocator.SHARED,
+          tech.streamfusion.arrow.MapListRepresentation.forExport(root),
+          NativeAllocator.DICTIONARIES,
+          array,
+          schema);
       importer.run(handle, array.memoryAddress(), schema.memoryAddress());
     }
   }
@@ -498,7 +502,7 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
               var keyRow = new GenericRowData(keyType.getFieldCount());
               for (int k = 0; k < keyType.getFieldCount(); k++)
                 keyRow.setField(k, get(row, keyType, k));
-              var owner = new RowDataSerializer(keyType).toBinaryRow(keyRow).copy();
+              var owner = new StockKeyProjection(keyType).project(keyRow);
               backend.setCurrentKey(owner);
               int k = keyType.getFieldCount();
               if (row.isNullAt(k)) scalar(backend, cleanupState).clear();
@@ -535,7 +539,7 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
   private BinaryRowData protocolKey(RowData row) {
     var key = new GenericRowData(keyType.getFieldCount());
     for (int i = 0; i < keyType.getFieldCount(); i++) key.setField(i, get(row, keyType, i));
-    return new RowDataSerializer(keyType).toBinaryRow(key).copy();
+    return new StockKeyProjection(keyType).project(key);
   }
 
   private static final class Partition {
@@ -684,7 +688,15 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
           || (partition.cleanupTimerCount == 1
               && (partition.cleanup == null || !partitions.contains(3, owner, partition.cleanup)))
           || (cleanupEnabled && partition.bucketCount != 0 && partition.cleanup == null))
-        throw new IllegalArgumentException("Event ROWS cleanup/timer ownership changed");
+        throw new IllegalArgumentException(
+            "Event ROWS cleanup/timer ownership changed: enabled="
+                + cleanupEnabled
+                + ", timers="
+                + partition.cleanupTimerCount
+                + ", cleanup="
+                + partition.cleanup
+                + ", buckets="
+                + partition.bucketCount);
       if (partition.accumulator != null
           && hiddenCount >= 0
           && (partition.accumulator.isNullAt(hiddenCount)
@@ -877,7 +889,7 @@ abstract class StockBoundedOverStateContract implements StockStateContract {
       CheckpointableKeyedStateBackend<RowData> backend, long handle, boolean persistent)
       throws Exception {
     try (var partitions = new StockStateSpool(new RowDataSerializer(keyType))) {
-      var lists = new StockMapListSnapshot(partitions, new RowDataSerializer(inputType), 2);
+      var lists = new StockMapListSnapshot(partitions, new RowDataSerializer(inputType), 5);
       preflight(backend, partitions, lists, handle, persistent);
       try (var owners = partitions.owners()) {
         while (owners.hasNext()) {

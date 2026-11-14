@@ -1,6 +1,6 @@
 use super::{re, rocks_row_supported};
 use crate::*;
-use arrow::array::{make_array, ArrayData};
+use arrow::array::make_array;
 use arrow::row::{RowConverter, Rows, SortField};
 
 /// Payload rows do not need map comparison semantics. Arrow 58's row codec can encode their
@@ -94,35 +94,13 @@ fn align_columns(
     columns
         .iter()
         .zip(types)
-        .map(|(array, ty)| Ok(make_array(align_data(array.to_data(), ty)?)))
+        .map(|(array, ty)| {
+            Ok(make_array(crate::owned::align_nested_data(
+                array.to_data(),
+                ty,
+            )?))
+        })
         .collect()
-}
-
-fn align_data(data: ArrayData, ty: &DataType) -> Result<ArrayData, DataFusionError> {
-    if data.data_type() == ty {
-        return Ok(data);
-    }
-    let children = match ty {
-        DataType::List(field) | DataType::Map(field, _) => {
-            vec![align_data(data.child_data()[0].clone(), field.data_type())?]
-        }
-        DataType::Struct(fields) if fields.len() == data.child_data().len() => data
-            .child_data()
-            .iter()
-            .zip(fields)
-            .map(|(child, field)| align_data(child.clone(), field.data_type()))
-            .collect::<Result<Vec<_>, _>>()?,
-        _ => {
-            return Err(DataFusionError::Execution(
-                "retained row layout changed".into(),
-            ))
-        }
-    };
-    data.into_builder()
-        .data_type(ty.clone())
-        .child_data(children)
-        .build()
-        .map_err(re)
 }
 
 #[cfg(test)]

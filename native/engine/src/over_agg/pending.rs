@@ -29,20 +29,31 @@ impl OverWindowAggregator {
                 .filter(|(_, field)| !companion(field))
                 .collect::<Vec<_>>();
             if payload.len() != logical.len()
-                || payload
-                    .iter()
-                    .zip(&logical)
-                    .any(|((_, left), right)| left.data_type() != right.data_type())
+                || payload.iter().zip(&logical).any(|((_, left), right)| {
+                    left.metadata() != right.metadata()
+                        || !same_logical_type(left.data_type(), right.data_type())
+                })
             {
-                return Err(DataFusionError::Execution(
-                    "OVER pending logical input schema changed".into(),
-                ));
+                return Err(DataFusionError::Execution(format!(
+                    "OVER pending logical input schema changed: {:?} -> {:?}",
+                    payload
+                        .iter()
+                        .map(|(_, field)| field.data_type())
+                        .collect::<Vec<_>>(),
+                    logical
+                        .iter()
+                        .map(|field| field.data_type())
+                        .collect::<Vec<_>>()
+                )));
             }
             let mut columns = Vec::with_capacity(schema.fields().len());
             let mut position = 0;
             for field in schema.fields() {
                 if !companion(field) {
-                    columns.push(batch.column(payload[position].0).clone());
+                    columns.push(align_column(
+                        batch.column(payload[position].0),
+                        field.data_type(),
+                    )?);
                     position += 1;
                 } else if let Some(column) = batch.column_by_name(field.name()) {
                     if column.data_type() != field.data_type() {
@@ -74,4 +85,45 @@ impl OverWindowAggregator {
         self.buffered = aligned;
         Ok(())
     }
+}
+
+// Arrow Java and retained row reconstruction use different names for a List's
+// physical child (element, $data$, items, entries). Those names have no SQL
+// meaning. ROW field names, nullability, dictionaries and extension metadata do.
+fn same_logical_field(left: &Field, right: &Field, element: bool) -> bool {
+    let mut expected = left.clone().with_data_type(right.data_type().clone());
+    if element {
+        expected = expected.with_name(right.name());
+    }
+    expected == *right && same_logical_type(left.data_type(), right.data_type())
+}
+
+fn same_logical_type(left: &DataType, right: &DataType) -> bool {
+    if left == right {
+        return true;
+    }
+    match (left, right) {
+        (DataType::List(left), DataType::List(right)) => same_logical_field(left, right, true),
+        (DataType::Map(left, left_sorted), DataType::Map(right, right_sorted)) => {
+            left_sorted == right_sorted && same_logical_field(left, right, true)
+        }
+        (DataType::Struct(left), DataType::Struct(right)) => {
+            left.len() == right.len()
+                && left
+                    .iter()
+                    .zip(right)
+                    .all(|(left, right)| same_logical_field(left, right, false))
+        }
+        _ => false,
+    }
+}
+
+pub(super) fn align_column(column: &ArrayRef, ty: &DataType) -> Result<ArrayRef, DataFusionError> {
+    if column.data_type() == ty {
+        return Ok(column.clone());
+    }
+    Ok(arrow::array::make_array(crate::owned::align_nested_data(
+        column.to_data(),
+        ty,
+    )?))
 }

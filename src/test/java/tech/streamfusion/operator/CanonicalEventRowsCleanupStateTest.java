@@ -48,23 +48,25 @@ class CanonicalEventRowsCleanupStateTest {
       if (mode.equals("missing-value")) cleanup.clear();
       else if (mode.equals("wrong-deadline")) cleanup.update(1601L);
       else {
-        var timers =
-            ((org.apache.flink.runtime.state.CheckpointableKeyedStateBackend<
-                        org.apache.flink.table.data.RowData>)
-                    backend)
-                .create(
-                    "_timer_state/processing_user-timers",
-                    new org.apache.flink.streaming.api.operators.TimerSerializer<>(
-                        new org.apache.flink.table.runtime.typeutils.RowDataSerializer(
-                            plan.keyType),
-                        org.apache.flink.runtime.state.VoidNamespaceSerializer.INSTANCE));
-        timers.add(
-            new org.apache.flink.streaming.api.operators.TimerHeapInternalTimer<>(
-                1601, key, org.apache.flink.runtime.state.VoidNamespace.INSTANCE));
+        ((org.apache.flink.streaming.api.operators.AbstractStreamOperator<?>) stock.getOperator())
+            .getInternalTimerService(
+                "user-timers",
+                org.apache.flink.runtime.state.VoidNamespaceSerializer.INSTANCE,
+                (org.apache.flink.streaming.api.operators.Triggerable<
+                        org.apache.flink.table.data.RowData,
+                        org.apache.flink.runtime.state.VoidNamespace>)
+                    stock.getOperator())
+            .registerProcessingTimeTimer(
+                org.apache.flink.runtime.state.VoidNamespace.INSTANCE, 1601L);
       }
       saved = CanonicalOverSnapshotTestSupport.snapshot(stock, 1, 100);
-      target.initializeState(saved);
-      assertThrows(Exception.class, target::open);
+      var invalid = saved;
+      assertThrows(
+          Exception.class,
+          () -> {
+            target.initializeState(invalid);
+            target.open();
+          });
     } finally {
       if (saved != null) saved.discardState();
     }
