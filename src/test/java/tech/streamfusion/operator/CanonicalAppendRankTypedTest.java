@@ -198,6 +198,8 @@ class CanonicalAppendRankTypedTest {
           returned.initializeState(saved);
           returned.open();
           synchronizeCacheClock(returned, fast);
+          // Released Top-1 keeps new winners in its write-back cache until checkpoint.
+          snapshots.add(snapshot(reference));
           assertEquals(
               CanonicalUnboundedOverScalarTest.raw(reference),
               CanonicalUnboundedOverScalarTest.raw(returned));
@@ -662,8 +664,12 @@ class CanonicalAppendRankTypedTest {
         new StreamRecord<>(
             new ArrowBatch(
                 CanonicalRankRowKeyFixture.required(type)
-                    ? CanonicalRowKeyFixture.arrow(rows, type, new int[] {0})
-                    : RowDataArrowConverter.write(rows, type, NativeAllocator.SHARED))));
+                    ? CanonicalRowKeyFixture.arrow(
+                        CanonicalOverValueFixture.physicalRows(rows, type), type, new int[] {0})
+                    : RowDataArrowConverter.write(
+                        CanonicalOverValueFixture.physicalRows(rows, type),
+                        type,
+                        NativeAllocator.SHARED))));
     harness.prepareSnapshotPreBarrier(0);
   }
 

@@ -464,8 +464,13 @@ class CanonicalRetractingRankTypedTest {
         new StreamRecord<>(
             new ArrowBatch(
                 CanonicalRankRowKeyFixture.required(type)
-                    ? CanonicalRowKeyFixture.arrow(rows, type, new int[] {0})
-                    : RowDataArrowConverter.write(rows, type, NativeAllocator.SHARED, true))));
+                    ? CanonicalRowKeyFixture.arrow(
+                        CanonicalOverValueFixture.physicalRows(rows, type), type, new int[] {0})
+                    : RowDataArrowConverter.write(
+                        CanonicalOverValueFixture.physicalRows(rows, type),
+                        type,
+                        NativeAllocator.SHARED,
+                        true))));
     harness.prepareSnapshotPreBarrier(0);
   }
 

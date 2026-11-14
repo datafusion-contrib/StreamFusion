@@ -168,6 +168,8 @@ public final class CanonicalRankScalarFixture {
       if (score == 20) return 0.0d;
       if (score == 50) return Double.longBitsToDouble(0x7ff8000000000011L);
     }
+    // UpdateFast requires each replacement to improve its ORDER BY value.
+    if (score != null && shape.equals("scalar-boolean")) return score >= 10;
     return value(shape, score);
   }
 }

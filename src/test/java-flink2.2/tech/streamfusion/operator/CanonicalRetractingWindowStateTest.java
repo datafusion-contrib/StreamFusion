@@ -104,6 +104,8 @@ class CanonicalRetractingWindowStateTest {
             if (nativeStage) plan.sendNative(nativeOwner, input.get(index));
             else plan.send(stock, input.get(index));
           }
+          // Released slicing windows stage accumulator updates until a checkpoint barrier.
+          canonical(reference).discardState();
           var previous = saved;
           saved = canonical(receiver);
           if (previous != null) previous.discardState();
@@ -177,12 +179,13 @@ class CanonicalRetractingWindowStateTest {
         throws Exception {
       this.compiled = compiled;
       var config = new Configuration();
-      config.setString("streamfusion.native.enabled", "false");
+      config.setString("streamfusion.native.enabled", "true");
       config.setString("parallelism.default", "1");
       config.setString("pipeline.max-parallelism", "128");
       config.setString("table.exec.uid.generation", "ALWAYS");
       config.setString("table.optimizer.agg-phase-strategy", "ONE_PHASE");
       table = NativePlannerTestEnvironment.create(config, CanonicalFixtureFactory.class);
+      table.getConfig().set("streamfusion.native.enabled", "false");
       table.executeSql(
           "CREATE TABLE input_table(k BIGINT,v "
               + type
@@ -379,7 +382,12 @@ class CanonicalRetractingWindowStateTest {
             result.setField(index, filter);
             break;
           default:
-            throw new AssertionError(input.asSummaryString());
+            // FILTER predicates may be materialized as a computed IS TRUE column.
+            if (input
+                .getTypeAt(index)
+                .is(org.apache.flink.table.types.logical.LogicalTypeRoot.BOOLEAN))
+              result.setField(index, filter);
+            else throw new AssertionError(input.asSummaryString());
         }
       }
       return result;
