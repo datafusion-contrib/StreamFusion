@@ -2385,3 +2385,14 @@ continued/empty handoffs, native checkpoint recovery and source/materializer/wri
 These controls await qualification on both release lines; 1.18 uses LEGACY and 2.2 additionally
 uses VALUE/MAP/ADAPTIVE. The compatibility fixture exposes typed output columns and committed
 record bytes while retaining its existing default BIGINT protocol.
+
+## GROUP BY ROW-key binding awaiting qualification
+
+Typed scalar and shared DISTINCT aggregate state already carries raw Flink keys. Its canonical
+input boundary now also retains binary ROW-bearing grouping keys, including nested row kinds,
+wide decimal/timestamp fields and original padding. Ordinary submission uses the captured stock
+producer before that boundary. One-phase eager/retracting mini-batches and append-only two-phase
+partials share this representation; aggregate execution and private checkpoint formats stay on
+the existing paths. New raw-state, planner and clean-worker controls cover both engine orders,
+NULL keys, checkpoint recovery and rescaling. These additions await qualification on Flink 1.18
+and 2.2. Two-phase retracting scalar/DISTINCT layouts remain outside canonical binding.

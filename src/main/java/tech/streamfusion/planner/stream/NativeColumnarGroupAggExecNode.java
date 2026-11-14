@@ -39,6 +39,10 @@ public class NativeColumnarGroupAggExecNode extends ExecNodeBase<ArrowBatch>
   private final int[] keyTimestampPrecisions;
   private Integer stateMaxParallelism;
 
+  public int groupingKeyCount() {
+    return keyColumns.length;
+  }
+
   public boolean hasStockGroupPartials() {
     for (int i = 0; i < aggregateKinds.length; i++) {
       int kind = aggregateKinds[i];

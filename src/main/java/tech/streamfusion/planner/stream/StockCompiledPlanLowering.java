@@ -369,7 +369,7 @@ final class StockCompiledPlanLowering {
                   || node instanceof NativeColumnarWindowAggExecNode
                   || node instanceof NativeColumnarSessionWindowAggExecNode
                   || node instanceof NativeColumnarGlobalWindowAggExecNode) return true;
-              if (needsNormalizerRowTemplate(node)) return true;
+              if (needsBinaryRowKeyTemplate(node)) return true;
               if (needsStringTemplate(node, graph) || needsGlobalGroupTemplate(node, graph))
                 return true;
               if (node instanceof NativeColumnarGroupAggExecNode
@@ -401,7 +401,11 @@ final class StockCompiledPlanLowering {
             });
   }
 
-  private static boolean needsNormalizerRowTemplate(ExecNode<?> node) {
+  private static boolean needsBinaryRowKeyTemplate(ExecNode<?> node) {
+    if (node instanceof NativeColumnarGroupAggExecNode)
+      return rowKeys((RowType) node.getOutputType(),
+          java.util.stream.IntStream.range(0,
+              ((NativeColumnarGroupAggExecNode) node).groupingKeyCount()).toArray());
     if (node instanceof NativeChangelogNormalizeExecNode)
       return rowKeys((RowType) node.getOutputType(),
           ((NativeChangelogNormalizeExecNode) node).stateKeyColumns());
@@ -455,7 +459,7 @@ final class StockCompiledPlanLowering {
     Set<ExecNode<?>> nodes = Collections.newSetFromMap(new IdentityHashMap<>());
     collectOrdinaryNodes(graph.getRootNodes(), nodes);
     for (ExecNode<?> node : nodes) {
-      if (needsNormalizerRowTemplate(node)
+      if (needsBinaryRowKeyTemplate(node)
           || needsStringTemplate(node, graph)
           || needsGlobalGroupTemplate(node, graph)) return false;
       if (node instanceof NativeTemporalSortExecNode || node instanceof NativeWindowRankExecNode)
@@ -2562,6 +2566,7 @@ final class StockCompiledPlanLowering {
     boolean stringCaches =
         java.util.stream.IntStream.range(0, kinds.length)
             .anyMatch(i -> (kinds[i] == 10 || kinds[i] == 11) && types[i] == 3);
+    boolean binaryRowKeys = rowKeys(sourceType, localKeys);
     NativeColumnarExchangeExecNode exchange;
     if (global) {
       RowType stockPartialType = (RowType) local.getOutputType();
@@ -2625,7 +2630,7 @@ final class StockCompiledPlanLowering {
       if (!localViewSources.isEmpty()) localOwner.withStockAppendDistinct();
       var producer = local.getInputEdges().get(0).getSource();
       ExecNode<?> entry;
-      if (stringCaches) {
+      if (stringCaches || binaryRowKeys) {
         entry =
             new RowDataToArrowExecNode(
                 config,
@@ -2637,7 +2642,8 @@ final class StockCompiledPlanLowering {
                 false,
                 1024,
                 false,
-                true);
+                stringCaches);
+        if (binaryRowKeys) ((RowDataToArrowExecNode) entry).withBinaryRowKeys();
         connect(producer, entry);
       } else entry = arrowInput(producer, config, sourceType, true);
       connect(entry, localOwner);
@@ -2656,7 +2662,7 @@ final class StockCompiledPlanLowering {
     } else
       exchange =
           (NativeColumnarExchangeExecNode)
-              canonicalJoinInput(input, config, inputType, keys, true, stringCaches);
+              canonicalJoinInput(input, config, inputType, keys, true, stringCaches, binaryRowKeys);
     exchange.withStateMaxParallelism(maximum);
     var owner =
         new NativeColumnarGroupAggExecNode(
