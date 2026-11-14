@@ -19,7 +19,7 @@ pages. Historical cohorts are not silently requalified against each newer librar
 
 | Family | Current stock-interchange scope | Main remaining work |
 | --- | --- | --- |
-| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Arithmetic, typed scalar/shared COUNT DISTINCT and append numeric SUM DISTINCT, append extrema, integral/date/time/boolean retracting MIN/MAX, append scalar and local/global DISTINCT mini-batches, and captured managed UDFs; one-phase retracting scalar/COUNT DISTINCT and two-phase retracting scalar mini-batches awaiting qualification | Wider types/keys, remaining retracting mini-batches, wider UDF contracts, other views/phases and failures |
+| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Arithmetic, typed scalar/shared COUNT DISTINCT and append numeric SUM DISTINCT, append extrema, integral/date/time/boolean retracting MIN/MAX, append scalar and local/global DISTINCT mini-batches, and captured managed UDFs; one-phase retracting scalar/COUNT DISTINCT, one-phase decimal SUM/AVG and two-phase retracting scalar mini-batches awaiting qualification | Wider types/keys, remaining retracting mini-batches, wider UDF contracts, other views/phases and failures |
 | [Deduplication](../operators/deduplication.md#canonical-state-adapter) | Automatic eager and buffered contracts, selected mini-batch and TTL modes; ROW-key binding awaiting qualification | Remaining schemas/emission variants and full failure matrix |
 | [Top-N / First-N / LIMIT](../operators/top-n.md#first-n-canonical-handoffs) | Automatic first-N, append, updating and retracting rank subsets; wider scalar/arbitrary-sort and nested-payload binding awaiting qualification | Algorithm-specific bounds, TTL, constructed key/sort types and complete new-scope qualification |
 | [Regular joins](../operators/joins/regular-join.md) | Automatic qualified stock layouts and complete-job handoffs; nested payload binding awaiting qualification | Wider uniqueness, mini-batch, schema and TTL combinations |
@@ -49,7 +49,7 @@ claim a downgrade from a newer stock state format into an older release.
 
 The frozen sink-materializer cohort used explicit attachment on both lines. Resumed #569 work now
 connects automatic stock-sink binding through the shared materializer hook, including existing
-Arrow payloads and scalar sink/matching keys; new planner and
+Arrow payloads and scalar/ROW sink/matching keys; new planner and
 complete-job controls await the final six-hour testing window. Earlier automatic-job qualification
 claims remain withdrawn. This extension is separate from the historical frozen evidence.
 Captured JVM aggregate handlers already store their accumulators/views in released Flink managed
@@ -2375,7 +2375,7 @@ validation, TTL, no-input returns, native checkpoints and keyed rescaling.
 
 ## Typed materializer binding awaiting qualification
 
-The captured stock materializer hook now admits existing Arrow payload types with scalar sink
+The captured stock materializer hook now admits existing Arrow payload types with scalar/ROW sink
 and inferred input keys, instead of rejecting every non-BIGINT retained row. ROW/ARRAY/MAP/
 MULTISET payloads use the existing candidate and matching codecs. ARRAY/MAP/MULTISET key descendants, empty input
 upsert keys, async/unaligned state and independent accelerated-connector contracts retain their

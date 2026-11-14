@@ -104,8 +104,8 @@ serializers stay behind a narrow version adapter. Flink 1.18 has no V2 materiali
 
 The resumed #569 implementation now attaches the contract to captured stock sink materializers
 through ordinary SQL and portable compiled plans. Existing Arrow payload types are admitted,
-including nested ROW/ARRAY/MAP/MULTISET values, while sink and inferred input matching keys
-remain scalar. Constructed keys retain the stock owner. It retains the released sink's
+including nested ROW/ARRAY/MAP/MULTISET values. Sink and inferred input matching keys admit
+scalars and ROWs with scalar/ROW descendants; array/map key descendants retain the stock owner. It retains the released sink's
 constraint, writer and committer translation, replaces its materializer hook, and captures the
 actual stock strategy, input matching key, LEGACY TTL and adaptive threshold overrides. The shared
 runtime supports LEGACY on both releases and the V2 strategies on 2.2. Stateful registration uses
@@ -121,7 +121,7 @@ component evidence below does not qualify these new jobs. Typed planner and full
 decimals, nanosecond timestamps, binary data and nested payloads. The fixture’s typed sink
 serializes whole candidate rows, compares the complete committed changelog with stock, and
 checks an independent final candidate table; no projection hides the materializer payload.
-Earlier claims of seventy qualified automatic jobs remain withdrawn. Constructed keys,
+Earlier claims of seventy qualified automatic jobs remain withdrawn. Array/map key descendants,
 async/unaligned state and accelerated Doris binding
 remain separate work; existing accelerated connector replacements retain their prior route.
 `streamfusion.operator.sinkMaterializer.enabled=false` keeps the captured stock materializer.
