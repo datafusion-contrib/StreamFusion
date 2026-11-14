@@ -132,6 +132,109 @@ class CanonicalDedupRowKeyStateTest {
     harness.setStateTtlProcessingTime(clock);
   }
 
+  static Stream<Arguments> representedKeys() {
+    return tech.streamfusion.CanonicalTestMatrix.select(
+        Stream.of(false, true)
+            .flatMap(
+                nested ->
+                    Stream.of(RowKind.values())
+                        .flatMap(
+                            kind ->
+                                Stream.of(false, true)
+                                    .map(rocks -> Arguments.of(nested, kind, rocks)))));
+  }
+
+  @ParameterizedTest
+  @MethodSource("representedKeys")
+  void genericAndBinaryFormsSharePendingWinnersAndEmittedMarkers(
+      boolean nested, RowKind kind, boolean rocks) throws Exception {
+    org.junit.jupiter.api.Assumptions.assumeTrue(
+        CanonicalTestCompat.flink22(),
+        "The released watermark-buffered keep-first owner is a Flink 2.2 contract");
+    var layout = new Layout("buffered", nested, kind, false, 1000);
+    long allocated = NativeAllocator.SHARED.getAllocatedMemory();
+    OperatorSubtaskState pending = null, checkpoint = null, fromStock = null, fromNative = null;
+    try (var stock = layout.stock(rocks);
+        var source = layout.nativeHarness(rocks)) {
+      stock.open();
+      source.open();
+      time(stock, 100);
+      time(source, 100);
+      var binary = layout.row(1L, 10, 100);
+      var generic = (GenericRowData) layout.row(1L, 11, 90);
+      generic.setField(0, CanonicalRowKeyFixture.logicalKey(nested, 1L, kind));
+      var selector =
+          KeySelectorUtil.getRowDataSelector(
+              getClass().getClassLoader(), new int[] {0}, InternalTypeInfo.of(layout.input));
+      RowData expectedKey = new RowDataSerializer(layout.keys).copy(selector.getKey(binary));
+      assertEquals(expectedKey, selector.getKey(generic), "These are one actual stock binary key");
+      layout.feed(stock, List.of(binary));
+      layout.push(source, List.of(binary));
+      pending = FirstNCanonicalTestSupport.snapshot(stock);
+      try (var imported = layout.nativeHarness(!rocks)) {
+        imported.initializeState(pending);
+        imported.open();
+        time(imported, 100);
+        layout.feed(stock, List.of(generic));
+        layout.push(source, List.of(generic));
+        layout.push(imported, List.of(generic));
+        source.prepareSnapshotPreBarrier(3);
+        checkpoint = source.snapshot(3, 0);
+        try (var recovered = layout.nativeHarness(rocks)) {
+          recovered.initializeState(checkpoint);
+          recovered.open();
+          time(recovered, 100);
+          stock.processWatermark(new Watermark(100));
+          source.processWatermark(new Watermark(100));
+          imported.processWatermark(new Watermark(100));
+          recovered.processWatermark(new Watermark(100));
+          var expected = layout.drain(stock);
+          assertEquals(1, expected.size(), "A smaller time replaces the first representation");
+          assertEquals(expected, layout.nativeOutput(source));
+          assertEquals(expected, layout.nativeOutput(imported));
+          assertEquals(expected, layout.nativeOutput(recovered));
+        }
+      }
+      fromStock = FirstNCanonicalTestSupport.snapshot(stock);
+      fromNative = FirstNCanonicalTestSupport.snapshot(source);
+      try (var returned = layout.stock(!rocks);
+          var imported = layout.nativeHarness(!rocks)) {
+        returned.initializeState(fromNative);
+        imported.initializeState(fromStock);
+        returned.open();
+        imported.open();
+        assertEquals(
+            CanonicalUnboundedOverScalarTest.raw(stock),
+            CanonicalUnboundedOverScalarTest.raw(returned));
+        for (long clock : new long[] {500, 1200}) {
+          time(stock, clock);
+          time(returned, clock);
+          time(imported, clock);
+          long stamp = clock == 500 ? 2000 : 3000;
+          var first = (GenericRowData) layout.row(1L, 20, stamp);
+          first.setField(0, CanonicalRowKeyFixture.logicalKey(nested, 1L, kind));
+          var rows = List.of((RowData) first, layout.row(1L, 21, stamp - 1));
+          layout.feed(stock, rows);
+          layout.feed(returned, rows);
+          layout.push(imported, rows);
+          stock.processWatermark(new Watermark(stamp));
+          returned.processWatermark(new Watermark(stamp));
+          imported.processWatermark(new Watermark(stamp));
+          var expected = layout.drain(stock);
+          assertEquals(clock == 500 ? 0 : 1, expected.size());
+          assertEquals(expected, layout.drain(returned));
+          assertEquals(expected, layout.nativeOutput(imported));
+        }
+      }
+    } finally {
+      if (pending != null) pending.discardState();
+      if (checkpoint != null) checkpoint.discardState();
+      if (fromStock != null) fromStock.discardState();
+      if (fromNative != null) fromNative.discardState();
+    }
+    assertEquals(allocated, NativeAllocator.SHARED.getAllocatedMemory());
+  }
+
   private static final class Layout {
     final String mode;
     final boolean nested, padding, buffered, rowtime, first;

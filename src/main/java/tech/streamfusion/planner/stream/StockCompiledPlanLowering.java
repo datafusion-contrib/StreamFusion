@@ -3063,6 +3063,9 @@ final class StockCompiledPlanLowering {
     RowType inputType = (RowType) input.getOutputType();
     if (!RowDataArrowConverter.supports(inputType)
         || !ArrowRowTypeSupport.supportsFields(inputType, keys)) return stock;
+    if (buffered && Arrays.stream(keys)
+        .anyMatch(key -> containsRow(inputType.getTypeAt(key))
+            && !scalarOrRowKey(inputType.getTypeAt(key)))) return stock;
     Configuration config = new Configuration(planner.getTableConfig().getConfiguration());
     FlinkPlanCompat.persistedConfig(stock).toMap().forEach(config::setString);
     if (Boolean.parseBoolean(config.getString("execution.checkpointing.unaligned.enabled", "false"))
@@ -3786,14 +3789,14 @@ final class StockCompiledPlanLowering {
         original.getStateKeyType()).toRowType();
     if (!RowDataArrowConverter.supports(inputType)
         || materializerKeyType.getChildren().stream()
-            .anyMatch(type -> !materializerKey(type)))
+            .anyMatch(type -> !scalarOrRowKey(type)))
       return stock;
     int[] upsertKeys = definition.path("inputUpsertKey").isArray()
         ? reader.forType(int[].class).readValue(definition.path("inputUpsertKey")) : null;
     if (upsertKeys != null
         && (upsertKeys.length == 0 || Arrays.stream(upsertKeys)
             .anyMatch(index -> index < 0 || index >= inputType.getFieldCount()
-                || !materializerKey(inputType.getTypeAt(index))))) return stock;
+                || !scalarOrRowKey(inputType.getTypeAt(index))))) return stock;
     var operator = ((SimpleOperatorFactory<?>) original.getOperatorFactory()).getOperator();
     String strategy;
     long ttl;
@@ -3847,9 +3850,9 @@ final class StockCompiledPlanLowering {
     return sink;
   }
 
-  private static boolean materializerKey(LogicalType type) {
+  private static boolean scalarOrRowKey(LogicalType type) {
     if (type.is(LogicalTypeRoot.ROW))
-      return type.getChildren().stream().allMatch(StockCompiledPlanLowering::materializerKey);
+      return type.getChildren().stream().allMatch(StockCompiledPlanLowering::scalarOrRowKey);
     return !type.is(LogicalTypeFamily.CONSTRUCTED);
   }
 

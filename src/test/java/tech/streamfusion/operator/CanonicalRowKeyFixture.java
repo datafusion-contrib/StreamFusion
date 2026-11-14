@@ -34,6 +34,21 @@ public final class CanonicalRowKeyFixture {
   }
 
   public static RowData key(boolean nested, Long id, RowKind kind, boolean padding) {
+    var value = logicalKey(nested, id, kind);
+    if (value == null) return null;
+    var binary = new RowDataSerializer(type(nested)).toBinaryRow(value).copy();
+    if (padding) {
+      byte[] bytes =
+          BinarySegmentUtils.copyToBytes(
+              binary.getSegments(), binary.getOffset(), binary.getSizeInBytes());
+      bytes = Arrays.copyOf(bytes, bytes.length + 8);
+      Arrays.fill(bytes, bytes.length - 8, bytes.length, (byte) 0x55);
+      binary.pointTo(MemorySegmentFactory.wrap(bytes), 0, bytes.length);
+    }
+    return binary;
+  }
+
+  public static RowData logicalKey(boolean nested, Long id, RowKind kind) {
     if (id == null) return null;
     var child =
         GenericRowData.of(id.intValue(), id % 3 == 0 ? null : StringData.fromString("雪" + id));
@@ -50,16 +65,7 @@ public final class CanonicalRowKeyFixture {
                         new BigDecimal("123456789012345678901234567890123456.78"), 38, 2))
             : GenericRowData.of(id, id % 2 == 0 ? null : StringData.fromString("雪" + id));
     value.setRowKind(kind);
-    var binary = new RowDataSerializer(type(nested)).toBinaryRow(value).copy();
-    if (padding) {
-      byte[] bytes =
-          BinarySegmentUtils.copyToBytes(
-              binary.getSegments(), binary.getOffset(), binary.getSizeInBytes());
-      bytes = Arrays.copyOf(bytes, bytes.length + 8);
-      Arrays.fill(bytes, bytes.length - 8, bytes.length, (byte) 0x55);
-      binary.pointTo(MemorySegmentFactory.wrap(bytes), 0, bytes.length);
-    }
-    return binary;
+    return value;
   }
 
   public static VectorSchemaRoot arrow(List<RowData> rows, RowType type) {

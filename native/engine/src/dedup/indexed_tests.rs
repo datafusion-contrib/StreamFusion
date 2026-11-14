@@ -1,4 +1,167 @@
 use super::*;
+
+fn represented_row_batch(count: usize, binary: bool, time: i64) -> RecordBatch {
+    use arrow::array::{BinaryArray, Int8Array, ListArray, StructArray};
+    use arrow::datatypes::UInt16Type;
+    let java = ListArray::from_iter_primitive::<UInt16Type, _, _>(
+        (0..count).map(|_| (!binary).then_some(vec![Some(0x03bbu16)])),
+    );
+    let string_fields = vec![
+        Arc::new(Field::new("utf8", DataType::Utf8, true).with_metadata(
+            std::collections::HashMap::from([("streamfusion.nested-string".into(), "1".into())]),
+        )),
+        Arc::new(Field::new("java", java.data_type().clone(), true)),
+        Arc::new(Field::new("array_copy_class", DataType::Int8, true)),
+    ];
+    let strings = Arc::new(StructArray::new(
+        string_fields.into(),
+        vec![
+            Arc::new(StringArray::from(vec!["λ"; count])),
+            Arc::new(java),
+            Arc::new(Int8Array::from(vec![(!binary).then_some(0); count])),
+        ],
+        None,
+    ));
+    let bytes = (0..count)
+        .map(|key| {
+            let mut row = vec![0u8; 24];
+            row[0] = 2;
+            row[8..16].copy_from_slice(&(key as i64).to_ne_bytes());
+            if cfg!(target_endian = "little") {
+                row[16..18].copy_from_slice("λ".as_bytes());
+                row[23] = 0x82;
+            } else {
+                row[16] = 0x82;
+                row[17..19].copy_from_slice("λ".as_bytes());
+            }
+            binary.then_some(row)
+        })
+        .collect::<Vec<_>>();
+    let fields = vec![
+        Arc::new(Field::new("id", DataType::Int64, true)),
+        Arc::new(Field::new("s", strings.data_type().clone(), true)),
+        Arc::new(Field::new("owned", DataType::Binary, true).with_metadata(
+            std::collections::HashMap::from([(
+                "streamfusion.nested-row-binary".into(),
+                "1".into(),
+            )]),
+        )),
+        Arc::new(Field::new("kind", DataType::Int8, true).with_metadata(
+            std::collections::HashMap::from([("streamfusion.nested-row-kind".into(), "1".into())]),
+        )),
+    ];
+    let keys = Arc::new(StructArray::new(
+        fields.into(),
+        vec![
+            Arc::new(Int64Array::from_iter_values(0..count as i64)),
+            strings,
+            Arc::new(BinaryArray::from_iter(bytes)),
+            Arc::new(Int8Array::from(vec![2; count])),
+        ],
+        None,
+    ));
+    RecordBatch::try_from_iter(vec![
+        ("k", keys as ArrayRef),
+        ("rt", Arc::new(Int64Array::from(vec![time; count]))),
+        ("v", Arc::new(Int64Array::from_iter_values(0..count as i64))),
+    ])
+    .unwrap()
+}
+
+fn represented_snapshots(operator: &mut KeepFirstDeduplicator, descriptor: &[i32]) -> Vec<Vec<u8>> {
+    #[cfg(feature = "rocksdb-state")]
+    if operator.store.is_some() {
+        return operator
+            .canonical_partitions()
+            .unwrap()
+            .into_values()
+            .collect();
+    }
+    operator
+        .snapshot_partitions(128, descriptor)
+        .into_values()
+        .collect()
+}
+
+#[test]
+fn represented_row_keys_share_candidates_and_markers_across_raw_recovery() {
+    let descriptor = vec![i32::MIN, -1, -1, -1];
+    for count in [2, 2048] {
+        for persistent in [false, true] {
+            #[cfg(not(feature = "rocksdb-state"))]
+            if persistent {
+                continue;
+            }
+            let directory = tempfile::tempdir().unwrap();
+            let binary = represented_row_batch(count, true, 1000);
+            let generic = represented_row_batch(count, false, 900);
+            let mut source = KeepFirstDeduplicator::new(vec![0], 1)
+                .with_key_timestamp_precisions(descriptor.clone())
+                .with_state_ttl(1000);
+            #[cfg(feature = "rocksdb-state")]
+            if persistent {
+                let store = crate::state::RocksKeepFirstDedupStore::create(
+                    crate::state::RocksStoreConfig {
+                        table_dir: directory.path().join("source").to_str().unwrap().into(),
+                        max_parallelism: 128,
+                        options_json: include_str!("../../benches/fixtures/rocks-options.json")
+                            .into(),
+                        ttl_ms: 1000,
+                        shared_resources: 0,
+                    },
+                    binary.schema(),
+                    &[0],
+                )
+                .unwrap();
+                source = source.with_store(store);
+            }
+            source.push(&binary, 100).unwrap();
+            source.push(&generic, 100).unwrap();
+            if !persistent {
+                assert_eq!(source.pending_batch().unwrap().num_rows(), count);
+            }
+            let snapshots = represented_snapshots(&mut source, &descriptor);
+            let mut restored =
+                KeepFirstDeduplicator::restore_partitions(vec![0], 1, &snapshots, 100)
+                    .with_key_timestamp_precisions(descriptor.clone())
+                    .with_state_ttl(1000);
+            for operator in [&mut source, &mut restored] {
+                let output = operator.flush(1000, 100).unwrap();
+                assert_eq!(output.num_rows(), count);
+                assert!(column_i64(&output, "rt")
+                    .values()
+                    .iter()
+                    .all(|time| *time == 900));
+            }
+            let snapshots = represented_snapshots(&mut source, &descriptor);
+            let mut marker_restore =
+                KeepFirstDeduplicator::restore_partitions(vec![0], 1, &snapshots, 100)
+                    .with_key_timestamp_precisions(descriptor.clone())
+                    .with_state_ttl(1000);
+            for operator in [&mut source, &mut marker_restore] {
+                operator
+                    .push(&represented_row_batch(count, false, 2000), 500)
+                    .unwrap();
+                operator
+                    .push(&represented_row_batch(count, true, 2000), 500)
+                    .unwrap();
+                assert_eq!(operator.flush(2000, 500).unwrap().num_rows(), 0);
+                operator
+                    .push(&represented_row_batch(count, false, 3000), 1200)
+                    .unwrap();
+                operator
+                    .push(&represented_row_batch(count, true, 2999), 1200)
+                    .unwrap();
+                let output = operator.flush(3000, 1200).unwrap();
+                assert_eq!(output.num_rows(), count);
+                assert!(column_i64(&output, "rt")
+                    .values()
+                    .iter()
+                    .all(|time| *time == 2999));
+            }
+        }
+    }
+}
 use arrow::datatypes::TimeUnit;
 
 fn batch(keys: Vec<i64>, times: Vec<i64>, values: Vec<i64>) -> RecordBatch {

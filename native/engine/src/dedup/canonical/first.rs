@@ -79,10 +79,17 @@ impl KeepFirstDeduplicator {
         let columns = if self.partition_columns.is_empty() {
             vec![Arc::new(BooleanArray::from(vec![false; rows.num_rows()])) as ArrayRef]
         } else {
-            self.partition_columns
-                .iter()
-                .map(|&key| rows.column(key).clone())
-                .collect()
+            crate::flink_key::stock_row_key_columns(
+                rows,
+                &self.partition_columns,
+                &self.key_timestamp_precisions,
+            )
+            .unwrap_or_else(|| {
+                self.partition_columns
+                    .iter()
+                    .map(|&column| rows.column(column).clone())
+                    .collect()
+            })
         };
         let keys = self
             .key_converter

@@ -258,14 +258,27 @@ impl KeepFirstDeduplicator {
         }
     }
 
-    fn add_pending(&mut self, batch: &RecordBatch, ttl: StateTtl) {
-        let arrays = self
-            .partition_columns
-            .iter()
-            .map(|&column| batch.column(column))
-            .collect::<Vec<_>>();
+    fn encoded_partition_keys(&mut self, batch: &RecordBatch) -> arrow::row::Rows {
+        let columns = crate::flink_key::stock_row_key_columns(
+            batch,
+            &self.partition_columns,
+            &self.key_timestamp_precisions,
+        );
+        let arrays = columns.as_ref().map_or_else(
+            || {
+                self.partition_columns
+                    .iter()
+                    .map(|&column| batch.column(column))
+                    .collect::<Vec<_>>()
+            },
+            |columns| columns.iter().collect::<Vec<_>>(),
+        );
         self.key_types = key_types(&arrays);
-        let encoded = encode_keys(&mut self.key_converter, &arrays, batch.num_rows());
+        encode_keys(&mut self.key_converter, &arrays, batch.num_rows())
+    }
+
+    fn add_pending(&mut self, batch: &RecordBatch, ttl: StateTtl) {
+        let encoded = self.encoded_partition_keys(batch);
         let times = rt_to_millis(batch.column(self.rt_column));
         let mut best: HashMap<&[u8], usize> = HashMap::default();
         for row in 0..batch.num_rows() {
@@ -323,13 +336,7 @@ impl KeepFirstDeduplicator {
     /// Flink's keep-first rule of replacing only on a strictly smaller rowtime). The winning rows are
     /// gathered with `take`; the row data is never materialized into scalars.
     fn min_per_key(&mut self, batch: &RecordBatch, ttl: StateTtl) -> RecordBatch {
-        let key_arrays: Vec<&ArrayRef> = self
-            .partition_columns
-            .iter()
-            .map(|&i| batch.column(i))
-            .collect();
-        self.key_types = key_types(&key_arrays);
-        let keys_encoded = encode_keys(&mut self.key_converter, &key_arrays, batch.num_rows());
+        let keys_encoded = self.encoded_partition_keys(batch);
         let rt = rt_to_millis(batch.column(self.rt_column));
         let track = self.memory.tracking();
         let mut reclaimed = 0isize;
@@ -484,13 +491,7 @@ impl KeepFirstDeduplicator {
         }
         self.pending = (not_ready.num_rows() > 0).then_some(not_ready);
         if ready.num_rows() > 0 {
-            let key_arrays: Vec<&ArrayRef> = self
-                .partition_columns
-                .iter()
-                .map(|&i| ready.column(i))
-                .collect();
-            self.key_types = key_types(&key_arrays);
-            let keys_encoded = encode_keys(&mut self.key_converter, &key_arrays, ready.num_rows());
+            let keys_encoded = self.encoded_partition_keys(&ready);
             let ttl = StateTtl::new(self.ttl_ms, now_ms);
             let stamp = if ttl.enabled() { ttl.now() } else { 0 };
             for row in 0..ready.num_rows() {

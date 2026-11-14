@@ -239,8 +239,8 @@ and export. Buffered native RocksDB declares that same representation before ope
 Flink 1.18’s released event-time first-row function retains its eager contract; Flink 2.2’s
 watermark-buffered function retains its pending/timer contract.
 
-Processing-time keep-last uses the existing stock-compatible logical equaliser for represented
-binary ROW payloads, so reserved-byte differences in a non-key row do not fabricate updates.
+Processing-time keep-last uses the existing stock-compatible binary-row comparison for represented
+ROW payloads. It retains their original nested bytes rather than comparing reconstructed fields.
 The scalar path retains its existing byte comparison. New direct, planner and clean-stock job
 controls cover both directions, original TTL ages, nested timestamp/decimal keys, all nested row
 kinds, padding, NULLs, bundles, native checkpoint recovery, no-input returns and rescaling.
@@ -254,3 +254,19 @@ checkpoint recovery before firing. Clean-worker jobs include continued input and
 retain the payload with a user function, and compare committed effects against an independent
 window/payload oracle. This exercises existing execution and state codecs; no processing-time
 canonical window-selection contract or new input semantics is introduced.
+
+## Buffered ROW-key representation consistency awaiting qualification
+
+Stock-bound buffered keep-first keys normalize their transient Arrow representation before
+decodable row encoding: every non-NULL ROW has its original or stock-encoded owned bytes,
+while redundant nested ownership and string caches do not distinguish the same stock key.
+The full candidate payload remains unchanged. Small reductions, indexed candidates, emitted
+markers, canonical import and persistent lookups use the same key vectors; native checkpoint
+schemas and table layouts retain their existing fields. Ordinary scalar key paths are unchanged.
+
+New controls mix generic and binary forms of an actual equal stock key, retain all nested
+RowKinds, import pending/marker state, recover native checkpoints, suppress a live marker and
+refire after its original TTL expires. Native controls exercise both candidate sizes around
+the index threshold and both stores. These controls await execution. The new buffered ROW-key
+binding is limited to scalar/ROW descendants; collection-bearing ROW keys remain outside this
+extension. Existing eager key admission retains its separate binary-key implementation.

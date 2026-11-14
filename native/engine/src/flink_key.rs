@@ -38,6 +38,117 @@ pub(crate) fn represented_string(data_type: &DataType) -> bool {
             && fields[1].name() == "java" && matches!(fields[1].data_type(), DataType::List(_)))
 }
 
+/// A decodable Arrow key must not distinguish optional transports for the same stock ROW bytes.
+pub(crate) fn stock_row_key_columns(
+    batch: &RecordBatch,
+    key_columns: &[usize],
+    timestamp_precisions: &[i32],
+) -> Option<Vec<ArrayRef>> {
+    if timestamp_precisions.first() != Some(&STOCK_KEY_PROJECTION)
+        || !key_columns
+            .iter()
+            .any(|&column| row_binary_field(batch.column(column).data_type()).is_some())
+    {
+        return None;
+    }
+    let encoder = BinaryRowBatchEncoder::new(batch, key_columns, timestamp_precisions);
+    Some(
+        encoder
+            .columns
+            .iter()
+            .zip(&encoder.schemas)
+            .map(|(&column, schema)| {
+                let Some(binary) = row_binary_field(column.data_type()) else {
+                    return column.clone();
+                };
+                let row = column
+                    .as_any()
+                    .downcast_ref::<StructArray>()
+                    .expect("represented ROW key");
+                let existing = row
+                    .column(binary)
+                    .as_any()
+                    .downcast_ref::<BinaryArray>()
+                    .unwrap();
+                let missing = existing.null_count() != 0
+                    && (0..row.len()).any(|index| !row.is_null(index) && existing.is_null(index));
+                let owned = if missing {
+                    Arc::new(BinaryArray::from_iter((0..row.len()).map(|index| {
+                        (!row.is_null(index)).then(|| encode_struct(row, index, schema))
+                    }))) as ArrayRef
+                } else {
+                    row.column(binary).clone()
+                };
+                let mut normalized = clear_row_transports(row);
+                normalized[binary] = owned;
+                represented_row(row, column, normalized)
+            })
+            .collect(),
+    )
+}
+
+fn represented_row(row: &StructArray, original: &ArrayRef, columns: Vec<ArrayRef>) -> ArrayRef {
+    if columns
+        .iter()
+        .zip(row.columns())
+        .all(|(left, right)| Arc::ptr_eq(left, right))
+    {
+        original.clone()
+    } else {
+        Arc::new(StructArray::new(
+            row.fields().clone(),
+            columns,
+            row.nulls().cloned(),
+        ))
+    }
+}
+
+fn row_binary_field(data_type: &DataType) -> Option<usize> {
+    let DataType::Struct(fields) = data_type else {
+        return None;
+    };
+    fields.iter().position(|field| {
+        field
+            .metadata()
+            .get("streamfusion.nested-row-binary")
+            .is_some_and(|value| value == "1")
+    })
+}
+
+// The outer owned ROW retains these bytes; nested transports must not create another key.
+fn clear_row_transports(row: &StructArray) -> Vec<ArrayRef> {
+    let string = represented_string(row.data_type());
+    row.fields()
+        .iter()
+        .zip(row.columns())
+        .enumerate()
+        .map(|(index, (field, column))| {
+            if string && index > 0
+                || field
+                    .metadata()
+                    .get("streamfusion.nested-row-binary")
+                    .is_some_and(|value| value == "1")
+            {
+                if column.null_count() == row.len() {
+                    column.clone()
+                } else {
+                    new_null_array(field.data_type(), row.len())
+                }
+            } else if let Some(child) = column.as_any().downcast_ref::<StructArray>() {
+                if represented_string(child.data_type())
+                    || row_binary_field(child.data_type()).is_some()
+                {
+                    represented_row(child, column, clear_row_transports(child))
+                } else {
+                    column.clone()
+                }
+            } else {
+                column.clone()
+            }
+        })
+        .collect()
+}
+
 fn represented_element(data_type: &DataType) -> bool {
     matches!(data_type, DataType::Struct(fields)
         if fields.len() == 2 && fields[0].name() == "value"

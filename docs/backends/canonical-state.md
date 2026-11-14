@@ -2505,3 +2505,9 @@ layout and retains RowKinds at entry, without changing the native state format. 
 NULL overflow at a zero count remains raw state. Flink 1.18 has no matching released retracting
 TVF owner; its established append-only and legacy contracts are unchanged. Wider retracting
 phases and time/assignment families remain outside this extension.
+
+Buffered keep-first ROW keys additionally normalize optional Arrow transport children around
+the stock binary key bytes, so generic live keys and binary restored keys share candidates and
+emitted markers. The codec fields and persistent tables are unchanged. Mixed-representation,
+pending/marker restore, native recovery and original-age TTL controls await execution. This
+buffered extension admits scalar/ROW descendants; collection-bearing ROW keys remain gated.
