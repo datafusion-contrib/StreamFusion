@@ -15,15 +15,28 @@ import org.apache.flink.types.RowKind;
 import tech.streamfusion.operator.CanonicalRowKeyFixture;
 
 class CanonicalUnboundedOverRowKeyJobTest extends CanonicalUnboundedOverJobTest {
+  boolean stringExtrema() {
+    return false;
+  }
+
   @Override
   Path prepare(String name, String kind, String mode, boolean ordinary) throws Exception {
     var root = super.prepare(name, kind, mode, ordinary);
     Files.writeString(
         root.resolve("input-columns.sql"),
-        "k " + CanonicalRowKeyFixture.sql(true) + ",v BIGINT,rt TIMESTAMP(3)");
+        "k "
+            + CanonicalRowKeyFixture.sql(true)
+            + ",v "
+            + (stringExtrema() ? "STRING" : "BIGINT")
+            + ",rt TIMESTAMP(3)");
     var serializer =
         new RowDataSerializer(
-            RowType.of(CanonicalRowKeyFixture.type(true), new BigIntType(), new TimestampType(3)));
+            RowType.of(
+                CanonicalRowKeyFixture.type(true),
+                stringExtrema()
+                    ? new org.apache.flink.table.types.logical.VarCharType(100)
+                    : new BigIntType(),
+                new TimestampType(3)));
     var encoded = new ArrayList<String>();
     for (String line : Files.readAllLines(root.resolve("input.csv"))) {
       var cells = line.split(",", -1);
@@ -35,7 +48,11 @@ class CanonicalUnboundedOverRowKeyJobTest extends CanonicalUnboundedOverJobTest 
                   id,
                   id == null ? RowKind.INSERT : RowKind.fromByteValue((byte) Math.floorMod(id, 4)),
                   true),
-              cells[2].equals("null") ? null : Long.valueOf(cells[2]),
+              cells[2].equals("null")
+                  ? null
+                  : stringExtrema()
+                      ? org.apache.flink.table.data.StringData.fromString(cells[2])
+                      : Long.valueOf(cells[2]),
               TimestampData.fromEpochMillis(Long.parseLong(cells[3])));
       var buffer = new DataOutputSerializer(256);
       serializer.serialize(row, buffer);
@@ -44,7 +61,11 @@ class CanonicalUnboundedOverRowKeyJobTest extends CanonicalUnboundedOverJobTest 
     Files.write(root.resolve("input.csv"), encoded);
     Files.writeString(
         root.resolve("query.sql"),
-        "INSERT INTO output_table SELECT k.i,SUM(v) OVER w,AVG(v) OVER w FROM input_table"
+        "INSERT INTO output_table SELECT k.i,"
+            + (stringExtrema()
+                ? "CAST(MIN(v) OVER w AS BIGINT),CAST(MAX(v) OVER w AS BIGINT)"
+                : "SUM(v) OVER w,AVG(v) OVER w")
+            + " FROM input_table"
             + " WINDOW w AS (PARTITION BY k ORDER BY pt "
             + (kind.equals("rows") ? "ROWS" : "RANGE")
             + " BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)");

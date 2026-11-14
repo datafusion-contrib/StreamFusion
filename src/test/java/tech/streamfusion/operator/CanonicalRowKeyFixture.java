@@ -69,8 +69,16 @@ public final class CanonicalRowKeyFixture {
   }
 
   public static VectorSchemaRoot arrow(List<RowData> rows, RowType type) {
-    var root =
-        VectorSchemaRoot.create(ArrowConversion.toBinaryRowKeySchema(type), NativeAllocator.SHARED);
+    return arrow(rows, type, ArrowConversion.toBinaryRowKeySchema(type));
+  }
+
+  static VectorSchemaRoot arrow(List<RowData> rows, RowType type, int[] keyColumns) {
+    return arrow(rows, type, ArrowConversion.toBinaryRowKeySchema(type, keyColumns));
+  }
+
+  private static VectorSchemaRoot arrow(
+      List<RowData> rows, RowType type, org.apache.arrow.vector.types.pojo.Schema schema) {
+    var root = VectorSchemaRoot.create(schema, NativeAllocator.SHARED);
     var kinds = new TinyIntVector(RowDataArrowConverter.ROW_KIND_COLUMN, NativeAllocator.SHARED);
     try {
       var writer = ArrowConversion.createRowDataArrowWriter(root, type);

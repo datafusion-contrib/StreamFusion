@@ -78,7 +78,12 @@ class CanonicalOverRowKeyPlanTest {
             .map(node -> ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator())
             .filter(NativeOverAggregateOperator.class::isInstance)
             .toList();
-    boolean admitted = mode.equals("rows") || mode.equals("range") || mode.equals("ttl");
+    boolean admitted =
+        mode.equals("rows")
+            || mode.equals("range")
+            || mode.equals("ttl")
+            || mode.equals("string-key")
+            || mode.equals("string-min");
     assertEquals(admitted ? 1 : 0, owners.size(), graph.getStreamingPlanAsJSON());
     if (admitted) {
       var contract =

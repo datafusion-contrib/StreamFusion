@@ -2012,7 +2012,7 @@ final class StockCompiledPlanLowering {
     int maximum = stockMaximum(original);
     var exchange =
         (NativeColumnarExchangeExecNode)
-            canonicalJoinInput(input, config, inputType, keys, true, false, binaryRowKeys);
+            canonicalJoinInput(input, config, inputType, keys, true, false, binaryRowKeys, keys);
     exchange.withStateMaxParallelism(maximum);
     var over =
         new NativeOverAggExecNode(
@@ -4526,6 +4526,19 @@ final class StockCompiledPlanLowering {
       boolean changelog,
       boolean preserveStringCaches,
       boolean binaryRowKeys) {
+    return canonicalJoinInput(
+        input, config, type, keys, changelog, preserveStringCaches, binaryRowKeys, null);
+  }
+
+  private ExecNode<?> canonicalJoinInput(
+      ExecNode<?> input,
+      Configuration config,
+      RowType type,
+      int[] keys,
+      boolean changelog,
+      boolean preserveStringCaches,
+      boolean binaryRowKeys,
+      int[] binaryRowKeyColumns) {
     var source =
         input instanceof StreamExecExchange ? input.getInputEdges().get(0).getSource() : input;
     var exchange =
@@ -4551,7 +4564,11 @@ final class StockCompiledPlanLowering {
               1024,
               false,
               preserveStringCaches);
-      if (binaryRowKeys) ((RowDataToArrowExecNode) columnarInput).withBinaryRowKeys();
+      if (binaryRowKeys) {
+        var entry = (RowDataToArrowExecNode) columnarInput;
+        if (binaryRowKeyColumns == null) entry.withBinaryRowKeys();
+        else entry.withBinaryRowKeys(binaryRowKeyColumns);
+      }
       connect(source, columnarInput);
     } else columnarInput = arrowInput(source, config, type, changelog);
     connect(columnarInput, exchange);

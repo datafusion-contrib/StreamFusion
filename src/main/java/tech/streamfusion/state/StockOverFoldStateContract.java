@@ -71,13 +71,7 @@ public final class StockOverFoldStateContract implements StockStateContract {
     this.preserveRowKeys = preserveRowKeys;
     this.views = List.copyOf(views);
     boolean rowKeys = keyType.getChildren().stream().anyMatch(StockKeyedRowSchema::containsRow);
-    if (rowKeys
-        && (!preserveRowKeys
-            || !views.isEmpty()
-            || java.util.stream.Stream.concat(
-                    keyType.getChildren().stream(), accumulatorType.getChildren().stream())
-                .anyMatch(
-                    type -> type.is(LogicalTypeRoot.CHAR) || type.is(LogicalTypeRoot.VARCHAR))))
+    if (rowKeys && (!preserveRowKeys || !views.isEmpty()))
       throw new IllegalArgumentException("Unqualified processing OVER ROW partition layout");
     boolean[] distinct = new boolean[kinds.length];
     if (ttl && !views.isEmpty())
@@ -191,7 +185,8 @@ public final class StockOverFoldStateContract implements StockStateContract {
 
   private org.apache.arrow.vector.types.pojo.Schema bridgeSchema() {
     return preserveRowKeys
-        ? StockKeyedRowSchema.schema(bridge, keyType)
+        ? ArrowConversion.toBinaryRowKeySchema(
+            bridge, java.util.stream.IntStream.range(0, keyType.getFieldCount()).toArray())
         : ArrowConversion.toArrowSchema(bridge);
   }
 

@@ -2568,6 +2568,9 @@ The live boundary, transient fold projection and persistent native initializatio
 owned binary ROW schema; redundant nested transport caches cannot split restored keys from
 live keys. Original bytes, padding, nested kinds and per-value TTL stamps remain authoritative.
 New raw-state/native-recovery and clean-stock job controls await both-release qualification.
-Event/bounded ROW keys, collection descendants, DISTINCT/ROW combinations and standalone string
-key or string accumulator combinations remain gated. This does not qualify historical native
+The selective schema preserves original-byte metadata only on ROW partition columns, admitting
+standalone string companion keys and string accumulator fields without changing their existing
+representation. These combinations also have pending raw-state and clean-stock controls.
+Event/bounded ROW keys, collection descendants and DISTINCT/ROW combinations remain gated.
+This does not qualify historical native
 checkpoint upgrades with changed physical ROW transports.

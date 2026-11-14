@@ -245,7 +245,8 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
 
   private long withInputSchema(java.util.function.LongUnaryOperator call) {
     if (binaryRowKeys) {
-      var schema = tech.streamfusion.arrow.ArrowConversion.toBinaryRowKeySchema(nativeRowType());
+      var schema =
+          tech.streamfusion.arrow.ArrowConversion.toBinaryRowKeySchema(nativeRowType(), keyColumns);
       return withRowSchema(
           mapListInput ? tech.streamfusion.arrow.MapListRepresentation.forIpc(schema) : schema,
           call);

@@ -30,7 +30,10 @@ class CanonicalUnboundedOverRowKeyStateTest {
           for (boolean rocks : new boolean[] {false, true})
             for (boolean rows : new boolean[] {false, true})
               for (long ttl : new long[] {0, 1000})
-                cases.add(Arguments.of(nested, kind, padding, rocks, rows, ttl));
+                for (boolean extrema : new boolean[] {false, true})
+                  for (boolean composite : new boolean[] {false, true})
+                    cases.add(
+                        Arguments.of(nested, kind, padding, rocks, rows, ttl, extrema, composite));
     return tech.streamfusion.CanonicalTestMatrix.select(cases.stream());
   }
 
@@ -53,11 +56,24 @@ class CanonicalUnboundedOverRowKeyStateTest {
   @ParameterizedTest
   @MethodSource("cases")
   void originalRowKeysRetainRawFoldsAcrossLiveFormsAndNativeRecovery(
-      boolean nested, RowKind kind, boolean padding, boolean rocks, boolean rows, long ttl)
+      boolean nested,
+      RowKind kind,
+      boolean padding,
+      boolean rocks,
+      boolean rows,
+      long ttl,
+      boolean extrema,
+      boolean composite)
       throws Exception {
     var plan =
         new CanonicalUnboundedOverScalarTest.Plan(
-            "BIGINT", rows, false, ttl, CanonicalRowKeyFixture.sql(nested), false);
+            extrema ? "VARCHAR(100)" : "BIGINT",
+            rows,
+            false,
+            ttl,
+            CanonicalRowKeyFixture.sql(nested),
+            composite,
+            extrema);
     try (var reference = plan.stock(!rocks);
         var owner = plan.nativeHarness(rocks)) {
       reference.open();
@@ -126,7 +142,10 @@ class CanonicalUnboundedOverRowKeyStateTest {
         generic
             ? CanonicalRowKeyFixture.logicalKey(nested, id, kind)
             : CanonicalRowKeyFixture.key(nested, id, kind, padding));
-    row.setField(1, value);
+    row.setField(1, CanonicalOverValueFixture.number(plan.input.getTypeAt(1), value));
+    if (plan.partitions.length > 1)
+      row.setField(
+          2, id == null ? null : org.apache.flink.table.data.StringData.fromString("雪-" + id));
     return row;
   }
 }

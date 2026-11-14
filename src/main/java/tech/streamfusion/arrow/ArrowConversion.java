@@ -158,6 +158,21 @@ public final class ArrowConversion {
     return NestedRepresentation.withBinaryRows(toArrowInputSchema(rowType, true));
   }
 
+  /** Preserve original ROW bytes only in the selected key columns. */
+  public static Schema toBinaryRowKeySchema(RowType rowType, int[] keyColumns) {
+    var fields = new ArrayList<>(toArrowSchema(rowType).getFields());
+    List<Field> represented = null;
+    for (int column : keyColumns) {
+      if (column < 0 || column >= rowType.getFieldCount())
+        throw new IllegalArgumentException("Invalid binary ROW key column");
+      if (rowType.getTypeAt(column).is(org.apache.flink.table.types.logical.LogicalTypeRoot.ROW)) {
+        if (represented == null) represented = toBinaryRowKeySchema(rowType).getFields();
+        fields.set(column, represented.get(column));
+      }
+    }
+    return new Schema(fields);
+  }
+
   private static Schema schema(RowType rowType, boolean preserve, boolean input) {
     List<Field> fields =
         rowType.getFields().stream()

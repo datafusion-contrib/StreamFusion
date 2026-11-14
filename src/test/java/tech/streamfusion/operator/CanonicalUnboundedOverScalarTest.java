@@ -464,7 +464,7 @@ class CanonicalUnboundedOverScalarTest {
               + keyType
               + ",v "
               + type
-              + (composite ? ",k2 BIGINT" : "")
+              + (composite ? ",k2 " + (keyType.startsWith("ROW") ? "STRING" : "BIGINT") : "")
               + ",pt AS PROCTIME()) WITH ("
               + (customSource
                   ? "'connector'='canonical-fixture','input'='unused.csv','insert-only'='true'"
@@ -701,7 +701,7 @@ class CanonicalUnboundedOverScalarTest {
           new StreamRecord<>(
               new ArrowBatch(
                   binaryRowKeys
-                      ? CanonicalRowKeyFixture.arrow(rows, input)
+                      ? CanonicalRowKeyFixture.arrow(rows, input, partitions)
                       : RowDataArrowConverter.write(
                           CanonicalOverValueFixture.physicalRows(rows, input),
                           input,
