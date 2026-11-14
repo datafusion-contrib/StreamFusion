@@ -507,6 +507,9 @@ positive continuation matrix. These controls await local execution.
 
 The new planner and component matrices include compact/wide decimals, timestamp precision nine,
 binary/interval carriers, signed-zero/NaN sort values, three-field sorting and nested payloads.
+The pending scalar and nested-payload component cases now compare complete raw stock state after
+no-input canonical returns as well as continued output. This checks list-map keys and cached
+fields which output-only comparisons could miss; these stronger checks have not yet run.
 Nested operator controls cover all three algorithms, with append-only MAP payloads. New
 clean-worker append/retract jobs consume the entire nested value together with the computed
 rank in a normal user function, preventing projection from hiding retained-payload coverage. Isolated DOUBLE

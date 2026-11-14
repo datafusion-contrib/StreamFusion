@@ -145,7 +145,9 @@ class CanonicalRetractingRankTypedTest {
         if (nativeFirst) {
           second.initializeState(saved);
           second.open();
-          if (shape.startsWith("row-key"))
+          if (shape.startsWith("row-key")
+              || shape.startsWith("scalar-")
+              || shape.startsWith("payload-"))
             assertEquals(
                 CanonicalUnboundedOverScalarTest.raw(reference),
                 CanonicalUnboundedOverScalarTest.raw(second));
@@ -154,7 +156,9 @@ class CanonicalRetractingRankTypedTest {
         } else {
           nativeHarness.initializeState(saved);
           nativeHarness.open();
-          if (shape.startsWith("row-key")) {
+          if (shape.startsWith("row-key")
+              || shape.startsWith("scalar-")
+              || shape.startsWith("payload-")) {
             var roundTrip = snapshot(nativeHarness);
             try (var returned = stock(layout, output, start, variable, ttl, rocks, before, rank)) {
               returned.initializeState(roundTrip);

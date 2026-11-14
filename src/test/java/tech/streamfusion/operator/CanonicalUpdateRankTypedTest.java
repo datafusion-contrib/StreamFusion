@@ -146,7 +146,9 @@ class CanonicalUpdateRankTypedTest {
       nativeHarness.open();
       assertEquals(
           rocks ? "rocksdb" : "memory", ((CanonicalRank) nativeHarness.getOperator()).storage());
-      if (shape.startsWith("row-key"))
+      if (shape.startsWith("row-key")
+          || shape.startsWith("scalar-")
+          || shape.startsWith("payload-"))
         try (var returned = stock(layout, output, fast, rocks, before, rank, offset)) {
           returned.initializeState(snapshot(nativeHarness));
           returned.open();

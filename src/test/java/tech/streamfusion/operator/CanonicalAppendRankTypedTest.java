@@ -131,7 +131,9 @@ class CanonicalAppendRankTypedTest {
       nativeHarness.open();
       assertEquals(
           rocks ? "rocksdb" : "memory", ((CanonicalRank) nativeHarness.getOperator()).storage());
-      if (shape.startsWith("row-key")) {
+      if (shape.startsWith("row-key")
+          || shape.startsWith("scalar-")
+          || shape.startsWith("payload-")) {
         var saved = snapshot(nativeHarness);
         try (var returned = stock(type, output, key, sort, retention, fast, rank, rocks)) {
           returned.initializeState(saved);

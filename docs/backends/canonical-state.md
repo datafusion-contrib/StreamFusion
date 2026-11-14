@@ -2561,6 +2561,10 @@ Overlapping DISTINCT capture controls additionally compare complete stock state 
 live membership changes and native-owner closure, finishing in reverse order on a writer thread.
 Nullable scalar and represented ROW keys use both native stores; this new matrix remains pending.
 
+Pending value-rank component controls compare complete raw stock state after no-input returns for
+the newly added scalar and nested-payload shapes, in addition to ROW partition keys and continued
+outputs. Both-release execution must qualify independent map/list keys and cached fields.
+
 
 Retracting GROUP BY MIN/MAX additionally captures the existing one-phase mini-batch owner and
 count trigger for the already bound integral/date/time/boolean map views. New raw-state and
