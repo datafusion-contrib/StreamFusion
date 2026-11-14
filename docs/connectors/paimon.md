@@ -96,7 +96,8 @@ currently scans committed bucket metadata and must not add a `SELECT` privilege 
 to an `INSERT`-only user. Paimon's stock writer preserves its original privilege checks.
 
 The [bounded Paimon benchmarks](../benchmarks/paimon-batch.md) describe complete connector copies
-and the unchanged TPC-H workload with committed Paimon outputs.
+and the unchanged TPC-H workload with committed Paimon outputs. The [TPC-DS suite](../benchmarks/tpcds.md)
+adds all 103 released Flink variants for 99 templates with Paimon inputs and committed outputs.
 
 ## Streaming source
 

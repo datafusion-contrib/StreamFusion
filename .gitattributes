@@ -1,0 +1,2 @@
+# Preserve released upstream SQL byte-for-byte, including its published whitespace.
+streamfusion-paimon/src/tpcds/resources/tpcds/flink-2.2.1/query*.sql -whitespace

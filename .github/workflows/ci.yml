@@ -526,6 +526,20 @@ jobs:
           --module '${{ matrix.module }}'
           --summary "$RUNNER_TEMP/lake-test-phases.json"
 
+      - name: Plan every released TPC-DS variant over Paimon
+        if: matrix.module == 'streamfusion-paimon' && matrix.jdk == '17'
+        env:
+          SF_TPCDS: 'true'
+        run: |
+          python3 bin/ci-maven-dependencies.py --profile '${{ matrix.profile }},tpcds' --projects streamfusion-paimon --also-make
+          tpcds_scratch="$RUNNER_TEMP/tpcds-${{ contains(matrix.profile, 'flink-1.18') && '1.18' || '2.2' }}"
+          trap 'rm -rf "$tpcds_scratch"' EXIT
+          mvn -B -ntp -P'${{ matrix.profile }},tpcds' -pl streamfusion-paimon -am \
+            -Dnative.build.skip=true -Dsf.runtime.tests.skip=true \
+            -Dtest=PaimonTpcdsBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
+            -Dsf.tpcds.mode=plan -Dsf.tpcds.scale=0.01 \
+            -Dsf.tpcds.directory="$tpcds_scratch" test
+
       - name: Retain per-format outcomes and phase costs
         if: always() && matrix.module == 'streamfusion-paimon'
         uses: actions/upload-artifact@v4
