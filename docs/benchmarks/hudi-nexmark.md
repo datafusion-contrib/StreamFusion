@@ -71,6 +71,13 @@ x86-64 runners with four available processors, about 15.6 GiB physical memory
 and JDK 17.0.21; heap ran on AMD EPYC 9V74 and RocksDB on AMD EPYC 9V45.
 Their absolute times do not isolate a backend or mini-batch effect.
 
+The [original campaign archive](https://github.com/jordepic/StreamFusion-contrib/releases/tag/benchmark-evidence-hudi-matrix-attempt1-20261114-866620764)
+preserves all four raw logs/reports and terminal timeout evidence. Its manifest
+records the bundle/member sizes and SHA-256 hashes; all were independently
+downloaded and verified. The off snapshots retain their original `running`
+status at cancellation and are diagnostic only, with 189/159 completed timings.
+They do not establish the full-configuration or final native-cleanup gates.
+
 The fixed configuration retains four Hudi source/sink tasks, eight slots,
 8 GiB heap, a 48 GiB logical native off-heap limit, object reuse, one-second
 checkpoints, one warmup and three rotating trials per engine. All deterministic
