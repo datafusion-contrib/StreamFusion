@@ -238,12 +238,13 @@ remains experimental and enabled by default when installed; set
 
 The experimental [four-partition Hudi benchmark](docs/benchmarks/hudi-nexmark.md)
 uses the same two-million-event corpus and query SQL with a COW source and
-append/MOR sinks. The baseline heap-state configurations have geometric means
-of median speedups over stock Flink of **0.55× with mini-batching off** and
-**0.64× with it on**. Simple I/O cases improve, while window and lookup paths
-regress substantially. Window-state tuning and full-matrix requalification are
-in progress; the linked report retains all trials, ranges, fallback exclusions and profiling
-evidence.
+append/MOR sinks. Completed Linux runs with mini-batching on have geometric means
+of median speedups over stock Flink of **1.27× with heap state** and **1.32× with
+RocksDB**, beating stock on 17 of 22 timed queries in each configuration. Several
+window and lookup queries still regress substantially. The mini-batching-off
+configurations reached their original three-hour limit and are being retried;
+the full matrix remains incomplete. The linked report retains all trials, ranges,
+fallback exclusions, earlier baselines and profiling evidence.
 
 ## Related work
 

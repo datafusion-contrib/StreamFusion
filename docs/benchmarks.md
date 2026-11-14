@@ -525,13 +525,17 @@ cause. The original best-of Paimon runner remains available unchanged.
 
 The [four-partition Hudi Nexmark matrix](benchmarks/hudi-nexmark.md) retains the
 shared query SQL and two-million-event Kafka corpus with Hudi tables at both
-ends. Completed heap/off and heap/on configurations have geometric means of
-median speedups of 0.55× / 0.64× stock Flink and 7.51× / 8.78× previous
-StreamFusion boundaries. These baseline results precede persistent-window tuning;
-the linked report includes a focused Q5 before/after comparison, and full-matrix
-requalification remains pending. Full-value checks,
-processing-time exceptions, ranges, profiling evidence and host memory context
-are recorded on that page.
+ends. The completed post-optimization Linux configurations with mini-batching on
+have geometric means of median speedups of **1.27× stock / 10.28× previous
+StreamFusion** with heap state and **1.32× / 8.10×** with RocksDB. Native medians
+beat stock on 17 of 22 timed queries in each configuration; Q5/Q8/Q11/Q13/Q14
+retain substantial stock losses. Both mini-batching-off configurations hit their
+original three-hour limit and are being retried, so the full matrix remains
+incomplete. Compare engines within each configuration; different runner CPU
+models prevent a causal backend or before/after comparison. Full-value checks,
+processing-time exceptions, all trials/ranges, earlier baselines, profiling evidence
+and host memory context are recorded on that page. These are complete-job timings,
+not sustained streaming throughput.
 
 ## Historical Nexmark report review (2026-09-08)
 
