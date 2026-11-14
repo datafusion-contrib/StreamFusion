@@ -2517,3 +2517,9 @@ Updating Top-N additionally binds constant OFFSET ranges through the existing co
 projection, including hidden-prefix rows and equal-sort positions. No serializer or native state
 format changes. New raw/changelog, recovery and clean-worker controls await both-release execution;
 TTL and variable updating bounds remain gated. See the Top-N page for the exact pending scope.
+
+
+Pending ROW-key normalizer consumer controls now require the newly bound retracting mini-batch
+aggregate or nested regular join to retain its own canonical owner and perform native work.
+They no longer accept the former consumer fallback as evidence for the combined graph. These
+joint continuation/recovery/rescale controls await both-release execution.
