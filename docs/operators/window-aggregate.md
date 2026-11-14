@@ -1989,3 +1989,32 @@ disk spool. Past shared slices retain their released semantics; expired unshared
 remain excluded from native installation. Accumulator and shared-timer transfers share a
 1,024-row and four-MiB payload estimate, allowing an oversized value. No whole-job timer or
 owner set is retained in Java heap. Native checkpoint formats and operator admission are unchanged.
+
+### Retracting fixed-window binding awaiting qualification
+
+Flink 2.2's released synchronous single-phase event-time TUMBLE/HOP/CUMULATE owner can now bind
+the existing native retracting COUNT/SUM/SUM0/AVG layout, including supported filters. The
+binding derives signed scalar widths and the hidden live-row count from the actual released
+aggregate information, preserves the input RowKind sidecar and checks the captured accumulator
+serializer before replacement. Retracting decimal AVG already has a numeric zero at creation;
+its NULL raw sum at count zero therefore retains sticky overflow and is not normalized away.
+The native state codec and stock descriptors are reused without adding fields to either format.
+
+Flink 1.18 does not expose this retracting TVF owner and retains its existing admission. Legacy,
+session, processing-time, attached, offset and local/global retracting window contracts remain
+outside this binding. The new 2.2 boundary awaits local qualification; existing two-release
+append-only bindings and their historical counts remain separate evidence.
+
+New 2.2 component fixtures use the actual planner-produced owner for ordinary SQL and portable
+plans, checking captured maximum parallelism and portable identities. They alternate engines,
+compare every raw namespaced accumulator after each cut, recover through a native checkpoint
+and fire the retained timers. INT/BIGINT/FLOAT/DOUBLE/wide-scale DECIMAL, keyed/global,
+explicit/hidden live counters, filters and both stores are represented. The decimal sequence
+reaches NULL raw AVG at count zero before adding new input. These controls remain unexecuted.
+
+Separate complete-job fixtures cover the same three window assignments with INT/BIGINT/DECIMAL
+arithmetic, clean stock workers, both engine orders/stores/submission forms and the standard
+empty-return/checkpoint/rescale modes. An independent signed window fold checks committed SUM
+and AVG results. The rescale input reaches a zero-live-row state at the middle cut before new
+rows arrive. Source offsets, both transposes and transactional stock sink state remain in scope;
+execution and the wider delivery/failure matrix are still pending.

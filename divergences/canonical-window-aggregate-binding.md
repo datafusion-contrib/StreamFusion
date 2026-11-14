@@ -32,3 +32,12 @@ release behavior and clears it at the first watermark. Memory captures retain th
 an operator initializes it according to the released lifecycle. No alternate state layout or
 forked Flink runtime is required. Shared-window tests restore the independent stock reference at
 every tested checkpoint boundary, so the comparison covers equal restoration lifecycles.
+
+The pending Flink 2.2 retracting fixed-window adapter captures the released retraction flag and
+aggregate information rather than inferring state from SQL result types. The existing native
+signed sum/count fields and live-row counter already implement those accelerated shapes.
+An append-only decimal AVG uses a NULL native sum for an unseen zero-count state and needs the
+stock zero projection; a retracting AVG starts at numeric zero, so NULL at count zero denotes
+sticky overflow and must survive unchanged. Flink 1.18 lacks this released TVF owner, and the
+adapter retains that version boundary. No third-party fork, new native operator or persisted
+format is introduced. New raw-state and clean-worker controls await qualification.

@@ -968,11 +968,19 @@ final class StockCompiledPlanLowering {
             : WindowAggregateMatcher.isLtz(windowing);
     if (processingTime && local != null)
       return windowFallback(stock, "processing-time partial boundaries are not bound");
-    if (definition.path("needRetraction").asBoolean())
-      return windowFallback(stock, "retracting state contract is not bound");
+    boolean retracting = definition.path("needRetraction").asBoolean();
     var spec = legacy ? null : windowing.getWindow();
     boolean session = legacySession || !legacy && FlinkCompat.isSessionWindow(spec);
     boolean cumulative = !legacy && WindowAggregateMatcher.isCumulative(windowing);
+    if (retracting
+        && (!FlinkPlanCompat.supportsRetractingWindowAggregation()
+            || legacy
+            || session
+            || processingTime
+            || finalWindows
+            || local != null))
+      return windowFallback(
+          stock, "retracting state requires a synchronous single-phase fixed event-time owner");
     if (session && local != null)
       return windowFallback(stock, "SESSION partial boundaries are not bound");
     Duration offset;
@@ -989,6 +997,8 @@ final class StockCompiledPlanLowering {
     }
     if (processingTime && offset != null && !offset.isZero())
       return windowFallback(stock, "processing-time offset assignment is not bound");
+    if (retracting && offset != null && !offset.isZero())
+      return windowFallback(stock, "retracting offset assignment is not bound");
     long size =
         legacy
             ? legacySession
@@ -1114,6 +1124,9 @@ final class StockCompiledPlanLowering {
         || !WindowAggregateMatcher.supportedAggregates(keys, sequence, relationalType))
       return windowFallback(
           stock, "input, output, grouping, time attribute or aggregate type is not admitted");
+    if (retracting
+        && !WindowAggregateMatcher.supportedRetractingAggregates(sequence, relationalType))
+      return windowFallback(stock, "retracting aggregate state is not admitted");
     var information =
         legacy
             ? org.apache.flink.table.planner.plan.utils.AggregateUtil
@@ -1126,7 +1139,7 @@ final class StockCompiledPlanLowering {
                     true,
                     true)
             : FlinkPlanCompat.windowAggregates(
-                planner.getTypeFactory(), inputType, sequence, windowing.getWindow());
+                planner.getTypeFactory(), inputType, sequence, retracting, windowing.getWindow());
     boolean hiddenCount = information.countStarInserted();
     if (information.aggInfos().length != calls.length + (hiddenCount ? 1 : 0))
       return windowFallback(stock, "stock accumulator count differs from its aggregate calls");
@@ -1135,7 +1148,8 @@ final class StockCompiledPlanLowering {
     int width = 0;
     for (int i = 0; i < information.aggInfos().length; i++) {
       var info = information.aggInfos()[i];
-      int expectedWidth = i < calls.length ? WindowAggregateMatcher.partialWidth(calls[i]) : 1;
+      int expectedWidth =
+          i < calls.length ? WindowAggregateMatcher.partialWidth(calls[i], retracting) : 1;
       if (info.viewSpecs().length != 0 || info.externalAccTypes().length != expectedWidth)
         return windowFallback(
             stock,
@@ -1147,11 +1161,17 @@ final class StockCompiledPlanLowering {
                 + info.viewSpecs().length
                 + " views");
       if (width == information.getIndexOfCountStar()) countStar = i;
-      if (i < calls.length && calls[i].getAggregation().getKind() == SqlKind.AVG)
+      // A retracting AVG starts at zero; NULL at count zero must retain sticky overflow.
+      if (!retracting && i < calls.length && calls[i].getAggregation().getKind() == SqlKind.AVG)
         averages.add(width);
       width += info.externalAccTypes().length;
     }
-    int[] kinds = WindowAggregateMatcher.kinds(sequence);
+    if (retracting && countStar < 0)
+      return windowFallback(stock, "retracting live-row counter is not captured");
+    int[] kinds =
+        retracting
+            ? Arrays.copyOf(WindowAggregateMatcher.retractingKinds(sequence), calls.length)
+            : WindowAggregateMatcher.kinds(sequence);
     int[] values = WindowAggregateMatcher.valueColumns(sequence);
     int[] types = WindowAggregateMatcher.valueTypeCodes(sequence, relationalType);
     int[] filters = Arrays.stream(calls).mapToInt(call -> call.filterArg).toArray();
@@ -1287,7 +1307,7 @@ final class StockCompiledPlanLowering {
                         processingTime);
     ExecNode<?> rows =
         input instanceof StreamExecExchange ? input.getInputEdges().get(0).getSource() : input;
-    ExecNode<?> entry = arrowInput(rows, config, inputType, false);
+    ExecNode<?> entry = arrowInput(rows, config, inputType, retracting);
     RowType exchangeType = inputType;
     int[] exchangeKeys = keys;
     if (local != null) {
@@ -3746,10 +3766,12 @@ final class StockCompiledPlanLowering {
       StreamExecSink stock, JsonNode definition,
       org.apache.flink.table.connector.ChangelogMode mode, Configuration config)
       throws IOException {
-    if (!nativeKeyedState || !NativeConfig.operatorEnabled("sinkMaterializer")
+    if (!nativeKeyedState
+        || !NativeConfig.operatorEnabled("sinkMaterializer")
         || !definition.path("requireUpsertMaterialize").asBoolean()
         || mode.containsOnly(org.apache.flink.types.RowKind.INSERT)
-        || Boolean.parseBoolean(config.getString("execution.checkpointing.unaligned.enabled", "false"))
+        || Boolean.parseBoolean(
+            config.getString("execution.checkpointing.unaligned.enabled", "false"))
         || Boolean.parseBoolean(config.getString("table.exec.async-state.enabled", "false")))
       return stock;
     var original = sinkMaterializer(stock);
@@ -3792,8 +3814,13 @@ final class StockCompiledPlanLowering {
         return stock;
       ttl = 0;
       for (String bound : List.of("high", "low")) {
-        var value = (Long) releasedField(stateConfig,
-            bound.equals("high") ? "adaptiveHighThresholdOverride" : "adaptiveLowThresholdOverride");
+        var value =
+            (Long)
+                releasedField(
+                    stateConfig,
+                    bound.equals("high")
+                        ? "adaptiveHighThresholdOverride"
+                        : "adaptiveLowThresholdOverride");
         if (value != null)
           strategyConfig.setString(
               "table.exec.sink.upsert-materialize-strategy.adaptive.threshold." + bound,
@@ -3842,7 +3869,8 @@ final class StockCompiledPlanLowering {
           String name = ((SimpleOperatorFactory<?>) one.getOperatorFactory())
               .getOperator().getClass().getName();
           if (name.equals("org.apache.flink.table.runtime.operators.sink.SinkUpsertMaterializer")
-              || name.equals("org.apache.flink.table.runtime.operators.sink.SinkUpsertMaterializerV2")) {
+              || name.equals(
+                  "org.apache.flink.table.runtime.operators.sink.SinkUpsertMaterializerV2")) {
             if (found != null) return null;
             found = one;
           }

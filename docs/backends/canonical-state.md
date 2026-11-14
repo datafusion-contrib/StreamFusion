@@ -23,7 +23,7 @@ pages. Historical cohorts are not silently requalified against each newer librar
 | [Deduplication](../operators/deduplication.md#canonical-state-adapter) | Automatic eager and buffered contracts, selected mini-batch and TTL modes; ROW-key binding awaiting qualification | Remaining schemas/emission variants and full failure matrix |
 | [Top-N / First-N / LIMIT](../operators/top-n.md#first-n-canonical-handoffs) | Automatic first-N, append, updating and retracting rank subsets; wider scalar/arbitrary-sort and nested-payload binding awaiting qualification | Algorithm-specific bounds, TTL, constructed key/sort types and complete new-scope qualification |
 | [Regular joins](../operators/joins/regular-join.md) | Automatic qualified stock layouts and complete-job handoffs; nested payload binding awaiting qualification | Wider uniqueness, mini-batch, schema and TTL combinations |
-| [Fixed windows](../operators/window-aggregate.md#stock-canonical-savepoint-interoperability) | Automatic binding, namespaced/DISTINCT state and selected complete-job handoffs | Complete phase/type/view and failure matrix |
+| [Fixed windows](../operators/window-aggregate.md#stock-canonical-savepoint-interoperability) | Automatic binding, namespaced/DISTINCT state and selected complete-job handoffs; floating SUM preservation and 2.2 single-phase retracting binding awaiting qualification | Complete phase/type/view and failure matrix |
 | [Sessions](../operators/window-aggregate.md) | Automatic partitioned TVF and legacy event/processing-time SESSION binding, operator recovery and selected complete-job handoffs | Native unpartitioned SESSION TVF assignment and wider merging/timer/recovery matrix |
 | [Window rank](../operators/top-n.md#window-rank-canonical-interchange-partial) | Automatic event-time retained sort-list, timer and watermark binding | Wider bounds/types, processing-time projection and failure/delivery matrix |
 | [Window deduplication](../operators/deduplication.md#window-deduplication-canonical-interchange-partial) | Automatic event-time winner, timer and watermark binding | Wider winner/types, processing-time projection and failure/delivery matrix |
@@ -2498,3 +2498,10 @@ Ordinary OVER COUNT additionally binds its existing binary, interval and nested 
 readers while retaining the same BIGINT state. New component/planner/full-job controls cover
 retained input and frame schemas, released timer versions, TTL and recovery/rescaling; these
 remain unexecuted. DISTINCT views and other aggregate argument gates stay separate.
+
+Flink 2.2 additionally has a pending canonical binding for existing single-phase retracting
+fixed event-time COUNT/SUM/SUM0/AVG kernels. It captures the released signed scalar/hidden-count
+layout and retains RowKinds at entry, without changing the native state format. Retracting AVG
+NULL overflow at a zero count remains raw state. Flink 1.18 has no matching released retracting
+TVF owner; its established append-only and legacy contracts are unchanged. Wider retracting
+phases and time/assignment families remain outside this extension.
