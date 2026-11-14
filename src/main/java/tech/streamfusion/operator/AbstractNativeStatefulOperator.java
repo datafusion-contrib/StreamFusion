@@ -15,7 +15,6 @@ import org.apache.flink.runtime.state.StateInitializationContext;
 import org.apache.flink.runtime.state.StateSnapshotContext;
 import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.Native;
-import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.arrow.MapListRepresentation;
 import tech.streamfusion.compat.FlinkCanonicalStreamOperator;
 import tech.streamfusion.compat.RuntimeCompat;
@@ -656,15 +655,15 @@ public abstract class AbstractNativeStatefulOperator<OUT>
    * Exports a row type as an FFI Arrow schema for the duration of one native call; the native side
    * consumes the schema contents, the wrapper struct is released here.
    */
-  protected static long withRowSchema(RowType rowType, LongUnaryOperator call) {
+  protected final long withRowSchema(RowType rowType, LongUnaryOperator call) {
     return withRowSchema(rowType, false, call);
   }
 
-  protected static long withMapListSchema(RowType rowType, LongUnaryOperator call) {
+  protected final long withMapListSchema(RowType rowType, LongUnaryOperator call) {
     return withRowSchema(rowType, true, call);
   }
 
-  private static long withRowSchema(RowType rowType, boolean mapList, LongUnaryOperator call) {
+  private long withRowSchema(RowType rowType, boolean mapList, LongUnaryOperator call) {
     try (ArrowSchema schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
       Data.exportSchema(
           NativeAllocator.SHARED,
@@ -676,17 +675,17 @@ public abstract class AbstractNativeStatefulOperator<OUT>
   }
 
   /** Two-input variant of {@link #withRowSchema}, for the joins' left and right row types. */
-  protected static long withRowSchemas(
+  protected final long withRowSchemas(
       RowType leftType, RowType rightType, LongBinaryOperator call) {
     return withRowSchemas(leftType, rightType, false, call);
   }
 
-  protected static long withMapListSchemas(
+  protected final long withMapListSchemas(
       RowType leftType, RowType rightType, LongBinaryOperator call) {
     return withRowSchemas(leftType, rightType, true, call);
   }
 
-  private static long withRowSchemas(
+  private long withRowSchemas(
       RowType leftType, RowType rightType, boolean mapList, LongBinaryOperator call) {
     try (ArrowSchema left = ArrowSchema.allocateNew(NativeAllocator.SHARED);
         ArrowSchema right = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
@@ -701,9 +700,8 @@ public abstract class AbstractNativeStatefulOperator<OUT>
     }
   }
 
-  private static org.apache.arrow.vector.types.pojo.Schema rowSchema(
-      RowType rowType, boolean mapList) {
-    var schema = ArrowConversion.toArrowSchema(rowType);
+  private org.apache.arrow.vector.types.pojo.Schema rowSchema(RowType rowType, boolean mapList) {
+    var schema = runtimeOptions().arrowSchema(rowType);
     return mapList ? MapListRepresentation.forIpc(schema) : schema;
   }
 }

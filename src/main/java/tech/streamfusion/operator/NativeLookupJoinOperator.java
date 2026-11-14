@@ -70,7 +70,7 @@ public class NativeLookupJoinOperator extends FlinkStreamOperator<ArrowBatch>
     // collect — writing its fields into the Arrow builders right there needs no defensive copy
     // (the per-row RowDataSerializer.copy was ~27% of q13's lookup-path CPU) and no gather list.
     VectorSchemaRoot out =
-        VectorSchemaRoot.create(ArrowConversion.toArrowSchema(outputType), allocator);
+        VectorSchemaRoot.create(runtimeOptions().arrowSchema(outputType), allocator);
     ArrowWriter<RowData> writer = ArrowConversion.createRowDataArrowWriter(out, outputType);
     Collector<RowData> gather =
         new Collector<>() {

@@ -130,6 +130,8 @@ public final class NativeUdf {
     final Class<?> varArgComponent;
     final FlinkExpressionFunction generated;
     final Schema rowSchema;
+    final tech.streamfusion.configuration.NativeRuntimeOptions options =
+        tech.streamfusion.configuration.NativeRuntimeOptions.capture();
 
     Registered(ScalarFunction function, Method eval, int[] argTypes, int returnType) {
       this.function = function;
@@ -330,6 +332,16 @@ public final class NativeUdf {
      * from its local index to the task-local runtime id (a copy, leaving the encoded array pristine
      * so a re-open rebinds correctly). Returns {@code longs} unchanged when there are no UDFs.
      */
+    public long[] bind(
+        long[] longs,
+        FunctionContext context,
+        org.apache.flink.streaming.runtime.tasks.ProcessingTimeService processingTimeService,
+        tech.streamfusion.configuration.NativeRuntimeOptions options) {
+      try (var ignored = options.use()) {
+        return bind(longs, context, processingTimeService);
+      }
+    }
+
     public long[] bind(long[] longs, FunctionContext context) {
       return bind(longs, context, null);
     }
@@ -452,7 +464,8 @@ public final class NativeUdf {
     if (udf == null) {
       throw new IllegalStateException("no registered UDF for id " + id);
     }
-    try (ArrowArray inArray = ArrowArray.wrap(inArrayAddress);
+    try (var ignored = udf.options.use();
+        ArrowArray inArray = ArrowArray.wrap(inArrayAddress);
         ArrowSchema inSchema = ArrowSchema.wrap(inSchemaAddress);
         VectorSchemaRoot in =
             Data.importVectorSchemaRoot(
@@ -587,9 +600,7 @@ public final class NativeUdf {
         .getFields()
         .get(0)
         .getChildren()
-        .equals(
-            tech.streamfusion.arrow.ArrowConversion.toArrowSchema(udf.generated.rowResultType())
-                .getFields());
+        .equals(udf.options.arrowSchema(udf.generated.rowResultType()).getFields());
   }
 
   private static boolean isPrimitiveArgument(int type) {
@@ -632,6 +643,13 @@ public final class NativeUdf {
 
   static VectorSchemaRoot evaluateRowCalc(int id, VectorSchemaRoot in, int[] columns) {
     Registered udf = REGISTRY.get(id);
+    try (var ignored = udf.options.use()) {
+      return evaluateRowCalc(udf, id, in, columns);
+    }
+  }
+
+  private static VectorSchemaRoot evaluateRowCalc(
+      Registered udf, int id, VectorSchemaRoot in, int[] columns) {
     List<FieldVector> inputs = new ArrayList<>(columns.length);
     for (int column : columns) inputs.add(in.getVector(column));
     // This root only borrows vectors; its owner remains the consumed input batch.
@@ -642,8 +660,7 @@ public final class NativeUdf {
             arguments,
             org.apache.flink.table.types.logical.RowType.of(udf.generated.argumentTypes()));
     var type = udf.generated.rowResultType();
-    if (Boolean.parseBoolean(
-            System.getProperty("streamfusion.experimental.temporalAliases", "true"))
+    if (udf.options.get(tech.streamfusion.configuration.NativeRuntimeOptions.TEMPORAL_ALIASES)
         && !udf.generated.hasRowFilter()
         && type.getFieldCount() == columns.length
         && type.getChildren().stream()

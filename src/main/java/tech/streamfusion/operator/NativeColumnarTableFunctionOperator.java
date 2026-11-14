@@ -109,7 +109,7 @@ public final class NativeColumnarTableFunctionOperator extends FlinkStreamOperat
         inputMapping == null
             ? null
             : org.apache.flink.table.data.utils.ProjectedRowData.from(inputMapping);
-    outputSchema = ArrowConversion.toArrowSchema(outputType, preserveCollections);
+    outputSchema = runtimeOptions().arrowSchema(outputType, preserveCollections);
     if (preserveCollections)
       outputSchema = tech.streamfusion.arrow.NestedRepresentation.withBinaryRows(outputSchema);
     projected = org.apache.flink.table.data.utils.ProjectedRowData.from(projection);

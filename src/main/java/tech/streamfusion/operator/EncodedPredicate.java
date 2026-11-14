@@ -56,7 +56,12 @@ public final class EncodedPredicate implements Serializable {
    * predicate; use {@link #boundLongs()} in place of {@link #longs} thereafter.
    */
   public void bind(FunctionContext context) {
-    boundLongs = binding.bind(longs, context);
+    bind(context, tech.streamfusion.configuration.NativeRuntimeOptions.capture());
+  }
+
+  public void bind(
+      FunctionContext context, tech.streamfusion.configuration.NativeRuntimeOptions options) {
+    boundLongs = binding.bind(longs, context, null, options);
   }
 
   /** The {@code longs} to compile with — the patched copy after {@link #bind}, else the raw array. */

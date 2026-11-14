@@ -101,7 +101,10 @@ public class NativeCalcOperator extends FlinkStreamOperator<ArrowBatch>
     // patch their ids into the encoded pool before compiling — so distributed tasks resolve them.
     boundLongs =
         udfBinding.bind(
-            longs, new FunctionContext(getRuntimeContext()), getProcessingTimeService());
+            longs,
+            new FunctionContext(getRuntimeContext()),
+            getProcessingTimeService(),
+            runtimeOptions());
     compiledSchemas = new HashMap<>();
     directRowCalc = -1;
     directPrimitiveCalc = -1;
@@ -113,8 +116,8 @@ public class NativeCalcOperator extends FlinkStreamOperator<ArrowBatch>
       int id = udfBinding.rowCalcId();
       if (NativeUdf.canEvaluatePrimitiveRowCalc(id)) directPrimitiveCalc = id;
     }
-    if (Boolean.parseBoolean(
-            System.getProperty("streamfusion.experimental.directTemporalCalc", "true"))
+    if (runtimeOptions()
+            .get(tech.streamfusion.configuration.NativeRuntimeOptions.DIRECT_TEMPORAL_CALC)
         && directColumns != null) {
       int id = udfBinding.rowCalcId();
       if (NativeUdf.canEvaluateTemporalRowCalc(id)) directRowCalc = id;

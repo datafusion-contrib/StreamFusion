@@ -12,7 +12,6 @@ import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.streaming.runtime.tasks.ProcessingTimeService;
 import tech.streamfusion.Native;
-import tech.streamfusion.planner.NativeConfig;
 
 /**
  * Re-assembles processing-sized batches in front of a keyed native operator. The columnar exchange
@@ -34,13 +33,21 @@ public final class BatchCoalescer implements AutoCloseable {
 
   /** The configured coalescer for a keyed operator's input, or null when disabled. */
   static BatchCoalescer create(ProcessingTimeService timers, Consumer<VectorSchemaRoot> sink) {
-    int targetRows = NativeConfig.exchangeCoalesceRows();
+    return create(tech.streamfusion.configuration.NativeRuntimeOptions.capture(), timers, sink);
+  }
+
+  static BatchCoalescer create(
+      tech.streamfusion.configuration.NativeRuntimeOptions options,
+      ProcessingTimeService timers,
+      Consumer<VectorSchemaRoot> sink) {
+    int targetRows =
+        options.get(tech.streamfusion.configuration.NativeRuntimeOptions.COALESCE_ROWS);
     if (targetRows <= 1) {
       return null;
     }
     return new BatchCoalescer(
         targetRows,
-        NativeConfig.exchangeCoalesceLatencyMs(),
+        options.get(tech.streamfusion.configuration.NativeRuntimeOptions.COALESCE_LATENCY_MS),
         NativeAllocator.SHARED,
         NativeAllocator.DICTIONARIES,
         timers,

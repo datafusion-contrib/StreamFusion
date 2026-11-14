@@ -206,7 +206,9 @@ public class NativeColumnarGroupAggregateOperator extends AbstractNativeStateful
       boundary = new MiniBatchBoundary(miniBatchSize);
       miniBatchMetrics = new MiniBatchMetrics(getMetricGroup(), true);
     }
-    coalescer = ownResource(BatchCoalescer.create(getProcessingTimeService(), this::ingest));
+    coalescer =
+        ownResource(
+            BatchCoalescer.create(runtimeOptions(), getProcessingTimeService(), this::ingest));
   }
 
   @Override

@@ -111,7 +111,9 @@ public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<A
   @Override
   protected void beforeHandleCreation() throws Exception {
     ownResource(predicate::unbind);
-    predicate.bind(new org.apache.flink.table.functions.FunctionContext(getRuntimeContext()));
+    predicate.bind(
+        new org.apache.flink.table.functions.FunctionContext(getRuntimeContext()),
+        runtimeOptions());
   }
 
   // Proctime interval joins share the event-time state layout (rows buffer with clock

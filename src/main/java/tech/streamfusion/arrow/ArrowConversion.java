@@ -261,12 +261,13 @@ public final class ArrowConversion {
   }
 
   public static boolean binaryEltEnabled() {
-    return Boolean.parseBoolean(System.getProperty("streamfusion.experimental.binaryElt", "true"));
+    return tech.streamfusion.configuration.StreamFusionConfig.get(
+        tech.streamfusion.configuration.NativeRuntimeOptions.BINARY_ELT);
   }
 
   public static boolean nestedScalarUdfsEnabled() {
-    return Boolean.parseBoolean(
-        System.getProperty("streamfusion.experimental.nestedScalarUdfs", "true"));
+    return tech.streamfusion.configuration.StreamFusionConfig.get(
+        tech.streamfusion.configuration.NativeRuntimeOptions.NESTED_SCALAR_UDFS);
   }
 
   /**

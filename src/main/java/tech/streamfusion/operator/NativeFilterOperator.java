@@ -71,7 +71,10 @@ public class NativeFilterOperator extends FlinkStreamOperator<ArrowBatch>
     // compiling — so a task manager (empty registry) resolves them, not just the planner JVM.
     long[] boundLongs =
         udfBinding.bind(
-            longs, new FunctionContext(getRuntimeContext()), getProcessingTimeService());
+            longs,
+            new FunctionContext(getRuntimeContext()),
+            getProcessingTimeService(),
+            runtimeOptions());
     predicate =
         Native.createFilterExpression(kinds, payload, childCounts, boundLongs, doubles, strings);
     resources.own(

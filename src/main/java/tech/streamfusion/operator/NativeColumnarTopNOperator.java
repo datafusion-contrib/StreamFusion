@@ -16,7 +16,6 @@ import tech.streamfusion.arrow.MapListRepresentation;
 import tech.streamfusion.operator.stream.MiniBatchBoundary;
 import tech.streamfusion.operator.stream.MiniBatchMetrics;
 import tech.streamfusion.operator.stream.MiniBatchMetrics.FlushReason;
-import tech.streamfusion.planner.NativeConfig;
 import tech.streamfusion.state.CanonicalNativeState;
 import tech.streamfusion.state.RocksDBNativeStateSupport;
 
@@ -427,7 +426,8 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
   @Override
   protected boolean writeAsyncMemorySnapshot(
       CheckpointableKeyedStateBackend<?> backend, long timerDeadline) throws Exception {
-    if (!NativeConfig.asyncMemorySnapshotsEnabled()) {
+    if (!runtimeOptions()
+        .get(tech.streamfusion.configuration.NativeRuntimeOptions.ASYNC_MEMORY_SNAPSHOTS)) {
       return false;
     }
     return CanonicalNativeState.captureAndWriteAsyncTopN(
@@ -488,7 +488,9 @@ public class NativeColumnarTopNOperator extends AbstractNativeStatefulOperator<A
       boundary = new MiniBatchBoundary(miniBatchSize);
       miniBatchMetrics = new MiniBatchMetrics(getMetricGroup());
     }
-    coalescer = ownResource(BatchCoalescer.create(getProcessingTimeService(), this::ingest));
+    coalescer =
+        ownResource(
+            BatchCoalescer.create(runtimeOptions(), getProcessingTimeService(), this::ingest));
   }
 
   @Override

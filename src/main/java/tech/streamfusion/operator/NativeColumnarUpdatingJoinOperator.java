@@ -118,7 +118,10 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractNativeStatefulOp
     ownResource(predBinding::unbind);
     boundPredLongs =
         predBinding.bind(
-            predLongs, new org.apache.flink.table.functions.FunctionContext(getRuntimeContext()));
+            predLongs,
+            new org.apache.flink.table.functions.FunctionContext(getRuntimeContext()),
+            null,
+            runtimeOptions());
   }
 
   @Override
@@ -288,9 +291,13 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractNativeStatefulOp
       getMetricGroup().gauge("rightBundleReducedSize", () -> rightBundleReducedSize);
     }
     leftCoalescer =
-        ownResource(BatchCoalescer.create(getProcessingTimeService(), in -> ingest(in, true)));
+        ownResource(
+            BatchCoalescer.create(
+                runtimeOptions(), getProcessingTimeService(), in -> ingest(in, true)));
     rightCoalescer =
-        ownResource(BatchCoalescer.create(getProcessingTimeService(), in -> ingest(in, false)));
+        ownResource(
+            BatchCoalescer.create(
+                runtimeOptions(), getProcessingTimeService(), in -> ingest(in, false)));
   }
 
   @Override

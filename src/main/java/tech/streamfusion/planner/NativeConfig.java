@@ -1,7 +1,6 @@
 package tech.streamfusion.planner;
 
 import java.util.Locale;
-import java.util.Optional;
 import org.apache.flink.configuration.ConfigOptions;
 import org.apache.flink.configuration.DeploymentOptions;
 import org.apache.flink.configuration.ReadableConfig;
@@ -9,8 +8,8 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 
 /**
  * Opt-in configuration for the native planner. Planning reads the current job's Flink
- * configuration, with same-named JVM system properties as a compatibility fallback; task-runtime
- * calls use the JVM properties until their values are serialized into operator specs. Mirrors
+ * configuration, with same-named JVM system properties as a compatibility fallback. Native runtime
+ * options are captured in serialized operators and scoped around generated-function callbacks. Mirrors
  * DataFusion Comet's {@code allowIncompatible} surface: some native expressions are known to
  * diverge from the host (locale-sensitive case folding, {@code BigDecimal} rounding, last-ULP
  * transcendental math). They fall back by default; a user who accepts the divergence — typically
@@ -18,21 +17,12 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
  */
 public final class NativeConfig {
 
-  private static final ThreadLocal<ReadableConfig> PLANNER_CONFIG = new ThreadLocal<>();
-
   private NativeConfig() {}
 
   /** Scopes planner option reads to one job without leaking configuration across concurrent jobs. */
   public static Scope usePlannerConfig(ReadableConfig config) {
-    ReadableConfig previous = PLANNER_CONFIG.get();
-    PLANNER_CONFIG.set(config);
-    return () -> {
-      if (previous == null) {
-        PLANNER_CONFIG.remove();
-      } else {
-        PLANNER_CONFIG.set(previous);
-      }
-    };
+    var scope = tech.streamfusion.configuration.StreamFusionConfig.use(config);
+    return scope::close;
   }
 
   @FunctionalInterface
@@ -42,15 +32,7 @@ public final class NativeConfig {
   }
 
   private static String value(String key, String defaultValue) {
-    ReadableConfig config = PLANNER_CONFIG.get();
-    if (config != null) {
-      Optional<String> configured =
-          config.getOptional(ConfigOptions.key(key).stringType().noDefaultValue());
-      if (configured.isPresent()) {
-        return configured.get();
-      }
-    }
-    return System.getProperty(key, defaultValue);
+    return tech.streamfusion.configuration.StreamFusionConfig.value(key, defaultValue);
   }
 
   private static boolean booleanValue(String key, boolean defaultValue) {
@@ -195,7 +177,13 @@ public final class NativeConfig {
    * watermark, and barrier flushes alone can otherwise retain a trickle stream indefinitely.
    */
   public static long transposeFlushLatencyMs() {
-    return Long.parseLong(value("streamfusion.transpose.flushLatencyMs", "50"));
+    return tech.streamfusion.configuration.StreamFusionConfig.get(
+        tech.streamfusion.configuration.NativeRuntimeOptions.TRANSPOSE_FLUSH_LATENCY_MS);
+  }
+
+  public static int jvmAccumulatorCacheEntries() {
+    return tech.streamfusion.configuration.StreamFusionConfig.get(
+        tech.streamfusion.configuration.NativeRuntimeOptions.JVM_ACCUMULATOR_CACHE_ENTRIES);
   }
 
   /**

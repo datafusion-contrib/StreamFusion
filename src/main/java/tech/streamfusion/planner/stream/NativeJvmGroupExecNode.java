@@ -152,7 +152,7 @@ public final class NativeJvmGroupExecNode extends ExecNodeBase<ArrowBatch>
               function,
               selector,
               NativeConfig.transposeBatchRows(config),
-              Integer.getInteger("streamfusion.experimental.jvmAccumulatorCacheEntries", 0),
+              NativeConfig.jvmAccumulatorCacheEntries(),
               keyType,
               grouping.length == 1 ? grouping[0] : -1,
               retention);

@@ -37,7 +37,8 @@ public class ArrowToRowDataOperator extends FlinkStreamOperator<RowData>
     implements OneInputStreamOperator<ArrowBatch, RowData> {
   private final RowType rowType;
   private final boolean borrowStrings =
-      Boolean.getBoolean("streamfusion.experimental.borrowedStringExit");
+      runtimeOptions()
+          .get(tech.streamfusion.configuration.NativeRuntimeOptions.BORROWED_STRING_EXIT);
   private final GeneratedProjection generatedProjection;
   private final boolean requiresBinaryRowCache;
   private final boolean borrowCanonicalStrings;

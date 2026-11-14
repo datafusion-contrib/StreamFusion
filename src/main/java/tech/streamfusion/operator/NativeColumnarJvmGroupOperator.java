@@ -240,8 +240,8 @@ public class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<ArrowBat
     outputSchema =
         binaryRowKeys
             ? tech.streamfusion.arrow.NestedRepresentation.withBinaryRows(
-                ArrowConversion.toArrowSchema(outputType, true))
-            : ArrowConversion.toArrowSchema(outputType, temporalArrays || nestedCollections);
+                runtimeOptions().arrowSchema(outputType, true))
+            : runtimeOptions().arrowSchema(outputType, temporalArrays || nestedCollections);
     collector =
         new Collector<RowData>() {
           @Override
@@ -312,7 +312,7 @@ public class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<ArrowBat
     coalescer =
         stateRetentionTime > 0
             ? null
-            : BatchCoalescer.create(getProcessingTimeService(), this::ingest);
+            : BatchCoalescer.create(runtimeOptions(), getProcessingTimeService(), this::ingest);
   }
 
   private org.apache.flink.api.common.functions.RuntimeContext accumulatorRuntime() {

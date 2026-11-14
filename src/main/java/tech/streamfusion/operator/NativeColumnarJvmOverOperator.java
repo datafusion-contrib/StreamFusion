@@ -74,7 +74,7 @@ public final class NativeColumnarJvmOverOperator extends FlinkStreamOperator<Arr
     super.open();
     NativeAllocator.initializeFor(this);
     inputs = new RowDataSerializer(inputType);
-    outputSchema = ArrowConversion.toArrowSchema(outputType);
+    outputSchema = runtimeOptions().arrowSchema(outputType);
     inputRows = getMetricGroup().counter("jvmOverRows");
     eventTimers = getMetricGroup().counter("jvmOverEventTimers");
     processingTimers = getMetricGroup().counter("jvmOverProcessingTimers");

@@ -162,7 +162,9 @@ public class NativeWindowJoinOperator extends AbstractNativeStatefulOperator<Arr
   @Override
   protected void beforeHandleCreation() throws Exception {
     ownResource(predicate::unbind);
-    predicate.bind(new org.apache.flink.table.functions.FunctionContext(getRuntimeContext()));
+    predicate.bind(
+        new org.apache.flink.table.functions.FunctionContext(getRuntimeContext()),
+        runtimeOptions());
   }
 
   // Proctime joins share the event-time state layout (windows are assigned upstream and both

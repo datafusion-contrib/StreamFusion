@@ -99,7 +99,7 @@ final class CapturedJvmGroupExecNode extends ExecNodeBase<ArrowBatch>
                 bundleTrigger,
                 selector,
                 NativeConfig.transposeBatchRows(config),
-                Integer.getInteger("streamfusion.experimental.jvmAccumulatorCacheEntries", 0),
+                NativeConfig.jvmAccumulatorCacheEntries(),
                 key,
                 grouping.length == 1 ? grouping[0] : -1,
                 retention,

@@ -17,7 +17,6 @@ import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.arrow.ArrowWriter;
 import tech.streamfusion.arrow.StringCacheColumns;
 import tech.streamfusion.compat.FlinkStreamOperator;
-import tech.streamfusion.planner.NativeConfig;
 
 /**
  * Transpose entering a columnar region: writes rows into owned Arrow buffers and emits them as
@@ -106,7 +105,13 @@ public class RowDataToArrowOperator extends FlinkStreamOperator<ArrowBatch>
         org.apache.arrow.vector.types.pojo.Schema.deserializeMessage(
             java.nio.ByteBuffer.wrap(arrowSchema));
     writeRowKind = carryRowKind;
-    flushLatencyMs = boundedInput ? 0 : NativeConfig.transposeFlushLatencyMs();
+    flushLatencyMs =
+        boundedInput
+            ? 0
+            : runtimeOptions()
+                .get(
+                    tech.streamfusion.configuration.NativeRuntimeOptions
+                        .TRANSPOSE_FLUSH_LATENCY_MS);
     flushDeadline = Long.MIN_VALUE;
     // Prune before taking ownership so unused payload is neither copied nor buffered.
     projector = sourceType == null ? null : PrunedRowData.of(sourceType, rowType);

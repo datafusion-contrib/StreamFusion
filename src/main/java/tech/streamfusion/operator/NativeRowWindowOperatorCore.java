@@ -13,7 +13,6 @@ import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.table.types.logical.LogicalTypeRoot;
 import org.apache.flink.table.types.logical.RowType;
-import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.operator.window.stream.FlinkWindowMetrics;
 
 /**
@@ -108,7 +107,8 @@ public abstract class NativeRowWindowOperatorCore extends NativeWindowOperatorCo
         if (n == 0) {
           return;
         }
-        VectorSchemaRoot out = VectorSchemaRoot.create(ArrowConversion.toArrowSchema(outputType), allocator);
+        VectorSchemaRoot out =
+            VectorSchemaRoot.create(runtimeOptions().arrowSchema(outputType), allocator);
         int properties = outputType.getFieldCount() - keyCount - aggregates;
         boolean transferBuffers = properties == 0;
         boolean emitted = false;
