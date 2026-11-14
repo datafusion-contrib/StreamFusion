@@ -19,21 +19,12 @@ key, so unobserved flush positions do not select event-time winners. User-functi
 calls stop this broader rewrite. Event-time ordering, precombine-disabled writes,
 windows, unknown operators/programs and observable watermark expressions retain
 the original eager boundaries. A Q4 diagnostic profile attributed 35.6% of CPU
-samples to regular-join watermark flushing. The broader rewrite reduced the
-two-million-event Q4 heap/no-mini-batch native diagnostic from 82.2 seconds to a
-2.68-second median over three measured trials. The matching stock median was
-4.82 seconds and the previous path was 142.39 seconds. Native medians beat stock
-in all four heap/RocksDB and mini-batch configurations, by 1.55×–6.82×. Full
-values, ranges and resources are recorded with the Q4 observations linked below.
-The rewrite copies only the terminal branch, preserving shared producers.
+samples to regular-join watermark flushing. A Q9 CPU capture likewise attributed
+49.7% of samples to batch flushing, including 27.8% under join watermark flushing.
+These inclusive CPU shares identify work performed while the process was active;
+they are not elapsed-time speedups.
 
-On the two-million-event, four-partition Q0 job, one warmup and three rotating
-measured trials gave medians of 1,080.5 ms stock, 7,884.6 ms previous StreamFusion
-and 626.6 ms with native Hudi boundaries. Ranges were 1,007.0–2,011.6,
-7,873.4–9,970.4 and 589.5–639.3 ms respectively. Every trial checked all
-1,840,000 bid outputs and all four sink partitions. Timing includes final commit
-visibility; fixture creation and full stock readback are outside timing.
-This is a 1.72× median gain over stock for the measured bounded Q0 configuration,
-not a steady-state throughput claim or a result for other queries. The
-[Hudi Nexmark method and observations](../benchmarks/hudi-nexmark.md) record the
-resource settings, all trials and the remaining qualification work.
+Earlier Q0/Q1/Q4 full-value comparisons passed, but macOS power logs later showed
+repeated system suspension during the campaign. Their timing qualification has
+been withdrawn. The [benchmark method](../benchmarks/hudi-nexmark.md) now requires
+an awake host and records both clocks. Controlled release comparisons are pending.

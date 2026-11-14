@@ -1,5 +1,5 @@
 {
-  "status": "passed",
+  "status": "diagnostic",
   "rows": 2000000,
   "input_bids": 1840000,
   "parallelism": 4,
@@ -632,5 +632,7 @@
   ],
   "scope": "q4; heap and RocksDB; mini-batch off/on; one warmup and three rotating measured trials; full-value multiset, payload encoder, backend and native resource checks",
   "source_base_revision": "07fd1f0d4781d04550f4ec6f2faae024c464bdd1",
-  "harness_sha256": "4b494429ee548ef8c31434a747220aca82000972bd53e64abc151c4915bdc1c2"
+  "harness_sha256": "4b494429ee548ef8c31434a747220aca82000972bd53e64abc151c4915bdc1c2",
+  "original_run_status": "passed",
+  "timing_qualification": "Withdrawn: host suspensions occurred during the campaign; rerun with an awake host. Full-value comparison results remain correctness evidence."
 }
