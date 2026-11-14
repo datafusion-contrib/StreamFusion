@@ -43,20 +43,27 @@ matrices remain pending. Selected checks establish only the exercised contracts 
 
 | Selection | Local result |
 | --- | --- |
-| Native library, final production sources | 1,609 passed; two release-only diagnostic ignores |
+| Native library, final production sources | 1,611 passed; two release-only diagnostic ignores |
 | Native memory-only build and workspace formatting | Passed |
-| Flink 1.18 latest selected per-class reports | 4,717 checks across 94 classes; zero failures/errors; 40 explicit release/platform skips |
+| Flink 1.18 latest selected per-class reports | 5,558 checks across 124 classes; zero failures/errors; 40 explicit release/platform skips |
 | Flink 1.18 unchanged released heap/RocksDB backend-switch fixtures | Eight passed per engine; runtime-only backend evidence |
 | Flink 2.2 clean component/planner selection | 5,106 passed across 67 classes; no failures, errors or skips |
-| Flink 2.2 extended isolated-worker selections | In progress |
+| Flink 2.2 latest selected per-class reports | 6,192 checks across 121 classes; zero failures/errors/skips |
+| Flink 2.2 corrective normal pairwise job selection | 129 passed, including rank, ROW grouping/dedup and typed materializer rescaling |
+| Flink 2.2 unchanged released GROUP/OVER/event-window restore fixtures | 41 passed per engine; strict audit: 29 native and 12 explicitly mixed native/stock routes |
+| Final Flink 2.2 nested-rank, retracting-window and typed DISTINCT job cohort | 51 passed with the final native library |
+| Execution-evidence controls | 69 normal-mode checks passed (62 conditional skips), 222 canonical checks passed; 52 report-validator checks passed |
 
-Local common arithmetic job smoke limits its shared provider to continued-input, compiled,
-native-first handoffs on both native stores. Other pairwise worker providers retain their own
-engine orders, ordinary/compiled submission, no-input, checkpoint and rescaling cases. Their
+Initial common arithmetic job smoke limited its shared provider to continued-input, compiled,
+native-first handoffs on both native stores. The corrective pairwise cohorts on both releases remove
+that additional restriction and include all handoff modes selected by their providers. Other
+pairwise worker providers retain their own engine orders, ordinary/compiled submission, no-input, checkpoint and rescaling cases. Their
 stock workers exclude StreamFusion classes and native libraries and require positive native
 execution in the native stages. Raw-state and malformed-state controls complement output oracles.
-These selections do not replace the exact-head hosted merge gates or unchanged released restore
-fixtures. No benchmark or throughput claim is made. Same-build native recovery does not qualify
+The new large validity-only COUNT payload complete-job matrices remain unexecuted; component
+checks do not qualify those jobs. These selections do not replace the pending exact-head hosted
+merge gates or complete default matrices. No benchmark or throughput claim is made. Same-build
+native recovery does not qualify
 historical physical ROW checkpoint layouts or cross-line state upgrades under
 [#188](https://github.com/datafusion-contrib/StreamFusion/issues/188).
 
@@ -988,9 +995,10 @@ currently retains the stock join state owner rather than eliding its pending wor
 
 The clean compiled-plan qualification includes 46 complete-job window-join cases, 50 planner
 controls, unchanged released restore fixtures and existing ordinary SQL/planner regression checks.
-The shared Flink 1.18 planner retains its previous implementation; its regression checks do not
-qualify Flink 1.18 stock canonical interchange. Canonical conversion runs only at the canonical
-savepoint boundary; ordinary native checkpoints retain their existing paths. Benchmarking remains
+In that frozen cohort, the shared Flink 1.18 planner retained its previous implementation; its
+regression checks did not qualify Flink 1.18 stock canonical interchange. Resumed 1.18 binding
+and selected local qualification are reported separately above. Canonical conversion runs only at
+the canonical savepoint boundary; ordinary native checkpoints retain their existing paths. Benchmarking remains
 deferred while the full #569 functionality is completed.
 
 ### Event-time interval cache projection
@@ -1883,7 +1891,8 @@ The current bounded binding passes one 1,834-check regression cohort and a separ
 handoff/recovery/rescale cohort on Flink 2.2.1. See the operator page for the exact type, key and
 scenario split; earlier overlapping cohorts are not cumulative coverage. Original released OVER
 restore programs remain stock controls where their UDF/key layouts are outside this binding.
-The shared 1.18 processing tests do not establish stock-compatible canonical restore there.
+Those frozen 1.18 processing tests did not establish stock-compatible canonical restore there;
+the resumed 1.18 scope and selected local qualification are reported separately above.
 
 
 ## Unbounded processing-time OVER binding (partial)
