@@ -3919,3 +3919,8 @@ Broader user serializer contracts, key/value schemas, view/phase/TTL/failure com
 connector delivery and cross-version qualification remain in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Every family remains partial.
 Benchmarking remains explicitly deferred.
+
+Integer AVG finalization shares the same signed-count, wrapping-division and narrowing kernel
+as window accumulators and native OVER. Storage layouts and update/merge loops remain
+specialized; shared contract cases cover NULLs, changelog retractions and partial-state restore.
+See [the integer AVG decision](https://github.com/datafusion-contrib/StreamFusion/blob/main/divergences/01-integer-truncating-avg.md) in the repository.
