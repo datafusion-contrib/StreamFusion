@@ -90,6 +90,8 @@ ordering values and Arrow batch/row references. Payloads stay columnar throughou
 merging and projection. Terminal field projection is deferred to the Arrow batch
 gather, avoiding per-row projection wrappers. Rust's Arrow interleave kernel
 gathers the winning rows into bounded output batches.
+Gathers retain the decoded vectors' actual field layouts and metadata. In
+particular, stored nested rows omit execution-only row-kind children.
 
 Admission covers standard full-row event-time or commit-time merging, a single
 INT/BIGINT ordering field, the same payload types as COW reads and
@@ -354,7 +356,11 @@ those reports have `inventory` status and do not qualify as a passing gate.
 `HudiExpandedCoverageTest` covers partitioned reads, residual predicates, nested
 COW payloads and four MOR writers over two commits. `HudiMorSinkTest` compares
 update-before and precombine behavior with the original writer and exercises the
-shared native sink materializer. The [four-partition Hudi Nexmark harness](../benchmarks/hudi-nexmark.md)
+shared native sink materializer. `NativeHudiMorSourceTest` compares partitioned
+log-only and base-plus-log merges with stock Hudi, including nested ROW/ARRAY/MAP
+NULLs, microsecond timestamps, DECIMAL, TIME and binary payloads. It verifies
+projection and that an older event version cannot replace the latest payload.
+The [four-partition Hudi Nexmark harness](../benchmarks/hudi-nexmark.md)
 adds full-row stock readback and checks the actual Parquet encoder. Expanded
 matrix performance validation is ongoing; the earlier one-writer measurements
 above do not establish performance for the expanded matrix.

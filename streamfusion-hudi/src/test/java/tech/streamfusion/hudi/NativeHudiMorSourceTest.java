@@ -674,6 +674,68 @@ class NativeHudiMorSourceTest {
     assertSqlMatchesStock("SELECT name,id+1 FROM h");
   }
 
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void partitionedNestedPayloadsPreserveJavaMergeWinners(boolean base) throws Exception {
+    sql =
+        StreamTableEnvironment.create(
+            StreamExecutionEnvironment.createLocalEnvironment(4, memory()));
+    sql.getConfig().setLocalTimeZone(java.time.ZoneId.of("UTC"));
+    sql.executeSql(
+        "CREATE TABLE typed (id BIGINT,p STRING,version BIGINT,"
+            + "nested ROW<name STRING,stamp TIMESTAMP_LTZ(6)>,tags ARRAY<STRING>,"
+            + "attrs MAP<STRING,ROW<n BIGINT,t TIMESTAMP(6)>>,amount DECIMAL(25,6),"
+            + "clock TIME(3),payload BYTES,PRIMARY KEY(id,p) NOT ENFORCED) PARTITIONED BY(p)"
+            + " WITH ('connector'='hudi','path'='"
+            + temporary.resolve("nested").toUri()
+            + "','table.type'='MERGE_ON_READ','write.operation'='upsert','write.tasks'='4',"
+            + "'read.tasks'='4','metadata.enabled'='false','compaction.async.enabled'='false',"
+            + "'compaction.schedule.enabled'='false','read.source-v2.enabled'='true',"
+            + "'precombine.field'='version','index.bootstrap.enabled'='true',"
+            + "'hoodie.logfile.data.block.format'='parquet')");
+    String value =
+        "ROW('é',CAST(TIMESTAMP '1969-12-31 23:59:59.123456' AS TIMESTAMP_LTZ(6))),"
+            + "ARRAY['a',CAST(NULL AS STRING)],"
+            + "MAP['k',ROW(CAST(42 AS BIGINT),TIMESTAMP '1969-12-31 23:59:59.123456')],"
+            + "CAST('1234567890123456789.123456' AS DECIMAL(25,6)),TIME '12:34:56.123',X'00FF'";
+    sql.executeSql(
+            "INSERT INTO typed "
+                + (base ? "/*+ OPTIONS('write.operation'='insert') */ " : "")
+                + "VALUES (1,'p0',1,"
+                + value
+                + "),(2,'p1',1,"
+                + value
+                + "),(3,'p2',1,"
+                + value
+                + ")")
+        .await();
+    try (var files = java.nio.file.Files.walk(temporary.resolve("nested"))) {
+      assertEquals(base, files.anyMatch(path -> path.toString().endsWith(".parquet")));
+    }
+    sql.executeSql(
+            "INSERT INTO typed VALUES (1,'p0',2,"
+                + "CAST(NULL AS ROW<name STRING,stamp TIMESTAMP_LTZ(6)>),"
+                + "ARRAY[CAST(NULL AS STRING),'updated'],"
+                + "MAP['k',CAST(NULL AS ROW<n BIGINT,t TIMESTAMP(6)>)],"
+                + "CAST(NULL AS DECIMAL(25,6)),CAST(NULL AS TIME(3)),CAST(NULL AS BYTES)),"
+                + "(4,'p3',2,"
+                + value
+                + ")")
+        .await();
+    sql.executeSql("INSERT INTO typed VALUES (1,'p0',0," + value + ")").await();
+    try (var files = java.nio.file.Files.walk(temporary.resolve("nested"))) {
+      assertTrue(files.anyMatch(path -> path.getFileName().toString().contains(".log.")));
+    }
+    assertSqlMatchesStock(
+        "SELECT id+1,p,version,nested,tags,attrs,amount,clock,payload FROM typed");
+    try (var rows =
+        sql.executeSql("SELECT version,nested,amount FROM typed WHERE id=1").collect()) {
+      assertTrue(rows.hasNext());
+      assertEquals(Row.of(2L, null, null), rows.next());
+      assertFalse(rows.hasNext());
+    }
+  }
+
   @Test
   void commitTimeUpdatesAndUnorderedKeyDeletesMatchStock() throws Exception {
     var env = StreamExecutionEnvironment.createLocalEnvironment(1, memory());

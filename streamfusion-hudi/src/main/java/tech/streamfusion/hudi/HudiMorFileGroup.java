@@ -27,7 +27,6 @@ import org.apache.hudi.util.FlinkClientUtil;
 import org.apache.hudi.util.FlinkWriteClients;
 import org.apache.hudi.util.HoodieSchemaConverter;
 import org.apache.hudi.util.StreamerUtil;
-import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.operator.NativeAllocator;
 import tech.streamfusion.operator.RowDataArrowConverter;
 
@@ -170,7 +169,11 @@ final class HudiMorFileGroup implements AutoCloseable {
               .collect(java.util.stream.Collectors.toList());
       roots.add(
           new VectorSchemaRoot(
-              ArrowConversion.toArrowSchema(output), vectors, input.root.getRowCount()));
+              vectors.stream()
+                  .map(vector -> vector.getField())
+                  .collect(java.util.stream.Collectors.toList()),
+              vectors,
+              input.root.getRowCount()));
     }
     var selected = tech.streamfusion.arrow.ArrowFileBatch.interleave(roots, sources, positions);
     if (!streaming) return selected;
