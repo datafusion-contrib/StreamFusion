@@ -39,6 +39,12 @@ retracting/updating input doesn't disqualify it by itself. A union may alternate
 batches and batches carrying a row-kind column; Calc caches each schema separately and preserves
 those row kinds through projections and filters. Row-to-Arrow boundaries also retain actual
 retractions received from a source that advertised insert-only output.
+An empty input or a filter that selects no rows emits no data record; its Arrow
+result is released immediately. Watermarks still propagate, and zero-column
+batches with a positive row count retain their rows and changelog kinds.
+Programs without JVM bindings export only referenced top-level input columns and
+the changelog column through C Data. JVM-bound programs keep their original
+positional input schema. This changes transport work, not expression admission.
 
 The streaming Calc and filter rules prepare their expression plans once for
 one candidate; a Calc also prepares its declared-result-type check. Construction and fallback diagnostics consume that same admission decision;

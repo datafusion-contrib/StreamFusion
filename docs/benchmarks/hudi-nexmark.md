@@ -8,7 +8,7 @@ and release StreamFusion engine/Parquet libraries.
 For the Java batching/allocation investigation, the manual **CI startup profile**
 workflow with suite `hudi-benchmark` runs Q8/Q12 on one isolated Ubuntu runner. Supply a full baseline commit
 SHA with identical native sources, build inputs and benchmark harness. The runner
-admits changes only to the allocation authority and Hudi terminal-batch proof,
+admits changes only to the allocation authority, Calc transport and Hudi terminal-batch proof,
 builds the two release libraries once, verifies their hashes throughout, and
 alternates baseline/candidate then candidate/baseline. Each invocation retains
 one warmup and three rotating stock/previous/native trials, four source/sink tasks,

@@ -16,6 +16,7 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 JAVA = (
+    "src/main/java/tech/streamfusion/operator/NativeCalcOperator.java",
     "src/main/java/tech/streamfusion/operator/TaskOffHeapMemory.java",
     "streamfusion-hudi/src/main/java/tech/streamfusion/planner/stream/HudiSinkMatcher.java",
 )

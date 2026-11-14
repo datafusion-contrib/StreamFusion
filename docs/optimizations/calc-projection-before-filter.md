@@ -11,6 +11,20 @@ This matters most after a shared wide source, where several selective branches r
 fields from the same decoded batch. Projection expressions are remapped once when the Calc is
 compiled, so the per-batch path remains evaluation plus Arrow kernels rather than planner work.
 
+For native programs without JVM bindings, the Java C Data entry also exports only
+referenced top-level columns and the hidden changelog column. Input references are
+remapped once per input schema. The export wrapper borrows the original vectors;
+it does not copy payloads or own their release. JVM-bound programs retain their
+original positional schema. This avoids exporting unused wide structs when a
+columnar watermark assigner hides the source from planner projection pushdown.
+The existing Rust projection-before-filter path remains unchanged.
+
+An empty Calc result is closed at the operator boundary. It does not enter downstream
+window/exchange operators, where an empty fragment would still allocate transport and
+accumulator wrappers. Watermarks continue through their independent callback. This applies
+to both native and direct JVM evaluation; inputs and retained nonempty outputs keep their
+existing ownership. A focused Hudi comparison is pending for this additional optimization.
+
 The release-mode Criterion A/B over a 4,096-row Q3-shaped event batch measured the filtering kernel
 at 4.01 microseconds for the former full-schema path and 1.18 microseconds after pruning projection
 inputs, a 3.39x operator-level speedup. Two clean 2-million-event exactly-once Kafka Q3 reruns put

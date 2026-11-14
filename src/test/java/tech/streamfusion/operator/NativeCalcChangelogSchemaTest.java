@@ -24,7 +24,7 @@ class NativeCalcChangelogSchemaTest {
   private static final RowType TYPE = RowType.of(new IntType());
 
   @Test
-  void nestedAndEmptyOutputsRemainOwnedAcrossLaterBatchesAndShutdown() throws Exception {
+  void nestedOutputsRemainOwnedAndEmptyInputsEmitNoRecordsAcrossShutdown() throws Exception {
     RowType type = RowType.of(new ArrayType(new IntType()),
         RowType.of(new IntType(), new VarCharType(VarCharType.MAX_LENGTH)));
     var calc = new NativeCalcOperator(new int[] {0, 0}, new int[] {0, 1}, new int[] {0, 0},
@@ -49,7 +49,11 @@ class NativeCalcChangelogSchemaTest {
                 RowDataArrowConverter.write(input, type, allocator, true), 17)));
             @SuppressWarnings("unchecked")
             var output = (StreamRecord<ArrowBatch>) harness.getOutput().poll();
-            retained.add(output.getValue());
+            if (count == 0) {
+              org.junit.jupiter.api.Assertions.assertNull(output);
+            } else {
+              retained.add(output.getValue());
+            }
           }
           harness.processWatermark(new org.apache.flink.streaming.api.watermark.Watermark(123));
           assertEquals(123, ((org.apache.flink.streaming.api.watermark.Watermark)
@@ -59,7 +63,7 @@ class NativeCalcChangelogSchemaTest {
           var output = retained.get(batch);
           assertEquals(17, output.keyGroup());
           var rows = RowDataArrowConverter.read(output.root(), type);
-          assertEquals(new int[] {0, 3, 0, 2}[batch], rows.size());
+          assertEquals(new int[] {3, 2}[batch], rows.size());
           for (int i = 0; i < rows.size(); i++) {
             var row = rows.get(i);
             assertEquals(RowKind.values()[i % 4], row.getRowKind());
@@ -108,6 +112,7 @@ class NativeCalcChangelogSchemaTest {
       harness.processElement(new StreamRecord<>(new ArrowBatch(root)));
       harness.processElement(new StreamRecord<>(new ArrowBatch(
           RowDataArrowConverter.write(List.of(), RowType.of(), NativeAllocator.SHARED, changelog))));
+      assertEquals(1, harness.getOutput().size());
       int count = 0;
       for (Object record : harness.getOutput()) {
         if (record instanceof StreamRecord<?>) {
