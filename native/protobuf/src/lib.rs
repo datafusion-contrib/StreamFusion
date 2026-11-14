@@ -31,3 +31,19 @@ pub extern "system" fn Java_tech_streamfusion_format_protobuf_NativeProtobufForm
 ) -> jstring {
     streamfusion_bridge::live_handles_probe(env)
 }
+
+pub mod encode;
+streamfusion_format_support::format_encoder_jni_facade!(
+    Java_tech_streamfusion_format_protobuf_NativeProtobufFormat_createEncoder,
+    Java_tech_streamfusion_format_protobuf_NativeProtobufFormat_encodeBatch,
+    Java_tech_streamfusion_format_protobuf_NativeProtobufFormat_closeEncoder,
+    Java_tech_streamfusion_format_protobuf_NativeProtobufFormat_encoderSupported,
+    Java_tech_streamfusion_format_protobuf_NativeProtobufFormat_spellFloatingPoint,
+    encode::create_encoder,
+    encode::supports_encoder
+);
+
+#[allow(unused_imports)]
+use encode::*;
+
+pub use encode::ProtobufEncoder;

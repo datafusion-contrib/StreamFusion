@@ -1,5 +1,8 @@
 package tech.streamfusion.format.avroconfluent;
 
+import java.util.Map;
+import org.apache.flink.formats.avro.typeutils.AvroSchemaConverter;
+import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.format.EncodeFormat;
 import tech.streamfusion.format.FormatCodes;
 import tech.streamfusion.format.NativeFormatContext;
@@ -8,12 +11,16 @@ import tech.streamfusion.format.NativeMessageDecoderFactory;
 import tech.streamfusion.format.avro.AvroDecodeGate;
 import tech.streamfusion.format.avro.AvroEncodeGate;
 import tech.streamfusion.kafka.ConfluentSchemaRegistry;
-import java.util.Map;
-import org.apache.flink.formats.avro.typeutils.AvroSchemaConverter;
-import org.apache.flink.table.types.logical.RowType;
 
 /** Native provider for Flink's {@code avro-confluent} format. */
 public final class AvroConfluentFormatProvider implements NativeFormatProvider {
+
+  @Override
+  public tech.streamfusion.format.NativeMessageEncoderFactory encoderFactory() {
+    return (options, types, names, fields) ->
+        tech.streamfusion.format.avro.NativeAvroFormat.encoder(
+            tech.streamfusion.format.FormatCodes.AVRO_CONFLUENT, options, types, names, fields);
+  }
 
   @Override
   public String formatIdentifier() {
@@ -42,12 +49,15 @@ public final class AvroConfluentFormatProvider implements NativeFormatProvider {
   @Override
   public NativeMessageDecoderFactory createDecoder(NativeFormatContext context) {
     ConfluentSchemaRegistry registry = ConfluentSchemaRegistry.fromOptions(context.options());
-    String readerSchema = AvroSchemaConverter.convertToSchema(context.outputType().copy(false)).toString();
+    String readerSchema =
+        AvroSchemaConverter.convertToSchema(context.outputType().copy(false)).toString();
     return () -> new RegistryAvroDecoder(registry, readerSchema, false);
   }
 
   @Override
   public EncodeFormat encodeFormat(NativeFormatContext context) {
+    if (!tech.streamfusion.format.avro.NativeAvroFormat.encoderSupported(
+        FormatCodes.AVRO_CONFLUENT)) return null;
     RowType rowType = context.writerType();
     Map<String, String> options = context.options();
     ConfluentSchemaRegistry registry = ConfluentSchemaRegistry.fromFormatOptions(options);
@@ -63,6 +73,10 @@ public final class AvroConfluentFormatProvider implements NativeFormatProvider {
     return EncodeFormat.resolved(
         FormatCodes.AVRO_CONFLUENT,
         "avro-schema=" + schema + "\n",
-        new ConfluentSchemaRegistration(registry, subject, schema));
+        new ConfluentSchemaRegistration(registry, subject, schema),
+        false,
+        (resolved, types, names, fields) ->
+            tech.streamfusion.format.avro.NativeAvroFormat.encoder(
+                FormatCodes.AVRO_CONFLUENT, resolved, types, names, fields));
   }
 }

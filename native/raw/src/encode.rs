@@ -177,3 +177,25 @@ fn write_raw_value(
 fn extend_endian(big: &[u8], little: &[u8], little_endian: bool, out: &mut Vec<u8>) {
     out.extend_from_slice(if little_endian { little } else { big });
 }
+
+struct CodecEncoder(RawEncodeOptions);
+impl MessageEncoder for CodecEncoder {
+    fn encode(
+        &self,
+        batch: &RecordBatch,
+        _kinds: Option<&Int8Array>,
+        _types: &[String],
+        _names: &[String],
+    ) -> Result<EncodedLines, String> {
+        encode_raw_batch(batch, &self.0).map(|(bytes, rows)| EncodedLines::new(bytes, rows))
+    }
+}
+pub fn supports_encoder(format: i32) -> bool {
+    format == FORMAT_RAW
+}
+pub fn create_encoder(format: i32, options: &str) -> Result<Box<dyn MessageEncoder>, String> {
+    if !supports_encoder(format) {
+        return Err(format!("raw library does not encode format {format}"));
+    }
+    Ok(Box::new(CodecEncoder(RawEncodeOptions::parse(options)?)))
+}

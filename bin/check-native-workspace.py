@@ -50,6 +50,16 @@ def main():
         name = package["name"]
         cdylibs = [target for target in package["targets"] if "cdylib" in target["crate_types"]]
         assert bool(cdylibs) == (name in owners), f"unexpected library target for {name}"
+        if name in {"streamfusion-kafka", "streamfusion-format-support"}:
+            codecs = {"arrow-avro", "prost", "prost-types", "prost-reflect", "simd-json", "csv-core"}
+            normal = [dep for dep in package["dependencies"] if dep["kind"] is None]
+            assert not (codecs & {dep["name"] for dep in normal}), (
+                f"{name} links format implementations instead of their owning optional library"
+            )
+            if name == "streamfusion-kafka":
+                assert all("json" not in dep["features"] for dep in normal if dep["name"] == "arrow"), (
+                    "Kafka must not enable Arrow's JSON encoder"
+                )
         if name in owners and name != "streamfusion":
             pending = [package_id]
             seen = set()

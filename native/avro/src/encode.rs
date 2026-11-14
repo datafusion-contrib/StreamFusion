@@ -57,14 +57,15 @@ pub(crate) fn encode_debezium_avro_batch(
     options: &AvroEncodeOptions,
     logical_types: &[String],
     field_names: &[String],
-) -> Result<crate::kafka::EncodedLines, String> {
+) -> Result<streamfusion_format_support::EncodedLines, String> {
     use arrow::array::StructArray;
     use arrow::buffer::NullBuffer;
 
     // The envelope declares its own top-level names, but the image structs resolve their fields
     // by name against the derived envelope schema — the batch must carry the declared sink field
     // names, not the plan's generated expression names.
-    let batch = &crate::kafka::annotate_flink_types(batch, logical_types, field_names)?;
+    let batch =
+        &streamfusion_format_support::annotate_flink_types(batch, logical_types, field_names)?;
     let rows = batch.num_rows();
     let mut delete = Vec::with_capacity(rows);
     for row in 0..rows {
@@ -113,7 +114,7 @@ pub(crate) fn encode_debezium_avro_batch(
         bytes.extend_from_slice(&line[5..]);
         lines.push(start..bytes.len());
     }
-    Ok(crate::kafka::EncodedLines::new(bytes, lines))
+    Ok(streamfusion_format_support::EncodedLines::new(bytes, lines))
 }
 
 /// Encodes one projected sink batch as per-row Avro payloads with Flink's exact bytes. The batch
@@ -125,12 +126,13 @@ pub(crate) fn encode_avro_batch(
     options: &AvroEncodeOptions,
     logical_types: &[String],
     field_names: &[String],
-) -> Result<crate::kafka::EncodedLines, String> {
+) -> Result<streamfusion_format_support::EncodedLines, String> {
     use arrow_avro::schema::{FingerprintStrategy, SCHEMA_METADATA_KEY};
     use arrow_avro::writer::format::{AvroBinaryFormat, AvroSoeFormat};
     use arrow_avro::writer::WriterBuilder;
 
-    let batch = crate::kafka::annotate_flink_types(batch, logical_types, field_names)?;
+    let batch =
+        streamfusion_format_support::annotate_flink_types(batch, logical_types, field_names)?;
     let mut fields = Vec::with_capacity(batch.num_columns());
     let mut columns = Vec::with_capacity(batch.num_columns());
     for (field, column) in batch.schema().fields().iter().zip(batch.columns()) {
@@ -166,7 +168,7 @@ pub(crate) fn encode_avro_batch(
         .encode(&batch)
         .map_err(|error| format!("failed to encode Kafka Avro batch: {error}"))?;
     let rows = encoder.flush();
-    Ok(crate::kafka::EncodedLines::from_offsets(
+    Ok(streamfusion_format_support::EncodedLines::from_offsets(
         rows.bytes().to_vec(),
         rows.offsets(),
     ))
@@ -439,7 +441,7 @@ mod encode_tests {
         schema_json: &str,
         schema_id: Option<u32>,
         batch: &RecordBatch,
-    ) -> Result<crate::kafka::EncodedLines, String> {
+    ) -> Result<streamfusion_format_support::EncodedLines, String> {
         let options = AvroEncodeOptions {
             schema_json: schema_json.to_string(),
             schema_id,
@@ -628,4 +630,39 @@ mod encode_tests {
             .expect("a null key must fail");
         assert!(error.contains("NULL map key"), "{error}");
     }
+}
+
+struct CodecEncoder {
+    options: AvroEncodeOptions,
+    debezium: bool,
+}
+impl MessageEncoder for CodecEncoder {
+    fn encode(
+        &self,
+        batch: &RecordBatch,
+        kinds: Option<&Int8Array>,
+        types: &[String],
+        names: &[String],
+    ) -> Result<EncodedLines, String> {
+        if self.debezium {
+            encode_debezium_avro_batch(batch, kinds, &self.options, types, names)
+        } else {
+            encode_avro_batch(batch, &self.options, types, names)
+        }
+    }
+}
+pub fn supports_encoder(format: i32) -> bool {
+    matches!(
+        format,
+        FORMAT_AVRO | FORMAT_AVRO_CONFLUENT | FORMAT_DEBEZIUM_AVRO_CONFLUENT
+    )
+}
+pub fn create_encoder(format: i32, options: &str) -> Result<Box<dyn MessageEncoder>, String> {
+    if !supports_encoder(format) {
+        return Err(format!("Avro library does not encode format {format}"));
+    }
+    Ok(Box::new(CodecEncoder {
+        options: AvroEncodeOptions::parse(options, format != FORMAT_AVRO)?,
+        debezium: format == FORMAT_DEBEZIUM_AVRO_CONFLUENT,
+    }))
 }

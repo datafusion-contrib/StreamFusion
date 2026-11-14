@@ -6,9 +6,9 @@ use std::sync::Arc;
 use arrow::array::{ArrayRef, BooleanArray, Float64Array, Int64Array, RecordBatch, StringArray};
 use arrow::datatypes::{DataType, Field, Schema};
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
-use streamfusion_kafka::bench::{
-    encode_kafka_json, encode_kafka_timestamps, KafkaTimestampStrategy,
-};
+#[path = "../src/encode_bench.rs"]
+mod encode_bench;
+use encode_bench::{encode_kafka_json, encode_kafka_timestamps, KafkaTimestampStrategy};
 
 const ROWS: usize = 4096;
 

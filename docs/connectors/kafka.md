@@ -13,6 +13,21 @@ The `streamfusion-kafka` connector extension and the matching `streamfusion-*` f
 must both be installed. A missing extension is a planner fallback, never a linkage failure. See
 [Deployment](../deployment.md).
 
+
+Sink formats own their planner admission and task-local encoder factories, following Flink's
+`EncodingFormat` contract. Each encoder handle stays in its format's native library. Kafka composes
+the returned JVM byte slabs into key/value records and upsert tombstones; it does not link JSON,
+CSV, Avro, Protobuf or raw implementations into its native payload. JSON and CSV require their
+matching format artifacts on the sink side as well as on the source side. An unavailable native
+format implementation is a planner fallback with the provider's admission reason.
+
+An upsert write can use different key and value formats. Each format receives its own projection
+and declared logical schema and crosses its own C Data/JNI facade; schema-registry completion runs
+at task open. Native encoder handles close independently, including when opening the second format
+fails. Encoded slabs retain the distinction between a present zero-byte message and a tombstone.
+This ownership refactor makes no throughput claim; existing performance observations describe the
+implementations and boundary configurations under which they were measured.
+
 Nested ROW transport metadata is excluded from format input. The annotation plan removes only
 marked RowKind and binary-row sidecars, recursively through containers, while retaining the
 logical field names, parent nulls and existing Arrow data buffers. A user field with a similar

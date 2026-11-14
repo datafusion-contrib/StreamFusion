@@ -7,7 +7,10 @@ public final class NativeAvroFormat {
 
   static {
     NativeExtensionLoader.load(
-        NativeAvroFormat.class, "avro", NativeAvroFormat::nativeBuildVersion, NativeAvroFormat::liveNativeHandles);
+        NativeAvroFormat.class,
+        "avro",
+        NativeAvroFormat::nativeBuildVersion,
+        NativeAvroFormat::liveNativeHandles);
   }
 
   private NativeAvroFormat() {}
@@ -40,9 +43,9 @@ public final class NativeAvroFormat {
       long schemaAddress);
 
   /**
-   * The {@code debezium-avro-confluent} decoder: a registry-driven envelope decode against
-   * {@code readerSchema} (the Debezium envelope derivation), fanned out to changelog rows on the
-   * exported physical boundary schema plus {@code $row_kind$}.
+   * The {@code debezium-avro-confluent} decoder: a registry-driven envelope decode against {@code
+   * readerSchema} (the Debezium envelope derivation), fanned out to changelog rows on the exported
+   * physical boundary schema plus {@code $row_kind$}.
    */
   public static native long createDebeziumDecoder(
       String readerSchema, long schemaArrayAddress, long schemaAddress);
@@ -57,4 +60,24 @@ public final class NativeAvroFormat {
       long outSchemaAddress);
 
   public static native void closeDecoder(long handle);
+
+  public static native boolean encoderSupported(int format);
+
+  public static native byte[] spellFloatingPoint(double[] doubles, float[] floats);
+
+  private static native long createEncoder(
+      int format, String options, String[] types, String[] names, int[] fields);
+
+  private static native tech.streamfusion.format.EncodedMessages encodeBatch(
+      long handle, long array, long schema);
+
+  private static native void closeEncoder(long handle);
+
+  public static tech.streamfusion.format.NativeMessageEncoder encoder(
+      int format, String options, String[] types, String[] names, int[] fields) {
+    return tech.streamfusion.format.NativeHandleMessageEncoder.open(
+        () -> createEncoder(format, options, types, names, fields),
+        NativeAvroFormat::encodeBatch,
+        NativeAvroFormat::closeEncoder);
+  }
 }

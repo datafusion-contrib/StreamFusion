@@ -7,7 +7,10 @@ public final class NativeJsonFormat {
 
   static {
     NativeExtensionLoader.load(
-        NativeJsonFormat.class, "json", NativeJsonFormat::nativeBuildVersion, NativeJsonFormat::liveNativeHandles);
+        NativeJsonFormat.class,
+        "json",
+        NativeJsonFormat::nativeBuildVersion,
+        NativeJsonFormat::liveNativeHandles);
   }
 
   private NativeJsonFormat() {}
@@ -54,4 +57,24 @@ public final class NativeJsonFormat {
       long outSchemaAddress);
 
   static native void closeDecoder(long handle);
+
+  public static native boolean encoderSupported(int format);
+
+  public static native byte[] spellFloatingPoint(double[] doubles, float[] floats);
+
+  private static native long createEncoder(
+      int format, String options, String[] types, String[] names, int[] fields);
+
+  private static native tech.streamfusion.format.EncodedMessages encodeBatch(
+      long handle, long array, long schema);
+
+  private static native void closeEncoder(long handle);
+
+  public static tech.streamfusion.format.NativeMessageEncoder encoder(
+      int format, String options, String[] types, String[] names, int[] fields) {
+    return tech.streamfusion.format.NativeHandleMessageEncoder.open(
+        () -> createEncoder(format, options, types, names, fields),
+        NativeJsonFormat::encodeBatch,
+        NativeJsonFormat::closeEncoder);
+  }
 }

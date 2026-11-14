@@ -14,6 +14,13 @@ import tech.streamfusion.planner.stream.ProtobufDescriptors;
 /** Native provider for Flink's protobuf value format. */
 public final class ProtobufFormatProvider implements NativeFormatProvider {
   @Override
+  public tech.streamfusion.format.NativeMessageEncoderFactory encoderFactory() {
+    return (options, types, names, fields) ->
+        tech.streamfusion.format.protobuf.NativeProtobufFormat.encoder(
+            tech.streamfusion.format.FormatCodes.PROTOBUF, options, types, names, fields);
+  }
+
+  @Override
   public String formatIdentifier() {
     return "protobuf";
   }
@@ -42,7 +49,8 @@ public final class ProtobufFormatProvider implements NativeFormatProvider {
   @Override
   public NativeMessageDecoderFactory createDecoder(NativeFormatContext context) {
     String messageClass = context.options().get("protobuf.message-class-name");
-    // This method runs while Flink translates the physical plan. Resolve the user-supplied generated
+    // This method runs while Flink translates the physical plan. Resolve the user-supplied
+    // generated
     // class here, while the planner's user-code classloader is authoritative, and put only portable
     // data in the Source that Flink serializes to TaskManagers.
     ProtobufDecoderPlan plan =
@@ -53,11 +61,15 @@ public final class ProtobufFormatProvider implements NativeFormatProvider {
     return new DecoderFactory(plan);
   }
 
-  /** The sink seam hands prefix-stripped options; {@code read-default-values} is decode-only (the
+  /**
+   * The sink seam hands prefix-stripped options; {@code read-default-values} is decode-only (the
    * serializer never consults it), so only the row↔descriptor mapping and the null-string literal
-   * gate the encode. */
+   * gate the encode.
+   */
   @Override
   public EncodeFormat encodeFormat(NativeFormatContext context) {
+    if (!tech.streamfusion.format.protobuf.NativeProtobufFormat.encoderSupported(
+        FormatCodes.PROTOBUF)) return null;
     Map<String, String> options = context.options();
     String messageClass = options.get("message-class-name");
     String nullLiteral = options.getOrDefault("write-null-string-literal", "");
@@ -78,7 +90,14 @@ public final class ProtobufFormatProvider implements NativeFormatProvider {
     if (!nullLiteral.isEmpty()) {
       encoded.append("null-literal=").append(nullLiteral).append('\n');
     }
-    return EncodeFormat.resolved(FormatCodes.PROTOBUF, encoded.toString(), null);
+    return EncodeFormat.resolved(
+        FormatCodes.PROTOBUF,
+        encoded.toString(),
+        null,
+        false,
+        (resolved, types, names, fields) ->
+            tech.streamfusion.format.protobuf.NativeProtobufFormat.encoder(
+                FormatCodes.PROTOBUF, resolved, types, names, fields));
   }
 
   private static final class Decoder extends NativeSchemaMessageDecoder {
@@ -136,7 +155,9 @@ public final class ProtobufFormatProvider implements NativeFormatProvider {
     }
   }
 
-  /** Named rather than a lambda so accidental task-side descriptor generation cannot creep back in. */
+  /**
+   * Named rather than a lambda so accidental task-side descriptor generation cannot creep back in.
+   */
   private static final class DecoderFactory implements NativeMessageDecoderFactory {
     private static final long serialVersionUID = 1L;
 

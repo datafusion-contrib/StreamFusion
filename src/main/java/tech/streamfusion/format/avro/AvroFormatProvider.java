@@ -14,6 +14,13 @@ import tech.streamfusion.format.NativeSchemaMessageDecoder;
 public final class AvroFormatProvider implements NativeFormatProvider {
 
   @Override
+  public tech.streamfusion.format.NativeMessageEncoderFactory encoderFactory() {
+    return (options, types, names, fields) ->
+        tech.streamfusion.format.avro.NativeAvroFormat.encoder(
+            tech.streamfusion.format.FormatCodes.AVRO, options, types, names, fields);
+  }
+
+  @Override
   public String formatIdentifier() {
     return "avro";
   }
@@ -49,6 +56,8 @@ public final class AvroFormatProvider implements NativeFormatProvider {
 
   @Override
   public EncodeFormat encodeFormat(NativeFormatContext context) {
+    if (!tech.streamfusion.format.avro.NativeAvroFormat.encoderSupported(FormatCodes.AVRO))
+      return null;
     // The sink seam hands each format instance its prefix-stripped options (a key format has no
     // value-format spelling for NativeFormatOptions to resolve).
     RowType rowType = context.writerType();
@@ -63,7 +72,14 @@ public final class AvroFormatProvider implements NativeFormatProvider {
     // The derived writer schema travels to the native encoder verbatim, so the wire bytes carry
     // Flink's exact record names, union order, and logical types.
     String schema = AvroEncodeGate.derivedSchema(rowType, legacy);
-    return EncodeFormat.resolved(FormatCodes.AVRO, "avro-schema=" + schema + "\n", null);
+    return EncodeFormat.resolved(
+        FormatCodes.AVRO,
+        "avro-schema=" + schema + "\n",
+        null,
+        false,
+        (resolved, types, names, fields) ->
+            tech.streamfusion.format.avro.NativeAvroFormat.encoder(
+                FormatCodes.AVRO, resolved, types, names, fields));
   }
 
   @Override

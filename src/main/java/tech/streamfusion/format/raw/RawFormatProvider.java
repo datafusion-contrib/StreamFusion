@@ -1,5 +1,7 @@
 package tech.streamfusion.format.raw;
 
+import java.util.Map;
+import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.format.EncodeFormat;
 import tech.streamfusion.format.FormatCodes;
 import tech.streamfusion.format.NativeFormatContext;
@@ -7,8 +9,6 @@ import tech.streamfusion.format.NativeFormatOptions;
 import tech.streamfusion.format.NativeFormatProvider;
 import tech.streamfusion.format.NativeMessageDecoderFactory;
 import tech.streamfusion.format.NativeSchemaMessageDecoder;
-import java.util.Map;
-import org.apache.flink.table.types.logical.RowType;
 
 /**
  * Native provider for Flink's raw value format: the whole message is the single physical column's
@@ -16,23 +16,32 @@ import org.apache.flink.table.types.logical.RowType;
  * fixed-width numerics with either {@code raw.endianness}. Staying on Flink: multi-column schemas
  * and invalid option values (Flink raises its own ValidationException); {@code RAW<T>} columns
  * (their bytes belong to a Java TypeSerializer); fixed-length BINARY (Flink passes any message
- * length through where Arrow's fixed-size binary enforces the declared one); a non-UTF-8
- * {@code raw.charset} (the native decode has no charset machinery); and {@code ignore-parse-errors}
- * (an option Flink's raw factory doesn't define).
+ * length through where Arrow's fixed-size binary enforces the declared one); a non-UTF-8 {@code
+ * raw.charset} (the native decode has no charset machinery); and {@code ignore-parse-errors} (an
+ * option Flink's raw factory doesn't define).
  */
 public final class RawFormatProvider implements NativeFormatProvider {
+
+  @Override
+  public tech.streamfusion.format.NativeMessageEncoderFactory encoderFactory() {
+    return (options, types, names, fields) ->
+        tech.streamfusion.format.raw.NativeRawFormat.encoder(
+            tech.streamfusion.format.FormatCodes.RAW, options, types, names, fields);
+  }
 
   @Override
   public String formatIdentifier() {
     return "raw";
   }
 
-  /** The single column's admitted roots — kept in a method body (like the sibling providers') so
-   * the class links under a Flink-less loader: the extension-JAR probe instantiates providers over
-   * the platform classloader, where a static {@code EnumSet<LogicalTypeRoot>} fails resolution.
-   * {@code encode} additionally admits fixed-length BINARY: writing the fixed-size boundary bytes
-   * verbatim is lossless, while the decode side cannot enforce the declared length on arbitrary
-   * message bytes. */
+  /**
+   * The single column's admitted roots — kept in a method body (like the sibling providers') so the
+   * class links under a Flink-less loader: the extension-JAR probe instantiates providers over the
+   * platform classloader, where a static {@code EnumSet<LogicalTypeRoot>} fails resolution. {@code
+   * encode} additionally admits fixed-length BINARY: writing the fixed-size boundary bytes verbatim
+   * is lossless, while the decode side cannot enforce the declared length on arbitrary message
+   * bytes.
+   */
   private static boolean supportedType(RowType schema, boolean encode) {
     switch (schema.getTypeAt(0).getTypeRoot()) {
       case BINARY:
@@ -72,11 +81,15 @@ public final class RawFormatProvider implements NativeFormatProvider {
         && NativeFormatOptions.encode(context.options()) != null;
   }
 
-  /** The sink side of the same format: the single column's value IS the message. A NULLABLE column
+  /**
+   * The sink side of the same format: the single column's value IS the message. A NULLABLE column
    * falls back — Flink serializes a null field as a null {@code byte[]}, a Kafka tombstone, which
-   * the sink's value path does not produce. The sink seam hands prefix-stripped options. */
+   * the sink's value path does not produce. The sink seam hands prefix-stripped options.
+   */
   @Override
   public EncodeFormat encodeFormat(NativeFormatContext context) {
+    if (!tech.streamfusion.format.raw.NativeRawFormat.encoderSupported(FormatCodes.RAW))
+      return null;
     RowType schema = context.writerType();
     Map<String, String> options = context.options();
     if (schema.getFieldCount() != 1
@@ -90,10 +103,24 @@ public final class RawFormatProvider implements NativeFormatProvider {
     }
     String endianness = options.get("endianness");
     if (endianness == null || "big-endian".equalsIgnoreCase(endianness)) {
-      return EncodeFormat.resolved(FormatCodes.RAW, "", null);
+      return EncodeFormat.resolved(
+          FormatCodes.RAW,
+          "",
+          null,
+          false,
+          (resolved, types, names, fields) ->
+              tech.streamfusion.format.raw.NativeRawFormat.encoder(
+                  FormatCodes.RAW, resolved, types, names, fields));
     }
     if ("little-endian".equalsIgnoreCase(endianness)) {
-      return EncodeFormat.resolved(FormatCodes.RAW, "endianness=little-endian\n", null);
+      return EncodeFormat.resolved(
+          FormatCodes.RAW,
+          "endianness=little-endian\n",
+          null,
+          false,
+          (resolved, types, names, fields) ->
+              tech.streamfusion.format.raw.NativeRawFormat.encoder(
+                  FormatCodes.RAW, resolved, types, names, fields));
     }
     return null; // Flink raises its own ValidationException for an invalid endianness
   }

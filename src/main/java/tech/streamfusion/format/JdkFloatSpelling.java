@@ -1,13 +1,13 @@
-package tech.streamfusion.kafka;
+package tech.streamfusion.format;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Random;
 
 /**
  * The plan-time probe deciding whether the native library spells FLOAT/DOUBLE exactly like this
- * JVM's {@code Float.toString}/{@code Double.toString}. The native side ports the legacy (JDK ≤
- * 18) algorithm; JDK 19 switched to shortest-representation digits, which differ on ~0.3% of
- * random doubles and ~11% of random floats. The corpus deliberately contains values where the two
+ * JVM's {@code Float.toString}/{@code Double.toString}. The native side ports the legacy (JDK ≤ 18)
+ * algorithm; JDK 19 switched to shortest-representation digits, which differ on ~0.3% of random
+ * doubles and ~11% of random floats. The corpus deliberately contains values where the two
  * algorithms disagree, so on a JDK 19+ host the probe fails closed and FLOAT/DOUBLE columns keep
  * host serialization instead of silently diverging.
  */
@@ -15,30 +15,45 @@ public final class JdkFloatSpelling {
 
   private JdkFloatSpelling() {}
 
+  @FunctionalInterface
+  public interface Spelling {
+    byte[] apply(double[] doubles, float[] floats);
+  }
+
+  public static boolean containsFloat(org.apache.flink.table.types.logical.RowType type) {
+    return containsFloat((org.apache.flink.table.types.logical.LogicalType) type);
+  }
+
+  public static boolean containsFloat(org.apache.flink.table.types.logical.LogicalType type) {
+    return type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.FLOAT)
+        || type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.DOUBLE)
+        || type.getChildren().stream().anyMatch(JdkFloatSpelling::containsFloat);
+  }
+
   private static volatile Boolean nativeMatchesJvm;
 
   /** Test hook forcing the probe's answer; null probes for real. */
-  static Boolean probeOverride;
+  public static Boolean probeOverride;
 
-  public static boolean nativeMatchesJvm() {
+  public static boolean nativeMatchesJvm(Spelling spelling) {
     Boolean override = probeOverride;
     if (override != null) {
       return override;
     }
     Boolean matches = nativeMatchesJvm;
     if (matches == null) {
-      matches = probe();
+      matches = probe(spelling);
       nativeMatchesJvm = matches;
     }
     return matches;
   }
 
-  private static boolean probe() {
+  private static boolean probe(Spelling spelling) {
     double[] doubles = probeDoubles();
     float[] floats = probeFloats();
     byte[] spelled;
     try {
-      spelled = NativeKafka.spellFloatingPoint(doubles, floats);
+      spelled = spelling.apply(doubles, floats);
     } catch (LinkageError missingLibrary) {
       return false;
     }
@@ -56,9 +71,9 @@ public final class JdkFloatSpelling {
   }
 
   /**
-   * Doubles whose legacy spelling is not the shortest representation (mined against JDK 17):
-   * random doubles diverge too rarely (~0.3%) for a 64-value sample to guarantee one, so these
-   * make the double half of the probe unable to pass by luck on a shortest-digits JVM.
+   * Doubles whose legacy spelling is not the shortest representation (mined against JDK 17): random
+   * doubles diverge too rarely (~0.3%) for a 64-value sample to guarantee one, so these make the
+   * double half of the probe unable to pass by luck on a shortest-digits JVM.
    */
   private static final long[] DIVERGENT_DOUBLE_BITS = {
     0x43B010EECEFE7DC2L, 0xC3D4DDBEC2FB191DL, 0xC3ADB50F5FBBE557L

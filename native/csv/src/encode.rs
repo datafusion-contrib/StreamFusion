@@ -275,7 +275,7 @@ fn render_csv_scalar(
         DataType::Decimal128(_, scale) => {
             let value = column.as_primitive::<Decimal128Type>().value(row);
             if options.legacy_decimal_nodes {
-                crate::kafka::encode_legacy_decimal_node(
+                streamfusion_format_support::encode_legacy_decimal_node(
                     value,
                     *scale,
                     !options.scientific_decimal,
@@ -700,4 +700,26 @@ mod tests {
         );
         assert_eq!(rows, vec!["\"abc\"|12"]);
     }
+}
+
+struct CodecEncoder(CsvEncodeOptions);
+impl MessageEncoder for CodecEncoder {
+    fn encode(
+        &self,
+        batch: &RecordBatch,
+        _kinds: Option<&Int8Array>,
+        types: &[String],
+        names: &[String],
+    ) -> Result<EncodedLines, String> {
+        encode_csv_batch(batch, &self.0, types, names)
+    }
+}
+pub fn supports_encoder(format: i32) -> bool {
+    format == FORMAT_CSV
+}
+pub fn create_encoder(format: i32, options: &str) -> Result<Box<dyn MessageEncoder>, String> {
+    if !supports_encoder(format) {
+        return Err(format!("csv library does not encode format {format}"));
+    }
+    Ok(Box::new(CodecEncoder(parse_csv_encode_options(options)?)))
 }

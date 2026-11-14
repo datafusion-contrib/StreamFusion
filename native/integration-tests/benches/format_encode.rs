@@ -8,7 +8,9 @@ use prost_reflect::prost_types::{
 };
 use std::sync::Arc;
 use streamfusion_benchmark_support::{header, measure, report, CountingAllocator};
-use streamfusion_kafka::bench::FormatEncoder;
+#[path = "../src/encode_bench.rs"]
+mod encode_bench;
+use encode_bench::FormatEncoder;
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;
 fn descriptor() -> Vec<u8> {

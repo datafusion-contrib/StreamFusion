@@ -149,7 +149,7 @@ public final class NativeFormatOptions {
     }
   }
 
-  static boolean appendChar(StringBuilder encoded, String key, char c) {
+  public static boolean appendChar(StringBuilder encoded, String key, char c) {
     if (c > 127 || c == '\n' || c == '\r') {
       return false;
     }
@@ -163,7 +163,7 @@ public final class NativeFormatOptions {
    * a single character; null (fall back) for anything else rather than risking a mis-read
    * delimiter.
    */
-  static Character unescapedDelimiter(String raw) {
+  public static Character unescapedDelimiter(String raw) {
     if (raw.length() == 1) {
       return raw.charAt(0);
     }

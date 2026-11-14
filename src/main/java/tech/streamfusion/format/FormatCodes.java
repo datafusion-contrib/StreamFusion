@@ -4,8 +4,8 @@ import java.util.Map;
 
 /**
  * The {@code MessageDecoder} format-code protocol: one int per value format, shared across the JNI
- * boundary and mirrored by the named constants in {@code native/bridge/src/format_codes.rs}. The codes are wire
- * format — never renumber them.
+ * boundary and mirrored by the named constants in {@code native/bridge/src/format_codes.rs}. The
+ * codes are wire format — never renumber them.
  */
 public final class FormatCodes {
 
@@ -13,18 +13,24 @@ public final class FormatCodes {
 
   public static final int UNSUPPORTED = -1;
   public static final int JSON = 0;
+
   /** Confluent-framed Avro; writer schemas fetched from the registry by frame id. */
   public static final int AVRO_CONFLUENT = 1;
+
   public static final int CSV = 2;
   public static final int RAW = 3;
+
   /** Bare Avro; the reader schema is derived from the table's RowType. */
   public static final int AVRO = 4;
+
   /** Descriptor derived from the message-class-name's generated class. */
   public static final int PROTOBUF = 5;
+
   public static final int DEBEZIUM_JSON = 6;
   public static final int OGG_JSON = 7;
   public static final int MAXWELL_JSON = 8;
   public static final int CANAL_JSON = 9;
+
   /** Debezium envelope with Confluent-framed Avro bodies; writer schemas fetched by frame id. */
   public static final int DEBEZIUM_AVRO_CONFLUENT = 10;
 
@@ -45,6 +51,15 @@ public final class FormatCodes {
   /** The code for a Flink format identifier, or {@link #UNSUPPORTED}. */
   public static int forIdentifier(String identifier) {
     return identifier == null ? UNSUPPORTED : BY_IDENTIFIER.getOrDefault(identifier, UNSUPPORTED);
+  }
+
+  /** Legacy JNI helpers resolve the provider by its stable protocol identifier. */
+  public static String identifier(int code) {
+    return BY_IDENTIFIER.entrySet().stream()
+        .filter(entry -> entry.getValue() == code)
+        .map(Map.Entry::getKey)
+        .findFirst()
+        .orElse(null);
   }
 
   /** Whether the code is an insert-only format (at most one decoded row per message). */

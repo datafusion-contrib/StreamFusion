@@ -1,24 +1,23 @@
 package tech.streamfusion.format.json;
 
+import org.apache.flink.table.types.logical.LogicalType;
+import org.apache.flink.table.types.logical.LogicalTypeFamily;
+import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.format.FormatCodes;
 import tech.streamfusion.format.NativeFormatContext;
 import tech.streamfusion.format.NativeFormatOptions;
 import tech.streamfusion.format.NativeFormatProvider;
-import tech.streamfusion.format.NativeMessageDecoder;
 import tech.streamfusion.format.NativeMessageDecoderFactory;
 import tech.streamfusion.format.NativeSchemaMessageDecoder;
-import org.apache.flink.table.types.logical.LogicalType;
-import org.apache.flink.table.types.logical.LogicalTypeFamily;
-import org.apache.flink.table.types.logical.RowType;
 
 /** Native providers for Flink's JSON and JSON-CDC formats. */
 public final class JsonFormatProvider implements NativeFormatProvider {
 
   /**
    * Whether every column (and every nested leaf) is a type the native JSON decode converts with
-   * Flink's exact semantics — the set {@code native/json/src/json.rs}'s appender dispatch implements,
-   * parity-pinned by {@code JsonDecodeParityTest}. Anything else stays on Flink at plan time
-   * instead of reaching a native decode it would fail: BINARY (its fixed-size Arrow carriage
+   * Flink's exact semantics — the set {@code native/json/src/json.rs}'s appender dispatch
+   * implements, parity-pinned by {@code JsonDecodeParityTest}. Anything else stays on Flink at plan
+   * time instead of reaching a native decode it would fail: BINARY (its fixed-size Arrow carriage
    * cannot hold the arbitrary-length base64 Flink decodes without enforcing the declared length)
    * and the INTERVAL types (unimplemented). A null row type (an identifier-level query with no
    * schema at hand) passes; the planner gates on the resolved schema separately.
@@ -64,6 +63,13 @@ public final class JsonFormatProvider implements NativeFormatProvider {
   }
 
   @Override
+  public tech.streamfusion.format.NativeMessageEncoderFactory encoderFactory() {
+    return (options, types, names, fields) ->
+        tech.streamfusion.format.json.NativeJsonFormat.encoder(
+            tech.streamfusion.format.FormatCodes.JSON, options, types, names, fields);
+  }
+
+  @Override
   public String formatIdentifier() {
     return "json";
   }
@@ -88,7 +94,52 @@ public final class JsonFormatProvider implements NativeFormatProvider {
   public NativeMessageDecoderFactory createDecoder(NativeFormatContext context) {
     return () ->
         new JsonDecoder(
-            FormatCodes.JSON, context.ignoreParseErrors(), NativeFormatOptions.encode(context.options()));
+            FormatCodes.JSON,
+            context.ignoreParseErrors(),
+            NativeFormatOptions.encode(context.options()));
+  }
+
+  @Override
+  public tech.streamfusion.format.NativeEncoderPlan planEncoder(NativeFormatContext context) {
+    return encoderPlan(FormatCodes.JSON, context);
+  }
+
+  @Override
+  public tech.streamfusion.format.EncodeFormat encodeFormat(NativeFormatContext context) {
+    return planEncoder(context).format;
+  }
+
+  private static tech.streamfusion.format.NativeEncoderPlan encoderPlan(
+      int format, NativeFormatContext context) {
+    var type = context.writerType();
+    String typeFallback = JsonEncodeGate.fallbackReason(type);
+    if (typeFallback != null)
+      return tech.streamfusion.format.NativeEncoderPlan.fallback(typeFallback);
+    if (type != null
+        && tech.streamfusion.format.JdkFloatSpelling.containsFloat(type)
+        && !tech.streamfusion.format.JdkFloatSpelling.nativeMatchesJvm(
+            NativeJsonFormat::spellFloatingPoint))
+      return tech.streamfusion.format.NativeEncoderPlan.fallback(
+          "jdk float spelling mismatch (JDK 19+)");
+    if (format == FormatCodes.DEBEZIUM_JSON
+        && Boolean.parseBoolean(context.options().get("schema-include")))
+      return tech.streamfusion.format.NativeEncoderPlan.fallback(
+          "Debezium JSON serialization rejects schema-include");
+    String options = JsonEncodeOptions.encode(context.options());
+    if (options == null)
+      return tech.streamfusion.format.NativeEncoderPlan.fallback(
+          "unsupported JSON serializer options");
+    if (!NativeJsonFormat.encoderSupported(format))
+      return tech.streamfusion.format.NativeEncoderPlan.fallback(
+          "JSON native encoder is unavailable");
+    return tech.streamfusion.format.NativeEncoderPlan.supported(
+        tech.streamfusion.format.EncodeFormat.resolved(
+            format,
+            options,
+            null,
+            format != FormatCodes.JSON,
+            (resolved, types, names, fields) ->
+                NativeJsonFormat.encoder(format, resolved, types, names, fields)));
   }
 
   /** A separate provider class shares this JAR for each Flink JSON CDC identifier. */
@@ -99,6 +150,13 @@ public final class JsonFormatProvider implements NativeFormatProvider {
     public Cdc(String identifier) {
       this.identifier = identifier;
       this.format = FormatCodes.forIdentifier(identifier);
+    }
+
+    @Override
+    public tech.streamfusion.format.NativeMessageEncoderFactory encoderFactory() {
+      int code = format;
+      return (options, types, names, fields) ->
+          NativeJsonFormat.encoder(code, options, types, names, fields);
     }
 
     @Override
@@ -125,11 +183,23 @@ public final class JsonFormatProvider implements NativeFormatProvider {
     }
 
     @Override
+    public tech.streamfusion.format.NativeEncoderPlan planEncoder(NativeFormatContext context) {
+      return encoderPlan(format, context);
+    }
+
+    @Override
+    public tech.streamfusion.format.EncodeFormat encodeFormat(NativeFormatContext context) {
+      return encoderPlan(format, context).format;
+    }
+
+    @Override
     public NativeMessageDecoderFactory createDecoder(NativeFormatContext context) {
       // Capture the code, not `this`: the factory ships in the job graph and providers are not
       // serializable (reading the field inside the lambda would capture the provider).
       int format = this.format;
-      return () -> new JsonDecoder(format, context.ignoreParseErrors(), NativeFormatOptions.encode(context.options()));
+      return () ->
+          new JsonDecoder(
+              format, context.ignoreParseErrors(), NativeFormatOptions.encode(context.options()));
     }
   }
 
@@ -171,15 +241,7 @@ public final class JsonFormatProvider implements NativeFormatProvider {
         long outArray,
         long outSchema) {
       NativeJsonFormat.decodeContiguousBytesInto(
-          handle,
-          dataAddress,
-          dataLength,
-          keyBytes,
-          lengths,
-          count,
-          keyed,
-          outArray,
-          outSchema);
+          handle, dataAddress, dataLength, keyBytes, lengths, count, keyed, outArray, outSchema);
     }
 
     @Override

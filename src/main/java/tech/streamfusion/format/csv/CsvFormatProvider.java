@@ -1,12 +1,11 @@
 package tech.streamfusion.format.csv;
 
+import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.format.NativeFormatContext;
 import tech.streamfusion.format.NativeFormatOptions;
 import tech.streamfusion.format.NativeFormatProvider;
-import tech.streamfusion.format.NativeMessageDecoder;
 import tech.streamfusion.format.NativeMessageDecoderFactory;
 import tech.streamfusion.format.NativeSchemaMessageDecoder;
-import org.apache.flink.table.types.logical.RowType;
 
 /** Native provider for Flink's CSV value format. */
 public final class CsvFormatProvider implements NativeFormatProvider {
@@ -44,6 +43,13 @@ public final class CsvFormatProvider implements NativeFormatProvider {
   }
 
   @Override
+  public tech.streamfusion.format.NativeMessageEncoderFactory encoderFactory() {
+    return (options, types, names, fields) ->
+        tech.streamfusion.format.csv.NativeCsvFormat.encoder(
+            tech.streamfusion.format.FormatCodes.CSV, options, types, names, fields);
+  }
+
+  @Override
   public String formatIdentifier() {
     return "csv";
   }
@@ -66,7 +72,43 @@ public final class CsvFormatProvider implements NativeFormatProvider {
 
   @Override
   public NativeMessageDecoderFactory createDecoder(NativeFormatContext context) {
-    return () -> new Decoder(context.ignoreParseErrors(), NativeFormatOptions.encode(context.options()));
+    return () ->
+        new Decoder(context.ignoreParseErrors(), NativeFormatOptions.encode(context.options()));
+  }
+
+  @Override
+  public tech.streamfusion.format.NativeEncoderPlan planEncoder(NativeFormatContext context) {
+    var type = context.writerType();
+    String typeFallback = CsvEncodeGate.fallbackReason(type);
+    if (typeFallback != null)
+      return tech.streamfusion.format.NativeEncoderPlan.fallback(typeFallback);
+    if (type != null
+        && tech.streamfusion.format.JdkFloatSpelling.containsFloat(type)
+        && !tech.streamfusion.format.JdkFloatSpelling.nativeMatchesJvm(
+            NativeCsvFormat::spellFloatingPoint))
+      return tech.streamfusion.format.NativeEncoderPlan.fallback(
+          "jdk float spelling mismatch (JDK 19+)");
+    String options = CsvEncodeOptions.encode(context.options());
+    if (options == null)
+      return tech.streamfusion.format.NativeEncoderPlan.fallback(
+          "unsupported CSV serializer options");
+    if (!NativeCsvFormat.encoderSupported(tech.streamfusion.format.FormatCodes.CSV))
+      return tech.streamfusion.format.NativeEncoderPlan.fallback(
+          "CSV native encoder is unavailable");
+    return tech.streamfusion.format.NativeEncoderPlan.supported(
+        tech.streamfusion.format.EncodeFormat.resolved(
+            tech.streamfusion.format.FormatCodes.CSV,
+            options,
+            null,
+            false,
+            (resolved, types, names, fields) ->
+                NativeCsvFormat.encoder(
+                    tech.streamfusion.format.FormatCodes.CSV, resolved, types, names, fields)));
+  }
+
+  @Override
+  public tech.streamfusion.format.EncodeFormat encodeFormat(NativeFormatContext context) {
+    return planEncoder(context).format;
   }
 
   private static final class Decoder extends NativeSchemaMessageDecoder {
@@ -80,7 +122,8 @@ public final class CsvFormatProvider implements NativeFormatProvider {
 
     @Override
     protected long createHandle(long schemaArrayAddress, long schemaAddress) {
-      return NativeCsvFormat.createDecoder(schemaArrayAddress, schemaAddress, skipParseErrors, formatOptions);
+      return NativeCsvFormat.createDecoder(
+          schemaArrayAddress, schemaAddress, skipParseErrors, formatOptions);
     }
 
     @Override

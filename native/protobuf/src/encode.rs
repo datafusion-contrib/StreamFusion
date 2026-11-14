@@ -561,3 +561,31 @@ fn outside_gate(kind: &Kind) -> String {
          (proto3 signed ints, float, double, bool, string, nested messages)"
     )
 }
+
+struct CodecEncoder(ProtobufEncodeOptions);
+impl MessageEncoder for CodecEncoder {
+    fn encode(
+        &self,
+        batch: &RecordBatch,
+        _kinds: Option<&Int8Array>,
+        types: &[String],
+        names: &[String],
+    ) -> Result<EncodedLines, String> {
+        {
+            let batch = annotate_flink_types(batch, types, names)?;
+            let (bytes, rows) = self.0.encoder().encode(&batch).into_parts();
+            Ok(EncodedLines::new(bytes, rows))
+        }
+    }
+}
+pub fn supports_encoder(format: i32) -> bool {
+    format == FORMAT_PROTOBUF
+}
+pub fn create_encoder(format: i32, options: &str) -> Result<Box<dyn MessageEncoder>, String> {
+    if !supports_encoder(format) {
+        return Err(format!("protobuf library does not encode format {format}"));
+    }
+    Ok(Box::new(CodecEncoder(ProtobufEncodeOptions::parse(
+        options,
+    )?)))
+}

@@ -33,3 +33,17 @@ pub extern "system" fn Java_tech_streamfusion_format_csv_NativeCsvFormat_liveNat
 }
 
 pub mod bench;
+
+pub mod encode;
+streamfusion_format_support::format_encoder_jni_facade!(
+    Java_tech_streamfusion_format_csv_NativeCsvFormat_createEncoder,
+    Java_tech_streamfusion_format_csv_NativeCsvFormat_encodeBatch,
+    Java_tech_streamfusion_format_csv_NativeCsvFormat_closeEncoder,
+    Java_tech_streamfusion_format_csv_NativeCsvFormat_encoderSupported,
+    Java_tech_streamfusion_format_csv_NativeCsvFormat_spellFloatingPoint,
+    encode::create_encoder,
+    encode::supports_encoder
+);
+
+#[allow(unused_imports)]
+use encode::*;
