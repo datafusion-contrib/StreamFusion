@@ -324,6 +324,8 @@ coverage. Reproduce it with `--mode stock --tests ITTestVariantCrossEngineCompat
 The fixture build uses published test JARs and matches the released bundle's
 package relocations. Hudi does not publish the Flink 1.18 adapter test JAR, so
 six unchanged adapter helpers are vendored from the exact release commit.
+The provenance records both the annotated release tag object and its target
+commit, verified against Apache Hudi's canonical tag.
 `dev/flink-suite/hudi-fixtures/provenance.json` pins their source paths and
 SHA-256 values, plus the published fixture JAR checksums. Test dependencies
 include Hive and Lance so the original mixed-format/catalog cases can execute.
