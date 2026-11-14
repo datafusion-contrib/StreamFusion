@@ -1336,6 +1336,14 @@ These scalar rules are separate from grouping-key equality and sort ordering.
 
 ## Casts
 
+Primitive integer/string, Boolean/string and binary/string cast families resolve through shared
+semantic rules. Each family keeps its admission, native lowering, possible row failure and output
+representation together. Short-circuit analysis and ASCII or binary-width proofs consult those
+same families rather than independently recognizing casts. TRY_CAST still catches conversion
+failures only: a fallible argument retains Flink evaluation before the conversion. Decimal,
+temporal and collection casts keep their existing exact kernels or generated evaluators.
+This organization changes no coverage, configuration or runtime wire code.
+
 `CAST` and `TRY_CAST` from a direct BOOLEAN input or literal to STRING, bounded VARCHAR or CHAR use a
 native Arrow formatter. Both also admit recursively verified BOOLEAN-only NOT, AND, OR,
 IS NULL, IS NOT NULL, IS TRUE, IS NOT TRUE, IS FALSE and IS NOT FALSE operands; their

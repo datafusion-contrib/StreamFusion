@@ -208,6 +208,25 @@ final class RexExpression implements EncodedExpression {
   private final java.util.Set<String> statefulUdfEvaluations = new java.util.HashSet<>();
   private ClassLoader expressionClassLoader = RexExpression.class.getClassLoader();
 
+  private final ScalarCastRules.Context castContext = new ScalarCastRules.Context() {
+    @Override
+    public Boolean legacyBehaviour() { return legacyCastBehaviour; }
+    @Override
+    public boolean requiresRowEvaluation(RexNode operand) { return requiresRowShortCircuit(operand); }
+    @Override
+    public boolean supportsBooleanText(RexNode operand) { return nativeBooleanTextOperand(operand); }
+    @Override
+    public boolean operand(RexNode operand) { return emit(operand); }
+    @Override
+    public boolean host(RexCall call) { return emitHostExpression(call, true); }
+    @Override
+    public void node(ExpressionKind kind, int payload, int children) { add(kind.code(), payload, children); }
+    @Override
+    public void integerLiteral(int value) { add(KIND_LIT_INT, longs.size(), 0); longs.add((long) value); }
+    @Override
+    public void booleanLiteral(boolean value) { add(KIND_LIT_BOOL, longs.size(), 0); longs.add(value ? 1L : 0L); }
+  };
+
   private RexExpression() {}
 
   @Override
@@ -3616,6 +3635,7 @@ final class RexExpression implements EncodedExpression {
   }
 
   private boolean mayFailOnRow(RexCall call) {
+    if (ScalarCastRules.mayFailOnRow(call, legacyCastBehaviour)) return true;
     if (nativeFromBase64(call)) return true;
     if (call.getOperator()
             == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.RAND_INTEGER
@@ -3635,14 +3655,6 @@ final class RexExpression implements EncodedExpression {
     if (name.equals("ELEMENT")) return true;
     if (name.equals("MAP_FROM_ARRAYS"))
       return args.size()!=2 || !args.get(0).equals(args.get(1));
-    if (call.getKind() == SqlKind.CAST
-        && (call.getType().getSqlTypeName() == SqlTypeName.BOOLEAN
-            || SqlTypeFamily.INTEGER.getTypeNames().contains(call.getType().getSqlTypeName()))
-        && args.size() == 1
-        && isCharacter(args.get(0))
-        && !Boolean.TRUE.equals(legacyCastBehaviour)) {
-      return true;
-    }
     if (call.getOperator()
             == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.INSTR
         && args.size() >= 3
@@ -4186,6 +4198,9 @@ final class RexExpression implements EncodedExpression {
     if (call.getOperands().size() != 1) {
       return reject("unsupported CAST arity");
     }
+    Admission<ScalarCastRules.Plan> scalar = ScalarCastRules.prepare(call, castContext);
+    if (scalar.isAccepted()) return scalar.value().emit(castContext);
+    if (scalar.status() == Admission.Status.DECLINED) return reject(scalar.reason());
     RelDataType sourceType = call.getOperands().get(0).getType();
     RelDataType resultType = call.getType();
     boolean tryCast =
@@ -4239,46 +4254,10 @@ final class RexExpression implements EncodedExpression {
       }
       return true;
     }
-    if (SqlTypeFamily.BINARY.contains(resultType)
-        && (SqlTypeFamily.CHARACTER.contains(sourceType)
-            || SqlTypeFamily.BINARY.contains(sourceType))) {
-      if (legacyCastBehaviour == null || requiresRowShortCircuit(call.getOperands().get(0))) {
-        return emitHostExpression(call, true);
-      }
-      int length = legacyCastBehaviour ? 0 : resultType.getPrecision();
-      boolean padVariable =
-          !legacyCastBehaviour
-              && targetType == SqlTypeName.VARBINARY
-              && SqlTypeFamily.BINARY.contains(sourceType)
-              && tech.streamfusion.compat.FlinkCompat.binaryCastPadsVariable(
-                  sourceType.getPrecision(), length);
-      if (padVariable) add(KIND_BINARY_CAST, 0, 1);
-      add(KIND_BINARY_CAST, targetType == SqlTypeName.BINARY || padVariable ? -length : length, 1);
-      return emit(call.getOperands().get(0));
-    }
     int sourceInteger = numericRank(source);
     int targetInteger = numericRank(targetType);
-    if (nativeBooleanCharacterCast(call) && legacyCastBehaviour != null) {
-      return emitBooleanCharacterCast(call, legacyCastBehaviour);
-    }
     if (tryCast && source == SqlTypeName.BOOLEAN && SqlTypeFamily.CHARACTER.contains(resultType)) {
       return emitHostExpression(call, true);
-    }
-    if (SqlTypeFamily.BINARY.contains(sourceType)
-        && SqlTypeFamily.CHARACTER.contains(resultType)
-        && (targetType == SqlTypeName.VARCHAR && resultType.getPrecision() == Integer.MAX_VALUE
-            || Boolean.TRUE.equals(legacyCastBehaviour))) {
-      // Released Flink decodes with new String(bytes, UTF_8), including JDK error grouping.
-      return emitBuiltinCall(call, 237);
-    }
-    if (modernBoundedBinaryCharacterCast(call)) {
-      // UTF-16 truncation can split a pair; consumers of that Java String stay in Flink.
-      add(KIND_CALL, 237, 2);
-      if (!emit(call.getOperands().get(0))) return false;
-      add(KIND_LIT_INT, longs.size(), 0);
-      longs.add((long) (targetType == SqlTypeName.CHAR
-          ? -resultType.getPrecision() : resultType.getPrecision()));
-      return true;
     }
     if (source == SqlTypeName.DECIMAL
         && SqlTypeFamily.CHARACTER.contains(resultType)
@@ -4307,41 +4286,12 @@ final class RexExpression implements EncodedExpression {
       }
       return true;
     }
-    if ((source == SqlTypeName.VARCHAR || source == SqlTypeName.CHAR)
-        && targetInteger >= 0
-        && targetInteger <= 3) {
-      if (!tryCast && legacyCastBehaviour == null) {
-        return reject("STRING to integer requires the configured cast behavior");
-      }
-      add(
-          KIND_STRING_TO_INTEGER,
-          targetInteger | (tryCast || Boolean.TRUE.equals(legacyCastBehaviour) ? 4 : 0),
-          1);
-      return emit(call.getOperands().get(0));
-    }
-    if (sourceInteger >= 0
-        && sourceInteger <= 3
-        && (targetType == SqlTypeName.VARCHAR || targetType == SqlTypeName.CHAR)) {
-      if (legacyCastBehaviour == null) {
-        return reject("Integer to STRING requires the configured cast behavior");
-      }
-      int length = legacyCastBehaviour ? Integer.MAX_VALUE : resultType.getPrecision();
-      boolean pad = !legacyCastBehaviour && targetType == SqlTypeName.CHAR;
-      add(KIND_INTEGER_TO_STRING, pad ? -length : length, 1);
-      return emit(call.getOperands().get(0));
-    }
     RexNode integerTextDecimal = nativeIntegerTextDecimal(call);
     if (!unnestOperand && integerTextDecimal != null) {
       add(KIND_CAST_DECIMAL, resultType.getPrecision() * 100 + resultType.getScale(), 1);
       return emit(integerTextDecimal);
     }
     if (tryCast && (source == SqlTypeName.VARCHAR || source == SqlTypeName.CHAR)) {
-      if (targetType == SqlTypeName.BOOLEAN) {
-        // TRY_CAST catches conversion failures, not failures while evaluating its input.
-        return requiresRowShortCircuit(call.getOperands().get(0))
-            ? emitHostExpression(call, true)
-            : emitBuiltinCall(call, 160);
-      }
       {
         boolean switchResult1;
         switch (targetType) {
@@ -4414,13 +4364,6 @@ final class RexExpression implements EncodedExpression {
           floatingTarget.getSqlTypeName() == SqlTypeName.DOUBLE ? CAST_DOUBLE : CAST_FLOAT,
           1);
       return emit(call.getOperands().get(0));
-    }
-    if ((source == SqlTypeName.VARCHAR || source == SqlTypeName.CHAR)
-        && targetType == SqlTypeName.BOOLEAN) {
-      if (legacyCastBehaviour == null) {
-        return reject("STRING to BOOLEAN requires the configured cast behavior");
-      }
-      return emitBuiltinCall(call, legacyCastBehaviour ? 160 : 159);
     }
     // A non-narrowing cast to VARCHAR from a CHAR or VARCHAR source (target length ≥ source). Flink
     // stores both as unpadded StringData and neither pads nor truncates a widening string cast, so
@@ -5087,14 +5030,7 @@ final class RexExpression implements EncodedExpression {
   }
 
   private boolean emitBooleanCharacterCast(RexCall call, boolean lowercase) {
-    add(KIND_CALL, 244, 3);
-    if (!emit(call.getOperands().get(0))) return false;
-    add(KIND_LIT_BOOL, longs.size(), 0);
-    longs.add(lowercase ? 1L : 0L);
-    add(KIND_LIT_INT, longs.size(), 0);
-    longs.add((long) (call.getType().getSqlTypeName() == SqlTypeName.CHAR
-        ? -call.getType().getPrecision() : call.getType().getPrecision()));
-    return true;
+    return ScalarCastRules.emitBooleanText(call, lowercase, castContext);
   }
 
   private static boolean nativeBooleanTextOperand(RexNode operand) {
@@ -5138,18 +5074,8 @@ final class RexExpression implements EncodedExpression {
 
   private static RexNode nativeIntegerTextProducer(RexNode operand) {
     if (!(operand instanceof RexCall)) return null;
-    var call = (RexCall) operand;
-    if (!(call.getOperator()
-                == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.CAST
-            || call.getOperator()
-                == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRY_CAST)
-        || call.getOperands().size() != 1
-        || call.getType().getSqlTypeName() != SqlTypeName.VARCHAR
-        || call.getType().getPrecision() != Integer.MAX_VALUE
-        || !SqlTypeFamily.INTEGER.contains(call.getOperands().get(0).getType())
-        || !nativeIntegralRoundingOperand(call.getOperands().get(0))) return null;
-    // General conversions of integer text match boxed integers; numeric conversions stay invalid.
-    return call.getOperands().get(0);
+    RexNode integer = ScalarCastRules.integerTextOperand((RexCall) operand);
+    return integer != null && nativeIntegralRoundingOperand(integer) ? integer : null;
   }
 
   private static RexNode nativeIntegerTextDecimal(RexCall call) {
@@ -7438,16 +7364,7 @@ final class RexExpression implements EncodedExpression {
   }
 
   private boolean modernBoundedBinaryCharacterCast(RexCall call) {
-    RelDataType type = call.getType();
-    return (call.getKind() == SqlKind.CAST
-            || call.getOperator()
-                == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRY_CAST)
-        && Boolean.FALSE.equals(legacyCastBehaviour)
-        && call.getOperands().size() == 1
-        && SqlTypeFamily.BINARY.contains(call.getOperands().get(0).getType())
-        && (type.getSqlTypeName() == SqlTypeName.CHAR
-            || type.getSqlTypeName() == SqlTypeName.VARCHAR
-                && type.getPrecision() != Integer.MAX_VALUE);
+    return ScalarCastRules.modernBoundedBinaryCharacterCast(call, legacyCastBehaviour);
   }
 
   private boolean containsModernBoundedBinaryCharacterCast(RexNode node) {
