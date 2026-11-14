@@ -2697,3 +2697,7 @@ are authored but unexecuted; no native state field or stock serializer changes.
 The retained-row codec also accepts the internal unsigned 16-bit UTF-16 cache child used by
 represented ROW keys. This is a transport implementation field, not additional SQL scalar
 admission; encoded logical row bytes, nested kinds and stock serializers remain unchanged.
+
+Validated stock-state cleanup clears each selected state/owner/namespace once while streaming
+its immutable snapshot. Repeated map members do not trigger repeated whole-map deletion, and
+unknown real state is still validated independently before any cleanup.
