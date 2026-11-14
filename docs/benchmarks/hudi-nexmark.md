@@ -93,6 +93,26 @@ and 584.0–766.0 ms). Every trial compared all 1,840,000 output rows. Its
 and source/harness identity. This is a 3.43× median gain over stock in this
 bounded configuration; the wide stock range remains visible.
 
+Q4 completed the same two-million-event comparison across all four state and
+mini-batch configurations after the terminal watermark rewrite was extended
+through its regular join and non-windowed aggregates. All 36 measured results
+compared the complete 100-row output across four sink partitions. The six
+RocksDB warmups verified actual database creation. Final handle and reservation
+checks passed. Values below are median milliseconds (minimum–maximum).
+
+| State | Mini-batch | Stock | Previous | Native | Stock/native |
+| --- | --- | ---: | ---: | ---: | ---: |
+| memory | false | 4,824.1 (2,126.3–5,668.8) | 142,394.1 (86,414.8–234,831.6) | 2,683.9 (1,458.1–2,701.3) | 1.80× |
+| memory | true | 1,591.1 (1,419.8–1,809.8) | 49,789.4 (49,729.1–52,572.8) | 1,026.3 (898.2–1,202.4) | 1.55× |
+| rocksdb | false | 24,952.8 (6,566.1–29,171.8) | 83,838.4 (83,296.0–84,330.4) | 3,657.0 (3,373.5–3,686.5) | 6.82× |
+| rocksdb | true | 5,338.0 (4,553.7–7,394.6) | 52,620.7 (51,388.0–54,362.1) | 1,578.6 (1,519.4–1,653.0) | 3.38× |
+
+[All Q4 observations](hudi-nexmark-q4-20261113.json) retain every trial and
+resource setting. Stock RocksDB and the previous heap path have wide ranges;
+these bounded-job results do not establish sustained throughput. Q0/Q1 used
+source base `93077f8fb`; Q4 used the rebased `07fd1f0d4` native sources. Other
+queries remain under qualification.
+
 Stock Flink 1.18.1 rejects the unchanged q7 query over the Kafka corpus's
 TIMESTAMP_LTZ rowtime when it compares that time with a TIMESTAMP window boundary.
 The matrix records the exact planner rejection for this query and configuration;

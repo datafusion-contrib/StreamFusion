@@ -37,7 +37,12 @@ keeps complete batches when none of those Calcs observes `CURRENT_WATERMARK`.
 The same expression evaluates every row and retains the maximum candidate,
 NULL rowtime validation, periodic emissions and the final maximum watermark.
 Intermediate emissions move to batch boundaries because this proven downstream
-path cannot observe their position. Other operators, unknown Calc programs and
+path cannot observe their position. Append Hudi sinks also permit native exchanges,
+mini-batch assigners and inner joins whose two inputs are insert-only.
+For Hudi MOR sinks explicitly using commit-time
+ordering and precombine, this proof also crosses native exchanges, mini-batch assigners, regular joins
+and non-windowed aggregates without user functions. Event-time ordering,
+precombine-disabled writes, other operators, unknown Calc programs and
 `CURRENT_WATERMARK` retain every original eager boundary.
 
 The independent assigner also falls back when `table.exec.source.idle-timeout` is positive.

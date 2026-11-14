@@ -74,6 +74,16 @@ public class StreamPhysicalNativeColumnarUpdatingJoin extends StreamPhysicalNati
     return false;
   }
 
+  boolean hasUserFunctions() {
+    return predicate != null
+        && predicate.udfBinding() != null
+        && predicate.udfBinding().hasUserFunctions();
+  }
+
+  boolean isInsertOnlyInnerJoin() {
+    return joinType == 0 && leftInsertOnly && rightInsertOnly;
+  }
+
   @Override
   public RelNode copy(RelTraitSet traitSet, List<RelNode> inputs) {
     return new StreamPhysicalNativeColumnarUpdatingJoin(
