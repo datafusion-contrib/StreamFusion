@@ -1,0 +1,226 @@
+{
+  "version": 1,
+  "nodeKinds": [
+    {
+      "name": "INPUT_REF",
+      "code": 0
+    },
+    {
+      "name": "LIT_LONG",
+      "code": 1
+    },
+    {
+      "name": "LIT_DOUBLE",
+      "code": 2
+    },
+    {
+      "name": "LIT_STRING",
+      "code": 3
+    },
+    {
+      "name": "LIT_BOOL",
+      "code": 4
+    },
+    {
+      "name": "LIT_NULL",
+      "code": 5
+    },
+    {
+      "name": "CALL",
+      "code": 6
+    },
+    {
+      "name": "LIT_INT",
+      "code": 7
+    },
+    {
+      "name": "LIT_SMALL",
+      "code": 8
+    },
+    {
+      "name": "LIT_TINY",
+      "code": 9
+    },
+    {
+      "name": "CAST",
+      "code": 11
+    },
+    {
+      "name": "PROCTIME",
+      "code": 12
+    },
+    {
+      "name": "FIELD_ACCESS",
+      "code": 13
+    },
+    {
+      "name": "CAST_DECIMAL",
+      "code": 14
+    },
+    {
+      "name": "LIT_INTERVAL",
+      "code": 15
+    },
+    {
+      "name": "LIT_DECIMAL",
+      "code": 16
+    },
+    {
+      "name": "UDF",
+      "code": 17
+    },
+    {
+      "name": "CAST_NARROW",
+      "code": 18
+    },
+    {
+      "name": "ITEM",
+      "code": 19
+    },
+    {
+      "name": "DECIMAL_DIVIDE",
+      "code": 20
+    },
+    {
+      "name": "DECIMAL_MOD",
+      "code": 21
+    },
+    {
+      "name": "LIT_FLOAT",
+      "code": 22
+    },
+    {
+      "name": "LIT_BINARY",
+      "code": 23
+    },
+    {
+      "name": "LIT_TEMPORAL",
+      "code": 24
+    },
+    {
+      "name": "CLOCK",
+      "code": 25
+    },
+    {
+      "name": "DECIMAL_ADD",
+      "code": 26
+    },
+    {
+      "name": "DECIMAL_SUBTRACT",
+      "code": 27
+    },
+    {
+      "name": "DECIMAL_MULTIPLY",
+      "code": 28
+    },
+    {
+      "name": "LIT_TIMESTAMP",
+      "code": 29
+    },
+    {
+      "name": "DECIMAL_ROUND",
+      "code": 30
+    },
+    {
+      "name": "LIT_TYPED_NULL",
+      "code": 31
+    },
+    {
+      "name": "RANDOM",
+      "code": 32
+    },
+    {
+      "name": "STRING_TO_INTEGER",
+      "code": 33
+    },
+    {
+      "name": "INTEGER_TO_STRING",
+      "code": 34
+    },
+    {
+      "name": "DECIMAL_TRUNCATE",
+      "code": 35
+    },
+    {
+      "name": "FROM_UNIXTIME",
+      "code": 36
+    },
+    {
+      "name": "DECIMAL_FLOAT",
+      "code": 37
+    },
+    {
+      "name": "ROW_UDF",
+      "code": 38
+    },
+    {
+      "name": "BINARY_CAST",
+      "code": 39
+    },
+    {
+      "name": "BINARY_ELT",
+      "code": 40
+    },
+    {
+      "name": "DECIMAL_ROUND_TEXT",
+      "code": 41
+    },
+    {
+      "name": "NUMERIC_CAST",
+      "code": 42
+    },
+    {
+      "name": "ARRAY_CAST",
+      "code": 43
+    },
+    {
+      "name": "CERTIFIED_BUILTIN",
+      "code": 44
+    },
+    {
+      "name": "ZONED_EXTRACT",
+      "code": 45
+    },
+    {
+      "name": "COLLECTION_CAST",
+      "code": 46
+    },
+    {
+      "name": "DECIMAL_IF",
+      "code": 47
+    }
+  ],
+  "reservedNodeKinds": [
+    10
+  ],
+  "castTargets": [
+    {
+      "name": "TINYINT",
+      "code": 0
+    },
+    {
+      "name": "SMALLINT",
+      "code": 1
+    },
+    {
+      "name": "INTEGER",
+      "code": 2
+    },
+    {
+      "name": "BIGINT",
+      "code": 3
+    },
+    {
+      "name": "FLOAT",
+      "code": 4
+    },
+    {
+      "name": "DOUBLE",
+      "code": 5
+    },
+    {
+      "name": "STRING",
+      "code": 6
+    }
+  ]
+}

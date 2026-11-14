@@ -382,9 +382,25 @@ shift, firing at the last millisecond of the window. It does
 not apply another zone shift on output. Plain TIMESTAMP uses a zero offset. This also supports
 input from an aggregate whose boundaries are already rendered locally.
 
-Regional RocksDB firing scans keys to collect distinct local window ends before converting their
-deadlines. Its subsequent row scan retains only closed groups. Pending rank buffers remain in
-RocksDB, and fixed-offset firing retains its ordered-prefix scan.
+Watermark and processing-time firing hand output to the JVM synchronously in batches bounded by
+1,024 rows and a conservative 4 MiB workspace target. A single wider row may exceed that target,
+but still must fit the task memory budget. A large top-N group spans batches without restarting
+its rank numbers; small dedup groups share batches. Scalar-to-Arrow overlap, frame copies and
+firing metadata reserve task off-heap memory before allocation. The memory backend moves retained
+rows into output and releases the exact partition-key and row state charges as ownership moves.
+
+RocksDB firing inventories distinct local ends with prefix seeks, converts regional deadlines,
+and visits due ends in `(deadline, end)` order. Within each end it merges separate negative-start
+and nonnegative-start spans from each key group: starts keep their released raw signed-BE layout,
+whose byte ordering differs from numeric ordering. Partition bytes break start ties. Only bounded
+row frames are copied and decoded, including for one large persisted group; pending rank buffers
+remain in RocksDB. Metadata scales with distinct ends and owned key-group iterators, rather than
+all closed groups or rows, and is charged to the same task budget. The memory backend charges
+its sorted group ownership records without cloning partition payloads.
+
+Receiver failure fails the task and releases the output workspace. Recovery replays the previous
+checkpoint, including groups whose output had already been handed off before the failure. Legacy
+single-batch JNI collector entries remain available; production uses the bounded receiver entry.
 
 The `-Dstreamfusion.operator.windowRank.enabled` switch covers both shapes; window dedup reuses the
 window-rank operator rather than getting its own switch — see [Configuration](../configuration.md).

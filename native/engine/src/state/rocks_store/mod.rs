@@ -17,9 +17,12 @@ mod canonical_transfer;
 pub(crate) use canonical_snapshot::{RocksCanonicalSnapshot, RocksReadSnapshot};
 mod decoded_cache;
 pub(crate) mod legacy_snapshot;
+pub(crate) mod ordered_scan;
 mod raw_store;
 pub(crate) mod retained_rows;
 pub(crate) mod window_memberships;
+#[cfg(test)]
+mod working_memory_tests;
 pub(crate) use raw_store::RocksRawStore;
 pub(crate) mod interval_buffer;
 #[cfg(test)]
@@ -156,6 +159,12 @@ pub(crate) trait RocksStateCodec {
     fn raw_write(&self, _value: &Self::Value, _out: &mut Vec<u8>) {
         unreachable!("not a raw codec")
     }
+    fn raw_decoded_bytes(&self, bytes: &[u8]) -> usize {
+        bytes
+            .len()
+            .saturating_add(std::mem::size_of::<Self::Value>())
+    }
+
     fn from_raw(&self, _bytes: &[u8]) -> Self::Value {
         unreachable!("not a raw codec")
     }
@@ -477,8 +486,11 @@ pub(crate) struct RocksStore<C: RocksStateCodec> {
     generation: i64,
     write_batch_size: usize,
     working: ahash::HashMap<ByteKey, Slot<C::Value>>,
+    bundle_open: bool,
     footprint: isize,
+    memory: Option<StateMemory>,
     decoded_cache: Option<decoded_cache::DecodedCache<C::Value>>,
+    decoded_header_bytes: usize,
 }
 
 const PAIR_FIRST_TABLE: u8 = 0;
@@ -589,6 +601,53 @@ fn multi_get_pinned<'db>(
 }
 
 impl<C: RocksStateCodec> RocksStore<C> {
+    fn require_hydrated(&self, key: &[u8]) {
+        assert!(
+            !self.bundle_open || self.working.contains_key(key),
+            "RocksDB point access requires batch hydration"
+        );
+    }
+
+    fn reserve_working(&self, additional: usize) -> Result<(), DataFusionError> {
+        if let Some(memory) = &self.memory {
+            memory.try_resize(
+                self.resident_bytes()
+                    .unwrap_or(0)
+                    .saturating_add(additional),
+            )?;
+        }
+        Ok(())
+    }
+
+    fn decode_bytes(&self, encoded: usize, rows: usize) -> usize {
+        // Encoded rows, Arrow decoding columns and owned values coexist during hydration.
+        encoded
+            .saturating_mul(4)
+            .saturating_add(rows.saturating_mul(self.decoded_header_bytes))
+    }
+
+    fn decoding_bytes(&self, values: &[&[u8]]) -> usize {
+        if self.codec.raw() {
+            values
+                .iter()
+                .map(|value| {
+                    self.codec
+                        .raw_decoded_bytes(&value[self.value_prefix_len()..])
+                        .saturating_add(Self::SLOT_OVERHEAD)
+                })
+                .sum()
+        } else {
+            self.decode_bytes(values.iter().map(|value| value.len()).sum(), values.len())
+        }
+    }
+
+    fn reserve_bytes(&self, bytes: usize) -> Result<(), DataFusionError> {
+        if let Some(memory) = &self.memory {
+            memory.try_resize(bytes)?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn legacy_snapshot_reader(
         &self,
     ) -> Result<Option<legacy_snapshot::LegacySnapshotReader>, DataFusionError> {
@@ -796,6 +855,8 @@ impl<C: RocksStateCodec> RocksStore<C> {
                     .map_err(|e| DataFusionError::External(Box::new(e)))
             })
             .collect::<Result<Vec<_>, _>>()?;
+        let decoded_header_bytes =
+            Self::SLOT_OVERHEAD + value_fields.len() * 2 * std::mem::size_of::<ScalarValue>();
         Ok(Self {
             db: opened.db.clone(),
             _cache: opened.cache.clone(),
@@ -811,8 +872,11 @@ impl<C: RocksStateCodec> RocksStore<C> {
             generation: 0,
             write_batch_size: opened.write_batch_size,
             working: ahash::HashMap::default(),
+            bundle_open: false,
             footprint: 0,
+            memory: None,
             decoded_cache: None,
+            decoded_header_bytes,
         })
     }
 
@@ -950,6 +1014,15 @@ impl<C: RocksStateCodec> RocksStore<C> {
             if elements.is_empty() {
                 continue;
             }
+            let workspace = self
+                .memory
+                .as_ref()
+                .and_then(StateMemory::temporary_reservation);
+            if let Some(workspace) = &workspace {
+                workspace.try_resize(
+                    self.decode_bytes(elements.get_array_memory_size(), elements.len()),
+                )?;
+            }
             let table = &self.multisets[position];
             let element_rows = table
                 .converter
@@ -1064,6 +1137,7 @@ impl<C: RocksStateCodec> RocksStore<C> {
     /// Writes every dirty working-set entry through to RocksDB in one columnar conversion —
     /// Flink's write path, amortized to one memtable write per touched key per bundle.
     fn write_dirty(&mut self) -> Result<(), DataFusionError> {
+        self.reserve_working(0)?;
         let multiset_changes = self.drain_multiset_ops()?;
         let removed_keys: Vec<ByteKey> = self.removed_multiset_keys.drain().collect();
         let mut keys = Vec::new();
@@ -1085,6 +1159,22 @@ impl<C: RocksStateCodec> RocksStore<C> {
             && multiset_changes.is_empty()
         {
             return Ok(());
+        }
+        let workspace = self
+            .memory
+            .as_ref()
+            .and_then(StateMemory::temporary_reservation);
+        if let Some(workspace) = &workspace {
+            let bytes = keys
+                .iter()
+                .zip(&states)
+                .map(|(key, state)| key.len().saturating_add(self.codec.resident_bytes(state)))
+                .sum::<usize>();
+            workspace.try_resize(if self.codec.raw() {
+                bytes
+            } else {
+                self.decode_bytes(bytes, states.len())
+            })?;
         }
         let db = self.db.clone();
         let mut writes = FlinkWriteBatch::new(&db, self.write_batch_size);
@@ -1209,7 +1299,9 @@ impl<C: RocksStateCodec> RocksStore<C> {
             cache.clear();
         }
         self.working.clear();
+        self.bundle_open = false;
         self.probed_multiset_keys.clear();
+        self.reserve_working(0)?;
         if snapshot_dir.is_empty() {
             return Ok(RocksCheckpointManifest::absent());
         }
@@ -1258,6 +1350,10 @@ impl<C: RocksStateCodec> RocksStore<C> {
 
     pub(crate) fn finish_canonical_scan(&mut self) {
         self.working.clear();
+        self.bundle_open = false;
+        if let Some(memory) = &self.memory {
+            memory.try_resize(0).expect("release scan memory");
+        }
     }
 
     /// Reads bounded self-contained canonical rows without expiring or refreshing their TTL ages.
@@ -1276,9 +1372,23 @@ impl<C: RocksStateCodec> RocksStore<C> {
 }
 
 impl<C: RocksStateCodec> KeyedStateStore<C::Value> for RocksStore<C> {
+    fn attach_memory(&mut self, memory: StateMemory) {
+        self.memory = Some(memory);
+    }
+
+    fn owns_memory(&self) -> bool {
+        self.memory.as_ref().is_some_and(StateMemory::tracking)
+    }
+
+    fn account_memory(&mut self) -> Result<(), DataFusionError> {
+        self.reserve_working(0)
+    }
+
     fn prepare_canonical_import(&mut self, keys: &BinaryArray) -> Result<(), DataFusionError> {
         let mut missing = Vec::new();
         let mut seen = ahash::HashSet::default();
+        let resident = self.resident_bytes().unwrap_or(0);
+        let mut pending_bytes = 0usize;
         for bytes in keys.iter().flatten() {
             if bytes.is_empty() || bytes.len() % 8 != 0 {
                 return Err(DataFusionError::Execution(
@@ -1286,7 +1396,10 @@ impl<C: RocksStateCodec> KeyedStateStore<C::Value> for RocksStore<C> {
                 ));
             }
             let key = ByteKey::from(bytes);
-            if !self.working.contains_key(&key) && seen.insert(key.clone()) {
+            if !self.working.contains_key(&key) && !seen.contains(&key) {
+                pending_bytes = pending_bytes.saturating_add(Self::SLOT_OVERHEAD + 4 * key.len());
+                self.reserve_bytes(resident.saturating_add(pending_bytes))?;
+                seen.insert(key.clone());
                 if let Some(value) = self
                     .decoded_cache
                     .as_mut()
@@ -1327,6 +1440,11 @@ impl<C: RocksStateCodec> KeyedStateStore<C::Value> for RocksStore<C> {
                 Err(error) => return Err(re(error.clone())),
             }
         }
+        self.reserve_bytes(
+            resident
+                .saturating_add(pending_bytes)
+                .saturating_add(self.decoding_bytes(&hit_values)),
+        )?;
         let decoded = self.decode_values_with_visibility(&hit_values, false)?;
         drop(hit_values);
         drop(fetched);
@@ -1356,15 +1474,18 @@ impl<C: RocksStateCodec> KeyedStateStore<C::Value> for RocksStore<C> {
         self.decoded_cache = Some(decoded_cache::DecodedCache::new(limit, reservation));
     }
     fn contains(&self, key: &[u8]) -> bool {
+        self.require_hydrated(key);
         matches!(self.working.get(key), Some(Slot::Present { .. }))
     }
     fn get(&self, key: &[u8]) -> Option<&C::Value> {
+        self.require_hydrated(key);
         match self.working.get(key) {
             Some(Slot::Present { state, .. }) => Some(state),
             _ => None,
         }
     }
     fn get_mut(&mut self, key: &[u8]) -> Option<&mut C::Value> {
+        self.require_hydrated(key);
         match self.working.get_mut(key) {
             Some(Slot::Present { state, dirty }) => {
                 *dirty = true;
@@ -1378,6 +1499,7 @@ impl<C: RocksStateCodec> KeyedStateStore<C::Value> for RocksStore<C> {
         key: &[u8],
         admit: F,
     ) -> Option<&mut C::Value> {
+        self.require_hydrated(key);
         match self.working.get_mut(key) {
             Some(Slot::Present { state, dirty }) => {
                 if admit(state) {
@@ -1467,12 +1589,19 @@ impl<C: RocksStateCodec> KeyedStateStore<C::Value> for RocksStore<C> {
         key_columns: &[usize],
         precisions: &[i32],
     ) -> Result<(), DataFusionError> {
+        self.bundle_open = true;
+        self.reserve_working(0)?;
         let mut encoder = BinaryRowBatchEncoder::new(batch, key_columns, precisions);
         let mut missing = Vec::new();
         let mut seen = ahash::HashSet::default();
+        let resident = self.resident_bytes().unwrap_or(0);
+        let mut pending_bytes = 0usize;
         for row in 0..batch.num_rows() {
             let key = ByteKey::from(encoder.encode(row));
-            if !self.working.contains_key(&key) && seen.insert(key.clone()) {
+            if !self.working.contains_key(&key) && !seen.contains(&key) {
+                pending_bytes = pending_bytes.saturating_add(Self::SLOT_OVERHEAD + 4 * key.len());
+                self.reserve_bytes(resident.saturating_add(pending_bytes))?;
+                seen.insert(key.clone());
                 if let Some(value) = self
                     .decoded_cache
                     .as_mut()
@@ -1520,6 +1649,11 @@ impl<C: RocksStateCodec> KeyedStateStore<C::Value> for RocksStore<C> {
                 Err(error) => return Err(re(error.clone())),
             }
         }
+        self.reserve_bytes(
+            resident
+                .saturating_add(pending_bytes)
+                .saturating_add(self.decoding_bytes(&hit_values)),
+        )?;
         let decoded = self.decode_values(&hit_values)?;
         drop(hit_values);
         drop(fetched);
@@ -1556,6 +1690,7 @@ impl<C: RocksStateCodec> KeyedStateStore<C::Value> for RocksStore<C> {
             }
             self.probe_multisets(batch, key_columns, precisions)?;
         }
+        self.reserve_working(0)?;
         Ok(())
     }
     fn end_bundle(&mut self) -> Result<(), DataFusionError> {
@@ -1566,6 +1701,8 @@ impl<C: RocksStateCodec> KeyedStateStore<C::Value> for RocksStore<C> {
             self.working.clear();
         }
         self.probed_multiset_keys.clear();
+        self.bundle_open = false;
+        self.reserve_working(0)?;
         Ok(())
     }
     fn footprint_delta(&mut self) -> isize {

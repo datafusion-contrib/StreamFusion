@@ -52,11 +52,23 @@ inside their owning library; the format-driver contract still passes only C Data
 opaque handles. The driver init is handed out by its owner's JNI facade, so it needs no common
 unmangled symbol that would collide when Rust integration tests link multiple format crates.
 
-Kafka's existing sink encoders remain in the Kafka package. Moving encoding behind a new format ABI
-would change the runtime contract and is separate from enforcing the crate boundaries. The decoder
-packages do not depend on Kafka, and Kafka does not link their decoder implementations. The raw
-decoder primitive is shared with key/value composition because a keyed JSON value can contain a raw
-key; this needs no third-party codec dependency.
+Sink encoding follows Flink's `EncodingFormat` planning/runtime split as well. Providers own
+exact type, option and changelog admission and serialize an encoder factory into the job graph.
+At task open the factory creates a handle in its matching format DSO; every encode and close returns
+to that same facade. Kafka composes independently encoded key/value slabs and upsert tombstones,
+while Flink owns broker I/O. JSON, CSV, raw, Protobuf and Avro encode kernels live beside their
+matching decoders. Registry Avro providers reuse the Avro library, including schema registration
+at open. The connector and neutral format-support crate do not link codec dependencies.
+
+The encoder bridge returns JVM-owned contiguous byte slabs with offsets and lengths, preserving
+empty messages distinctly from Kafka tombstones and avoiding a JNI object per row. Keyed writes
+invoke the two owning encoder facades separately. This incurs one C Data import per format instance;
+it does not exchange a Rust trait object across libraries. Native trait objects remain local to the
+format's statically linked support helper. A versioned encode vtable can remove repeated boundary
+work if a production profile justifies it; no throughput gain is claimed for the ownership split.
+The shared support layer contains only generic batch annotation, numeric/timestamp spelling,
+encoded-slab framing and guarded JNI lifecycle helpers. Per-format admission and implementations
+remain in their artifacts. Missing or incompatible format libraries fall back during planning.
 
 Tests live with their owning packages, with connector/format round trips in an integration-test
 package. Java tests load the same distinct libraries as production, including separate handle

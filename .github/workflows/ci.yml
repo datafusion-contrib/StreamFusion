@@ -135,6 +135,11 @@ jobs:
       - name: Test fork result reporting
         run: python3 -m unittest discover -s bin -p test_fork_ci_status.py
 
+      - name: Check generated expression protocol
+        run: |
+          python3 bin/generate-expression-protocol.py --check
+          python3 -m unittest discover -s bin -p test_expression_protocol.py
+
       - name: Run native test suite
         working-directory: native
         run: cargo test --workspace
@@ -264,7 +269,8 @@ jobs:
           -Dsf.testForks=2
           -Dsf.testReuseForks=false
           "-Dsf.extraJvmArgs=-Xmx4g -Djava.library.path=$GITHUB_WORKSPACE/native/target/debug -Dstreamfusion.experimental.temporalScalarUdfs=true -Dstreamfusion.experimental.jvmAccumulatorCacheEntries=65536 -Dstreamfusion.experimental.borrowedStringExit=true"
-          surefire:test@default-test
+          -am test -Dsf.ci.precompiledJava=true -DskipTests=true -Dsf.runtime.tests.skip=false
+          -Dsf.protobuf.checkStaleness=true -Dsurefire.failIfNoSpecifiedTests=false
 
       - name: Check deployed Java 11 bytecode including embedded payloads
         if: matrix.shard == 1

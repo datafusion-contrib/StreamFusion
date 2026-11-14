@@ -1,6 +1,6 @@
 use streamfusion_bridge::prelude::*;
-use streamfusion_kafka::ProtobufEncoder;
 use streamfusion_protobuf::ProtobufDecoder;
+use streamfusion_protobuf::ProtobufEncoder;
 
 fn json_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![

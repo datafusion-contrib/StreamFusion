@@ -442,7 +442,11 @@ impl TumblingAggregator {
         Ok(present.then_some(merged))
     }
 
-    pub(super) fn flush_shared(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
+    pub(super) fn flush_shared_to(
+        &mut self,
+        watermark: i64,
+        consume: &mut dyn FnMut(RecordBatch) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
         #[cfg(feature = "rocksdb-state")]
         self.hydrate_slice_timers()?;
         let mut deadlines = self.slice_end_thresholds(self.slice_timers.keys().copied());
@@ -450,14 +454,7 @@ impl TumblingAggregator {
             .iter()
             .map(|(&end, &epoch)| Reverse((epoch, end)))
             .collect::<BinaryHeap<_>>();
-        let mut keys = Vec::new();
-        let mut starts = Vec::new();
-        let mut ends = Vec::new();
-        let mut results = self
-            .aggregates
-            .iter()
-            .map(WindowResultColumn::new)
-            .collect::<Vec<_>>();
+        let mut output = output::WindowOutput::new(self);
         while let Some(Reverse((epoch, end))) = queue.peek().copied() {
             if epoch > watermark {
                 break;
@@ -485,16 +482,12 @@ impl TumblingAggregator {
                 if let Some(mut merged) = merged {
                     live = Self::group_is_live(self.live_count, &mut merged)?;
                     if live {
-                        keys.push(key.clone());
-                        starts.push(if self.cumulative {
+                        let start = if self.cumulative {
                             self.shared_base(end)
                         } else {
                             end - self.window_millis
-                        });
-                        ends.push(end);
-                        for (values, accumulator) in results.iter_mut().zip(&mut merged) {
-                            values.push(accumulator.as_mut())?;
-                        }
+                        };
+                        output.push(self, key.clone(), start, end, &mut merged, consume)?;
                     }
                     if self.cumulative_prefix() {
                         let first = self.shared_base(end) + self.slide_millis;
@@ -578,7 +571,7 @@ impl TumblingAggregator {
         self.memory.account_shrink();
         self.persist_slice_timers()?;
         self.clear_resident_slice_timers();
-        Ok(self.final_batch(keys, starts, ends, results))
+        output.emit(self, consume)
     }
 
     #[cfg(feature = "rocksdb-state")]

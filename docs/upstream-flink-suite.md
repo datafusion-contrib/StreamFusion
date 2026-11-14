@@ -13,6 +13,13 @@ the inherited root `PhysicalPlanScan` facade as another scan. Both Flink source
 lines use the shared `planner.stream.NativeStreamPlanner`, while public installation and
 ServiceLoader entries retain their established names. Positive native-consumption
 and existing route expectations remain required after package moves.
+Planner observation matches method signatures explicitly: batch/portable string reasons and
+streaming operator/island reasons with their node argument keep the same exact fallback contracts.
+Batch inventories observe the two-argument semantic rewrite entry once, excluding its convenience
+wrapper. Bytecode-transform regressions cover mixed overloads, both rejection scopes and the
+single completed batch-plan event. Native OVER consumes through the same observed element
+boundary as its execution contract requires; opening or restored rows alone remain insufficient.
+Observer changes do not relax native-work requirements.
 Path-selected compatibility and JVM aggregate workflows also cover planner mode
 subpackages, so later edits to migrated implementations still select their checks.
 

@@ -1,3 +1,5 @@
+mod firing;
+
 use super::retained_rows::RetainedRows;
 use super::{
     checkpoint_files, copy_checkpoint_db, merged_timer_deadline, multi_get_pinned, open_shared_db,

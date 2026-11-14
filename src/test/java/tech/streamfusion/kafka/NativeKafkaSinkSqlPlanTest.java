@@ -12,6 +12,7 @@ import org.apache.flink.table.api.ValidationException;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.format.JdkFloatSpelling;
 import tech.streamfusion.planner.NativePlanner;
 import tech.streamfusion.planner.PhysicalPlanScan;
 

@@ -81,10 +81,6 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
-        <configuration><includes>
-          <include>tech/streamfusion/doris/**/*.java</include>
-          <include>tech/streamfusion/planner/**/*Doris*.java</include>
-        </includes></configuration>
       </plugin>
     </plugins>
   </build>
