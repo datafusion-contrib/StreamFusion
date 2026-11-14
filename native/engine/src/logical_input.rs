@@ -1,6 +1,6 @@
 use crate::*;
 
-// Java ListVector replaces this internal UTF-16 child name at a network edge.
+// Java collection vectors rename physical children at a network edge. SQL ROW names stay intact.
 pub(crate) fn canonical_list_labels(data_type: &DataType) -> DataType {
     match data_type {
         DataType::Struct(fields) => DataType::Struct(
@@ -23,6 +23,25 @@ pub(crate) fn canonical_list_labels(data_type: &DataType) -> DataType {
         {
             DataType::List(Arc::new(field.as_ref().clone().with_name("unit")))
         }
+        DataType::List(field) if field.data_type() != &DataType::UInt16 || field.is_nullable() => {
+            DataType::List(Arc::new(
+                field
+                    .as_ref()
+                    .clone()
+                    .with_name("element")
+                    .with_data_type(canonical_list_labels(field.data_type())),
+            ))
+        }
+        DataType::Map(field, sorted) => DataType::Map(
+            Arc::new(
+                field
+                    .as_ref()
+                    .clone()
+                    .with_name("entries")
+                    .with_data_type(canonical_list_labels(field.data_type())),
+            ),
+            *sorted,
+        ),
         _ => data_type.clone(),
     }
 }
@@ -103,5 +122,56 @@ mod tests {
             .collect::<Vec<_>>();
         fields[1] = fields[1].clone().with_data_type(DataType::Float64);
         assert!(insert_only(expected.clone(), &Arc::new(Schema::new(fields)), "test").is_err());
+    }
+    #[test]
+    fn nested_array_and_map_physical_labels_reconcile_before_buffering() {
+        use arrow::array::{
+            Array, ArrayRef, Int64Array, Int64Builder, ListArray, MapBuilder, StringBuilder,
+            StructArray,
+        };
+        use arrow::datatypes::Int64Type;
+        let array = Arc::new(ListArray::from_iter_primitive::<Int64Type, _, _>([Some(
+            vec![Some(1), None],
+        )])) as ArrayRef;
+        let mut builder = MapBuilder::new(None, StringBuilder::new(), Int64Builder::new());
+        builder.keys().append_value("key");
+        builder.values().append_value(7);
+        builder.append(true).unwrap();
+        let map = Arc::new(builder.finish()) as ArrayRef;
+        let payload = Arc::new(StructArray::new(
+            vec![
+                Arc::new(Field::new("array", array.data_type().clone(), true)),
+                Arc::new(Field::new("map", map.data_type().clone(), true)),
+            ]
+            .into(),
+            vec![array, map],
+            None,
+        )) as ArrayRef;
+        let expected = RecordBatch::try_from_iter(vec![("payload", payload.clone())]).unwrap();
+        let DataType::Struct(fields) = payload.data_type() else {
+            unreachable!()
+        };
+        let mut changed = fields.to_vec();
+        if let DataType::List(element) = fields[0].data_type() {
+            changed[0] = Arc::new(fields[0].as_ref().clone().with_data_type(DataType::List(
+                Arc::new(element.as_ref().clone().with_name("$data$")),
+            )));
+        }
+        if let DataType::Map(entry, sorted) = fields[1].data_type() {
+            changed[1] = Arc::new(fields[1].as_ref().clone().with_data_type(DataType::Map(
+                Arc::new(entry.as_ref().clone().with_name("items")),
+                *sorted,
+            )));
+        }
+        let network = arrow::array::make_array(
+            crate::owned::align_nested_data(payload.to_data(), &DataType::Struct(changed.into()))
+                .unwrap(),
+        );
+        let network = RecordBatch::try_from_iter(vec![("payload", network)]).unwrap();
+        assert_ne!(expected.schema(), network.schema());
+        assert_eq!(
+            insert_only(network, &expected.schema(), "test").unwrap(),
+            expected
+        );
     }
 }

@@ -269,3 +269,7 @@ independent. New ordinary/compiled planner and clean-stock-worker fixtures keep 
 payloads through the join, with NULL parents, NULL descendants, Unicode map keys and duplicate
 rows. The authored fixtures cover continued input, no-input re-export, native checkpoints and
 1 → 3 → 2 rescaling; qualification on Flink 1.18 and 2.2 is pending.
+
+Live input reconciles Arrow’s physical ARRAY and MAP child labels with the captured
+logical schema before buffering or probing. Logical ROW names and collection value types
+remain unchanged, so restored and newly arriving rows share one schema.

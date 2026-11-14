@@ -180,3 +180,7 @@ The persistent window-join buffer uses the shared retained-row codec for payload
 including nested MAP fields. MAP input keeps its declared Arrow representation;
 only the private storage codec uses the equivalent list layout and reconstructs
 the requested schema when reading rows. Join-key admission is unchanged.
+
+Live input reconciles Arrow’s physical ARRAY and MAP child labels with the captured
+logical schema before buffering or probing. Logical ROW names and collection value types
+remain unchanged, so restored and newly arriving rows share one schema.
