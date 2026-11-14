@@ -1,0 +1,89 @@
+name: Hudi focused benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      baseline:
+        description: 'Full commit SHA with identical native inputs and benchmark SQL'
+        type: string
+        required: true
+      rows:
+        description: 'Events per trial (up to 2000000)'
+        type: string
+        default: '200000'
+      queries:
+        description: 'Unchanged query selection'
+        type: choice
+        options: ['q8,q12', q8, q12]
+        default: 'q8,q12'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hudi-benchmark-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  compare:
+    if: github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+      BASELINE: ${{ inputs.baseline }}
+      BENCH_ROWS: ${{ inputs.rows }}
+      BENCH_QUERIES: ${{ inputs.queries }}
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          filter: blob:none
+      - name: Check comparison failure handling and source compatibility
+        run: |
+          python3 -m unittest discover -s bin -p test_bench_hudi_java.py
+          python3 bin/bench-hudi-java.py --baseline "$BASELINE" --verify-only \
+            --rows "$BENCH_ROWS" --queries "$BENCH_QUERIES" \
+            --output "$RUNNER_TEMP/hudi-benchmark"
+      - run: python3 bin/ci-free-disk.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17.0.21+9'
+          cache: maven
+      - uses: ./.github/actions/setup-rust
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+          shared-key: release-hudi
+      - name: Build the two production release libraries once
+        run: >-
+          cargo build --manifest-path native/Cargo.toml --release --locked --lib
+          -p streamfusion -p streamfusion-parquet
+          --features streamfusion/mimalloc,streamfusion-parquet/mimalloc --timings
+      - name: Alternate baseline and candidate on the same isolated runner
+        run: >-
+          python3 bin/bench-hudi-java.py --baseline "$BASELINE"
+          --rows "$BENCH_ROWS" --queries "$BENCH_QUERIES"
+          --output "$RUNNER_TEMP/hudi-benchmark"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hudi-focused-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/hudi-benchmark/summary.json
+            ${{ runner.temp }}/hudi-benchmark/*.log
+            ${{ runner.temp }}/hudi-benchmark/*.json
+            native/target/cargo-timings
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Remove generated benchmark tables and logs
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import shutil
+          shutil.rmtree(Path(os.environ['RUNNER_TEMP']) / 'hudi-benchmark', ignore_errors=True)
+          PY

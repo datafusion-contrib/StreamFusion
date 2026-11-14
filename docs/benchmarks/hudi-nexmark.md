@@ -5,6 +5,25 @@ corpus with Hudi tables at both ends. This is a separate storage workload from
 the README Kafka benchmark. It requires the released Hudi 1.2.1 Flink 1.18 bundle
 and release StreamFusion engine/Parquet libraries.
 
+For the Java batching/allocation investigation, the manual **Hudi focused benchmark**
+workflow runs Q8/Q12 on one isolated Ubuntu runner. Supply a full baseline commit
+SHA with identical native sources, build inputs and benchmark harness. The runner
+admits changes only to the allocation authority and Hudi terminal-batch proof,
+builds the two release libraries once, verifies their hashes throughout, and
+alternates baseline/candidate then candidate/baseline. Each invocation retains
+one warmup and three rotating stock/previous/native trials, four source/sink tasks,
+heap state and mini-batching off. It restores candidate sources and deletes runtime
+tables even after failure. The workflow artifact retains every observation and log.
+This focused comparison is separate from the complete four-configuration matrix.
+
+The same comparison can run on an otherwise idle developer machine using
+`python3 bin/bench-hudi-java.py --baseline FULL_BASELINE_SHA --output NEW_DIRECTORY`
+with production engine/Parquet libraries in `native/target/release`. Set `JAVA_HOME`
+to a supported JDK and prevent system sleep for local timings. The
+[processing-time investigation](hudi-processing-time-batches-20261114.json)
+retains the local diagnostic and excluded contended attempts; its after-change
+timings remain unqualified pending the isolated run.
+
 The fixture is a COW table partitioned by `sf_partition`, populated once using
 stock Hudi with a single ordered input and checkpoints disabled during seeding.
 Measured jobs retain one-second checkpoints. Each event retains its original schema and timestamp; the storage
