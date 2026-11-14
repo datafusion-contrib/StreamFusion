@@ -23,7 +23,8 @@ final class SerializedJoinInput implements AutoCloseable {
   }
 
   static SerializedJoinInput prepare(VectorSchemaRoot input, RowType type) {
-    if (type.getChildren().stream().noneMatch(SerializedJoinInput::containsRow))
+    if (input.getRowCount() == 0
+        || type.getChildren().stream().noneMatch(SerializedJoinInput::containsRow))
       return new SerializedJoinInput(input, false, null);
     long bytes =
         Math.addExact(
