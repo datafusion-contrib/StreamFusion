@@ -18,3 +18,12 @@ The [GROUP BY](../operators/group-by.md) aggregate's touched-group measurement r
 tuple's `ScalarValue`s each time. A 2026-07-12 q17 profile flagged the cost, so the size is now
 cached next to the tuple and maintained wherever the cache changes, making the per-row measurement
 pure arithmetic.
+
+Shared Arrow allocation reads the published owner ID through its existing volatile
+field. Only first registration takes the process monitor; the owner enters the
+registry before its ID is published. Reservation limits, adoption of early buffers,
+release and test-reset accounting retain their existing paths. A Hudi Q8 CPU
+diagnostic attributed 8.3% of inclusive samples to this lookup, motivating the
+change. Concurrent first-use and watermark tests pass on both Flink lines;
+complete-job performance validation is pending in the focused Hudi comparison.
+This is not yet a measured pipeline speedup.

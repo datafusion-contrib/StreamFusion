@@ -50,6 +50,38 @@ class TaskOffHeapMemoryTest {
   }
 
   @Test
+  void concurrentFirstArrowReservationsShareOnePublishedOwner() throws Exception {
+    var threads = java.util.concurrent.Executors.newFixedThreadPool(8);
+    try {
+      for (int round = 0; round < 2; round++) {
+        TaskOffHeapMemory.resetForTests(64);
+        var barrier = new java.util.concurrent.CyclicBarrier(8);
+        var futures = new java.util.ArrayList<java.util.concurrent.Future<?>>();
+        for (int worker = 0; worker < 8; worker++) {
+          futures.add(
+              threads.submit(
+                  () -> {
+                    barrier.await(10, java.util.concurrent.TimeUnit.SECONDS);
+                    TaskOffHeapMemory.reserveArrow(8);
+                    try {
+                      barrier.await(10, java.util.concurrent.TimeUnit.SECONDS);
+                    } finally {
+                      TaskOffHeapMemory.releaseArrow(8);
+                    }
+                    return null;
+                  }));
+        }
+        for (var future : futures) future.get(20, java.util.concurrent.TimeUnit.SECONDS);
+        assertEquals(64, TaskOffHeapMemory.peakBytes());
+        assertEquals(0, TaskOffHeapMemory.reservedBytes());
+      }
+    } finally {
+      threads.shutdownNow();
+      assertTrue(threads.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS));
+    }
+  }
+
+  @Test
   void spillableStateLeavesHeadroomWithoutPartitioningTheSharedBudget() {
     TaskOffHeapMemory.resetForTests(32);
     long state = TaskOffHeapMemory.registerOwner("state", "sort");
