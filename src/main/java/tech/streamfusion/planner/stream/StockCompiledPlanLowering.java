@@ -402,6 +402,9 @@ final class StockCompiledPlanLowering {
   }
 
   private static boolean needsBinaryRowKeyTemplate(ExecNode<?> node) {
+    if (node instanceof NativeFirstNExecNode)
+      return rowKeys((RowType) node.getInputEdges().get(0).getOutputType(),
+          ((NativeFirstNExecNode) node).stateKeyColumns());
     if (node instanceof NativeColumnarGroupAggExecNode)
       return rowKeys((RowType) node.getOutputType(),
           java.util.stream.IntStream.range(0,
@@ -3343,7 +3346,8 @@ final class StockCompiledPlanLowering {
         new tech.streamfusion.state.StockFirstNStateContract(serializer, keyType, ttl.isEnabled());
     int maximum = stockMaximum(original);
     var exchange =
-        (NativeColumnarExchangeExecNode) canonicalJoinInput(input, config, inputType, keys, true);
+        (NativeColumnarExchangeExecNode) canonicalJoinInput(input, config, inputType, keys, true,
+            false, rowKeys(inputType, keys));
     exchange.withStateMaxParallelism(maximum);
     var first =
         new NativeFirstNExecNode(

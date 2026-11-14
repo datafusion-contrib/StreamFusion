@@ -2555,3 +2555,9 @@ the existing independent native bound to released `rankEnd` VALUE state, includi
 owners and full signed 64-bit values. Stock tuple serializers and native checkpoint layouts are
 unchanged. Required INT/BIGINT bound columns with TTL disabled await both-release component/job
 qualification; nullable columns, updating TTL and inner-position gaps remain gated.
+
+
+First-N ROW-key binding additionally rebuilds the shared binary-row input representation for
+ordinary SQL and stock portable plans. Restored raw counter keys and live keys therefore retain
+original nested kinds/bytes. New raw-counter, TTL, recovery and clean-worker rescale controls
+await both-release execution; the counter serializer and private native state format are unchanged.

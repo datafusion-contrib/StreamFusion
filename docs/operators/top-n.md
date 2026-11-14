@@ -943,3 +943,15 @@ private checkpoint recovery and canonical continuation. Ordinary/portable job fi
 empty returns and rescaling with an independent per-key bound oracle. These additions await
 both-release execution. Updating TTL ages/gapped ties and nullable variable-bound columns remain
 gated; earlier historical passing cohorts retain their original scope.
+
+
+First-N ROW-bearing partition keys now use the shared binary-row input boundary when binding
+the stock counter. Ordinary SQL rebuilds that representation from the portable stock template,
+so the live key and restored counter key retain the same ROW kinds and original reserved bytes.
+The counter bridge and native checkpoint format are unchanged.
+
+New controls compare raw counters, mixed generic/binary keys, nested kinds and reserved bytes,
+hidden/projected rank, original-age TTL and native recovery. Clean-worker ROW-key jobs include
+ordinary/portable submission, both engine orders, empty returns and rescaling with a separate
+arrival-count oracle. These additions await Flink 1.18 and 2.2 qualification; no performance
+result is claimed.

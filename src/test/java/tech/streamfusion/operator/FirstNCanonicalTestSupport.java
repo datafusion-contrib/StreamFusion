@@ -83,6 +83,12 @@ final class FirstNCanonicalTestSupport {
 
   static KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> harness(
       boolean stock, boolean keyless, boolean rank, long ttl) throws Exception {
+    return harness(stock, keyless, rank, ttl, INPUT, false);
+  }
+
+  static KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> harness(
+      boolean stock, boolean keyless, boolean rank, long ttl, RowType inputType, boolean rocks)
+      throws Exception {
     OneInputStreamOperator<RowData, RowData> operator;
     if (stock) {
       var comparator =
@@ -96,11 +102,11 @@ final class FirstNCanonicalTestSupport {
           KeySelectorUtil.getRowDataSelector(
               FirstNCanonicalTestSupport.class.getClassLoader(),
               new int[] {1},
-              InternalTypeInfo.of(INPUT));
+              InternalTypeInfo.of(inputType));
       var function =
           new AppendOnlyFirstNFunction(
               StateConfigUtil.createTtlConfig(ttl),
-              InternalTypeInfo.of(INPUT),
+              InternalTypeInfo.of(inputType),
               comparator,
               sort,
               RankType.ROW_NUMBER,
@@ -115,12 +121,17 @@ final class FirstNCanonicalTestSupport {
         KeySelectorUtil.getRowDataSelector(
             FirstNCanonicalTestSupport.class.getClassLoader(),
             keyless ? new int[0] : new int[] {0},
-            InternalTypeInfo.of(INPUT));
+            InternalTypeInfo.of(inputType));
     var harness =
         new KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData>(
             operator, selector, selector.getProducedType(), keyless ? 1 : 128, 1, 0);
-    harness.setStateBackend(new HashMapStateBackend());
-    harness.setup(new RowDataSerializer(outputType(rank)));
+    harness.setStateBackend(
+        rocks
+            ? tech.streamfusion.compat.CanonicalTestCompat.rocksBackend()
+            : new HashMapStateBackend());
+    var fields = new ArrayList<>(inputType.getFields());
+    if (rank) fields.add(new RowType.RowField("rank", new BigIntType(false)));
+    harness.setup(new RowDataSerializer(new RowType(fields)));
     return harness;
   }
 
