@@ -99,7 +99,7 @@ public final class CanonicalOverValueFixture {
     }
   }
 
-  static Object number(LogicalType type, Long value) {
+  public static Object number(LogicalType type, Long value) {
     if (value == null) return null;
     switch (type.getTypeRoot()) {
       case TINYINT:

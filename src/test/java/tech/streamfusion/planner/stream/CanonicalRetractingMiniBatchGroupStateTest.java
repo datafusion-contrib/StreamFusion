@@ -55,6 +55,33 @@ class CanonicalRetractingMiniBatchGroupStateTest {
     return cases().filter(args -> (boolean) args.get()[3]);
   }
 
+  static Stream<Arguments> countPayloadCases() {
+    return tech.streamfusion.CanonicalTestMatrix.select(
+        Stream.concat(
+                tech.streamfusion.operator.CanonicalOverValueFixture.countTypes(),
+                Stream.of("DECIMAL(38,20)"))
+            .flatMap(
+                type ->
+                    Stream.of(false, true)
+                        .flatMap(
+                            rocks ->
+                                Stream.of(false, true)
+                                    .flatMap(
+                                        first ->
+                                            Stream.of(false, true)
+                                                .map(
+                                                    global ->
+                                                        Arguments.of(
+                                                            type, rocks, first, global))))));
+  }
+
+  @ParameterizedTest
+  @MethodSource("countPayloadCases")
+  void binaryIntervalAndNestedCountArgumentsRetainSignedScalarState(
+      String type, boolean rocks, boolean first, boolean global) throws Exception {
+    verify("count:" + type, false, rocks, first, true, global);
+  }
+
   private void verify(
       String type,
       boolean distinct,
@@ -124,7 +151,13 @@ class CanonicalRetractingMiniBatchGroupStateTest {
 
   private static MiniBatchGroupStockFixture fixture(
       String type, boolean distinct, boolean rocks, boolean global) throws Exception {
-    return new MiniBatchGroupStockFixture(type, global, rocks, distinct, true);
+    return new MiniBatchGroupStockFixture(
+        type.startsWith("count:") ? type.substring(6) : type,
+        global,
+        rocks,
+        distinct,
+        true,
+        type.startsWith("count:"));
   }
 
   private static void assertState(

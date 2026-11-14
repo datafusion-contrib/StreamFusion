@@ -3965,3 +3965,20 @@ stock key into multiple local partials. Scalar and ordinary Arrow-row key paths 
 existing selection. A floating-sum regression mixes logical and owned ROW representations in
 single-row and whole-batch input, across repeated flushes; one stock key must keep one fold in
 arrival order. Execution of this new control remains deferred to the qualification window.
+
+
+## Additional COUNT arguments awaiting canonical qualification
+
+Canonical scalar and local/global binding now admits non-DISTINCT COUNT arguments wherever the
+existing Arrow input reader supports them, including binary, interval, ROW, ARRAY, MAP and
+MULTISET values. COUNT uses only argument validity and retains the same BIGINT accumulator;
+no value view, input-row replay or native state format is added. Grouping keys and all other
+aggregate arguments retain their existing type and view gates. Decimal COUNT likewise uses
+its validity reader independently of decimal SUM/AVG accumulator restrictions.
+
+New planner controls cover eager, one-phase and two-phase execution, append/retract input and
+ordinary/portable submissions. Raw-state controls include signed retractions, filters, NULLs,
+empty group removal, repeated switches and native recovery on both stores. Clean-worker jobs
+also cover hidden liveness counts, partial bundle barriers and rescaling with a separate final
+COUNT oracle. All additions await both-release execution in the local testing window; no new
+passing cohort or performance result is claimed.

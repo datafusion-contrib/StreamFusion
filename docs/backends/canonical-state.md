@@ -2529,3 +2529,9 @@ Nested regular-join component controls additionally compare serialized canonical
 not only projected job output, through no-input returns and native checkpoint recovery. They use
 all released side layouts and join kinds, with nested row kinds and insert-only MAP inputs.
 Execution on Flink 1.18 and 2.2 remains pending.
+
+
+GROUP BY non-DISTINCT COUNT additionally binds existing binary, interval and nested validity
+readers to the unchanged BIGINT accumulator, including filtered eager/one-phase/two-phase paths.
+New plan/raw-state/clean-worker controls await both-release execution. DISTINCT views, grouping
+key representations and other aggregate argument restrictions are unchanged.

@@ -2347,9 +2347,9 @@ final class StockCompiledPlanLowering {
         && !Arrays.equals(keys, java.util.stream.IntStream.range(0, localKeys.length).toArray()))
       return stock;
     RowType outputType = (RowType) stock.getOutputType();
-    if (!global && !typedGroupArrowType(inputType)
+    if (!global && !RowDataArrowConverter.supports(inputType)
         || !typedGroupArrowType(outputType)
-        || !typedGroupArrowType(sourceType)) return stock;
+        || !RowDataArrowConverter.supports(sourceType)) return stock;
     for (int i = 0; i < keys.length; i++)
       if (!inputType.getTypeAt(keys[i]).equals(outputType.getTypeAt(i))) return stock;
     Configuration config = new Configuration(planner.getTableConfig().getConfiguration());
@@ -2487,7 +2487,7 @@ final class StockCompiledPlanLowering {
           kind == 7
               ? call.getArgList().get(0)
               : countAll || info.argIndexes().length == 0 ? -1 : info.argIndexes()[0];
-      int valueType = value < 0 ? 0 : typedGroupValueCode(sourceType.getTypeAt(value));
+      int valueType = value < 0 || kind == 3 ? 0 : typedGroupValueCode(sourceType.getTypeAt(value));
       if (valueType < 0) return stock;
       if (valueType >= 2000) {
         if (kind != 7 && (global || kind != 0 && kind != 4)) return stock;
