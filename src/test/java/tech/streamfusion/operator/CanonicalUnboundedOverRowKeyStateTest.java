@@ -123,7 +123,7 @@ class CanonicalUnboundedOverRowKeyStateTest {
     }
   }
 
-  private static RowData row(
+  static RowData row(
       CanonicalUnboundedOverScalarTest.Plan plan,
       boolean nested,
       RowKind kind,

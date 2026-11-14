@@ -2557,6 +2557,9 @@ Pending bounded and unbounded OVER controls also forbid intermediate native snap
 canonical capture and check the counter after writer completion, while retaining ordinary
 checkpoint recovery. This covers both the specialized scalar projection and the pinned full-view
 capture used by DISTINCT; the new guards are authored and await execution.
+Overlapping DISTINCT capture controls additionally compare complete stock state at two cuts after
+live membership changes and native-owner closure, finishing in reverse order on a writer thread.
+Nullable scalar and represented ROW keys use both native stores; this new matrix remains pending.
 
 
 Retracting GROUP BY MIN/MAX additionally captures the existing one-phase mini-batch owner and

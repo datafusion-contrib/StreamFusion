@@ -2108,6 +2108,12 @@ during canonical capture and verify the call counter again after the asynchronou
 The same fixtures still exercise ordinary native checkpoints. These added guards await execution
 with the pending two-release state matrix.
 
+Pending DISTINCT writer controls also pin two captures, change live folds and nullable membership
+views, close the native handle, then finish the captures in reverse order on a writer thread.
+They compare complete stock accumulator/view bytes and continued outputs independently at each
+cut, including NULL-only owners, scalar/global keys and mixed binary/logical nested ROW keys.
+Both native stores and ROWS/RANGE orders are included; these controls have not yet run.
+
 ## Unbounded processing ROW partition keys awaiting qualification
 
 The existing unbounded processing ROWS/RANGE fold can now bind ROW partition keys whose
