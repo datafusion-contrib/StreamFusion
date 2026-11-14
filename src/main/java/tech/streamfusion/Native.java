@@ -3688,6 +3688,12 @@ public final class Native {
    * Emits the sessions the watermark has closed as a batch (columns {@code key}, {@code
    * window_start}, {@code window_end}, {@code result0..}) and drops them from state.
    */
+  public static native void flushSessionAggregatorBatches(
+      long handle, long watermarkMillis, BatchReceiver receiver);
+
+  public static native void flushRocksDBSessionAggregatorBatches(
+      long handle, long watermarkMillis, BatchReceiver receiver);
+
   public static native void flushSessionAggregator(
       long handle, long watermarkMillis, long outArrayAddress, long outSchemaAddress);
 

@@ -225,9 +225,9 @@ reader multiplier remains unchanged, although the initial filesystem source does
 not admit timestamp columns. Reader cancellation closes queued, unconsumed Arrow
 batches promptly. No source-specific memory budget is introduced.
 
-### Fixed-window output
+### Window final output
 
-Production aligned-window final output uses synchronous bounded receivers rather than one
+Production aligned-window and session final output uses synchronous bounded receivers rather than one
 Arrow batch containing an entire watermark backlog. Decode frames and output assembly retain
 separate reservations until their consumers release them. Either can flush early when a larger
 reservation is denied; a single row that cannot fit still fails normally. The maximum batch
@@ -238,3 +238,9 @@ RocksDB firing retains window-end metadata and key-group iterator indices, not a
 future row payloads. The window-end inventory and the largest group still have to fit. Legacy
 single-result JNI helpers retain their compatibility behavior and can collect multiple emitted
 batches; the production fixed-window operators use the bounded receiver entry points.
+
+Session firing merges key-group scans by grouping key and session start. It keeps bounded
+key/end frames for calendar decisions and decodes only closed session payloads. Key-header,
+decode and final-output workspaces use the same shared cap and can flush independently under
+pressure; future payloads remain in RocksDB. Session input still hydrates a touched key's
+neighboring sessions for merging, so a single large key/session remains a working-memory floor.

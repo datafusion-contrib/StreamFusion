@@ -22,3 +22,9 @@ state with Arroyo's actor-owned execution plans.
 Flink can interrupt timer drains through mailbox continuations on versions/configurations
 that support them. This change keeps the existing mailbox scheduling contract and bounds
 native decode/output frames inside that call. It does not implement such continuations.
+
+Session state is key-major because ingest must see neighboring sessions for merges. Its firing
+scan uses the same ordered iterator merge, but batches key/end headers for calendar filtering
+and point-decodes only closed payloads. The memory path walks sorted keys and bounded session
+frames. Both retain the existing (group key, session start) output order, and preserve pending
+sessions and their next processing-time deadline.

@@ -1990,5 +1990,17 @@ largest individual group and the window-end/key-group inventory remain working-m
 The memory backend still sorts the keys of its current resident window before emission.
 
 This changes the execution boundary, not supported SQL, state encodings or recovery routing.
-Session windows, window rank and local partial-output batches retain their existing independent
-firing paths. No mailbox continuations or background state mutation are introduced.
+Window rank and local partial-output batches retain their existing independent firing paths. No mailbox continuations or background state mutation are introduced.
+
+## Bounded session firing
+
+Final session output uses the same synchronous 1,024-row / 4 MiB estimated working-size target,
+with early emission under reservation pressure and one oversized row as a necessary minimum.
+Memory sessions emit in grouping-key/start order while retaining unfired sessions. Direct
+RocksDB sessions merge key-group iterators in that order and retain bounded key/end candidates;
+regional calendar conversion is batched over those headers. Future session payloads are not
+loaded for firing, and closed state is decoded in smaller frames when the task pool requires it.
+The existing per-key session hydration and largest individual session state remain working-set
+floors. Changelog, timer deadlines, persisted state and canonical formats are unchanged.
+A receiver error releases workspaces and fails the task; the preceding completed checkpoint
+remains the recovery boundary.

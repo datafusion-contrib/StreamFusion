@@ -1,6 +1,9 @@
 package tech.streamfusion;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -61,6 +64,52 @@ class StatefulSessionTest {
       } finally {
         Native.closeSessionAggregator(restored);
       }
+    }
+  }
+
+  @Test
+  void boundedReceiverPreservesSessionOrderAcrossMultipleArrowHandoffs() {
+    try (BufferAllocator allocator = new RootAllocator();
+        CDataDictionaryProvider provider = new CDataDictionaryProvider()) {
+      long handle = Native.createSessionAggregator(1000, new int[] {0}, new int[] {0}, UNBOUNDED);
+      try {
+        long[] timestamps = new long[2051];
+        long[] values = new long[2051];
+        for (int i = 0; i < values.length; i++) { timestamps[i] = i * 2000L; values[i] = i + 1; }
+        update(allocator, provider, handle, timestamps, values);
+        int[] rows = {0}, batches = {0};
+        Native.flushSessionAggregatorBatches(handle, Long.MAX_VALUE, (arrayAddress, schemaAddress) -> {
+          try (ArrowArray array = ArrowArray.wrap(arrayAddress);
+              ArrowSchema schema = ArrowSchema.wrap(schemaAddress);
+              VectorSchemaRoot result = Data.importVectorSchemaRoot(allocator, array, schema, provider)) {
+            batches[0]++;
+            assertTrue(result.getRowCount() <= 1024);
+            BigIntVector starts = (BigIntVector) result.getVector("window_start");
+            BigIntVector totals = (BigIntVector) result.getVector("result0");
+            for (int i = 0; i < result.getRowCount(); i++, rows[0]++) {
+              assertEquals(rows[0] * 2000L, starts.get(i));
+              assertEquals(rows[0] + 1L, totals.get(i));
+            }
+          }
+        });
+        assertEquals(2051, rows[0]);
+        assertEquals(3, batches[0]);
+      } finally { Native.closeSessionAggregator(handle); }
+    }
+  }
+
+  @Test
+  void boundedReceiverFailurePreservesTheJavaExceptionAndReleasesArrowOwnership() {
+    try (BufferAllocator allocator = new RootAllocator();
+        CDataDictionaryProvider provider = new CDataDictionaryProvider()) {
+      long handle = Native.createSessionAggregator(1000, new int[] {0}, new int[] {0}, UNBOUNDED);
+      try {
+        update(allocator, provider, handle, new long[] {0, 2000}, new long[] {1, 2});
+        IllegalStateException failure = new IllegalStateException("receiver stopped");
+        assertSame(failure, assertThrows(IllegalStateException.class,
+            () -> Native.flushSessionAggregatorBatches(handle, Long.MAX_VALUE, (array, schema) -> { throw failure; })));
+      } finally { Native.closeSessionAggregator(handle); }
+      assertEquals(0, allocator.getAllocatedMemory());
     }
   }
 

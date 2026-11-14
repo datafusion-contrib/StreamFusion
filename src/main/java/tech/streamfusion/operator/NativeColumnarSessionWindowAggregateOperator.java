@@ -266,6 +266,16 @@ public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindo
   }
 
   @Override
+  protected void flushBatches(long watermark, Native.BatchReceiver receiver) {
+    watermark = WindowTimeDomain.closeThreshold(watermark, 0);
+    if (directRocksDBState()) {
+      Native.flushRocksDBSessionAggregatorBatches(handle, watermark, receiver);
+    } else {
+      Native.flushSessionAggregatorBatches(handle, watermark, receiver);
+    }
+  }
+
+  @Override
   protected void flushHandle(long watermark, long arrayAddress, long schemaAddress) {
     watermark = WindowTimeDomain.closeThreshold(watermark, 0);
     if (directRocksDBState()) {

@@ -1,3 +1,4 @@
+mod firing;
 use super::window_memberships::{persisted_key_group, WindowStateCodec};
 use super::{
     checkpoint_files, copy_checkpoint_db, merged_timer_deadline, open_shared_db, re,
@@ -344,71 +345,18 @@ impl RocksSessionAggStore {
         watermark: i64,
         calendar: Option<&crate::window_calendar::WindowCalendar>,
     ) -> Result<Vec<StoredSession>, DataFusionError> {
-        let mut closed: Vec<(Box<[u8]>, i64, Box<[u8]>)> = Vec::new();
-        let mut candidates = Vec::new();
-        let mut next_end: Option<i64> = None;
-        let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
-        for key_group in self.key_groups.clone() {
-            let prefix = key_group.to_be_bytes();
-            for row in self
-                .db
-                .iterator(IteratorMode::From(&prefix, Direction::Forward))
-            {
-                let (key, value) = row.map_err(re)?;
-                if key.len() < MIN_KEY_LEN || key[..KEY_GROUP_LEN] != prefix {
-                    break;
-                }
-                let end = i64::from_le_bytes(value[..8].try_into().expect("session end"));
-                if calendar.is_some() {
-                    candidates.push((key, value, end));
-                    continue;
-                }
-                if end > watermark {
-                    next_end = Some(next_end.map_or(end, |previous| previous.min(end)));
-                    continue;
-                }
-                writes.delete(&key)?;
-                closed.push((key, end, value[8..].into()));
-            }
-        }
-        if let Some(calendar) = calendar {
-            let ends = candidates
-                .iter()
-                .map(|(_, _, end)| *end)
-                .collect::<Vec<_>>();
-            for ((key, value, end), deadline) in
-                candidates.into_iter().zip(calendar.exclusive_ends(&ends))
-            {
-                if deadline > watermark {
-                    next_end = Some(next_end.map_or(deadline, |previous| previous.min(deadline)));
-                    continue;
-                }
-                writes.delete(&key)?;
-                closed.push((key, end, value[8..].into()));
-            }
-        }
-        self.next_exclusive_end = next_end;
-        closed.sort_unstable_by(|a, b| {
-            let left = (
-                &a.0[KEY_GROUP_LEN..a.0.len() - SESSION_START_LEN],
-                session_start_from(&a.0[a.0.len() - SESSION_START_LEN..]),
-            );
-            let right = (
-                &b.0[KEY_GROUP_LEN..b.0.len() - SESSION_START_LEN],
-                session_start_from(&b.0[b.0.len() - SESSION_START_LEN..]),
-            );
-            left.cmp(&right)
-        });
-        let owners = if self.state_codec.has_memberships() {
-            closed.iter().map(|row| row.0.clone()).collect::<Vec<_>>()
-        } else {
-            Vec::new()
-        };
-        let sessions = self.into_sessions(closed, false)?;
-        for owner in owners {
-            self.state_codec.delete_owner_into(&mut writes, &owner)?;
-        }
-        writes.finish()?;
+        let mut sessions = Vec::new();
+        self.visit_closed_batches(
+            watermark,
+            calendar,
+            None,
+            1024,
+            4 * 1024 * 1024,
+            &mut |batch| {
+                sessions.extend(batch);
+                Ok(())
+            },
+        )?;
         Ok(sessions)
     }
 
