@@ -199,6 +199,8 @@ public final class StockOverFoldStateContract implements StockStateContract {
       case SMALLINT:
       case INTEGER:
       case BIGINT:
+      case FLOAT:
+      case DOUBLE:
       case BOOLEAN:
       case CHAR:
       case VARCHAR:

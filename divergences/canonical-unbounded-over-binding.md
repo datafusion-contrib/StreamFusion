@@ -19,8 +19,9 @@ is released before reporting an exception so release callbacks cannot erase the 
 
 The initial scalar binding qualifies BIGINT, FLOAT and DOUBLE arithmetic. The resumed implementation
 also uses the existing scalar key codec for composite integer, boolean, string, decimal and temporal
-keys; no key is re-encoded through a BIGINT carrier. Unbounded decimal accumulators, DISTINCT,
-views, floating-point/nested keys and the remaining connector/version/failure protocols are
+keys; no key is re-encoded through a BIGINT carrier. Additional decimal accumulators, DISTINCT
+memberships and processing-time ROW keys are authored but await both-release qualification.
+Floating-point partition keys, wider views and the remaining connector/version/failure protocols are
 unfinished work in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569), not
 alternative compatibility formats. Benchmarking is explicitly deferred.
 
@@ -42,3 +43,10 @@ NOT NULL. The Arrow schema therefore describes the nullable physical slot, while
 serializer and logical row type remain unchanged. This follows Comet's export of actual vector
 fields through the moved Arrow ownership boundary. Required ordinary fields retain their NULL
 checks. No alternate savepoint encoding, native snapshot intermediate or input replay is added.
+
+Unbounded scalar MIN/MAX also reuse the existing direct field for FLOAT/DOUBLE. Released
+handlers use primitive less/greater comparisons, so tied signed zeros retain their first value,
+a first NaN remains retained and later NaNs do not replace a finite value. Raw transfers preserve
+that field rather than rebuilding an extremum from input. Additional actual-stock raw-state,
+serialized-output, pending-timer, TTL, native-recovery and clean-worker controls are authored but
+unexecuted. Bounded extrema and FIRST/LAST order metadata retain their separate gates.

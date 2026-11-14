@@ -26,6 +26,8 @@ class CanonicalUnboundedOverExtremaJobTest extends CanonicalUnboundedOverJobTest
                                 Stream.of(
                                         "BIGINT",
                                         "TINYINT",
+                                        "FLOAT",
+                                        "DOUBLE",
                                         "DECIMAL(18,2)",
                                         "DECIMAL(38,20)",
                                         "STRING")

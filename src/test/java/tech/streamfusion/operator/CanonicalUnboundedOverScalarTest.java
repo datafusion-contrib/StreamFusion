@@ -106,6 +106,8 @@ class CanonicalUnboundedOverScalarTest {
                 "TINYINT",
                 "INT",
                 "BIGINT",
+                "FLOAT",
+                "DOUBLE",
                 "DECIMAL(18,2)",
                 "DECIMAL(38,20)",
                 "BOOLEAN",
@@ -185,13 +187,26 @@ class CanonicalUnboundedOverScalarTest {
   private void verifyInterchange(Plan plan, boolean stockStore, boolean nativeStore)
       throws Exception {
     var prefix =
-        List.of(
-            plan.row(Long.MIN_VALUE, 10000000000000000L),
-            plan.row(Long.MIN_VALUE, 1L),
-            plan.row(Long.MIN_VALUE, -10000000000000000L),
-            plan.row(null, 3L),
-            plan.row(Long.MAX_VALUE, null),
-            plan.row(null, null));
+        new ArrayList<RowData>(
+            List.of(
+                plan.row(Long.MIN_VALUE, 10000000000000000L),
+                plan.row(Long.MIN_VALUE, 1L),
+                plan.row(Long.MIN_VALUE, -10000000000000000L),
+                plan.row(null, 3L),
+                plan.row(Long.MAX_VALUE, null),
+                plan.row(null, null)));
+    if (plan.extrema)
+      prefix.addAll(
+          List.of(
+              plan.row(8L, 9L),
+              plan.row(8L, 10L),
+              plan.row(8L, -5L),
+              plan.row(9L, 7L),
+              plan.row(9L, 8L),
+              plan.row(9L, 9L),
+              plan.row(10L, 8L),
+              plan.row(10L, 7L),
+              plan.row(10L, 9L)));
     var suffix =
         List.of(plan.row(Long.MIN_VALUE, 2L), plan.row(null, 5L), plan.row(Long.MAX_VALUE, 7L));
     long allocated = NativeAllocator.SHARED.getAllocatedMemory();
@@ -395,7 +410,7 @@ class CanonicalUnboundedOverScalarTest {
     final int timeColumn;
     final boolean rows;
     final long ttl;
-    final boolean countOnly;
+    final boolean countOnly, extrema;
     final boolean distinct;
     final boolean binaryRowKeys;
 
@@ -447,6 +462,7 @@ class CanonicalUnboundedOverScalarTest {
       this.rows = rows;
       this.ttl = ttl;
       this.countOnly = countOnly;
+      this.extrema = extrema;
       this.distinct = distinct;
       var config = new Configuration();
       config.setString("streamfusion.native.enabled", "false");
@@ -676,7 +692,7 @@ class CanonicalUnboundedOverScalarTest {
       CanonicalOverKeyFixture.set(row, input, key);
       row.setField(
           1,
-          distinct
+          distinct || extrema
               ? CanonicalOverDistinctValueFixture.number(input.getTypeAt(1), value)
               : CanonicalOverValueFixture.number(input.getTypeAt(1), value));
       return row;

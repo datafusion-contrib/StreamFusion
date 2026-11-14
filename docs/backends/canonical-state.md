@@ -2440,12 +2440,14 @@ execution on Flink 1.18 and 2.2 in the final testing window; no passing evidence
 ## Unbounded OVER extrema binding awaiting qualification
 
 The existing raw fold bridge now binds the single nullable stock MIN/MAX field for integral,
-decimal, string/CHAR, boolean, date, time and timestamp values. Processing-time and event-time
+FLOAT/DOUBLE, decimal, string/CHAR, boolean, date, time and timestamp values. Processing-time and event-time
 unbounded ROWS/RANGE use the same scalar projection; event-time owners retain their released
 V1 polling or V2 callback policy, pending rows and cleanup contract. No native accumulator or
 checkpoint encoding changes. New raw-state/TTL, native-recovery, planner and clean-worker
-controls await testing on Flink 1.18 and 2.2. Floating extrema, bounded extrema with views and
-FIRST/LAST_VALUE order metadata remain outside this extension.
+controls await testing on Flink 1.18 and 2.2. Floating controls retain first-NaN values and
+both signed-zero arrival orders in raw state and serialized output; they use the released primitive
+comparison policy. Bounded extrema with views and FIRST/LAST_VALUE order metadata remain outside
+this extension.
 
 COUNT over the same scalar argument types uses its existing non-null reader and released
 BIGINT accumulator, allowing mixed MIN/MAX/COUNT folds without a numeric-only argument gate.

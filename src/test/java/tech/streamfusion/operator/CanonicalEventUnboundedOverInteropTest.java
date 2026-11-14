@@ -571,7 +571,19 @@ class CanonicalEventUnboundedOverInteropTest {
       nativeOp.open();
       time(stock, 100);
       time(nativeOp, 100);
-      var prefix = List.of(plan.row(1L, 3L, 1), plan.row(null, null, 1));
+      var prefix = new ArrayList<RowData>(List.of(plan.row(1L, 3L, 1), plan.row(null, null, 1)));
+      if (plan.extrema)
+        prefix.addAll(
+            List.of(
+                plan.row(8L, 9L, 1),
+                plan.row(8L, 10L, 1),
+                plan.row(8L, -5L, 1),
+                plan.row(9L, 7L, 1),
+                plan.row(9L, 8L, 1),
+                plan.row(9L, 9L, 1),
+                plan.row(10L, 8L, 1),
+                plan.row(10L, 7L, 1),
+                plan.row(10L, 9L, 1)));
       assertTrue(plan.stockInput(stock, prefix).isEmpty());
       assertTrue(plan.nativeInput(nativeOp, prefix).isEmpty());
       stock.processWatermark(new Watermark(1));
@@ -820,7 +832,7 @@ class CanonicalEventUnboundedOverInteropTest {
     final boolean rows;
     final int version;
     final long ttl;
-    final boolean countOnly;
+    final boolean countOnly, extrema;
     final tech.streamfusion.planner.stream.OverConstantArguments constants;
 
     Plan(String type, boolean rows, boolean global, long ttl) throws Exception {
@@ -976,6 +988,7 @@ class CanonicalEventUnboundedOverInteropTest {
       this.ttl = ttl;
       this.version = version;
       this.countOnly = countOnly;
+      this.extrema = extrema;
       var config = new Configuration();
       config.setString("streamfusion.native.enabled", "false");
       config.setString("table.exec.state.ttl", ttl + " ms");
@@ -1237,7 +1250,11 @@ class CanonicalEventUnboundedOverInteropTest {
     RowData row(Long key, Long value, long timestamp) {
       var row = new GenericRowData(input.getFieldCount());
       CanonicalOverKeyFixture.set(row, input, key);
-      row.setField(1, CanonicalOverValueFixture.number(input.getTypeAt(1), value));
+      row.setField(
+          1,
+          extrema
+              ? CanonicalOverDistinctValueFixture.number(input.getTypeAt(1), value)
+              : CanonicalOverValueFixture.number(input.getTypeAt(1), value));
       row.setField(timeColumn, TimestampData.fromEpochMillis(timestamp));
       return row;
     }
@@ -1293,7 +1310,13 @@ class CanonicalEventUnboundedOverInteropTest {
     }
 
     private String value(RowData row) {
-      if (countOnly) return CanonicalOverValueFixture.serialized(row, output);
+      if (countOnly
+          || extrema
+              && (input.getTypeAt(1).is(org.apache.flink.table.types.logical.LogicalTypeRoot.FLOAT)
+                  || input
+                      .getTypeAt(1)
+                      .is(org.apache.flink.table.types.logical.LogicalTypeRoot.DOUBLE)))
+        return CanonicalOverValueFixture.serialized(row, output);
       var values = new ArrayList<String>();
       for (int i = 0; i < output.getFieldCount(); i++) {
         Object value =

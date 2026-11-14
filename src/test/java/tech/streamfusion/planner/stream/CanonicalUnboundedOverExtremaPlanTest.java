@@ -22,6 +22,8 @@ class CanonicalUnboundedOverExtremaPlanTest {
                 "TINYINT",
                 "INT",
                 "BIGINT",
+                "FLOAT",
+                "DOUBLE",
                 "DECIMAL(18,2)",
                 "DECIMAL(38,20)",
                 "STRING",

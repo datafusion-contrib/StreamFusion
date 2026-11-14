@@ -2006,7 +2006,7 @@ qualification remain separate.
 
 ### Unbounded scalar MIN/MAX awaiting qualification
 
-The stock fold adapter now admits existing unbounded MIN/MAX over integral, decimal, text,
+The stock fold adapter now admits existing unbounded MIN/MAX over integral, FLOAT/DOUBLE, decimal, text,
 boolean, date, time and timestamp values. Each maps directly to the released single nullable
 accumulator field, including the untouched all-NULL state. Existing processing TTL and event
 pending/timer policies are preserved for ROWS/RANGE and both released event-time implementations.
@@ -2014,7 +2014,10 @@ Native accumulator and checkpoint formats are unchanged. New component controls 
 stock state and continuation through empty returns, TTL and ordinary native recovery; planner
 and clean-worker matrices include ordinary/compiled submission, both engine orders and rescaling.
 These additions await the final local qualification window on both release lines. Floating
-MIN/MAX, bounded extrema and FIRST/LAST_VALUE order metadata are not included.
+controls retain first-NaN state and each signed-zero arrival order, with complete raw state and
+serialized output comparisons through pending timers, no-input returns and TTL. Released
+handlers and native folds use primitive comparisons rather than boxed DISTINCT equality.
+Bounded extrema and FIRST/LAST_VALUE order metadata are not included.
 
 COUNT over the same scalar argument types uses its existing non-null reader and released
 BIGINT accumulator, allowing mixed MIN/MAX/COUNT folds without a numeric-only argument gate.
