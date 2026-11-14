@@ -356,8 +356,14 @@ above do not establish performance for the expanded matrix.
 
 The terminal sink does not observe watermarks. When only native Calcs without
 `CURRENT_WATERMARK` separate it from an assigner, the planner retains whole
-Arrow batches instead of splitting at unobservable eager emissions. Windows,
-other intervening operators and watermark-observing Calcs retain the exact
+Arrow batches instead of splitting at unobservable eager emissions. Append sinks
+also admit native exchanges, mini-batch assigners and inner joins with insert-only
+inputs. For MOR with
+explicit commit-time ordering and precombine, this proof also crosses native
+exchanges, mini-batch assigners, regular joins and non-windowed aggregates without
+user functions. Event-time ordering and precombine-disabled writes retain their
+flush positions. Windows,
+unknown intervening operators and watermark-observing Calcs retain the exact
 per-row boundaries. The watermark expression and NULL validation remain intact.
 
 `NativeHudiSourceTest` uses stock Hudi SQL writes, compares stock/native SQL results,

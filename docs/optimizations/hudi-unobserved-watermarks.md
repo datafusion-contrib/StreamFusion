@@ -10,8 +10,21 @@ These are inclusive sample shares, not independent costs or throughput gains.
 The Hudi sink does not consume watermarks. Its planner now retains whole batches
 through a terminal chain of native Calcs when their original programs contain no
 `CURRENT_WATERMARK` call. Candidate evaluation, NULL rowtime failure, periodic
-progress and final maximum watermark remain. Unknown Calc programs, other operators
-and observable watermark expressions preserve the original eager boundaries.
+progress and final maximum watermark remain. Append sinks can also cross native
+exchanges, mini-batch assigners and inner joins with two insert-only inputs.
+For MOR sinks explicitly configured
+with commit-time ordering and precombine, the proof also crosses native exchanges,
+mini-batch assigners, regular joins and non-windowed aggregates. These sinks retain the final upsert per
+key, so unobserved flush positions do not select event-time winners. User-function
+calls stop this broader rewrite. Event-time ordering, precombine-disabled writes,
+windows, unknown operators/programs and observable watermark expressions retain
+the original eager boundaries. A Q4 diagnostic profile attributed 35.6% of CPU
+samples to regular-join watermark flushing. The broader rewrite reduced the
+two-million-event Q4 heap/no-mini-batch native diagnostic from 82.2 seconds to a
+2.68-second median over three measured trials. The matching stock median was
+4.82 seconds and the previous path was 142.39 seconds. Native medians beat stock
+in all four heap/RocksDB and mini-batch configurations, by 1.55×–6.82×. Full
+values, ranges and resources are recorded with the Q4 observations linked below.
 The rewrite copies only the terminal branch, preserving shared producers.
 
 On the two-million-event, four-partition Q0 job, one warmup and three rotating

@@ -332,6 +332,8 @@ class NexmarkHudiBenchmark {
         assertTrue(plan.contains("NativeHudiSink"), plan + "\n" + scan.explainSummary());
         assertFalse(plan.contains("RowDataToArrow"), plan);
         assertFalse(plan.contains("ArrowToRow"), plan);
+        if (List.of("q3", "q4", "q20", "q23").contains(query.label))
+          assertTrue(plan.contains("watermarkGranularity=[batch]"), plan);
       }
       var opened = new java.util.concurrent.atomic.AtomicBoolean();
       Path stateDirectory =

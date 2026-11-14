@@ -82,6 +82,12 @@ Arroyo's expression watermark generator forwards a whole record batch before
 broadcasting progress. Flink's eager per-row emissions require finer boundaries
 when a window or `CURRENT_WATERMARK` can observe them. Before a terminal Hudi sink,
 StreamFusion uses whole batches only across a proven chain of native Calcs that
-does not read the watermark. It still evaluates every candidate and rejects NULL
-rowtime. The planner copies this branch rather than changing shared producers;
+does not read the watermark. Append sinks also admit native exchanges, mini-batch
+assigners and inner joins whose inputs are insert-only. For MOR commit-time
+ordering with precombine, the
+proof also crosses native exchanges, mini-batch assigners, regular joins and
+non-windowed aggregates. User-function instances stop this broader proof;
+stateless generated built-ins without user dependencies do not. Event-time
+ordering and precombine-disabled writes retain their original flush positions.
+It still evaluates every candidate and rejects NULL rowtime. The planner copies this branch rather than changing shared producers;
 all unknown or watermark-sensitive downstream paths keep the existing boundaries.

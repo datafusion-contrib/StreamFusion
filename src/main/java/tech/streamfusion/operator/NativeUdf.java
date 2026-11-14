@@ -315,6 +315,16 @@ public final class NativeUdf {
       return descriptors.length == 0;
     }
 
+    public boolean hasUserFunctions() {
+      for (Descriptor descriptor : descriptors) {
+        ScalarFunction function = descriptor.function;
+        if (function != null
+            && !(function instanceof FlinkExpressionFunction
+                && ((FlinkExpressionFunction) function).functions().isEmpty())) return true;
+      }
+      return false;
+    }
+
     int[] rowInputColumns() {
       return rowInputColumns == null ? null : rowInputColumns.clone();
     }

@@ -1,5 +1,6 @@
 package tech.streamfusion.planner.stream;
 
+import java.util.ArrayList;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rex.RexCall;
 import org.apache.calcite.rex.RexVisitorImpl;
@@ -9,6 +10,7 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalR
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink;
 import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
 import org.apache.flink.table.planner.plan.utils.UpsertKeyUtil;
+import org.apache.hudi.configuration.FlinkOptions;
 import org.apache.hudi.configuration.OptionsResolver;
 import org.apache.hudi.table.HoodieTableSink;
 import tech.streamfusion.hudi.HudiSinkPlan;
@@ -68,7 +70,14 @@ final class HudiSinkMatcher {
               materializationKeys,
               false);
     }
-    input = wholeBatchesBeforeSink(input);
+    boolean terminalUpserts =
+        !OptionsResolver.isAppendMode(table.getConf())
+            && table.getConf().get(FlinkOptions.PRE_COMBINE)
+            && "COMMIT_TIME_ORDERING"
+                .equals(table.getConf().toMap().get("hoodie.write.record.merge.mode"));
+    input =
+        wholeBatchesBeforeSink(
+            input, terminalUpserts, OptionsResolver.isAppendMode(table.getConf()));
     return new StreamPhysicalNativeHudiSink(
         sink.getCluster(),
         sink.getTraitSet(),
@@ -80,12 +89,44 @@ final class HudiSinkMatcher {
         NativePlanDetails.from(sink));
   }
 
-  private static RelNode wholeBatchesBeforeSink(RelNode input) {
+  private static RelNode wholeBatchesBeforeSink(
+      RelNode input, boolean terminalUpserts, boolean appendOnly) {
     if (input instanceof StreamPhysicalNativeWatermarkAssigner)
       return ((StreamPhysicalNativeWatermarkAssigner) input).wholeBatches();
-    if (!(input instanceof StreamPhysicalNativeCalc)) return input;
-    var program = ((StreamPhysicalNativeCalc) input).sourceProgram();
-    if (program == null) return input;
+    if (input instanceof StreamPhysicalNativeCalc) {
+      var calc = (StreamPhysicalNativeCalc) input;
+      if (calc.hasUserFunctions()) return input;
+      if (observesWatermarks(calc)) return input;
+    } else if (!canCross(input, terminalUpserts, appendOnly)) {
+      return input;
+    }
+    var children = new ArrayList<RelNode>();
+    boolean changed = false;
+    for (RelNode child : input.getInputs()) {
+      var replacement = wholeBatchesBeforeSink(child, terminalUpserts, appendOnly);
+      children.add(replacement);
+      changed |= replacement != child;
+    }
+    return changed ? input.copy(input.getTraitSet(), children) : input;
+  }
+
+  private static boolean canCross(RelNode input, boolean terminalUpserts, boolean appendOnly) {
+    if (input instanceof StreamPhysicalNativeColumnarExchange
+        || input instanceof StreamPhysicalNativeMiniBatchAssigner)
+      return terminalUpserts || appendOnly;
+    if (input instanceof StreamPhysicalNativeColumnarGroupAggregate
+        || input instanceof StreamPhysicalNativeColumnarLocalGroupAggregate) return terminalUpserts;
+    if (input instanceof StreamPhysicalNativeColumnarUpdatingJoin) {
+      var join = (StreamPhysicalNativeColumnarUpdatingJoin) input;
+      return (terminalUpserts || appendOnly && join.isInsertOnlyInnerJoin())
+          && !join.hasUserFunctions();
+    }
+    return false;
+  }
+
+  private static boolean observesWatermarks(StreamPhysicalNativeCalc calc) {
+    var program = calc.sourceProgram();
+    if (program == null) return true;
     var observes = new boolean[1];
     var visitor =
         new RexVisitorImpl<Void>(true) {
@@ -96,10 +137,6 @@ final class HudiSinkMatcher {
           }
         };
     program.getExprList().forEach(expression -> expression.accept(visitor));
-    if (observes[0]) return input;
-    var child = wholeBatchesBeforeSink(input.getInput(0));
-    return child == input.getInput(0)
-        ? input
-        : input.copy(input.getTraitSet(), java.util.List.of(child));
+    return observes[0];
   }
 }

@@ -48,28 +48,34 @@ class HudiExpandedCoverageTest {
         .setInteger("table.exec.resource.default-parallelism", 1);
     nativeSql.executeSql(source);
     var scan = NativePlanner.install(nativeSql);
-    for (boolean observed : List.of(false, true)) {
+    for (String kind : List.of("plain", "join", "observed")) {
+      boolean observed = kind.equals("observed");
       String expression = observed ? "CURRENT_WATERMARK(ts)" : "ts";
       for (var sql : List.of(stock, nativeSql)) {
-        String name = "result_" + observed + "_" + (sql == stock ? "stock" : "native");
+        String name = "result_" + kind + "_" + (sql == stock ? "stock" : "native");
         sql.executeSql(
             "CREATE TABLE "
                 + name
                 + " (id BIGINT,ts TIMESTAMP(3)) WITH ("
                 + watermarkOptions(name, false)
                 + ")");
-        String insert = "INSERT INTO " + name + " SELECT id," + expression + " FROM timed";
+        String select =
+            kind.equals("join")
+                ? "SELECT a.id,a.ts FROM timed a JOIN timed b ON a.id=b.id"
+                : "SELECT id," + expression + " FROM timed";
+        String insert = "INSERT INTO " + name + " " + select;
         if (sql == nativeSql) {
           String plan = sql.explainSql(insert);
           assertTrue(plan.contains("NativeHudiSource"), plan + scan.explainSummary());
           assertTrue(plan.contains("NativeHudiSink"), plan);
           assertEquals(!observed, plan.contains("watermarkGranularity=[batch]"), plan);
+          if (kind.equals("join")) assertTrue(plan.contains("NativeColumnarUpdatingJoin"), plan);
         }
         sql.executeSql(insert).await();
       }
       var reader = environment();
       for (String engine : List.of("stock", "native")) {
-        String name = "result_" + observed + "_" + engine;
+        String name = "result_" + kind + "_" + engine;
         reader.executeSql(
             "CREATE TABLE "
                 + name
@@ -78,8 +84,7 @@ class HudiExpandedCoverageTest {
                 + ")");
       }
       assertEquals(
-          read(reader, "result_" + observed + "_stock"),
-          read(reader, "result_" + observed + "_native"));
+          read(reader, "result_" + kind + "_stock"), read(reader, "result_" + kind + "_native"));
     }
   }
 
@@ -91,6 +96,86 @@ class HudiExpandedCoverageTest {
         + "'hoodie.populate.meta.fields'='"
         + metadata
         + "','hoodie.datasource.write.recordkey.field'='id','hoodie.parquet.block.size'='1048576'";
+  }
+
+  @Test
+  void terminalCommitTimeUpsertsBatchThroughRegularJoinAndAggregate() throws Exception {
+    var seed = environment();
+    String source =
+        "CREATE TABLE timed (id BIGINT,ts TIMESTAMP(3),WATERMARK FOR ts AS ts - INTERVAL '1'"
+            + " SECOND) WITH ("
+            + watermarkOptions("aggregate_input", true)
+            + ")";
+    seed.executeSql(source);
+    seed.executeSql(
+            "INSERT INTO timed VALUES (1,TIMESTAMP '2026-01-01 00:00:00'),"
+                + "(2,TIMESTAMP '2026-01-01 00:00:10'),(3,TIMESTAMP '2026-01-01 00:00:05')")
+        .await();
+    for (boolean miniBatch : List.of(false, true)) {
+      for (String mode : List.of("commit", "event", "no_precombine", "user_function")) {
+        var results = new ArrayList<List<String>>();
+        for (boolean nativeEngine : List.of(false, true)) {
+          var sql = environment();
+          var config = sql.getConfig().getConfiguration();
+          config.setInteger("table.exec.resource.default-parallelism", 1);
+          config.setString("table.exec.mini-batch.enabled", Boolean.toString(miniBatch));
+          if (miniBatch) {
+            config.setString("table.exec.mini-batch.allow-latency", "1 s");
+            config.setString("table.exec.mini-batch.size", "100");
+          }
+          sql.executeSql(source);
+          sql.createTemporarySystemFunction("user_identity", StatefulIdentity.class);
+          String name = "aggregate_" + mode + "_" + miniBatch + "_" + nativeEngine;
+          String ddl =
+              "CREATE TABLE aggregate_result (id BIGINT,total BIGINT NOT NULL,PRIMARY KEY(id) NOT"
+                  + " ENFORCED) WITH ('connector'='hudi','path'='"
+                  + temporary.resolve(name).toUri()
+                  + "','table.type'='MERGE_ON_READ','write.operation'='upsert','write.tasks'='1',"
+                  + "'read.tasks'='1','read.source-v2.enabled'='true','metadata.enabled'='false',"
+                  + "'index.type'='BUCKET','hoodie.bucket.index.num.buckets'='1',"
+                  + "'write.table.version'='9','precombine.field'='total','write.precombine'='"
+                  + !mode.equals("no_precombine")
+                  + "','hoodie.write.record.merge.mode'='"
+                  + (mode.equals("event") ? "EVENT_TIME_ORDERING" : "COMMIT_TIME_ORDERING")
+                  + "','hoodie.logfile.data.block.format'='parquet','compaction.async.enabled'='false',"
+                  + "'compaction.schedule.enabled'='false')";
+          sql.executeSql(ddl);
+          var scan = nativeEngine ? NativePlanner.install(sql) : null;
+          String value = "COALESCE(SUM(2-b.id),CAST(0 AS BIGINT))";
+          if (mode.equals("user_function")) value = "user_identity(" + value + ")";
+          String insert =
+              "INSERT INTO aggregate_result SELECT a.id % 2,"
+                  + value
+                  + " FROM timed a"
+                  + " JOIN timed b ON a.id=b.id GROUP BY a.id % 2";
+          if (nativeEngine) {
+            String plan = sql.explainSql(insert);
+            assertTrue(plan.contains("NativeHudiSource"), plan + scan.explainSummary());
+            assertTrue(plan.contains("NativeHudiSink"), plan + scan.explainSummary());
+            assertTrue(plan.contains("NativeColumnarUpdatingJoin"), plan);
+            assertTrue(plan.contains("NativeColumnarGroupAggregate"), plan);
+            assertEquals(
+                mode.equals("commit"), plan.contains("watermarkGranularity=[batch]"), plan);
+          }
+          sql.executeSql(insert).await();
+          var reader = environment();
+          reader.executeSql(ddl);
+          results.add(read(reader, "aggregate_result"));
+        }
+        assertEquals(2, results.get(0).size());
+        assertEquals(results.get(0), results.get(1), mode + " miniBatch=" + miniBatch);
+      }
+    }
+  }
+
+  public static final class StatefulIdentity
+      extends org.apache.flink.table.functions.ScalarFunction {
+    private long calls;
+
+    public Long eval(Long value) {
+      calls++;
+      return value;
+    }
   }
 
   @Test
