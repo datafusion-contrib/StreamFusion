@@ -58,6 +58,25 @@ class NativeSourceTest(unittest.TestCase):
             with self.assertRaises(subprocess.CalledProcessError):
                 source.verify("owner/repo", 123)
 
+    def test_release_hudi_requires_its_successful_build_and_live_artifact(self):
+        sha = "a" * 40
+        producer = {"name": "hudi-benchmark", "conclusion": "success", "steps": [
+            {"name": "Build the two production release libraries once", "conclusion": "success"}]}
+        artifact = {"name": "hudi-release-native-" + sha, "expired": False}
+        responses = [{"head_sha": sha}, {"jobs": [producer]}, {"artifacts": [artifact]}]
+        with patch.object(source, "api", side_effect=responses), patch.object(source.subprocess, "run") as run:
+            self.assertEqual(artifact["name"], source.verify("owner/repo", 123, release_hudi=True))
+            self.assertEqual("diff", run.call_args_list[1].args[0][1])
+        artifact["expired"] = True
+        with patch.object(source, "api", side_effect=responses), patch.object(source.subprocess, "run"):
+            with self.assertRaisesRegex(ValueError, "missing or expired"):
+                source.verify("owner/repo", 123, release_hudi=True)
+        producer["steps"][0]["conclusion"] = "skipped"
+        with patch.object(source, "api", side_effect=responses), patch.object(source.subprocess, "run") as run:
+            with self.assertRaisesRegex(ValueError, "did not build"):
+                source.verify("owner/repo", 123, release_hudi=True)
+            run.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

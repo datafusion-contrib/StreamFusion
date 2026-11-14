@@ -51,9 +51,15 @@ isolated release comparison combined this proof with an allocation-owner candida
 Q12 native medians were 6,121 -> 400 ms at 200k events, versus 634 ms stock after
 the change (15.3× over baseline, 1.59× over stock). Q8 did not establish a benefit
 from the allocation candidate, which was removed. The retained configuration is
-being rechecked; [all 72 isolated observations](../benchmarks/hudi-java-comparison-20261114.json)
+measured in the repeat below; [all 72 isolated observations](../benchmarks/hudi-java-comparison-20261114.json)
 remain available. Processing-time count checks permit empty output when a
 bounded job completes before its first timer; they are not full-value parity.
+
+The [retained-configuration repeat](../benchmarks/hudi-calc-transport-20261114.json)
+removes the owner candidate and combines the proof with Calc transport pruning and
+empty-result suppression. Q12 native medians are 8,138 -> 529 ms (15.39×), versus
+809 ms stock, in that isolated 200k-event run. Q8 improves 1.13× but still loses
+to stock by 3.66×. The full two-million-event matrix remains pending.
 
 An awake Q9 CPU capture then identified MOR log serialization (32.9% of samples)
 and its encoder handoff (25.7%, inclusive). Java previously filled metadata for

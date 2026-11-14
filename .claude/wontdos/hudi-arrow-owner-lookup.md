@@ -16,7 +16,9 @@ stock moved 1,190 -> 1,312 ms. This does not establish a regression either.
 Q12 also included the independent processing-time batch proof and improved
 6,121 -> 400 ms. That combined result does not attribute a gain to owner lookup.
 All count/full-value, encoder, resource cleanup and source/library checks passed.
-The retained batch proof is rechecked after removing this allocation candidate.
+The retained batch proof was rechecked after removing this allocation candidate,
+together with Calc transport changes; the [repeat](../../docs/benchmarks/hudi-calc-transport-20261114.json)
+retains those measurements separately.
 
 [All 72 observations and provenance](../../docs/benchmarks/hudi-java-comparison-20261114.json)
 and [the patch against `3da6a654d`](hudi-arrow-owner-lookup.patch) remain available.

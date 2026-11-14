@@ -1,5 +1,5 @@
 {
-  "status": "focused-hosted-candidate-passed-retained-configuration-recheck-pending",
+  "status": "focused-retained-configuration-passed-full-matrix-pending",
   "scope": "Focused Q12 processing-time batching comparison; full matrix remains pending.",
   "method": "Unchanged Hudi source/sink Nexmark SQL, four physical partitions/tasks, heap state, mini-batching off, release libraries, one warmup and three rotating trials. Processing-time bounded counts rather than full-value parity.",
   "native_tree": "16d4c0052bb61c9a6c783bd03bdafc6c02fe9896",
@@ -1474,5 +1474,11 @@
     "report": "hudi-java-comparison-20261114.json",
     "workflow_run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43619138937",
     "note": "The combined processing-time proof/allocation candidate improved Q12, but Q8 did not establish an allocation-owner gain. That allocation candidate was removed; the retained configuration and additional Calc work are rechecked separately."
+  },
+  "retained_configuration_comparison": {
+    "status": "passed",
+    "report": "hudi-calc-transport-20261114.json",
+    "workflow_run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43624540633",
+    "scope": "Focused 200k-event Q8/Q12 comparison with all 72 observations; full matrix pending"
   }
 }

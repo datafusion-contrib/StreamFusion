@@ -23,6 +23,22 @@ to a supported JDK and prevent system sleep for local timings. The
 [processing-time investigation](hudi-processing-time-batches-20261114.json)
 retains the local diagnostic and excluded contended attempts.
 
+For complete qualification, select suite `hudi-benchmark` with
+`hudi_full_matrix=true` and set `native_run` to a successful focused release
+producer. The full mode uses two million events and every unchanged query in four
+isolated jobs: heap/RocksDB × mini-batching off/on. Native source/toolchain inputs
+must match the producer, its release-build step must have succeeded, and its
+library artifact must still be available. Each job downloads those same libraries
+and records their hashes. No native rebuild is required for Java-only follow-ups.
+
+`bin/bench-hudi-matrix.py` checks all 198 timing identities plus the exact Q7 stock
+planner exclusion per configuration, full-value/count validation, fixed resources,
+and actual RocksDB engagement. Partial or duplicate reports fail validation. Source
+commit, producer, platform, library hashes and every trial remain in the artifacts.
+Generated runtime tables are removed on success and failure. Focused and full
+modes have separate workflow concurrency groups; run the required CI, upstream
+Flink and docs gates for the final candidate after recording the results.
+
 The first [isolated comparison](hudi-java-comparison-20261114.json) passed on Linux
 x86-64 with four available processors, JDK 17.0.21, 200k events, heap state and
 mini-batching off. Two alternating baseline/candidate passes give six timed trials
@@ -38,8 +54,17 @@ per engine/query/variant. Medians in milliseconds:
 Q12 improved 15.3× over its native baseline and 1.59× over stock in this candidate.
 The Q8 ranges overlap and do not establish an owner-lookup gain; that allocation
 candidate was removed. All 72 trials, ranges and source/library hashes are retained.
-The retained batch proof and subsequent Calc transport changes are rechecked
-separately. These focused results do not qualify the full two-million-event matrix.
+The subsequent report measures the retained batch proof and Calc transport changes.
+These focused results do not qualify the full two-million-event matrix.
+
+The [retained-configuration repeat](hudi-calc-transport-20261114.json) removes the
+owner trial and adds Calc input pruning/empty-result suppression. On that runner,
+Q8 native medians are 7,824 -> 6,910 ms (1.13×), versus 1,890 ms stock and
+7,182 ms Hudi-disabled SF after the change. Q12 is 8,138 -> 529 ms (15.39×),
+versus 809 ms stock and 8,157 ms Hudi-disabled SF. It retains another 72 observations
+with the same focused workload and alternating order. Compare variants within each
+run; the two hosted runners have different absolute timings. Q8's remaining
+3.66× stock loss and the full-matrix recheck remain open.
 
 The fixture is a COW table partitioned by `sf_partition`, populated once using
 stock Hudi with a single ordered input and checkpoints disabled during seeding.

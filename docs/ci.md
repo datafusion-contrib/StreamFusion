@@ -1261,6 +1261,16 @@ and both pinned JDK releases. Locally, after compiling the requested line, use
 It checks every invocation/outcome and the number of parent clusters actually started.
 The full CI and upstream matrices remain final qualification gates.
 
+The optional startup-profile suite `hudi-benchmark` also supports
+`hudi_full_matrix=true`. It requires `native_run` from a successful focused Hudi
+release comparison. The verifier checks its release-build step, live artifact and
+unchanged native/toolchain inputs before four isolated heap/RocksDB × mini-batch
+jobs reuse the libraries. Each job runs the unchanged two-million-event Nexmark
+matrix and rejects incomplete trial identities, missing actual RocksDB engagement
+or changed validation/settings. The [Hudi benchmark guide](benchmarks/hudi-nexmark.md)
+documents the workload and evidence. Full and focused modes have separate
+concurrency groups; observe the account-wide capacity rules before dispatching.
+
 Before a dispatch, inspect active workflows across the fork and reuse their handles. Keep
 optional diagnostics separate from the candidate's full qualification campaign. When another
 task's qualification already fills the observed runner capacity, finish local preparation and

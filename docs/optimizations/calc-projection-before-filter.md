@@ -23,7 +23,16 @@ An empty Calc result is closed at the operator boundary. It does not enter downs
 window/exchange operators, where an empty fragment would still allocate transport and
 accumulator wrappers. Watermarks continue through their independent callback. This applies
 to both native and direct JVM evaluation; inputs and retained nonempty outputs keep their
-existing ownership. A focused Hudi comparison is pending for this additional optimization.
+existing ownership. Both transport changes were measured together below.
+
+The combined transport changes pass an isolated Linux release Q8 comparison at
+200k events, four source/sink tasks, heap state and mini-batching off. Two paired
+passes in both orders give six timed trials per engine/variant: native medians
+7,824 -> 6,910 ms (1.13×), Hudi-disabled SF 8,385 -> 7,182 ms. Stock in the
+candidate runs is 1,890 ms, so native remains 3.66× slower. This complete-job gain
+does not isolate the two transport changes or qualify the two-million-event
+matrix. [All 72 Q8/Q12 observations](../benchmarks/hudi-calc-transport-20261114.json)
+retain ranges, library/source hashes and unfavorable results.
 
 The release-mode Criterion A/B over a 4,096-row Q3-shaped event batch measured the filtering kernel
 at 4.01 microseconds for the former full-schema path and 1.18 microseconds after pruning projection
