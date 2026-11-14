@@ -84,7 +84,7 @@ class CanonicalRankRowKeyPlanTest {
             .filter(node -> node.getOperatorFactory() instanceof SimpleOperatorFactory)
             .map(node -> ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator())
             .filter(NativeColumnarTopNOperator.class::isInstance)
-            .toList();
+            .collect(tech.streamfusion.compat.ListCollectors.toList());
     boolean admitted =
         !mode.equals("array-key")
             && !mode.equals("row-sort")

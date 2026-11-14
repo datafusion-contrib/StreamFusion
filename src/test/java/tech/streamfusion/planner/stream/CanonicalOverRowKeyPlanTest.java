@@ -81,7 +81,7 @@ class CanonicalOverRowKeyPlanTest {
             .filter(node -> node.getOperatorFactory() instanceof SimpleOperatorFactory)
             .map(node -> ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator())
             .filter(NativeOverAggregateOperator.class::isInstance)
-            .toList();
+            .collect(tech.streamfusion.compat.ListCollectors.toList());
     boolean admitted =
         mode.equals("rows")
             || mode.equals("range")

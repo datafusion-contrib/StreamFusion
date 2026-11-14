@@ -31,7 +31,7 @@ class CanonicalUnboundedOverDistinctStateTest {
     for (String type :
         CanonicalOverDistinctValueFixture.countTypes()
             .flatMap(sql -> Stream.of(sql, sql + " NOT NULL"))
-            .toList())
+            .collect(tech.streamfusion.compat.ListCollectors.toList()))
       for (boolean rows : new boolean[] {false, true})
         for (boolean global : new boolean[] {false, true})
           for (boolean rocks : new boolean[] {false, true})
