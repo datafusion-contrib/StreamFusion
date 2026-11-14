@@ -13,6 +13,7 @@ fn emit_frame(
     build: impl FnOnce() -> Result<RecordBatch, DataFusionError>,
     receiver: &mut impl FnMut(FrameKind, RecordBatch, &mut Work) -> Result<(), DataFusionError>,
 ) -> Result<(), DataFusionError> {
+    // Builders can hold old and grown buffers together; charge that capacity before allocating.
     let bytes = key_bytes
         .saturating_add(rows.saturating_mul(fields.saturating_mul(16).saturating_add(64)))
         .saturating_mul(2)
