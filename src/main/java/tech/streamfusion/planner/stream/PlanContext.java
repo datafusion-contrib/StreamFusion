@@ -21,6 +21,7 @@ import tech.streamfusion.planner.common.StreamRule.PreparedPlan;
 final class PlanContext implements tech.streamfusion.planner.common.StreamPlanningContext {
 
   private final StreamPlanScan scan;
+  private RelNode diagnosticNode;
   private final Set<String> repeatedSources;
   private final Set<RelNode> javaJsonInputs;
   private final Map<RelNode, RelNode> originals = new IdentityHashMap<>();
@@ -94,10 +95,14 @@ final class PlanContext implements tech.streamfusion.planner.common.StreamPlanni
     scan.countSubstitution();
   }
 
+  void inspecting(RelNode node) {
+    diagnosticNode = originalNode(node);
+  }
+
   /** Records why a node the scan recognized stays on the host. */
   @Override
   public void decline(String reason) {
-    scan.recordFallback(reason);
+    scan.recordFallback(diagnosticNode, reason);
   }
 
   /** Records the final Rust/JVM function assignment for one admitted Calc or filter. */

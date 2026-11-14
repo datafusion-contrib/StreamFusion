@@ -92,6 +92,29 @@ class PreparedAdmissionTest {
   }
 
   @Test
+  void rejectionProvenanceRefersToTheOriginalRoleAfterACopy() {
+    var original = node();
+    var copy = node();
+    var scan = new StreamPlanScan();
+    var context = new PlanContext(scan, Set.of());
+    context.rememberOriginal(copy, original);
+    var config = new Configuration();
+    config.setString("streamfusion.operator.calc.enabled", "false");
+    var rule = Substitution.preparing(RelNode.class, "calc", (input, ctx) ->
+        Admission.accepted(() -> input));
+    try (NativeConfig.Scope ignored = NativeConfig.usePlannerConfig(config)) {
+      assertSame(copy, rule.apply(copy, context));
+    }
+    var rejection = scan.planningRejections().get(0);
+    assertEquals(original.getId(), rejection.nodeId());
+    assertEquals(original.getRelTypeName(), rejection.operator());
+    assertEquals(tech.streamfusion.planner.common.PlanningRejection.Scope.OPERATOR, rejection.scope());
+    assertEquals(scan.fallbackReasons().get(0), rejection.reason());
+    assertTrue(scan.explainSummary().contains("rel#" + original.getId()));
+    assertTrue(scan.explainSummary().contains("admission rejection(s)"));
+  }
+
+  @Test
   void optionalProbeErrorsYieldButAdmittedConstructionErrorsPropagate() {
     var node = node();
     var context = context();

@@ -41,6 +41,10 @@ public final class ExpressionPlanning {
     return RexExpression.encodeCalc(calc, javaJsonInput);
   }
 
+  public static Admission<EncodedExpression> prepare(RexNode expression, RelNode context) {
+    return RexExpression.prepare(expression, context).map(value -> value);
+  }
+
   public static EncodedExpression encode(RexNode expression) {
     return RexExpression.encode(expression);
   }

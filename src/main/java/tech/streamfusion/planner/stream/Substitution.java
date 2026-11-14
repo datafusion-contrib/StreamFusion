@@ -132,6 +132,7 @@ final class Substitution<T extends RelNode> {
       return null;
     }
     T typed = rule.shape().cast(node);
+    ctx.inspecting(node);
     try {
       if (!rule.matchesShape(typed)) {
         return null;

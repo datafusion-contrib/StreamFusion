@@ -10,7 +10,10 @@ import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexProgram;
 import tech.streamfusion.planner.CollectionExpressionSemantics;
 import tech.streamfusion.planner.ExpressionPlanning;
+import tech.streamfusion.planner.common.Admission;
 import tech.streamfusion.planner.common.EncodedExpression;
+import tech.streamfusion.planner.common.PreparedExpression;
+import tech.streamfusion.planner.common.StreamRule.PreparedPlan;
 
 /**
  * Recognizes a filter the native operator can run: a {@link Calc} with an input-ref projection (a
@@ -25,15 +28,11 @@ final class FilterCalcMatcher {
   private FilterCalcMatcher() {}
 
   static boolean matches(Calc calc) {
-    if (CollectionExpressionSemantics.unverifiedInput(calc)
-        || CollectionExpressionSemantics.requiresStringCarrierEvaluation(calc)) return false;
-    if (!hasFilterShape(calc)) {
-      return false;
-    }
-    if (!convertibleRow(calc.getInput().getRowType())) {
-      return false;
-    }
-    return encodedCondition(calc) != null;
+    return prepareCondition(calc).isAccepted();
+  }
+
+  static Admission<PreparedPlan> prepare(Calc calc, PlanContext context) {
+    return prepareCondition(calc).map(condition -> () -> substitute(calc, condition, context));
   }
 
   static boolean hasFilterShape(Calc calc) {
@@ -44,15 +43,27 @@ final class FilterCalcMatcher {
    * The condition encoded for the native engine, or null if it contains an unsupported operation.
    */
   static EncodedExpression encodedCondition(Calc calc) {
-    if (CollectionExpressionSemantics.requiresGeneratedEvaluation(calc.getProgram())) return null;
+    var condition = prepareCondition(calc);
+    return condition.isAccepted() ? condition.value() : null;
+  }
+
+  private static Admission<EncodedExpression> prepareCondition(Calc calc) {
+    if (!hasFilterShape(calc)) return Admission.noMatch();
+    if (CollectionExpressionSemantics.unverifiedInput(calc))
+      return Admission.declined("Calc: collection input representation is unverified for this columnar producer");
+    if (CollectionExpressionSemantics.requiresStringCarrierEvaluation(calc))
+      return Admission.declined("Calc: owned string carriers require generated scalar evaluation");
+    if (!convertibleRow(calc.getInput().getRowType()))
+      return Admission.declined("Calc: unsupported input column type");
+    if (CollectionExpressionSemantics.requiresGeneratedEvaluation(calc.getProgram()))
+      return Admission.declined("Calc: collection representations require generated evaluation");
     RexProgram program = calc.getProgram();
     RexNode condition = program.expandLocalRef(program.getCondition());
-    // Calcite folds `col = literal`, IN, and ranges into a SEARCH/Sarg; expand it back into the
-    // comparisons the native engine evaluates. The native side handles arbitrary AND/OR/NOT trees,
-    // so no disjunctive-normal-form rewrite is needed.
     RexNode expanded =
         ExpressionPlanning.expandSearch(calc.getCluster().getRexBuilder(), null, condition);
-    return ExpressionPlanning.encode(expanded, calc);
+    var encoded = ExpressionPlanning.prepare(expanded, calc);
+    return encoded.isAccepted() ? Admission.accepted(PreparedExpression.copyOf(encoded.value()))
+        : Admission.declined("Calc: " + encoded.reason());
   }
 
   /**
@@ -82,7 +93,11 @@ final class FilterCalcMatcher {
   }
 
   static RelNode substitute(Calc calc, PlanContext ctx) {
-    EncodedExpression condition = FilterCalcMatcher.encodedCondition(calc);
+    var prepared = prepare(calc, ctx);
+    return prepared.isAccepted() ? prepared.value().build() : null;
+  }
+
+  private static RelNode substitute(Calc calc, EncodedExpression condition, PlanContext ctx) {
     ctx.functionExecution("NativeFilter", condition);
     StreamPhysicalNativeFilter filter = new StreamPhysicalNativeFilter(calc, condition);
     if (filter.getInput() instanceof StreamPhysicalNativeUnnest) {

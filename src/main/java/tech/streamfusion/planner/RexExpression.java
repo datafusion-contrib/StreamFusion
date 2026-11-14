@@ -296,19 +296,27 @@ final class RexExpression implements EncodedExpression {
 
   /** The encoded expression, or null if {@code node} contains an unsupported operation. */
   static RexExpression encode(RexNode node) {
-    RexExpression encoder = new RexExpression();
-    return encoder.emit(node) ? encoder : null;
+    Admission<RexExpression> prepared = prepare(node, null);
+    return prepared.isAccepted() ? prepared.value() : null;
   }
 
   static RexExpression encode(RexNode node, org.apache.calcite.rel.RelNode context) {
+    Admission<RexExpression> prepared = prepare(node, context);
+    return prepared.isAccepted() ? prepared.value() : null;
+  }
+
+  static Admission<RexExpression> prepare(RexNode node, org.apache.calcite.rel.RelNode context) {
     RexExpression encoder = new RexExpression();
-    encoder.expressionClassLoader =
-        org.apache.flink.table.planner.utils.ShortcutUtils.unwrapClassLoader(context);
-    encoder.configure(
-        org.apache.flink.table.planner.utils.ShortcutUtils.unwrapTableConfig(context));
-    encoder.aliasedFunctionInput =
-        context.getInputs().stream().anyMatch(JvmFunctionConversions::aliasedProducer);
-    return encoder.emit(node) ? encoder : null;
+    if (context != null) {
+      encoder.expressionClassLoader =
+          org.apache.flink.table.planner.utils.ShortcutUtils.unwrapClassLoader(context);
+      encoder.configure(
+          org.apache.flink.table.planner.utils.ShortcutUtils.unwrapTableConfig(context));
+      encoder.aliasedFunctionInput =
+          context.getInputs().stream().anyMatch(JvmFunctionConversions::aliasedProducer);
+    }
+    return encoder.emit(node) ? Admission.accepted(encoder)
+        : Admission.declined(encoder.reasonOrDefault());
   }
 
   /**

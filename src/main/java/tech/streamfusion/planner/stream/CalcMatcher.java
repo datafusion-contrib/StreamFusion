@@ -32,18 +32,18 @@ final class CalcMatcher {
   }
 
   static boolean matches(Calc calc, boolean javaJsonInput) {
-    return prepareExpression(calc, javaJsonInput).isAccepted();
+    return prepareExpression(calc, javaJsonInput, true).isAccepted();
   }
 
   static Admission<PreparedPlan> prepare(Calc calc, PlanContext ctx) {
     boolean javaJsonInput = ctx.requiresJavaJsonInput(calc);
-    Admission<CalcSpec> expression = prepareExpression(calc, javaJsonInput);
+    Admission<CalcSpec> expression = prepareExpression(calc, javaJsonInput, false);
     if (!expression.isAccepted())
       return expression.status() == Admission.Status.NO_MATCH
           ? Admission.noMatch() : Admission.declined(expression.reason());
     Calc candidate = mergeProcessingTimeProjection(calc);
     if (candidate != calc) {
-      Admission<CalcSpec> merged = prepareExpression(candidate, javaJsonInput);
+      Admission<CalcSpec> merged = prepareExpression(candidate, javaJsonInput, false);
       if (merged.isAccepted()) {
         calc = candidate;
         expression = merged;
@@ -54,13 +54,14 @@ final class CalcMatcher {
     return Admission.accepted(() -> substitute(preparedCalc, preparedExpression, ctx));
   }
 
-  private static Admission<CalcSpec> prepareExpression(Calc calc, boolean javaJsonInput) {
+  private static Admission<CalcSpec> prepareExpression(
+      Calc calc, boolean javaJsonInput, boolean checkFilter) {
     if (CollectionExpressionSemantics.unverifiedInput(calc))
       return Admission.declined(
           "Calc: collection input representation is unverified for this columnar producer");
     RexProgram program = calc.getProgram();
     // The filter's column-transfer projection avoids evaluating identity expressions.
-    if (program.getCondition() != null && allInputRefs(program) && FilterCalcMatcher.matches(calc))
+    if (checkFilter && program.getCondition() != null && allInputRefs(program) && FilterCalcMatcher.matches(calc))
       return Admission.noMatch();
     if (!FilterCalcMatcher.convertibleRow(
         calc.getInput().getRowType(),
@@ -238,7 +239,7 @@ final class CalcMatcher {
    * first un-admitted node, or an expression whose native result type disagrees with the plan.
    */
   static String unsupportedReason(Calc calc) {
-    String reason = prepareExpression(calc, false).reason();
+    String reason = prepareExpression(calc, false, true).reason();
     return reason != null ? reason : "Calc: unsupported Calc expression";
   }
 }

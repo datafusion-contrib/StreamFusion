@@ -56,6 +56,7 @@ import tech.streamfusion.planner.NativePlannerExtensions;
 import tech.streamfusion.planner.RequiresRowKind;
 import tech.streamfusion.planner.common.EncodedExpression;
 import tech.streamfusion.planner.common.NativeRelDigests;
+import tech.streamfusion.planner.common.PlanningRejection;
 
 /**
  * Rewrites the host engine's optimized physical plan, replacing supported operators with native
@@ -75,7 +76,7 @@ public class StreamPlanScan implements FlinkOptimizeProgram<StreamOptimizeContex
       LoggerFactory.getLogger("tech.streamfusion.planner.PhysicalPlanScan");
 
   private final List<String> operatorTypes = new ArrayList<>();
-  private final List<String> fallbackReasons = new ArrayList<>();
+  private final List<PlanningRejection> rejections = new ArrayList<>();
   private final List<String> functionExecutions = new ArrayList<>();
   private int substitutions;
   private int jvmFunctionOperators;
@@ -130,7 +131,7 @@ public class StreamPlanScan implements FlinkOptimizeProgram<StreamOptimizeContex
         NativeConfig.usePlannerConfig(
             ShortcutUtils.unwrapTableConfig(roots.get(0)).getConfiguration())) {
       List<RelNode> optimized = optimizeConfigured(roots, finalOutput);
-      PlannerDiagnostics.logOccurrences(LOG, "StreamFusion falls back to host: ", fallbackReasons);
+      PlannerDiagnostics.logOccurrences(LOG, "StreamFusion falls back to host: ", fallbackReasons());
       PlannerDiagnostics.logOccurrences(LOG, "", functionExecutions);
       return optimized;
     }
@@ -139,7 +140,7 @@ public class StreamPlanScan implements FlinkOptimizeProgram<StreamOptimizeContex
   private List<RelNode> optimizeConfigured(List<RelNode> roots, boolean finalOutput) {
     roots = FlinkPlannerCompat.prepareTimestampComparisons(roots);
     operatorTypes.clear();
-    fallbackReasons.clear();
+    rejections.clear();
     functionExecutions.clear();
     substitutions = 0;
     jvmFunctionOperators = 0;
@@ -154,7 +155,7 @@ public class StreamPlanScan implements FlinkOptimizeProgram<StreamOptimizeContex
         tech.streamfusion.compat.FlinkStateBackendCompat.prepareNativeStateBackend(
             executionEnvironment, ShortcutUtils.unwrapTableConfig(roots.get(0)));
     if (roots.stream().anyMatch(StreamPlanScan::deltaJoinForceWouldReject)) {
-      recordFallback(
+      recordIslandFallback(roots.get(0),
           "delta join: table.optimizer.delta-join.strategy is FORCE but this optimizer block"
               + " contains a regular join and no delta join");
       LOG.info(
@@ -174,35 +175,35 @@ public class StreamPlanScan implements FlinkOptimizeProgram<StreamOptimizeContex
             + " recorded; {} Calc/filter node(s) use JVM functions)",
         substitutions,
         operatorTypes.size(),
-        fallbackReasons.size(),
+        rejections.size(),
         jvmFunctionOperators);
     return optimized;
   }
 
   private RelNode substitute(RelNode root, Set<String> repeatedSources, boolean finalOutput) {
     if (CollectionValueIdentity.observesCollectionKeyOrder(root)) {
-      recordFallback(
+      recordIslandFallback(root,
           "COLLECT formatting over binary or nested elements requires Flink's JVM key order");
       return root;
     }
     if (JvmGroupAggregateMatcher.unverifiedCollectionInputMaterialization(root)) {
-      recordFallback(
+      recordIslandFallback(root,
           "collection input materialization of NOT NULL hints requires Flink physical getters");
       return root;
     }
     if (CollectionValueIdentity.crossesBoundary(root, finalOutput)) {
-      recordFallback(
+      recordIslandFallback(root,
           "collection value representation requires a final projection or fused consumer");
       return root;
     }
     if (LegacyBinaryResults.crossesBoundary(root, finalOutput)) {
-      recordFallback(
+      recordIslandFallback(root,
           "legacy binary variable bytes require a final projection or fused scalar consumer");
       return root;
     }
     Set<RelNode> javaJsonInputs = JsonStringIdentity.finalUnionJsonInputs(root, finalOutput);
     if (javaJsonInputs == null) {
-      recordFallback("JSON string identity requires a final projection or a fused scalar consumer");
+      recordIslandFallback(root, "JSON string identity requires a final projection or a fused scalar consumer");
       return root;
     }
     // Pass 1 substitutes native (columnar) operators.
@@ -213,7 +214,7 @@ public class StreamPlanScan implements FlinkOptimizeProgram<StreamOptimizeContex
     if (!javaJsonInputs.isEmpty() && substituted instanceof ColumnarInput) {
       substitutions = previousSubstitutions;
       rollbackFunctionExecutions(previousFunctionExecutions, previousJvmFunctionOperators);
-      recordFallback("JSON string identity across UNION requires a row sink");
+      recordIslandFallback(root, "JSON string identity across UNION requires a row sink");
       return root;
     }
     if (root instanceof org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink
@@ -224,7 +225,7 @@ public class StreamPlanScan implements FlinkOptimizeProgram<StreamOptimizeContex
                 && !((ColumnarInput) substituted).acceptsCollectionRepresentation())) {
       substitutions = previousSubstitutions;
       rollbackFunctionExecutions(previousFunctionExecutions, previousJvmFunctionOperators);
-      recordFallback(
+      recordIslandFallback(root,
           LegacyBinaryResults.reachesSink(root)
               ? "legacy binary variable bytes require a row sink"
               : JsonStringIdentity.projectsBinaryString(root)
@@ -235,7 +236,7 @@ public class StreamPlanScan implements FlinkOptimizeProgram<StreamOptimizeContex
     if (CollectionValueIdentity.generatedCollectionCrossesBoundary(substituted, finalOutput)) {
       substitutions = previousSubstitutions;
       rollbackFunctionExecutions(previousFunctionExecutions, previousJvmFunctionOperators);
-      recordFallback(
+      recordIslandFallback(root,
           "generated collection representation requires a final projection or fused" + " consumer");
       return root;
     }
@@ -248,6 +249,7 @@ public class StreamPlanScan implements FlinkOptimizeProgram<StreamOptimizeContex
     if (substitutions > previousSubstitutions && !fullyColumnar(substituted, true)) {
       substitutions = previousSubstitutions; // retain counts from other admitted roots
       rollbackFunctionExecutions(previousFunctionExecutions, previousJvmFunctionOperators);
+      recordIslandFallback(root, "columnar island contains an unsupported interior operator");
       return root;
     }
     if (substitutions == previousSubstitutions + 1
@@ -255,13 +257,13 @@ public class StreamPlanScan implements FlinkOptimizeProgram<StreamOptimizeContex
         && standaloneDropUpdateBefore(substituted)) {
       substitutions = previousSubstitutions;
       rollbackFunctionExecutions(previousFunctionExecutions, previousJvmFunctionOperators);
-      recordFallback("dropUpdateBefore: standalone row-source filtering is explicitly disabled");
+      recordIslandFallback(root, "dropUpdateBefore: standalone row-source filtering is explicitly disabled");
       return root;
     }
     if (unconsumedColumnarOutput(substituted, false)) {
       substitutions = previousSubstitutions;
       rollbackFunctionExecutions(previousFunctionExecutions, previousJvmFunctionOperators);
-      recordFallback("columnar source requires a columnar consumer");
+      recordIslandFallback(root, "columnar source requires a columnar consumer");
       return root;
     }
     // Pass 2 inserts a row↔columnar transpose at each perimeter edge (rowwise source/sink ↔
@@ -490,10 +492,8 @@ public class StreamPlanScan implements FlinkOptimizeProgram<StreamOptimizeContex
     // guard:
     // it matches the host's Calc over a retracting stream row for row.
     entries.add(
-        Substitution.of(StreamPhysicalCalc.class, "filter", FilterCalcMatcher::substitute)
+        Substitution.preparing(StreamPhysicalCalc.class, "filter", FilterCalcMatcher::prepare)
             .shaped(FilterCalcMatcher::hasFilterShape)
-            .matching(FilterCalcMatcher::matches)
-            .reason(CalcMatcher::unsupportedReason)
             .changelogSafe());
     entries.add(
         Substitution.preparing(StreamPhysicalCalc.class, "calc", CalcMatcher::prepare)
@@ -1044,7 +1044,7 @@ public class StreamPlanScan implements FlinkOptimizeProgram<StreamOptimizeContex
     for (Substitution<?> substitution : registry) {
       String reason = substitution.reasonFor(node, ctx);
       if (reason != null) {
-        recordFallback(reason);
+        recordFallback(ctx.originalNode(node), reason);
         return;
       }
     }
@@ -1054,8 +1054,12 @@ public class StreamPlanScan implements FlinkOptimizeProgram<StreamOptimizeContex
     substitutions++;
   }
 
-  void recordFallback(String reason) {
-    fallbackReasons.add(reason);
+  void recordFallback(RelNode node, String reason) {
+    rejections.add(new PlanningRejection(PlanningRejection.Scope.OPERATOR, node, reason));
+  }
+
+  private void recordIslandFallback(RelNode root, String reason) {
+    rejections.add(new PlanningRejection(PlanningRejection.Scope.ISLAND, root, reason));
   }
 
   void recordFunctionExecution(String operator, EncodedExpression expression) {
@@ -1120,7 +1124,11 @@ public class StreamPlanScan implements FlinkOptimizeProgram<StreamOptimizeContex
    * way Comet surfaces fallback reasons in extended explain (ticket 29).
    */
   public List<String> fallbackReasons() {
-    return List.copyOf(fallbackReasons);
+    return rejections.stream().map(PlanningRejection::reason).collect(ListCollectors.toList());
+  }
+
+  public List<PlanningRejection> planningRejections() {
+    return List.copyOf(rejections);
   }
 
   /** Final function-engine assignments for admitted Calc/filter nodes, in traversal order. */
@@ -1130,19 +1138,19 @@ public class StreamPlanScan implements FlinkOptimizeProgram<StreamOptimizeContex
 
   /**
    * A native-acceleration section for appending to Flink's {@code explainSql} output: how many
-   * operators ran natively and, for those that did not, why — Comet's flat "fallback reasons"
-   * explain format, followed by the final Calc/filter function-engine assignments. Reflects the
+   * operators ran natively and why operator or whole-island admission was declined, followed by
+   * the final Calc/filter function-engine assignments. Reflects the
    * most recently optimized plan.
    */
   public String explainSummary() {
     StringBuilder out = new StringBuilder("== Native acceleration (StreamFusion) ==\n");
     out.append(substitutions).append(" operator(s) ran natively.\n");
-    if (fallbackReasons.isEmpty()) {
+    if (rejections.isEmpty()) {
       out.append("No operators fell back to Flink.\n");
     } else {
-      out.append(fallbackReasons.size()).append(" operator(s) fell back to Flink:\n");
-      for (String reason : fallbackReasons) {
-        out.append("  - ").append(reason).append('\n');
+      out.append(rejections.size()).append(" admission rejection(s):\n");
+      for (PlanningRejection rejection : rejections) {
+        out.append("  - ").append(rejection.describe()).append('\n');
       }
     }
     if (!functionExecutions.isEmpty()) {

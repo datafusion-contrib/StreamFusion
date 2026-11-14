@@ -35,9 +35,10 @@ batches and batches carrying a row-kind column; Calc caches each schema separate
 those row kinds through projections and filters. Row-to-Arrow boundaries also retain actual
 retractions received from a source that advertised insert-only output.
 
-The streaming Calc rule prepares its expression plan and declared-result-type check once for
-one candidate. Construction and fallback diagnostics consume that same admission decision;
-explaining a declined Calc does not repeat expression generation or optional native probes.
+The streaming Calc and filter rules prepare their expression plans once for
+one candidate; a Calc also prepares its declared-result-type check. Construction and fallback diagnostics consume that same admission decision;
+explaining a declined Calc or filter does not repeat expression generation or optional native probes.
+A declined standalone filter passes to general Calc admission without repeating its predicate probe.
 Ordinary streaming, bounded batch and stock compiled-plan Calc lowering share an immutable
 Calc specification for the native result-type contract. Its expression pools, output names and
 representation requirements are fixed after admission. Input pruning creates a separate expression
