@@ -1801,6 +1801,10 @@ public final class Native {
   public static native void flushWindowRanker(
       long handle, long watermarkMillis, long outArrayAddress, long outSchemaAddress);
 
+  /** Emits bounded batches synchronously for memory and RocksDB window-rank handles. */
+  public static native void flushWindowRankerBatches(
+      long handle, long watermarkMillis, BatchReceiver receiver);
+
   /** Releases the window-rank ranker and its per-window state. */
   public static native void closeWindowRanker(long handle);
 

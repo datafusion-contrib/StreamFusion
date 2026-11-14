@@ -2,6 +2,7 @@ use crate::*;
 use arrow::array::{Float32Array, Float64Array, Int8Builder};
 
 mod window_canonical;
+mod window_output;
 
 mod append_top1;
 mod canonical;
@@ -4819,84 +4820,113 @@ impl WindowRanker {
         Ok(())
     }
 
-    /// Emits the top-N rows of every window the watermark has closed, in rank order (with the rank
-    /// number appended when the host projects it), and evicts those windows.
+    /// Compatibility collector. Production hands each bounded batch to the receiver directly.
     pub(crate) fn flush(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
+        let mut batches = Vec::new();
+        self.flush_to(watermark, &mut |batch| {
+            batches.push(batch);
+            Ok(())
+        })?;
+        if batches.is_empty() {
+            return Ok(self.emit(Vec::new(), Vec::new()));
+        }
+        Ok(concat_batches(&batches[0].schema(), batches.iter())?)
+    }
+
+    /// Transfers closed rows in row- and byte-bounded batches. Rank numbering belongs to the
+    /// retained group, so a large top-N buffer may span many batches without restarting at one.
+    pub(crate) fn flush_to(
+        &mut self,
+        watermark: i64,
+        consume: &mut dyn FnMut(RecordBatch) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
         self.current_watermark = watermark;
         #[cfg(feature = "rocksdb-state")]
         if self.store.is_some() {
-            return self.flush_store(watermark);
+            return self.flush_store_to(watermark, consume);
+        }
+        let mut metadata = self.memory.temporary_reservation();
+        let mut ends = std::collections::BTreeSet::new();
+        for (end, _, _) in self.groups.keys() {
+            if !ends.contains(end) {
+                if let Some(work) = &mut metadata {
+                    work.try_resize((ends.len() + 1).saturating_mul(192))?;
+                }
+                ends.insert(*end);
+            }
         }
         let deadlines = self
             .calendar
             .as_ref()
-            .map(|calendar| calendar.end_thresholds(self.groups.keys().map(|(end, _, _)| *end)));
+            .map(|calendar| calendar.end_thresholds(ends));
         self.next_timer_deadline = deadlines
             .as_ref()
             .and_then(|values| values.values().filter(|&&end| end > watermark).min())
             .map_or(i64::MIN, |end| end.saturating_sub(1));
-        let mut ready: Vec<(i64, i64, GroupKey)> = self
-            .groups
-            .keys()
-            .filter(|(we, _, _)| deadlines.as_ref().map_or(*we, |values| values[we]) <= watermark)
-            .cloned()
-            .collect();
-        // Evict in (window_end, window_start) order for a deterministic emission sequence.
-        ready.sort_by(|a, b| {
-            let left = deadlines.as_ref().map_or(a.0, |values| values[&a.0]);
-            let right = deadlines.as_ref().map_or(b.0, |values| values[&b.0]);
-            (left, a.0, a.1).cmp(&(right, b.0, b.1))
+        let due = |end: i64| deadlines.as_ref().map_or(end, |values| values[&end]) <= watermark;
+        let count = self.groups.keys().filter(|(end, _, _)| due(*end)).count();
+        if let Some(work) = &mut metadata {
+            // Only ownership records are sorted: partition keys and retained rows are moved,
+            // never cloned. Account the sort vector before allocating it.
+            work.try_resize(work.size().saturating_add(count.saturating_mul(128)))?;
+        }
+        let mut ready = Vec::with_capacity(count);
+        ready.extend(self.groups.extract_if(|(end, _, _), _| due(*end)));
+        ready.sort_unstable_by_key(|((end, start, _), _)| {
+            (
+                deadlines.as_ref().map_or(*end, |values| values[end]),
+                *end,
+                *start,
+            )
         });
-        let mut rows: Vec<JoinRow> = Vec::new();
-        let mut ranks: Vec<i64> = Vec::new();
-        let track = self.memory.tracking();
-        let mut freed = 0usize;
-        for group in ready {
-            let buffer = self.groups.remove(&group).expect("ready group present");
-            if track {
-                freed += GROUP_ENTRY_OVERHEAD;
-                freed += buffer
-                    .iter()
-                    .map(|r| scalar_row_bytes(r) + GROUP_ENTRY_OVERHEAD)
-                    .sum::<usize>();
+        let mut output = window_output::RankOutput::new(self);
+        for ((_, _, key), buffer) in ready {
+            if self.memory.tracking() {
+                self.memory.forget(group_key_bytes(&key));
             }
+            drop(key);
             for (rank, row) in buffer.into_iter().enumerate() {
-                rows.push(row);
-                ranks.push(rank as i64 + 1);
+                if self.memory.tracking() {
+                    self.memory
+                        .forget(scalar_row_bytes(&row) + GROUP_ENTRY_OVERHEAD);
+                }
+                self.memory.account_shrink();
+                output.push(self, row, rank as i64 + 1, consume)?;
             }
         }
-        self.memory.forget(freed);
-        self.memory.account_shrink();
-        Ok(self.emit(rows, ranks))
+        output.emit(self, consume)
     }
 
-    /// Persistent-state firing: the store removes and returns every closed (window, key) group in
-    /// (window_end, window_start) order with each buffer already ranked — every fired group leaves
-    /// the store, so a closed window can never re-fire after a restore.
     #[cfg(feature = "rocksdb-state")]
-    fn flush_store(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
-        let fired = self
-            .store
-            .as_mut()
-            .expect("window-rank rocksdb store")
-            .take_closed_with_calendar(watermark, self.calendar.as_ref())?;
+    fn flush_store_to(
+        &mut self,
+        watermark: i64,
+        consume: &mut dyn FnMut(RecordBatch) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        let schema = self.schema.clone().expect("window-rank schema");
+        let output_rank_number = self.output_rank_number;
+        let store = self.store.as_mut().expect("window-rank rocksdb store");
+        store.visit_closed_batches(
+            watermark,
+            self.calendar.as_ref(),
+            self.memory.temporary_reservation(),
+            window_output::OUTPUT_ROWS,
+            window_output::OUTPUT_BYTES,
+            &mut |columns, ranks| {
+                consume(window_output::ranked_batch(
+                    &schema,
+                    columns,
+                    ranks,
+                    output_rank_number,
+                )?)
+            },
+        )?;
         if self.calendar.is_some() {
-            self.next_timer_deadline = self
-                .store
-                .as_ref()
-                .unwrap()
+            self.next_timer_deadline = store
                 .next_exclusive_end()
                 .map_or(i64::MIN, |end| end.saturating_sub(1));
         }
-        let mut rows: Vec<JoinRow> = Vec::new();
-        let mut ranks: Vec<i64> = Vec::new();
-        for group in fired {
-            for (rank, row) in group.rows.into_iter().enumerate() {
-                rows.push(row);
-                ranks.push(rank as i64 + 1);
-            }
-        }
-        Ok(self.emit(rows, ranks))
+        Ok(())
     }
 
     fn emit(&self, rows: Vec<JoinRow>, ranks: Vec<i64>) -> RecordBatch {
@@ -5259,6 +5289,25 @@ pub extern "system" fn Java_tech_streamfusion_Native_flushWindowRanker<'local>(
         match ranker.flush(watermark_millis) {
             Ok(result) => export_record_batch(result, out_array_address, out_schema_address),
             Err(e) => throw_memory_limit(&mut env, &e.to_string()),
+        }
+    })
+}
+
+/// Production handoff for either memory or persistent window-rank handles.
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_flushWindowRankerBatches<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    watermark_millis: jlong,
+    receiver: jni::objects::JObject<'local>,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let ranker = unsafe { &mut *(handle as *mut WindowRanker) };
+        if let Err(error) = ranker.flush_to(watermark_millis, &mut |batch| {
+            crate::bridge::emit_record_batch(&mut env, &receiver, batch)
+        }) {
+            throw_memory_limit(&mut env, &error.to_string());
         }
     })
 }

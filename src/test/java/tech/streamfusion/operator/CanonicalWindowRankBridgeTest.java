@@ -91,6 +91,89 @@ class CanonicalWindowRankBridgeTest {
     }
   }
 
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void watermarkOutputSplitsOneLargeGroupWithoutRestartingRanks(boolean persistent) {
+    long handle = create(persistent);
+    try {
+      var rows = new ArrayList<RowData>();
+      for (long tag = 0; tag < 2500; tag++)
+        rows.add(GenericRowData.of(1L, 10L, tag, -1000L, 1000L));
+      transfer(handle, rows, ROW);
+      long allocated = NativeAllocator.SHARED.getAllocatedMemory();
+      var chunks = new ArrayList<Integer>();
+      var tags = new ArrayList<Long>();
+      Native.flushWindowRankerBatches(
+          handle,
+          1000,
+          (arrayAddress, schemaAddress) -> {
+            try (var array = ArrowArray.wrap(arrayAddress);
+                var schema = ArrowSchema.wrap(schemaAddress);
+                var root =
+                    Data.importVectorSchemaRoot(
+                        NativeAllocator.SHARED, array, schema, NativeAllocator.DICTIONARIES)) {
+              chunks.add(root.getRowCount());
+              var tag = (org.apache.arrow.vector.BigIntVector) root.getVector(2);
+              var rank = (org.apache.arrow.vector.BigIntVector) root.getVector(5);
+              for (int i = 0; i < root.getRowCount(); i++) {
+                assertEquals(tags.size() + 1L, rank.get(i));
+                tags.add(tag.get(i));
+              }
+            }
+          });
+      assertEquals(List.of(1024, 1024, 452), chunks);
+      assertEquals(
+          java.util.stream.LongStream.range(0, 2500)
+              .boxed()
+              .collect(java.util.stream.Collectors.toList()),
+          tags);
+      assertEquals(allocated, NativeAllocator.SHARED.getAllocatedMemory());
+      Native.flushWindowRankerBatches(
+          handle, 1000, (array, schema) -> fail("closed group re-emitted"));
+    } finally {
+      close(handle, persistent);
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void watermarkReceiverFailurePreservesTheOriginalExceptionAndReleasesArrow(boolean persistent) {
+    long handle = create(persistent);
+    try {
+      var rows = new ArrayList<RowData>();
+      for (long tag = 0; tag < 2500; tag++)
+        rows.add(GenericRowData.of(1L, 10L, tag, -1000L, 1000L));
+      transfer(handle, rows, ROW);
+      long allocated = NativeAllocator.SHARED.getAllocatedMemory();
+      var sentinel = new IllegalArgumentException("watermark receiver stopped");
+      var seen = new AtomicInteger();
+      var failure =
+          assertThrows(
+              IllegalArgumentException.class,
+              () ->
+                  Native.flushWindowRankerBatches(
+                      handle,
+                      1000,
+                      (arrayAddress, schemaAddress) -> {
+                        try (var array = ArrowArray.wrap(arrayAddress);
+                            var schema = ArrowSchema.wrap(schemaAddress);
+                            var root =
+                                Data.importVectorSchemaRoot(
+                                    NativeAllocator.SHARED,
+                                    array,
+                                    schema,
+                                    NativeAllocator.DICTIONARIES)) {
+                          assertTrue(root.getRowCount() <= 1024);
+                          if (seen.incrementAndGet() == 2) throw sentinel;
+                        }
+                      }));
+      assertSame(sentinel, failure);
+      assertEquals(allocated, NativeAllocator.SHARED.getAllocatedMemory());
+    } finally {
+      close(handle, persistent);
+    }
+  }
+
   static Stream<Arguments> invalidBatches() {
     return Stream.of("bounds", "null", "arity", "schema", "rowKind", "expired")
         .flatMap(mode -> Stream.of(Arguments.of(mode, false), Arguments.of(mode, true)));

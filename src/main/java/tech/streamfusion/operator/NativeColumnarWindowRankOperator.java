@@ -439,20 +439,16 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
     threshold =
         WindowTimeDomain.closeThreshold(
             threshold, calendarZoneId == null ? boundaryOffsetMillis : 0);
-    try (ArrowArray array = ArrowArray.allocateNew(allocator);
-        ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
-      if (directRocksDBState()) {
-        Native.flushRocksDBWindowRanker(
-            handle, threshold, array.memoryAddress(), schema.memoryAddress());
-      } else {
-        Native.flushWindowRanker(handle, threshold, array.memoryAddress(), schema.memoryAddress());
-      }
-      VectorSchemaRoot out = Data.importVectorSchemaRoot(allocator, array, schema, dictionaries);
-      if (out.getRowCount() > 0) {
-        ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(out));
-      } else {
-        out.close(); // no window closed at this threshold
-      }
-    }
+    Native.flushWindowRankerBatches(
+        handle,
+        threshold,
+        (arrayAddress, schemaAddress) -> {
+          try (ArrowArray array = ArrowArray.wrap(arrayAddress);
+              ArrowSchema schema = ArrowSchema.wrap(schemaAddress)) {
+            VectorSchemaRoot out =
+                Data.importVectorSchemaRoot(allocator, array, schema, dictionaries);
+            ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(out));
+          }
+        });
   }
 }
