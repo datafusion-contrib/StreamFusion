@@ -119,6 +119,9 @@ final class HudiSinkMatcher {
         || input instanceof StreamPhysicalNativeColumnarTopN) return terminalUpserts;
     if (input instanceof StreamPhysicalNativeDeduplicate)
       return terminalUpserts && !((StreamPhysicalNativeDeduplicate) input).requireWatermark();
+    if (input instanceof StreamPhysicalNativeColumnarWindowAggregate)
+      return (terminalUpserts || appendOnly)
+          && !((StreamPhysicalNativeColumnarWindowAggregate) input).requireWatermark();
     if (input instanceof StreamPhysicalNativeColumnarUpdatingJoin) {
       var join = (StreamPhysicalNativeColumnarUpdatingJoin) input;
       return (terminalUpserts || appendOnly && join.isInsertOnlyInnerJoin())

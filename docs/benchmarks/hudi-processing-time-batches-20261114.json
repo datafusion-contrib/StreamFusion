@@ -1,0 +1,1472 @@
+{
+  "status": "pending-uncontended-repeat",
+  "scope": "Focused Q12 processing-time batching comparison; full matrix remains pending.",
+  "method": "Unchanged Hudi source/sink Nexmark SQL, four physical partitions/tasks, heap state, mini-batching off, release libraries, one warmup and three rotating trials. Processing-time bounded counts rather than full-value parity.",
+  "native_tree": "16d4c0052bb61c9a6c783bd03bdafc6c02fe9896",
+  "candidate_java_files": {
+    "streamfusion-hudi/src/main/java/tech/streamfusion/planner/stream/HudiSinkMatcher.java": "2f834f9827878037030cd9efb2d4623c29623fc3f0c02ee9d34c94edf72463b6"
+  },
+  "profile": {
+    "samples": 6711,
+    "inclusive_top": [
+      {
+        "frame": "[break_stack_range]",
+        "samples": 6164,
+        "percent": 91.85
+      },
+      {
+        "frame": "org/apache/flink/runtime/taskmanager/Task.runWithSystemExitMonitoring",
+        "samples": 6152,
+        "percent": 91.67
+      },
+      {
+        "frame": "org/apache/flink/streaming/runtime/tasks/mailbox/MailboxProcessor.runMailboxLoop",
+        "samples": 6152,
+        "percent": 91.67
+      },
+      {
+        "frame": "org/apache/flink/runtime/taskmanager/Task$$Lambda$2999.0x0000007001e748e8.run",
+        "samples": 6152,
+        "percent": 91.67
+      },
+      {
+        "frame": "org/apache/flink/streaming/runtime/tasks/StreamTask.invoke",
+        "samples": 6152,
+        "percent": 91.67
+      },
+      {
+        "frame": "org/apache/flink/runtime/taskmanager/Task.restoreAndInvoke",
+        "samples": 6152,
+        "percent": 91.67
+      },
+      {
+        "frame": "org/apache/flink/streaming/runtime/tasks/StreamTask.runMailboxLoop",
+        "samples": 6152,
+        "percent": 91.67
+      },
+      {
+        "frame": "org/apache/flink/streaming/runtime/tasks/StreamTask$$Lambda$2787.0x0000007001e1bc98.runDefaultAction",
+        "samples": 6147,
+        "percent": 91.6
+      },
+      {
+        "frame": "org/apache/flink/streaming/runtime/io/StreamOneInputProcessor.processInput",
+        "samples": 6147,
+        "percent": 91.6
+      },
+      {
+        "frame": "org/apache/flink/streaming/runtime/tasks/StreamTask.processInput",
+        "samples": 6147,
+        "percent": 91.6
+      },
+      {
+        "frame": "org/apache/flink/streaming/runtime/tasks/ChainingOutput.collect",
+        "samples": 3551,
+        "percent": 52.91
+      },
+      {
+        "frame": "tech/streamfusion/operator/NativeCalcOperator.processElement",
+        "samples": 3551,
+        "percent": 52.91
+      },
+      {
+        "frame": "tech/streamfusion/operator/ColumnarRecordMetrics.emit",
+        "samples": 3551,
+        "percent": 52.91
+      },
+      {
+        "frame": "org/apache/flink/streaming/runtime/io/RecordProcessorUtils$$Lambda$2889.0x0000007001e41078.accept",
+        "samples": 3551,
+        "percent": 52.91
+      },
+      {
+        "frame": "org/apache/flink/streaming/runtime/tasks/ChainingOutput.pushToOperator",
+        "samples": 3551,
+        "percent": 52.91
+      },
+      {
+        "frame": "org/apache/flink/streaming/api/operators/source/SourceOutputWithWatermarks.collect",
+        "samples": 3545,
+        "percent": 52.82
+      },
+      {
+        "frame": "tech/streamfusion/operator/NativeColumnarWatermarkAssignerOperator.processElement",
+        "samples": 3545,
+        "percent": 52.82
+      },
+      {
+        "frame": "org/apache/flink/streaming/runtime/tasks/SourceOperatorStreamTask$AsyncDataOutputToOutput.emitRecord",
+        "samples": 3545,
+        "percent": 52.82
+      },
+      {
+        "frame": "org/apache/flink/streaming/runtime/io/StreamTaskSourceInput.emitNext",
+        "samples": 3545,
+        "percent": 52.82
+      },
+      {
+        "frame": "tech/streamfusion/hudi/NativeHudiSource$$Lambda$4999.0x0000007002443e00.emitRecord",
+        "samples": 3545,
+        "percent": 52.82
+      },
+      {
+        "frame": "org/apache/flink/streaming/api/operators/SourceOperator.emitNext",
+        "samples": 3545,
+        "percent": 52.82
+      },
+      {
+        "frame": "org/apache/flink/connector/base/source/reader/SourceReaderBase.pollNext",
+        "samples": 3545,
+        "percent": 52.82
+      },
+      {
+        "frame": "tech/streamfusion/hudi/NativeHudiSource.lambda$createReader$0",
+        "samples": 3545,
+        "percent": 52.82
+      },
+      {
+        "frame": "org/apache/flink/streaming/runtime/io/AbstractStreamTaskNetworkInput.emitNext",
+        "samples": 2602,
+        "percent": 38.77
+      },
+      {
+        "frame": "tech/streamfusion/operator/SplitByKeyGroupOperator.processElement",
+        "samples": 2464,
+        "percent": 36.72
+      },
+      {
+        "frame": "org/apache/flink/streaming/runtime/io/AbstractStreamTaskNetworkInput.processElement",
+        "samples": 2262,
+        "percent": 33.71
+      },
+      {
+        "frame": "org/apache/flink/streaming/runtime/tasks/OneInputStreamTask$StreamTaskNetworkOutput.emitRecord",
+        "samples": 2258,
+        "percent": 33.65
+      },
+      {
+        "frame": "org/apache/flink/streaming/runtime/io/RecordProcessorUtils$$Lambda$4074.0x00000070021e26a0.accept",
+        "samples": 2258,
+        "percent": 33.65
+      },
+      {
+        "frame": "org/apache/flink/streaming/runtime/io/RecordProcessorUtils.lambda$getRecordProcessor$0",
+        "samples": 2258,
+        "percent": 33.65
+      },
+      {
+        "frame": "tech/streamfusion/operator/NativeColumnarWindowAggregateOperator.processElement",
+        "samples": 2256,
+        "percent": 33.62
+      },
+      {
+        "frame": "org/apache/arrow/c/Data.exportVectorSchemaRoot",
+        "samples": 1980,
+        "percent": 29.5
+      },
+      {
+        "frame": "org/apache/arrow/memory/RootAllocator.buffer",
+        "samples": 1746,
+        "percent": 26.02
+      },
+      {
+        "frame": "org/apache/arrow/memory/BaseAllocator.buffer",
+        "samples": 1746,
+        "percent": 26.02
+      },
+      {
+        "frame": "tech/streamfusion/operator/NativeWindowOperatorCore.updateColumnarProctime",
+        "samples": 1684,
+        "percent": 25.09
+      },
+      {
+        "frame": "tech/streamfusion/operator/NativeWindowOperatorCore.updateColumnarInternal",
+        "samples": 1683,
+        "percent": 25.08
+      },
+      {
+        "frame": "org/apache/arrow/memory/BufferLedger.release",
+        "samples": 1182,
+        "percent": 17.61
+      },
+      {
+        "frame": "org/apache/arrow/memory/AllocationManager.release",
+        "samples": 1181,
+        "percent": 17.6
+      },
+      {
+        "frame": "org/apache/arrow/memory/BufferLedger.decrement",
+        "samples": 1181,
+        "percent": 17.6
+      },
+      {
+        "frame": "org/apache/arrow/memory/BaseAllocator.bufferWithoutReservation",
+        "samples": 1115,
+        "percent": 16.61
+      },
+      {
+        "frame": "org/apache/arrow/memory/BaseAllocator.newAllocationManager",
+        "samples": 1096,
+        "percent": 16.33
+      },
+      {
+        "frame": "org/apache/arrow/memory/unsafe/UnsafeAllocationManager.<init>",
+        "samples": 1096,
+        "percent": 16.33
+      },
+      {
+        "frame": "org/apache/arrow/memory/unsafe/UnsafeAllocationManager$1.create",
+        "samples": 1096,
+        "percent": 16.33
+      },
+      {
+        "frame": "org/apache/arrow/c/Data.importVectorSchemaRoot",
+        "samples": 971,
+        "percent": 14.47
+      },
+      {
+        "frame": "org/apache/arrow/c/ArrayExporter.export",
+        "samples": 964,
+        "percent": 14.36
+      },
+      {
+        "frame": "org/apache/arrow/c/Data.exportVector",
+        "samples": 964,
+        "percent": 14.36
+      },
+      {
+        "frame": "org/apache/arrow/memory/AllocationManager.<init>",
+        "samples": 903,
+        "percent": 13.46
+      },
+      {
+        "frame": "org/apache/arrow/c/Data.importIntoVectorSchemaRoot",
+        "samples": 886,
+        "percent": 13.2
+      },
+      {
+        "frame": "org/apache/arrow/memory/ArrowBuf.close",
+        "samples": 885,
+        "percent": 13.19
+      },
+      {
+        "frame": "pthread_jit_write_protect_np",
+        "samples": 803,
+        "percent": 11.97
+      },
+      {
+        "frame": "org/apache/arrow/c/Data.exportSchema",
+        "samples": 764,
+        "percent": 11.38
+      },
+      {
+        "frame": "org/apache/arrow/c/Data.exportField",
+        "samples": 756,
+        "percent": 11.27
+      },
+      {
+        "frame": "org/apache/arrow/c/SchemaExporter.export",
+        "samples": 756,
+        "percent": 11.27
+      },
+      {
+        "frame": "org/apache/arrow/memory/unsafe/UnsafeAllocationManager.release0",
+        "samples": 722,
+        "percent": 10.76
+      },
+      {
+        "frame": "sun/misc/Unsafe.freeMemory",
+        "samples": 722,
+        "percent": 10.76
+      },
+      {
+        "frame": "org/apache/arrow/memory/util/MemoryUtil.freeMemory",
+        "samples": 722,
+        "percent": 10.76
+      },
+      {
+        "frame": "jdk/internal/misc/Unsafe.freeMemory",
+        "samples": 722,
+        "percent": 10.76
+      },
+      {
+        "frame": "tech/streamfusion/operator/TaskOffHeapMemory.reserveArrow",
+        "samples": 658,
+        "percent": 9.8
+      },
+      {
+        "frame": "tech/streamfusion/operator/NativeAllocator$TaskBudgetListener.onPreAllocation",
+        "samples": 658,
+        "percent": 9.8
+      },
+      {
+        "frame": "org/apache/arrow/c/Data.importIntoVector",
+        "samples": 639,
+        "percent": 9.52
+      },
+      {
+        "frame": "org/apache/arrow/c/ArrayImporter.importArray",
+        "samples": 637,
+        "percent": 9.49
+      },
+      {
+        "frame": "tech/streamfusion/operator/SplitByKeyGroupOperator.copyCompactTimestamps",
+        "samples": 627,
+        "percent": 9.34
+      },
+      {
+        "frame": "org/apache/arrow/c/NativeUtil.closeBuffer",
+        "samples": 624,
+        "percent": 9.3
+      },
+      {
+        "frame": "org/apache/arrow/util/AutoCloseables.close",
+        "samples": 609,
+        "percent": 9.07
+      },
+      {
+        "frame": "org/apache/arrow/vector/VectorSchemaRoot.close",
+        "samples": 595,
+        "percent": 8.87
+      },
+      {
+        "frame": "org/apache/arrow/c/ReferenceCountedArrowArray$1.release0",
+        "samples": 589,
+        "percent": 8.78
+      },
+      {
+        "frame": "org/apache/arrow/c/ReferenceCountedArrowArray.release",
+        "samples": 589,
+        "percent": 8.78
+      },
+      {
+        "frame": "org/apache/arrow/memory/ForeignAllocationManager.release0",
+        "samples": 589,
+        "percent": 8.78
+      },
+      {
+        "frame": "org/apache/arrow/memory/AllocationManager.associate",
+        "samples": 569,
+        "percent": 8.48
+      },
+      {
+        "frame": "org/apache/arrow/vector/complex/StructVector.close",
+        "samples": 552,
+        "percent": 8.23
+      },
+      {
+        "frame": "tech/streamfusion/operator/NativeColumnarWindowAggregateOperator.emitClosedWindows",
+        "samples": 546,
+        "percent": 8.14
+      },
+      {
+        "frame": "tech/streamfusion/operator/NativeRowWindowOperatorCore.emitFinal",
+        "samples": 545,
+        "percent": 8.12
+      },
+      {
+        "frame": "org/apache/arrow/memory/LowCostIdentityHashMap.findIndex",
+        "samples": 538,
+        "percent": 8.02
+      },
+      {
+        "frame": "org/apache/arrow/memory/LowCostIdentityHashMap.getModuloHash",
+        "samples": 538,
+        "percent": 8.02
+      },
+      {
+        "frame": "org/apache/arrow/vector/BaseValueVector.releaseBuffer",
+        "samples": 537,
+        "percent": 8.0
+      },
+      {
+        "frame": "org/apache/arrow/vector/BaseFixedWidthVector.clear",
+        "samples": 532,
+        "percent": 7.93
+      },
+      {
+        "frame": "org/apache/arrow/memory/LowCostIdentityHashMap.get",
+        "samples": 528,
+        "percent": 7.87
+      },
+      {
+        "frame": "org/apache/arrow/vector/BaseFixedWidthVector.close",
+        "samples": 528,
+        "percent": 7.87
+      },
+      {
+        "frame": "tech/streamfusion/operator/NativeColumnarWindowAggregateOperator.updateHandle",
+        "samples": 517,
+        "percent": 7.7
+      },
+      {
+        "frame": "tech/streamfusion/Native.updateLocalTumblingAggregator",
+        "samples": 516,
+        "percent": 7.69
+      },
+      {
+        "frame": "org/apache/arrow/vector/complex/NonNullableStructVector.close",
+        "samples": 509,
+        "percent": 7.58
+      },
+      {
+        "frame": "org/apache/arrow/c/ArrayImporter.doImport",
+        "samples": 504,
+        "percent": 7.51
+      },
+      {
+        "frame": "jni_NewGlobalRef",
+        "samples": 483,
+        "percent": 7.2
+      },
+      {
+        "frame": "org/apache/arrow/c/ArrayExporter$ExportedArrayPrivateData.close",
+        "samples": 469,
+        "percent": 6.99
+      },
+      {
+        "frame": "org/apache/arrow/c/ArrowArray.allocateNew",
+        "samples": 463,
+        "percent": 6.9
+      },
+      {
+        "frame": "thread_native_entry",
+        "samples": 448,
+        "percent": 6.68
+      },
+      {
+        "frame": "_pthread_start",
+        "samples": 448,
+        "percent": 6.68
+      },
+      {
+        "frame": "Thread::call_run",
+        "samples": 448,
+        "percent": 6.68
+      },
+      {
+        "frame": "thread_start",
+        "samples": 448,
+        "percent": 6.68
+      },
+      {
+        "frame": "mach_absolute_time",
+        "samples": 430,
+        "percent": 6.41
+      },
+      {
+        "frame": "org/apache/arrow/c/ArrayImporter.importChild",
+        "samples": 418,
+        "percent": 6.23
+      },
+      {
+        "frame": "G1EvacuateRegionsBaseTask::work",
+        "samples": 379,
+        "percent": 5.65
+      },
+      {
+        "frame": "GangWorker::run",
+        "samples": 379,
+        "percent": 5.65
+      },
+      {
+        "frame": "JNIHandles::make_global",
+        "samples": 376,
+        "percent": 5.6
+      },
+      {
+        "frame": "OopStorage::allocate",
+        "samples": 374,
+        "percent": 5.57
+      },
+      {
+        "frame": "G1ParEvacuateFollowersClosure::do_void",
+        "samples": 355,
+        "percent": 5.29
+      },
+      {
+        "frame": "G1EvacuateRegionsTask::evacuate_live_objects",
+        "samples": 355,
+        "percent": 5.29
+      },
+      {
+        "frame": "org/apache/flink/runtime/io/network/api/serialization/SpillingAdaptiveSpanningRecordDeserializer.getNextRecord",
+        "samples": 332,
+        "percent": 4.95
+      },
+      {
+        "frame": "G1ParScanThreadState::trim_queue_to_threshold",
+        "samples": 332,
+        "percent": 4.95
+      },
+      {
+        "frame": "org/apache/flink/runtime/io/network/api/serialization/SpillingAdaptiveSpanningRecordDeserializer.readNextRecord",
+        "samples": 331,
+        "percent": 4.93
+      },
+      {
+        "frame": "jdk/internal/misc/Unsafe.freeMemory0",
+        "samples": 330,
+        "percent": 4.92
+      }
+    ],
+    "leaf_top": [
+      {
+        "frame": "pthread_jit_write_protect_np",
+        "samples": 803,
+        "percent": 11.97
+      },
+      {
+        "frame": "mach_absolute_time",
+        "samples": 430,
+        "percent": 6.41
+      },
+      {
+        "frame": "org/apache/arrow/memory/AllocationManager.<init>",
+        "samples": 418,
+        "percent": 6.23
+      },
+      {
+        "frame": "org/apache/arrow/c/ReferenceCountedArrowArray.release",
+        "samples": 310,
+        "percent": 4.62
+      },
+      {
+        "frame": "__psynch_mutexwait",
+        "samples": 243,
+        "percent": 3.62
+      },
+      {
+        "frame": "org/apache/arrow/memory/LowCostIdentityHashMap.getModuloHash",
+        "samples": 228,
+        "percent": 3.4
+      },
+      {
+        "frame": "G1ParScanThreadState::do_copy_to_survivor_space",
+        "samples": 185,
+        "percent": 2.76
+      },
+      {
+        "frame": "java/util/concurrent/ConcurrentHashMap.get",
+        "samples": 181,
+        "percent": 2.7
+      },
+      {
+        "frame": "jdk/internal/misc/Unsafe.freeMemory",
+        "samples": 177,
+        "percent": 2.64
+      },
+      {
+        "frame": "tech/streamfusion/operator/TaskOffHeapMemory.reserveGlobal",
+        "samples": 152,
+        "percent": 2.26
+      },
+      {
+        "frame": "__psynch_cvwait",
+        "samples": 136,
+        "percent": 2.03
+      },
+      {
+        "frame": "ObjectMonitor::TrySpin",
+        "samples": 131,
+        "percent": 1.95
+      },
+      {
+        "frame": "itable stub",
+        "samples": 127,
+        "percent": 1.89
+      },
+      {
+        "frame": "os::javaTimeNanos",
+        "samples": 108,
+        "percent": 1.61
+      },
+      {
+        "frame": "org/apache/arrow/vector/complex/AbstractStructVector.getChildren",
+        "samples": 100,
+        "percent": 1.49
+      },
+      {
+        "frame": "__psynch_mutexdrop",
+        "samples": 94,
+        "percent": 1.4
+      },
+      {
+        "frame": "stub:pthread_jit_write_protect_np",
+        "samples": 83,
+        "percent": 1.24
+      },
+      {
+        "frame": "void OopOopIterateBackwardsDispatch<G1ScanEvacuatedObjClosure>::Table::oop_oop_iterate_backwards<InstanceKlass, narrowOop>",
+        "samples": 79,
+        "percent": 1.18
+      },
+      {
+        "frame": "Copy::fill_to_memory_atomic",
+        "samples": 65,
+        "percent": 0.97
+      },
+      {
+        "frame": "G1ParScanThreadState::trim_queue_to_threshold",
+        "samples": 54,
+        "percent": 0.8
+      },
+      {
+        "frame": "jdk/internal/reflect/GeneratedConstructorAccessor78.newInstance",
+        "samples": 53,
+        "percent": 0.79
+      },
+      {
+        "frame": "org/apache/arrow/vector/complex/NonNullableStructVector.<init>",
+        "samples": 48,
+        "percent": 0.72
+      },
+      {
+        "frame": "org/apache/arrow/memory/RootAllocator.buffer",
+        "samples": 47,
+        "percent": 0.7
+      },
+      {
+        "frame": "java/util/Arrays.copyOf",
+        "samples": 46,
+        "percent": 0.69
+      },
+      {
+        "frame": "nanov2_malloc_type",
+        "samples": 46,
+        "percent": 0.69
+      },
+      {
+        "frame": "org/apache/arrow/memory/AllocationManager.associate",
+        "samples": 41,
+        "percent": 0.61
+      },
+      {
+        "frame": "java/lang/reflect/Constructor.setConstructorAccessor",
+        "samples": 38,
+        "percent": 0.57
+      },
+      {
+        "frame": "java/util/Arrays.hashCode",
+        "samples": 34,
+        "percent": 0.51
+      },
+      {
+        "frame": "org/apache/arrow/vector/complex/NonNullableStructVector.getField",
+        "samples": 31,
+        "percent": 0.46
+      },
+      {
+        "frame": "org/apache/arrow/memory/ArrowBuf.setOne",
+        "samples": 30,
+        "percent": 0.45
+      },
+      {
+        "frame": "Unsafe_FreeMemory0",
+        "samples": 29,
+        "percent": 0.43
+      },
+      {
+        "frame": "org/apache/arrow/c/ArrowArray.directBuffer",
+        "samples": 27,
+        "percent": 0.4
+      },
+      {
+        "frame": "_nanov2_free",
+        "samples": 24,
+        "percent": 0.36
+      },
+      {
+        "frame": "org/apache/arrow/c/NativeUtil.toJavaArray",
+        "samples": 24,
+        "percent": 0.36
+      },
+      {
+        "frame": "SafeFetch32_impl",
+        "samples": 22,
+        "percent": 0.33
+      },
+      {
+        "frame": "mi_free",
+        "samples": 21,
+        "percent": 0.31
+      },
+      {
+        "frame": "org/apache/arrow/util/Collections2.toList",
+        "samples": 20,
+        "percent": 0.3
+      },
+      {
+        "frame": "os::current_thread_enable_wx",
+        "samples": 20,
+        "percent": 0.3
+      },
+      {
+        "frame": "org/apache/arrow/vector/util/IntObjectHashMap$PrimitiveIterator.scanNext",
+        "samples": 20,
+        "percent": 0.3
+      },
+      {
+        "frame": "java/util/ArrayList.<init>",
+        "samples": 19,
+        "percent": 0.28
+      },
+      {
+        "frame": "arrow_data::data::ArrayDataBuilder::build",
+        "samples": 19,
+        "percent": 0.28
+      },
+      {
+        "frame": "mi_is_in_heap_region",
+        "samples": 19,
+        "percent": 0.28
+      },
+      {
+        "frame": "org/apache/arrow/util/AutoCloseables.close",
+        "samples": 19,
+        "percent": 0.28
+      },
+      {
+        "frame": "tlv_get_addr",
+        "samples": 19,
+        "percent": 0.28
+      },
+      {
+        "frame": "OopStorage::allocate",
+        "samples": 19,
+        "percent": 0.28
+      },
+      {
+        "frame": "GenericTaskQueueSet<OverflowTaskQueue<ScannerTask, (MEMFLAGS)5, 131072u>, (MEMFLAGS)5>::steal_best_of_2",
+        "samples": 19,
+        "percent": 0.28
+      },
+      {
+        "frame": "jbyte_disjoint_arraycopy",
+        "samples": 18,
+        "percent": 0.27
+      },
+      {
+        "frame": "java/nio/channels/Channels$WritableByteChannelImpl.write",
+        "samples": 18,
+        "percent": 0.27
+      },
+      {
+        "frame": "org/apache/arrow/memory/ArrowBuf.close",
+        "samples": 18,
+        "percent": 0.27
+      },
+      {
+        "frame": "com/google/flatbuffers/FlatBufferBuilder.endTable",
+        "samples": 18,
+        "percent": 0.27
+      }
+    ]
+  },
+  "profile_note": "6711 inclusive CPU samples at 10 ms over 10 seconds during a 2M-event native diagnostic before the planner change. Inclusive shares overlap; instrumented durations are not a speedup gate.",
+  "comparisons": [
+    {
+      "stage": "q12-before-batches",
+      "status": "passed",
+      "rows": 200000,
+      "input_bids": 184000,
+      "parallelism": 4,
+      "source_partitions": 4,
+      "sink_partition_modulus": 4,
+      "checkpoint_ms": 1000,
+      "warmups": 1,
+      "runs": 3,
+      "object_reuse": true,
+      "jdk": "17.0.17+10",
+      "architecture": "aarch64",
+      "available_processors": 10,
+      "heap_max_bytes": 8589934592,
+      "native_task_off_heap_capacity_bytes": 51539607552,
+      "state_backend_checks": [],
+      "observations": [
+        {
+          "query": "q12",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 373.204417,
+          "wall_milliseconds": 373.212,
+          "started_at_utc": "2026-11-14T16:27:12.440858Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 3407.563292,
+          "wall_milliseconds": 3407.6,
+          "started_at_utc": "2026-11-14T16:27:13.028201Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 3442.171042,
+          "wall_milliseconds": 3442.208,
+          "started_at_utc": "2026-11-14T16:27:16.672050Z",
+          "output_rows": 46,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 3332.386625,
+          "wall_milliseconds": 3332.424,
+          "started_at_utc": "2026-11-14T16:27:20.377302Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 365.140833,
+          "wall_milliseconds": 365.147,
+          "started_at_utc": "2026-11-14T16:27:23.949745Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 3369.910208,
+          "wall_milliseconds": 3369.946,
+          "started_at_utc": "2026-11-14T16:27:24.522328Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 3493.398125,
+          "wall_milliseconds": 3493.436,
+          "started_at_utc": "2026-11-14T16:27:28.135207Z",
+          "output_rows": 46,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 3316.249166,
+          "wall_milliseconds": 3316.285,
+          "started_at_utc": "2026-11-14T16:27:32.029677Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 321.852833,
+          "wall_milliseconds": 321.858,
+          "started_at_utc": "2026-11-14T16:27:35.590668Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "processing-time bounded counts"
+        }
+      ]
+    },
+    {
+      "stage": "q12-after-batches-contended",
+      "status": "diagnostic",
+      "rows": 200000,
+      "input_bids": 184000,
+      "parallelism": 4,
+      "source_partitions": 4,
+      "sink_partition_modulus": 4,
+      "checkpoint_ms": 1000,
+      "warmups": 1,
+      "runs": 3,
+      "object_reuse": true,
+      "jdk": "17.0.17+10",
+      "architecture": "aarch64",
+      "available_processors": 10,
+      "heap_max_bytes": 8589934592,
+      "native_task_off_heap_capacity_bytes": 51539607552,
+      "state_backend_checks": [],
+      "observations": [
+        {
+          "query": "q12",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 572.215584,
+          "wall_milliseconds": 572.225,
+          "started_at_utc": "2026-11-14T16:31:35.981834Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 5130.150084,
+          "wall_milliseconds": 5130.204,
+          "started_at_utc": "2026-11-14T16:31:36.824037Z",
+          "output_rows": 46,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 358.590583,
+          "wall_milliseconds": 358.598,
+          "started_at_utc": "2026-11-14T16:31:42.337997Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 327.53375,
+          "wall_milliseconds": 327.54,
+          "started_at_utc": "2026-11-14T16:31:42.978343Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 415.018208,
+          "wall_milliseconds": 415.025,
+          "started_at_utc": "2026-11-14T16:31:43.545911Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 4642.3595,
+          "wall_milliseconds": 4642.409,
+          "started_at_utc": "2026-11-14T16:31:44.225600Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 5051.741834,
+          "wall_milliseconds": 5051.795,
+          "started_at_utc": "2026-11-14T16:31:49.153006Z",
+          "output_rows": 46,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 358.911417,
+          "wall_milliseconds": 358.928,
+          "started_at_utc": "2026-11-14T16:31:54.480528Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 438.804917,
+          "wall_milliseconds": 438.813,
+          "started_at_utc": "2026-11-14T16:31:55.091935Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "processing-time bounded counts"
+        }
+      ],
+      "original_run_status": "passed",
+      "qualification": "Correctness/count checks passed, but another session started a Paimon benchmark during this after run; repeat timing on an idle host."
+    },
+    {
+      "stage": "q12-after-batches-2m-interrupted",
+      "status": "interrupted",
+      "rows": 2000000,
+      "input_bids": 1840000,
+      "parallelism": 4,
+      "source_partitions": 4,
+      "sink_partition_modulus": 4,
+      "checkpoint_ms": 1000,
+      "warmups": 1,
+      "runs": 3,
+      "object_reuse": true,
+      "jdk": "17.0.17+10",
+      "architecture": "aarch64",
+      "available_processors": 10,
+      "heap_max_bytes": 8589934592,
+      "native_task_off_heap_capacity_bytes": 51539607552,
+      "state_backend_checks": [],
+      "observations": [
+        {
+          "query": "q12",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 1111.074959,
+          "wall_milliseconds": 1111.09,
+          "started_at_utc": "2026-11-14T16:33:12.138473Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 50470.920666,
+          "wall_milliseconds": 50471.451,
+          "started_at_utc": "2026-11-14T16:33:13.486146Z",
+          "output_rows": 230,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 478.343417,
+          "wall_milliseconds": 478.351,
+          "started_at_utc": "2026-11-14T16:34:04.603146Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 570.673375,
+          "wall_milliseconds": 570.683,
+          "started_at_utc": "2026-11-14T16:34:05.392419Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 2915.7295,
+          "wall_milliseconds": 2915.773,
+          "started_at_utc": "2026-11-14T16:34:06.247326Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 63407.715333,
+          "wall_milliseconds": 63408.355,
+          "started_at_utc": "2026-11-14T16:34:09.472210Z",
+          "output_rows": 322,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "processing-time bounded counts"
+        }
+      ],
+      "original_run_status": "running",
+      "qualification": "Excluded from timing qualification: another session started a Paimon benchmark during this run.",
+      "concurrent_worker": {
+        "pid": 52395,
+        "observed_cpu_percent": 109.9,
+        "repository": "StreamFusion Paimon batch IO (other session)",
+        "action": "left untouched"
+      }
+    },
+    {
+      "stage": "q12-after-batches-idle-contended",
+      "status": "diagnostic",
+      "rows": 200000,
+      "input_bids": 184000,
+      "parallelism": 4,
+      "source_partitions": 4,
+      "sink_partition_modulus": 4,
+      "checkpoint_ms": 1000,
+      "warmups": 1,
+      "runs": 3,
+      "object_reuse": true,
+      "jdk": "17.0.17+10",
+      "architecture": "aarch64",
+      "available_processors": 10,
+      "heap_max_bytes": 8589934592,
+      "native_task_off_heap_capacity_bytes": 51539607552,
+      "state_backend_checks": [],
+      "observations": [
+        {
+          "query": "q12",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 461.053208,
+          "wall_milliseconds": 461.063,
+          "started_at_utc": "2026-11-14T16:39:55.900589Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 4546.872917,
+          "wall_milliseconds": 4546.923,
+          "started_at_utc": "2026-11-14T16:39:56.620299Z",
+          "output_rows": 46,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 388.212,
+          "wall_milliseconds": 388.22,
+          "started_at_utc": "2026-11-14T16:40:01.454361Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 304.783084,
+          "wall_milliseconds": 304.789,
+          "started_at_utc": "2026-11-14T16:40:02.198010Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 408.36125,
+          "wall_milliseconds": 408.368,
+          "started_at_utc": "2026-11-14T16:40:02.749620Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 4344.793459,
+          "wall_milliseconds": 4344.84,
+          "started_at_utc": "2026-11-14T16:40:03.391405Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 4338.214709,
+          "wall_milliseconds": 4338.261,
+          "started_at_utc": "2026-11-14T16:40:07.979627Z",
+          "output_rows": 46,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 297.760375,
+          "wall_milliseconds": 297.767,
+          "started_at_utc": "2026-11-14T16:40:12.633767Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 380.973542,
+          "wall_milliseconds": 380.982,
+          "started_at_utc": "2026-11-14T16:40:13.185750Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "processing-time bounded counts"
+        }
+      ],
+      "original_run_status": "passed",
+      "qualification": "Excluded: foreign Paimon worker overlapped; initial process guard used truncated macOS comm field and missed it. Guard corrected to parse full argv."
+    },
+    {
+      "stage": "q12-after-batches-guarded-interrupted",
+      "status": "interrupted",
+      "rows": 200000,
+      "input_bids": 0,
+      "parallelism": 4,
+      "source_partitions": 4,
+      "sink_partition_modulus": 4,
+      "checkpoint_ms": 1000,
+      "warmups": 1,
+      "runs": 3,
+      "object_reuse": true,
+      "jdk": "17.0.17+10",
+      "architecture": "aarch64",
+      "available_processors": 10,
+      "heap_max_bytes": 8589934592,
+      "native_task_off_heap_capacity_bytes": 51539607552,
+      "state_backend_checks": [],
+      "observations": [],
+      "original_run_status": "running",
+      "qualification": "Foreign Surefire worker overlap; timing excluded"
+    }
+  ],
+  "full_matrix_qualified": false,
+  "profile_run": {
+    "status": "profiled",
+    "rows": 2000000,
+    "input_bids": 1840000,
+    "parallelism": 4,
+    "source_partitions": 4,
+    "sink_partition_modulus": 4,
+    "checkpoint_ms": 1000,
+    "warmups": 0,
+    "runs": 1,
+    "object_reuse": true,
+    "jdk": "17.0.17+10",
+    "architecture": "aarch64",
+    "available_processors": 10,
+    "heap_max_bytes": 8589934592,
+    "native_task_off_heap_capacity_bytes": 51539607552,
+    "state_backend_checks": [],
+    "observations": [
+      {
+        "query": "q12",
+        "engine": "stock",
+        "backend": "memory",
+        "mini_batch": false,
+        "trial": 0,
+        "milliseconds": 1547.908,
+        "wall_milliseconds": 1547.928,
+        "started_at_utc": "2026-11-14T16:25:08.714615Z",
+        "output_rows": 46,
+        "sink_partitions": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "validation": "processing-time bounded counts"
+      },
+      {
+        "query": "q12",
+        "engine": "previous",
+        "backend": "memory",
+        "mini_batch": false,
+        "trial": 0,
+        "milliseconds": 33304.029417,
+        "wall_milliseconds": 33304.362,
+        "started_at_utc": "2026-11-14T16:25:10.755178Z",
+        "output_rows": 138,
+        "sink_partitions": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "validation": "processing-time bounded counts"
+      },
+      {
+        "query": "q12",
+        "engine": "native",
+        "backend": "memory",
+        "mini_batch": false,
+        "trial": 0,
+        "milliseconds": 31886.194458,
+        "wall_milliseconds": 31886.516,
+        "started_at_utc": "2026-11-14T16:25:44.486991Z",
+        "output_rows": 138,
+        "sink_partitions": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "validation": "processing-time bounded counts"
+      }
+    ],
+    "original_run_status": "passed",
+    "qualification": "CPU-instrumented diagnostic; not a timing gate"
+  },
+  "validation": {
+    "expanded_hudi_jdk17_utf8": {
+      "executed": 8,
+      "failures": 0,
+      "errors": 0
+    },
+    "watermark_runtime_flink118": {
+      "executed": 8,
+      "failures": 0
+    },
+    "watermark_runtime_flink22": {
+      "executed": 8,
+      "failures": 0
+    },
+    "note": "The separate allocation-owner candidate is not part of this planner change.",
+    "processing_time_canonical_recovery_flink118": {
+      "executed": 14,
+      "selection": "pairwise canonicalSmoke; automatic import rearms idle timers and survives a native checkpoint; tumble/hop/cumulative, regions, heap/RocksDB and DISTINCT",
+      "status": "passed"
+    },
+    "processing_time_canonical_recovery_flink22": {
+      "executed": 14,
+      "selection": "pairwise canonicalSmoke; automatic import rearms idle timers and survives a native checkpoint; tumble/hop/cumulative, regions, heap/RocksDB and DISTINCT",
+      "status": "passed"
+    }
+  },
+  "host_contention": {
+    "interrupted_guarded_attempt": {
+      "status": "no-timing-results",
+      "foreign_native_compiler_pid": 62531
+    },
+    "note": "The first repeat guard used truncated macOS comm fields and missed overlap; subsequent guard parses full argv and stopped the next attempt during foreign native compilation. No after-change timing is qualified yet.",
+    "isolated_batch_proof_owner_baseline_attempt": {
+      "status": "interrupted-before-timing",
+      "foreign_busy_maven_pid": 65763,
+      "benchmark": "Paimon TPC-DS scale 1, nine queries",
+      "note": "Guard correctly terminated only the Hudi process group."
+    }
+  }
+}

@@ -101,6 +101,60 @@ class HudiExpandedCoverageTest {
   }
 
   @Test
+  void processingTimeWindowsKeepBatchesUnlessTheirInputObservesWatermarks() throws Exception {
+    String source =
+        "CREATE TABLE timed (id BIGINT,ts TIMESTAMP(3),WATERMARK FOR ts AS ts - INTERVAL '1'"
+            + " SECOND) WITH ("
+            + watermarkOptions("window_input", true)
+            + ")";
+    var seed = environment();
+    seed.executeSql(source);
+    seed.executeSql("INSERT INTO timed VALUES (1,TIMESTAMP '2026-01-01 00:00:00')").await();
+    var sql = environment();
+    sql.getConfig().getConfiguration().setInteger("table.exec.resource.default-parallelism", 1);
+    sql.executeSql(source);
+    sql.executeSql(
+        "CREATE TABLE window_result (id BIGINT,total BIGINT,lo TIMESTAMP(3),hi TIMESTAMP(3)) WITH ("
+            + watermarkOptions("window_result", false)
+            + ")");
+    var scan = NativePlanner.install(sql);
+    for (boolean observed : List.of(false, true)) {
+      String view = "clock_" + observed;
+      sql.executeSql(
+          "CREATE TEMPORARY VIEW "
+              + view
+              + " AS SELECT *,PROCTIME() AS p_time FROM timed"
+              + (observed ? " WHERE CURRENT_WATERMARK(ts) IS NULL" : ""));
+      for (boolean proctime : List.of(false, true)) {
+        for (String shape : List.of("TUMBLE", "HOP", "CUMULATE")) {
+          String intervals =
+              shape.equals("TUMBLE")
+                  ? "INTERVAL '10' SECOND"
+                  : "INTERVAL '5' SECOND,INTERVAL '10' SECOND";
+          String insert =
+              "INSERT INTO window_result SELECT id,COUNT(*),window_start,window_end FROM TABLE("
+                  + shape
+                  + "(TABLE "
+                  + view
+                  + ",DESCRIPTOR("
+                  + (proctime ? "p_time" : "ts")
+                  + "),"
+                  + intervals
+                  + ")) GROUP BY id,window_start,window_end";
+          String plan = sql.explainSql(insert);
+          assertTrue(plan.contains("NativeHudiSource"), plan + scan.explainSummary());
+          assertTrue(plan.contains("NativeHudiSink"), plan + scan.explainSummary());
+          assertTrue(
+              plan.contains("NativeColumnarWindowAggregate")
+                  || plan.contains("NativeColumnarGlobalWindowAggregate"),
+              plan);
+          assertEquals(proctime && !observed, plan.contains("watermarkGranularity=[batch]"), plan);
+        }
+      }
+    }
+  }
+
+  @Test
   void terminalCommitTimeUpsertsBatchThroughRegularJoinAndAggregate() throws Exception {
     var seed = environment();
     String source =

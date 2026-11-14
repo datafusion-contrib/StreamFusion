@@ -12,12 +12,16 @@ through a terminal chain of native Calcs without user functions when their
 original programs contain no `CURRENT_WATERMARK` call. Candidate evaluation, NULL rowtime failure, periodic
 progress and final maximum watermark remain. Append sinks can also cross native
 exchanges, mini-batch assigners and inner joins with two insert-only inputs.
+Append and terminal commit-time upsert paths can also cross single-phase
+processing-time fixed windows: these fire from the processing-time service and
+do not consume event-time watermarks. Tumble, hop and cumulative plans are
+covered; a `CURRENT_WATERMARK` expression below the window still stops the proof.
 For MOR sinks explicitly configured with commit-time ordering and precombine, the proof also crosses native exchanges,
 mini-batch assigners, regular joins, non-windowed aggregates/ranking and
 deduplication that does not observe watermarks. Rowtime keep-first retains fine
 boundaries. These sinks retain the final upsert per key, so unobserved flush
 positions do not select event-time winners. User-function calls stop this broader rewrite. Event-time ordering, precombine-disabled writes,
-windows, unknown operators/programs and observable watermark expressions retain
+event-time windows, unknown operators/programs and observable watermark expressions retain
 the original eager boundaries. A Q4 diagnostic profile attributed 35.6% of CPU
 samples to regular-join watermark flushing. A Q9 CPU capture likewise attributed
 49.7% of samples to batch flushing, including 27.8% under join watermark flushing.
@@ -34,6 +38,17 @@ one warmup and three rotating release trials per engine. Q0 medians are
 2,039.6 / 85,742.2 / 1,323.7 ms respectively. The benchmark page retains all
 trial ranges and losses. The heap/mini-batching-on baseline is also recorded there.
 Persistent-window tuning and full-matrix requalification remain in progress.
+
+A separate two-million-event Q12 diagnostic collected 6,711 CPU samples. Work
+under the watermark assigner/Calc accounted for 52.8% and key-group splitting
+for 36.7%; empty window emission accounted for 8.1%. These inclusive shares
+overlap. This motivated extending the existing proof across processing-time
+fixed windows rather than changing their timer implementation. The
+[structured observations](../benchmarks/hudi-processing-time-batches-20261114.json)
+retain the diagnostic and every attempted comparison. After-change timings
+overlapped another session's builds/benchmarks, so they remain diagnostic pending
+an uncontended repeat. Processing-time count checks permit empty output when a
+bounded job completes before its first timer; they are not full-value parity.
 
 An awake Q9 CPU capture then identified MOR log serialization (32.9% of samples)
 and its encoder handoff (25.7%, inclusive). Java previously filled metadata for

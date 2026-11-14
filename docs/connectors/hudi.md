@@ -386,8 +386,11 @@ also admit native exchanges, mini-batch assigners and inner joins with insert-on
 inputs. For MOR with explicit commit-time ordering and precombine, this proof also crosses native
 exchanges, mini-batch assigners, regular joins, non-windowed aggregates/ranking
 and deduplication that does not observe watermarks, without user functions.
+Both append and terminal commit-time upsert paths can cross single-phase
+processing-time tumble/hop/cumulative windows, whose timers ignore event-time
+watermarks. A watermark-observing Calc below such a window still stops the proof.
 Rowtime keep-first deduplication retains fine boundaries. Event-time ordering and
-precombine-disabled writes retain their flush positions. Windows, unknown
+precombine-disabled writes retain their flush positions. Event-time windows, unknown
 intervening operators and watermark-observing Calcs retain the exact
 per-row boundaries. The watermark expression and NULL validation remain intact.
 
