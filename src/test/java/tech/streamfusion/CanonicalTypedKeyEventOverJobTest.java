@@ -7,44 +7,25 @@ import java.util.stream.Stream;
 import org.junit.jupiter.params.provider.Arguments;
 import tech.streamfusion.compat.FlinkPlanCompat;
 
-class CanonicalTypedKeyEventOverJobTest extends CanonicalEventUnboundedOverJobTest {
-  static Stream<Arguments> continuedCases() {
-    return cases(false);
-  }
-
-  static Stream<Arguments> recoveryCases() {
-    return cases(true);
-  }
-
-  private static Stream<Arguments> cases(boolean recovery) {
+abstract class CanonicalTypedKeyEventOverJobTest extends CanonicalEventUnboundedOverJobTest {
+  static Stream<Arguments> typedCases(boolean recovery, String types) {
     return CanonicalTestMatrix.select(
         Stream.of("rows", "range")
             .flatMap(
                 frame ->
-                    Stream.of(
-                            "INT:BIGINT",
-                            "STRING:BIGINT",
-                            "BIGINT:TINYINT",
-                            "BIGINT:SMALLINT",
-                            "BIGINT:INT",
-                            "BIGINT:DECIMAL(18,2)",
-                            "BIGINT:DECIMAL(38,2)",
-                            "BIGINT:DECIMAL(38,20)")
+                    IntStream.rangeClosed(1, FlinkPlanCompat.unboundedOverVersion())
+                        .boxed()
                         .flatMap(
-                            types ->
-                                IntStream.rangeClosed(1, FlinkPlanCompat.unboundedOverVersion())
-                                    .boxed()
-                                    .flatMap(
-                                        version ->
-                                            eventCases(frame, false, false, recovery)
-                                                .map(
-                                                    args ->
-                                                        Arguments.of(
-                                                            frame + ":" + types + ":" + version,
-                                                            args.get()[1],
-                                                            args.get()[2],
-                                                            args.get()[3],
-                                                            args.get()[4]))))));
+                            version ->
+                                eventCases(frame, false, false, recovery)
+                                    .map(
+                                        args ->
+                                            Arguments.of(
+                                                frame + ":" + types + ":" + version,
+                                                args.get()[1],
+                                                args.get()[2],
+                                                args.get()[3],
+                                                args.get()[4])))));
   }
 
   @Override

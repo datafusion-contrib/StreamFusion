@@ -17,48 +17,34 @@ import org.apache.flink.table.types.logical.TimestampType;
 import org.junit.jupiter.params.provider.Arguments;
 import tech.streamfusion.compat.FlinkPlanCompat;
 
-class CanonicalOverCountPayloadJobTest extends CanonicalUnboundedOverJobTest {
-  static Stream<Arguments> continuedCases() {
-    return cases(false);
-  }
-
-  static Stream<Arguments> recoveryCases() {
-    return cases(true);
-  }
-
-  private static Stream<Arguments> cases(boolean recovery) {
+abstract class CanonicalOverCountPayloadJobTest extends CanonicalUnboundedOverJobTest {
+  static Stream<Arguments> payloadCases(boolean recovery, String frame) {
     return CanonicalTestMatrix.select(
         Stream.of("proc", "event")
             .flatMap(
                 clock ->
-                    Stream.of("rows", "range")
+                    Stream.of("scalar-varbinary", "array", "row", "map")
                         .flatMap(
-                            frame ->
-                                Stream.of("scalar-varbinary", "array", "row", "map")
+                            shape ->
+                                Stream.of(1, FlinkPlanCompat.unboundedOverVersion())
+                                    .distinct()
+                                    .filter(version -> clock.equals("event") || version == 1)
                                     .flatMap(
-                                        shape ->
-                                            Stream.of(1, FlinkPlanCompat.unboundedOverVersion())
-                                                .distinct()
+                                        version ->
+                                            CanonicalGroupArithmeticJobTest.cases()
                                                 .filter(
-                                                    version ->
-                                                        clock.equals("event") || version == 1)
-                                                .flatMap(
-                                                    version ->
-                                                        CanonicalGroupArithmeticJobTest.cases()
-                                                            .filter(
-                                                                args ->
-                                                                    recovery
-                                                                        != args.get()[0].equals(
-                                                                            "continue"))
-                                                            .map(
-                                                                args ->
-                                                                    Arguments.of(
-                                                                        clock + ":" + frame + ":"
-                                                                            + shape + ":" + version,
-                                                                        args.get()[0],
-                                                                        args.get()[1],
-                                                                        args.get()[2],
-                                                                        args.get()[3])))))));
+                                                    args ->
+                                                        recovery
+                                                            != args.get()[0].equals("continue"))
+                                                .map(
+                                                    args ->
+                                                        Arguments.of(
+                                                            clock + ":" + frame + ":" + shape + ":"
+                                                                + version,
+                                                            args.get()[0],
+                                                            args.get()[1],
+                                                            args.get()[2],
+                                                            args.get()[3]))))));
   }
 
   @Override

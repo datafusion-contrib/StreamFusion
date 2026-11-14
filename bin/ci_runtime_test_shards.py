@@ -47,7 +47,9 @@ def partition(classes, count, suite="all", durations=None, line=None):
         raise ValueError("No compiled Surefire test candidates found")
     if durations is None:
         recorded = json.loads(DURATIONS.read_text())
-        durations = {**recorded["seconds"],
+        durations = {**recorded.get("estimated_seconds", {}),
+                     **recorded.get("estimated_seconds_by_line", {}).get(line, {}),
+                     **recorded["seconds"],
                      **recorded.get("seconds_by_line", {}).get(line, {})}
     if any(not isinstance(value, (int, float)) or isinstance(value, bool)
            or not math.isfinite(value) or value < 0 for value in durations.values()):

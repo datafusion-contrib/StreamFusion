@@ -22,26 +22,24 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
-class CanonicalTypedMaterializerJobTest {
+abstract class CanonicalTypedMaterializerJobTest {
   @TempDir Path directory;
 
-  static Stream<Arguments> cases() {
+  static Stream<Arguments> casesForShape(String shape, boolean inputKey) {
     return CanonicalTestMatrix.select(
-        CanonicalMaterializerTypeFixture.shapes()
-            .flatMap(
-                shape ->
-                    CanonicalSinkMaterializerJobTest.cases()
-                        .map(
-                            args ->
-                                Arguments.of(
-                                    shape,
-                                    args.get()[0],
-                                    args.get()[1],
-                                    args.get()[2],
-                                    args.get()[3],
-                                    args.get()[4],
-                                    args.get()[5],
-                                    args.get()[6]))));
+        CanonicalSinkMaterializerJobTest.allCases()
+            .filter(args -> (boolean) args.get()[1] == inputKey)
+            .map(
+                args ->
+                    Arguments.of(
+                        shape,
+                        args.get()[0],
+                        args.get()[1],
+                        args.get()[2],
+                        args.get()[3],
+                        args.get()[4],
+                        args.get()[5],
+                        args.get()[6])));
   }
 
   @ParameterizedTest
@@ -115,9 +113,9 @@ class CanonicalTypedMaterializerJobTest {
       String mode,
       boolean ordinary)
       throws Exception {
-    var base = new CanonicalSinkMaterializerJobTest();
-    base.directory = directory;
-    var root = base.prepare(name, strategy, inputKey, uids, mode, ordinary);
+    var root =
+        CanonicalSinkMaterializerJobTest.prepareFixture(
+            directory, name, strategy, inputKey, uids, mode, ordinary);
     Files.writeString(
         root.resolve("input-columns.sql"),
         "k "

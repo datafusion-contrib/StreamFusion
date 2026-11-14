@@ -6,55 +6,41 @@ import java.util.stream.Stream;
 import org.junit.jupiter.params.provider.Arguments;
 import tech.streamfusion.compat.FlinkPlanCompat;
 
-class CanonicalUnboundedOverExtremaJobTest extends CanonicalUnboundedOverJobTest {
-  static Stream<Arguments> continuedCases() {
-    return cases(false);
-  }
-
-  static Stream<Arguments> recoveryCases() {
-    return cases(true);
-  }
-
-  private static Stream<Arguments> cases(boolean recovery) {
+abstract class CanonicalUnboundedOverExtremaJobTest extends CanonicalUnboundedOverJobTest {
+  static Stream<Arguments> extremaCases(boolean recovery, String clock, String... frames) {
     return CanonicalTestMatrix.select(
-        Stream.of("proc", "event")
+        Stream.of(frames)
             .flatMap(
-                clock ->
-                    Stream.of("rows", "range")
+                frame ->
+                    Stream.of(
+                            "BIGINT",
+                            "TINYINT",
+                            "FLOAT",
+                            "DOUBLE",
+                            "DECIMAL(18,2)",
+                            "DECIMAL(38,20)",
+                            "STRING")
                         .flatMap(
-                            frame ->
-                                Stream.of(
-                                        "BIGINT",
-                                        "TINYINT",
-                                        "FLOAT",
-                                        "DOUBLE",
-                                        "DECIMAL(18,2)",
-                                        "DECIMAL(38,20)",
-                                        "STRING")
+                            type ->
+                                Stream.of(1, FlinkPlanCompat.unboundedOverVersion())
+                                    .distinct()
+                                    .filter(version -> clock.equals("event") || version == 1)
                                     .flatMap(
-                                        type ->
-                                            Stream.of(1, FlinkPlanCompat.unboundedOverVersion())
-                                                .distinct()
+                                        version ->
+                                            CanonicalGroupArithmeticJobTest.cases()
                                                 .filter(
-                                                    version ->
-                                                        clock.equals("event") || version == 1)
-                                                .flatMap(
-                                                    version ->
-                                                        CanonicalGroupArithmeticJobTest.cases()
-                                                            .filter(
-                                                                args ->
-                                                                    recovery
-                                                                        != args.get()[0].equals(
-                                                                            "continue"))
-                                                            .map(
-                                                                args ->
-                                                                    Arguments.of(
-                                                                        clock + ":" + frame + ":"
-                                                                            + type + ":" + version,
-                                                                        args.get()[0],
-                                                                        args.get()[1],
-                                                                        args.get()[2],
-                                                                        args.get()[3])))))));
+                                                    args ->
+                                                        recovery
+                                                            != args.get()[0].equals("continue"))
+                                                .map(
+                                                    args ->
+                                                        Arguments.of(
+                                                            clock + ":" + frame + ":" + type + ":"
+                                                                + version,
+                                                            args.get()[0],
+                                                            args.get()[1],
+                                                            args.get()[2],
+                                                            args.get()[3]))))));
   }
 
   @Override

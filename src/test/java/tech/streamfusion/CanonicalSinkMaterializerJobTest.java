@@ -18,10 +18,10 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
-class CanonicalSinkMaterializerJobTest {
+abstract class CanonicalSinkMaterializerJobTest {
   @TempDir Path directory;
 
-  static Stream<Arguments> cases() {
+  static Stream<Arguments> allCases() {
     var strategies =
         tech.streamfusion.compat.MaterializerStateCompat.supportsV2()
             ? Stream.of("LEGACY", "VALUE", "MAP", "ADAPTIVE_VALUE", "ADAPTIVE_MAP")
@@ -60,8 +60,8 @@ class CanonicalSinkMaterializerJobTest {
       boolean nativeFirst,
       String backend)
       throws Exception {
-    var baseline = prepare("baseline", strategy, inputKey, uids, mode, ordinary);
-    var switched = prepare("switched", strategy, inputKey, uids, mode, ordinary);
+    var baseline = prepareFixture(directory, "baseline", strategy, inputKey, uids, mode, ordinary);
+    var switched = prepareFixture(directory, "switched", strategy, inputKey, uids, mode, ordinary);
     new CanonicalJobRunner(directory)
         .verifyJoinSwitch(baseline, switched, nativeFirst, backend, mode, "SinkMaterializer");
     var type = RowType.of(new BigIntType(), new BigIntType(), new BigIntType());
@@ -86,8 +86,14 @@ class CanonicalSinkMaterializerJobTest {
       assertFalse(Files.readString(switched.resolve("plan.json")).contains("tech.streamfusion"));
   }
 
-  Path prepare(
-      String name, String strategy, boolean inputKey, String uids, String mode, boolean ordinary)
+  static Path prepareFixture(
+      Path directory,
+      String name,
+      String strategy,
+      boolean inputKey,
+      String uids,
+      String mode,
+      boolean ordinary)
       throws Exception {
     var root = directory.resolve(name);
     Files.createDirectories(root);
