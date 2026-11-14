@@ -24,6 +24,18 @@ admitted TUMBLE/HOP/CUMULATE bindings on 1.18 and 2.2, admitted SESSION TVFs on 
 event/processing-time SESSION/TUMBLE/HOP group windows on both lines.
 Flink 1.18 has no SESSION TVF.
 
+### Floating SUM preservation awaiting qualification
+
+Existing FLOAT and DOUBLE window/session SUM use the released nullable buffer semantics:
+the first non-NULL value is assigned directly, and later values or partial sums are added in
+arrival order at their declared width. A canonical import must preserve an initial negative
+zero rather than add it to positive zero. DOUBLE no longer delegates this fold to DataFusion's
+batch reduction, whose association can differ from Flink's row sequence. State remains one
+nullable floating field, including for local/global partials; native checkpoint and stock
+canonical serializers do not gain fields. New raw-state/rebuild and physical-batch controls
+await execution. This is a parity correction for existing native shapes, with no performance
+claim; both-release qualification remains pending.
+
 Legacy SESSION reuses the released `window-aggs`, `session-window-mapping` and window timer
 serializers. Ordinary SQL and compiled plans bind the original owner and key-group maximum,
 including a singleton maximum for global sessions. The binding checks the actual assigner,

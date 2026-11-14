@@ -199,6 +199,15 @@ fn create(path: Option<&std::path::Path>, keyless: bool, count_only: bool) -> Tu
             vec![0, 3, 4, 0, 4, 1, 2],
         )
     };
+    create_with_aggregates(path, keyless, types, kinds)
+}
+
+fn create_with_aggregates(
+    path: Option<&std::path::Path>,
+    keyless: bool,
+    types: Vec<i64>,
+    kinds: Vec<i64>,
+) -> TumblingAggregator {
     let mut value = TumblingAggregator::new(1000, 1000, false, types, kinds)
         .with_key_timestamp_precisions(if keyless { vec![] } else { vec![-1] });
     #[cfg(feature = "rocksdb-state")]
@@ -230,6 +239,71 @@ fn create(path: Option<&std::path::Path>, keyless: bool, count_only: bool) -> Tu
         );
     }
     value
+}
+
+#[test]
+fn floating_sum_preserves_raw_negative_zero_across_direct_canonical_stores() {
+    use arrow::array::Float32Array;
+    for (code, data_type) in [(6, DataType::Float32), (1, DataType::Float64)] {
+        for source_rocks in [false, true] {
+            for target_rocks in [false, true] {
+                let directory = tempfile::tempdir().unwrap();
+                let source_path = directory.path().join("source");
+                let target_path = directory.path().join("target");
+                let mut source = create_with_aggregates(
+                    source_rocks.then_some(source_path.as_path()),
+                    false,
+                    vec![code],
+                    vec![0],
+                );
+                let mut target = create_with_aggregates(
+                    target_rocks.then_some(target_path.as_path()),
+                    false,
+                    vec![code],
+                    vec![0],
+                );
+                let values: ArrayRef = match data_type {
+                    DataType::Float32 => Arc::new(Float32Array::from(vec![Some(-0.0), None])),
+                    _ => Arc::new(Float64Array::from(vec![Some(-0.0), None])),
+                };
+                let input = RecordBatch::try_from_iter(vec![
+                    ("key0", Arc::new(Int64Array::from(vec![7, 7])) as ArrayRef),
+                    ("value0", values),
+                    ("ts", Arc::new(Int64Array::from(vec![100, 100]))),
+                ])
+                .unwrap();
+                source.update(&input).unwrap();
+                let check = |batch: RecordBatch| {
+                    assert_eq!(batch.num_rows(), 1);
+                    match ScalarValue::try_from_array(batch.column(3), 0).unwrap() {
+                        ScalarValue::Float32(Some(value)) => {
+                            assert_eq!(value.to_bits(), (-0.0f32).to_bits())
+                        }
+                        ScalarValue::Float64(Some(value)) => {
+                            assert_eq!(value.to_bits(), (-0.0f64).to_bits())
+                        }
+                        other => panic!("floating raw sum: {other:?}"),
+                    }
+                };
+                source
+                    .visit_canonical_tumble(|batch| {
+                        check(batch.clone());
+                        target.import_canonical_tumble(&batch, 1)
+                    })
+                    .unwrap();
+                target
+                    .visit_canonical_tumble(|batch| {
+                        check(batch);
+                        Ok(())
+                    })
+                    .unwrap();
+                assert_eq!(
+                    rows(&source.flush(1000).unwrap()),
+                    rows(&target.flush(1000).unwrap())
+                );
+            }
+        }
+    }
 }
 
 fn input(keyless: bool, count_only: bool, offset: usize, count: usize) -> RecordBatch {

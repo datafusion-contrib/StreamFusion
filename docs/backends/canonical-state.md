@@ -2483,3 +2483,8 @@ remain unchanged. These additions await both-release execution in the local test
 The new alternating GROUP BY ROW-key fixture releases superseded snapshots after their last
 restore and discards its final snapshot on every exit. Test-owned checkpoint files therefore
 have an explicit lifetime within the qualification run.
+
+Existing window/session floating SUM preserves its first nullable value on canonical import
+and ordinary checkpoint rebuild, including negative zero, then folds in arrival order. FLOAT
+and DOUBLE retain their single-field state layout. New raw-state controls await execution;
+the correction is not a new operator or performance qualification.
