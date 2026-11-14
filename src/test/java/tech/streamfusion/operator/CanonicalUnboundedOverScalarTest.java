@@ -39,12 +39,10 @@ import org.apache.flink.table.runtime.keyselector.RowDataKeySelector;
 import org.apache.flink.table.runtime.operators.over.ProcTimeUnboundedPrecedingFunction;
 import org.apache.flink.table.runtime.typeutils.RowDataSerializer;
 import org.apache.flink.table.types.logical.LogicalType;
-import org.apache.flink.table.types.logical.LogicalTypeRoot;
 import org.apache.flink.table.types.logical.RowType;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import tech.streamfusion.Native;
 import tech.streamfusion.NativePlannerTestEnvironment;
 import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.compat.FlinkPlanCompat;
@@ -59,8 +57,16 @@ class CanonicalUnboundedOverScalarTest {
   }
 
   private static Stream<Arguments> allCases() {
-    return Stream.of("TINYINT", "SMALLINT", "INT", "BIGINT", "FLOAT", "DOUBLE",
-        "DECIMAL(18,2)", "DECIMAL(38,2)", "DECIMAL(38,20)")
+    return Stream.of(
+            "TINYINT",
+            "SMALLINT",
+            "INT",
+            "BIGINT",
+            "FLOAT",
+            "DOUBLE",
+            "DECIMAL(18,2)",
+            "DECIMAL(38,2)",
+            "DECIMAL(38,20)")
         .flatMap(
             type ->
                 Stream.of(false, true)
@@ -94,6 +100,47 @@ class CanonicalUnboundedOverScalarTest {
       throws Exception {
     var plan = new Plan(type, rows, global, ttl);
     verifyInterchange(plan, stockStore, nativeStore);
+  }
+
+  static Stream<Arguments> extremaCases() {
+    return tech.streamfusion.CanonicalTestMatrix.select(
+        Stream.of(
+                "TINYINT",
+                "INT",
+                "BIGINT",
+                "DECIMAL(18,2)",
+                "DECIMAL(38,20)",
+                "BOOLEAN",
+                "DATE",
+                "TIME(3)",
+                "TIMESTAMP(9)",
+                "TIMESTAMP_LTZ(3)",
+                "STRING",
+                "CHAR(32)")
+            .flatMap(
+                type ->
+                    Stream.of(false, true)
+                        .flatMap(
+                            rows ->
+                                Stream.of(false, true)
+                                    .flatMap(
+                                        global ->
+                                            Stream.of(0L, 1000L)
+                                                .flatMap(
+                                                    ttl ->
+                                                        Stream.of(false, true)
+                                                            .map(
+                                                                rocks ->
+                                                                    Arguments.of(
+                                                                        type, rows, global, ttl,
+                                                                        rocks)))))));
+  }
+
+  @ParameterizedTest
+  @MethodSource("extremaCases")
+  void unboundedScalarExtremaRetainNullableValuesAndTtlAges(
+      String type, boolean rows, boolean global, long ttl, boolean rocks) throws Exception {
+    verifyInterchange(new Plan(type, rows, global, ttl, "BIGINT", false, true), !rocks, rocks);
   }
 
   static Stream<Arguments> typedKeys() {
@@ -185,10 +232,14 @@ class CanonicalUnboundedOverScalarTest {
   }
 
   static Stream<Arguments> integralBoundaries() {
-    return Stream.of(Arguments.of("TINYINT", 127L), Arguments.of("SMALLINT", 32767L),
+    return Stream.of(
+            Arguments.of("TINYINT", 127L),
+            Arguments.of("SMALLINT", 32767L),
             Arguments.of("INT", 2147483647L))
-        .flatMap(args -> Stream.of(false, true)
-            .map(rocks -> Arguments.of(args.get()[0], args.get()[1], rocks)));
+        .flatMap(
+            args ->
+                Stream.of(false, true)
+                    .map(rocks -> Arguments.of(args.get()[0], args.get()[1], rocks)));
   }
 
   @ParameterizedTest
@@ -197,26 +248,34 @@ class CanonicalUnboundedOverScalarTest {
       throws Exception {
     var plan = new Plan("DECIMAL(38,2)", true, false, 0);
     var maximum = (GenericRowData) plan.row(1L, null);
-    maximum.setField(1, org.apache.flink.table.data.DecimalData.fromBigDecimal(
-        new java.math.BigDecimal("999999999999999999999999999999999999.99"), 38, 2));
+    maximum.setField(
+        1,
+        org.apache.flink.table.data.DecimalData.fromBigDecimal(
+            new java.math.BigDecimal("999999999999999999999999999999999999.99"), 38, 2));
     var extra = (GenericRowData) plan.row(1L, null);
-    extra.setField(1, org.apache.flink.table.data.DecimalData.fromBigDecimal(
-        new java.math.BigDecimal("0.01"), 38, 2));
+    extra.setField(
+        1,
+        org.apache.flink.table.data.DecimalData.fromBigDecimal(
+            new java.math.BigDecimal("0.01"), 38, 2));
     List<RowData> prefix = List.of(plan.row(null, null), maximum, extra);
-    var suffix = List.of(plan.row(1L, null), plan.row(1L, 7L), plan.row(1L, -2L), plan.row(null, 3L));
+    var suffix =
+        List.of(plan.row(1L, null), plan.row(1L, 7L), plan.row(1L, -2L), plan.row(null, 3L));
     long allocated = NativeAllocator.SHARED.getAllocatedMemory();
-    try (var stock = plan.stock(rocks); var source = plan.nativeHarness(rocks)) {
+    try (var stock = plan.stock(rocks);
+        var source = plan.nativeHarness(rocks)) {
       stock.open();
       source.open();
       assertEquals(plan.stockInput(stock, prefix), plan.nativeInput(source, prefix));
       var nativeState = snapshot(source);
       var stockState = snapshot(stock);
-      try (var returned = plan.stock(rocks); var imported = plan.nativeHarness(rocks)) {
+      try (var returned = plan.stock(rocks);
+          var imported = plan.nativeHarness(rocks)) {
         returned.initializeState(nativeState);
         imported.initializeState(stockState);
         returned.open();
         imported.open();
-        assertEquals(raw(stock), raw(returned), "Nullable decimal sum and raw AVG overflow are stock state");
+        assertEquals(
+            raw(stock), raw(returned), "Nullable decimal sum and raw AVG overflow are stock state");
         var expected = plan.stockInput(stock, suffix);
         assertEquals(expected, plan.stockInput(returned, suffix));
         assertEquals(expected, plan.nativeInput(imported, suffix));
@@ -237,7 +296,8 @@ class CanonicalUnboundedOverScalarTest {
     var prefix = List.of(plan.row(1L, maximum), plan.row(1L, 1L));
     var suffix = List.of(plan.row(1L, -1L), plan.row(1L, null), plan.row(1L, 2L));
     long allocated = NativeAllocator.SHARED.getAllocatedMemory();
-    try (var stock = plan.stock(rocks); var source = plan.nativeHarness(rocks)) {
+    try (var stock = plan.stock(rocks);
+        var source = plan.nativeHarness(rocks)) {
       stock.open();
       source.open();
       time(stock, 100);
@@ -245,7 +305,8 @@ class CanonicalUnboundedOverScalarTest {
       assertEquals(plan.stockInput(stock, prefix), plan.nativeInput(source, prefix));
       var state = snapshot(source);
       var original = snapshot(stock);
-      try (var returned = plan.stock(rocks); var nativeAgain = plan.nativeHarness(rocks)) {
+      try (var returned = plan.stock(rocks);
+          var nativeAgain = plan.nativeHarness(rocks)) {
         returned.initializeState(state);
         nativeAgain.initializeState(original);
         returned.open();
@@ -314,6 +375,18 @@ class CanonicalUnboundedOverScalarTest {
 
     Plan(String type, boolean rows, boolean global, long ttl, String keyType, boolean composite)
         throws Exception {
+      this(type, rows, global, ttl, keyType, composite, false);
+    }
+
+    Plan(
+        String type,
+        boolean rows,
+        boolean global,
+        long ttl,
+        String keyType,
+        boolean composite,
+        boolean extrema)
+        throws Exception {
       this.rows = rows;
       this.ttl = ttl;
       var config = new Configuration();
@@ -321,22 +394,28 @@ class CanonicalUnboundedOverScalarTest {
       config.setString("table.exec.state.ttl", ttl + " ms");
       var table = NativePlannerTestEnvironment.create(config);
       table.executeSql(
-          "CREATE TABLE scalar_input(k " + keyType + ",v "
+          "CREATE TABLE scalar_input(k "
+              + keyType
+              + ",v "
               + type
               + (composite ? ",k2 BIGINT" : "")
               + ",pt AS PROCTIME()) WITH ('connector'='datagen')");
       table.executeSql(
-          "CREATE TABLE scalar_output(k " + keyType + ",v "
+          "CREATE TABLE scalar_output(k "
+              + keyType
+              + ",v "
               + type
-              + ",s "
-              + type
-              + ",c BIGINT,a "
-              + type
+              + (extrema
+                  ? ",lo " + type + ",hi " + type + ",n BIGINT"
+                  : ",s " + type + ",c BIGINT,a " + type)
               + ") WITH ('connector'='blackhole')");
       json =
           table
               .compilePlanSql(
-                  "INSERT INTO scalar_output SELECT k,v,SUM(v) OVER w,COUNT(v) OVER w,AVG(v) OVER w"
+                  "INSERT INTO scalar_output SELECT k,v,"
+                      + (extrema
+                          ? "MIN(v) OVER w,MAX(v) OVER w,COUNT(v) OVER w"
+                          : "SUM(v) OVER w,COUNT(v) OVER w,AVG(v) OVER w")
                       + " FROM scalar_input WINDOW w AS ("
                       + (global ? "" : "PARTITION BY k" + (composite ? ",k2" : "") + " ")
                       + "ORDER BY pt "
@@ -388,6 +467,10 @@ class CanonicalUnboundedOverScalarTest {
                     switch (call.getAggregation().getKind()) {
                       case SUM:
                         return 0;
+                      case MIN:
+                        return 1;
+                      case MAX:
+                        return 2;
                       case COUNT:
                         return 3;
                       case AVG:
@@ -514,7 +597,11 @@ class CanonicalUnboundedOverScalarTest {
       harness.processElement(
           new StreamRecord<>(
               new ArrowBatch(
-                  RowDataArrowConverter.write(rows, input, NativeAllocator.SHARED, true))));
+                  RowDataArrowConverter.write(
+                      CanonicalOverValueFixture.physicalRows(rows, input),
+                      input,
+                      NativeAllocator.SHARED,
+                      true))));
       var out = new ArrayList<String>();
       for (var batch : harness.extractOutputValues())
         try (var root = batch.root()) {

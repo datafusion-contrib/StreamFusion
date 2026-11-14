@@ -57,9 +57,12 @@ public final class StockOverFoldStateContract implements StockStateContract {
       throw new IllegalArgumentException("Unqualified unbounded OVER key or accumulator layout");
     int slot = 0;
     for (int i = 0; i < kinds.length; i++) {
-      if (kinds[i] != 0 && kinds[i] != 3 && kinds[i] != 4 && kinds[i] != 22
+      boolean extreme = kinds[i] == 1 || kinds[i] == 2;
+      if (kinds[i] != 0 && kinds[i] != 3 && kinds[i] != 4 && kinds[i] != 22 && !extreme
           || widths[i] != (kinds[i] == 4 ? 2 : 1)
-          || !numeric(accumulatorType.getTypeAt(slot))
+          || !(extreme
+              ? supportsExtremumType(accumulatorType.getTypeAt(slot))
+              : numeric(accumulatorType.getTypeAt(slot)))
           || kinds[i] == 3 && !accumulatorType.getTypeAt(slot).is(LogicalTypeRoot.BIGINT)
           || widths[i] == 2 && !accumulatorType.getTypeAt(slot + 1).is(LogicalTypeRoot.BIGINT))
         throw new IllegalArgumentException("Unqualified unbounded OVER scalar schema");
@@ -76,8 +79,9 @@ public final class StockOverFoldStateContract implements StockStateContract {
     for (int i = 0; i < kinds.length; i++) {
       for (int p = 0; p < widths[i]; p++) {
         nativeFields[slot + p] = keyType.getFieldCount() + nativeSlot;
-        fields.add(new RowType.RowField("state" + nativeSlot++,
-            accumulatorType.getTypeAt(slot + p).copy(true)));
+        fields.add(
+            new RowType.RowField(
+                "state" + nativeSlot++, accumulatorType.getTypeAt(slot + p).copy(true)));
       }
       if (kinds[i] == 0 && accumulatorType.getTypeAt(slot).is(LogicalTypeRoot.DECIMAL)) {
         decimalSumCounts[slot] = keyType.getFieldCount() + nativeSlot;
@@ -103,6 +107,26 @@ public final class StockOverFoldStateContract implements StockStateContract {
   }
 
   public static boolean supportsPartitionKey(LogicalType type) {
+    switch (type.getTypeRoot()) {
+      case TINYINT:
+      case SMALLINT:
+      case INTEGER:
+      case BIGINT:
+      case BOOLEAN:
+      case CHAR:
+      case VARCHAR:
+      case DECIMAL:
+      case DATE:
+      case TIME_WITHOUT_TIME_ZONE:
+      case TIMESTAMP_WITHOUT_TIME_ZONE:
+      case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  public static boolean supportsExtremumType(LogicalType type) {
     switch (type.getTypeRoot()) {
       case TINYINT:
       case SMALLINT:
@@ -155,6 +179,8 @@ public final class StockOverFoldStateContract implements StockStateContract {
     int slot = 0;
     for (int i = 0; i < kinds.length; i++) {
       if (kinds[i] != 0
+              && kinds[i] != 1
+              && kinds[i] != 2
               && !accumulatorType.getTypeAt(slot).is(LogicalTypeRoot.DECIMAL)
               && value.isNullAt(slot)
           || widths[i] == 2 && value.isNullAt(slot + 1))
@@ -228,7 +254,8 @@ public final class StockOverFoldStateContract implements StockStateContract {
     var keyRows = new RowDataSerializer(keyType);
     var getters = new RowData.FieldGetter[nativeFields.length];
     for (int i = 0; i < getters.length; i++)
-      getters[i] = RowData.createFieldGetter(accumulatorType.getTypeAt(i).copy(true), nativeFields[i]);
+      getters[i] =
+          RowData.createFieldGetter(accumulatorType.getTypeAt(i).copy(true), nativeFields[i]);
     return (row, receiver) -> {
       var key = copy(row, keyGetters);
       var accumulator = new GenericRowData(nativeFields.length);

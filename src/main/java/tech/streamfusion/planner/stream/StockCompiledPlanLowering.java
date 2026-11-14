@@ -1822,6 +1822,11 @@ final class StockCompiledPlanLowering {
         case SUM0:
           kinds[i] = 22;
           break;
+        case MIN:
+        case MAX:
+          if (bounded) return stock;
+          kinds[i] = call.getAggregation().getKind() == SqlKind.MIN ? 1 : 2;
+          break;
         default:
           return stock;
       }
@@ -1832,7 +1837,7 @@ final class StockCompiledPlanLowering {
               : call.getArgList().get(0);
       if (columns[i] < 0 || columns[i] >= argumentType.getFieldCount()) return stock;
       var type = argumentType.getTypeAt(columns[i]);
-      if (!NativeOverAggExecNode.stockArithmeticValueType(type)) return stock;
+      if (!NativeOverAggExecNode.stockFoldValueType(kinds[i], type)) return stock;
       types[i] =
           WindowAggregateMatcher.windowValueTypeCode(
               planner.getTypeFactory().createFieldTypeFromLogicalType(type));

@@ -27,7 +27,7 @@ pages. Historical cohorts are not silently requalified against each newer librar
 | [Sessions](../operators/window-aggregate.md) | Automatic partitioned TVF and legacy event/processing-time SESSION binding, operator recovery and selected complete-job handoffs | Native unpartitioned SESSION TVF assignment and wider merging/timer/recovery matrix |
 | [Window rank](../operators/top-n.md#window-rank-canonical-interchange-partial) | Automatic event-time retained sort-list, timer and watermark binding | Wider bounds/types, processing-time projection and failure/delivery matrix |
 | [Window deduplication](../operators/deduplication.md#window-deduplication-canonical-interchange-partial) | Automatic event-time winner, timer and watermark binding | Wider winner/types, processing-time projection and failure/delivery matrix |
-| [OVER](../operators/over.md#automatic-bounded-arithmetic-state-binding-partial) | Bounded arithmetic, processing-time unbounded scalar and event-time unbounded scalar contracts with automatic binding; narrow integral values, scalar/composite keys and decimal values, explicit 2.2 V1 implementations and bounded event-ROWS cleanup awaiting qualification | Remaining keys/types, DISTINCT/views and complete new-scope qualification |
+| [OVER](../operators/over.md#automatic-bounded-arithmetic-state-binding-partial) | Bounded arithmetic, processing-time unbounded scalar and event-time unbounded scalar contracts with automatic binding; narrow integral values, scalar/composite keys and decimal values, explicit 2.2 V1 implementations, bounded event-ROWS cleanup and unbounded scalar MIN/MAX awaiting qualification | Remaining keys/types, DISTINCT/views and complete new-scope qualification |
 | [Changelog normalization](../operators/changelog-normalize.md#canonical-savepoint-adapter) | Automatic retained-row/TTL contract and complete jobs | Wider keys, mini-batches, consumers and failure matrix |
 | [Interval joins](../operators/joins/interval-join.md#complete-job-handoff-matrix) | Event/proctime state, four join kinds and selected complete-job/rescale matrices; nested binding awaiting qualification | Wider schemas, cleanup edges and remaining ordinary-SQL combinations |
 | [Temporal joins](../operators/joins/temporal-join.md#complete-job-handoff-matrix) | Qualified INNER/LEFT history/probe/timer state and complete jobs; nested binding awaiting qualification | Legacy proctime variant, wider schemas and commit-failure matrix |
@@ -2431,3 +2431,18 @@ a latched overflowed NULL sum. Private native checkpoint formats are unchanged. 
 two-phase scalar/DISTINCT reductions and decimal extrema retain their existing canonical
 fallbacks. New compact/wide-scale raw-state, overflow, planner and isolated job controls await
 execution on Flink 1.18 and 2.2 in the final testing window; no passing evidence is claimed yet.
+
+## Unbounded OVER extrema binding awaiting qualification
+
+The existing raw fold bridge now binds the single nullable stock MIN/MAX field for integral,
+decimal, string/CHAR, boolean, date, time and timestamp values. Processing-time and event-time
+unbounded ROWS/RANGE use the same scalar projection; event-time owners retain their released
+V1 polling or V2 callback policy, pending rows and cleanup contract. No native accumulator or
+checkpoint encoding changes. New raw-state/TTL, native-recovery, planner and clean-worker
+controls await testing on Flink 1.18 and 2.2. Floating extrema, bounded extrema with views and
+FIRST/LAST_VALUE order metadata remain outside this extension.
+
+COUNT over the same scalar argument types uses its existing non-null reader and released
+BIGINT accumulator, allowing mixed MIN/MAX/COUNT folds without a numeric-only argument gate.
+The new typed component fixtures feed both engines the same serialized physical rows so
+timestamp precision and string representation are aligned at the boundary.
