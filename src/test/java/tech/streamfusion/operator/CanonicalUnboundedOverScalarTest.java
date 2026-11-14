@@ -13,9 +13,7 @@ import java.util.stream.Stream;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.StateBackendOptions;
-import org.apache.flink.core.execution.SavepointFormatType;
 import org.apache.flink.runtime.checkpoint.OperatorSubtaskState;
-import org.apache.flink.runtime.checkpoint.SavepointType;
 import org.apache.flink.runtime.state.CheckpointableKeyedStateBackend;
 import org.apache.flink.runtime.state.StateBackendLoader;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
@@ -362,9 +360,7 @@ class CanonicalUnboundedOverScalarTest {
 
   static OperatorSubtaskState snapshot(AbstractStreamOperatorTestHarness<?> harness)
       throws Exception {
-    return harness
-        .snapshotWithLocalState(1, 100, SavepointType.savepoint(SavepointFormatType.CANONICAL))
-        .getJobManagerOwnedState();
+    return CanonicalOverSnapshotTestSupport.snapshot(harness, 1, 100);
   }
 
   static Map<String, String> raw(
@@ -638,7 +634,7 @@ class CanonicalUnboundedOverScalarTest {
     KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> nativeHarness(
         boolean rocks) throws Exception {
       var operator =
-          new NativeOverAggregateOperator(
+          new CanonicalOverSnapshotTestSupport.DirectOver(
               timeColumn,
               columns,
               partitions,

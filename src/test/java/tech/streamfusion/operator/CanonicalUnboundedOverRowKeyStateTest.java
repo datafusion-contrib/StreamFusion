@@ -41,15 +41,7 @@ class CanonicalUnboundedOverRowKeyStateTest {
   private OperatorSubtaskState snapshot(
       org.apache.flink.streaming.util.AbstractStreamOperatorTestHarness<?> harness)
       throws Exception {
-    harness.prepareSnapshotPreBarrier(1);
-    var saved =
-        harness
-            .snapshotWithLocalState(
-                1,
-                0,
-                org.apache.flink.runtime.checkpoint.SavepointType.savepoint(
-                    org.apache.flink.core.execution.SavepointFormatType.CANONICAL))
-            .getJobManagerOwnedState();
+    var saved = CanonicalOverSnapshotTestSupport.snapshot(harness, 1, 0);
     snapshots.add(saved);
     return saved;
   }

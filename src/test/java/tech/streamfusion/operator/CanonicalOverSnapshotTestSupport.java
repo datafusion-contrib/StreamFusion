@@ -1,0 +1,103 @@
+package tech.streamfusion.operator;
+
+import java.util.concurrent.atomic.AtomicLong;
+import org.apache.flink.core.execution.SavepointFormatType;
+import org.apache.flink.runtime.checkpoint.CheckpointOptions;
+import org.apache.flink.runtime.checkpoint.OperatorSubtaskState;
+import org.apache.flink.runtime.checkpoint.SavepointType;
+import org.apache.flink.runtime.state.CheckpointStreamFactory;
+import org.apache.flink.streaming.api.operators.OperatorSnapshotFutures;
+import org.apache.flink.streaming.util.AbstractStreamOperatorTestHarness;
+import org.apache.flink.table.types.logical.RowType;
+
+final class CanonicalOverSnapshotTestSupport {
+  private CanonicalOverSnapshotTestSupport() {}
+
+  static OperatorSubtaskState snapshot(
+      AbstractStreamOperatorTestHarness<?> harness, long id, long time) throws Exception {
+    var owner =
+        harness.getOperator() instanceof DirectOver ? (DirectOver) harness.getOperator() : null;
+    long before = owner == null ? 0 : owner.rawSnapshots.get();
+    harness.prepareSnapshotPreBarrier(id);
+    var saved =
+        harness
+            .snapshotWithLocalState(
+                id, time, SavepointType.savepoint(SavepointFormatType.CANONICAL))
+            .getJobManagerOwnedState();
+    if (owner != null && owner.rawSnapshots.get() != before) {
+      saved.discardState();
+      throw new AssertionError("Canonical OVER capture used an intermediate native snapshot");
+    }
+    return saved;
+  }
+
+  static final class DirectOver extends NativeOverAggregateOperator {
+    private final AtomicLong rawSnapshots = new AtomicLong();
+    private transient boolean canonical;
+
+    DirectOver(
+        int timeColumn,
+        int[] valueColumns,
+        int[] keyColumns,
+        int[] valueTypes,
+        int[] aggregateKinds,
+        int frameKind,
+        long frameOffset,
+        boolean proctime,
+        int[] keyTimestampPrecisions,
+        long stateTtlMillis,
+        RowType rowType,
+        int maxParallelism) {
+      super(
+          timeColumn,
+          valueColumns,
+          keyColumns,
+          valueTypes,
+          aggregateKinds,
+          frameKind,
+          frameOffset,
+          proctime,
+          keyTimestampPrecisions,
+          stateTtlMillis,
+          rowType,
+          maxParallelism);
+    }
+
+    @Override
+    protected OperatorSnapshotFutures snapshotCanonicalState(
+        long id, long time, CheckpointOptions options, CheckpointStreamFactory streams)
+        throws Exception {
+      canonical = true;
+      try {
+        return super.snapshotCanonicalState(id, time, options, streams);
+      } finally {
+        canonical = false;
+      }
+    }
+
+    @Override
+    protected byte[][] snapshotRawPartitions() {
+      rawSnapshots.incrementAndGet();
+      if (canonical) throw new AssertionError("Canonical OVER capture serialized native raw state");
+      return super.snapshotRawPartitions();
+    }
+
+    @Override
+    protected byte[][] snapshotCanonicalPartitions() {
+      rawSnapshots.incrementAndGet();
+      if (canonical)
+        throw new AssertionError("Canonical OVER capture serialized native partitions");
+      return super.snapshotCanonicalPartitions();
+    }
+
+    @Override
+    protected String[] checkpointRocksDBHandle(String directory) {
+      if (!directory.isEmpty()) {
+        rawSnapshots.incrementAndGet();
+        if (canonical)
+          throw new AssertionError("Canonical OVER capture created a native checkpoint");
+      }
+      return super.checkpointRocksDBHandle(directory);
+    }
+  }
+}

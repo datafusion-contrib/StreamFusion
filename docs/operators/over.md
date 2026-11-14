@@ -2102,6 +2102,12 @@ Text, floating and complex DISTINCT arguments remain outside this binding. Unqua
 native contexts keep their existing processing/checkpoint route without canonical interchange
 credit; portable stock plans retain their stock OVER owner for those contexts.
 
+Unbounded scalar, ROW-key and DISTINCT component captures additionally guard the native snapshot
+entry points. They reject raw partition serialization or a nonempty native checkpoint directory
+during canonical capture and verify the call counter again after the asynchronous writer finishes.
+The same fixtures still exercise ordinary native checkpoints. These added guards await execution
+with the pending two-release state matrix.
+
 ## Unbounded processing ROW partition keys awaiting qualification
 
 The existing unbounded processing ROWS/RANGE fold can now bind ROW partition keys whose
