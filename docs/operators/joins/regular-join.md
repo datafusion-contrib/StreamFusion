@@ -363,3 +363,9 @@ live input and canonical imports, so transport presence cannot split one stock m
 into separate native candidates. Temporary Java serialization workspace is reserved before
 conversion, and the scoped Arrow root is released after synchronous C-data handover.
 Primitive input follows the existing columnar export path.
+
+Focused conversion controls deny the Java workspace before allocation, retry the same input,
+and inject an invalid row-kind carrier after conversion has begun. They require unchanged input
+ownership and no leaked Arrow buffers or reservations. Primitive and empty inputs retain their
+borrowed ownership. Same-build recovery controls do not establish migration from historical
+native checkpoints with a different physical ROW transport.
