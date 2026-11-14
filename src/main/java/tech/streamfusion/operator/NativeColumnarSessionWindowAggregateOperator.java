@@ -21,6 +21,8 @@ import tech.streamfusion.state.RocksDBNativeStateSupport;
 public class NativeColumnarSessionWindowAggregateOperator extends NativeRowWindowOperatorCore
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch>, ProcessingTimeCallback {
 
+  private static final long serialVersionUID = 4376152176413938176L;
+
   private final long gapMillis;
   private final String sessionCalendarZoneId;
   private final boolean proctime;
