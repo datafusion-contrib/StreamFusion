@@ -1335,6 +1335,10 @@ compiler activity, allocations and waits, then removes the recordings. Instrumen
 times remain attribution evidence. The `lake-setup` suite separately runs both complete Paimon
 format configurations for one chosen line/JDK and retains compilation, per-format elapsed/CPU
 times and JUnit outcomes. These small workflows remain separate from merge-gate qualification.
+Select `lake_module=hudi` to run the complete Hudi module on its released Flink 1.18
+bundle instead. This checks Linux dependency resolution and native integration on one
+chosen JDK using the same verified producer; it retains the module's JUnit reports.
+The full upstream Hudi SQL corpus remains in the ordinary CI Hudi JDK 17 lane.
 The setup probe's `metadata_regression` input instead runs all eight worker-cache controls plus
 the complete 28-case append-arithmetic class that exposed the JDK 11 crash. It requires all 36
 checks to pass, including actual collector isolation and unchanged native/stock continuation,
