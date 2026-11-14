@@ -86,6 +86,13 @@ shows substantial variability. [All Q0 observations](hudi-nexmark-q0-20261113.js
 retain every measured trial. This result does not qualify the remaining queries
 or state configurations; the small smoke runs establish correctness only.
 
+The same run completed Q1 with medians of 2,200.5 ms stock, 11,077.0 ms previous
+StreamFusion and 641.7 ms native (ranges 1,461.0–3,453.8, 9,283.4–11,996.4
+and 584.0–766.0 ms). Every trial compared all 1,840,000 output rows. Its
+[Q1 observations](hudi-nexmark-q1-20261113.json) retain the matching configuration
+and source/harness identity. This is a 3.43× median gain over stock in this
+bounded configuration; the wide stock range remains visible.
+
 Stock Flink 1.18.1 rejects the unchanged q7 query over the Kafka corpus's
 TIMESTAMP_LTZ rowtime when it compares that time with a TIMESTAMP window boundary.
 The matrix records the exact planner rejection for this query and configuration;
