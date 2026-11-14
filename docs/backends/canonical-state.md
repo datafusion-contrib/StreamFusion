@@ -2493,3 +2493,8 @@ New single-phase floating-window job fixtures compare committed serialized rows 
 independent window/session oracle, retaining negative-zero bits, NULL-only state, source
 progress and transactional writers across the standard handoff/recovery/rescale modes.
 They await both-release qualification; no passing cohort is claimed yet.
+
+Ordinary OVER COUNT additionally binds its existing binary, interval and nested argument
+readers while retaining the same BIGINT state. New component/planner/full-job controls cover
+retained input and frame schemas, released timer versions, TTL and recovery/rescaling; these
+remain unexecuted. DISTINCT views and other aggregate argument gates stay separate.

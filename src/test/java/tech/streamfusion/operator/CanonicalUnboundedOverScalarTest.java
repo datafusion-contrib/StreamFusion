@@ -154,6 +154,36 @@ class CanonicalUnboundedOverScalarTest {
     verifyInterchange(new Plan("BIGINT", true, false, 1000, keyType, composite), rocks, rocks);
   }
 
+  static Stream<Arguments> countPayloadCases() {
+    return tech.streamfusion.CanonicalTestMatrix.select(
+        CanonicalOverValueFixture.countTypes()
+            .flatMap(
+                type ->
+                    Stream.of(false, true)
+                        .flatMap(
+                            rows ->
+                                Stream.of(false, true)
+                                    .flatMap(
+                                        global ->
+                                            Stream.of(0L, 1000L)
+                                                .flatMap(
+                                                    ttl ->
+                                                        Stream.of(false, true)
+                                                            .map(
+                                                                rocks ->
+                                                                    Arguments.of(
+                                                                        type, rows, global, ttl,
+                                                                        rocks)))))));
+  }
+
+  @ParameterizedTest
+  @MethodSource("countPayloadCases")
+  void countArgumentsRetainTheirValidityAcrossCanonicalAndTtlTransitions(
+      String type, boolean rows, boolean global, long ttl, boolean rocks) throws Exception {
+    verifyInterchange(
+        new Plan(type, rows, global, ttl, "BIGINT", false, false, true), !rocks, rocks);
+  }
+
   private void verifyInterchange(Plan plan, boolean stockStore, boolean nativeStore)
       throws Exception {
     var prefix =
@@ -368,6 +398,7 @@ class CanonicalUnboundedOverScalarTest {
     final int timeColumn;
     final boolean rows;
     final long ttl;
+    final boolean countOnly;
 
     Plan(String type, boolean rows, boolean global, long ttl) throws Exception {
       this(type, rows, global, ttl, "BIGINT", false);
@@ -387,35 +418,61 @@ class CanonicalUnboundedOverScalarTest {
         boolean composite,
         boolean extrema)
         throws Exception {
+      this(type, rows, global, ttl, keyType, composite, extrema, false);
+    }
+
+    Plan(
+        String type,
+        boolean rows,
+        boolean global,
+        long ttl,
+        String keyType,
+        boolean composite,
+        boolean extrema,
+        boolean countOnly)
+        throws Exception {
       this.rows = rows;
       this.ttl = ttl;
+      this.countOnly = countOnly;
       var config = new Configuration();
       config.setString("streamfusion.native.enabled", "false");
       config.setString("table.exec.state.ttl", ttl + " ms");
-      var table = NativePlannerTestEnvironment.create(config);
+      var table =
+          countOnly
+              ? NativePlannerTestEnvironment.create(
+                  config, org.example.canonical.CanonicalFixtureFactory.class)
+              : NativePlannerTestEnvironment.create(config);
       table.executeSql(
           "CREATE TABLE scalar_input(k "
               + keyType
               + ",v "
               + type
               + (composite ? ",k2 BIGINT" : "")
-              + ",pt AS PROCTIME()) WITH ('connector'='datagen')");
+              + ",pt AS PROCTIME()) WITH ("
+              + (countOnly
+                  ? "'connector'='canonical-fixture','input'='unused.csv','insert-only'='true'"
+                  : "'connector'='datagen'")
+              + ")");
       table.executeSql(
           "CREATE TABLE scalar_output(k "
               + keyType
               + ",v "
               + type
-              + (extrema
-                  ? ",lo " + type + ",hi " + type + ",n BIGINT"
-                  : ",s " + type + ",c BIGINT,a " + type)
+              + (countOnly
+                  ? ",n BIGINT"
+                  : extrema
+                      ? ",lo " + type + ",hi " + type + ",n BIGINT"
+                      : ",s " + type + ",c BIGINT,a " + type)
               + ") WITH ('connector'='blackhole')");
       json =
           table
               .compilePlanSql(
                   "INSERT INTO scalar_output SELECT k,v,"
-                      + (extrema
-                          ? "MIN(v) OVER w,MAX(v) OVER w,COUNT(v) OVER w"
-                          : "SUM(v) OVER w,COUNT(v) OVER w,AVG(v) OVER w")
+                      + (countOnly
+                          ? "COUNT(v) OVER w"
+                          : extrema
+                              ? "MIN(v) OVER w,MAX(v) OVER w,COUNT(v) OVER w"
+                              : "SUM(v) OVER w,COUNT(v) OVER w,AVG(v) OVER w")
                       + " FROM scalar_input WINDOW w AS ("
                       + (global ? "" : "PARTITION BY k" + (composite ? ",k2" : "") + " ")
                       + "ORDER BY pt "
@@ -613,6 +670,7 @@ class CanonicalUnboundedOverScalarTest {
     }
 
     private String value(RowData row) {
+      if (countOnly) return CanonicalOverValueFixture.serialized(row, output);
       var values = new ArrayList<String>();
       for (int i = 0; i < output.getFieldCount(); i++) {
         if (i == timeColumn)

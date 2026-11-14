@@ -106,6 +106,44 @@ class CanonicalBoundedRangeInteropTest {
     verifyInterchange(plan, rocks, rocks, true);
   }
 
+  static Stream<Arguments> countPayloadCases() {
+    return tech.streamfusion.CanonicalTestMatrix.select(
+        CanonicalOverValueFixture.countTypes()
+            .flatMap(
+                type ->
+                    Stream.of("range", "event-rows", "processing-rows")
+                        .flatMap(
+                            mode ->
+                                Stream.of(false, true)
+                                    .flatMap(
+                                        rocks ->
+                                            Stream.of(false, true)
+                                                .map(
+                                                    pending ->
+                                                        Arguments.of(
+                                                            type, mode, rocks, pending))))));
+  }
+
+  @ParameterizedTest
+  @MethodSource("countPayloadCases")
+  void nullableCountArgumentsRetainRawFramesThroughBothEngineOrders(
+      String type, String mode, boolean rocks, boolean pending) throws Exception {
+    var plan =
+        new Plan(
+            type,
+            false,
+            mode.equals("processing-rows"),
+            mode.equals("event-rows"),
+            mode.equals("range") ? 32 : 2,
+            0,
+            false,
+            null,
+            "BIGINT",
+            false,
+            true);
+    verifyInterchange(plan, !rocks, rocks, pending);
+  }
+
   private void verifyInterchange(
       Plan plan, boolean stockStore, boolean nativeStore, boolean pendingOnly) throws Exception {
     long allocated = NativeAllocator.SHARED.getAllocatedMemory();
@@ -616,7 +654,7 @@ class CanonicalBoundedRangeInteropTest {
     final RowType input, output, accumulator, keyType;
     final int[] keys, kinds, values, codes, widths;
     final int hiddenCount, timeColumn;
-    final boolean processingRows, eventRows;
+    final boolean processingRows, eventRows, countOnly;
     final int offset;
     final long ttl;
     final RowDataKeySelector selector;
@@ -689,16 +727,48 @@ class CanonicalBoundedRangeInteropTest {
         String keySqlType,
         boolean composite)
         throws Exception {
+      this(
+          type,
+          keyless,
+          processingRows,
+          eventRows,
+          offset,
+          ttl,
+          starAndLiteral,
+          payload,
+          keySqlType,
+          composite,
+          false);
+    }
+
+    Plan(
+        String type,
+        boolean keyless,
+        boolean processingRows,
+        boolean eventRows,
+        int offset,
+        long ttl,
+        boolean starAndLiteral,
+        String payload,
+        String keySqlType,
+        boolean composite,
+        boolean countOnly)
+        throws Exception {
       this.eventRows = eventRows;
       this.processingRows = processingRows;
       this.offset = offset;
       this.ttl = ttl;
+      this.countOnly = countOnly;
       var config = new Configuration();
       config.set(
           org.apache.flink.table.api.config.ExecutionConfigOptions.IDLE_STATE_RETENTION,
           java.time.Duration.ofMillis(ttl));
       config.setString("streamfusion.native.enabled", "false");
-      var table = NativePlannerTestEnvironment.create(config);
+      var table =
+          countOnly
+              ? NativePlannerTestEnvironment.create(
+                  config, org.example.canonical.CanonicalFixtureFactory.class)
+              : NativePlannerTestEnvironment.create(config);
       table.executeSql(
           "CREATE TABLE range_input(k "
               + keySqlType
@@ -708,7 +778,11 @@ class CanonicalBoundedRangeInteropTest {
               + (composite ? ",k2 BIGINT" : "")
               + (payload == null ? "" : ",payload " + payload)
               + (processingRows ? ",pt AS PROCTIME()" : ",WATERMARK FOR rt AS rt")
-              + ") WITH ('connector'='datagen')");
+              + ") WITH ("
+              + (countOnly
+                  ? "'connector'='canonical-fixture','input'='unused.csv','insert-only'='true'"
+                  : "'connector'='datagen'")
+              + ")");
       table.executeSql(
           "CREATE TABLE range_output(k "
               + keySqlType
@@ -716,19 +790,18 @@ class CanonicalBoundedRangeInteropTest {
               + type
               + ",rt TIMESTAMP(3)"
               + (payload == null ? "" : ",payload " + payload)
-              + ",s "
-              + type
-              + ",c BIGINT,a "
-              + type
+              + (countOnly ? ",n BIGINT" : ",s " + type + ",c BIGINT,a " + type)
               + ") WITH ('connector'='blackhole')");
       json =
           table
               .compilePlanSql(
                   "INSERT INTO range_output SELECT k,v,rt,"
                       + (payload == null ? "" : "payload,")
-                      + (starAndLiteral
-                          ? "COUNT(*) OVER w,SUM(CAST(7 AS BIGINT)) OVER w,AVG(v) OVER w"
-                          : "SUM(v) OVER w,COUNT(v) OVER w,AVG(v) OVER w")
+                      + (countOnly
+                          ? "COUNT(v) OVER w"
+                          : starAndLiteral
+                              ? "COUNT(*) OVER w,SUM(CAST(7 AS BIGINT)) OVER w,AVG(v) OVER w"
+                              : "SUM(v) OVER w,COUNT(v) OVER w,AVG(v) OVER w")
                       + " FROM range_input WINDOW w AS ("
                       + (keyless ? "" : "PARTITION BY k" + (composite ? ",k2" : "") + " ")
                       + (processingRows || eventRows
@@ -1007,6 +1080,10 @@ class CanonicalBoundedRangeInteropTest {
         if (input.getFieldNames().get(i).equals("payload")
             || input.getFieldNames().get(i).equals("k2")) continue;
         var logical = input.getTypeAt(i);
+        if (countOnly && i == 1) {
+          row.setField(i, CanonicalOverValueFixture.number(logical, value));
+          continue;
+        }
         if (logical instanceof TimestampType || logical instanceof LocalZonedTimestampType) {
           row.setField(i, TimestampData.fromEpochMillis(time));
           continue;
@@ -1111,6 +1188,10 @@ class CanonicalBoundedRangeInteropTest {
     List<String> format(List<RowData> values) {
       var result = new ArrayList<String>();
       for (var row : values) {
+        if (countOnly) {
+          result.add(CanonicalOverValueFixture.serialized(row, output));
+          continue;
+        }
         var fields = new ArrayList<String>();
         for (int i = 0; i < output.getFieldCount(); i++) fields.add(String.valueOf(get(row, i)));
         result.add(String.join(":", fields));

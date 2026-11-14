@@ -120,9 +120,11 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
 
   static boolean stockFoldValueType(
       int kind, org.apache.flink.table.types.logical.LogicalType type) {
-    if (kind == 1 || kind == 2 || kind == 3)
-      return tech.streamfusion.state.StockOverFoldStateContract.supportsExtremumType(type)
-          || kind == 3 && stockArithmeticValueType(type);
+    if (kind == 3)
+      return !type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.BINARY)
+          && tech.streamfusion.operator.RowDataArrowConverter.supports(RowType.of(type));
+    if (kind == 1 || kind == 2)
+      return tech.streamfusion.state.StockOverFoldStateContract.supportsExtremumType(type);
     return stockArithmeticValueType(type);
   }
 

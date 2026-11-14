@@ -146,6 +146,37 @@ class CanonicalEventUnboundedOverInteropTest {
     verifyCheckpoint(plan, !rocks, rocks);
   }
 
+  static Stream<Arguments> countPayloadCases() {
+    return tech.streamfusion.CanonicalTestMatrix.select(
+        CanonicalUnboundedOverScalarTest.countPayloadCases()
+            .flatMap(
+                args ->
+                    Stream.of(1, FlinkPlanCompat.unboundedOverVersion())
+                        .distinct()
+                        .map(
+                            version ->
+                                Arguments.of(
+                                    args.get()[0],
+                                    args.get()[1],
+                                    args.get()[2],
+                                    args.get()[3],
+                                    args.get()[4],
+                                    version))));
+  }
+
+  @ParameterizedTest
+  @MethodSource("countPayloadCases")
+  void countPayloadsRetainBufferedRowsAndCallbacksInEachReleasedTimerVersion(
+      String type, boolean rows, boolean global, long ttl, boolean rocks, int version)
+      throws Exception {
+    var plan =
+        new Plan(
+            type, rows, global, ttl, false, false, false, null, version, "BIGINT", false, false,
+            true);
+    verifyInterchange(plan, !rocks, rocks);
+    verifyCheckpoint(plan, !rocks, rocks);
+  }
+
   static Stream<Arguments> typedKeys() {
     return CanonicalOverKeyFixture.stores()
         .flatMap(
@@ -789,6 +820,7 @@ class CanonicalEventUnboundedOverInteropTest {
     final boolean rows;
     final int version;
     final long ttl;
+    final boolean countOnly;
     final tech.streamfusion.planner.stream.OverConstantArguments constants;
 
     Plan(String type, boolean rows, boolean global, long ttl) throws Exception {
@@ -909,14 +941,50 @@ class CanonicalEventUnboundedOverInteropTest {
         boolean composite,
         boolean extrema)
         throws Exception {
+      this(
+          type,
+          rows,
+          global,
+          ttl,
+          literals,
+          proctime,
+          requiredValue,
+          payload,
+          version,
+          keyType,
+          composite,
+          extrema,
+          false);
+    }
+
+    Plan(
+        String type,
+        boolean rows,
+        boolean global,
+        long ttl,
+        boolean literals,
+        boolean proctime,
+        boolean requiredValue,
+        String payload,
+        int version,
+        String keyType,
+        boolean composite,
+        boolean extrema,
+        boolean countOnly)
+        throws Exception {
       this.rows = rows;
       this.ttl = ttl;
       this.version = version;
+      this.countOnly = countOnly;
       var config = new Configuration();
       config.setString("streamfusion.native.enabled", "false");
       config.setString("table.exec.state.ttl", ttl + " ms");
       config.setString("table.exec.unbounded-over.version", Integer.toString(version));
-      var table = NativePlannerTestEnvironment.create(config);
+      var table =
+          countOnly
+              ? NativePlannerTestEnvironment.create(
+                  config, org.example.canonical.CanonicalFixtureFactory.class)
+              : NativePlannerTestEnvironment.create(config);
       table.executeSql(
           "CREATE TABLE scalar_input(k "
               + keyType
@@ -927,16 +995,22 @@ class CanonicalEventUnboundedOverInteropTest {
               + (payload == null ? "" : ",payload " + payload)
               + ",rt TIMESTAMP_LTZ(3),"
               + (proctime ? "pt AS PROCTIME()," : "")
-              + "WATERMARK FOR rt AS rt) WITH ('connector'='datagen')");
+              + "WATERMARK FOR rt AS rt) WITH ("
+              + (countOnly
+                  ? "'connector'='canonical-fixture','input'='unused.csv','insert-only'='true'"
+                  : "'connector'='datagen'")
+              + ")");
       table.executeSql(
           "CREATE TABLE scalar_output(k "
               + keyType
               + ",v "
               + type
               + (payload == null ? "" : ",payload " + payload)
-              + (extrema
-                  ? ",lo " + type + ",hi " + type + ",n BIGINT"
-                  : ",s " + type + ",c BIGINT,a " + type)
+              + (countOnly
+                  ? ",n BIGINT"
+                  : extrema
+                      ? ",lo " + type + ",hi " + type + ",n BIGINT"
+                      : ",s " + type + ",c BIGINT,a " + type)
               + (proctime ? ",pt TIMESTAMP_LTZ(3)" : "")
               + ") WITH ('connector'='blackhole')");
       json =
@@ -944,11 +1018,13 @@ class CanonicalEventUnboundedOverInteropTest {
               .compilePlanSql(
                   "INSERT INTO scalar_output SELECT k,v,"
                       + (payload == null ? "" : "payload,")
-                      + (extrema
-                          ? "MIN(v) OVER w,MAX(v) OVER w,COUNT(v) OVER w"
-                          : literals
-                              ? "COUNT(*) OVER w,SUM(CAST(7 AS BIGINT)) OVER w,AVG(v) OVER w"
-                              : "SUM(v) OVER w,COUNT(v) OVER w,AVG(v) OVER w")
+                      + (countOnly
+                          ? "COUNT(v) OVER w"
+                          : extrema
+                              ? "MIN(v) OVER w,MAX(v) OVER w,COUNT(v) OVER w"
+                              : literals
+                                  ? "COUNT(*) OVER w,SUM(CAST(7 AS BIGINT)) OVER w,AVG(v) OVER w"
+                                  : "SUM(v) OVER w,COUNT(v) OVER w,AVG(v) OVER w")
                       + (proctime ? ",pt" : "")
                       + " FROM scalar_input WINDOW w AS ("
                       + (global ? "" : "PARTITION BY k" + (composite ? ",k2" : "") + " ")
@@ -1217,6 +1293,7 @@ class CanonicalEventUnboundedOverInteropTest {
     }
 
     private String value(RowData row) {
+      if (countOnly) return CanonicalOverValueFixture.serialized(row, output);
       var values = new ArrayList<String>();
       for (int i = 0; i < output.getFieldCount(); i++) {
         Object value =

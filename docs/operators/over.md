@@ -2028,3 +2028,20 @@ decimal kernel supplies this initialization for ordinary and DISTINCT bounded fo
 changing the checkpoint schema. A new stock/raw-state regression covers all-NULL initialization
 and later zero history in processing ROWS, event ROWS and event RANGE on both stores. This
 control awaits execution with the pending decimal canonical matrix.
+
+### COUNT argument bindings awaiting qualification
+
+Ordinary COUNT now admits the existing native validity reader at the canonical boundary for
+VARBINARY, intervals and recursively supported ARRAY/ROW/MAP/MULTISET arguments. Its retained
+accumulator remains the released BIGINT field; binary and nested argument codecs belong to
+pending input and frames rather than aggregate state. This covers the already native bounded
+event ROWS/RANGE, bounded processing ROWS and unbounded event/processing ROWS/RANGE shapes.
+DISTINCT and fixed BINARY admission are unchanged.
+
+New component controls compare complete serialized rows, raw accumulators, TTL ages, pending
+inputs and actual callbacks through both engine orders and stores, including V1/V2 where the
+release supports them and ordinary native recovery. Planner controls use a typed custom source
+so unsupported datagen generators do not mask the state contract. Additional unbounded full
+jobs cover binary/ARRAY/ROW/nested-MAP values, NULL arguments, ordinary/portable submissions,
+empty returns, native checkpoints and keyed rescaling with independent final counts. All new
+controls await execution on Flink 1.18 and 2.2; historical passing cohorts do not qualify them.
