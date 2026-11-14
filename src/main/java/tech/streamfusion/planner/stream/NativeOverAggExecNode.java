@@ -128,7 +128,9 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
   static boolean stockFoldValueType(
       int kind, org.apache.flink.table.types.logical.LogicalType type) {
     if (tech.streamfusion.state.StockOverDistinctView.supportsAggregate(kind))
-      return tech.streamfusion.state.StockOverDistinctView.supportsValueType(type);
+      return kind == 103
+          ? tech.streamfusion.state.StockOverDistinctView.supportsCountValueType(type)
+          : tech.streamfusion.state.StockOverDistinctView.supportsValueType(type);
     if (kind == 3)
       return !type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.BINARY)
           && tech.streamfusion.operator.RowDataArrowConverter.supports(RowType.of(type));

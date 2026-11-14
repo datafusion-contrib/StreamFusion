@@ -2547,6 +2547,12 @@ encodings preserve it through native recovery. Valid NULL-only owners and malfor
 or orphan owners have pending controls. TTL, event/bounded frames
 and DISTINCT extrema remain outside this extension; see the OVER page for its exact scope.
 
+COUNT DISTINCT additionally binds the existing decimal, boolean and date/time/timestamp member
+codecs while retaining the stock BIGINT scalar. Typed preflight and nullable/raw-recovery controls,
+plus independent clean-stock boolean/decimal/nanosecond timestamp jobs, await both-release
+execution. DISTINCT arithmetic remains integral-only; text/floating/complex members and the
+existing clock/TTL exclusions remain outside this binding.
+
 
 Retracting GROUP BY MIN/MAX additionally captures the existing one-phase mini-batch owner and
 count trigger for the already bound integral/date/time/boolean map views. New raw-state and

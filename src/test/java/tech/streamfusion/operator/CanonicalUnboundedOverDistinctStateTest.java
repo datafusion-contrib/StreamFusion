@@ -29,22 +29,16 @@ class CanonicalUnboundedOverDistinctStateTest {
   static Stream<Arguments> cases() {
     var cases = new ArrayList<Arguments>();
     for (String type :
-        new String[] {
-          "TINYINT NOT NULL",
-          "SMALLINT NOT NULL",
-          "INT NOT NULL",
-          "BIGINT NOT NULL",
-          "TINYINT",
-          "SMALLINT",
-          "INT",
-          "BIGINT"
-        })
+        CanonicalOverDistinctValueFixture.countTypes()
+            .flatMap(sql -> Stream.of(sql, sql + " NOT NULL"))
+            .toList())
       for (boolean rows : new boolean[] {false, true})
         for (boolean global : new boolean[] {false, true})
           for (boolean rocks : new boolean[] {false, true})
             for (boolean first : new boolean[] {false, true})
               for (boolean arithmetic : new boolean[] {false, true})
-                cases.add(Arguments.of(type, rows, global, rocks, first, arithmetic));
+                if (!arithmetic || CanonicalOverDistinctValueFixture.integral(type))
+                  cases.add(Arguments.of(type, rows, global, rocks, first, arithmetic));
     return tech.streamfusion.CanonicalTestMatrix.select(cases.stream());
   }
 
@@ -84,13 +78,11 @@ class CanonicalUnboundedOverDistinctStateTest {
                   : type.startsWith("INT") ? Integer.MAX_VALUE : Long.MAX_VALUE;
       var prefix =
           new ArrayList<>(
-              List.of(
-                  plan.row(1L, 7L),
-                  plan.row(1L, 7L),
-                  plan.row(2L, 9L),
-                  plan.row(null, 3L),
-                  plan.row(1L, edge),
-                  plan.row(1L, 1L)));
+              List.of(plan.row(1L, 7L), plan.row(1L, 7L), plan.row(2L, 9L), plan.row(null, 3L)));
+      if (CanonicalOverDistinctValueFixture.integral(type)) {
+        prefix.add(plan.row(1L, edge));
+        prefix.add(plan.row(1L, 1L));
+      }
       if (!type.contains("NOT NULL")) {
         prefix.add(plan.row(1L, null));
         prefix.add(plan.row(9L, null));

@@ -26,7 +26,7 @@ import tech.streamfusion.Native;
 import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.operator.NativeAllocator;
 
-/** Released integral DISTINCT memberships alongside an unbounded scalar fold. */
+/** Released scalar DISTINCT memberships alongside an unbounded scalar fold. */
 public final class StockOverDistinctView implements Serializable {
   private static final long serialVersionUID = 1L;
   private static final int CHUNK_ROWS = 1024;
@@ -48,7 +48,7 @@ public final class StockOverDistinctView implements Serializable {
       TypeSerializer<?> values,
       TypeSerializer<?> bits,
       int[] aggregates) {
-    if (!supportsValueType(valueType)
+    if (!supportsCountValueType(valueType)
         || aggregates.length == 0
         || aggregates.length > Long.SIZE
         || java.util.Arrays.stream(aggregates).anyMatch(index -> index < 0)
@@ -68,7 +68,10 @@ public final class StockOverDistinctView implements Serializable {
 
   void validateAggregates(int[] kinds, boolean[] bound) {
     for (int index : aggregates) {
-      if (index >= kinds.length || !supportsAggregate(kinds[index]) || bound[index])
+      if (index >= kinds.length
+          || !supportsAggregate(kinds[index])
+          || bound[index]
+          || kinds[index] != 103 && !supportsValueType(bridge.getTypeAt(keyType.getFieldCount())))
         throw new IllegalArgumentException("Unqualified or duplicate OVER DISTINCT aggregate");
       bound[index] = true;
     }
@@ -85,6 +88,16 @@ public final class StockOverDistinctView implements Serializable {
         || type.is(LogicalTypeRoot.BIGINT);
   }
 
+  public static boolean supportsCountValueType(LogicalType type) {
+    return supportsValueType(type)
+        || type.is(LogicalTypeRoot.BOOLEAN)
+        || type.is(LogicalTypeRoot.DECIMAL)
+        || type.is(LogicalTypeRoot.DATE)
+        || type.is(LogicalTypeRoot.TIME_WITHOUT_TIME_ZONE)
+        || type.is(LogicalTypeRoot.TIMESTAMP_WITHOUT_TIME_ZONE)
+        || type.is(LogicalTypeRoot.TIMESTAMP_WITH_LOCAL_TIME_ZONE);
+  }
+
   private boolean validMember(Object value) {
     switch (bridge.getTypeAt(keyType.getFieldCount()).getTypeRoot()) {
       case TINYINT:
@@ -92,9 +105,23 @@ public final class StockOverDistinctView implements Serializable {
       case SMALLINT:
         return value instanceof Short;
       case INTEGER:
+      case DATE:
+      case TIME_WITHOUT_TIME_ZONE:
         return value instanceof Integer;
       case BIGINT:
         return value instanceof Long;
+      case BOOLEAN:
+        return value instanceof Boolean;
+      case DECIMAL:
+        if (!(value instanceof org.apache.flink.table.data.DecimalData)) return false;
+        var decimal = (org.apache.flink.table.data.DecimalData) value;
+        var type =
+            (org.apache.flink.table.types.logical.DecimalType)
+                bridge.getTypeAt(keyType.getFieldCount());
+        return decimal.precision() == type.getPrecision() && decimal.scale() == type.getScale();
+      case TIMESTAMP_WITHOUT_TIME_ZONE:
+      case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
+        return value instanceof org.apache.flink.table.data.TimestampData;
       default:
         return false;
     }
@@ -257,7 +284,8 @@ public final class StockOverDistinctView implements Serializable {
               for (int slot = 0; slot < aggregates.length; slot++) {
                 if ((flags >>> slot & 1) == 0) continue;
                 counts[slot]++;
-                sums[slot] += ((Number) entry.getKey()).longValue();
+                if (kinds[aggregates[slot]] != 3)
+                  sums[slot] += ((Number) entry.getKey()).longValue();
               }
             }
           for (int slot = 0; slot < aggregates.length; slot++) {

@@ -18,10 +18,16 @@ import tech.streamfusion.state.StockOverFoldStateContract;
 
 class CanonicalOverDistinctPlanTest {
   static Stream<Arguments> cases() {
-    return Stream.of("TINYINT", "SMALLINT", "INT", "BIGINT")
+    return tech.streamfusion.operator.CanonicalOverDistinctValueFixture.countTypes()
         .flatMap(
             type ->
                 Stream.of("rows", "range", "nullable", "ttl", "event", "bounded", "sum", "avg")
+                    .filter(
+                        mode ->
+                            !mode.equals("sum") && !mode.equals("avg")
+                                || tech.streamfusion.operator.CanonicalOverDistinctValueFixture
+                                    .integral(type)
+                                || type.startsWith("DECIMAL"))
                     .flatMap(
                         mode ->
                             Stream.of(false, true)
@@ -30,18 +36,20 @@ class CanonicalOverDistinctPlanTest {
 
   @ParameterizedTest
   @MethodSource("cases")
-  void onlyTheCapturedIntegralMembershipContractIsBound(String type, String mode, boolean compiled)
+  void onlyTheCapturedScalarMembershipContractIsBound(String type, String mode, boolean compiled)
       throws Exception {
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", "true");
     config.setString("table.exec.state.ttl", mode.equals("ttl") ? "1 h" : "0 ms");
-    var table = NativePlannerTestEnvironment.create(config);
+    var table =
+        NativePlannerTestEnvironment.create(
+            config, org.example.canonical.CanonicalFixtureFactory.class);
     table.executeSql(
         "CREATE TABLE input_table(k BIGINT,v "
             + type
             + (mode.equals("nullable") ? "" : " NOT NULL")
             + ",rt TIMESTAMP(3),pt AS PROCTIME(),WATERMARK FOR rt AS rt)"
-            + " WITH ('connector'='datagen')");
+            + " WITH ('connector'='canonical-fixture','input'='unused.csv','insert-only'='true')");
     table.executeSql(
         "CREATE TABLE output_table(k BIGINT,v "
             + type
@@ -72,14 +80,17 @@ class CanonicalOverDistinctPlanTest {
     boolean admitted =
         mode.equals("rows")
             || mode.equals("range")
-            || mode.equals("sum")
-            || mode.equals("avg")
-            || mode.equals("nullable");
-    assertEquals(admitted ? 1 : 0, owners.size(), graph.getStreamingPlanAsJSON());
+            || mode.equals("nullable")
+            || (mode.equals("sum") || mode.equals("avg"))
+                && tech.streamfusion.operator.CanonicalOverDistinctValueFixture.integral(type);
+    var bound = new java.util.ArrayList<Object>();
+    for (var owner : owners) if (field(owner, "stockStateContract") != null) bound.add(owner);
+    assertEquals(admitted ? 1 : 0, bound.size(), graph.getStreamingPlanAsJSON());
+    if (!admitted && compiled) assertTrue(owners.isEmpty(), graph.getStreamingPlanAsJSON());
     if (admitted) {
       var contract =
           assertInstanceOf(
-              StockOverFoldStateContract.class, field(owners.get(0), "stockStateContract"));
+              StockOverFoldStateContract.class, field(bound.get(0), "stockStateContract"));
       assertEquals(
           1,
           contract.stateDescriptors().values().stream()
@@ -87,7 +98,7 @@ class CanonicalOverDistinctPlanTest {
               .count());
       assertArrayEquals(
           new int[] {mode.equals("sum") ? 100 : mode.equals("avg") ? 104 : 103},
-          (int[]) field(owners.get(0), "aggregateKinds"));
+          (int[]) field(bound.get(0), "aggregateKinds"));
     }
     assertFalse(portable.contains("tech.streamfusion"));
     if (compiled) assertEquals(portable, plan.asJsonString());

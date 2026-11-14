@@ -2092,6 +2092,16 @@ SUM fields at their declared width independently from the wider AVG sum. Compone
 planner controls include every integer width and both nullability forms; a clean-stock nullable
 TINYINT arithmetic fixture adds continuation and rescaling. These additions remain unexecuted.
 
+COUNT DISTINCT also binds existing decimal, BOOLEAN, DATE, TIME and TIMESTAMP/LTZ membership
+codecs. The stock BIGINT cardinality stays independent of typed members and nullable markers;
+decimal precision/scale and temporal fractions are retained. DISTINCT SUM/SUM0/AVG remain
+integral-only here. New scalar raw-state/native-recovery and planner controls include both
+nullability forms, with separate clean-stock BOOLEAN, wide-decimal and nanosecond timestamp
+COUNT fixtures and independent cardinality oracles. These controls await both-release execution.
+Text, floating and complex DISTINCT arguments remain outside this binding. Unqualified ordinary
+native contexts keep their existing processing/checkpoint route without canonical interchange
+credit; portable stock plans retain their stock OVER owner for those contexts.
+
 ## Unbounded processing ROW partition keys awaiting qualification
 
 The existing unbounded processing ROWS/RANGE fold can now bind ROW partition keys whose

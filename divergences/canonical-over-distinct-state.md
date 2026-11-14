@@ -6,8 +6,9 @@ accumulator, map view and external serializers. Comet's execution utilities and 
 supply the moved C Data ownership pattern; imported/exported roots are scoped before errors
 propagate. No new JNI entry point or native checkpoint format is needed.
 
-The Java binding is deliberately limited to TINYINT/SMALLINT/INT/BIGINT COUNT/SUM/SUM0/AVG DISTINCT in
-TTL-disabled unbounded processing-time ROWS/RANGE frames. Nullable arguments retain stock's NULL
+The Java arithmetic binding covers TINYINT/SMALLINT/INT/BIGINT COUNT/SUM/SUM0/AVG DISTINCT in
+TTL-disabled unbounded processing-time ROWS/RANGE frames. COUNT additionally uses the scalar
+member codecs described below. Nullable arguments retain stock's NULL
 membership marker independently of the scalar count/sum. Memory holds a presence flag alongside
 the non-NULL set; RocksDB stores a typed NULL in its existing membership table. Existing raw
 checkpoint member lists already admit typed NULLs, so no record field is added. Live NULL tracking
@@ -34,3 +35,10 @@ keep their existing carriers. Import normalizes the leading key columns before m
 native fold's Arrow codec. This preserves reserved bytes and nested kinds across generic/live and
 binary/restored forms without changing stock serializers or adding a replay phase. Scalar/ROW
 descendant and processing/TTL gates remain shared with the fold binding.
+
+COUNT also reuses existing decimal, BOOLEAN and date/time/timestamp membership codecs. Captured
+internal key data types keep their released serializers (including DecimalData and TimestampData);
+preflight checks typed members, exact cardinality and nullable-marker ownership. Arithmetic views
+keep the integral restriction, so no decimal arithmetic history is reconstructed from membership.
+Text/floating/complex membership and wider clock/TTL contracts remain unbound. Unqualified
+ordinary native processing is not counted as canonical qualification.
