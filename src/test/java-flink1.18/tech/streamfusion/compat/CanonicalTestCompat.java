@@ -45,6 +45,14 @@ public final class CanonicalTestCompat {
         type, ttl, updateBefore, insert, insertOnly, equaliser);
   }
 
+  public static org.apache.flink.streaming.api.functions.KeyedProcessFunction<
+      org.apache.flink.table.data.RowData, org.apache.flink.table.data.RowData,
+      org.apache.flink.table.data.RowData> bufferedDedup(
+          org.apache.flink.table.runtime.typeutils.InternalTypeInfo<org.apache.flink.table.data.RowData> type,
+          long retention, int timeColumn) {
+    throw new UnsupportedOperationException("Flink 1.18 uses eager event-time first-row state");
+  }
+
   public static Object ticker(java.util.function.LongSupplier clock) {
     return new org.apache.flink.shaded.guava31.com.google.common.base.Ticker() {
       @Override

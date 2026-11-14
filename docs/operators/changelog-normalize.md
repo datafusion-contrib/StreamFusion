@@ -94,3 +94,7 @@ When ROW-key input crosses a network edge during rescaling, Arrow Java may renam
 UTF-16 list child. The normalizer preserves the original values and reconciles decoded retained
 rows with the output schema; both canonical restore and subsequent update-before emission accept
 that representation-only rename. Logical schema changes remain rejected.
+
+The binary-row schema builder is shared with canonical deduplication so retained input and
+key imports use one representation rule. Normalizer behavior and its qualified key scope are
+unchanged; new deduplication qualification is tracked on its operator page.

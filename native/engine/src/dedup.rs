@@ -5,6 +5,24 @@ mod pending;
 use crate::*;
 use pending::PendingRows;
 
+fn binary_row_payload(data_type: &DataType) -> bool {
+    let field = |field: &Field| {
+        field
+            .metadata()
+            .get("streamfusion.nested-row-binary")
+            .is_some_and(|value| value == "1")
+            || binary_row_payload(field.data_type())
+    };
+    match data_type {
+        DataType::Struct(fields) => fields.iter().any(|child| field(child)),
+        DataType::List(child)
+        | DataType::LargeList(child)
+        | DataType::FixedSizeList(child, _)
+        | DataType::Map(child, _) => field(child),
+        _ => false,
+    }
+}
+
 const INDEX_PENDING_THRESHOLD: usize = 1024;
 
 /// Append-only keep-first deduplication on a rowtime order — Flink's
@@ -1251,6 +1269,15 @@ impl<S: KeyedStateStore<DedupRow>> KeepLastDeduplicator<S> {
         let arity = data_arity(batch);
         self.schema = Some(data_schema(batch));
         self.ensure_converters(batch, arity);
+        let logical_equality = self
+            .schema
+            .as_ref()
+            .unwrap()
+            .fields()
+            .iter()
+            .any(|field| binary_row_payload(field.data_type()));
+        let converter = self.payload_converter.as_ref().unwrap();
+        let fields = self.schema.as_ref().unwrap().fields();
         self.rows.begin_batch(
             batch,
             &self.partition_columns,
@@ -1407,7 +1434,16 @@ impl<S: KeyedStateStore<DedupRow>> KeepLastDeduplicator<S> {
                     if !rowtime_ordered
                         && (generate_update_before || generate_insert)
                         && !stored.update_kind
-                        && stored.payload.as_ref() == current
+                        && if logical_equality {
+                            crate::flink_row_equal::encoded_rows(
+                                converter,
+                                fields,
+                                &stored.payload,
+                                current,
+                            )?
+                        } else {
+                            stored.payload.as_ref() == current
+                        }
                         && !ttl.enabled() =>
                 {
                     continue;
@@ -1549,7 +1585,26 @@ impl<S: KeyedStateStore<DedupRow>> KeepLastDeduplicator<S> {
             if self.ttl_ms == 0
                 && (self.generate_update_before || self.generate_insert)
                 && !row.update_kind
-                && before.as_ref() == Some(&after)
+                && match before.as_ref() {
+                    Some(before)
+                        if self
+                            .schema
+                            .as_ref()
+                            .unwrap()
+                            .fields()
+                            .iter()
+                            .any(|field| binary_row_payload(field.data_type())) =>
+                    {
+                        crate::flink_row_equal::encoded_rows(
+                            self.payload_converter.as_ref().unwrap(),
+                            self.schema.as_ref().unwrap().fields(),
+                            before,
+                            &after,
+                        )?
+                    }
+                    Some(before) => before.as_ref() == after.as_ref(),
+                    None => false,
+                }
             {
                 continue;
             }

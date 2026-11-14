@@ -402,10 +402,11 @@ final class StockCompiledPlanLowering {
   }
 
   private static boolean needsNormalizerRowTemplate(ExecNode<?> node) {
-    return node instanceof NativeChangelogNormalizeExecNode
-        && rowKeys(
-            (RowType) node.getOutputType(),
-            ((NativeChangelogNormalizeExecNode) node).stateKeyColumns());
+    if (node instanceof NativeChangelogNormalizeExecNode)
+      return rowKeys((RowType) node.getOutputType(),
+          ((NativeChangelogNormalizeExecNode) node).stateKeyColumns());
+    return node instanceof NativeDeduplicateExecNode
+        && rowKeys((RowType) node.getOutputType(), ((NativeDeduplicateExecNode) node).stateKeyColumns());
   }
 
   private static boolean needsStringTemplate(ExecNode<?> node, SqlPlanOrigins.RuntimeGraph graph) {
@@ -3024,8 +3025,7 @@ final class StockCompiledPlanLowering {
     ExecNode<?> input = stock.getInputEdges().get(0).getSource();
     RowType inputType = (RowType) input.getOutputType();
     if (!RowDataArrowConverter.supports(inputType)
-        || !ArrowRowTypeSupport.supportsFields(inputType, keys)
-        || Arrays.stream(keys).anyMatch(key -> containsRow(inputType.getTypeAt(key)))) return stock;
+        || !ArrowRowTypeSupport.supportsFields(inputType, keys)) return stock;
     Configuration config = new Configuration(planner.getTableConfig().getConfiguration());
     FlinkPlanCompat.persistedConfig(stock).toMap().forEach(config::setString);
     if (Boolean.parseBoolean(config.getString("execution.checkpointing.unaligned.enabled", "false"))
@@ -3065,7 +3065,7 @@ final class StockCompiledPlanLowering {
                     serializer, keyType, inputType, presenceOnly, rowtimeColumn, retention);
     int maximum = stockMaximum(original);
     var exchange =
-        (NativeColumnarExchangeExecNode) canonicalJoinInput(input, config, inputType, keys, true);
+        (NativeColumnarExchangeExecNode) canonicalJoinInput(input, config, inputType, keys, true, false, rowKeys(inputType, keys));
     exchange.withStateMaxParallelism(maximum);
     var dedup =
         new NativeDeduplicateExecNode(

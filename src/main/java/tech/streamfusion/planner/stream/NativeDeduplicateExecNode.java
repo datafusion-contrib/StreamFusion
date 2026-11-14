@@ -41,6 +41,10 @@ public class NativeDeduplicateExecNode extends ExecNodeBase<ArrowBatch>
   private boolean stockEagerState;
   private boolean stockBufferedState;
 
+  public int[] stateKeyColumns() {
+    return partitionColumns.clone();
+  }
+
   public NativeDeduplicateExecNode withStateMaxParallelism(int maximum) {
     org.apache.flink.util.Preconditions.checkArgument(maximum > 0);
     stateMaxParallelism = maximum;
@@ -157,6 +161,10 @@ public class NativeDeduplicateExecNode extends ExecNodeBase<ArrowBatch>
                 (RowType) getOutputType(),
                 stateTtlMillis,
                 maxParallelism);
+    if (stockBufferedState
+        && java.util.Arrays.stream(partitionColumns).anyMatch(column -> containsRow(
+            ((RowType) getOutputType()).getTypeAt(column))))
+      ((NativeColumnarDeduplicateOperator) operator).withBinaryRowKeys();
     OneInputTransformation<ArrowBatch, ArrowBatch> transformation =
         ExecNodeUtil.createOneInputTransformation(
             input,
@@ -167,5 +175,10 @@ public class NativeDeduplicateExecNode extends ExecNodeBase<ArrowBatch>
             false);
     FlinkKeyGroupUtils.applyColumnarKeying(transformation, maxParallelism);
     return transformation;
+  }
+
+  private static boolean containsRow(org.apache.flink.table.types.logical.LogicalType type) {
+    return type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.ROW)
+        || type.getChildren().stream().anyMatch(NativeDeduplicateExecNode::containsRow);
   }
 }

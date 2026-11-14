@@ -229,3 +229,21 @@ canonical qualification. Benchmarking remains deferred.
 Processing-time ordinary SQL retains its existing native owner rather than passing through the
 released stock translator, which rejects that shape. Six dedicated keyed/global rank/first/last
 planner controls check actual owner routing and the stock rejection separately.
+
+## ROW-bearing canonical partition keys awaiting qualification
+
+Canonical submission now binds ROW-bearing partition keys through the same binary-row boundary
+used by normalization. Eager winners/presence and buffered winners/emitted markers preserve
+actual nested row kinds, reserved bytes and key-group placement during import, input, capture
+and export. Buffered native RocksDB declares that same representation before opening its store.
+Flink 1.18’s released event-time first-row function retains its eager contract; Flink 2.2’s
+watermark-buffered function retains its pending/timer contract.
+
+Processing-time keep-last uses the existing stock-compatible logical equaliser for represented
+binary ROW payloads, so reserved-byte differences in a non-key row do not fabricate updates.
+The scalar path retains its existing byte comparison. New direct, planner and clean-stock job
+controls cover both directions, original TTL ages, nested timestamp/decimal keys, all nested row
+kinds, padding, NULLs, bundles, native checkpoint recovery, no-input returns and rescaling.
+These changes await testing on both release lines during the final six-hour window of #569;
+earlier scalar evidence does not qualify this extension. MAP-bearing keys remain outside the
+existing Arrow key-codec admission. Benchmarking remains deferred.

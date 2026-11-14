@@ -194,7 +194,7 @@ public final class StockDedupStateContract implements StockStateContract {
       try {
         Data.exportSchema(
             NativeAllocator.SHARED,
-            ArrowConversion.toArrowSchema(rowType),
+            StockKeyedRowSchema.schema(rowType, keyType),
             NativeAllocator.DICTIONARIES,
             schema);
         return action.apply(schema.memoryAddress());
@@ -294,7 +294,7 @@ public final class StockDedupStateContract implements StockStateContract {
   private void importBatch(
       List<RowData> rows, long handle, boolean persistent, boolean validateOnly) {
     try (VectorSchemaRoot root =
-            RowDataArrowConverter.write(rows, bridgeType, NativeAllocator.SHARED);
+            StockKeyedRowSchema.write(rows, bridgeType, keyType);
         ArrowArray array = ArrowArray.allocateNew(NativeAllocator.SHARED);
         ArrowSchema schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
       Data.exportVectorSchemaRoot(

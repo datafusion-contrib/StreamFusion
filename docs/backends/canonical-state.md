@@ -20,7 +20,7 @@ pages. Historical cohorts are not silently requalified against each newer librar
 | Family | Current stock-interchange scope | Main remaining work |
 | --- | --- | --- |
 | [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Arithmetic, typed scalar/shared COUNT DISTINCT and append numeric SUM DISTINCT, append extrema, integral/date/time/boolean retracting MIN/MAX, append scalar and local/global DISTINCT mini-batches, and captured managed UDFs; one-phase retracting scalar/COUNT DISTINCT mini-batches awaiting qualification | Wider types/keys, remaining retracting mini-batches, wider UDF contracts, other views/phases and failures |
-| [Deduplication](../operators/deduplication.md#canonical-state-adapter) | Automatic eager and buffered contracts, selected mini-batch and TTL modes | Remaining schemas/emission variants and full failure matrix |
+| [Deduplication](../operators/deduplication.md#canonical-state-adapter) | Automatic eager and buffered contracts, selected mini-batch and TTL modes; ROW-key binding awaiting qualification | Remaining schemas/emission variants and full failure matrix |
 | [Top-N / First-N / LIMIT](../operators/top-n.md#first-n-canonical-handoffs) | Automatic first-N, append, updating and retracting rank subsets; wider scalar/arbitrary-sort and nested-payload binding awaiting qualification | Algorithm-specific bounds, TTL, constructed key/sort types and complete new-scope qualification |
 | [Regular joins](../operators/joins/regular-join.md) | Automatic qualified stock layouts and complete-job handoffs; nested payload binding awaiting qualification | Wider uniqueness, mini-batch, schema and TTL combinations |
 | [Fixed windows](../operators/window-aggregate.md#stock-canonical-savepoint-interoperability) | Automatic binding, namespaced/DISTINCT state and selected complete-job handoffs | Complete phase/type/view and failure matrix |
@@ -2359,3 +2359,15 @@ tracked separately in #437. New planner and component controls retain full neste
 append, updating and retracting state; clean-worker append/retract jobs combine the full payload
 and computed rank in a user function to prevent payload pruning. Both-direction continuation,
 no-input, native checkpoint and rescale cases await testing on both supported release lines.
+
+## Deduplication ROW-key binding awaiting qualification
+
+Eager and buffered canonical deduplication now share normalization’s binary-row schema boundary
+for ROW-bearing keys, preserving nested row kinds and original byte identity for stock hashing.
+The loader retains the stock producer and explicitly rebuilds its Arrow input representation.
+Released first-row timing stays version-specific: eager on 1.18, watermark-buffered on 2.2.
+The buffered persistent store declares the same schema as import and live input. Processing-time
+keep-last compares represented ROW payload content using the shared stock equaliser; ordinary
+scalar byte comparison stays on its existing path. New state/planner/clean-worker controls await
+qualification across both lines, including malformed representation edges through existing
+validation, TTL, no-input returns, native checkpoints and keyed rescaling.

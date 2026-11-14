@@ -76,28 +76,11 @@ public final class StockChangelogNormalizeStateContract implements StockStateCon
   }
 
   private org.apache.arrow.vector.types.pojo.Schema arrowSchema(RowType type) {
-    return keyType.getChildren().stream()
-            .anyMatch(StockChangelogNormalizeStateContract::containsRow)
-        ? ArrowConversion.toBinaryRowKeySchema(type)
-        : ArrowConversion.toArrowSchema(type);
-  }
-
-  private static boolean containsRow(org.apache.flink.table.types.logical.LogicalType type) {
-    return type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.ROW)
-        || type.getChildren().stream().anyMatch(StockChangelogNormalizeStateContract::containsRow);
+    return StockKeyedRowSchema.schema(type, keyType);
   }
 
   private VectorSchemaRoot writeRows(List<RowData> rows) {
-    var root = VectorSchemaRoot.create(arrowSchema(bridgeType), NativeAllocator.SHARED);
-    try {
-      var writer = ArrowConversion.createRowDataArrowWriter(root, bridgeType);
-      for (var row : rows) writer.write(row);
-      writer.finish();
-      return root;
-    } catch (RuntimeException | Error failure) {
-      root.close();
-      throw failure;
-    }
+    return StockKeyedRowSchema.write(rows, bridgeType, keyType);
   }
 
   @Override

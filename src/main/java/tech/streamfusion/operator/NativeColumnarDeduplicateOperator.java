@@ -29,6 +29,7 @@ public class NativeColumnarDeduplicateOperator extends AbstractNativeStatefulOpe
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
 
   private final int[] partitionColumns;
+  private boolean binaryRowKeys;
   private final int rowtimeColumn;
   private final RowType rowType;
   private final long stateTtlMillis;
@@ -50,6 +51,17 @@ public class NativeColumnarDeduplicateOperator extends AbstractNativeStatefulOpe
     this.stateTtlMillis = stateTtlMillis;
   }
 
+  public NativeColumnarDeduplicateOperator withBinaryRowKeys() {
+    binaryRowKeys = true;
+    return this;
+  }
+
+  private long withInputSchema(java.util.function.LongUnaryOperator action) {
+    return binaryRowKeys
+        ? withRowSchema(tech.streamfusion.arrow.ArrowConversion.toBinaryRowKeySchema(rowType), action)
+        : withRowSchema(rowType, action);
+  }
+
   @Override
   protected RocksDBNativeStateSupport resolveRocksDBState(boolean rawStateRestored) {
     return resolveRocksDB(rawStateRestored, () -> true, stateTtlMillis);
@@ -59,15 +71,14 @@ public class NativeColumnarDeduplicateOperator extends AbstractNativeStatefulOpe
   // the typed RocksDB data plane.
   @Override
   protected boolean usesDirectRocksDBState() {
-    return withRowSchema(rowType, s -> Native.rocksdbKeepFirstDeduplicatorSupported(s) ? 1L : 0L)
+    return withInputSchema(s -> Native.rocksdbKeepFirstDeduplicatorSupported(s) ? 1L : 0L)
         != 0L;
   }
 
   @Override
   protected long createRocksDBHandle(
       RocksDBNativeStateSupport rocksdb, byte[][] restoredPartitions) {
-    return withRowSchema(
-        rowType,
+    return withInputSchema(
         s ->
             Native.createRocksDBKeepFirstDeduplicator(
                 partitionColumns,
