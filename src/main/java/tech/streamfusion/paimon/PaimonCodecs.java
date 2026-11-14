@@ -7,6 +7,10 @@ import tech.streamfusion.format.ColumnarFileCodec;
 public final class PaimonCodecs {
   private PaimonCodecs() {}
 
+  public static String specialWriteFeatures(org.apache.paimon.CoreOptions options) {
+    return PaimonVersion.compactionFeatures(options);
+  }
+
   public static boolean available(String format) {
     if (!Set.of("parquet", "orc").contains(format)) return false;
     String name = format.equals("orc") ? "Orc" : "Parquet";

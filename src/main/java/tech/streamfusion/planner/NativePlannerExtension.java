@@ -20,6 +20,17 @@ public interface NativePlannerExtension {
     return null;
   }
 
+  /**
+   * Refines a bounded host sink's format while retaining its execution topology and abilities.
+   * Returns the original sink when no refinement applies.
+   */
+  default org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalSink
+      prepareBatchSink(
+          org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalSink sink,
+          org.apache.flink.configuration.ReadableConfig config) {
+    return sink;
+  }
+
   /** An optional connector's bounded Arrow sink; null retains the host sink. */
   default BatchSink planBatchSink(
       org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalSink sink,

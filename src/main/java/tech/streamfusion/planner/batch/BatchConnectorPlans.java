@@ -54,7 +54,8 @@ final class BatchConnectorPlans {
     RelNode target = node;
     if (node instanceof BatchPhysicalSink) {
       for (var provider : providers) {
-        var sink = provider.planBatchSink((BatchPhysicalSink) node, config);
+        target = provider.prepareBatchSink((BatchPhysicalSink) target, config);
+        var sink = provider.planBatchSink((BatchPhysicalSink) target, config);
         if (sink != null) {
           target = new BatchPhysicalNativeConnectorSink(node, node.getInput(0), sink);
           break;

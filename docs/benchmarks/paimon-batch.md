@@ -115,3 +115,94 @@ Both [Flink 2.2/Paimon 2.1](results/paimon-batch-tpch-validation22-20261113.json
 22 queries at SF0.01. Every native job had native source/compute work, zero entry transposes,
 no source decode fallback and native encoders for nonempty outputs. Stock readback verified
 the complete declared result types and committed row multisets.
+
+## Java batch operations and native Parquet encoding
+
+`PaimonBatchOperationsBenchmark` compares complete partitioned overwrite, SQL UPDATE/DELETE and
+clustering jobs. The three controls are stock Flink, the previous StreamFusion behavior (native
+source/compute with `paimonBatchEncoding` disabled), and native file encoding. Each trial includes
+Java sorting/mutation/merge logic, Arrow conversion, JNI encoding, Java IO and the successful final
+commit. Fixtures and exact stock SDK readback are outside the timer. Alternating engines share the
+same data and resources; warmup observations are retained separately. Parquet footer `created_by`
+and source counters establish actual execution. Results must be measured with the release `bench`
+profile. Configure `sf.paimon.operations.rows`, `.warmups`, `.trials`, `.cases`, and `.report` to
+select the input size, repetitions, operation set and structured report destination.
+
+### Initial codec cohorts
+
+The following observations precede direct string copying and full 4,096-row buffering.
+They establish the initial implementation's behavior, rather than its final performance.
+Later repeats and unfavorable observations remain in the same structured report.
+
+On Apple Silicon, JDK 17.0.17, Flink 2.2.1 and Paimon 2.1.0, both initial cohorts completed all 105
+jobs (two warmups and five measured trials per engine and operation). The 210 jobs passed exact
+stock SDK row validation and native-source/encoder checks. Each engine used two writers, seven
+table partitions, Snappy, an 8 GiB maximum heap, a 512 MiB native budget and Arrow IPC shuffles.
+The schema is two integers and a nullable 61–64-byte string with 4,096 distinct values. Java
+owns all file IO, sorting, mutation/merge semantics and final commits in every engine.
+
+Median elapsed milliseconds (minimum–maximum), including submission and commit:
+
+| Input rows | Operation | Stock | Previous | Native encoding | Stock / native |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 250,000 | overwrite append | 371.5 (292.9–384.7) | 246.0 (233.4–296.3) | 242.6 (189.5–257.5) | 1.53× |
+| 250,000 | overwrite primary key | 410.8 (340.3–440.5) | 346.5 (316.2–395.2) | 273.5 (259.5–326.7) | 1.50× |
+| 250,000 | UPDATE | 322.3 (271.9–372.7) | 277.7 (255.9–310.1) | 267.0 (220.1–298.5) | 1.21× |
+| 250,000 | DELETE | 287.2 (272.8–356.2) | 283.8 (280.3–324.0) | 281.3 (219.0–285.8) | 1.02× |
+| 250,000 | clustering insert | 311.3 (275.9–328.3) | 311.5 (242.4–359.5) | 281.9 (190.1–312.6) | 1.10× |
+| 1,000,000 | overwrite append | 332.2 (322.8–337.0) | 324.1 (314.1–329.0) | 246.2 (237.7–260.0) | 1.35× |
+| 1,000,000 | overwrite primary key | 520.3 (511.9–552.1) | 496.6 (496.0–508.3) | 439.2 (432.9–444.0) | 1.18× |
+| 1,000,000 | UPDATE | 448.9 (425.9–467.9) | 458.5 (443.3–467.7) | 436.1 (409.2–436.7) | 1.03× |
+| 1,000,000 | DELETE | 523.3 (513.0–528.6) | 499.7 (484.7–511.2) | 455.6 (433.9–475.1) | 1.15× |
+| 1,000,000 | clustering insert | 914.7 (667.8–1174.1) | 729.8 (649.9–1051.3) | 663.3 (603.9–850.2) | 1.38× |
+
+Native medians beat both controls in these ten comparisons. Gains over previous behavior range
+from 1.009× to 1.317×; 250,000-row DELETE is marginal and the trial ranges overlap. These short
+bounded jobs include startup and commit costs, so interpret the results at that scope. The
+[structured observations](results/paimon-batch-operations-20261114.json) retain warmups, every
+trial, net job runtime, encoder evidence and native library checksums.
+
+Flink 1.18.1/Paimon 2.0.0 with JDK 11.0.28 passed all 150 jobs in a follow-up cohort with
+three warmups and seven measured trials per engine/operation. Native medians beat stock by
+1.10–1.17× and previous behavior by 1.05–1.22×. Initial DELETE measured 300.0 ms versus stock
+295.5 ms (0.985×), while its net job runtime was consistently lower. A focused JFR diagnostic
+also showed faster native worker runtimes. Planning now creates one runtime table copy rather
+than copying it again solely to add the encoder marker. The final unprofiled DELETE medians
+were stock 281.5 ms, previous 272.9 ms, native 255.9 ms. This repeat does not establish how much
+of the change came from planning versus host/JVM variability. The JSON retains the initial
+cohort, the profiling diagnostic and the final cohort separately.
+
+The released Paimon 1.0.0 adapter on Flink 1.18.1/JDK 11.0.28 also completed all 150 jobs
+with three warmups and seven measured trials. All five native medians beat stock (1.02–1.30×)
+and previous behavior (1.06–1.21×), with exact stock-reader results and native Parquet footers.
+The UPDATE result is marginal and its trial ranges overlap. Its observations remain a separate
+versioned cohort in the same JSON.
+
+### String copying and buffered size checks
+
+The row adapter now copies ordinary heap-backed Paimon strings directly into Arrow and
+keeps its 4,096-row buffer across SDK size probes when it remains safely below the target
+file size. It flushes near the roll boundary and at close, with an 8 MiB allocation
+threshold for wide values. Unicode, offset/multisegment strings, NULLs, reused input rows,
+wide buffers, close and encoding failure have dedicated ownership controls.
+
+On Flink 2.2.1/Paimon 2.1.0, the 250,000-row cohort with three warmups and seven measured
+trials per engine passed all 150 jobs. The native medians beat stock by 1.08–1.22× and
+previous behavior by 1.07–1.19×. Earlier repeats had losses in append, DELETE, UPDATE and
+clustering; those observations are retained and are not mixed into this cohort.
+
+A subsequent Flink 1.18.1/Paimon 2.0.0 cohort passed the same 150 correctness and encoder
+checks. Four native medians beat both controls; clustering was slower. Median milliseconds
+(minimum–maximum), including submission and commit:
+
+| Operation | Stock | Previous | Native encoding | Stock / native |
+| --- | ---: | ---: | ---: | ---: |
+| overwrite append | 287.9 (245.9–411.8) | 280.9 (224.1–339.1) | 251.9 (200.7–327.2) | 1.14× |
+| overwrite primary key | 371.9 (338.8–408.3) | 382.1 (315.0–422.3) | 322.3 (295.3–359.2) | 1.15× |
+| UPDATE | 311.3 (299.1–359.7) | 316.8 (291.1–379.8) | 297.4 (275.8–371.2) | 1.05× |
+| DELETE | 407.6 (374.5–434.9) | 399.9 (347.4–455.4) | 347.2 (295.1–417.4) | 1.17× |
+| clustering insert | 394.1 (355.9–884.7) | 391.9 (322.1–479.7) | 471.9 (286.4–745.9) | 0.84× |
+
+These are short jobs on a shared Apple M4 host with 16 GiB RAM, and their ranges overlap.
+The clustering loss requires further profiling; these observations do not establish a
+general gain for every adapter and operation.

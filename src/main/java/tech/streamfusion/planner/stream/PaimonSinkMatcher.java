@@ -89,10 +89,25 @@ final class PaimonSinkMatcher {
     return sink.tableSink() instanceof FlinkTableSink;
   }
 
+  static FlinkTableSink stockSink(
+      FileStoreTable table, org.apache.flink.table.factories.DynamicTableFactory.Context context) {
+    return new FlinkTableSink(context.getObjectIdentifier(), table, context);
+  }
+
+  static boolean clustering(FileStoreTable table) {
+    return !table
+        .coreOptions()
+        .toConfiguration()
+        .getOptional(CoreOptions.CLUSTERING_COLUMNS)
+        .orElse("")
+        .trim()
+        .isEmpty();
+  }
+
   static Planned plan(Sink sink) {
     for (SinkAbilitySpec ability : tech.streamfusion.compat.FlinkCompat.sinkAbilities(sink)) {
       if (ability instanceof OverwriteSpec) {
-        return Planned.fallback("INSERT OVERWRITE is not supported");
+        return Planned.fallback("INSERT OVERWRITE retains Paimon's Java sink topology");
       }
       if (ability instanceof RowLevelDeleteSpec || ability instanceof RowLevelUpdateSpec) {
         return Planned.fallback("row-level mutations retain Flink's row-kind setter");
@@ -125,7 +140,7 @@ final class PaimonSinkMatcher {
     BucketMode bucketMode = table.bucketMode();
     if (sink instanceof BatchPhysicalSink
         && bucketMode == BucketMode.BUCKET_UNAWARE
-        && !table.options().getOrDefault("clustering.columns", "").trim().isEmpty()) {
+        && clustering(table)) {
       return Planned.fallback("bounded clustering retains Paimon's stock sorting topology");
     }
     if (bucketMode != BucketMode.HASH_FIXED
@@ -293,13 +308,18 @@ final class PaimonSinkMatcher {
     return reason;
   }
 
-  private static FileStoreTable resolveTable(Sink sink) {
+  static FileStoreTable resolveTable(Sink sink) {
+    return resolveTable(sink, Map.of());
+  }
+
+  static FileStoreTable resolveTable(Sink sink, Map<String, String> runtimeOptions) {
     ContextResolvedTable resolved = sink.contextResolvedTable();
     ResolvedCatalogBaseTable<?> resolvedTable = resolved.getResolvedTable();
     CatalogBaseTable origin = resolvedTable.getOrigin();
     Map<String, String> options = new HashMap<>(resolvedTable.getOptions());
     options.putAll(org.apache.flink.table.planner.hint.FlinkHints.getHintedOptions(sink.hints()));
     options.putAll(PaimonDynamicOptions.forTable(sink, resolved.getIdentifier()));
+    options.putAll(runtimeOptions);
     FileStoreTable table;
     if (origin instanceof DataCatalogTable) {
       Table paimonTable = ((DataCatalogTable) origin).table();

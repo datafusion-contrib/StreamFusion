@@ -72,6 +72,152 @@ class PaimonBatchSqlTest {
     assertEquals(
         collect(stock.executeSql("SELECT * FROM stock_copy ORDER BY id")),
         collect(stock.executeSql("SELECT * FROM input ORDER BY id")));
+    // A mutation leaves the untouched snapshot files in place; require native bytes in the new
+    // file.
+    assertLatestFilesNative(table("input"));
+  }
+
+  @ParameterizedTest
+  @CsvSource({"false,false", "false,true", "true,false", "true,true"})
+  void overwriteRetainsJavaPartitionPlanning(boolean primaryKey, boolean partitioned)
+      throws Exception {
+    var config = new Configuration();
+    config.setString("parallelism.default", "2");
+    var stock = environment(config, false);
+    for (String name : List.of("input", "stock_copy")) {
+      stock.executeSql(ddl(name, primaryKey, partitioned, "parquet"));
+      stock.executeSql("INSERT INTO " + name + " VALUES (0,0,'before'),(1,1,'untouched')").await();
+    }
+    var nativeEnv = environment(config, true);
+    String overwrite =
+        "INSERT OVERWRITE input "
+            + (partitioned ? "PARTITION (k=0) SELECT 2,'after'" : "VALUES (2,0,'after')");
+    stock.executeSql(overwrite.replace("input", "stock_copy")).await();
+    assertFalse(nativeEnv.explainSql(overwrite).contains("NativeConnectorSink"));
+    nativeEnv.executeSql(overwrite).await();
+    assertEquals(
+        collect(stock.executeSql("SELECT * FROM stock_copy ORDER BY id")),
+        collect(stock.executeSql("SELECT * FROM input ORDER BY id")));
+    assertLatestFilesNative(table("input"));
+    assertFalse(
+        table("input")
+            .options()
+            .containsKey(tech.streamfusion.paimon.NativePaimonParquetFormat.BATCH_ROW_ENCODING));
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(strings = {"paimonSink", "paimonBatchEncoding"})
+  void batchEncodingSwitchIsLocalToTheJob(String operator) throws Exception {
+    var config = new Configuration();
+    config.setString("parallelism.default", "2");
+    var stock = environment(config, false);
+    stock.executeSql(ddl("input", false, false, "parquet"));
+    String overwrite = "INSERT OVERWRITE input VALUES (1,0,'a')";
+    environment(config, true).executeSql(overwrite).await();
+    assertNativeFiles(table("input"));
+    var disabled = new Configuration(config);
+    disabled.setString("streamfusion.operator." + operator + ".enabled", "false");
+    environment(disabled, true).executeSql(overwrite).await();
+    assertEncoder(table("input"), false);
+    environment(config, true).executeSql(overwrite).await();
+    assertNativeFiles(table("input"));
+    stock.executeSql(overwrite).await();
+    assertEncoder(table("input"), false);
+  }
+
+  @org.junit.jupiter.api.Test
+  void clusteringRetainsJavaSorting() throws Exception {
+    var config = new Configuration();
+    config.setString("parallelism.default", "2");
+    var stock = environment(config, false);
+    for (String name : List.of("input", "stock_copy"))
+      stock.executeSql(
+          ddl(name, false, true, "parquet")
+              .replace(
+                  "'write-only'='true'", "'write-only'='true','sink.clustering.by-columns'='id'"));
+    String insert = "INSERT INTO input VALUES (4,0,'d'),(1,0,'a'),(3,1,'c'),(2,1,'b')";
+    stock.executeSql(insert.replace("input", "stock_copy")).await();
+    var nativeEnv = environment(config, true);
+    String plan = nativeEnv.explainSql(insert);
+    assertFalse(plan.contains("NativeConnectorSink"), plan);
+    nativeEnv.executeSql(insert).await();
+    assertEquals(
+        collect(stock.executeSql("SELECT * FROM stock_copy ORDER BY id")),
+        collect(stock.executeSql("SELECT * FROM input ORDER BY id")));
+    assertNativeFiles(table("input"));
+  }
+
+  private static void assertLatestFilesNative(org.apache.paimon.table.FileStoreTable table)
+      throws Exception {
+    var snapshot = table.snapshotManager().latestSnapshot();
+    int count = 0;
+    for (var entry : table.store().newScan().withSnapshot(snapshot.id()).plan().files()) {
+      var path =
+          new org.apache.paimon.fs.Path(
+              table.store().pathFactory().bucketPath(entry.partition(), entry.bucket()),
+              entry.file().fileName());
+      try (var reader =
+          tech.streamfusion.paimon.PaimonTestCompat.parquetReader(
+              table.fileIO(), path, entry.file().fileSize())) {
+        if (reader.getFooter().getFileMetaData().getCreatedBy().contains("parquet-rs")) count++;
+      }
+    }
+    assertTrue(count > 0, "The operation must commit a file encoded by parquet-rs");
+  }
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(strings = {"overwrite", "update", "delete"})
+  void javaBatchEncodingPreservesNestedValuesAndWideTimestamps(String operation) throws Exception {
+    var config = new Configuration();
+    config.setString("parallelism.default", "2");
+    var stock = environment(config, false);
+    String values =
+        " VALUES (1,CAST(-123.456 AS DECIMAL(12,3)),"
+            + "TIMESTAMP '2001-02-03 04:05:06.123456789',ARRAY[1,CAST(NULL AS INT)],"
+            + "MAP['x',1,'y',CAST(NULL AS INT)],ROW('hello',CAST(1.25 AS DECIMAL(8,2)))),"
+            + "(2,CAST(NULL AS DECIMAL(12,3)),CAST(NULL AS TIMESTAMP(9)),"
+            + "CAST(NULL AS ARRAY<INT>),CAST(NULL AS MAP<STRING,INT>),"
+            + "CAST(NULL AS ROW<s STRING,n DECIMAL(8,2)>)),"
+            + "(3,CAST(1.000 AS DECIMAL(12,3)),TIMESTAMP '1969-12-31 23:59:59.123000000',"
+            + "ARRAY[2],MAP['z',3],ROW('before',CAST(-2.50 AS DECIMAL(8,2))))";
+    for (String name : List.of("input", "stock_copy")) {
+      stock.executeSql(
+          "CREATE TABLE "
+              + name
+              + " (id INT NOT NULL,d DECIMAL(12,3),t TIMESTAMP(9),a ARRAY<INT>,"
+              + "m MAP<STRING,INT>,r ROW<s STRING,n DECIMAL(8,2)>,PRIMARY KEY(id) NOT ENFORCED)"
+              + " WITH ('bucket'='2','file.format'='parquet','write-only'='true')");
+      stock.executeSql("INSERT INTO " + name + values).await();
+    }
+    String sql =
+        operation.equals("overwrite")
+            ? "INSERT OVERWRITE input" + values
+            : operation.equals("update")
+                ? "UPDATE input SET d=d+1 WHERE id=1"
+                : "DELETE FROM input WHERE id=1";
+    stock.executeSql(sql.replace("input", "stock_copy")).await();
+    environment(config, true).executeSql(sql).await();
+    assertEquals(
+        collect(stock.executeSql("SELECT * FROM stock_copy ORDER BY id")),
+        collect(stock.executeSql("SELECT * FROM input ORDER BY id")));
+    assertLatestFilesNative(table("input"));
+  }
+
+  @ParameterizedTest
+  @CsvSource({"parquet,true", "orc,false"})
+  void batchRowEncodingRetainsUnadmittedFormatsAndSettings(String format, boolean validation)
+      throws Exception {
+    var config = new Configuration();
+    config.setString("parallelism.default", "2");
+    var stock = environment(config, false);
+    String create = ddl("input", false, false, format);
+    if (validation)
+      create =
+          create.replace("'write-only'='true'", "'write-only'='true','parquet.validation'='true'");
+    stock.executeSql(create);
+    environment(config, true).executeSql("INSERT OVERWRITE input VALUES (1,0,'a')").await();
+    assertEquals(List.of("+I[1, 0, a]"), collect(stock.executeSql("SELECT * FROM input")));
+    assertEncoder(table("input"), false);
   }
 
   @org.junit.jupiter.api.Test
@@ -469,8 +615,9 @@ class PaimonBatchSqlTest {
     }
   }
 
-  @org.junit.jupiter.api.Test
-  void commitsOnlyTheCompletedBatchAttempt() throws Exception {
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+  void commitsOnlyTheCompletedBatchAttempt(boolean overwrite) throws Exception {
     var config = new Configuration();
     config.setString("parallelism.default", "2");
     config.setString("table.exec.resource.default-parallelism", "2");
@@ -495,7 +642,10 @@ class PaimonBatchSqlTest {
       var nativeEnv = environment(config, true);
       nativeEnv.createTemporarySystemFunction("paimon_fail_once", FailOnce.class);
       var result =
-          nativeEnv.executeSql("INSERT INTO copy SELECT paimon_fail_once(id),k,v FROM input");
+          nativeEnv.executeSql(
+              "INSERT "
+                  + (overwrite ? "OVERWRITE " : "INTO ")
+                  + "copy SELECT paimon_fail_once(id),k,v FROM input");
       result.await();
       result.getJobClient().orElseThrow().getJobExecutionResult().get();
       assertTrue(FailOnce.FAILED.get());

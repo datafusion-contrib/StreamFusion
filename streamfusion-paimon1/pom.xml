@@ -209,6 +209,8 @@
                                     <includes>
                                         <include>**/PaimonSourceSqlTest.java</include>
                                         <include>**/PaimonBatchSqlTest.java</include>
+                                        <include>**/PaimonBatchEncodingTest.java</include>
+                                        <include>**/PaimonBatchOperationsBenchmark.java</include>
                                         <include>**/PaimonOperatorDescriptionTest.java</include>
                                         <include>**/PaimonSplitWatermarksTest.java</include>
                                         <include>**/PaimonFetcherLifecycleTest.java</include>

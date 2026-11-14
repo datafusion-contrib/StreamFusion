@@ -39,6 +39,11 @@ public class PaimonPlannerExtension implements NativePlannerExtension {
   }
 
   @Override
+  public BatchPhysicalSink prepareBatchSink(BatchPhysicalSink sink, ReadableConfig config) {
+    return PaimonBatchEncoding.prepare(sink, config);
+  }
+
+  @Override
   public BatchSink planBatchSink(BatchPhysicalSink sink, ReadableConfig config) {
     if (!NativeConfig.operatorEnabled("paimonSink")
         || !(sink.tableSink() instanceof FlinkTableSink)) return null;
