@@ -1,0 +1,303 @@
+<?xml version="1.0" ?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>tech.streamfusion</groupId>
+    <artifactId>hudi-upstream-fixtures</artifactId>
+    <version>1.0</version>
+
+    <properties>
+        <hudi.version>1.2.1</hudi.version>
+        <fixtures.output>${project.basedir}/target</fixtures.output>
+        <maven.compiler.release>11</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <!-- Released test bytecode only. Relocations match the released Flink bundle; test bodies and assertions remain unchanged. -->
+
+    <dependencies>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-streaming-java</artifactId>
+            <version>1.18.1</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-runtime</artifactId>
+            <version>1.18.1</version>
+            <type>test-jar</type>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>1.18.36</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.hudi</groupId>
+            <artifactId>hudi-flink</artifactId>
+            <version>${hudi.version}</version>
+            <classifier>tests</classifier>
+            <exclusions>
+                <exclusion>
+                    <groupId>*</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.hudi</groupId>
+            <artifactId>hudi-common</artifactId>
+            <version>${hudi.version}</version>
+            <classifier>tests</classifier>
+            <exclusions>
+                <exclusion>
+                    <groupId>*</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.hudi</groupId>
+            <artifactId>hudi-hadoop-common</artifactId>
+            <version>${hudi.version}</version>
+            <classifier>tests</classifier>
+            <exclusions>
+                <exclusion>
+                    <groupId>*</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.hudi</groupId>
+            <artifactId>hudi-client-common</artifactId>
+            <version>${hudi.version}</version>
+            <classifier>tests</classifier>
+            <exclusions>
+                <exclusion>
+                    <groupId>*</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.hudi</groupId>
+            <artifactId>hudi-flink-client</artifactId>
+            <version>${hudi.version}</version>
+            <classifier>tests</classifier>
+            <exclusions>
+                <exclusion>
+                    <groupId>*</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.hudi</groupId>
+            <artifactId>hudi-tests-common</artifactId>
+            <version>${hudi.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>*</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <directory>${fixtures.output}</directory>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.1</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <relocations>
+                                <relocation>
+                                    <pattern>com.esotericsoftware.kryo.</pattern>
+                                    <shadedPattern>org.apache.hudi.com.esotericsoftware.kryo.</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>com.esotericsoftware.reflectasm.</pattern>
+                                    <shadedPattern>org.apache.hudi.com.esotericsoftware.reflectasm.</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>com.esotericsoftware.minlog.</pattern>
+                                    <shadedPattern>org.apache.hudi.com.esotericsoftware.minlog.</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>org.objenesis.</pattern>
+                                    <shadedPattern>org.apache.hudi.org.objenesis.</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>javax.servlet.</pattern>
+                                    <shadedPattern>org.apache.hudi.javax.servlet.</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>org.apache.avro.</pattern>
+                                    <shadedPattern>org.apache.hudi.org.apache.avro.</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>org.apache.commons.io.</pattern>
+                                    <shadedPattern>org.apache.hudi.org.apache.commons.io.</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>com.yammer.metrics.</pattern>
+                                    <shadedPattern>org.apache.hudi.com.yammer.metrics.</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>com.codahale.metrics.</pattern>
+                                    <shadedPattern>org.apache.hudi.com.codahale.metrics.</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>org.apache.flink.dropwizard.</pattern>
+                                    <shadedPattern>org.apache.hudi.org.apache.flink.dropwizard.</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>com.beust.jcommander.</pattern>
+                                    <shadedPattern>org.apache.hudi.com.beust.jcommander.</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>org.apache.commons.codec.</pattern>
+                                    <shadedPattern>org.apache.hudi.org.apache.commons.codec.</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>org.eclipse.jetty.</pattern>
+                                    <shadedPattern>org.apache.hudi.org.apache.jetty.</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>com.fasterxml.jackson.</pattern>
+                                    <shadedPattern>org.apache.hudi.com.fasterxml.jackson.</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>org.openjdk.jol.</pattern>
+                                    <shadedPattern>org.apache.hudi.org.openjdk.jol.</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>com.uber.m3.</pattern>
+                                    <shadedPattern>org.apache.hudi.com.uber.m3.</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>com.google.common.</pattern>
+                                    <shadedPattern>org.apache.hudi.com.google.common.</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>com.google.protobuf.</pattern>
+                                    <shadedPattern>org.apache.hudi.com.google.protobuf.</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>org.apache.commons.lang3.</pattern>
+                                    <shadedPattern>org.apache.hudi.org.apache.commons.lang3.</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>org.apache.commons.lang.</pattern>
+                                    <shadedPattern>org.apache.hudi.org.apache.commons.lang.</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>org.apache.thrift.</pattern>
+                                    <shadedPattern>org.apache.hudi.org.apache.thrift.</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>org.apache.orc.</pattern>
+                                    <shadedPattern>org.apache.hudi.org.apache.orc.</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>org.json.</pattern>
+                                    <shadedPattern>org.apache.hudi.org.json.</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>org.codehaus.jackson.</pattern>
+                                    <shadedPattern>org.apache.hudi.org.codehaus.jackson.</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>com.facebook.fb303.</pattern>
+                                    <shadedPattern>org.apache.hudi.com.facebook.fb303.</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>au.com.bytecode.opencsv.</pattern>
+                                    <shadedPattern>org.apache.hudi.au.com.bytecode.opencsv.</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>javaewah.</pattern>
+                                    <shadedPattern>org.apache.hudi.javaewah.</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>javolution.</pattern>
+                                    <shadedPattern>org.apache.hudi.javolution.</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>jodd.</pattern>
+                                    <shadedPattern>org.apache.hudi.jodd.</shadedPattern>
+                                </relocation>
+                            </relocations>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                            </transformers>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+        </plugins>
+    </build>
+</project>

@@ -521,6 +521,17 @@ apply to both engines; these differ from the explicit Iceberg writer settings an
 so a cross-connector speedup gap is a diagnostic signal rather than proof of its
 cause. The original best-of Paimon runner remains available unchanged.
 
+## Hudi storage comparison
+
+The [four-partition Hudi Nexmark matrix](benchmarks/hudi-nexmark.md) retains the
+shared query SQL and two-million-event Kafka corpus with Hudi tables at both
+ends. Completed heap/off and heap/on configurations have geometric means of
+median speedups of 0.55× / 0.64× stock Flink and 7.51× / 8.78× previous
+StreamFusion boundaries. Window and lookup regressions remain; both RocksDB
+configurations are still undergoing qualification. Full-value checks,
+processing-time exceptions, ranges, profiling evidence and host memory context
+are recorded on that page.
+
 ## Historical Nexmark report review (2026-09-08)
 
 The [report submitted in #354](https://github.com/datafusion-contrib/StreamFusion/issues/354)

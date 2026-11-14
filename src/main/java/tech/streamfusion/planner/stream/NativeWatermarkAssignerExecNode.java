@@ -28,6 +28,7 @@ public class NativeWatermarkAssignerExecNode extends ExecNodeBase<ArrowBatch>
 
   private final int rowtimeColumn;
   private final WatermarkExpression expression;
+  private final boolean preserveBoundaries;
 
   public NativeWatermarkAssignerExecNode(
       ReadableConfig tableConfig,
@@ -36,6 +37,17 @@ public class NativeWatermarkAssignerExecNode extends ExecNodeBase<ArrowBatch>
       String description,
       int rowtimeColumn,
       WatermarkExpression expression) {
+    this(tableConfig, inputProperty, outputType, description, rowtimeColumn, expression, true);
+  }
+
+  public NativeWatermarkAssignerExecNode(
+      ReadableConfig tableConfig,
+      InputProperty inputProperty,
+      RowType outputType,
+      String description,
+      int rowtimeColumn,
+      WatermarkExpression expression,
+      boolean preserveBoundaries) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-native-watermark-assigner_1"),
@@ -45,6 +57,7 @@ public class NativeWatermarkAssignerExecNode extends ExecNodeBase<ArrowBatch>
         description);
     this.rowtimeColumn = rowtimeColumn;
     this.expression = expression;
+    this.preserveBoundaries = preserveBoundaries;
   }
 
   @Override
@@ -56,7 +69,7 @@ public class NativeWatermarkAssignerExecNode extends ExecNodeBase<ArrowBatch>
     return ExecNodeUtil.createOneInputTransformation(
         input,
         createTransformationMeta(TRANSFORMATION, config),
-        new NativeColumnarWatermarkAssignerOperator(rowtimeColumn, expression),
+        new NativeColumnarWatermarkAssignerOperator(rowtimeColumn, expression, preserveBoundaries),
         ArrowBatchTypeInformation.INSTANCE,
         input.getParallelism(),
         false);

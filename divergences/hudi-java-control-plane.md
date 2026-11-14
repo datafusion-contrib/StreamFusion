@@ -32,7 +32,7 @@ Coverage and measurements are recorded on the connector page.
 
 The immutable COW append adapter follows Iceberg's released-graph decoration. It
 retains Hudi's append function and coordinator and gives Java only borrowed Arrow
-row views for keys/counters. A whole batch reaches the shared Parquet encoder once;
+row views for keys/counters. Each partition writer passes its selected batch rows to the shared Parquet encoder;
 Java retains authenticated output I/O, markers, file handles and commit metadata.
 File rolling is deferred until the current Arrow batch has been counted completely.
 This avoids duplicating Hudi's write/commit protocol or transposing payload rows.
@@ -53,3 +53,48 @@ version-pinned serializer hook skips payload writes while reserving identical
 control pages. Original cross-bucket input order is preserved because changing
 flush boundaries changes delete/reinsert semantics. No custom index, memory-pool,
 spill or winner-selection algorithm is introduced.
+
+Append and MOR writers share one adapter for the released graph, preserving the
+original writer coordinator and identities. Multiple MOR tasks use Hudi's own
+bucket partitioner for channel assignment and the existing Arrow routing kernel
+for payload selection. Channel IDs go through Flink's custom partitioner rather
+than being interpreted as Flink key groups. Partition discovery and pruning
+remain in the original source. SQL predicates remain explicit residual Calcs,
+matching the pinned source's filter contract.
+
+Physical timestamp encoding is derived from Hudi's Parquet schema converter;
+StreamFusion supplies its existing Rust encoder with unit/UTC/INT96 metadata.
+This avoids maintaining a second Hudi logical-to-physical type policy. Parquet
+footer admission uses Hudi's own Avro converter with standard list unwrapping.
+
+Read merging and write precombine share an Arrow-preserving Hudi record context.
+Write precombine calls the released deduplication helper and buffered merger.
+The context retains stable row references instead of making binary-row payload
+copies. Disabling precombine retains stock behavior, including delete/reinsert
+effects at the original buffer's flush boundaries.
+
+Restored writers query Hudi's original coordinator for inflight instants and await
+older checkpoint commits before their first bucket assignment. Task startup can precede replayed commit completion, and early
+index bootstrap would miss that commit's file groups. Hudi's wait helper honors the configured commit acknowledgement timeout.
+Commit and index decisions remain in the original coordinator and writer.
+
+Arroyo's expression watermark generator forwards a whole record batch before
+broadcasting progress. Flink's eager per-row emissions require finer boundaries
+when a window or `CURRENT_WATERMARK` can observe them. Before a terminal Hudi sink,
+StreamFusion uses whole batches only across a proven chain of native Calcs that
+has no user functions and does not read the watermark. Append sinks also admit native exchanges, mini-batch
+assigners and inner joins whose inputs are insert-only. For MOR commit-time
+ordering with precombine, the proof also crosses native exchanges, mini-batch
+assigners, regular joins, non-windowed aggregates/ranking and deduplication that
+does not observe watermarks. Rowtime keep-first retains fine boundaries. User-function instances stop this broader proof;
+stateless generated built-ins without user dependencies do not. Event-time
+ordering and precombine-disabled writes retain their original flush positions.
+It still evaluates every candidate and rejects NULL rowtime. The planner copies this branch rather than changing shared producers;
+all unknown or watermark-sensitive downstream paths keep the existing boundaries.
+
+MOR log encoding now gathers bounded chunks of row references with the same
+shared Arrow interleave wrapper used by the file-group reader. Source-batch
+changes no longer force a tiny encoder call or a metadata array sized to the
+entire parent batch. The gather preserves iterator order and repeated payload
+positions; Hudi continues to select winners and construct deletes. Payloads are
+combined columnwise in Rust, and Java creates only Hudi metadata columns.

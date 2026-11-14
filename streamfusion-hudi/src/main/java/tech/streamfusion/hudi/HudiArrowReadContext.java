@@ -26,7 +26,6 @@ import org.apache.hudi.common.util.SizeEstimator;
 import org.apache.hudi.common.util.collection.ClosableIterator;
 import org.apache.hudi.storage.HoodieStorage;
 import org.apache.hudi.storage.StoragePath;
-import org.apache.hudi.table.format.FlinkRecordContext;
 import org.apache.hudi.table.format.FlinkRowDataReaderContext;
 import org.apache.hudi.table.format.InternalSchemaManager;
 import org.apache.hudi.util.HoodieSchemaConverter;
@@ -90,46 +89,7 @@ final class HudiArrowReadContext extends FlinkRowDataReaderContext implements Au
     this.budget = budget;
     this.basePath = basePath == null ? null : new StoragePath(basePath);
     recordContext =
-        new FlinkRecordContext(meta.getTableConfig(), meta.getStorageConf()) {
-          @Override
-          public RowData toBinaryRow(HoodieSchema schema, RowData record) {
-            if (!(record instanceof HudiAppendIOFactory.Cursor))
-              throw new IllegalArgumentException("Hudi merge expected a stable Arrow row view");
-            return record;
-          }
-
-          @Override
-          public RowData seal(RowData record) {
-            return record;
-          }
-
-          @Override
-          public org.apache.hudi.org.apache.avro.generic.GenericRecord convertToAvroRecord(
-              RowData record, HoodieSchema schema) {
-            throw new UnsupportedOperationException(
-                "Hudi Arrow payloads require native columnar processing");
-          }
-
-          @Override
-          public RowData convertAvroRecord(
-              org.apache.hudi.org.apache.avro.generic.IndexedRecord record) {
-            throw new UnsupportedOperationException(
-                "Hudi Arrow reads require Parquet log payloads");
-          }
-
-          @Override
-          public RowData constructEngineRecord(HoodieSchema schema, Object[] values) {
-            throw new UnsupportedOperationException(
-                "Hudi Arrow reads require complete stored payloads");
-          }
-
-          @Override
-          public RowData mergeWithEngineRecord(
-              HoodieSchema schema, Map<Integer, Object> updates, BufferedRecord<RowData> base) {
-            throw new UnsupportedOperationException(
-                "Partial Hudi updates require the stock reader");
-          }
-
+        new HudiArrowRecordContext(meta.getTableConfig(), meta.getStorageConf()) {
           @Override
           public java.util.function.UnaryOperator<RowData> projectRecord(
               HoodieSchema from, HoodieSchema to, Map<String, String> renamed) {

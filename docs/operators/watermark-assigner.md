@@ -32,6 +32,21 @@ forwarded whole. A NULL rowtime fails the
 job like Flink's assigner. Non-constant or negative delays, other watermark expressions, and
 expressions referring to a different column fall back.
 
+For a terminal native Hudi sink reached only through native Calcs, the planner
+keeps complete batches when none of those Calcs observes `CURRENT_WATERMARK`.
+The same expression evaluates every row and retains the maximum candidate,
+NULL rowtime validation, periodic emissions and the final maximum watermark.
+Intermediate emissions move to batch boundaries because this proven downstream
+path cannot observe their position. Append Hudi sinks also permit native exchanges,
+mini-batch assigners and inner joins whose two inputs are insert-only.
+For Hudi MOR sinks explicitly using commit-time
+ordering and precombine, this proof also crosses native exchanges, mini-batch
+assigners, regular joins, non-windowed aggregates/ranking and deduplication that
+does not observe watermarks. User functions and rowtime keep-first deduplication
+retain their original boundaries. Event-time ordering,
+precombine-disabled writes, other operators, unknown Calc programs and
+`CURRENT_WATERMARK` retain every original eager boundary.
+
 The independent assigner also falls back when `table.exec.source.idle-timeout` is positive.
 Flink then retains its idle/active channel notifications, including its backpressure-aware
 idle clock, so idle partitions cannot block downstream watermarks. The whole query follows

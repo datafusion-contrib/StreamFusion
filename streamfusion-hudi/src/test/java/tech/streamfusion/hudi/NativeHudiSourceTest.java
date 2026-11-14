@@ -636,6 +636,24 @@ class NativeHudiSourceTest {
     assertEquals(1000, ids.size());
     assertEquals(0L, ids.first());
     assertEquals(999L, ids.last());
+    var target =
+        new HoodieTableSource(
+            SerializableSchema.create(schema),
+            new StoragePath(path),
+            List.of(),
+            "__HIVE_DEFAULT_PARTITION__",
+            conf);
+    var meta = target.getMetaClient();
+    var files = target.getBaseFileOnlyFileSlices(meta);
+    assertTrue(files.size() > 1, "Recovery must retain checkpoint-rolled data files");
+    for (var file : files) {
+      var storagePath = file.getBaseFile().get().getStoragePath();
+      var footer =
+          org.apache.hudi.common.util.ParquetUtils.readMetadata(meta.getStorage(), storagePath);
+      assertTrue(
+          footer.getFileMetaData().getCreatedBy().contains("parquet-rs"),
+          storagePath + ": " + footer.getFileMetaData().getCreatedBy());
+    }
   }
 
   private static final class RecoveringArrowSource
@@ -905,6 +923,11 @@ class NativeHudiSourceTest {
     try (var rows = sql.executeSql(query).collect()) {
       while (rows.hasNext()) expected.add(rows.next().toString());
     }
+    String filtered = "SELECT name, id FROM h WHERE id > 1";
+    var expectedFiltered = new ArrayList<String>();
+    try (var rows = sql.executeSql(filtered).collect()) {
+      while (rows.hasNext()) expectedFiltered.add(rows.next().toString());
+    }
     tech.streamfusion.planner.NativePlanner.install(sql);
     assertTrue(sql.explainSql(query).contains("native Parquet"));
     var actual = new ArrayList<String>();
@@ -916,7 +939,14 @@ class NativeHudiSourceTest {
     assertEquals(expected, actual);
     assertFalse(sql.explainSql("SELECT name, id FROM h").contains("native Parquet"));
     assertFalse(sql.explainSql("SELECT name, id FROM h LIMIT 1").contains("native Parquet"));
-    assertFalse(sql.explainSql("SELECT name, id FROM h WHERE id > 1").contains("native Parquet"));
+    assertTrue(sql.explainSql(filtered).contains("native Parquet"));
+    var actualFiltered = new ArrayList<String>();
+    try (var rows = sql.executeSql(filtered).collect()) {
+      while (rows.hasNext()) actualFiltered.add(rows.next().toString());
+    }
+    java.util.Collections.sort(expectedFiltered);
+    java.util.Collections.sort(actualFiltered);
+    assertEquals(expectedFiltered, actualFiltered);
   }
 
   @Test

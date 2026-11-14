@@ -194,6 +194,7 @@ jobs:
           python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.5.3
           mvn -B -ntp -f dev/flink-suite/agent/pom.xml package
           python3 -m unittest discover -s dev/flink-suite -p 'test_*.py'
+          python3 -m unittest discover -s bin -p 'test_hudi_suite.py'
           python3 -m unittest discover -s bin -p 'test_check_flink_suite_classpath.py'
           python3 -m unittest discover -s bin -p 'test_check_native_glibc.py'
           python3 -m unittest discover -s bin -p 'test_check_native_tls.py'
@@ -459,7 +460,7 @@ jobs:
     needs: native-build
     name: ${{ matrix.name }} tests (debug native build)${{ matrix.jdk == '11' && ' (JDK 11)' || '' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    timeout-minutes: ${{ matrix.module == 'streamfusion-hudi' && 240 || 150 }}
     strategy:
       fail-fast: true
       matrix:
@@ -544,6 +545,23 @@ jobs:
           python3 bin/ci-maven-dependencies.py --profile paimon,upstream-paimon-compaction --projects streamfusion-paimon --also-make
           python3 bin/ci-maven-dependencies.py --pom dev/flink-suite/agent/pom.xml
           python3 bin/paimon-compaction-suite.py --skip-native-build
+
+      - name: Run unchanged upstream Hudi SQL corpus with stock and native evidence
+        if: matrix.module == 'streamfusion-hudi' && matrix.jdk == '17'
+        run: |
+          python3 bin/ci-maven-dependencies.py --profile hudi,flink-1.18,hudi-upstream --projects streamfusion-hudi --also-make
+          python3 bin/ci-maven-dependencies.py --pom dev/flink-suite/hudi-fixtures/pom.xml
+          python3 bin/ci-maven-dependencies.py --pom dev/flink-suite/agent/pom.xml
+          python3 bin/hudi-suite.py --native-library-dir "$PWD/native/target/debug"
+
+      - name: Retain upstream Hudi invocation and execution evidence
+        if: always() && matrix.module == 'streamfusion-hudi' && matrix.jdk == '17'
+        uses: actions/upload-artifact@v4
+        with:
+          name: hudi-sql-upstream
+          path: streamfusion-hudi/target/hudi-upstream.json
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Retain Paimon compaction results and invocation evidence
         if: always() && matrix.name == 'Paimon formats' && matrix.jdk == '17'

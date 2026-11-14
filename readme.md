@@ -37,7 +37,9 @@ Native coverage is broad — most of the streaming SQL surface:
   (`s3:`/`gs:`/`abfs:`/`hdfs:`/…, `PARTITIONED BY` and partition commit included — native encoding
   drained into Flink's own recoverable streams; filesystem reads use Flink's stock source); Delta Lake
   append and merge-on-read sinks, with Delta 4.4 owning table semantics and Rust writing Parquet
-  bytes; Apache Paimon streaming sources and sinks using native Parquet/ORC decoding and encoding,
+  bytes; experimental Apache Hudi 1.2.1 sources and append/MOR sinks on Flink 1.18,
+  retaining Java Hudi controls and Rust Parquet payload encoding; Apache Paimon streaming
+  sources and sinks using native Parquet/ORC decoding and encoding,
   Arrow bucket routing and key merging while Paimon 2.0 keeps its manifests, commits, and
   in-job compaction; and Kafka source ingest and sink output for JSON/CSV/raw/Avro/protobuf and supported CDC
   formats. Flink's Kafka clients own consumption, production, offsets, and transactions while Rust
@@ -176,7 +178,7 @@ curl --fail --location \
   --output "$FLINK_HOME/lib/streamfusion-core.jar"
 ```
 
-StreamFusion currently supports exactly **Flink 2.2.0 and 2.2.1**, installs into Flink's `lib`
+Release support covers **Flink 2.2.0 and 2.2.1**. StreamFusion installs into Flink's `lib`
 directory (never the job JAR), and needs no application-side call to accelerate an ordinary
 streaming SQL job. Release JARs come from Maven Central and already contain the runner-built Linux
 x86_64 and macOS Apple Silicon native libraries; users do not build Rust or Java from source. The
@@ -184,6 +186,9 @@ base install is connector- and format-neutral — layer in only the `streamfusio
 connectors and formats actually need, mirroring Flink's own module split. See
 **[Deployment](https://datafusion-contrib.github.io/StreamFusion/deployment/)** for the full
 Kubernetes/Docker/bare-metal walkthrough and the exact JAR list per connector/format.
+
+The experimental [Flink 1.18.1 build](https://datafusion-contrib.github.io/StreamFusion/flink-compatibility/)
+uses separate `streamfusion-*-flink1.18` artifacts and is required for Hudi 1.2.1.
 
 Every runtime behavior — the acceleration on/off switches, `allowIncompatible` expression opt-ins,
 off-heap memory sizing for the native Kafka buffers, and how to see why a query fell back
@@ -228,6 +233,17 @@ are disabled in this exact-SQL Fluss comparison.
 are documented, alongside the earlier matched Kafka/Fluss results. The connector
 remains experimental and enabled by default when installed; set
 `-Dstreamfusion.fluss.enabled=false` to use stock connector endpoints.
+
+## Hudi-to-Hudi Nexmark
+
+The experimental [four-partition Hudi benchmark](docs/benchmarks/hudi-nexmark.md)
+uses the same two-million-event corpus and query SQL with a COW source and
+append/MOR sinks. The completed heap-state configurations have geometric means
+of median speedups over stock Flink of **0.55× with mini-batching off** and
+**0.64× with it on**. Simple I/O cases improve, while window and lookup paths
+regress substantially. Both RocksDB configurations are undergoing qualification;
+the linked report retains all trials, ranges, fallback exclusions and profiling
+evidence.
 
 ## Related work
 

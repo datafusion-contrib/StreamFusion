@@ -1,0 +1,168 @@
+{
+  "rows": 2000000,
+  "input_bids": 1840000,
+  "parallelism": 4,
+  "source_partitions": 4,
+  "sink_partition_modulus": 4,
+  "checkpoint_ms": 1000,
+  "warmups": 1,
+  "runs": 3,
+  "object_reuse": true,
+  "jdk": "17.0.17+10",
+  "architecture": "aarch64",
+  "available_processors": 10,
+  "heap_max_bytes": 8589934592,
+  "native_task_off_heap_capacity_bytes": 51539607552,
+  "status": "diagnostic",
+  "scope": "q1/memory/mini-batch=false; one warmup and three rotating measured trials; full-value multiset and encoder validation",
+  "source_base_revision": "93077f8fb9c86d5941bc81bab8a01065d51e396a",
+  "observations": [
+    {
+      "sink_partitions": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "mini_batch": false,
+      "validation": "full-value multiset",
+      "query": "q1",
+      "milliseconds": 1460.951625,
+      "backend": "memory",
+      "engine": "stock",
+      "trial": 0,
+      "output_rows": 1840000
+    },
+    {
+      "sink_partitions": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "mini_batch": false,
+      "validation": "full-value multiset",
+      "query": "q1",
+      "milliseconds": 9283.377,
+      "backend": "memory",
+      "engine": "previous",
+      "trial": 0,
+      "output_rows": 1840000
+    },
+    {
+      "sink_partitions": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "mini_batch": false,
+      "validation": "full-value multiset",
+      "query": "q1",
+      "milliseconds": 641.7275,
+      "backend": "memory",
+      "engine": "native",
+      "trial": 0,
+      "output_rows": 1840000
+    },
+    {
+      "sink_partitions": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "mini_batch": false,
+      "validation": "full-value multiset",
+      "query": "q1",
+      "milliseconds": 584.009125,
+      "backend": "memory",
+      "engine": "native",
+      "trial": 1,
+      "output_rows": 1840000
+    },
+    {
+      "sink_partitions": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "mini_batch": false,
+      "validation": "full-value multiset",
+      "query": "q1",
+      "milliseconds": 2200.469334,
+      "backend": "memory",
+      "engine": "stock",
+      "trial": 1,
+      "output_rows": 1840000
+    },
+    {
+      "sink_partitions": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "mini_batch": false,
+      "validation": "full-value multiset",
+      "query": "q1",
+      "milliseconds": 11996.394833,
+      "backend": "memory",
+      "engine": "previous",
+      "trial": 1,
+      "output_rows": 1840000
+    },
+    {
+      "sink_partitions": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "mini_batch": false,
+      "validation": "full-value multiset",
+      "query": "q1",
+      "milliseconds": 11077.03775,
+      "backend": "memory",
+      "engine": "previous",
+      "trial": 2,
+      "output_rows": 1840000
+    },
+    {
+      "sink_partitions": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "mini_batch": false,
+      "validation": "full-value multiset",
+      "query": "q1",
+      "milliseconds": 766.003125,
+      "backend": "memory",
+      "engine": "native",
+      "trial": 2,
+      "output_rows": 1840000
+    },
+    {
+      "sink_partitions": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "mini_batch": false,
+      "validation": "full-value multiset",
+      "query": "q1",
+      "milliseconds": 3453.848167,
+      "backend": "memory",
+      "engine": "stock",
+      "trial": 2,
+      "output_rows": 1840000
+    }
+  ],
+  "harness_sha256": "47878b1c43238ec227d3ffbec143738a2fe24d4220db652c169eb2519b4a9987",
+  "original_run_status": "passed",
+  "timing_qualification": "Withdrawn: host suspensions occurred during the campaign; rerun with an awake host. Full-value comparison results remain correctness evidence."
+}

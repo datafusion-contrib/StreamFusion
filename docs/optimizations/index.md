@@ -43,6 +43,7 @@ Those measurements describe CI job counts and elapsed time, not SQL execution th
 - [Reuse Iceberg boundary setup](iceberg-boundary-overhead.md): cached task schemas and serializers, shared Arrow leases and routing maps.
 
 - [Bounded Arrow batch sizing](bounded-batch-sizing.md): 8,192-row bounded batches amortize JNI, ownership copies and IPC while retaining the shared memory cap.
+- [Keep Hudi batches across unobserved watermarks](hudi-unobserved-watermarks.md): preserve complete payload batches along a proven terminal path without watermark observers.
 - [Columnar changelog operators](columnar-changelog-operators.md): pass unchanged filter batches by ownership and avoid standalone row/Arrow round trips.
 - [Collection representation work](collection-representation-work.md): share verified map projections, avoid redundant owned-row copies, reserve BIGINT array capacity and prune UNNEST expansion before copying.
 - [Native basic-array searches and extrema](native-array-search.md): scan or reduce flat values without JVM row reconstruction and avoid temporary bytes for wide-precision decimals whose actual value fits a long; retain measured standalone limits.

@@ -29,7 +29,7 @@ import org.apache.hudi.table.format.HoodieFlinkIOFactory;
 import org.apache.hudi.util.HoodieSchemaConverter;
 import org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.parquet.hadoop.metadata.ParquetMetadata;
-import tech.streamfusion.arrow.ArrowConversion;
+import tech.streamfusion.arrow.ArrowFileBatch;
 import tech.streamfusion.format.ColumnarFileCodec;
 import tech.streamfusion.operator.NativeAllocator;
 import tech.streamfusion.operator.TaskOffHeapMemory;
@@ -95,16 +95,15 @@ public final class HudiMorIOFactory extends HoodieFlinkIOFactory {
     private final TaskOffHeapMemory.Reservation memory;
     private final org.apache.arrow.vector.types.pojo.Schema schema;
     private final List<VarCharVector> metadata = new ArrayList<>();
-    private final List<Integer> selected = new ArrayList<>();
-    private HudiAppendIOFactory.Batch batch;
-    private RowData[] generatedMetadata;
+    private static final int ENCODER_BATCH_ROWS = 4096;
+    private final List<RowData> pending = new ArrayList<>(ENCODER_BATCH_ROWS);
     private ParquetMetadata footer;
     private boolean closed;
 
     LogWriter(EncodedBytes output, HoodieConfig config, HoodieSchema hudiSchema)
         throws IOException {
       this.output = output;
-      schema = ArrowConversion.toArrowSchema(HoodieSchemaConverter.convertToRowType(hudiSchema));
+      schema = HudiTypes.encoderSchema(HoodieSchemaConverter.convertToRowType(hudiSchema));
       long block = config.getLongOrDefault(HoodieStorageConfig.PARQUET_BLOCK_SIZE);
       memory =
           TaskOffHeapMemory.reserve(
@@ -145,29 +144,11 @@ public final class HudiMorIOFactory extends HoodieFlinkIOFactory {
     public void writeRow(String key, RowData row) throws IOException {
       if (closed) throw new IOException("Hudi Parquet log writer is closed");
       var cursor = payload(row);
-      if (batch != cursor.batch) {
-        flushBatch();
-        batch = cursor.batch;
-        if (row.getArity() != batch.data.getFieldVectors().size() + 5
-            || schema.getFields().size() != row.getArity())
-          throw new IOException("Hudi MOR requires exactly five generated metadata fields");
-        generatedMetadata = new RowData[batch.data.getRowCount()];
-        try {
-          for (int i = 0; i < 5; i++) {
-            var vector =
-                (VarCharVector) schema.getFields().get(i).createVector(NativeAllocator.SHARED);
-            metadata.add(vector);
-            vector.allocateNew();
-          }
-        } catch (Throwable failure) {
-          closeMetadata();
-          throw failure;
-        }
-      }
-      if (generatedMetadata[cursor.rowId] != null)
-        throw new IOException("Hudi MOR received the same payload position twice");
-      generatedMetadata[cursor.rowId] = row;
-      selected.add(cursor.rowId);
+      if (row.getArity() != cursor.batch.data.getFieldVectors().size() + 5
+          || schema.getFields().size() != row.getArity())
+        throw new IOException("Hudi MOR requires exactly five generated metadata fields");
+      pending.add(row);
+      if (pending.size() >= ENCODER_BATCH_ROWS) flushBatch();
     }
 
     @Override
@@ -176,31 +157,45 @@ public final class HudiMorIOFactory extends HoodieFlinkIOFactory {
     }
 
     private void flushBatch() throws IOException {
-      if (batch == null) return;
-      try {
-        // Fill variable-width metadata in vector order; selection retains Hudi's record order.
-        for (int row = 0; row < generatedMetadata.length; row++)
-          for (int column = 0; column < 5; column++) {
-            var values = generatedMetadata[row];
-            if (values == null || values.isNullAt(column)) metadata.get(column).setNull(row);
-            else metadata.get(column).setSafe(row, values.getString(column).toBytes());
+      if (pending.isEmpty()) return;
+      int count = pending.size();
+      var inputs = new java.util.LinkedHashMap<HudiAppendIOFactory.Batch, Integer>();
+      int[] sources = new int[count];
+      int[] positions = new int[count];
+      for (int i = 0; i < count; i++) {
+        var cursor = payload(pending.get(i));
+        sources[i] = inputs.computeIfAbsent(cursor.batch, ignored -> inputs.size());
+        positions[i] = cursor.rowId;
+      }
+      var roots =
+          inputs.keySet().stream()
+              .map(input -> input.data)
+              .collect(java.util.stream.Collectors.toList());
+      try (var selected = ArrowFileBatch.interleave(roots, sources, positions)) {
+        for (int column = 0; column < 5; column++) {
+          var vector =
+              (VarCharVector) schema.getFields().get(column).createVector(NativeAllocator.SHARED);
+          metadata.add(vector);
+          vector.allocateNew();
+          for (int row = 0; row < count; row++) {
+            var values = pending.get(row);
+            if (values.isNullAt(column)) vector.setNull(row);
+            else vector.setSafe(row, values.getString(column).toBytes());
           }
-        for (var vector : metadata) vector.setValueCount(batch.data.getRowCount());
+          vector.setValueCount(count);
+        }
         List<FieldVector> vectors = new ArrayList<>(metadata);
-        vectors.addAll(batch.data.getFieldVectors());
-        // Payload vectors are borrowed; only the five generated metadata vectors are closed here.
-        var borrowed = new VectorSchemaRoot(schema, vectors, batch.data.getRowCount());
-        int[] rows = selected.stream().mapToInt(Integer::intValue).toArray();
-        encoder.write(borrowed, rows, 0, rows.length);
+        vectors.addAll(selected.getFieldVectors());
+        // The selected root owns payloads; only generated metadata vectors are closed separately.
+        var borrowed = new VectorSchemaRoot(schema, vectors, count);
+        encoder.write(borrowed, new int[0], 0, count);
       } finally {
         closeMetadata();
       }
     }
 
     private void closeMetadata() {
-      batch = null;
-      generatedMetadata = null;
-      selected.clear();
+      pending.clear();
       for (var vector : metadata) vector.close();
       metadata.clear();
     }
