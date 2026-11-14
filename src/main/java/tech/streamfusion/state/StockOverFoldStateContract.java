@@ -366,7 +366,9 @@ public final class StockOverFoldStateContract implements StockStateContract {
     int[] scalarFields = new int[kinds.length];
     for (int index = 1; index < kinds.length; index++)
       scalarFields[index] = scalarFields[index - 1] + widths[index - 1];
-    for (var view : views) view.validate(backend, state(backend), scalarFields, this::validateKey);
+    for (var view : views)
+      view.validate(
+          backend, state(backend), scalarFields, kinds, accumulatorType, this::validateKey);
     transferState(backend, handle, false);
     for (var view : views) view.importState(backend, handle);
     if (!views.isEmpty()) Native.finishOverCanonicalDistinct(handle);

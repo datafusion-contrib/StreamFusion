@@ -93,7 +93,10 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
                         && kind != 4
                         && kind != 22
                         && (bounded || kind != 1 && kind != 2)
-                        && (bounded || !proctime || kind != 103))) return false;
+                        && (bounded
+                            || !proctime
+                            || !tech.streamfusion.state.StockOverDistinctView.supportsAggregate(
+                                kind)))) return false;
     var input = (RowType) getInputEdges().get(0).getOutputType();
     if (java.util.Arrays.stream(keyColumns)
         .anyMatch(
@@ -124,7 +127,7 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
 
   static boolean stockFoldValueType(
       int kind, org.apache.flink.table.types.logical.LogicalType type) {
-    if (kind == 103)
+    if (tech.streamfusion.state.StockOverDistinctView.supportsAggregate(kind))
       return !type.isNullable()
           && (type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.INTEGER)
               || type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.BIGINT));

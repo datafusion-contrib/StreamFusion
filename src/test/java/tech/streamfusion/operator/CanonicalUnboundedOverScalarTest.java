@@ -489,7 +489,10 @@ class CanonicalUnboundedOverScalarTest {
                           ? "COUNT(" + (distinct ? "DISTINCT " : "") + "v) OVER w"
                           : extrema
                               ? "MIN(v) OVER w,MAX(v) OVER w,COUNT(v) OVER w"
-                              : "SUM(v) OVER w,COUNT(v) OVER w,AVG(v) OVER w")
+                              : distinct
+                                  ? "SUM(DISTINCT v) OVER w,COUNT(DISTINCT v) OVER w,"
+                                      + "AVG(DISTINCT v) OVER w"
+                                  : "SUM(v) OVER w,COUNT(v) OVER w,AVG(v) OVER w")
                       + " FROM scalar_input WINDOW w AS ("
                       + (global ? "" : "PARTITION BY k" + (composite ? ",k2" : "") + " ")
                       + "ORDER BY pt "
@@ -547,7 +550,7 @@ class CanonicalUnboundedOverScalarTest {
                   call -> {
                     switch (call.getAggregation().getKind()) {
                       case SUM:
-                        return 0;
+                        return call.isDistinct() ? 100 : 0;
                       case MIN:
                         return 1;
                       case MAX:
@@ -555,9 +558,9 @@ class CanonicalUnboundedOverScalarTest {
                       case COUNT:
                         return call.isDistinct() ? 103 : 3;
                       case AVG:
-                        return 4;
+                        return call.isDistinct() ? 104 : 4;
                       case SUM0:
-                        return 22;
+                        return call.isDistinct() ? 122 : 22;
                       default:
                         throw new AssertionError(call);
                     }

@@ -2516,7 +2516,8 @@ buffered extension admits scalar/ROW descendants; collection-bearing ROW keys re
 Updating Top-N additionally binds constant OFFSET ranges through the existing complete retained-row
 projection, including hidden-prefix rows and equal-sort positions. No serializer or native state
 format changes. New raw/changelog, recovery and clean-worker controls await both-release execution;
-TTL and variable updating bounds remain gated. See the Top-N page for the exact pending scope.
+Updating TTL remains gated; the first-bound extension below covers required variable bounds.
+See the Top-N page for the exact pending scope.
 
 
 Pending ROW-key normalizer consumer controls now require the newly bound retracting mini-batch
@@ -2537,11 +2538,11 @@ New plan/raw-state/clean-worker controls await both-release execution. DISTINCT 
 key representations and other aggregate argument restrictions are unchanged.
 
 
-A pending OVER extension binds existing unbounded processing-time COUNT DISTINCT membership
+A pending OVER extension binds existing unbounded processing-time COUNT/SUM/SUM0/AVG DISTINCT membership
 transfers for required INT/BIGINT arguments with TTL disabled. It preserves the released raw
-count, shared membership-map serializers and null-state descriptor. Both-release component and
+counts, wrapping integral sums, shared membership-map serializers and null-state descriptor. Both-release component and
 clean-worker controls are written but unexecuted. Nullable arguments, TTL, event/bounded frames
-and other DISTINCT forms remain outside this extension; see the OVER page for its exact scope.
+and DISTINCT extrema remain outside this extension; see the OVER page for its exact scope.
 
 
 Retracting GROUP BY MIN/MAX additionally captures the existing one-phase mini-batch owner and

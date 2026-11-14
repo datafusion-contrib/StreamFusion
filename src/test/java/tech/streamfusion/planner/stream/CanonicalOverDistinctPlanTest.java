@@ -21,7 +21,7 @@ class CanonicalOverDistinctPlanTest {
     return Stream.of("INT", "BIGINT")
         .flatMap(
             type ->
-                Stream.of("rows", "range", "nullable", "ttl", "event", "bounded", "sum")
+                Stream.of("rows", "range", "nullable", "ttl", "event", "bounded", "sum", "avg")
                     .flatMap(
                         mode ->
                             Stream.of(false, true)
@@ -48,7 +48,7 @@ class CanonicalOverDistinctPlanTest {
             + ",c BIGINT) WITH ('connector'='blackhole')");
     String query =
         "INSERT INTO output_table SELECT k,v,"
-            + (mode.equals("sum") ? "SUM" : "COUNT")
+            + (mode.equals("sum") ? "SUM" : mode.equals("avg") ? "AVG" : "COUNT")
             + "(DISTINCT v) OVER (PARTITION BY k ORDER BY "
             + (mode.equals("event") ? "rt" : "pt")
             + (mode.equals("range") ? " RANGE" : " ROWS")
@@ -69,7 +69,8 @@ class CanonicalOverDistinctPlanTest {
             .map(node -> ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator())
             .filter(NativeOverAggregateOperator.class::isInstance)
             .collect(java.util.stream.Collectors.toList());
-    boolean admitted = mode.equals("rows") || mode.equals("range");
+    boolean admitted =
+        mode.equals("rows") || mode.equals("range") || mode.equals("sum") || mode.equals("avg");
     assertEquals(admitted ? 1 : 0, owners.size(), graph.getStreamingPlanAsJSON());
     if (admitted) {
       var contract =
@@ -80,7 +81,9 @@ class CanonicalOverDistinctPlanTest {
           contract.stateDescriptors().values().stream()
               .filter(kind -> kind == org.apache.flink.api.common.state.StateDescriptor.Type.MAP)
               .count());
-      assertArrayEquals(new int[] {103}, (int[]) field(owners.get(0), "aggregateKinds"));
+      assertArrayEquals(
+          new int[] {mode.equals("sum") ? 100 : mode.equals("avg") ? 104 : 103},
+          (int[]) field(owners.get(0), "aggregateKinds"));
     }
     assertFalse(portable.contains("tech.streamfusion"));
     if (compiled) assertEquals(portable, plan.asJsonString());

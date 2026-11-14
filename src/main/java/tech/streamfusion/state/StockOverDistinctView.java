@@ -27,7 +27,7 @@ import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.operator.NativeAllocator;
 import tech.streamfusion.operator.RowDataArrowConverter;
 
-/** Released non-null integral COUNT DISTINCT memberships alongside an unbounded scalar fold. */
+/** Released non-null integral DISTINCT memberships alongside an unbounded scalar fold. */
 public final class StockOverDistinctView implements Serializable {
   private static final long serialVersionUID = 1L;
   private static final int CHUNK_ROWS = 1024;
@@ -65,10 +65,14 @@ public final class StockOverDistinctView implements Serializable {
 
   void validateAggregates(int[] kinds, boolean[] bound) {
     for (int index : aggregates) {
-      if (index >= kinds.length || kinds[index] != 103 || bound[index])
+      if (index >= kinds.length || !supportsAggregate(kinds[index]) || bound[index])
         throw new IllegalArgumentException("Unqualified or duplicate OVER DISTINCT aggregate");
       bound[index] = true;
     }
+  }
+
+  public static boolean supportsAggregate(int kind) {
+    return kind == 100 || kind == 103 || kind == 104 || kind == 122;
   }
 
   Map<String, StateDescriptor.Type> stateDescriptors() {
@@ -172,6 +176,8 @@ public final class StockOverDistinctView implements Serializable {
       CheckpointableKeyedStateBackend<RowData> backend,
       StockValueState<RowData> accumulators,
       int[] scalarFields,
+      int[] kinds,
+      RowType accumulatorType,
       java.util.function.Consumer<RowData> keyValidator)
       throws Exception {
     var map = state(backend);
@@ -187,6 +193,7 @@ public final class StockOverDistinctView implements Serializable {
             throw new IllegalStateException("NULL membership for a required DISTINCT argument");
           var wrapped = accumulators.value();
           var counts = new long[aggregates.length];
+          var sums = new long[aggregates.length];
           var entries = map.entries();
           if (entries != null)
             for (var entry : entries) {
@@ -199,14 +206,38 @@ public final class StockOverDistinctView implements Serializable {
               long flags = (Long) entry.getValue();
               if (flags == 0 || aggregates.length < Long.SIZE && flags >>> aggregates.length != 0)
                 throw new IllegalStateException("Invalid OVER DISTINCT membership bits");
-              for (int slot = 0; slot < aggregates.length; slot++)
-                counts[slot] += flags >>> slot & 1;
+              for (int slot = 0; slot < aggregates.length; slot++) {
+                if ((flags >>> slot & 1) == 0) continue;
+                counts[slot]++;
+                sums[slot] += ((Number) entry.getKey()).longValue();
+              }
             }
-          for (int slot = 0; slot < aggregates.length; slot++)
-            if (wrapped == null
-                ? counts[slot] != 0
-                : wrapped.getUserValue().getLong(scalarFields[aggregates[slot]]) != counts[slot])
+          for (int slot = 0; slot < aggregates.length; slot++) {
+            if (wrapped == null) {
+              if (counts[slot] != 0)
+                throw new IllegalStateException("OVER DISTINCT membership has no scalar owner");
+              continue;
+            }
+            var value = wrapped.getUserValue();
+            int aggregate = aggregates[slot], field = scalarFields[aggregate];
+            int kind = kinds[aggregate];
+            if ((kind == 3 || kind == 4)
+                && value.getLong(field + (kind == 4 ? 1 : 0)) != counts[slot])
               throw new IllegalStateException("OVER DISTINCT scalar and membership count differ");
+            if (kind != 3) {
+              Object expected =
+                  kind == 0 && counts[slot] == 0
+                      ? null
+                      : accumulatorType.getTypeAt(field).is(LogicalTypeRoot.INTEGER)
+                          ? (Object) (int) sums[slot]
+                          : sums[slot];
+              Object actual =
+                  RowData.createFieldGetter(accumulatorType.getTypeAt(field).copy(true), field)
+                      .getFieldOrNull(value);
+              if (!java.util.Objects.equals(expected, actual))
+                throw new IllegalStateException("OVER DISTINCT scalar and membership sum differ");
+            }
+          }
         }
       }
   }

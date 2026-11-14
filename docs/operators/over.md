@@ -2050,24 +2050,30 @@ controls await execution on Flink 1.18 and 2.2; historical passing cohorts do no
 ## Additional unbounded DISTINCT binding awaiting qualification
 
 The Java canonical binding now connects the existing native membership transfer for unbounded
-processing-time COUNT DISTINCT over required INT/BIGINT arguments, with state TTL disabled.
+processing-time COUNT/SUM/SUM0/AVG DISTINCT over required INT/BIGINT arguments, with state TTL disabled.
 ROWS and RANGE use the released scalar accumulator plus its actual shared DISTINCT MAP view,
 stock external serializers and null-state descriptor. Memberships and raw counts transfer
-separately without replay. Complete cardinality and membership-bit validation precedes native
+separately without replay. Complete cardinality, wrapping integral sum and membership-bit validation precedes native
 insertion, and failed preflight retains the source state. Memory and RocksDB capture reuse the
 existing live-state readers; no new native checkpoint format is introduced.
 
 Nullable DISTINCT arguments remain outside this extension because their stock NULL-membership
 marker needs its own native representation. TTL, event-time and bounded DISTINCT, other argument
-types, filtered DISTINCT and other DISTINCT aggregate kinds retain their existing gates.
+types, filtered DISTINCT and DISTINCT extrema retain their existing gates.
 
 New actual-stock controls cover exact raw state, continued duplicate suppression, no-input
 returns, native checkpoint recovery, both stores and keyed/global ownership. Malformed bitsets,
-cardinality mismatches, NULL markers and membership-only orphan keys must reject before mutation;
+cardinality/sum mismatches, NULL markers and membership-only orphan keys must reject before mutation;
 a repaired source can retry into the same empty target. Clean-worker jobs add ordinary/portable
 submission, both engine orders and rescaling, with independent counts. These controls await
 Flink 1.18 and 2.2 execution in the final local window. Historical passing counts above do not
 qualify this new binding, and no performance claim is made.
+
+Shared integral SUM/COUNT/AVG views additionally retain the released narrow SUM versus wide AVG
+accumulator fields, including signed overflow. Component controls compare complete raw state and
+duplicate suppression after canonical and native recovery; separate malformed SUM and AVG-sum
+controls require rejection before either table changes. Clean-stock arithmetic jobs use independent
+distinct-set sums/averages through continuation and rescaling. This scope also awaits execution.
 
 ## Unbounded processing ROW partition keys awaiting qualification
 

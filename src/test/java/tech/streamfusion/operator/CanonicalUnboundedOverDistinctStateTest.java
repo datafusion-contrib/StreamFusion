@@ -27,25 +27,15 @@ class CanonicalUnboundedOverDistinctStateTest {
   }
 
   static Stream<Arguments> cases() {
-    return tech.streamfusion.CanonicalTestMatrix.select(
-        Stream.of("INT NOT NULL", "BIGINT NOT NULL")
-            .flatMap(
-                type ->
-                    Stream.of(false, true)
-                        .flatMap(
-                            rows ->
-                                Stream.of(false, true)
-                                    .flatMap(
-                                        global ->
-                                            Stream.of(false, true)
-                                                .flatMap(
-                                                    rocks ->
-                                                        Stream.of(false, true)
-                                                            .map(
-                                                                first ->
-                                                                    Arguments.of(
-                                                                        type, rows, global, rocks,
-                                                                        first)))))));
+    var cases = new ArrayList<Arguments>();
+    for (String type : new String[] {"INT NOT NULL", "BIGINT NOT NULL"})
+      for (boolean rows : new boolean[] {false, true})
+        for (boolean global : new boolean[] {false, true})
+          for (boolean rocks : new boolean[] {false, true})
+            for (boolean first : new boolean[] {false, true})
+              for (boolean arithmetic : new boolean[] {false, true})
+                cases.add(Arguments.of(type, rows, global, rocks, first, arithmetic));
+    return tech.streamfusion.CanonicalTestMatrix.select(cases.stream());
   }
 
   private OperatorSubtaskState snapshot(
@@ -67,16 +57,24 @@ class CanonicalUnboundedOverDistinctStateTest {
   @ParameterizedTest
   @MethodSource("cases")
   void scalarAndMembershipStateSurviveEmptyReturnsAndNativeRecovery(
-      String type, boolean rows, boolean global, boolean rocks, boolean first) throws Exception {
+      String type, boolean rows, boolean global, boolean rocks, boolean first, boolean arithmetic)
+      throws Exception {
     var plan =
         new CanonicalUnboundedOverScalarTest.Plan(
-            type, rows, global, 0, "BIGINT", false, false, true, true);
+            type, rows, global, 0, "BIGINT", false, false, !arithmetic, true);
     long allocated = NativeAllocator.SHARED.getAllocatedMemory();
     try (var reference = plan.stock(rocks);
         var owner = plan.nativeHarness(rocks)) {
       reference.open();
+      long edge = type.startsWith("INT") ? Integer.MAX_VALUE : Long.MAX_VALUE;
       var prefix =
-          List.of(plan.row(1L, 7L), plan.row(1L, 7L), plan.row(2L, 9L), plan.row(null, 3L));
+          List.of(
+              plan.row(1L, 7L),
+              plan.row(1L, 7L),
+              plan.row(2L, 9L),
+              plan.row(null, 3L),
+              plan.row(1L, edge),
+              plan.row(1L, 1L));
       var expected = plan.stockInput(reference, prefix);
       if (first) {
         owner.open();
@@ -129,7 +127,7 @@ class CanonicalUnboundedOverDistinctStateTest {
   }
 
   static Stream<Arguments> malformedCases() {
-    return Stream.of("bits", "count", "null", "orphan")
+    return Stream.of("bits", "count", "null", "orphan", "sum", "average")
         .flatMap(mode -> Stream.of(false, true).map(rocks -> Arguments.of(mode, rocks)));
   }
 
@@ -140,7 +138,7 @@ class CanonicalUnboundedOverDistinctStateTest {
       throws Exception {
     var plan =
         new CanonicalUnboundedOverScalarTest.Plan(
-            "BIGINT NOT NULL", true, false, 0, "BIGINT", false, false, true, true);
+            "BIGINT NOT NULL", true, false, 0, "BIGINT", false, false, false, true);
     try (var source = plan.stock(rocks);
         var target = plan.nativeHarness(rocks)) {
       source.open();
@@ -182,12 +180,36 @@ class CanonicalUnboundedOverDistinctStateTest {
               VoidNamespaceSerializer.INSTANCE,
               new ValueStateDescriptor<>(view + "_null_state", serializers.getValueSerializer()));
       backend.setCurrentKey(plan.selector.getKey(plan.row(1L, 7L)));
-      if (mode.equals("bits")) map.put(7L, 2L);
+      if (mode.equals("bits")) map.put(7L, 1L << plan.kinds.length);
       else if (mode.equals("count")) map.remove(7L);
       else if (mode.equals("null")) marker.update(1L);
-      else {
+      else if (mode.equals("orphan")) {
         backend.setCurrentKey(plan.selector.getKey(plan.row(99L, 7L)));
         map.put(7L, 1L);
+      } else {
+        var accumulator =
+            backend.getPartitionedState(
+                VoidNamespace.INSTANCE,
+                VoidNamespaceSerializer.INSTANCE,
+                new ValueStateDescriptor<>(
+                    "accState",
+                    new org.apache.flink.table.runtime.typeutils.RowDataSerializer(
+                        plan.accumulator)));
+        var current = accumulator.value();
+        var corrupt =
+            new org.apache.flink.table.data.GenericRowData(plan.accumulator.getFieldCount());
+        for (int field = 0; field < corrupt.getArity(); field++)
+          corrupt.setField(
+              field,
+              RowData.createFieldGetter(plan.accumulator.getTypeAt(field).copy(true), field)
+                  .getFieldOrNull(current));
+        int field = 0;
+        for (int kind : plan.kinds) {
+          if (kind == (mode.equals("sum") ? 100 : 104)) break;
+          field += kind == 104 || kind == 4 ? 2 : 1;
+        }
+        corrupt.setField(field, current.getLong(field) + 1);
+        accumulator.update(corrupt);
       }
       var invalid = raw(source);
       long handle = ((NativeOverAggregateOperator) target.getOperator()).handle;

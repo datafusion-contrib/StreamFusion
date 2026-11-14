@@ -1832,8 +1832,13 @@ final class StockCompiledPlanLowering {
     for (int i = 0; i < calls.size(); i++) {
       var call = calls.get(i);
       if (call.isDistinct()
-              && (bounded || !processing || retention > 0
-                  || call.getAggregation().getKind() != SqlKind.COUNT)
+              && (bounded
+                  || !processing
+                  || retention > 0
+                  || call.getAggregation().getKind() != SqlKind.COUNT
+                      && call.getAggregation().getKind() != SqlKind.SUM
+                      && call.getAggregation().getKind() != SqlKind.SUM0
+                      && call.getAggregation().getKind() != SqlKind.AVG)
           || call.isApproximate()
           || call.filterArg >= 0
           || !call.getCollation().getFieldCollations().isEmpty()
@@ -1916,15 +1921,22 @@ final class StockCompiledPlanLowering {
         int[] slots = new int[distinct.aggIndexes().size()];
         for (int index = 0; index < slots.length; index++) {
           slots[index] = (Integer) distinct.aggIndexes().apply(index);
-          if (slots[index] < 0 || slots[index] >= kinds.length || kinds[slots[index]] != 103)
-            return stock;
+          if (slots[index] < 0
+              || slots[index] >= kinds.length
+              || !tech.streamfusion.state.StockOverDistinctView.supportsAggregate(
+                  kinds[slots[index]])) return stock;
         }
         var view = distinct.dataViewSpec().get();
-        distinctViews.add(new tech.streamfusion.state.StockOverDistinctView(
-            view.getStateId(), keyType, distinct.keyType().getLogicalType(),
-            org.apache.flink.table.runtime.typeutils.ExternalSerializer.of(view.getKeyDataType()),
-            org.apache.flink.table.runtime.typeutils.ExternalSerializer.of(view.getValueDataType()),
-            slots));
+        distinctViews.add(
+            new tech.streamfusion.state.StockOverDistinctView(
+                view.getStateId(),
+                keyType,
+                distinct.keyType().getLogicalType(),
+                org.apache.flink.table.runtime.typeutils.ExternalSerializer.of(
+                    view.getKeyDataType()),
+                org.apache.flink.table.runtime.typeutils.ExternalSerializer.of(
+                    view.getValueDataType()),
+                slots));
       }
       int hiddenCount = infos.countStarInserted() ? infos.getIndexOfCountStar() : -1;
       contract =
