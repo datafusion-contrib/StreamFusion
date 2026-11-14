@@ -345,6 +345,9 @@ boundaries correctly stay stock while native Calcs execute. The expanded tests
 and Nexmark harness separately require native Hudi source/sink execution.
 CI runs the default corpus
 in the Hudi JDK 17 lane and uploads the concise report.
+CI also runs the runner's failure-path regressions: missing or duplicate invocations,
+fixture checksum failures, lost native work and unexpected fallback cannot produce
+a passing report.
 Maintainers can collect routes for new focused selections with `--inventory`;
 those reports have `inventory` status and do not qualify as a passing gate.
 

@@ -194,6 +194,7 @@ jobs:
           python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.5.3
           mvn -B -ntp -f dev/flink-suite/agent/pom.xml package
           python3 -m unittest discover -s dev/flink-suite -p 'test_*.py'
+          python3 -m unittest discover -s bin -p 'test_hudi_suite.py'
           python3 -m unittest discover -s bin -p 'test_check_flink_suite_classpath.py'
           python3 -m unittest discover -s bin -p 'test_check_native_glibc.py'
           python3 -m unittest discover -s bin -p 'test_check_native_tls.py'
