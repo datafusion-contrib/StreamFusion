@@ -35,5 +35,6 @@
     "hudi-flink-client-tests": "e790f8b088cf636c01e22ebf660241aa686ad2d52e04e261dbaebed9768e4f53",
     "hudi-tests-common": "a131deaccfa31c3690a8ad8da96077f8fbe32a495661633076c538fde575b9f5"
   },
-  "release_commit": "dee422b3e3f71668387ffefbe3d71307a9fe0235"
+  "release_tag_object": "dee422b3e3f71668387ffefbe3d71307a9fe0235",
+  "release_commit": "a9185b7c4e83422132c25f2efdf282c5bc6af2c7"
 }
