@@ -1,0 +1,4140 @@
+{
+  "status": "partial",
+  "rows": 2000000,
+  "input_bids": 1840000,
+  "parallelism": 4,
+  "source_partitions": 4,
+  "sink_partition_modulus": 4,
+  "checkpoint_ms": 1000,
+  "warmups": 1,
+  "runs": 3,
+  "object_reuse": true,
+  "jdk": "17.0.17+10",
+  "architecture": "aarch64",
+  "available_processors": 10,
+  "heap_max_bytes": 8589934592,
+  "native_task_off_heap_capacity_bytes": 51539607552,
+  "hudi": "1.2.1",
+  "flink": "1.18.1",
+  "hardware": {
+    "cpu_model": "Apple M4",
+    "physical_memory_bytes": 17179869184
+  },
+  "completed_configurations": 1,
+  "expected_configurations": 4,
+  "power_guard": "process-scoped caffeinate -is for every Maven invocation",
+  "allow_incompatible_expressions": false,
+  "provenance": {
+    "initial_source_revision": "0037e0bfa871f92e537911a9c812cb9cd6952fec",
+    "between_configuration_change": "MOR reader gather schemas now retain physical Arrow fields. The measured source is COW, and all measured sink/engine/codec/harness code is unchanged.",
+    "native_source_tree": "b6c72788246067524c2a4fa89c2e830f9483f3cf",
+    "inputs": {
+      "streamfusion-hudi/src/nexmark/java/tech/streamfusion/NexmarkHudiBenchmark.java": "b8d9e6c6dcd851909690ec8391c1f960022d21499077ec13ed917d3d1e894351",
+      "src/test/java/tech/streamfusion/NexmarkMatrixBenchmark.java": "dce754d4300b8aa046c296bb61ba3e5f541129cdf84f3b20869745b7edbe15c1",
+      "src/test/java/tech/streamfusion/NexmarkKafkaBenchmark.java": "9b9d80514d57e412ea376cd0b5d985c3f4b961fbd093ba45754cc118e0f8361d"
+    }
+  },
+  "configurations": [
+    {
+      "status": "passed",
+      "backend": "memory",
+      "mini_batch": false,
+      "source_revision": "0037e0bfa871f92e537911a9c812cb9cd6952fec",
+      "state_backend_checks": [],
+      "geometric_mean_speedup": {
+        "stock": 0.5539421905208034,
+        "previous": 7.512583976774857
+      },
+      "summary": [
+        {
+          "query": "q0",
+          "stock": {
+            "median_ms": 986.088708,
+            "min_ms": 957.00825,
+            "max_ms": 1053.703417
+          },
+          "previous": {
+            "median_ms": 7143.711666,
+            "min_ms": 7140.175042,
+            "max_ms": 7368.870291
+          },
+          "native": {
+            "median_ms": 529.917458,
+            "min_ms": 528.838583,
+            "max_ms": 591.393333
+          },
+          "speedup_vs_stock": 1.8608345377441782,
+          "speedup_vs_previous": 13.480800751425706
+        },
+        {
+          "query": "q1",
+          "stock": {
+            "median_ms": 1039.3525,
+            "min_ms": 974.440625,
+            "max_ms": 1069.763709
+          },
+          "previous": {
+            "median_ms": 7317.843208,
+            "min_ms": 7240.759084,
+            "max_ms": 7322.9945
+          },
+          "native": {
+            "median_ms": 584.017792,
+            "min_ms": 575.719917,
+            "max_ms": 587.900417
+          },
+          "speedup_vs_stock": 1.7796589662802602,
+          "speedup_vs_previous": 12.530171697234868
+        },
+        {
+          "query": "q2",
+          "stock": {
+            "median_ms": 597.530625,
+            "min_ms": 548.786333,
+            "max_ms": 640.743416
+          },
+          "previous": {
+            "median_ms": 5486.15375,
+            "min_ms": 5417.612125,
+            "max_ms": 5490.304875
+          },
+          "native": {
+            "median_ms": 364.861208,
+            "min_ms": 346.796208,
+            "max_ms": 390.009875
+          },
+          "speedup_vs_stock": 1.6376929415856125,
+          "speedup_vs_previous": 15.036275793945189
+        },
+        {
+          "query": "q3",
+          "stock": {
+            "median_ms": 554.315916,
+            "min_ms": 553.350125,
+            "max_ms": 557.690958
+          },
+          "previous": {
+            "median_ms": 15393.597458,
+            "min_ms": 15342.607125,
+            "max_ms": 15447.18775
+          },
+          "native": {
+            "median_ms": 437.541,
+            "min_ms": 430.090833,
+            "max_ms": 452.301209
+          },
+          "speedup_vs_stock": 1.2668890823945642,
+          "speedup_vs_previous": 35.18206855586105
+        },
+        {
+          "query": "q4",
+          "stock": {
+            "median_ms": 2039.570542,
+            "min_ms": 1976.525708,
+            "max_ms": 2504.236417
+          },
+          "previous": {
+            "median_ms": 85742.150792,
+            "min_ms": 83596.404792,
+            "max_ms": 88342.149125
+          },
+          "native": {
+            "median_ms": 1323.723334,
+            "min_ms": 1145.941875,
+            "max_ms": 1527.812125
+          },
+          "speedup_vs_stock": 1.5407830999222984,
+          "speedup_vs_previous": 64.77346783100523
+        },
+        {
+          "query": "q5",
+          "stock": {
+            "median_ms": 3483.395542,
+            "min_ms": 3419.185083,
+            "max_ms": 3588.272625
+          },
+          "previous": {
+            "median_ms": 32159.257125,
+            "min_ms": 31799.224583,
+            "max_ms": 32327.2185
+          },
+          "native": {
+            "median_ms": 35210.951583,
+            "min_ms": 34940.866666,
+            "max_ms": 35375.853209
+          },
+          "speedup_vs_stock": 0.09892932128769273,
+          "speedup_vs_previous": 0.9133310995357089
+        },
+        {
+          "query": "q8",
+          "stock": {
+            "median_ms": 1296.394084,
+            "min_ms": 1288.678625,
+            "max_ms": 1322.573459
+          },
+          "previous": {
+            "median_ms": 23829.885333,
+            "min_ms": 23444.173125,
+            "max_ms": 24234.576958
+          },
+          "native": {
+            "median_ms": 29410.962292,
+            "min_ms": 29283.365333,
+            "max_ms": 29495.995708
+          },
+          "speedup_vs_stock": 0.04407860141157737,
+          "speedup_vs_previous": 0.8102382062990814
+        },
+        {
+          "query": "q9",
+          "stock": {
+            "median_ms": 2741.677584,
+            "min_ms": 2676.736916,
+            "max_ms": 3021.247833
+          },
+          "previous": {
+            "median_ms": 166255.036791,
+            "min_ms": 165392.005708,
+            "max_ms": 177349.017167
+          },
+          "native": {
+            "median_ms": 2804.776583,
+            "min_ms": 2769.8595,
+            "max_ms": 2835.865958
+          },
+          "speedup_vs_stock": 0.9775030213164041,
+          "speedup_vs_previous": 59.27567913918226
+        },
+        {
+          "query": "q10",
+          "stock": {
+            "median_ms": 1217.236375,
+            "min_ms": 1167.970459,
+            "max_ms": 1218.940708
+          },
+          "previous": {
+            "median_ms": 10938.871084,
+            "min_ms": 10845.896958,
+            "max_ms": 11013.1595
+          },
+          "native": {
+            "median_ms": 671.489,
+            "min_ms": 632.27925,
+            "max_ms": 673.008083
+          },
+          "speedup_vs_stock": 1.8127420925733704,
+          "speedup_vs_previous": 16.290469514764947
+        },
+        {
+          "query": "q11",
+          "stock": {
+            "median_ms": 831.243667,
+            "min_ms": 809.107292,
+            "max_ms": 842.350292
+          },
+          "previous": {
+            "median_ms": 30535.2135,
+            "min_ms": 30214.234666,
+            "max_ms": 30575.706958
+          },
+          "native": {
+            "median_ms": 29805.0955,
+            "min_ms": 29661.228125,
+            "max_ms": 30026.793167
+          },
+          "speedup_vs_stock": 0.02788931399330695,
+          "speedup_vs_previous": 1.0244964153864229
+        },
+        {
+          "query": "q12",
+          "stock": {
+            "median_ms": 563.192042,
+            "min_ms": 561.898708,
+            "max_ms": 649.570625
+          },
+          "previous": {
+            "median_ms": 31973.83225,
+            "min_ms": 31885.883417,
+            "max_ms": 32042.059667
+          },
+          "native": {
+            "median_ms": 31553.62725,
+            "min_ms": 31368.08625,
+            "max_ms": 31590.472375
+          },
+          "speedup_vs_stock": 0.01784872583864348,
+          "speedup_vs_previous": 1.0133171694230494
+        },
+        {
+          "query": "q13",
+          "stock": {
+            "median_ms": 1148.522208,
+            "min_ms": 1088.770917,
+            "max_ms": 1285.035291
+          },
+          "previous": {
+            "median_ms": 9573.928209,
+            "min_ms": 9459.190583,
+            "max_ms": 9646.710209
+          },
+          "native": {
+            "median_ms": 11289.312584,
+            "min_ms": 10970.272875,
+            "max_ms": 11460.061292
+          },
+          "speedup_vs_stock": 0.10173535363240503,
+          "speedup_vs_previous": 0.8480523626007874
+        },
+        {
+          "query": "q14",
+          "stock": {
+            "median_ms": 1205.521709,
+            "min_ms": 1179.769834,
+            "max_ms": 1206.685791
+          },
+          "previous": {
+            "median_ms": 9204.015208,
+            "min_ms": 9158.522291,
+            "max_ms": 9421.157
+          },
+          "native": {
+            "median_ms": 13565.137375,
+            "min_ms": 13283.740042,
+            "max_ms": 13674.321917
+          },
+          "speedup_vs_stock": 0.08886911172913943,
+          "speedup_vs_previous": 0.6785051233585462
+        },
+        {
+          "query": "q15",
+          "stock": {
+            "median_ms": 7668.189834,
+            "min_ms": 7604.689625,
+            "max_ms": 7719.739
+          },
+          "previous": {
+            "median_ms": 27506.313625,
+            "min_ms": 27276.42725,
+            "max_ms": 27622.95575
+          },
+          "native": {
+            "median_ms": 7636.240042,
+            "min_ms": 7566.7275,
+            "max_ms": 7707.109833
+          },
+          "speedup_vs_stock": 1.0041839690507728,
+          "speedup_vs_previous": 3.60207555992384
+        },
+        {
+          "query": "q16",
+          "stock": {
+            "median_ms": 4705.629791,
+            "min_ms": 4675.213792,
+            "max_ms": 5052.547167
+          },
+          "previous": {
+            "median_ms": 34121.583542,
+            "min_ms": 34109.034625,
+            "max_ms": 34804.20925
+          },
+          "native": {
+            "median_ms": 5310.648041,
+            "min_ms": 4815.806583,
+            "max_ms": 5443.845375
+          },
+          "speedup_vs_stock": 0.8860744968732527,
+          "speedup_vs_previous": 6.425126138763071
+        },
+        {
+          "query": "q17",
+          "stock": {
+            "median_ms": 3233.441584,
+            "min_ms": 2921.782042,
+            "max_ms": 3364.217625
+          },
+          "previous": {
+            "median_ms": 35431.073792,
+            "min_ms": 35420.185541,
+            "max_ms": 35825.560208
+          },
+          "native": {
+            "median_ms": 3082.557625,
+            "min_ms": 2788.629083,
+            "max_ms": 3210.756625
+          },
+          "speedup_vs_stock": 1.0489476523573507,
+          "speedup_vs_previous": 11.494050753390216
+        },
+        {
+          "query": "q18",
+          "stock": {
+            "median_ms": 4052.595291,
+            "min_ms": 3668.240167,
+            "max_ms": 4104.175209
+          },
+          "previous": {
+            "median_ms": 69199.992709,
+            "min_ms": 67686.973125,
+            "max_ms": 69340.18975
+          },
+          "native": {
+            "median_ms": 5231.173083,
+            "min_ms": 3662.400583,
+            "max_ms": 6703.781208
+          },
+          "speedup_vs_stock": 0.7747010520775767,
+          "speedup_vs_previous": 13.228389046021555
+        },
+        {
+          "query": "q19",
+          "stock": {
+            "median_ms": 11287.258083,
+            "min_ms": 10884.380875,
+            "max_ms": 14690.772417
+          },
+          "previous": {
+            "median_ms": 59540.829334,
+            "min_ms": 59081.023917,
+            "max_ms": 60001.141791
+          },
+          "native": {
+            "median_ms": 10530.950375,
+            "min_ms": 9826.4495,
+            "max_ms": 13355.949375
+          },
+          "speedup_vs_stock": 1.0718176119978156,
+          "speedup_vs_previous": 5.653889460475214
+        },
+        {
+          "query": "q20",
+          "stock": {
+            "median_ms": 1527.564916,
+            "min_ms": 1165.584167,
+            "max_ms": 2292.29775
+          },
+          "previous": {
+            "median_ms": 59850.363166,
+            "min_ms": 59053.621625,
+            "max_ms": 59988.723333
+          },
+          "native": {
+            "median_ms": 1013.622,
+            "min_ms": 910.990584,
+            "max_ms": 1229.430834
+          },
+          "speedup_vs_stock": 1.507036070645665,
+          "speedup_vs_previous": 59.04603803587531
+        },
+        {
+          "query": "q21",
+          "stock": {
+            "median_ms": 650.81875,
+            "min_ms": 650.478959,
+            "max_ms": 853.482041
+          },
+          "previous": {
+            "median_ms": 8749.277666,
+            "min_ms": 8337.573458,
+            "max_ms": 8797.57975
+          },
+          "native": {
+            "median_ms": 655.6755,
+            "min_ms": 645.630541,
+            "max_ms": 878.588625
+          },
+          "speedup_vs_stock": 0.9925927535800865,
+          "speedup_vs_previous": 13.343914277718168
+        },
+        {
+          "query": "q22",
+          "stock": {
+            "median_ms": 1308.351125,
+            "min_ms": 1307.192833,
+            "max_ms": 1469.622083
+          },
+          "previous": {
+            "median_ms": 7449.032083,
+            "min_ms": 7411.213167,
+            "max_ms": 7678.095375
+          },
+          "native": {
+            "median_ms": 623.041625,
+            "min_ms": 603.633333,
+            "max_ms": 672.7505
+          },
+          "speedup_vs_stock": 2.0999417575029597,
+          "speedup_vs_previous": 11.955913993707885
+        },
+        {
+          "query": "q23",
+          "stock": {
+            "median_ms": 3943.444458,
+            "min_ms": 3744.750083,
+            "max_ms": 4016.105667
+          },
+          "previous": {
+            "median_ms": 62203.778167,
+            "min_ms": 62017.16675,
+            "max_ms": 62734.706166
+          },
+          "native": {
+            "median_ms": 1556.267333,
+            "min_ms": 1544.909625,
+            "max_ms": 1621.478125
+          },
+          "speedup_vs_stock": 2.5339119920985964,
+          "speedup_vs_previous": 39.969854052703425
+        }
+      ],
+      "observations": [
+        {
+          "query": "q0",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 986.088708,
+          "wall_milliseconds": 986.105,
+          "started_at_utc": "2026-11-14T08:43:25.385629Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q0",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 7368.870291,
+          "wall_milliseconds": 7368.98,
+          "started_at_utc": "2026-11-14T08:43:36.942267Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q0",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 591.393333,
+          "wall_milliseconds": 591.404,
+          "started_at_utc": "2026-11-14T08:43:55.580253Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q0",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 529.917458,
+          "wall_milliseconds": 529.927,
+          "started_at_utc": "2026-11-14T08:44:07.561163Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q0",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 1053.703417,
+          "wall_milliseconds": 1053.721,
+          "started_at_utc": "2026-11-14T08:44:18.650580Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q0",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 7140.175042,
+          "wall_milliseconds": 7140.281,
+          "started_at_utc": "2026-11-14T08:44:30.142509Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q0",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 7143.711666,
+          "wall_milliseconds": 7143.818,
+          "started_at_utc": "2026-11-14T08:44:48.812468Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q0",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 528.838583,
+          "wall_milliseconds": 528.848,
+          "started_at_utc": "2026-11-14T08:45:06.587855Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q0",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 957.00825,
+          "wall_milliseconds": 957.024,
+          "started_at_utc": "2026-11-14T08:45:17.673927Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q1",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 1039.3525,
+          "wall_milliseconds": 1039.37,
+          "started_at_utc": "2026-11-14T08:46:17.174646Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q1",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 7322.9945,
+          "wall_milliseconds": 7323.103,
+          "started_at_utc": "2026-11-14T08:46:30.393467Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q1",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 584.017792,
+          "wall_milliseconds": 584.028,
+          "started_at_utc": "2026-11-14T08:46:50.274168Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q1",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 587.900417,
+          "wall_milliseconds": 587.91,
+          "started_at_utc": "2026-11-14T08:47:04.411162Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q1",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 1069.763709,
+          "wall_milliseconds": 1069.78,
+          "started_at_utc": "2026-11-14T08:47:17.351777Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q1",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 7317.843208,
+          "wall_milliseconds": 7317.951,
+          "started_at_utc": "2026-11-14T08:47:31.502626Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q1",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 7240.759084,
+          "wall_milliseconds": 7240.866,
+          "started_at_utc": "2026-11-14T08:47:51.936775Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q1",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 575.719917,
+          "wall_milliseconds": 575.73,
+          "started_at_utc": "2026-11-14T08:48:11.344318Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q1",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 974.440625,
+          "wall_milliseconds": 974.457,
+          "started_at_utc": "2026-11-14T08:48:23.991963Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q2",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 597.530625,
+          "wall_milliseconds": 597.542,
+          "started_at_utc": "2026-11-14T08:48:45.380752Z",
+          "output_rows": 14640,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q2",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 5417.612125,
+          "wall_milliseconds": 5417.693,
+          "started_at_utc": "2026-11-14T08:48:46.306649Z",
+          "output_rows": 14640,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q2",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 346.796208,
+          "wall_milliseconds": 346.804,
+          "started_at_utc": "2026-11-14T08:48:52.153862Z",
+          "output_rows": 14640,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q2",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 390.009875,
+          "wall_milliseconds": 390.018,
+          "started_at_utc": "2026-11-14T08:48:52.742679Z",
+          "output_rows": 14640,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q2",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 548.786333,
+          "wall_milliseconds": 548.797,
+          "started_at_utc": "2026-11-14T08:48:53.488072Z",
+          "output_rows": 14640,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q2",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 5486.15375,
+          "wall_milliseconds": 5486.236,
+          "started_at_utc": "2026-11-14T08:48:54.399968Z",
+          "output_rows": 14640,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q2",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 5490.304875,
+          "wall_milliseconds": 5490.387,
+          "started_at_utc": "2026-11-14T08:49:00.410866Z",
+          "output_rows": 14640,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q2",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 364.861208,
+          "wall_milliseconds": 364.868,
+          "started_at_utc": "2026-11-14T08:49:06.324160Z",
+          "output_rows": 14640,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q2",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 640.743416,
+          "wall_milliseconds": 640.755,
+          "started_at_utc": "2026-11-14T08:49:06.880034Z",
+          "output_rows": 14640,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q3",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 554.315916,
+          "wall_milliseconds": 554.326,
+          "started_at_utc": "2026-11-14T08:49:25.985200Z",
+          "output_rows": 798,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q3",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 15447.18775,
+          "wall_milliseconds": 15447.415,
+          "started_at_utc": "2026-11-14T08:49:26.767102Z",
+          "output_rows": 798,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q3",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 437.541,
+          "wall_milliseconds": 437.549,
+          "started_at_utc": "2026-11-14T08:49:42.799048Z",
+          "output_rows": 798,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q3",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 452.301209,
+          "wall_milliseconds": 452.309,
+          "started_at_utc": "2026-11-14T08:49:43.510841Z",
+          "output_rows": 798,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q3",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 557.690958,
+          "wall_milliseconds": 557.701,
+          "started_at_utc": "2026-11-14T08:49:44.353466Z",
+          "output_rows": 798,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q3",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 15342.607125,
+          "wall_milliseconds": 15333.756,
+          "started_at_utc": "2026-11-14T08:49:45.136084Z",
+          "output_rows": 798,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q3",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 15393.597458,
+          "wall_milliseconds": 15385.615,
+          "started_at_utc": "2026-11-14T08:50:01.086893Z",
+          "output_rows": 798,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q3",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 430.090833,
+          "wall_milliseconds": 429.968,
+          "started_at_utc": "2026-11-14T08:50:17.050484Z",
+          "output_rows": 798,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q3",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 553.350125,
+          "wall_milliseconds": 553.201,
+          "started_at_utc": "2026-11-14T08:50:17.710496Z",
+          "output_rows": 798,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q4",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 2504.236417,
+          "wall_milliseconds": 2504.248,
+          "started_at_utc": "2026-11-14T08:51:50.764106Z",
+          "output_rows": 100,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q4",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 83596.404792,
+          "wall_milliseconds": 83596.823,
+          "started_at_utc": "2026-11-14T08:51:55.034528Z",
+          "output_rows": 100,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q4",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 1323.723334,
+          "wall_milliseconds": 1323.732,
+          "started_at_utc": "2026-11-14T08:53:20.096103Z",
+          "output_rows": 100,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q4",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 1145.941875,
+          "wall_milliseconds": 1145.949,
+          "started_at_utc": "2026-11-14T08:53:22.589908Z",
+          "output_rows": 100,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q4",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 2039.570542,
+          "wall_milliseconds": 2039.582,
+          "started_at_utc": "2026-11-14T08:53:24.386224Z",
+          "output_rows": 100,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q4",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 85742.150792,
+          "wall_milliseconds": 85742.583,
+          "started_at_utc": "2026-11-14T08:53:27.327127Z",
+          "output_rows": 100,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q4",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 88342.149125,
+          "wall_milliseconds": 88342.595,
+          "started_at_utc": "2026-11-14T08:54:54.616169Z",
+          "output_rows": 100,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q4",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 1527.812125,
+          "wall_milliseconds": 1527.821,
+          "started_at_utc": "2026-11-14T08:56:24.103798Z",
+          "output_rows": 100,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q4",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 1976.525708,
+          "wall_milliseconds": 1976.537,
+          "started_at_utc": "2026-11-14T08:56:26.216345Z",
+          "output_rows": 100,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q7",
+          "backend": "memory",
+          "mini_batch": false,
+          "status": "stock-planner-rejected",
+          "reason": "Incomparable types: TIMESTAMP_LTZ(3) and TIMESTAMP(3) NOT NULL"
+        },
+        {
+          "query": "q8",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 1288.678625,
+          "wall_milliseconds": 1288.686,
+          "started_at_utc": "2026-11-14T08:57:27.200580Z",
+          "output_rows": 40000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q8",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 23444.173125,
+          "wall_milliseconds": 23444.302,
+          "started_at_utc": "2026-11-14T08:57:28.861333Z",
+          "output_rows": 40000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q8",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 29410.962292,
+          "wall_milliseconds": 29411.115,
+          "started_at_utc": "2026-11-14T08:57:53.539211Z",
+          "output_rows": 40000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q8",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 29283.365333,
+          "wall_milliseconds": 29283.519,
+          "started_at_utc": "2026-11-14T08:58:23.987624Z",
+          "output_rows": 40000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q8",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 1322.573459,
+          "wall_milliseconds": 1322.58,
+          "started_at_utc": "2026-11-14T08:58:54.360169Z",
+          "output_rows": 40000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q8",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 23829.885333,
+          "wall_milliseconds": 23830.015,
+          "started_at_utc": "2026-11-14T08:58:56.034022Z",
+          "output_rows": 40000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q8",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 24234.576958,
+          "wall_milliseconds": 24234.704,
+          "started_at_utc": "2026-11-14T08:59:21.324030Z",
+          "output_rows": 40000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q8",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 29495.995708,
+          "wall_milliseconds": 29496.152,
+          "started_at_utc": "2026-11-14T08:59:46.822738Z",
+          "output_rows": 40000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q8",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 1296.394084,
+          "wall_milliseconds": 1296.401,
+          "started_at_utc": "2026-11-14T09:00:17.258767Z",
+          "output_rows": 40000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q9",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 3021.247833,
+          "wall_milliseconds": 3021.263,
+          "started_at_utc": "2026-11-14T09:04:05.412208Z",
+          "output_rows": 120000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q9",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 177349.017167,
+          "wall_milliseconds": 177349.91,
+          "started_at_utc": "2026-11-14T09:04:11.264106Z",
+          "output_rows": 120000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q9",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 2835.865958,
+          "wall_milliseconds": 2835.882,
+          "started_at_utc": "2026-11-14T09:07:33.147978Z",
+          "output_rows": 120000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q9",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 2769.8595,
+          "wall_milliseconds": 2769.878,
+          "started_at_utc": "2026-11-14T09:07:38.308411Z",
+          "output_rows": 120000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q9",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 2741.677584,
+          "wall_milliseconds": 2741.692,
+          "started_at_utc": "2026-11-14T09:07:43.150697Z",
+          "output_rows": 120000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q9",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 165392.005708,
+          "wall_milliseconds": 165392.838,
+          "started_at_utc": "2026-11-14T09:07:47.959514Z",
+          "output_rows": 120000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q9",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 166255.036791,
+          "wall_milliseconds": 166255.878,
+          "started_at_utc": "2026-11-14T09:10:48.825770Z",
+          "output_rows": 120000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q9",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 2804.776583,
+          "wall_milliseconds": 2804.792,
+          "started_at_utc": "2026-11-14T09:13:58.438693Z",
+          "output_rows": 120000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q9",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 2676.736916,
+          "wall_milliseconds": 2676.755,
+          "started_at_utc": "2026-11-14T09:14:03.291043Z",
+          "output_rows": 120000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q10",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 1218.940708,
+          "wall_milliseconds": 1218.947,
+          "started_at_utc": "2026-11-14T09:15:07.469082Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q10",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 11013.1595,
+          "wall_milliseconds": 11013.215,
+          "started_at_utc": "2026-11-14T09:15:22.561448Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q10",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 673.008083,
+          "wall_milliseconds": 673.011,
+          "started_at_utc": "2026-11-14T09:15:47.614168Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q10",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 671.489,
+          "wall_milliseconds": 671.493,
+          "started_at_utc": "2026-11-14T09:16:03.726804Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q10",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 1217.236375,
+          "wall_milliseconds": 1217.243,
+          "started_at_utc": "2026-11-14T09:16:18.940857Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q10",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 10845.896958,
+          "wall_milliseconds": 10845.952,
+          "started_at_utc": "2026-11-14T09:16:34.003549Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q10",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 10938.871084,
+          "wall_milliseconds": 10938.927,
+          "started_at_utc": "2026-11-14T09:17:00.534753Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q10",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 632.27925,
+          "wall_milliseconds": 632.283,
+          "started_at_utc": "2026-11-14T09:17:25.542829Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q10",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 1167.970459,
+          "wall_milliseconds": 1167.977,
+          "started_at_utc": "2026-11-14T09:17:40.042375Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q11",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 842.350292,
+          "wall_milliseconds": 842.355,
+          "started_at_utc": "2026-11-14T09:18:58.180792Z",
+          "output_rows": 46,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q11",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 30214.234666,
+          "wall_milliseconds": 30214.387,
+          "started_at_utc": "2026-11-14T09:18:59.217681Z",
+          "output_rows": 46,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q11",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 29805.0955,
+          "wall_milliseconds": 29805.246,
+          "started_at_utc": "2026-11-14T09:19:29.654683Z",
+          "output_rows": 46,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q11",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 30026.793167,
+          "wall_milliseconds": 30026.945,
+          "started_at_utc": "2026-11-14T09:19:59.695158Z",
+          "output_rows": 46,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q11",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 831.243667,
+          "wall_milliseconds": 831.248,
+          "started_at_utc": "2026-11-14T09:20:29.912055Z",
+          "output_rows": 46,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q11",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 30535.2135,
+          "wall_milliseconds": 30535.368,
+          "started_at_utc": "2026-11-14T09:20:30.938310Z",
+          "output_rows": 46,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q11",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 30575.706958,
+          "wall_milliseconds": 30575.861,
+          "started_at_utc": "2026-11-14T09:21:01.686216Z",
+          "output_rows": 46,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q11",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 29661.228125,
+          "wall_milliseconds": 29661.378,
+          "started_at_utc": "2026-11-14T09:21:32.484304Z",
+          "output_rows": 46,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q11",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 809.107292,
+          "wall_milliseconds": 809.111,
+          "started_at_utc": "2026-11-14T09:22:02.325347Z",
+          "output_rows": 46,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q12",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 563.192042,
+          "wall_milliseconds": 563.196,
+          "started_at_utc": "2026-11-14T09:23:08.038575Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 32042.059667,
+          "wall_milliseconds": 32042.222,
+          "started_at_utc": "2026-11-14T09:23:08.792474Z",
+          "output_rows": 184,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 31590.472375,
+          "wall_milliseconds": 31590.633,
+          "started_at_utc": "2026-11-14T09:23:41.206234Z",
+          "output_rows": 138,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 31553.62725,
+          "wall_milliseconds": 31549.697,
+          "started_at_utc": "2026-11-14T09:24:13.034173Z",
+          "output_rows": 138,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 561.898708,
+          "wall_milliseconds": 561.299,
+          "started_at_utc": "2026-11-14T09:24:44.890028Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 31885.883417,
+          "wall_milliseconds": 31871.883,
+          "started_at_utc": "2026-11-14T09:24:45.642964Z",
+          "output_rows": 138,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 31973.83225,
+          "wall_milliseconds": 31971.998,
+          "started_at_utc": "2026-11-14T09:25:17.869677Z",
+          "output_rows": 138,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 31368.08625,
+          "wall_milliseconds": 31367.777,
+          "started_at_utc": "2026-11-14T09:25:50.214733Z",
+          "output_rows": 138,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q12",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 649.570625,
+          "wall_milliseconds": 649.569,
+          "started_at_utc": "2026-11-14T09:26:21.781486Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "processing-time bounded counts"
+        },
+        {
+          "query": "q15",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 7719.739,
+          "wall_milliseconds": 7719.716,
+          "started_at_utc": "2026-11-14T09:27:06.514610Z",
+          "output_rows": 1,
+          "sink_partitions": [
+            0
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q15",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 27276.42725,
+          "wall_milliseconds": 27276.344,
+          "started_at_utc": "2026-11-14T09:27:14.438683Z",
+          "output_rows": 1,
+          "sink_partitions": [
+            0
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q15",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 7566.7275,
+          "wall_milliseconds": 7566.705,
+          "started_at_utc": "2026-11-14T09:27:42.241823Z",
+          "output_rows": 1,
+          "sink_partitions": [
+            0
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q15",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 7636.240042,
+          "wall_milliseconds": 7636.218,
+          "started_at_utc": "2026-11-14T09:27:50.055668Z",
+          "output_rows": 1,
+          "sink_partitions": [
+            0
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q15",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 7604.689625,
+          "wall_milliseconds": 7604.668,
+          "started_at_utc": "2026-11-14T09:27:58.131611Z",
+          "output_rows": 1,
+          "sink_partitions": [
+            0
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q15",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 27506.313625,
+          "wall_milliseconds": 27506.23,
+          "started_at_utc": "2026-11-14T09:28:05.952277Z",
+          "output_rows": 1,
+          "sink_partitions": [
+            0
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q15",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 27622.95575,
+          "wall_milliseconds": 27622.874,
+          "started_at_utc": "2026-11-14T09:28:33.954445Z",
+          "output_rows": 1,
+          "sink_partitions": [
+            0
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q15",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 7707.109833,
+          "wall_milliseconds": 7707.088,
+          "started_at_utc": "2026-11-14T09:29:02.115582Z",
+          "output_rows": 1,
+          "sink_partitions": [
+            0
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q15",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 7668.189834,
+          "wall_milliseconds": 7668.168,
+          "started_at_utc": "2026-11-14T09:29:10.189890Z",
+          "output_rows": 1,
+          "sink_partitions": [
+            0
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q16",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 4705.629791,
+          "wall_milliseconds": 4705.617,
+          "started_at_utc": "2026-11-14T09:30:07.102916Z",
+          "output_rows": 8,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q16",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 34109.034625,
+          "wall_milliseconds": 34108.937,
+          "started_at_utc": "2026-11-14T09:30:12.254923Z",
+          "output_rows": 8,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q16",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 5310.648041,
+          "wall_milliseconds": 5310.634,
+          "started_at_utc": "2026-11-14T09:30:48.814898Z",
+          "output_rows": 8,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q16",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 4815.806583,
+          "wall_milliseconds": 4815.807,
+          "started_at_utc": "2026-11-14T09:30:54.652880Z",
+          "output_rows": 8,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q16",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 4675.213792,
+          "wall_milliseconds": 4675.2,
+          "started_at_utc": "2026-11-14T09:31:00.048647Z",
+          "output_rows": 8,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q16",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 34804.20925,
+          "wall_milliseconds": 34804.106,
+          "started_at_utc": "2026-11-14T09:31:05.071849Z",
+          "output_rows": 8,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q16",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 34121.583542,
+          "wall_milliseconds": 34121.487,
+          "started_at_utc": "2026-11-14T09:31:41.919074Z",
+          "output_rows": 8,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q16",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 5443.845375,
+          "wall_milliseconds": 5443.835,
+          "started_at_utc": "2026-11-14T09:32:18.579305Z",
+          "output_rows": 8,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q16",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 5052.547167,
+          "wall_milliseconds": 5052.533,
+          "started_at_utc": "2026-11-14T09:32:24.448232Z",
+          "output_rows": 8,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q17",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 3364.217625,
+          "wall_milliseconds": 3364.212,
+          "started_at_utc": "2026-11-14T09:33:18.686912Z",
+          "output_rows": 120000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q17",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 35431.073792,
+          "wall_milliseconds": 35430.969,
+          "started_at_utc": "2026-11-14T09:33:23.603634Z",
+          "output_rows": 120000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q17",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 3210.756625,
+          "wall_milliseconds": 3210.751,
+          "started_at_utc": "2026-11-14T09:34:03.182726Z",
+          "output_rows": 120000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q17",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 3082.557625,
+          "wall_milliseconds": 3082.552,
+          "started_at_utc": "2026-11-14T09:34:08.935481Z",
+          "output_rows": 120000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q17",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 3233.441584,
+          "wall_milliseconds": 3233.433,
+          "started_at_utc": "2026-11-14T09:34:13.465291Z",
+          "output_rows": 120000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q17",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 35420.185541,
+          "wall_milliseconds": 35420.081,
+          "started_at_utc": "2026-11-14T09:34:18.441315Z",
+          "output_rows": 120000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q17",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 35825.560208,
+          "wall_milliseconds": 35825.451,
+          "started_at_utc": "2026-11-14T09:34:59.856901Z",
+          "output_rows": 120000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q17",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 2788.629083,
+          "wall_milliseconds": 2788.621,
+          "started_at_utc": "2026-11-14T09:35:41.695197Z",
+          "output_rows": 120000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q17",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 2921.782042,
+          "wall_milliseconds": 2921.773,
+          "started_at_utc": "2026-11-14T09:35:46.052097Z",
+          "output_rows": 120000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q18",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 3668.240167,
+          "wall_milliseconds": 3668.23,
+          "started_at_utc": "2026-11-14T09:38:05.222998Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q18",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 67686.973125,
+          "wall_milliseconds": 67686.766,
+          "started_at_utc": "2026-11-14T09:38:25.381280Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q18",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 5231.173083,
+          "wall_milliseconds": 5231.162,
+          "started_at_utc": "2026-11-14T09:39:57.236666Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q18",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 3662.400583,
+          "wall_milliseconds": 3662.39,
+          "started_at_utc": "2026-11-14T09:40:21.804135Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q18",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 4104.175209,
+          "wall_milliseconds": 4104.163,
+          "started_at_utc": "2026-11-14T09:40:41.596381Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q18",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 69199.992709,
+          "wall_milliseconds": 69199.781,
+          "started_at_utc": "2026-11-14T09:41:01.902167Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q18",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 69340.18975,
+          "wall_milliseconds": 69339.98,
+          "started_at_utc": "2026-11-14T09:42:39.661236Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q18",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 6703.781208,
+          "wall_milliseconds": 6703.766,
+          "started_at_utc": "2026-11-14T09:44:16.193670Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q18",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 4052.595291,
+          "wall_milliseconds": 4052.583,
+          "started_at_utc": "2026-11-14T09:44:38.536848Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q19",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 11287.258083,
+          "wall_milliseconds": 11287.228,
+          "started_at_utc": "2026-11-14T09:47:06.421469Z",
+          "output_rows": 1200000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q19",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 60001.141791,
+          "wall_milliseconds": 60000.958,
+          "started_at_utc": "2026-11-14T09:47:32.774080Z",
+          "output_rows": 1200000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q19",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 9826.4495,
+          "wall_milliseconds": 9826.421,
+          "started_at_utc": "2026-11-14T09:48:53.551043Z",
+          "output_rows": 1200000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q19",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 10530.950375,
+          "wall_milliseconds": 10530.919,
+          "started_at_utc": "2026-11-14T09:49:16.621671Z",
+          "output_rows": 1200000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q19",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 14690.772417,
+          "wall_milliseconds": 14690.731,
+          "started_at_utc": "2026-11-14T09:49:39.284403Z",
+          "output_rows": 1200000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q19",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 59540.829334,
+          "wall_milliseconds": 59540.647,
+          "started_at_utc": "2026-11-14T09:50:08.145163Z",
+          "output_rows": 1200000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q19",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 59081.023917,
+          "wall_milliseconds": 59080.847,
+          "started_at_utc": "2026-11-14T09:51:23.244754Z",
+          "output_rows": 1200000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q19",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 13355.949375,
+          "wall_milliseconds": 13355.912,
+          "started_at_utc": "2026-11-14T09:52:39.255339Z",
+          "output_rows": 1200000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q19",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 10884.380875,
+          "wall_milliseconds": 10884.353,
+          "started_at_utc": "2026-11-14T09:53:05.037672Z",
+          "output_rows": 1200000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q20",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 1527.564916,
+          "wall_milliseconds": 1527.568,
+          "started_at_utc": "2026-11-14T09:54:34.599103Z",
+          "output_rows": 18400,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q20",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 59850.363166,
+          "wall_milliseconds": 59850.189,
+          "started_at_utc": "2026-11-14T09:54:36.544943Z",
+          "output_rows": 18400,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q20",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 1229.430834,
+          "wall_milliseconds": 1229.431,
+          "started_at_utc": "2026-11-14T09:55:38.422770Z",
+          "output_rows": 18400,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q20",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 910.990584,
+          "wall_milliseconds": 910.988,
+          "started_at_utc": "2026-11-14T09:55:40.260511Z",
+          "output_rows": 18400,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q20",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 1165.584167,
+          "wall_milliseconds": 1165.582,
+          "started_at_utc": "2026-11-14T09:55:41.550029Z",
+          "output_rows": 18400,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q20",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 59053.621625,
+          "wall_milliseconds": 59053.465,
+          "started_at_utc": "2026-11-14T09:55:43.191447Z",
+          "output_rows": 18400,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q20",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 59988.723333,
+          "wall_milliseconds": 59988.554,
+          "started_at_utc": "2026-11-14T09:56:44.421769Z",
+          "output_rows": 18400,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q20",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 1013.622,
+          "wall_milliseconds": 1013.632,
+          "started_at_utc": "2026-11-14T09:57:46.623701Z",
+          "output_rows": 18400,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q20",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 2292.29775,
+          "wall_milliseconds": 2292.298,
+          "started_at_utc": "2026-11-14T09:57:48.056280Z",
+          "output_rows": 18400,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q22",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 1469.622083,
+          "wall_milliseconds": 1469.618,
+          "started_at_utc": "2026-11-14T09:58:38.346107Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q22",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 7678.095375,
+          "wall_milliseconds": 7678.073,
+          "started_at_utc": "2026-11-14T09:58:52.831834Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q22",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 603.633333,
+          "wall_milliseconds": 603.632,
+          "started_at_utc": "2026-11-14T09:59:13.612693Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q22",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 623.041625,
+          "wall_milliseconds": 623.041,
+          "started_at_utc": "2026-11-14T09:59:27.556110Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q22",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 1307.192833,
+          "wall_milliseconds": 1307.189,
+          "started_at_utc": "2026-11-14T09:59:40.474586Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q22",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 7411.213167,
+          "wall_milliseconds": 7410.839,
+          "started_at_utc": "2026-11-14T09:59:54.046326Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q22",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 7449.032083,
+          "wall_milliseconds": 7448.361,
+          "started_at_utc": "2026-11-14T10:00:14.982112Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q22",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 672.7505,
+          "wall_milliseconds": 672.728,
+          "started_at_utc": "2026-11-14T10:00:34.629367Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q22",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 1308.351125,
+          "wall_milliseconds": 1308.329,
+          "started_at_utc": "2026-11-14T10:00:47.402868Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 3588.272625,
+          "wall_milliseconds": 3588.256,
+          "started_at_utc": "2026-11-14T10:02:17.098067Z",
+          "output_rows": 200000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 32159.257125,
+          "wall_milliseconds": 32159.106,
+          "started_at_utc": "2026-11-14T10:02:21.839522Z",
+          "output_rows": 200000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 35210.951583,
+          "wall_milliseconds": 35210.784,
+          "started_at_utc": "2026-11-14T10:02:55.648170Z",
+          "output_rows": 200000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 34940.866666,
+          "wall_milliseconds": 34940.7,
+          "started_at_utc": "2026-11-14T10:03:32.302033Z",
+          "output_rows": 200000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 3483.395542,
+          "wall_milliseconds": 3483.38,
+          "started_at_utc": "2026-11-14T10:04:08.569236Z",
+          "output_rows": 200000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 31799.224583,
+          "wall_milliseconds": 31799.073,
+          "started_at_utc": "2026-11-14T10:04:13.408230Z",
+          "output_rows": 200000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 32327.2185,
+          "wall_milliseconds": 32327.065,
+          "started_at_utc": "2026-11-14T10:04:47.073410Z",
+          "output_rows": 200000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 35375.853209,
+          "wall_milliseconds": 35375.692,
+          "started_at_utc": "2026-11-14T10:05:21.093841Z",
+          "output_rows": 200000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q5",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 3419.185083,
+          "wall_milliseconds": 3419.169,
+          "started_at_utc": "2026-11-14T10:05:57.697056Z",
+          "output_rows": 200000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q13",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 1088.770917,
+          "wall_milliseconds": 1088.766,
+          "started_at_utc": "2026-11-14T10:06:52.441571Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q13",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 9459.190583,
+          "wall_milliseconds": 9459.146,
+          "started_at_utc": "2026-11-14T10:07:02.565435Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q13",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 11289.312584,
+          "wall_milliseconds": 11289.259,
+          "started_at_utc": "2026-11-14T10:07:21.250848Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q13",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 10970.272875,
+          "wall_milliseconds": 10970.221,
+          "started_at_utc": "2026-11-14T10:07:42.370809Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q13",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 1285.035291,
+          "wall_milliseconds": 1285.03,
+          "started_at_utc": "2026-11-14T10:08:02.220700Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q13",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 9646.710209,
+          "wall_milliseconds": 9646.664,
+          "started_at_utc": "2026-11-14T10:08:12.550097Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q13",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 9573.928209,
+          "wall_milliseconds": 9573.883,
+          "started_at_utc": "2026-11-14T10:08:32.367866Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q13",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 11460.061292,
+          "wall_milliseconds": 11460.007,
+          "started_at_utc": "2026-11-14T10:08:51.380553Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q13",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 1148.522208,
+          "wall_milliseconds": 1148.517,
+          "started_at_utc": "2026-11-14T10:09:11.699467Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q14",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 1206.685791,
+          "wall_milliseconds": 1206.68,
+          "started_at_utc": "2026-11-14T10:10:33.845971Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q14",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 9421.157,
+          "wall_milliseconds": 9421.113,
+          "started_at_utc": "2026-11-14T10:10:51.003539Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q14",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 13674.321917,
+          "wall_milliseconds": 13674.258,
+          "started_at_utc": "2026-11-14T10:11:15.672731Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q14",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 13565.137375,
+          "wall_milliseconds": 13565.073,
+          "started_at_utc": "2026-11-14T10:11:45.583790Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q14",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 1205.521709,
+          "wall_milliseconds": 1205.517,
+          "started_at_utc": "2026-11-14T10:12:14.206167Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q14",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 9158.522291,
+          "wall_milliseconds": 9158.478,
+          "started_at_utc": "2026-11-14T10:12:30.549260Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q14",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 9204.015208,
+          "wall_milliseconds": 9203.974,
+          "started_at_utc": "2026-11-14T10:12:56.455733Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q14",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 13283.740042,
+          "wall_milliseconds": 13283.677,
+          "started_at_utc": "2026-11-14T10:13:20.897561Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q14",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 1179.769834,
+          "wall_milliseconds": 1179.765,
+          "started_at_utc": "2026-11-14T10:13:49.385209Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q21",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 650.478959,
+          "wall_milliseconds": 650.477,
+          "started_at_utc": "2026-11-14T10:14:18.270026Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q21",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 8749.277666,
+          "wall_milliseconds": 8749.237,
+          "started_at_utc": "2026-11-14T10:14:19.321076Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q21",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 655.6755,
+          "wall_milliseconds": 655.673,
+          "started_at_utc": "2026-11-14T10:14:28.309403Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q21",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 645.630541,
+          "wall_milliseconds": 645.628,
+          "started_at_utc": "2026-11-14T10:14:29.417539Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q21",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 853.482041,
+          "wall_milliseconds": 853.479,
+          "started_at_utc": "2026-11-14T10:14:30.263714Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q21",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 8337.573458,
+          "wall_milliseconds": 8337.534,
+          "started_at_utc": "2026-11-14T10:14:31.550991Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q21",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 8797.57975,
+          "wall_milliseconds": 8797.537,
+          "started_at_utc": "2026-11-14T10:14:40.324416Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q21",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 878.588625,
+          "wall_milliseconds": 878.585,
+          "started_at_utc": "2026-11-14T10:14:49.575012Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q21",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 650.81875,
+          "wall_milliseconds": 650.817,
+          "started_at_utc": "2026-11-14T10:14:50.653048Z",
+          "output_rows": 0,
+          "sink_partitions": [],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q23",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 3943.444458,
+          "wall_milliseconds": 3943.428,
+          "started_at_utc": "2026-11-14T10:17:48.984196Z",
+          "output_rows": 5520000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q23",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 62017.16675,
+          "wall_milliseconds": 62016.871,
+          "started_at_utc": "2026-11-14T10:18:27.483579Z",
+          "output_rows": 5520000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q23",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 1556.267333,
+          "wall_milliseconds": 1556.26,
+          "started_at_utc": "2026-11-14T10:20:04.784488Z",
+          "output_rows": 5520000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q23",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 1544.909625,
+          "wall_milliseconds": 1544.903,
+          "started_at_utc": "2026-11-14T10:20:44.930002Z",
+          "output_rows": 5520000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q23",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 4016.105667,
+          "wall_milliseconds": 4016.089,
+          "started_at_utc": "2026-11-14T10:21:20.545673Z",
+          "output_rows": 5520000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q23",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 62203.778167,
+          "wall_milliseconds": 62203.482,
+          "started_at_utc": "2026-11-14T10:21:59.443099Z",
+          "output_rows": 5520000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q23",
+          "engine": "previous",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 62734.706166,
+          "wall_milliseconds": 62734.407,
+          "started_at_utc": "2026-11-14T10:23:41.128073Z",
+          "output_rows": 5520000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q23",
+          "engine": "native",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 1621.478125,
+          "wall_milliseconds": 1621.471,
+          "started_at_utc": "2026-11-14T10:25:19.403515Z",
+          "output_rows": 5520000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q23",
+          "engine": "stock",
+          "backend": "memory",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 3744.750083,
+          "wall_milliseconds": 3744.741,
+          "started_at_utc": "2026-11-14T10:25:55.057730Z",
+          "output_rows": 5520000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        }
+      ]
+    }
+  ],
+  "profile_diagnostics": [
+    {
+      "query": "q8",
+      "status": "profiled",
+      "method": "async-profiler 4.3 macOS CPU sampling at 10 ms on the native execution; profile mode verifies full-value parity against a stock reference; not a comparison timing gate",
+      "samples": 4163,
+      "inclusive_frames": [
+        [
+          "tech/streamfusion/operator/ColumnarRecordMetrics.emit",
+          2761,
+          66.32
+        ],
+        [
+          "tech/streamfusion/operator/NativeCalcOperator.processElement",
+          2609,
+          62.67
+        ],
+        [
+          "tech/streamfusion/hudi/NativeHudiSource.lambda$createReader$0",
+          2507,
+          60.22
+        ],
+        [
+          "tech/streamfusion/hudi/NativeHudiSource$$Lambda$4855.0x00000008023fbbf8.emitRecord",
+          2507,
+          60.22
+        ],
+        [
+          "tech/streamfusion/operator/NativeColumnarWatermarkAssignerOperator.processElement",
+          2507,
+          60.22
+        ],
+        [
+          "tech/streamfusion/operator/NativeColumnarLocalWindowAggregateOperator.processElement",
+          674,
+          16.19
+        ],
+        [
+          "tech/streamfusion/operator/NativeWindowOperatorCore.updateColumnarInternal",
+          607,
+          14.58
+        ],
+        [
+          "tech/streamfusion/operator/NativeWindowOperatorCore.updateColumnar",
+          607,
+          14.58
+        ],
+        [
+          "tech/streamfusion/operator/NativeAllocator$TaskBudgetListener.onPreAllocation",
+          569,
+          13.67
+        ],
+        [
+          "tech/streamfusion/operator/TaskOffHeapMemory.reserveArrow",
+          569,
+          13.67
+        ],
+        [
+          "tech/streamfusion/operator/NativeWindowOperatorCore.processWatermark",
+          453,
+          10.88
+        ],
+        [
+          "tech/streamfusion/operator/NativeRowWindowOperatorCore.processWatermark",
+          394,
+          9.46
+        ],
+        [
+          "tech/streamfusion/operator/NativeColumnarGlobalWindowAggregateOperator.emitClosedWindows",
+          389,
+          9.34
+        ],
+        [
+          "tech/streamfusion/operator/NativeRowWindowOperatorCore.emitFinal",
+          389,
+          9.34
+        ],
+        [
+          "tech/streamfusion/operator/TaskOffHeapMemory.arrowOwner",
+          347,
+          8.34
+        ],
+        [
+          "tech/streamfusion/Native.calcExpressionWithCachedSchemasAtWatermark",
+          332,
+          7.98
+        ],
+        [
+          "tech/streamfusion/operator/NativeWindowJoinOperator.processWatermark",
+          206,
+          4.95
+        ],
+        [
+          "tech/streamfusion/operator/NativeWindowJoinOperator.flush",
+          206,
+          4.95
+        ]
+      ],
+      "leaf_frames": [
+        [
+          "__psynch_mutexwait",
+          401,
+          9.63
+        ],
+        [
+          "pthread_jit_write_protect_np",
+          321,
+          7.71
+        ],
+        [
+          "__psynch_cvwait",
+          299,
+          7.18
+        ],
+        [
+          "mach_absolute_time",
+          156,
+          3.75
+        ],
+        [
+          "java/util/concurrent/atomic/AtomicLong.compareAndSet",
+          92,
+          2.21
+        ],
+        [
+          "java/util/concurrent/atomic/AtomicLong.incrementAndGet",
+          92,
+          2.21
+        ],
+        [
+          "tech/streamfusion/operator/TaskOffHeapMemory.reserveArrow",
+          72,
+          1.73
+        ],
+        [
+          "__psynch_mutexdrop",
+          71,
+          1.71
+        ],
+        [
+          "itable stub",
+          65,
+          1.56
+        ],
+        [
+          "tech/streamfusion/operator/TaskOffHeapMemory.release",
+          60,
+          1.44
+        ],
+        [
+          "ObjectMonitor::TrySpin",
+          60,
+          1.44
+        ],
+        [
+          "os::javaTimeNanos",
+          48,
+          1.15
+        ]
+      ]
+    }
+  ]
+}

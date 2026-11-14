@@ -363,10 +363,15 @@ projection and that an older event version cannot replace the latest payload.
 The [four-partition Hudi Nexmark harness](../benchmarks/hudi-nexmark.md)
 adds full-row stock readback and checks the actual Parquet encoder. Expanded
 matrix performance validation is ongoing; the earlier one-writer measurements
-above do not establish performance for the expanded matrix.
+above do not establish performance for the expanded matrix. The completed
+heap/mini-batching-off configuration has a 0.55× geometric mean of median
+speedups over stock Flink: simple I/O improves, but window and lookup paths
+remain substantially slower. The remaining three configurations are pending;
+the benchmark page retains all trial ranges and the draft's open performance
+disposition in [issue #663](https://github.com/datafusion-contrib/StreamFusion/issues/663).
 
 The terminal sink does not observe watermarks. When only native Calcs without
-`CURRENT_WATERMARK` separate it from an assigner, the planner retains whole
+`CURRENT_WATERMARK` or user functions separate it from an assigner, the planner retains whole
 Arrow batches instead of splitting at unobservable eager emissions. Append sinks
 also admit native exchanges, mini-batch assigners and inner joins with insert-only
 inputs. For MOR with explicit commit-time ordering and precombine, this proof also crosses native
