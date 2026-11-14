@@ -5,8 +5,8 @@ corpus with Hudi tables at both ends. This is a separate storage workload from
 the README Kafka benchmark. It requires the released Hudi 1.2.1 Flink 1.18 bundle
 and release StreamFusion engine/Parquet libraries.
 
-For the Java batching/allocation investigation, the manual **Hudi focused benchmark**
-workflow runs Q8/Q12 on one isolated Ubuntu runner. Supply a full baseline commit
+For the Java batching/allocation investigation, the manual **CI startup profile**
+workflow with suite `hudi-benchmark` runs Q8/Q12 on one isolated Ubuntu runner. Supply a full baseline commit
 SHA with identical native sources, build inputs and benchmark harness. The runner
 admits changes only to the allocation authority and Hudi terminal-batch proof,
 builds the two release libraries once, verifies their hashes throughout, and
