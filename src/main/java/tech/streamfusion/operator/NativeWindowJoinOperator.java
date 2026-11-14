@@ -309,7 +309,7 @@ public class NativeWindowJoinOperator extends AbstractNativeStatefulOperator<Arr
 
   /** Exports both side row types as FFI Arrow schemas for the duration of one native call. */
   private long withSchemas(LongBinaryOperator call) {
-    return withMapListSchemas(leftType, rightType, call);
+    return withRowSchemas(leftType, rightType, call);
   }
 
   @Override

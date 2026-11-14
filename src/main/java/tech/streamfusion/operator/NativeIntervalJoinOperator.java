@@ -259,7 +259,7 @@ public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<A
 
   /** Exports both side row types as FFI Arrow schemas for the duration of one native call. */
   private long withSchemas(LongBinaryOperator call) {
-    return withMapListSchemas(nativeType(leftType), nativeType(rightType), call);
+    return withRowSchemas(nativeType(leftType), nativeType(rightType), call);
   }
 
   private RowType nativeType(RowType type) {

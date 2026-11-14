@@ -269,9 +269,3 @@ independent. New ordinary/compiled planner and clean-stock-worker fixtures keep 
 payloads through the join, with NULL parents, NULL descendants, Unicode map keys and duplicate
 rows. The authored fixtures cover continued input, no-input re-export, native checkpoints and
 1 → 3 → 2 rescaling; qualification on Flink 1.18 and 2.2 is pending.
-
-The pending nested-payload binding uses the tagged Arrow map-list representation consistently
-for persistent-store declarations and stock-state import, matching live native input. This
-prevents MAP/MULTISET payloads from changing schema on a stock-to-native restore or an empty
-re-export. Existing nested clean-worker fixtures cover the corrected path; both release lines
-remain awaiting local qualification in the requested final testing window.
