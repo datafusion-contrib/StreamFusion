@@ -25,6 +25,14 @@ grows toward Comet's scale (nested structs, N-ary functions, casts), switching t
 *wire format* to Protobuf is the natural upgrade — it is a maintainability change,
 not a performance one, since encoding happens once per operator, not per batch.
 
+The node-kind and primitive cast-target vocabularies are defined in
+`native/engine/expression-protocol.json`. `bin/generate-expression-protocol.py` generates the
+Java and Rust enums; CI checks the generated sources and rejects duplicate or reused retired
+codes. The native decoder matches the typed node enum exhaustively. This keeps the existing
+parallel-array payload and every numeric code intact, including legacy interval literals.
+It does not introduce a second expression AST or a new serialization dependency. Add a new
+node kind to the manifest, regenerate both languages, and implement its native match arm.
+
 Builtin function IDs share one namespace between the Java encoder and Rust registry.
 Coordinate IDs across pending implementations as well as merged code; a rebase must not
 assign different functions the same ID. Encoder assertions and prepared-operation helpers

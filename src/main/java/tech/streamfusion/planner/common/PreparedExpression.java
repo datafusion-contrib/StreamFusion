@@ -40,7 +40,7 @@ public final class PreparedExpression implements EncodedExpression {
     payload = expression.payload();
     if (mapping != null)
       for (int i = 0; i < kinds.length; i++)
-        if (kinds[i] == 0) payload[i] = mapping[payload[i]];
+        if (kinds[i] == ExpressionKind.INPUT_REF.code()) payload[i] = mapping[payload[i]];
     childCounts = expression.childCounts();
     projectionRoots = expression.projectionRoots();
     longs = expression.longs();
@@ -123,7 +123,7 @@ public final class PreparedExpression implements EncodedExpression {
   @Override
   public Set<Integer> referencedInputs() {
     Set<Integer> references = new LinkedHashSet<>();
-    for (int i = 0; i < kinds.length; i++) if (kinds[i] == 0) references.add(payload[i]);
+    for (int i = 0; i < kinds.length; i++) if (kinds[i] == ExpressionKind.INPUT_REF.code()) references.add(payload[i]);
     return Collections.unmodifiableSet(references);
   }
 

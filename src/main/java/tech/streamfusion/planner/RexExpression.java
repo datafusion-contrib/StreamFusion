@@ -32,6 +32,8 @@ import tech.streamfusion.operator.WatermarkExpression;
 import tech.streamfusion.planner.common.CalcOutputTypeCheck;
 import tech.streamfusion.planner.common.Admission;
 import tech.streamfusion.planner.common.EncodedExpression;
+import tech.streamfusion.planner.common.ExpressionKind;
+import tech.streamfusion.planner.common.CastTarget;
 
 /**
  * Encodes a {@link RexNode} into the compact pre-order form the native engine decodes (see {@link
@@ -48,99 +50,99 @@ final class RexExpression implements EncodedExpression {
           .equals("\ufffd");
 
   // Node kinds, mirrored on the native side.
-  private static final int KIND_INPUT_REF = 0;
-  private static final int KIND_LIT_LONG = 1;
-  private static final int KIND_LIT_DOUBLE = 2;
-  private static final int KIND_LIT_STRING = 3;
-  private static final int KIND_LIT_BOOL = 4;
-  private static final int KIND_LIT_NULL = 5;
-  private static final int KIND_CALL = 6;
+  private static final int KIND_INPUT_REF = ExpressionKind.INPUT_REF.code();
+  private static final int KIND_LIT_LONG = ExpressionKind.LIT_LONG.code();
+  private static final int KIND_LIT_DOUBLE = ExpressionKind.LIT_DOUBLE.code();
+  private static final int KIND_LIT_STRING = ExpressionKind.LIT_STRING.code();
+  private static final int KIND_LIT_BOOL = ExpressionKind.LIT_BOOL.code();
+  private static final int KIND_LIT_NULL = ExpressionKind.LIT_NULL.code();
+  private static final int KIND_CALL = ExpressionKind.CALL.code();
   // Narrow integer literals keep their declared width (the value still rides in the long pool) so
   // native arithmetic evaluates in the same type as the host rather than a widened one.
-  private static final int KIND_LIT_INT = 7;
-  private static final int KIND_LIT_SMALL = 8;
-  private static final int KIND_LIT_TINY = 9;
+  private static final int KIND_LIT_INT = ExpressionKind.LIT_INT.code();
+  private static final int KIND_LIT_SMALL = ExpressionKind.LIT_SMALL.code();
+  private static final int KIND_LIT_TINY = ExpressionKind.LIT_TINY.code();
   // A cast node: payload is the target type code, with one child (the casted expression).
-  private static final int KIND_CAST = 11;
+  private static final int KIND_CAST = ExpressionKind.CAST.code();
   // PROCTIME_MATERIALIZE observes the current execution-time TIMESTAMP_LTZ(3).
-  private static final int KIND_PROCTIME = 12;
+  private static final int KIND_PROCTIME = ExpressionKind.PROCTIME.code();
   // Field access: extract a named field from a ROW/struct-typed child. payload is the string-pool
   // index of the field name, with one child (the struct-typed expression). Nested access (a.b.c)
   // nests these, the child being itself a field access. Mirrors DataFusion's get_field.
-  private static final int KIND_FIELD_ACCESS = 13;
+  private static final int KIND_FIELD_ACCESS = ExpressionKind.FIELD_ACCESS.code();
   // Exact decimal cast: payload packs precision*100 + scale; one decimal or integer child.
   // Rounds HALF_UP before checking precision, returning NULL on overflow.
-  private static final int KIND_CAST_DECIMAL = 14;
+  private static final int KIND_CAST_DECIMAL = ExpressionKind.CAST_DECIMAL.code();
   // An exact DECIMAL literal: payload indexes the string pool, whose entry is
   // "unscaled|precision|scale"
   // (the unscaled integer as a string, as it can exceed i64). The native side builds a Decimal128
   // scalar,
   // so decimal arithmetic stays exact instead of routing through double.
-  private static final int KIND_LIT_DECIMAL = 16;
+  private static final int KIND_LIT_DECIMAL = ExpressionKind.LIT_DECIMAL.code();
   // A JVM UDF call: payload indexes the long pool at [udf id, return-type code]; children are the
   // argument expressions. The native JvmUdf node upcalls NativeUdf.invokeUdf to run the actual
   // Flink
   // ScalarFunction.eval over each batch (columnar), so a non-builtin UDF stays inside the native
   // island.
-  private static final int KIND_UDF = 17;
+  private static final int KIND_UDF = ExpressionKind.UDF.code();
   // Runtime decimal rounding to text, retaining a JVM evaluator for exceptional scales.
-  private static final int KIND_DECIMAL_ROUND_TEXT = 41;
+  private static final int KIND_DECIMAL_ROUND_TEXT = ExpressionKind.DECIMAL_ROUND_TEXT.code();
   // Proven numeric cast batches avoid an upcall; exceptional batches retain Flink's evaluator.
-  private static final int KIND_NUMERIC_CAST = 42;
-  private static final int KIND_ARRAY_CAST = 43;
-  private static final int KIND_CERTIFIED_BUILTIN = 44;
-  private static final int KIND_ZONED_EXTRACT = 45;
-  private static final int KIND_COLLECTION_CAST = 46;
-  private static final int KIND_DECIMAL_IF = 47;
+  private static final int KIND_NUMERIC_CAST = ExpressionKind.NUMERIC_CAST.code();
+  private static final int KIND_ARRAY_CAST = ExpressionKind.ARRAY_CAST.code();
+  private static final int KIND_CERTIFIED_BUILTIN = ExpressionKind.CERTIFIED_BUILTIN.code();
+  private static final int KIND_ZONED_EXTRACT = ExpressionKind.ZONED_EXTRACT.code();
+  private static final int KIND_COLLECTION_CAST = ExpressionKind.COLLECTION_CAST.code();
+  private static final int KIND_DECIMAL_IF = ExpressionKind.DECIMAL_IF.code();
   // A narrowing cast to an integer type: payload is the target integer type code (CAST_TINYINT..
   // CAST_BIGINT), one child. Built natively as a wrapping/saturating kernel matching Flink's
   // primitive
   // Java cast, since arrow's own cast errors on overflow rather than wrapping.
-  private static final int KIND_CAST_NARROW = 18;
+  private static final int KIND_CAST_NARROW = ExpressionKind.CAST_NARROW.code();
 
   // ARRAY[i] / MAP[key] subscript (Calcite's ITEM): collection and runtime index/key children.
   // Payload bit 0 marks compact timestamp keys; bit 1 preserves logical MAP over List storage.
-  private static final int KIND_ITEM = 19;
+  private static final int KIND_ITEM = ExpressionKind.ITEM.code();
 
   // Decimal arithmetic: low 16 payload bits pack result precision*100 + scale;
   // bit 16 retains Flink 1.18's implicit integer conversions. Two children
   // (the
   // operands). A fused native kernel reproduces Flink's 38-significant-digit quotient + rescale.
-  private static final int KIND_DECIMAL_DIVIDE = 20;
-  private static final int KIND_DECIMAL_MOD = 21;
+  private static final int KIND_DECIMAL_DIVIDE = ExpressionKind.DECIMAL_DIVIDE.code();
+  private static final int KIND_DECIMAL_MOD = ExpressionKind.DECIMAL_MOD.code();
 
   // A single-precision literal, so a FLOAT expression is not widened to double by its constants.
-  private static final int KIND_LIT_FLOAT = 22;
-  private static final int KIND_LIT_BINARY = 23;
-  private static final int KIND_LIT_TEMPORAL = 24;
-  private static final int KIND_CLOCK = 25;
-  private static final int KIND_LIT_TIMESTAMP = 29;
-  private static final int KIND_DECIMAL_ROUND = 30;
-  private static final int KIND_RANDOM = 32;
-  private static final int KIND_STRING_TO_INTEGER = 33;
-  private static final int KIND_INTEGER_TO_STRING = 34;
-  private static final int KIND_DECIMAL_TRUNCATE = 35;
-  private static final int KIND_FROM_UNIXTIME = 36;
-  private static final int KIND_DECIMAL_FLOAT = 37;
+  private static final int KIND_LIT_FLOAT = ExpressionKind.LIT_FLOAT.code();
+  private static final int KIND_LIT_BINARY = ExpressionKind.LIT_BINARY.code();
+  private static final int KIND_LIT_TEMPORAL = ExpressionKind.LIT_TEMPORAL.code();
+  private static final int KIND_CLOCK = ExpressionKind.CLOCK.code();
+  private static final int KIND_LIT_TIMESTAMP = ExpressionKind.LIT_TIMESTAMP.code();
+  private static final int KIND_DECIMAL_ROUND = ExpressionKind.DECIMAL_ROUND.code();
+  private static final int KIND_RANDOM = ExpressionKind.RANDOM.code();
+  private static final int KIND_STRING_TO_INTEGER = ExpressionKind.STRING_TO_INTEGER.code();
+  private static final int KIND_INTEGER_TO_STRING = ExpressionKind.INTEGER_TO_STRING.code();
+  private static final int KIND_DECIMAL_TRUNCATE = ExpressionKind.DECIMAL_TRUNCATE.code();
+  private static final int KIND_FROM_UNIXTIME = ExpressionKind.FROM_UNIXTIME.code();
+  private static final int KIND_DECIMAL_FLOAT = ExpressionKind.DECIMAL_FLOAT.code();
   // Whole-row JVM evaluation; long pool [udf id, output Arrow schema string index].
-  private static final int KIND_ROW_UDF = 38;
-  private static final int KIND_BINARY_CAST = 39;
-  private static final int KIND_BINARY_ELT = 40;
+  private static final int KIND_ROW_UDF = ExpressionKind.ROW_UDF.code();
+  private static final int KIND_BINARY_CAST = ExpressionKind.BINARY_CAST.code();
+  private static final int KIND_BINARY_ELT = ExpressionKind.BINARY_ELT.code();
   // A typed NULL carries a one-field Arrow IPC schema in the string pool.
-  private static final int KIND_LIT_TYPED_NULL = 31;
+  private static final int KIND_LIT_TYPED_NULL = ExpressionKind.LIT_TYPED_NULL.code();
   // Fused exact arithmetic: payload is the declared result precision*100 + scale; two children.
-  private static final int KIND_DECIMAL_ADD = 26;
-  private static final int KIND_DECIMAL_SUBTRACT = 27;
-  private static final int KIND_DECIMAL_MULTIPLY = 28;
+  private static final int KIND_DECIMAL_ADD = ExpressionKind.DECIMAL_ADD.code();
+  private static final int KIND_DECIMAL_SUBTRACT = ExpressionKind.DECIMAL_SUBTRACT.code();
+  private static final int KIND_DECIMAL_MULTIPLY = ExpressionKind.DECIMAL_MULTIPLY.code();
 
   // Cast target type codes, mirrored on the native side.
-  private static final int CAST_TINYINT = 0;
-  private static final int CAST_SMALLINT = 1;
-  private static final int CAST_INTEGER = 2;
-  private static final int CAST_BIGINT = 3;
-  private static final int CAST_FLOAT = 4;
-  private static final int CAST_DOUBLE = 5;
-  private static final int CAST_STRING = 6;
+  private static final int CAST_TINYINT = CastTarget.TINYINT.code();
+  private static final int CAST_SMALLINT = CastTarget.SMALLINT.code();
+  private static final int CAST_INTEGER = CastTarget.INTEGER.code();
+  private static final int CAST_BIGINT = CastTarget.BIGINT.code();
+  private static final int CAST_FLOAT = CastTarget.FLOAT.code();
+  private static final int CAST_DOUBLE = CastTarget.DOUBLE.code();
+  private static final int CAST_STRING = CastTarget.STRING.code();
 
   private final List<Integer> kinds = new ArrayList<>();
   private final List<Integer> payload = new ArrayList<>();

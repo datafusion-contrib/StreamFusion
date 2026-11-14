@@ -70,6 +70,11 @@ the always-on planning log also counts Calc/filter nodes containing JVM function
 Flink's operator metrics use these detailed names as well; select Calc/filter metric groups by the
 `NativeCalc(` or `NativeFilter(` prefix rather than their execution-node class names.
 
+Expression node kinds and primitive cast targets come from one versioned protocol manifest,
+which generates both Java and Rust enums. Native decoding is exhaustive over those kinds, and
+CI checks generation drift and retired-code reuse. The compact pools and existing wire values
+remain unchanged; this is a planning maintainability change rather than a throughput claim.
+
 Generated expression code is built entirely in the planner. Serialized Calc/filter bindings
 carry only the generated function, runtime types/schema and user-function references; workers
 do not need Flink's planner or Calcite classes to deserialize or execute them. The runtime
