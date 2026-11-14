@@ -2570,6 +2570,11 @@ Pending value-rank component controls compare complete raw stock state after no-
 the newly added scalar and nested-payload shapes, in addition to ROW partition keys and continued
 outputs. Both-release execution must qualify independent map/list keys and cached fields.
 
+The pending represented ROW key paths additionally normalize Arrow-only runtime-class flags.
+Logical nested row kinds and original binary bytes are preserved. Shared native fixtures now
+carry actual Java binary/nested class flags, preventing identical stock keys from splitting solely
+because of their transport class; this correction awaits execution with the new state matrices.
+
 
 Retracting GROUP BY MIN/MAX additionally captures the existing one-phase mini-batch owner and
 count trigger for the already bound integral/date/time/boolean map views. New raw-state and

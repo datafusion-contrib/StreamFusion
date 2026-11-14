@@ -2114,6 +2114,12 @@ They compare complete stock accumulator/view bytes and continued outputs indepen
 cut, including NULL-only owners, scalar/global keys and mixed binary/logical nested ROW keys.
 Both native stores and ROWS/RANGE orders are included; these controls have not yet run.
 
+Represented ROW partition keys normalize the Arrow-only runtime-class bits alongside optional
+string and owned-byte caches. Logical nested row kinds and authoritative binary key bytes remain
+unchanged; GenericRowData, BinaryRowData and NestedRowData therefore address the same stock key
+when their serialized bytes match. New native fixtures emit the actual Java class flags; this
+correction and its pending Java continuation matrix still await execution.
+
 ## Unbounded processing ROW partition keys awaiting qualification
 
 The existing unbounded processing ROWS/RANGE fold can now bind ROW partition keys whose

@@ -979,6 +979,8 @@ normalize redundant nested transport caches before encoding retained payloads, s
 live generic/binary keys compare consistently while original ROW bytes, padding and nested kinds
 remain authoritative. Stock descriptors/serializers and native checkpoint record fields are
 unchanged. UpdateFast unique keys may include a ROW column already in the partition key.
+Normalization also clears Arrow-only ROW runtime-class flags, retaining their logical row-kind
+bits, so binary/nested/generic classes cannot distinguish identical stock partition bytes.
 
 New controls compare complete raw stock state after no-input returns, mixed live representations,
 TTL where already admitted, tied scalar sorts, constant/variable bounds, updating OFFSET and

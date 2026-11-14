@@ -134,6 +134,19 @@ fn clear_row_transports(row: &StructArray) -> Vec<ArrayRef> {
                 } else {
                     new_null_array(field.data_type(), row.len())
                 }
+            } else if field
+                .metadata()
+                .get("streamfusion.nested-row-kind")
+                .is_some_and(|value| value == "1")
+            {
+                let kinds = column.as_any().downcast_ref::<Int8Array>().unwrap();
+                if kinds.iter().flatten().any(|kind| kind & !3 != 0) {
+                    Arc::new(Int8Array::from_iter(
+                        kinds.iter().map(|kind| kind.map(|kind| kind & 3)),
+                    )) as ArrayRef
+                } else {
+                    column.clone()
+                }
             } else if let Some(child) = column.as_any().downcast_ref::<StructArray>() {
                 if represented_string(child.data_type())
                     || row_binary_field(child.data_type()).is_some()
@@ -1283,7 +1296,7 @@ pub extern "system" fn Java_tech_streamfusion_Native_flinkBinaryRows<'local>(
     })
 }
 
-/// Canonicalize the decodable transport around authoritative ROW bytes before an OVER key codec.
+/// Canonicalize the decodable transport around authoritative ROW bytes before a state key codec.
 pub(crate) fn canonical_stock_row_key_batch(
     batch: RecordBatch,
     key_columns: &[usize],
@@ -1428,7 +1441,7 @@ pub(crate) fn represented_row_key_fixture(count: usize, binary: bool, time: i64)
             Arc::new(Int64Array::from_iter_values(0..count as i64)),
             strings,
             Arc::new(BinaryArray::from_iter(bytes)),
-            Arc::new(Int8Array::from(vec![2; count])),
+            Arc::new(Int8Array::from(vec![if binary { 6 } else { 2 }; count])),
         ],
         None,
     ));
@@ -1438,4 +1451,50 @@ pub(crate) fn represented_row_key_fixture(count: usize, binary: bool, time: i64)
         ("v", Arc::new(Int64Array::from_iter_values(0..count as i64))),
     ])
     .unwrap()
+}
+
+#[cfg(test)]
+mod row_transport_tests {
+    use super::*;
+
+    #[test]
+    fn row_runtime_classes_do_not_split_stock_binary_keys() {
+        let descriptor = [i32::MIN, -1, -1, -1];
+        let logical = canonical_stock_row_key_batch(
+            represented_row_key_fixture(3, false, 0),
+            &[0],
+            &descriptor,
+        )
+        .unwrap();
+        let converter = key_row_converter(&[logical.column(0)]);
+        let expected = converter
+            .convert_columns(&[logical.column(0).clone()])
+            .unwrap();
+        for transport in [0, 4, 8, 16, 24] {
+            let input = represented_row_key_fixture(3, true, 0);
+            let row = input
+                .column(0)
+                .as_any()
+                .downcast_ref::<StructArray>()
+                .unwrap();
+            let mut children = row.columns().to_vec();
+            let kind = nested_row_kind_index(row.fields()).unwrap();
+            children[kind] = Arc::new(Int8Array::from(vec![2 | transport; 3]));
+            let mut columns = input.columns().to_vec();
+            columns[0] = Arc::new(StructArray::new(row.fields().clone(), children, None));
+            let input = RecordBatch::try_new(input.schema(), columns).unwrap();
+            let canonical = canonical_stock_row_key_batch(input, &[0], &descriptor).unwrap();
+            let actual = converter
+                .convert_columns(&[canonical.column(0).clone()])
+                .unwrap();
+            for index in 0..3 {
+                assert_eq!(expected.row(index).data(), actual.row(index).data());
+            }
+            let mut keys = BinaryRowBatchEncoder::new(&canonical, &[0], &descriptor);
+            let mut original = BinaryRowBatchEncoder::new(&logical, &[0], &descriptor);
+            for index in 0..3 {
+                assert_eq!(original.encode(index), keys.encode(index));
+            }
+        }
+    }
 }

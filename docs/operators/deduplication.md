@@ -257,6 +257,11 @@ canonical window-selection contract or new input semantics is introduced.
 
 ## Buffered ROW-key representation consistency awaiting qualification
 
+Key normalization also removes Arrow-only ROW runtime-class flags while retaining logical row
+kinds and authoritative stock binary bytes. Matching generic, binary and nested-row classes must
+therefore address the same emitted marker and pending winner. The shared native fixture now
+emits actual Java class flags; this correction remains pending both-release execution.
+
 Stock-bound buffered keep-first keys normalize their transient Arrow representation before
 decodable row encoding: every non-NULL ROW has its original or stock-encoded owned bytes,
 while redundant nested ownership and string caches do not distinguish the same stock key.
