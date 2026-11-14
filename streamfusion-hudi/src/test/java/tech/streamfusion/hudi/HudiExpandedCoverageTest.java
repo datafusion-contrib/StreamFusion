@@ -179,6 +179,73 @@ class HudiExpandedCoverageTest {
   }
 
   @Test
+  void terminalRankAndKeepLastBatchButWatermarkKeepFirstDoesNot() throws Exception {
+    var seed = environment();
+    String source =
+        "CREATE TABLE timed (id BIGINT,ts TIMESTAMP(3),WATERMARK FOR ts AS ts"
+            + " - INTERVAL '1' SECOND) WITH ("
+            + watermarkOptions("rank_input", true)
+            + ")";
+    seed.executeSql(source);
+    seed.executeSql(
+            "INSERT INTO timed VALUES (1,TIMESTAMP '2026-01-01 00:00:00'),"
+                + "(2,TIMESTAMP '2026-01-01 00:00:10'),(3,TIMESTAMP '2026-01-01 00:00:05')")
+        .await();
+    for (boolean miniBatch : List.of(false, true)) {
+      for (String ordering : List.of("id DESC", "ts DESC", "ts ASC")) {
+        var results = new ArrayList<List<String>>();
+        for (boolean nativeEngine : List.of(false, true)) {
+          var sql = environment();
+          var config = sql.getConfig().getConfiguration();
+          config.setInteger("table.exec.resource.default-parallelism", 1);
+          config.setString("table.exec.mini-batch.enabled", Boolean.toString(miniBatch));
+          if (miniBatch) {
+            config.setString("table.exec.mini-batch.allow-latency", "1 s");
+            config.setString("table.exec.mini-batch.size", "100");
+          }
+          sql.executeSql(source);
+          String name = "rank_" + ordering.replace(' ', '_') + "_" + miniBatch + "_" + nativeEngine;
+          String ddl =
+              "CREATE TABLE rank_result (gid BIGINT,id BIGINT,ts TIMESTAMP(3),"
+                  + "PRIMARY KEY(gid) NOT ENFORCED) WITH ('connector'='hudi','path'='"
+                  + temporary.resolve(name).toUri()
+                  + "','table.type'='MERGE_ON_READ',"
+                  + "'write.operation'='upsert','write.tasks'='1','read.tasks'='1',"
+                  + "'read.source-v2.enabled'='true','metadata.enabled'='false','index.type'='BUCKET',"
+                  + "'hoodie.bucket.index.num.buckets'='1','write.precombine'='true',"
+                  + "'hoodie.write.record.merge.mode'='COMMIT_TIME_ORDERING',"
+                  + "'hoodie.logfile.data.block.format'='parquet','compaction.async.enabled'='false',"
+                  + "'compaction.schedule.enabled'='false')";
+          sql.executeSql(ddl);
+          var scan = nativeEngine ? NativePlanner.install(sql) : null;
+          String insert =
+              "INSERT INTO rank_result SELECT gid,id,ts FROM (SELECT CAST(MOD(id,2) AS BIGINT) AS"
+                  + " gid,id,ts,ROW_NUMBER() OVER (PARTITION BY MOD(id,2) ORDER BY "
+                  + ordering
+                  + ") AS r FROM timed) WHERE r=1";
+          if (nativeEngine) {
+            String plan = sql.explainSql(insert);
+            assertTrue(plan.contains("NativeHudiSource"), plan + scan.explainSummary());
+            assertTrue(plan.contains("NativeHudiSink"), plan + scan.explainSummary());
+            assertTrue(
+                plan.contains(
+                    ordering.startsWith("id") ? "NativeColumnarTopN" : "NativeDeduplicate"),
+                plan);
+            assertEquals(
+                !ordering.equals("ts ASC"), plan.contains("watermarkGranularity=[batch]"), plan);
+          }
+          sql.executeSql(insert).await();
+          var reader = environment();
+          reader.executeSql(ddl);
+          results.add(read(reader, "rank_result"));
+        }
+        assertEquals(2, results.get(0).size());
+        assertEquals(results.get(0), results.get(1), ordering + " miniBatch=" + miniBatch);
+      }
+    }
+  }
+
+  @Test
   void fourMorWritersUseHudiPartitionRoutingAndRustLogsAcrossCommits() throws Exception {
     var sql = environment();
     String schema =

@@ -40,8 +40,10 @@ Intermediate emissions move to batch boundaries because this proven downstream
 path cannot observe their position. Append Hudi sinks also permit native exchanges,
 mini-batch assigners and inner joins whose two inputs are insert-only.
 For Hudi MOR sinks explicitly using commit-time
-ordering and precombine, this proof also crosses native exchanges, mini-batch assigners, regular joins
-and non-windowed aggregates without user functions. Event-time ordering,
+ordering and precombine, this proof also crosses native exchanges, mini-batch
+assigners, regular joins, non-windowed aggregates/ranking and deduplication that
+does not observe watermarks. User functions and rowtime keep-first deduplication
+retain their original boundaries. Event-time ordering,
 precombine-disabled writes, other operators, unknown Calc programs and
 `CURRENT_WATERMARK` retain every original eager boundary.
 

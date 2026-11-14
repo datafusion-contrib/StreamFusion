@@ -366,7 +366,7 @@ class NexmarkHudiBenchmark {
         assertTrue(plan.contains("NativeHudiSink"), plan + "\n" + scan.explainSummary());
         assertFalse(plan.contains("RowDataToArrow"), plan);
         assertFalse(plan.contains("ArrowToRow"), plan);
-        if (List.of("q3", "q4", "q20", "q23").contains(query.label))
+        if (List.of("q3", "q4", "q9", "q18", "q19", "q20", "q23").contains(query.label))
           assertTrue(plan.contains("watermarkGranularity=[batch]"), plan);
       }
       var opened = new java.util.concurrent.atomic.AtomicBoolean();
@@ -383,6 +383,8 @@ class NexmarkHudiBenchmark {
               ? NexmarkMatrixBenchmark.engagementWatcher(
                   opened, () -> databaseOpened(stateDirectory))
               : null;
+      if ("true".equals(System.getenv("SF_HUDI_PROFILE")))
+        System.out.printf("[hudi-profile] execute %s engine=%s%n", query.label, engine);
       double milliseconds;
       double wallMilliseconds;
       var startedAt = java.time.Instant.now();
