@@ -135,6 +135,7 @@ nav:
       - Batch aggregate comparisons: benchmarks/batch-aggregates.md
       - Batch grouped aggregates: benchmarks/batch-grouped-aggregates.md
       - TPC-H batch workload: benchmarks/tpch.md
+      - Bounded Paimon: benchmarks/paimon-batch.md
       - Native Criterion suites: benchmarks/native-criterion.md
       - AppendFast Top-1: benchmarks/append-top1.md
       - Performance audit reproduction: benchmarks/performance-audit.md

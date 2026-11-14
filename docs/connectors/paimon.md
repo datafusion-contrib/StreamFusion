@@ -1,7 +1,7 @@
 # Apache Paimon
 
 **Status:** experimental. The optional `streamfusion-paimon` module accelerates streaming
-`SELECT` reads and `INSERT INTO` jobs on Paimon **append-only tables** and **primary-key tables with fixed,
+and bounded batch `SELECT` reads and `INSERT INTO` jobs on Paimon **append-only tables** and **primary-key tables with fixed,
 dynamic, or postpone buckets** on published Paimon `2.1.0` for Flink 2.2 and `2.0.0` for Flink 1.18.
 The separate [Paimon 1.0.0 adapter](#paimon-100-on-flink-118) targets Flink 1.18.
 Paimon keeps every table-level responsibility:
@@ -23,6 +23,48 @@ INT64 microseconds for 4–6, and INT96 for 7–9. Mixed-precision schemas retai
 physical type and field ID. ORC preserves the nanosecond remainder and the stock writer's
 historical calendar and LTZ rules; its existing UTC-JVM requirement still applies.
 Native source and snapshot-reader admission remains limited to precision 6.
+
+## Bounded batch source and sink
+
+Batch reads support partitioned and unpartitioned append tables and primary-key snapshots.
+Primary-key snapshots do not require a changelog producer. The bounded source keeps the
+exact released Paimon source as its enumerator delegate, preserving partition predicates,
+snapshot and time-travel choices, split assignment, and checkpoint serialization. Native and
+Java fallback decoders use the same projection and logical-row offsets as the streaming reader.
+Batch output omits the streaming row-kind sidecar after snapshot materialization.
+Execution mode determines this choice: streaming scans stopped by `scan.bounded.watermark`
+retain their changelog sidecar, including across split checkpoint/recovery.
+Snapshot admission checks the data-file format; unused streaming changelog-format settings
+do not impose an ORC module or timezone requirement on Parquet snapshots.
+
+The optional connector boundary is independent of batch compute admission: a plain `SELECT`,
+an unsupported host computation, and a direct table copy can still use native file reading or
+writing. Host operators receive ordinary row boundaries; admitted native computation and
+native sinks exchange Arrow batches. Reused native sources retain buffer views for each consumer.
+
+Batch and streaming sinks share the table, type, format, merge-engine and constraint admission
+rules and the Arrow routing/writer topology. Bounded writers retain Paimon's end-of-input commit
+protocol and bounded compaction mode. Dynamic buckets retain their committed key index across
+jobs. Postpone tables use the released bounded fixed-bucket protocol by default, preserving each
+partition's known bucket count; `postpone.batch-write-fixed-bucket=false` selects staging writes.
+Configured batch clustering retains the stock Paimon sorting and sink topology.
+Append routing preserves row-level round-robin distribution across the configured writers,
+including when the input has only one Arrow batch. Unexpected retract or update row kinds
+retain Paimon's append-only writer error instead of being discarded during routing.
+Unspecified writer parallelism resolves through Flink's execution environment and configured
+default before the native router assigns channels.
+
+Continuous tails, periodic watermarks and consumer-retention cursors apply to streaming jobs.
+Batch reads retain the other source type, format, option and split-level fallbacks below.
+`INSERT OVERWRITE` retains the stock sink in both execution modes. SQL `DELETE` and `UPDATE`
+also retain the stock sink, including Flink's row-kind setter and required-column handling;
+snapshot reads feeding these statements can still use the native source.
+Privilege-protected primary-key tables retain the stock sink: native sequence initialization
+currently scans committed bucket metadata and must not add a `SELECT` privilege requirement
+to an `INSERT`-only user. Paimon's stock writer preserves its original privilege checks.
+
+The [bounded Paimon benchmarks](../benchmarks/paimon-batch.md) describe complete connector copies
+and the unchanged TPC-H workload with committed Paimon outputs.
 
 ## Streaming source
 
@@ -423,12 +465,12 @@ streamfusion-paimon -am test -Ppaimon,bench -Dtest=PaimonConsumerBenchmark
 
 ### Source admission and fallbacks
 
-Only streaming data-table reads enter this path. It uses the sink's supported value types below,
+Bounded and streaming data-table reads use the sink's supported value types below,
 except that timestamps remain limited to precision 6, including inside nested values.
 These configurations retain the stock
 source at planning time:
 
-- Primary-key tables without a changelog producer, table/changelog formats without an installed native Parquet or ORC module, thin data
+- Streaming primary-key tables without a changelog producer, table/changelog formats without an installed native Parquet or ORC module, thin data
   files, data evolution, row tracking, chain tables, query authorization, and exposing internal
   key-value sequence numbers.
 - Nested subfield pruning, zero-column projections, metadata columns, pushed limits/aggregates,
@@ -1562,13 +1604,18 @@ product retractions; Paimon 2.0 on Flink 1.18 keeps checked integer arithmetic, 
 writes reproduce 1.0's historical `java.sql.Timestamp` calendar conversion for both
 TIMESTAMP and TIMESTAMP_LTZ, while retaining timestamp-instant physical storage for LTZ.
 Field defaults retain the stock source because Paimon 1.0 applies them on reads,
-after merging and schema evolution. Paimon 1.0 has no
+after merging and schema evolution. Partial-update sequence groups and lookup partial updates
+with `partial-update.remove-record-on-delete=true` also retain the stock source in both modes:
+the released Rust reader validates sequence groups differently from 1.0, and lookup delete
+removal retains both the released source and writer to preserve tombstone-file compatibility.
+Paimon 1.0 has no
 writer-metadata handoff; native Parquet floating bounds are omitted conservatively
 so NaNs cannot cause files to be incorrectly pruned.
 
 The profile is opt-in and pins **1.0.0**, not the broader 1.x release family. The
 source and sink admission rules above apply, with the release differences listed
-here. Batch SQL keeps Paimon's planner and writer. Unsupported combinations keep
+here. Bounded batch SQL uses the shared native source/sink boundary with this adapter's
+existing bucket and type admission. Unsupported combinations keep
 the stock connector; passing upstream tests does not imply every query is native.
 
 ### Reproducing compatibility checks

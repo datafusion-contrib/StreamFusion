@@ -34,6 +34,8 @@ import tech.streamfusion.paimon.NativePaimonBucketAssigner;
 import tech.streamfusion.paimon.NativePaimonBucketSink;
 import tech.streamfusion.paimon.NativePaimonDynamicPartitionOperator;
 import tech.streamfusion.paimon.NativePaimonLocalMergeOperator;
+import tech.streamfusion.paimon.NativePaimonPostponeFixedBucketSink;
+import tech.streamfusion.paimon.NativePaimonPostponeFixedRouter;
 import tech.streamfusion.paimon.NativePaimonPostponeSink;
 import tech.streamfusion.planner.common.NativePlanDetails;
 
@@ -71,6 +73,14 @@ public final class NativePaimonSinkExecNode extends ExecNodeBase<Object>
       PlannerBase planner, ExecNodeConfig config) {
     Transformation<ArrowBatch> input =
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
+    return translate(planner, input, planned, getDescription());
+  }
+
+  static Transformation<Object> translate(
+      PlannerBase planner,
+      Transformation<ArrowBatch> input,
+      PaimonSinkMatcher.Planned planned,
+      String description) {
     FileStoreTable table = planned.table;
     if (java.util.Arrays.stream(planned.notNullFieldNames).anyMatch(name -> name != null)) {
       input =
@@ -95,6 +105,11 @@ public final class NativePaimonSinkExecNode extends ExecNodeBase<Object>
     boolean fixedBucket = table.bucketMode() == BucketMode.HASH_FIXED;
     boolean dynamicBucket = table.bucketMode() == BucketMode.HASH_DYNAMIC;
     boolean postpone = table.bucketMode() == BucketMode.POSTPONE_MODE;
+    boolean boundedFixedPostpone =
+        postpone
+            && !org.apache.paimon.flink.sink.FlinkSink.isStreaming(
+                new DataStream<>(planner.getExecEnv(), input))
+            && table.coreOptions().postponeBatchWriteFixedBucket();
     boolean postponeByPartition =
         postpone
             && !table.partitionKeys().isEmpty()
@@ -105,6 +120,15 @@ public final class NativePaimonSinkExecNode extends ExecNodeBase<Object>
             .getOptional(FlinkConnectorOptions.SINK_PARALLELISM)
             .orElse(null);
     int writerParallelism = parallelism == null ? input.getParallelism() : parallelism;
+    if (parallelism == null && writerParallelism <= 0) {
+      writerParallelism = planner.getExecEnv().getParallelism();
+      if (writerParallelism <= 0)
+        writerParallelism =
+            planner
+                .getTableConfig()
+                .getConfiguration()
+                .get(org.apache.flink.configuration.CoreOptions.DEFAULT_PARALLELISM);
+    }
     Integer configuredAssigners = table.coreOptions().dynamicBucketAssignerParallelism();
     int assignerParallelism = configuredAssigners == null ? writerParallelism : configuredAssigners;
     Integer initialBuckets = table.coreOptions().dynamicBucketInitialBuckets();
@@ -117,7 +141,7 @@ public final class NativePaimonSinkExecNode extends ExecNodeBase<Object>
     if (dynamicBucket) {
       routeDestinations = assignerParallelism;
       routeAssigners = numAssigners;
-    } else if (postpone && !postponeByPartition) {
+    } else if (postpone && !boundedFixedPostpone && !postponeByPartition) {
       routeDestinations = writerParallelism;
       routeAssigners = 0;
     }
@@ -133,17 +157,38 @@ public final class NativePaimonSinkExecNode extends ExecNodeBase<Object>
                     planned.bucketColumns,
                     planned.bucketTimestampPrecisions,
                     routeDestinations,
-                    planned.primaryKey,
+                    true,
                     routeAssigners)),
             BucketedArrowBatchTypeInformation.INSTANCE,
             input.getParallelism(),
             false);
-    route.setDescription(getDescription());
+    route.setDescription(description);
     DataStream<BucketedArrowBatch> routed = new DataStream<>(planner.getExecEnv(), route);
     int partitionArity = table.partitionKeys().size();
 
     DataStreamSink<?> end;
-    if (dynamicBucket) {
+    if (boundedFixedPostpone) {
+      var knownBuckets = org.apache.paimon.table.PostponeUtils.getKnownNumBuckets(table);
+      int defaultBuckets =
+          Math.min(
+              writerParallelism, table.coreOptions().postponeBatchWriteFixedBucketMaxParallelism());
+      var assigned =
+          routed.transform(
+              "native-paimon-postpone-fixed-bucket-route",
+              BucketedArrowBatchTypeInformation.INSTANCE,
+              new NativePaimonPostponeFixedRouter(
+                  knownBuckets,
+                  defaultBuckets,
+                  partitionArity,
+                  planned.bucketColumns,
+                  planned.bucketTimestampPrecisions));
+      var partitioned =
+          FlinkStreamPartitioner.partition(
+              assigned, BucketedArrowBatchChannelComputer.byBucket(partitionArity), parallelism);
+      end =
+          new NativePaimonPostponeFixedBucketSink(table, knownBuckets, defaultBuckets)
+              .sinkFrom(partitioned);
+    } else if (dynamicBucket) {
       String commitUser =
           org.apache.paimon.CoreOptions.createCommitUser(table.coreOptions().toConfiguration());
       DataStream<BucketedArrowBatch> toAssigners =
@@ -214,10 +259,24 @@ public final class NativePaimonSinkExecNode extends ExecNodeBase<Object>
                 .name("Strip Channel")
                 .setParallelism(writerParallelism);
       }
+      if (table.coreOptions().partitionSinkStrategy() == PartitionSinkStrategy.NONE) {
+        var assigned =
+            routed.transform(
+                "native-paimon-round-robin-route",
+                BucketedArrowBatchTypeInformation.INSTANCE,
+                new tech.streamfusion.paimon.NativePaimonRoundRobinOperator(writerParallelism));
+        shuffled =
+            FlinkStreamPartitioner.partition(
+                    assigned, BucketedArrowBatchChannelComputer.byChannel(), parallelism)
+                .map(batch -> new BucketedArrowBatch(batch.root(), batch.partition(), 0))
+                .returns(BucketedArrowBatchTypeInformation.INSTANCE)
+                .name("Strip Channel")
+                .setParallelism(writerParallelism);
+      }
       end = new NativePaimonAppendSink(table, parallelism).sinkFrom(shuffled);
     }
-    end.name(NativePlanDetails.name("NativeSink", getDescription()));
-    end.getTransformation().setDescription(getDescription());
+    end.name(NativePlanDetails.name("NativeSink", description));
+    end.getTransformation().setDescription(description);
     return (Transformation<Object>) (Transformation<?>) end.getTransformation();
   }
 }

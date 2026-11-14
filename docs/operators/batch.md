@@ -34,7 +34,10 @@ with those operations inside the same columnar island. Simple DATE comparisons
 between direct columns/literals use existing DataFusion Date32 comparisons,
 avoiding generated Java predicate bridges. Computed temporal operands retain
 their existing evaluation rules. Every UNION ALL branch must
-meet this rule, unless a qualifying Calc or sort sits above the union.
+meet this rule, unless a qualifying Calc or sort sits above the union. An admitted native
+Paimon batch source also qualifies its branch: its input is already Arrow and pays no
+row-to-Arrow source conversion. Connector substitution remains independent when computation
+retains stock Flink; see [Paimon bounded execution](../connectors/paimon.md#bounded-batch-source-and-sink).
 
 Sort keys may be TINYINT, SMALLINT, INTEGER, BIGINT, STRING/CHAR, BOOLEAN,
 DECIMAL (precision 1–38) or DATE, with any verified combination
@@ -105,7 +108,7 @@ still carry a DISTINCT flag, grouping sets/Expand and unsupported key types reta
 whole-query stock fallback. Complete standalone GROUP BY and DISTINCT comparisons
 are recorded separately from global-reduction and SHA2-pipeline measurements.
 
-Cheap standalone scalar pipelines retain stock Flink with the reason:
+Cheap standalone scalar pipelines with rowwise sources retain stock Flink with the reason:
 
 ```text
 batch Calc: standalone scalar pipeline has no verified speedup
@@ -216,8 +219,8 @@ arbitrary batch SQL or larger-data performance guarantee. See the
 - Join predicates requiring unverified JVM/string/collection representations, mixed
   keyed NULL equality, preserved-side broadcasts and external hash-table spilling.
 - Expand/UNNEST/correlate, nested boundary types and set-operation plans outside UNION ALL.
-- Native bounded connector admission beyond the documented filesystem Parquet
-  whitelist, including batch Iceberg/Paimon substitution, and native batch sinks.
+- Native bounded connector admission beyond the documented filesystem Parquet and
+  Paimon whitelists, including batch Iceberg substitution and other native batch sinks.
 - Native compiled batch plans. The deployed batch planner preserves stock compilation;
   Flink 1.18 keeps its own unsupported compiled-plan behavior.
 - Python, pattern matching, async/model functions and other unrecognized interior nodes.

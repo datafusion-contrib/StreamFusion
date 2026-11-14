@@ -292,8 +292,20 @@ Streaming inserts covered by the [Paimon connector whitelist](connectors/paimon.
 can take the native sink, including coordinated writers, coordinator commits, dynamic
 partition routing, and automatic append-buffer spilling. The regular StreamFusion SQL parity
 suite forces Arrow spilling and checkpoint failure/recovery; the unchanged upstream streaming
-tests exercise the surrounding writer lifecycle. Batch inserts,
-unsupported primary-key options, and compaction rewrites use stock Paimon. `CoordinatorCommitITCase`
+tests exercise the surrounding writer lifecycle. Bounded `INSERT INTO` jobs use the shared
+native connector boundaries independently of batch compute admission. Unsupported primary-key
+options retain stock Paimon. Flink 1.18 also runs the released shared
+`AppendOnlyTableITCase` and `BatchFileStoreITCase` classes, covering bounded reads, snapshots,
+time travel, partition pruning, pushdowns and append writes alongside its streaming/recovery
+selection and complete version-specific module. Each shared class is required in the result
+summary, so an empty selection cannot pass. Three Paimon 2.0 batch fixtures remain explicit
+stock-host exclusions in `paimon-flink118-shared-tests.txt`: `testIgnoreDelete` and
+`testIgnoreUpdateBeforeWithRowKindField` use named procedure arguments unsupported by Flink 1.18;
+`testNoOverwriteUpgradeWhenFilesOverlapped` also fails its deletion-vector visibility assertion
+on the unchanged stock runtime, before reaching its named procedure call. Native-disabled
+controls reproduced all three failures. The other 70 batch-source cases and all 26 shared
+append-only cases run unchanged, without skips. Flink 2.2 runs the complete classes.
+`CoordinatorCommitITCase`
 checks removal of the global committer, coordinator metrics, committed rows, and snapshot watermark
 parity for active and idle inputs. Because
 Surefire appends StreamFusion's classpath in no fixed order, the agent also resolves Paimon's
@@ -1458,6 +1470,11 @@ assertions pass. Its labels describe:
   The classifier checks final root operators, not just positive substitution counts. One unsupported
   interior operator falls back the entire query. This is planner evidence, not a throughput
   measurement or a new per-query native-work contract. EXPLAIN-only plans earn no execution credit.
+  Bounded optional connector boundaries are admitted separately from SQL computation. A native
+  source/sink around host computation remains partial SQL coverage, without being an interior
+  compute-island violation. The retained discovery scan underneath a native bounded source is
+  not counted as an active host reader. Batch observations record the final roots after optional
+  connector lowering, once per optimizer call.
 - **not accelerated**: batch, deliberately preserved stock plans, source/constant-only plans,
   validation/API fixtures without an execution plan, upstream skips/failures, or documented non-goals.
 - **should be accelerated**: an in-scope streaming coverage gap, categorized by its recorded

@@ -145,8 +145,7 @@ public final class FlinkCompat {
   }
 
   public static java.util.List<org.apache.flink.table.planner.plan.abilities.sink.SinkAbilitySpec>
-      sinkAbilities(
-          org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink sink) {
+      sinkAbilities(org.apache.flink.table.planner.plan.nodes.calcite.Sink sink) {
     return java.util.Arrays.asList(sink.abilitySpecs());
   }
 

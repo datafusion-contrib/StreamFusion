@@ -19,6 +19,7 @@ public final class NativePaimonBucketSink extends FlinkWriteSink<BucketedArrowBa
   private static final long serialVersionUID = 1L;
 
   private final boolean primaryKey;
+  private boolean streaming = true;
 
   public NativePaimonBucketSink(FileStoreTable table, boolean primaryKey) {
     super(table, null);
@@ -26,9 +27,18 @@ public final class NativePaimonBucketSink extends FlinkWriteSink<BucketedArrowBa
   }
 
   @Override
+  public org.apache.flink.streaming.api.datastream.DataStream<Committable> doWrite(
+      org.apache.flink.streaming.api.datastream.DataStream<BucketedArrowBatch> input,
+      String commitUser,
+      Integer parallelism) {
+    streaming = org.apache.paimon.flink.sink.FlinkSink.isStreaming(input.getExecutionEnvironment());
+    return super.doWrite(input, commitUser, parallelism);
+  }
+
+  @Override
   protected OneInputStreamOperatorFactory<BucketedArrowBatch, Committable>
       createWriteOperatorFactory(StoreSinkWrite.Provider writeProvider, String commitUser) {
-    writeProvider = PaimonCompactionProvider.wrap(table, writeProvider, true, false, false);
+    writeProvider = PaimonCompactionProvider.wrap(table, writeProvider, streaming, false, false);
     StoreSinkWrite.Provider provider =
         primaryKey
             ? keyValueWriteProvider(writeProvider)

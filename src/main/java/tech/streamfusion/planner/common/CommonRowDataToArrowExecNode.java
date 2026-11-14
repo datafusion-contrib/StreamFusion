@@ -49,6 +49,10 @@ public class CommonRowDataToArrowExecNode extends ExecNodeBase<ArrowBatch>
     fileSource = group;
   }
 
+  public boolean hasSourceConversion() {
+    return fileSource != null;
+  }
+
   /** A mode-specific source lowering may replace the ordinary row transpose. */
   @FunctionalInterface
   public interface SourceConversion {

@@ -9,7 +9,11 @@ import org.apache.flink.table.catalog.CatalogBaseTable;
 import org.apache.flink.table.catalog.ContextResolvedTable;
 import org.apache.flink.table.catalog.ResolvedCatalogBaseTable;
 import org.apache.flink.table.planner.plan.abilities.sink.OverwriteSpec;
+import org.apache.flink.table.planner.plan.abilities.sink.RowLevelDeleteSpec;
+import org.apache.flink.table.planner.plan.abilities.sink.RowLevelUpdateSpec;
 import org.apache.flink.table.planner.plan.abilities.sink.SinkAbilitySpec;
+import org.apache.flink.table.planner.plan.nodes.calcite.Sink;
+import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalSink;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalRel;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink;
 import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
@@ -85,13 +89,16 @@ final class PaimonSinkMatcher {
     return sink.tableSink() instanceof FlinkTableSink;
   }
 
-  static Planned plan(StreamPhysicalSink sink) {
+  static Planned plan(Sink sink) {
     for (SinkAbilitySpec ability : tech.streamfusion.compat.FlinkCompat.sinkAbilities(sink)) {
       if (ability instanceof OverwriteSpec) {
         return Planned.fallback("INSERT OVERWRITE is not supported");
       }
+      if (ability instanceof RowLevelDeleteSpec || ability instanceof RowLevelUpdateSpec) {
+        return Planned.fallback("row-level mutations retain Flink's row-kind setter");
+      }
     }
-    if (sink.upsertMaterialize()) {
+    if (sink instanceof StreamPhysicalSink && ((StreamPhysicalSink) sink).upsertMaterialize()) {
       return Planned.fallback(
           "an upsert-materialized sink (SinkUpsertMaterializer) is not natively reproduced");
     }
@@ -100,10 +107,20 @@ final class PaimonSinkMatcher {
       return Planned.fallback("the sink is not a Paimon data table");
     }
     boolean primaryKey = !table.primaryKeys().isEmpty();
+    if (primaryKey
+        && table
+            .store()
+            .getClass()
+            .getName()
+            .equals("org.apache.paimon.privilege.PrivilegedFileStore")) {
+      return Planned.fallback("privilege-protected primary-key writes retain the stock writer");
+    }
     if (!primaryKey && !PaimonAppendSequence.supported()) {
       return Planned.fallback("the released append bundle sequence contract is unavailable");
     }
-    if (!primaryKey && !ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) sink.getInput())) {
+    if (!primaryKey
+        && sink instanceof StreamPhysicalSink
+        && !ChangelogPlanUtils.isInsertOnly((StreamPhysicalRel) sink.getInput())) {
       return Planned.fallback("an append table takes an insert-only input");
     }
     CoreOptions coreOptions = table.coreOptions();
@@ -114,6 +131,11 @@ final class PaimonSinkMatcher {
       return Planned.fallback("external log systems require the stock Paimon 1.0 sink");
     }
     BucketMode bucketMode = table.bucketMode();
+    if (sink instanceof BatchPhysicalSink
+        && bucketMode == BucketMode.BUCKET_UNAWARE
+        && !table.options().getOrDefault("clustering.columns", "").trim().isEmpty()) {
+      return Planned.fallback("bounded clustering retains Paimon's stock sorting topology");
+    }
     if (bucketMode != BucketMode.HASH_FIXED
         && bucketMode != BucketMode.BUCKET_UNAWARE
         && bucketMode != BucketMode.HASH_DYNAMIC) {
@@ -199,6 +221,10 @@ final class PaimonSinkMatcher {
    */
   private static String primaryKeyFallbackReason(
       FileStoreTable table, CoreOptions coreOptions, Options options) {
+    if (coreOptions.mergeEngine() == CoreOptions.MergeEngine.PARTIAL_UPDATE
+        && coreOptions.changelogProducer() == ChangelogProducer.LOOKUP
+        && options.get(CoreOptions.PARTIAL_UPDATE_REMOVE_RECORD_ON_DELETE))
+      return "Paimon 1.0 lookup delete-removal writes retain the stock writer";
     String mergeFallback = PaimonMergeOptions.unsupportedReason(table);
     if (mergeFallback != null) {
       return mergeFallback;
@@ -240,7 +266,7 @@ final class PaimonSinkMatcher {
     return reason;
   }
 
-  private static FileStoreTable resolveTable(StreamPhysicalSink sink) {
+  private static FileStoreTable resolveTable(Sink sink) {
     ContextResolvedTable resolved = sink.contextResolvedTable();
     ResolvedCatalogBaseTable<?> resolvedTable = resolved.getResolvedTable();
     CatalogBaseTable origin = resolvedTable.getOrigin();

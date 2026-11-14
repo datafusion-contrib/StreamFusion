@@ -75,6 +75,13 @@ public class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext>
   }
 
   List<RelNode> optimizeRoots(List<RelNode> roots) {
+    return optimizeRoots(roots, node -> false, java.util.function.UnaryOperator.identity());
+  }
+
+  List<RelNode> optimizeRoots(
+      List<RelNode> roots,
+      java.util.function.Predicate<RelNode> nativeSource,
+      java.util.function.UnaryOperator<List<RelNode>> connectorBoundaries) {
     reasons.clear();
     operators.clear();
     substitutions = 0;
@@ -102,7 +109,7 @@ public class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext>
         admitted = admit(candidate, true, expressions, sorts, aggregates, false);
         if (admitted
             && (!expressions.isEmpty() || !sorts.isEmpty() || !aggregates.isEmpty())
-            && !amortizesRowBoundaries(candidate, expressions, false, false, false))
+            && !amortizesRowBoundaries(candidate, expressions, false, false, false, nativeSource))
           admitted =
               decline(
                   sorts.keySet().stream().anyMatch(node -> node instanceof BatchPhysicalSortLimit)
@@ -125,7 +132,7 @@ public class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext>
               : root);
     }
     for (String reason : reasons) LOG.info("StreamFusion batch fallback: {}", reason);
-    return result;
+    return connectorBoundaries.apply(result);
   }
 
   private static boolean amortizesRowBoundaries(
@@ -133,7 +140,8 @@ public class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext>
       Map<RelNode, EncodedExpression> expressions,
       boolean qualified,
       boolean userFunction,
-      boolean joined) {
+      boolean joined,
+      java.util.function.Predicate<RelNode> nativeSource) {
     if (node instanceof BatchPhysicalJoinBase) {
       joined = true;
       qualified = true;
@@ -156,10 +164,10 @@ public class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext>
       qualified |= expression.nativeFunctionCalls().contains("SHA2");
       userFunction |= hasUserFunction((BatchPhysicalCalc) node);
     }
-    if (node.getInputs().isEmpty()) return qualified || userFunction;
+    if (node.getInputs().isEmpty()) return qualified || userFunction || nativeSource.test(node);
     for (RelNode input : node.getInputs()) {
-      if (!amortizesRowBoundaries(input, expressions, qualified, userFunction, joined))
-        return false;
+      if (!amortizesRowBoundaries(
+          input, expressions, qualified, userFunction, joined, nativeSource)) return false;
     }
     return true;
   }

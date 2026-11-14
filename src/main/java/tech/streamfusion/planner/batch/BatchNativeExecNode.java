@@ -38,6 +38,7 @@ final class BatchNativeExecNode<T> extends ExecNodeBase<T>
 
   boolean acceptsNativeFileSource() {
     return delegate instanceof CommonRowDataToArrowExecNode
+        && !((CommonRowDataToArrowExecNode) delegate).hasSourceConversion()
         && ((CommonRowDataToArrowExecNode) delegate).acceptsNativeFileSource();
   }
 

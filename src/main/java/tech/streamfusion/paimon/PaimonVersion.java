@@ -47,6 +47,14 @@ import org.apache.paimon.utils.StatsCollectorFactories;
 final class PaimonVersion {
   private PaimonVersion() {}
 
+  static org.apache.flink.api.connector.source.Source<
+          tech.streamfusion.operator.ArrowBatch,
+          org.apache.paimon.flink.source.FileStoreSourceSplit,
+          org.apache.paimon.flink.source.PendingSplitsCheckpoint>
+      withSourceLineage(NativePaimonSource source, FileStoreTable table) {
+    return PaimonApiCompat.withSourceLineage(source, table);
+  }
+
   static boolean compactionSumWraps() {
     return PaimonApiCompat.compactionSumWraps();
   }
