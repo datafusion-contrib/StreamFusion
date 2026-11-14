@@ -253,12 +253,13 @@ public final class CanonicalJobWorker {
             rightReady,
             limit,
             fixedConnectorParallelism);
-      table.executeSql(
-          "CREATE TABLE output_table (k BIGINT, n BIGINT, total BIGINT"
+      String outputColumns = Files.exists(root.resolve("output-columns.sql"))
+          ? Files.readString(root.resolve("output-columns.sql"))
+          : "k BIGINT, n BIGINT, total BIGINT"
               + (sinkMaterializer || Files.exists(root.resolve("upsert-sink"))
-                  ? ",PRIMARY KEY(k) NOT ENFORCED"
-                  : "")
-              + ") WITH ("
+                  ? ",PRIMARY KEY(k) NOT ENFORCED" : "");
+      table.executeSql(
+          "CREATE TABLE output_table (" + outputColumns + ") WITH ("
               + "'connector'='canonical-fixture','output'='"
               + sql(root.resolve("committed"))
               + "','upsert'='"

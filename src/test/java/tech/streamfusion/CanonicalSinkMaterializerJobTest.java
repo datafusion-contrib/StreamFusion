@@ -63,7 +63,7 @@ class CanonicalSinkMaterializerJobTest {
     } else assertFalse(Files.readString(switched.resolve("plan.json")).contains("tech.streamfusion"));
   }
 
-  private Path prepare(String name, String strategy, boolean inputKey, String uids,
+  Path prepare(String name, String strategy, boolean inputKey, String uids,
       String mode, boolean ordinary) throws Exception {
     var root = directory.resolve(name);
     Files.createDirectories(root);

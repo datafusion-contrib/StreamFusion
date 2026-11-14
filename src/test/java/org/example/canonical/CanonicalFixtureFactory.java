@@ -981,24 +981,28 @@ public final class CanonicalFixtureFactory
     }
   }
 
+  public static List<byte[]> committedRecords(Path directory) throws IOException {
+    List<byte[]> result = new ArrayList<>();
+    try (var files = Files.list(directory)) {
+      for (Path file : files
+          .filter(path -> path.getFileName().toString().startsWith("transaction-"))
+          .sorted().collect(java.util.stream.Collectors.toList())) {
+        WriterState state = new RowsSerializer().deserialize(1, Files.readAllBytes(file));
+        result.addAll(state.rows);
+      }
+    }
+    return result;
+  }
+
   public static List<String> committedRows(Path directory, RowType type) throws IOException {
     List<String> result = new ArrayList<>();
     RowDataSerializer serializer = new RowDataSerializer(type);
-    try (var files = Files.list(directory)) {
-      for (Path file :
-          files
-              .filter(path -> path.getFileName().toString().startsWith("transaction-"))
-              .sorted()
-              .collect(java.util.stream.Collectors.toList())) {
-        WriterState state = new RowsSerializer().deserialize(1, Files.readAllBytes(file));
-        for (byte[] bytes : state.rows) {
-          RowData row = serializer.deserialize(new DataInputDeserializer(bytes));
-          StringBuilder value = new StringBuilder(row.getRowKind().shortString());
-          for (int i = 0; i < row.getArity(); i++)
-            value.append('|').append(row.isNullAt(i) ? "null" : row.getLong(i));
-          result.add(value.toString());
-        }
-      }
+    for (byte[] bytes : committedRecords(directory)) {
+      RowData row = serializer.deserialize(new DataInputDeserializer(bytes));
+      StringBuilder value = new StringBuilder(row.getRowKind().shortString());
+      for (int i = 0; i < row.getArity(); i++)
+        value.append('|').append(row.isNullAt(i) ? "null" : row.getLong(i));
+      result.add(value.toString());
     }
     return result;
   }

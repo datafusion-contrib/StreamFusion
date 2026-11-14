@@ -40,7 +40,7 @@ public final class CanonicalRankScalarFixture {
     }
   }
 
-  static LogicalType type(String shape) {
+  public static LogicalType type(String shape) {
     switch (shape) {
       case "scalar-tinyint": return new TinyIntType();
       case "scalar-smallint": return new SmallIntType();
@@ -65,7 +65,7 @@ public final class CanonicalRankScalarFixture {
     }
   }
 
-  static Object value(String shape, Integer value) {
+  public static Object value(String shape, Integer value) {
     if (value == null) return null;
     switch (shape) {
       case "scalar-tinyint": return value.byteValue();

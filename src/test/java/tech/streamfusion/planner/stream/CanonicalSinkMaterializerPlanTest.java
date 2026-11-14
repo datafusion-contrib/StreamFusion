@@ -42,6 +42,28 @@ class CanonicalSinkMaterializerPlanTest {
   @MethodSource("cases")
   void stockSinkKeepsItsHelpersWhileNativeMaterializationBindsOriginalStateAndIdentity(
       String strategy, boolean compiled, String uids, boolean inputKey) throws Exception {
+    assertPlan(strategy, compiled, uids, inputKey, "BIGINT", "BIGINT");
+  }
+
+  static Stream<Arguments> typedCases() {
+    return tech.streamfusion.CanonicalTestMatrix.select(
+        tech.streamfusion.CanonicalMaterializerTypeFixture.shapes()
+            .flatMap(shape -> strategies().flatMap(strategy -> Stream.of(false, true)
+                .flatMap(compiled -> Stream.of(false, true)
+                    .map(inputKey -> Arguments.of(shape, strategy, compiled, inputKey))))));
+  }
+
+  @ParameterizedTest
+  @MethodSource("typedCases")
+  void scalarKeysAndExistingPayloadTypesBindTheirOriginalMaterializer(
+      String shape, String strategy, boolean compiled, boolean inputKey) throws Exception {
+    String payload = tech.streamfusion.CanonicalMaterializerTypeFixture.sql(shape);
+    assertPlan(strategy, compiled, "DISABLED", inputKey,
+        shape.startsWith("scalar-") ? payload : "BIGINT", payload);
+  }
+
+  private void assertPlan(String strategy, boolean compiled, String uids, boolean inputKey,
+      String keyType, String payloadType) throws Exception {
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", "true");
     config.setString("parallelism.default", "2");
@@ -52,10 +74,10 @@ class CanonicalSinkMaterializerPlanTest {
     config.setString("table.exec.state.ttl", "1000 ms");
     var table = NativePlannerTestEnvironment.create(config, CanonicalFixtureFactory.class);
     String path = directory.toString().replace("'", "''");
-    table.executeSql("CREATE TABLE materializer_input(k BIGINT NOT NULL,v BIGINT,n BIGINT"
+    table.executeSql("CREATE TABLE materializer_input(k " + keyType + " NOT NULL,v " + payloadType + ",n BIGINT"
         + (inputKey ? ",PRIMARY KEY(k,n) NOT ENFORCED" : "")
         + ") WITH ('connector'='canonical-fixture','input'='" + path + "/input')");
-    table.executeSql("CREATE TABLE materializer_output(k BIGINT,v BIGINT,n BIGINT,"
+    table.executeSql("CREATE TABLE materializer_output(k " + keyType + ",v " + payloadType + ",n BIGINT,"
         + "PRIMARY KEY(k) NOT ENFORCED) WITH ('connector'='canonical-fixture',"
         + "'output'='" + path + "/output','upsert'='true')");
     String query = "INSERT INTO materializer_output SELECT k,v,n FROM materializer_input";

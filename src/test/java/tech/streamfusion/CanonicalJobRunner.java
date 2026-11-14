@@ -195,6 +195,20 @@ class CanonicalJobRunner {
   void verifyJoinSwitch(
       Path baseline, Path switched, boolean nativeFirst, String backend, String mode, String family)
       throws Exception {
+    var type = RowType.of(new BigIntType(), new BigIntType(), new BigIntType());
+    verifyJoinSwitch(baseline, switched, nativeFirst, backend, mode, family,
+        root -> CanonicalFixtureFactory.committedRows(root.resolve("committed"), type));
+  }
+
+  @FunctionalInterface
+  interface CommittedRows {
+    List<String> read(Path root) throws Exception;
+  }
+
+  void verifyJoinSwitch(
+      Path baseline, Path switched, boolean nativeFirst, String backend, String mode, String family,
+      CommittedRows output)
+      throws Exception {
     var fixture = fixtureJar();
     if (Files.exists(baseline.resolve("same-cut-stock-reference")))
       runStockAtSavepointCuts(fixture, baseline, mode);
@@ -243,17 +257,11 @@ class CanonicalJobRunner {
         "suffix",
         3,
         nativeFirst ? backend : "hashmap");
-    var type = RowType.of(new BigIntType(), new BigIntType(), new BigIntType());
-    var expected =
-        CanonicalFixtureFactory.committedRows(baseline.resolve("committed"), type).stream()
-            .sorted()
-            .toArray();
+    var expected = output.read(baseline).stream().sorted().toArray();
     assertTrue(expected.length > 0);
     assertArrayEquals(
         expected,
-        CanonicalFixtureFactory.committedRows(switched.resolve("committed"), type).stream()
-            .sorted()
-            .toArray());
+        output.read(switched).stream().sorted().toArray());
     for (String stage : List.of("prefix", "middle")) {
       if (mode.equals("checkpoint") && stage.equals("prefix")) continue;
       var savepoint =

@@ -3743,11 +3743,16 @@ final class StockCompiledPlanLowering {
       return stock;
     var inputType = ((org.apache.flink.table.runtime.typeutils.InternalTypeInfo<?>)
         original.getOutputType()).toRowType();
-    if (inputType.getChildren().stream().anyMatch(type -> !type.is(LogicalTypeRoot.BIGINT)))
+    var materializerKeyType = ((org.apache.flink.table.runtime.typeutils.InternalTypeInfo<?>)
+        original.getStateKeyType()).toRowType();
+    if (!RowDataArrowConverter.supports(inputType)
+        || materializerKeyType.getChildren().stream()
+            .anyMatch(type -> type.is(LogicalTypeFamily.CONSTRUCTED)))
       return stock;
     int[] upsertKeys = definition.path("inputUpsertKey").isArray()
         ? reader.forType(int[].class).readValue(definition.path("inputUpsertKey")) : null;
-    if (upsertKeys != null && upsertKeys.length == 0) return stock;
+    if (upsertKeys != null
+        && (upsertKeys.length == 0 || !scalarFields(inputType, upsertKeys))) return stock;
     var operator = ((SimpleOperatorFactory<?>) original.getOperatorFactory()).getOperator();
     String strategy;
     long ttl;

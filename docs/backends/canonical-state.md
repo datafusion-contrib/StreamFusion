@@ -32,7 +32,7 @@ pages. Historical cohorts are not silently requalified against each newer librar
 | [Interval joins](../operators/joins/interval-join.md#complete-job-handoff-matrix) | Event/proctime state, four join kinds and selected complete-job/rescale matrices; nested binding awaiting qualification | Wider schemas, cleanup edges and remaining ordinary-SQL combinations |
 | [Temporal joins](../operators/joins/temporal-join.md#complete-job-handoff-matrix) | Qualified INNER/LEFT history/probe/timer state and complete jobs; nested binding awaiting qualification | Legacy proctime variant, wider schemas and commit-failure matrix |
 | [Event-time sort](../operators/event-time-sort.md#stock-compatible-canonical-interchange) | Automatic single ascending-rowtime contract and complete-job handoffs | Secondary sorting and wider schema/connector/failure/version matrices |
-| [Sink materialization](../operators/sink-upsert-materialize.md#canonical-interchange-qualification) | LEGACY contract on both releases; 2.2 VALUE/MAP/ADAPTIVE layouts; automatic BIGINT stock-sink binding awaiting qualification | Accelerated connector binding, wider types and complete new-job/writer-rescale qualification |
+| [Sink materialization](../operators/sink-upsert-materialize.md#canonical-interchange-qualification) | LEGACY contract on both releases; 2.2 VALUE/MAP/ADAPTIVE layouts; automatic typed-payload/scalar-key stock-sink binding awaiting qualification | Accelerated connector binding, constructed keys and complete new-job/writer-rescale qualification |
 | [Window joins](../operators/joins/window-join.md#stock-canonical-savepoint-interoperability) | Qualified event-time INNER/outer window layouts and complete jobs; nested binding awaiting qualification | Wider schemas/residuals and additional exchange/rescale combinations |
 
 ## Release parity and frozen scope
@@ -48,7 +48,8 @@ state to their own released stock runtime, including async native RocksDB captur
 claim a downgrade from a newer stock state format into an older release.
 
 The frozen sink-materializer cohort used explicit attachment on both lines. Resumed #569 work now
-connects automatic BIGINT stock-sink binding through the shared materializer hook; new planner and
+connects automatic stock-sink binding through the shared materializer hook, including existing
+Arrow payloads and scalar sink/matching keys; new planner and
 complete-job controls await the final six-hour testing window. Earlier automatic-job qualification
 claims remain withdrawn. This extension is separate from the historical frozen evidence.
 Captured JVM aggregate handlers already store their accumulators/views in released Flink managed
@@ -2371,3 +2372,16 @@ keep-last compares represented ROW payload content using the shared stock equali
 scalar byte comparison stays on its existing path. New state/planner/clean-worker controls await
 qualification across both lines, including malformed representation edges through existing
 validation, TTL, no-input returns, native checkpoints and keyed rescaling.
+
+## Typed materializer binding awaiting qualification
+
+The captured stock materializer hook now admits existing Arrow payload types with scalar sink
+and inferred input keys, instead of rejecting every non-BIGINT retained row. ROW/ARRAY/MAP/
+MULTISET payloads use the existing candidate and matching codecs. Constructed keys, empty input
+upsert keys, async/unaligned state and independent accelerated-connector contracts retain their
+existing exclusions. New planner and clean-worker fixtures keep typed rows through the stock
+writer, compare committed row bytes and independently check the final candidate table after
+continued/empty handoffs, native checkpoint recovery and source/materializer/writer rescaling.
+These controls await qualification on both release lines; 1.18 uses LEGACY and 2.2 additionally
+uses VALUE/MAP/ADAPTIVE. The compatibility fixture exposes typed output columns and committed
+record bytes while retaining its existing default BIGINT protocol.
