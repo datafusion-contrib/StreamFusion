@@ -59,7 +59,8 @@ final class CanonicalSinkMaterializerRuntime implements CanonicalSinkIdentities 
       int[] upsertKeys,
       boolean parallelismConfigured) {
     if (!type.equals(physicalType))
-      throw new IllegalStateException("Captured sink materializer input type changed");
+      throw new IllegalStateException(
+          "Captured sink materializer input type changed: " + type + " -> " + physicalType);
     int[] descriptor = FlinkKeyGroupUtils.stockKeyDescriptor(type, keys);
     int inputMaximum =
         Math.max(maximum, Math.max(input.getParallelism(), input.getMaxParallelism()));

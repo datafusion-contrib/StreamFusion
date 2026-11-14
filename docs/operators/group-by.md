@@ -4044,3 +4044,7 @@ including TTL reads at bundle drainage. Two-phase merges retain their independen
 Ordinary grouped owners with non-compact DECIMAL or precise TIMESTAMP grouping fields likewise
 use the captured stock template when direct ordinary binding cannot retain that key layout.
 Canonical qualification remains scoped to the existing supported aggregate/state contracts.
+
+Bound, drained one-phase MIN/MAX bundles also use the existing direct RocksDB group store,
+with independent header/view expiry. The canonical component matrix requires that actual
+persistent path; a raw-keyed snapshot fallback does not qualify it.

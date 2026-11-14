@@ -80,6 +80,7 @@ public class NativeColumnarGroupAggregateOperator extends AbstractNativeStateful
   @Override
   protected boolean usesDirectRocksDBState() {
     return (!miniBatch
+            || hasStockStateContract()
             || java.util.Arrays.stream(aggregateKinds).noneMatch(kind -> kind == 38 || kind == 39))
         && Native.rocksdbGroupAggregatorSupported(aggregateKinds, valueTypes);
   }

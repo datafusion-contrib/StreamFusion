@@ -333,7 +333,7 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
     var bound = variable ? bound(backend) : null;
     var serializer = new RowDataSerializer(rowType);
     var keySerializer = keys.duplicate();
-    var binaryKeys = new RowDataSerializer(keyType);
+    var binaryKeys = new StockKeyProjection(keyType);
     var rowKeySerializer = new RowDataSerializer(rowKeyType);
     var sortSerializer = new RowDataSerializer(sortType);
     var batch =
@@ -364,7 +364,7 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
               throw new IllegalStateException("Invalid or duplicate updating first bound");
             var header = new GenericRowData(bridgeType.getFieldCount());
             int arity = rowType.getFieldCount();
-            header.setField(arity, bytes(binaryKeys.toBinaryRow(key)));
+            header.setField(arity, bytes(binaryKeys.project(key)));
             header.setField(arity + 1, new byte[0]);
             header.setField(arity + 2, -1);
             header.setField(arity + 3, value.getUserValue());
@@ -382,7 +382,7 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
           backend.setCurrentKey(key);
           if (bound != null && bound.value() == null)
             throw new IllegalStateException("Updating rows have no first-bound state");
-          byte[] encoded = bytes(binaryKeys.toBinaryRow(key));
+          byte[] encoded = bytes(binaryKeys.project(key));
           if (top1) {
             var value = winner.value();
             if (value == null || value.getUserValue() == null)
@@ -422,8 +422,7 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
         try (var groups = inventory.owners()) {
           while (groups.hasNext()) {
             var group = groups.next();
-            byte[] encoded =
-                bytes(binaryKeys.toBinaryRow(group.getRow(0, keyType.getFieldCount())));
+            byte[] encoded = bytes(binaryKeys.project(group.getRow(0, keyType.getFieldCount())));
             try (var positions = inventory.times(3, group);
                 var rows = inventory.values(4, group, tuple)) {
               long next = 1;

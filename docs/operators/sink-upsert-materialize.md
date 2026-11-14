@@ -208,3 +208,9 @@ them. New legacy component and released-strategy planner/full-job controls cover
 orders, original TTL ages, native recovery, empty returns and rescaling, with committed byte
 comparison. Qualification on both Flink lines is deferred to the final testing window. Array/map
 key descendants and migration of older private ROW checkpoint representations remain separate.
+
+The captured materializer uses the released sink's physical consumed schema, including its
+nullability, independently from the upstream transformation's output declaration. Internal V2
+VALUE_STATE/MAP_STATE strategies map to their public VALUE/MAP names, and legacy empty matching
+key arrays retain the released full-row matching semantics. Connector and helper translation
+continues through the stock sink on both release lines.

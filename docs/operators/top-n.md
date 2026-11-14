@@ -1011,3 +1011,12 @@ native work in both the ROW-key aggregate and rank owners. These additions await
 2.2 execution. ROW sort fields, collection-bearing keys and independent ROW unique-key columns
 remain gated, as do the existing AppendFast OFFSET and updating TTL cases. This work does not
 qualify upgrades from historical native checkpoints with a different ROW transport shape.
+
+Pending scalar-key canonical binding reconstructs ordinary rank owners from their captured stock
+template when a non-compact DECIMAL or precise TIMESTAMP partition needs that exact key layout.
+This retains the same qualified scalar codecs as portable submission; historical native
+checkpoint key-layout migration remains outside this same-build qualification.
+
+Updating Top-N rebuilds spilled projected partition keys with the released key projection
+layout, including reserved NULL slots for wide decimals and precise timestamps. Existing
+owned ROW bytes remain part of the key representation.

@@ -369,7 +369,7 @@ final class StockCompiledPlanLowering {
                   || node instanceof NativeColumnarWindowAggExecNode
                   || node instanceof NativeColumnarSessionWindowAggExecNode
                   || node instanceof NativeColumnarGlobalWindowAggExecNode) return true;
-              if (needsBinaryRowKeyTemplate(node)) return true;
+              if (needsBinaryRowKeyTemplate(node) || needsPreciseKeyTemplate(node)) return true;
               if (needsStringTemplate(node, graph) || needsGlobalGroupTemplate(node, graph))
                 return true;
               if (node instanceof NativeColumnarGroupAggExecNode
@@ -399,6 +399,27 @@ final class StockCompiledPlanLowering {
               return node instanceof NativeOverAggExecNode
                   && ((NativeOverAggExecNode) node).hasStockArithmeticState();
             });
+  }
+
+  private static boolean preciseScalarKey(LogicalType type) {
+    return type.is(LogicalTypeRoot.DECIMAL) && LogicalTypeChecks.getPrecision(type) > 18
+        || (type.is(LogicalTypeRoot.TIMESTAMP_WITHOUT_TIME_ZONE)
+                || type.is(LogicalTypeRoot.TIMESTAMP_WITH_LOCAL_TIME_ZONE))
+            && LogicalTypeChecks.getPrecision(type) > 3;
+  }
+
+  private static boolean needsPreciseKeyTemplate(ExecNode<?> node) {
+    if (node instanceof NativeColumnarTopNExecNode) {
+      var type = (RowType) node.getInputEdges().get(0).getOutputType();
+      return Arrays.stream(((NativeColumnarTopNExecNode) node).stateKeyColumns())
+          .anyMatch(key -> preciseScalarKey(type.getTypeAt(key)));
+    }
+    if (node instanceof NativeColumnarGroupAggExecNode)
+      return ((RowType) node.getOutputType())
+          .getChildren().stream()
+              .limit(((NativeColumnarGroupAggExecNode) node).groupingKeyCount())
+              .anyMatch(StockCompiledPlanLowering::preciseScalarKey);
+    return false;
   }
 
   private static boolean needsBinaryRowKeyTemplate(ExecNode<?> node) {
@@ -794,10 +815,7 @@ final class StockCompiledPlanLowering {
     if (!(keys instanceof org.apache.flink.table.runtime.typeutils.InternalTypeInfo)) return false;
     for (LogicalType field :
         ((org.apache.flink.table.runtime.typeutils.InternalTypeInfo<?>) keys).toRowFieldTypes())
-      if (field.is(LogicalTypeRoot.DECIMAL) && LogicalTypeChecks.getPrecision(field) > 18
-          || (field.is(LogicalTypeRoot.TIMESTAMP_WITHOUT_TIME_ZONE)
-                  || field.is(LogicalTypeRoot.TIMESTAMP_WITH_LOCAL_TIME_ZONE))
-              && LogicalTypeChecks.getPrecision(field) > 3) return false;
+      if (preciseScalarKey(field)) return false;
     return true;
   }
 
@@ -3939,8 +3957,13 @@ final class StockCompiledPlanLowering {
         || !(original.getStateKeySelector()
             instanceof org.apache.flink.table.runtime.keyselector.RowDataKeySelector)) return stock;
     var inputType =
-        ((org.apache.flink.table.runtime.typeutils.InternalTypeInfo<?>) original.getOutputType())
-            .toRowType();
+        (RowType)
+            stock
+                .getTableSinkSpec()
+                .getContextResolvedTable()
+                .getResolvedSchema()
+                .toPhysicalRowDataType()
+                .getLogicalType();
     var materializerKeyType =
         ((org.apache.flink.table.runtime.typeutils.InternalTypeInfo<?>) original.getStateKeyType())
             .toRowType();
@@ -3966,8 +3989,9 @@ final class StockCompiledPlanLowering {
     if (operator.getClass()
         == org.apache.flink.table.runtime.operators.sink.SinkUpsertMaterializer.class) {
       strategy = "LEGACY";
-      if (!Arrays.equals(upsertKeys, (int[]) releasedField(operator, "inputUpsertKey")))
-        return stock;
+      var capturedKeys = (int[]) releasedField(operator, "inputUpsertKey");
+      if (capturedKeys != null && capturedKeys.length == 0) capturedKeys = null;
+      if (!Arrays.equals(upsertKeys, capturedKeys)) return stock;
       var retention =
           (org.apache.flink.api.common.state.StateTtlConfig) releasedField(operator, "ttlConfig");
       ttl = retention.isEnabled() ? FlinkPlanCompat.ttlMillis(retention) : 0;
@@ -3975,6 +3999,8 @@ final class StockCompiledPlanLowering {
       var parameters = releasedField(operator, "stateParameters");
       var stateConfig = releasedField(parameters, "config");
       strategy = ((Enum<?>) releasedField(stateConfig, "strategy")).name();
+      if (strategy.equals("VALUE_STATE")) strategy = "VALUE";
+      else if (strategy.equals("MAP_STATE")) strategy = "MAP";
       if (!Set.of("VALUE", "MAP", "ADAPTIVE").contains(strategy)
           || (boolean) releasedField(operator, "hasUpsertKey") != (upsertKeys != null))
         return stock;
@@ -4139,6 +4165,23 @@ final class StockCompiledPlanLowering {
             new VolcanoPlanner(RelOptCostImpl.FACTORY, planner.getFlinkContext()), builder);
     var inputRelType = planner.getTypeFactory().createFieldTypeFromLogicalType(inputType);
     var outputRelType = planner.getTypeFactory().createFieldTypeFromLogicalType(outputType);
+    boolean[] matchingInputs = {true};
+    var inputCheck =
+        new org.apache.calcite.rex.RexVisitorImpl<Void>(true) {
+          @Override
+          public Void visitInputRef(org.apache.calcite.rex.RexInputRef reference) {
+            if (reference.getIndex() >= inputRelType.getFieldCount()
+                || !reference
+                    .getType()
+                    .equals(inputRelType.getFieldList().get(reference.getIndex()).getType()))
+              matchingInputs[0] = false;
+            return null;
+          }
+        };
+    for (var projection : projections) projection.accept(inputCheck);
+    if (condition != null) condition.accept(inputCheck);
+    if (!matchingInputs[0]) return stock;
+
     var program =
         RexProgram.create(
             inputRelType, Arrays.asList(projections), condition, outputRelType, builder);
