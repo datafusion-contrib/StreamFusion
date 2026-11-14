@@ -70,11 +70,18 @@ class CanonicalOverCountPayloadPlanTest {
     config.setString("table.exec.unbounded-over.version", Integer.toString(version));
     config.setString("table.exec.state.ttl", "1 h");
     var table = NativePlannerTestEnvironment.create(config, CanonicalFixtureFactory.class);
-    table.executeSql(
-        "CREATE TABLE count_input(k BIGINT,v "
-            + type
-            + ",rt TIMESTAMP(3),pt AS PROCTIME(),WATERMARK FOR rt AS rt) WITH"
-            + " ('connector'='canonical-fixture','input'='unused.csv','insert-only'='true')");
+    table.createTemporaryTable(
+        "count_input",
+        org.apache.flink.table.api.TableDescriptor.forConnector("canonical-fixture")
+            .schema(
+                tech.streamfusion.CanonicalTestSchemas.columns(
+                        "k", "BIGINT", "v", type, "rt", "TIMESTAMP(3)")
+                    .columnByExpression("pt", "PROCTIME()")
+                    .watermark("rt", "rt")
+                    .build())
+            .option("input", "unused.csv")
+            .option("insert-only", "true")
+            .build());
     table.executeSql(
         "CREATE TABLE count_output(k BIGINT,n BIGINT,c BIGINT) WITH ('connector'='blackhole')");
     boolean bounded =

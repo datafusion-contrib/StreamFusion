@@ -121,7 +121,23 @@ class CanonicalRetractingMiniBatchGroupStateTest {
                             nativeOwner, localOwner, target, rows, true)
                         : CanonicalMiniBatchGroupStateTest.nativeBundle(nativeOwner, target, rows)
                     : target.stockBundle(target.partials(rows));
-            assertEquals(expected, actual, "stage=" + stage + ",bundle=" + bundle);
+            assertEquals(
+                expected,
+                actual,
+                "type="
+                    + type
+                    + ",distinct="
+                    + distinct
+                    + ",rocks="
+                    + rocks
+                    + ",nativeFirst="
+                    + nativeFirst
+                    + ",global="
+                    + global
+                    + ",stage="
+                    + stage
+                    + ",bundle="
+                    + bundle);
           }
           var previous = saved;
           var previousReference = referenceSaved;

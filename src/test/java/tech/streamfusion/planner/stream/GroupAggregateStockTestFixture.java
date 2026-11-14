@@ -144,14 +144,18 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
         java.util.stream.IntStream.range(0, keySchema.getFieldCount())
             .mapToObj(index -> groupKeys == null ? "k" : "k" + index)
             .collect(java.util.stream.Collectors.joining(","));
-    String keyDeclaration =
-        java.util.stream.IntStream.range(0, keySchema.getFieldCount())
-            .mapToObj(
-                index ->
-                    (groupKeys == null ? "k" : "k" + index)
-                        + " "
-                        + keySchema.getTypeAt(index).asSerializableString())
-            .collect(java.util.stream.Collectors.joining(","));
+    var inputSchema = org.apache.flink.table.api.Schema.newBuilder();
+    var outputSchema = org.apache.flink.table.api.Schema.newBuilder();
+    for (int index = 0; index < keySchema.getFieldCount(); index++) {
+      String name = groupKeys == null ? "k" : "k" + index;
+      var type =
+          org.apache.flink.table.types.utils.TypeConversions.fromLogicalToDataType(
+              keySchema.getTypeAt(index));
+      inputSchema.column(name, type);
+      if (!global) outputSchema.column(name, type);
+    }
+    inputSchema.column(
+        "v", org.apache.flink.table.types.utils.TypeConversions.fromLogicalToDataType(valueType));
     var keyedFields = new java.util.ArrayList<LogicalType>(keySchema.getChildren());
     keyedFields.add(valueType);
     var expectedInput =
@@ -181,15 +185,14 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
           }
         });
     table.useCatalog("fixture");
-    table.executeSql(
-        "CREATE TABLE input_table("
-            + keyDeclaration
-            + ",v "
-            + valueSqlType
-            + ") WITH"
-            + " ('connector'='canonical-fixture','input'='unused.csv','ready'='unused.ready','insert-only'='"
-            + append
-            + "')");
+    table.createTable(
+        "input_table",
+        org.apache.flink.table.api.TableDescriptor.forConnector("canonical-fixture")
+            .schema(inputSchema.build())
+            .option("input", "unused.csv")
+            .option("ready", "unused.ready")
+            .option("insert-only", Boolean.toString(append))
+            .build());
     table.useCatalog("default_catalog");
     String fields =
         mode.equals("counted-extrema")
@@ -206,23 +209,34 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
                                 ? "COUNT(*) AS a,COUNT(v) AS b,SUM(v) AS c,AVG(v) AS d,MIN(v) AS"
                                     + " e,MAX(v) AS f"
                                 : mode.equals("count") ? "COUNT(v) AS a" : "COUNT(*) AS a";
-    table.executeSql(
-        "CREATE TABLE output_table("
-            + (global ? "" : keyDeclaration + ",")
-            + (mode.equals("counted-extrema")
-                ? "a BIGINT,b " + valueSqlType + ",c " + valueSqlType
-                : mode.equals("hidden-extrema")
-                    ? "c BIGINT,d BIGINT,e BIGINT,f BIGINT"
-                    : mode.equals("arithmetic")
-                        ? "a BIGINT,b BIGINT,c BIGINT,d BIGINT"
-                        : mode.equals("hidden")
-                            ? "c BIGINT,d BIGINT"
-                            : mode.equals("extrema")
-                                ? "a " + valueSqlType + ",b " + valueSqlType
-                                : mode.equals("mixed-extrema")
-                                    ? "a BIGINT,b BIGINT,c BIGINT,d BIGINT,e BIGINT,f BIGINT"
-                                    : "a BIGINT")
-            + ") WITH ('connector'='blackhole')");
+    String[] outputFields =
+        mode.equals("counted-extrema")
+            ? new String[] {"a", "b", "c"}
+            : mode.equals("hidden-extrema")
+                ? new String[] {"c", "d", "e", "f"}
+                : mode.equals("arithmetic")
+                    ? new String[] {"a", "b", "c", "d"}
+                    : mode.equals("hidden")
+                        ? new String[] {"c", "d"}
+                        : mode.equals("extrema")
+                            ? new String[] {"a", "b"}
+                            : mode.equals("mixed-extrema")
+                                ? new String[] {"a", "b", "c", "d", "e", "f"}
+                                : new String[] {"a"};
+    for (String name : outputFields) {
+      var type =
+          mode.equals("extrema") || mode.equals("counted-extrema") && !name.equals("a")
+              ? valueType
+              : new org.apache.flink.table.types.logical.BigIntType();
+      outputSchema.column(
+          name, org.apache.flink.table.types.utils.TypeConversions.fromLogicalToDataType(type));
+    }
+    table.createTable(
+        "output_table",
+        org.apache.flink.table.api.TableDescriptor.forConnector("blackhole")
+            .schema(outputSchema.build())
+            .build());
+
     var planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
     var transforms =
         CanonicalRegularJoinPlanTest.translate(

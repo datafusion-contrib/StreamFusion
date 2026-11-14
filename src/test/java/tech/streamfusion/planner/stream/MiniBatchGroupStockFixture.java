@@ -265,15 +265,17 @@ final class MiniBatchGroupStockFixture implements AutoCloseable {
           }
         });
     table.useCatalog("fixture");
-    table.executeSql(
-        "CREATE TABLE input_table(k BIGINT,a "
-            + arithmeticType(type)
-            + ",v "
-            + (distinct ? "STRING" : type)
-            + ") WITH"
-            + " ('connector'='canonical-fixture','input'='unused.csv','ready'='unused.ready','insert-only'='"
-            + !retract
-            + "')");
+    table.createTable(
+        "input_table",
+        org.apache.flink.table.api.TableDescriptor.forConnector("canonical-fixture")
+            .schema(
+                tech.streamfusion.CanonicalTestSchemas.columns(
+                        "k", "BIGINT", "a", arithmeticType(type), "v", distinct ? "STRING" : type)
+                    .build())
+            .option("input", "unused.csv")
+            .option("ready", "unused.ready")
+            .option("insert-only", Boolean.toString(!retract))
+            .build());
     table.useCatalog("default_catalog");
     String aggregates =
         countOnly

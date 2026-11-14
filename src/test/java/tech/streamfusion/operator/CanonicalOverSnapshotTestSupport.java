@@ -1,10 +1,8 @@
 package tech.streamfusion.operator;
 
 import java.util.concurrent.atomic.AtomicLong;
-import org.apache.flink.core.execution.SavepointFormatType;
 import org.apache.flink.runtime.checkpoint.CheckpointOptions;
 import org.apache.flink.runtime.checkpoint.OperatorSubtaskState;
-import org.apache.flink.runtime.checkpoint.SavepointType;
 import org.apache.flink.runtime.state.CheckpointStreamFactory;
 import org.apache.flink.streaming.api.operators.OperatorSnapshotFutures;
 import org.apache.flink.streaming.util.AbstractStreamOperatorTestHarness;
@@ -18,12 +16,7 @@ final class CanonicalOverSnapshotTestSupport {
     var owner =
         harness.getOperator() instanceof DirectOver ? (DirectOver) harness.getOperator() : null;
     long before = owner == null ? 0 : owner.rawSnapshots.get();
-    harness.prepareSnapshotPreBarrier(id);
-    var saved =
-        harness
-            .snapshotWithLocalState(
-                id, time, SavepointType.savepoint(SavepointFormatType.CANONICAL))
-            .getJobManagerOwnedState();
+    var saved = tech.streamfusion.CanonicalTestSnapshots.snapshot(harness, id, time);
     return verifyDirect(owner, before, saved);
   }
 

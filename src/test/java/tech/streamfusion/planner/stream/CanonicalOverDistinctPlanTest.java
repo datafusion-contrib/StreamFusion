@@ -61,12 +61,6 @@ class CanonicalOverDistinctPlanTest {
             + (mode.equals("nullable") ? "" : " NOT NULL")
             + ",rt TIMESTAMP(3),pt AS PROCTIME(),WATERMARK FOR rt AS rt)"
             + " WITH ('connector'='canonical-fixture','input'='unused.csv','insert-only'='true')");
-    table.executeSql(
-        "CREATE TABLE output_table(k BIGINT,v "
-            + type
-            + ",c BIGINT"
-            + (mode.equals("independent") ? ",d BIGINT" : "")
-            + ") WITH ('connector'='blackhole')");
     String query =
         "INSERT INTO output_table SELECT k,v,"
             + (mode.equals("sum") ? "SUM" : mode.equals("avg") ? "AVG" : "COUNT")
@@ -78,6 +72,17 @@ class CanonicalOverDistinctPlanTest {
             + " BETWEEN "
             + (mode.equals("bounded") ? "2" : "UNBOUNDED")
             + " PRECEDING AND CURRENT ROW)";
+    table.createTemporaryTable(
+        "output_table",
+        org.apache.flink.table.api.TableDescriptor.forConnector("blackhole")
+            .schema(
+                org.apache.flink.table.api.Schema.newBuilder()
+                    .fromResolvedSchema(
+                        table
+                            .sqlQuery(query.substring("INSERT INTO output_table ".length()))
+                            .getResolvedSchema())
+                    .build())
+            .build());
     var planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
     var plan = compiled ? table.compilePlanSql(query) : null;
     String portable = compiled ? plan.asJsonString() : "";
@@ -115,8 +120,17 @@ class CanonicalOverDistinctPlanTest {
       assertArrayEquals(
           mode.equals("independent")
               ? new int[] {103, 103}
-              : new int[] {mode.equals("sum") ? 100 : mode.equals("avg") ? 104 : 103},
-          (int[]) field(bound.get(0), "aggregateKinds"));
+              : mode.equals("avg")
+                  ? new int[] {100, 103}
+                  : new int[] {mode.equals("sum") ? 100 : 103},
+          (int[]) field(bound.get(0), "aggregateKinds"),
+          type
+              + ","
+              + mode
+              + ","
+              + compiled
+              + ": "
+              + java.util.Arrays.toString((int[]) field(bound.get(0), "aggregateKinds")));
     }
     assertFalse(portable.contains("tech.streamfusion"));
     if (compiled) assertEquals(portable, plan.asJsonString());

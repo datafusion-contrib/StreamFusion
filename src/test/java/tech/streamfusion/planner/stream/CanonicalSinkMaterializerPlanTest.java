@@ -146,7 +146,10 @@ class CanonicalSinkMaterializerPlanTest {
                         && ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator()
                             instanceof NativeSinkMaterializer)
             .collect(java.util.stream.Collectors.toList());
-    assertEquals(1, owners.size(), graph.getStreamingPlanAsJSON());
+    assertEquals(
+        1,
+        owners.size(),
+        "compiled=" + compiled + "\n" + graph.getStreamingPlanAsJSON() + "\n" + portable);
     var owner = owners.get(0);
     var operator = ((SimpleOperatorFactory<?>) owner.getOperatorFactory()).getOperator();
     var contract =

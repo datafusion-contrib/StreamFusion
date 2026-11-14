@@ -9,9 +9,7 @@ import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
 import org.apache.flink.configuration.Configuration;
-import org.apache.flink.core.execution.SavepointFormatType;
 import org.apache.flink.runtime.checkpoint.OperatorSubtaskState;
-import org.apache.flink.runtime.checkpoint.SavepointType;
 import org.apache.flink.runtime.state.CheckpointableKeyedStateBackend;
 import org.apache.flink.runtime.state.hashmap.HashMapStateBackend;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
@@ -193,9 +191,7 @@ final class FirstNCanonicalTestSupport {
   static OperatorSubtaskState snapshot(
       org.apache.flink.streaming.util.AbstractStreamOperatorTestHarness<?> harness)
       throws Exception {
-    return harness
-        .snapshotWithLocalState(1, 1800, SavepointType.savepoint(SavepointFormatType.CANONICAL))
-        .getJobManagerOwnedState();
+    return tech.streamfusion.CanonicalTestSnapshots.snapshot(harness, 1, 1800);
   }
 
   private static final class Projection extends AbstractStreamOperator<RowData>

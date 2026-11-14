@@ -43,10 +43,18 @@ class CanonicalRetractingExtremaScalarKeyPlanTest {
   void onlyCompleteScalarKeyCodecsBindReleasedExtremaViews(
       String definition, boolean compiled, boolean mini, long ttl) throws Exception {
     var keys = CanonicalExtremaScalarKeyFixture.schema(definition);
-    String fields =
-        java.util.stream.IntStream.range(0, keys.getFieldCount())
-            .mapToObj(index -> "k" + index + " " + keys.getTypeAt(index).asSerializableString())
-            .collect(java.util.stream.Collectors.joining(","));
+    var inputSchema = org.apache.flink.table.api.Schema.newBuilder();
+    var outputSchema = org.apache.flink.table.api.Schema.newBuilder();
+    for (int index = 0; index < keys.getFieldCount(); index++) {
+      var type =
+          org.apache.flink.table.types.utils.TypeConversions.fromLogicalToDataType(
+              keys.getTypeAt(index));
+      inputSchema.column("k" + index, type);
+      outputSchema.column("k" + index, type);
+    }
+    inputSchema.column("v", org.apache.flink.table.api.DataTypes.BIGINT());
+    for (String name : java.util.List.of("c", "lo", "hi"))
+      outputSchema.column(name, org.apache.flink.table.api.DataTypes.BIGINT());
     String names =
         java.util.stream.IntStream.range(0, keys.getFieldCount())
             .mapToObj(index -> "k" + index)
@@ -63,15 +71,18 @@ class CanonicalRetractingExtremaScalarKeyPlanTest {
     var table =
         NativePlannerTestEnvironment.create(
             config, org.example.canonical.CanonicalFixtureFactory.class);
-    table.executeSql(
-        "CREATE TABLE input_table("
-            + fields
-            + ",v BIGINT) WITH"
-            + " ('connector'='canonical-fixture','input'='unused.csv','insert-only'='false')");
-    table.executeSql(
-        "CREATE TABLE output_table("
-            + fields
-            + ",c BIGINT,lo BIGINT,hi BIGINT) WITH ('connector'='blackhole')");
+    table.createTemporaryTable(
+        "input_table",
+        org.apache.flink.table.api.TableDescriptor.forConnector("canonical-fixture")
+            .schema(inputSchema.build())
+            .option("input", "unused.csv")
+            .option("insert-only", "false")
+            .build());
+    table.createTemporaryTable(
+        "output_table",
+        org.apache.flink.table.api.TableDescriptor.forConnector("blackhole")
+            .schema(outputSchema.build())
+            .build());
     String sql =
         "INSERT INTO output_table SELECT "
             + names
@@ -103,7 +114,25 @@ class CanonicalRetractingExtremaScalarKeyPlanTest {
                               org.apache.flink.table.types.logical.LogicalTypeRoot
                                   .TIME_WITHOUT_TIME_ZONE)
                           ? new org.apache.flink.table.types.logical.TimeType(type.isNullable(), 0)
-                          : type)
+                          : type.is(
+                                  org.apache.flink.table.types.logical.LogicalTypeRoot
+                                      .INTERVAL_YEAR_MONTH)
+                              ? new org.apache.flink.table.types.logical.YearMonthIntervalType(
+                                      org.apache.flink.table.types.logical.YearMonthIntervalType
+                                          .YearMonthResolution.MONTH)
+                                  .copy(type.isNullable())
+                              : type.is(
+                                      org.apache.flink.table.types.logical.LogicalTypeRoot
+                                          .INTERVAL_DAY_TIME)
+                                  ? new org.apache.flink.table.types.logical.DayTimeIntervalType(
+                                      type.isNullable(),
+                                      org.apache.flink.table.types.logical.DayTimeIntervalType
+                                          .DayTimeResolution.SECOND,
+                                      2,
+                                      ((org.apache.flink.table.types.logical.DayTimeIntervalType)
+                                              type)
+                                          .getFractionalPrecision())
+                                  : type)
               .collect(tech.streamfusion.compat.ListCollectors.toList());
       assertEquals(expectedKeys, ((RowType) field(contract, "keyType")).getChildren());
     }

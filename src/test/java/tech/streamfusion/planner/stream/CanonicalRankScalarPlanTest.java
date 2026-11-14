@@ -61,21 +61,23 @@ class CanonicalRankScalarPlanTest {
     config.setString("table.exec.uid.generation", uids);
     var table = NativePlannerTestEnvironment.create(config, CanonicalFixtureFactory.class);
     String type = CanonicalRankScalarFixture.sql(shape);
-    table.executeSql(
-        "CREATE TABLE input_table(k "
-            + type
-            + ",v "
-            + type
-            + ",id BIGINT,p BIGINT) WITH ('connector'='canonical-fixture','input'='unused.csv',"
-            + "'insert-only'='"
-            + !mode.equals("retract")
-            + "')");
-    table.executeSql(
-        "CREATE TABLE output_table(k "
-            + type
-            + ",v "
-            + type
-            + ",n BIGINT) WITH ('connector'='blackhole')");
+    table.createTemporaryTable(
+        "input_table",
+        org.apache.flink.table.api.TableDescriptor.forConnector("canonical-fixture")
+            .schema(
+                tech.streamfusion.CanonicalTestSchemas.columns(
+                        "k", type, "v", type, "id", "BIGINT", "p", "BIGINT")
+                    .build())
+            .option("input", "unused.csv")
+            .option("insert-only", Boolean.toString(!mode.equals("retract")))
+            .build());
+    table.createTemporaryTable(
+        "output_table",
+        org.apache.flink.table.api.TableDescriptor.forConnector("blackhole")
+            .schema(
+                tech.streamfusion.CanonicalTestSchemas.columns("k", type, "v", type, "n", "BIGINT")
+                    .build())
+            .build());
     String source =
         mode.equals("update")
             ? "(SELECT k,v,id,p,COUNT(*) AS c FROM input_table GROUP BY k,v,id,p)"

@@ -56,10 +56,12 @@ class CanonicalGroupRowKeyPlanTest {
             + append
             + "')");
     table.executeSql(
-        "CREATE TABLE output_table(k BIGINT,s BIGINT,n BIGINT)"
+        "CREATE TABLE output_table(k "
+            + CanonicalRowKeyFixture.sql(nested)
+            + ",s BIGINT,n BIGINT)"
             + " WITH ('connector'='blackhole')");
     String query =
-        "INSERT INTO output_table SELECT k.i,SUM(v),COUNT(DISTINCT v)"
+        "INSERT INTO output_table SELECT k,SUM(v),COUNT(DISTINCT v)"
             + " FROM input_table GROUP BY k";
     var planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
     var plan = compiled ? table.compilePlanSql(query) : null;
