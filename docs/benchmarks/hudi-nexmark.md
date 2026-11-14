@@ -21,8 +21,25 @@ The same comparison can run on an otherwise idle developer machine using
 with production engine/Parquet libraries in `native/target/release`. Set `JAVA_HOME`
 to a supported JDK and prevent system sleep for local timings. The
 [processing-time investigation](hudi-processing-time-batches-20261114.json)
-retains the local diagnostic and excluded contended attempts; its after-change
-timings remain unqualified pending the isolated run.
+retains the local diagnostic and excluded contended attempts.
+
+The first [isolated comparison](hudi-java-comparison-20261114.json) passed on Linux
+x86-64 with four available processors, JDK 17.0.21, 200k events, heap state and
+mini-batching off. Two alternating baseline/candidate passes give six timed trials
+per engine/query/variant. Medians in milliseconds:
+
+| Query | Variant | Stock | Hudi-disabled SF | Native Hudi |
+| --- | --- | ---: | ---: | ---: |
+| Q8 | Baseline | 1,189.7 | 6,109.3 | 5,832.2 |
+| Q8 | Batch proof + owner candidate | 1,312.0 | 6,140.9 | 5,894.3 |
+| Q12 | Baseline | 597.1 | 6,251.3 | 6,120.8 |
+| Q12 | Batch proof + owner candidate | 633.8 | 6,355.8 | 399.6 |
+
+Q12 improved 15.3× over its native baseline and 1.59× over stock in this candidate.
+The Q8 ranges overlap and do not establish an owner-lookup gain; that allocation
+candidate was removed. All 72 trials, ranges and source/library hashes are retained.
+The retained batch proof and subsequent Calc transport changes are rechecked
+separately. These focused results do not qualify the full two-million-event matrix.
 
 The fixture is a COW table partitioned by `sf_partition`, populated once using
 stock Hudi with a single ordered input and checkpoints disabled during seeding.

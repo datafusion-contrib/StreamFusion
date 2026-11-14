@@ -285,17 +285,13 @@ public final class TaskOffHeapMemory {
     }
   }
 
-  private static long arrowOwner() {
-    long owner = arrowOwner;
-    if (owner != 0) return owner;
-    synchronized (TaskOffHeapMemory.class) {
-      if (arrowOwner == 0) {
-        long id = NEXT_OWNER.getAndIncrement();
-        OWNERS.put(id, new Owner("arrow", "shared Arrow allocator"));
-        arrowOwner = id;
-      }
-      return arrowOwner;
+  private static synchronized long arrowOwner() {
+    if (arrowOwner == 0) {
+      long id = NEXT_OWNER.getAndIncrement();
+      OWNERS.put(id, new Owner("arrow", "shared Arrow allocator"));
+      arrowOwner = id;
     }
+    return arrowOwner;
   }
 
   private static NativeMemoryLimitException tryReserve(Owner owner, long bytes) {

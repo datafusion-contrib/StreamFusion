@@ -45,9 +45,14 @@ for 36.7%; empty window emission accounted for 8.1%. These inclusive shares
 overlap. This motivated extending the existing proof across processing-time
 fixed windows rather than changing their timer implementation. The
 [structured observations](../benchmarks/hudi-processing-time-batches-20261114.json)
-retain the diagnostic and every attempted comparison. After-change timings
-overlapped another session's builds/benchmarks, so they remain diagnostic pending
-an uncontended repeat. Processing-time count checks permit empty output when a
+retain the diagnostic and every attempted comparison. Local after-change timings
+overlapped another session's builds/benchmarks and remain diagnostic. The first
+isolated release comparison combined this proof with an allocation-owner candidate:
+Q12 native medians were 6,121 -> 400 ms at 200k events, versus 634 ms stock after
+the change (15.3× over baseline, 1.59× over stock). Q8 did not establish a benefit
+from the allocation candidate, which was removed. The retained configuration is
+being rechecked; [all 72 isolated observations](../benchmarks/hudi-java-comparison-20261114.json)
+remain available. Processing-time count checks permit empty output when a
 bounded job completes before its first timer; they are not full-value parity.
 
 An awake Q9 CPU capture then identified MOR log serialization (32.9% of samples)
