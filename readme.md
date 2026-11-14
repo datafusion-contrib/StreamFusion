@@ -178,7 +178,7 @@ curl --fail --location \
   --output "$FLINK_HOME/lib/streamfusion-core.jar"
 ```
 
-StreamFusion currently supports exactly **Flink 2.2.0 and 2.2.1**, installs into Flink's `lib`
+Release support covers **Flink 2.2.0 and 2.2.1**. StreamFusion installs into Flink's `lib`
 directory (never the job JAR), and needs no application-side call to accelerate an ordinary
 streaming SQL job. Release JARs come from Maven Central and already contain the runner-built Linux
 x86_64 and macOS Apple Silicon native libraries; users do not build Rust or Java from source. The
@@ -186,6 +186,9 @@ base install is connector- and format-neutral — layer in only the `streamfusio
 connectors and formats actually need, mirroring Flink's own module split. See
 **[Deployment](https://datafusion-contrib.github.io/StreamFusion/deployment/)** for the full
 Kubernetes/Docker/bare-metal walkthrough and the exact JAR list per connector/format.
+
+The experimental [Flink 1.18.1 build](https://datafusion-contrib.github.io/StreamFusion/flink-compatibility/)
+uses separate `streamfusion-*-flink1.18` artifacts and is required for Hudi 1.2.1.
 
 Every runtime behavior — the acceleration on/off switches, `allowIncompatible` expression opt-ins,
 off-heap memory sizing for the native Kafka buffers, and how to see why a query fell back
