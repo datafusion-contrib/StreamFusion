@@ -66,6 +66,15 @@ with the same focused workload and alternating order. Compare variants within ea
 run; the two hosted runners have different absolute timings. Q8's remaining
 3.66× stock loss and the full-matrix recheck remain open.
 
+A subsequent local CPU diagnostic of that retained configuration passed six Q8
+native iterations against the stock output. Its 11,013 samples place 33.8% of
+captured CPU inside Arrow C Data export, including allocation/accounting work.
+These inclusive shares overlap, and Calc chains include downstream operators;
+they are not isolated component timings or a matched speedup comparison. The
+[compact observations](hudi-q8-profile-20261114.json) record source/library hashes
+and link the independently verified, versioned archive of folded stacks and logs.
+Repeated handoffs remain a target for profiling after the complete matrix.
+
 The fixture is a COW table partitioned by `sf_partition`, populated once using
 stock Hudi with a single ordered input and checkpoints disabled during seeding.
 Measured jobs retain one-second checkpoints. Each event retains its original schema and timestamp; the storage
