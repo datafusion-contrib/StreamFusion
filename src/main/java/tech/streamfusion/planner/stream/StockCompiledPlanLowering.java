@@ -3430,8 +3430,7 @@ final class StockCompiledPlanLowering {
         return stock;
       offset = constant.getRankStart() - 1;
       limit = constant.getRankEnd();
-    } else if (!updating
-        && range instanceof org.apache.flink.table.runtime.operators.rank.VariableRankRange) {
+    } else if (range instanceof org.apache.flink.table.runtime.operators.rank.VariableRankRange) {
       bound =
           ((org.apache.flink.table.runtime.operators.rank.VariableRankRange) range)
               .getRankEndIndex();
@@ -3466,7 +3465,7 @@ final class StockCompiledPlanLowering {
             index ->
                 org.apache.flink.table.types.logical.utils.LogicalTypeChecks.isProctimeAttribute(
                     inputType.getTypeAt(index)))) return stock;
-    if (retracting
+    if ((retracting || updating)
         && bound >= 0
         && (bound >= inputType.getFieldCount()
             || inputType.getTypeAt(bound).isNullable()
@@ -3525,7 +3524,7 @@ final class StockCompiledPlanLowering {
                   releasedField(function, "rowKeySelector");
       contract =
           new tech.streamfusion.state.StockUpdatingTopNStateContract(
-              serializer, selector, rowKeySelector, sortSelector, keyType, inputType, top1);
+              serializer, selector, rowKeySelector, sortSelector, keyType, inputType, top1, bound >= 0);
     } else {
       contract =
           new tech.streamfusion.state.StockAppendTopNStateContract(

@@ -50,7 +50,7 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
   private final RowDataKeySelector keySelector;
   private final RowDataKeySelector rowKeySelector;
   private final RowDataKeySelector sortSelector;
-  private final boolean top1;
+  private final boolean top1, variable;
 
   public StockUpdatingTopNStateContract(
       TypeSerializer<RowData> keys,
@@ -60,6 +60,21 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
       RowType keyType,
       RowType rowType,
       boolean top1) {
+    this(keys, keySelector, rowKeySelector, sortSelector, keyType, rowType, top1, false);
+  }
+
+  public StockUpdatingTopNStateContract(
+      TypeSerializer<RowData> keys,
+      RowDataKeySelector keySelector,
+      RowDataKeySelector rowKeySelector,
+      RowDataKeySelector sortSelector,
+      RowType keyType,
+      RowType rowType,
+      boolean top1,
+      boolean variable) {
+    if (top1 && variable)
+      throw new IllegalArgumentException("Variable rank requires updating tuple state");
+    this.variable = variable;
     this.keys = keys;
     this.keyType = keyType;
     this.rowType = rowType;
@@ -92,9 +107,12 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
 
   @Override
   public Map<String, StateDescriptor.Type> stateDescriptors() {
-    return Map.of(
+    var result = new java.util.LinkedHashMap<String, StateDescriptor.Type>();
+    result.put(
         top1 ? "Top1-Rank-State" : DATA,
         top1 ? StateDescriptor.Type.VALUE : StateDescriptor.Type.MAP);
+    if (variable) result.put("rankEnd", StateDescriptor.Type.VALUE);
+    return Map.copyOf(result);
   }
 
   @Override
@@ -122,6 +140,15 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
     return new StockValueState<>(backend, "Top1-Rank-State", new RowDataSerializer(rowType), false);
   }
 
+  private StockValueState<Long> bound(CheckpointableKeyedStateBackend<RowData> backend)
+      throws Exception {
+    return new StockValueState<>(
+        backend,
+        "rankEnd",
+        org.apache.flink.api.common.typeutils.base.LongSerializer.INSTANCE,
+        false);
+  }
+
   @Override
   public void exportState(
       CheckpointableKeyedStateBackend<RowData> backend, long handle, boolean persistent)
@@ -129,6 +156,7 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
     clear(backend);
     var data = top1 ? null : data(backend);
     var winner = top1 ? winner(backend) : null;
+    var bound = variable ? bound(backend) : null;
     var serializer = new RowDataSerializer(rowType);
     int arity = rowType.getFieldCount();
     try (ArrowSchema rowSchema = ArrowSchema.allocateNew(NativeAllocator.SHARED);
@@ -157,6 +185,19 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
                 RowData key = binary(row.getBinary(arity), keyType.getFieldCount());
                 validateKey(key, keyType);
                 backend.setCurrentKey(key);
+                if (row.getInt(arity + 2) == -1) {
+                  if (bound == null
+                      || bound.value() != null
+                      || row.getByte(arity + 4) != -1
+                      || row.getBinary(arity + 1).length != 0
+                      || java.util.stream.IntStream.range(0, arity)
+                          .anyMatch(field -> !row.isNullAt(field)))
+                    throw new IllegalStateException("Invalid or duplicate updating first bound");
+                  bound.update(row.getLong(arity + 3), 0);
+                  continue;
+                }
+                if (bound != null && bound.value() == null)
+                  throw new IllegalStateException("Updating rows have no first-bound state");
                 RowData retained = payload(row);
                 validatePayload(key, null, retained);
                 RowData payload = serializer.copy(retained);
@@ -256,6 +297,7 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
       throws Exception {
     var data = top1 ? null : data(backend);
     var winner = top1 ? winner(backend) : null;
+    var bound = variable ? bound(backend) : null;
     var serializer = new RowDataSerializer(rowType);
     var keySerializer = keys.duplicate();
     var binaryKeys = new RowDataSerializer(keyType);
@@ -274,6 +316,28 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
         new TupleSerializer<Tuple2<RowData, RowData>>(
             (Class) Tuple2.class, new TypeSerializer<?>[] {rowKeySerializer, serializer});
     try (var inventory = new StockStateSpool(ownerType)) {
+      if (bound != null)
+        try (var stream = backend.getKeys("rankEnd", VoidNamespace.INSTANCE)) {
+          var iterator = stream.iterator();
+          while (iterator.hasNext()) {
+            RowData key = keySerializer.copy(iterator.next());
+            validateKey(key, keyType);
+            backend.setCurrentKey(key);
+            var value = bound.value();
+            if (value == null
+                || value.getUserValue() == null
+                || !inventory.add(5, GenericRowData.of(key, new byte[0]), 0))
+              throw new IllegalStateException("Invalid or duplicate updating first bound");
+            var header = new GenericRowData(bridgeType.getFieldCount());
+            int arity = rowType.getFieldCount();
+            header.setField(arity, bytes(binaryKeys.toBinaryRow(key)));
+            header.setField(arity + 1, new byte[0]);
+            header.setField(arity + 2, -1);
+            header.setField(arity + 3, value.getUserValue());
+            header.setField(arity + 4, (byte) -1);
+            batch.append(header);
+          }
+        }
       try (var stream = backend.getKeys(top1 ? "Top1-Rank-State" : DATA, VoidNamespace.INSTANCE)) {
         var iterator = stream.iterator();
         while (iterator.hasNext()) {
@@ -282,6 +346,8 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
           if (!inventory.add(1, GenericRowData.of(key, new byte[0]), 0))
             throw new IllegalStateException("Duplicate update rank partition key");
           backend.setCurrentKey(key);
+          if (bound != null && bound.value() == null)
+            throw new IllegalStateException("Updating rows have no first-bound state");
           byte[] encoded = bytes(binaryKeys.toBinaryRow(key));
           if (top1) {
             var value = winner.value();

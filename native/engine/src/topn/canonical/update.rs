@@ -5,14 +5,17 @@ struct UpdateColumns<'a> {
     row_keys: &'a BinaryArray,
     times: &'a Int64Array,
     kinds: &'a Int8Array,
+    ranks: &'a Int32Array,
     payloads: arrow::row::Rows,
     sorts: arrow::row::Rows,
 }
 
 impl<S: KeyedStateStore<UpdatableTopNPartition>> UpdatableTopNRanker<S> {
     fn canonical_schema(&mut self, schema: SchemaRef) -> Result<(), DataFusionError> {
-        if self.ttl_ms != 0 || self.rank_end_column.is_some() {
-            return Err(invalid("update transfer requires a fixed rank without TTL"));
+        if self.ttl_ms != 0 || self.rank_end_column.is_some() && !self.first_bound {
+            return Err(invalid(
+                "update transfer requires fixed or first-bound state without TTL",
+            ));
         }
         if self
             .row_key_columns
@@ -93,6 +96,7 @@ impl<S: KeyedStateStore<UpdatableTopNPartition>> UpdatableTopNRanker<S> {
             &self.row_key_columns,
             &self.row_key_timestamp_precisions,
         );
+        let mut bounds = HashSet::default();
         for row in 0..batch.num_rows() {
             if keys.is_null(row)
                 || row_keys.is_null(row)
@@ -100,7 +104,21 @@ impl<S: KeyedStateStore<UpdatableTopNPartition>> UpdatableTopNRanker<S> {
                 || times.is_null(row)
                 || kinds.is_null(row)
                 || !valid_key(keys.value(row), self.partition_columns.len())
-                || !valid_key(row_keys.value(row), self.row_key_columns.len())
+            {
+                return Err(invalid("invalid update transfer metadata"));
+            }
+            if ranks.value(row) == -1 {
+                if !self.first_bound
+                    || kinds.value(row) != -1
+                    || !row_keys.value(row).is_empty()
+                    || batch.columns()[..arity]
+                        .iter()
+                        .any(|column| !column.is_null(row))
+                    || !bounds.insert(keys.value(row))
+                {
+                    return Err(invalid("invalid or duplicate update first-bound header"));
+                }
+            } else if !valid_key(row_keys.value(row), self.row_key_columns.len())
                 || ranks.value(row) <= 0
                 || times.value(row) != 0
                 || !matches!(kinds.value(row), 0..=3)
@@ -129,8 +147,14 @@ impl<S: KeyedStateStore<UpdatableTopNPartition>> UpdatableTopNRanker<S> {
         let mut positions = HashMap::default();
         for row in 0..batch.num_rows() {
             let key = keys.value(row);
-            let sort = sorts.row(row);
             let previous = self.groups.get(key);
+            if ranks.value(row) == -1 {
+                if previous.is_some_and(|partition| partition.first_rank_end.is_some()) {
+                    return Err(invalid("duplicate update first-bound header"));
+                }
+                continue;
+            }
+            let sort = sorts.row(row);
             if top1
                 && (ranks.value(row) != 1
                     || !winners.insert(key)
@@ -171,6 +195,7 @@ impl<S: KeyedStateStore<UpdatableTopNPartition>> UpdatableTopNRanker<S> {
             row_keys,
             times,
             kinds,
+            ranks,
             payloads,
             sorts,
         })
@@ -195,6 +220,7 @@ impl<S: KeyedStateStore<UpdatableTopNPartition>> UpdatableTopNRanker<S> {
             row_keys,
             times,
             kinds,
+            ranks,
             payloads,
             sorts,
         } = validated?;
@@ -208,6 +234,13 @@ impl<S: KeyedStateStore<UpdatableTopNPartition>> UpdatableTopNRanker<S> {
                 self.groups
                     .insert(ByteKey::from(key), UpdatableTopNPartition::default())
             };
+            if ranks.value(row) == -1 {
+                partition.first_rank_end = Some(FirstRankEnd {
+                    value: times.value(row),
+                    written_at: 0,
+                });
+                continue;
+            }
             let sort = sorts.row(row);
             let position = partition.partition_point(|entry| entry.sort.row() <= sort);
             let entry = UpdatableRow {
@@ -578,5 +611,126 @@ mod tests {
         assert!(state.validate_only(&frame(0, 1)).is_err());
         assert_eq!(state.groups.resident_bytes(), Some(0));
         state.import_canonical(&frame(1024, 1)).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn input(rows: &[(i64, i64, i64, i64)]) -> RecordBatch {
+        RecordBatch::try_from_iter(["k", "s", "id", "n"].into_iter().enumerate().map(
+            |(column, name)| {
+                let values = rows.iter().map(|row| match column {
+                    0 => row.0,
+                    1 => row.1,
+                    2 => row.2,
+                    _ => row.3,
+                });
+                (
+                    name,
+                    Arc::new(Int64Array::from_iter_values(values)) as ArrayRef,
+                )
+            },
+        ))
+        .unwrap()
+    }
+
+    fn ranker(variable: bool) -> UpdatableTopNRanker {
+        let mut ranker = UpdatableTopNRanker::new(
+            vec![0],
+            vec![i32::MIN, -1],
+            vec![0, 2],
+            vec![i32::MIN, -1, -1],
+            vec![SortColumn {
+                index: 1,
+                ascending: true,
+                nulls_first: false,
+            }],
+            100,
+            true,
+            true,
+        );
+        if variable {
+            ranker = ranker.with_rank_end_column(3);
+            ranker.enable_first_bound(true);
+        }
+        ranker
+    }
+
+    fn frames(source: &UpdatableTopNRanker, raw: bool) -> Vec<RecordBatch> {
+        let mut frames = Vec::new();
+        let mut emitter = encoded::Emitter::new(
+            source.schema.as_ref().unwrap(),
+            source.converters.as_ref().unwrap(),
+            &source.sort_columns,
+            encoded::Layout::Update,
+            None,
+            |batch| {
+                frames.push(batch);
+                Ok(())
+            },
+        );
+        if raw {
+            use crate::state::RocksStateCodec;
+            let codec = UpdatableTopNStateCodec::new(source.converters.as_ref().unwrap());
+            for (key, partition) in source.groups.iter() {
+                let mut bytes = Vec::new();
+                codec.raw_write(partition, &mut bytes);
+                emitter.encoded(&key.0, &bytes, false).unwrap();
+            }
+        } else {
+            emitter.update(source.groups.iter()).unwrap();
+        }
+        drop(emitter);
+        frames
+    }
+
+    #[test]
+    fn independent_updating_bounds_transfer_before_rows_and_ignore_later_proposals() {
+        let prefix = input(&[
+            (1, 20, 1, 2),
+            (1, 10, 2, 2),
+            (1, 10, 3, 2),
+            (2, 30, 1, -3),
+            (3, 30, 1, i64::MAX),
+        ]);
+        let suffix = input(&[(1, 5, 1, 99), (2, 5, 2, 4), (3, 20, 1, 1)]);
+        for raw in [false, true] {
+            let mut source = ranker(true);
+            source.push(&prefix, 1234).unwrap();
+            let mut restored = ranker(true);
+            let frames = frames(&source, raw);
+            for frame in &frames {
+                restored.validate_only(frame).unwrap();
+            }
+            assert_eq!(restored.groups.iter().count(), 0);
+            for frame in frames {
+                restored.import_canonical(&frame).unwrap();
+            }
+            assert_eq!(restored.groups.iter().count(), 3);
+            assert_eq!(
+                source.push(&suffix, 9999).unwrap().columns(),
+                restored.push(&suffix, 9999).unwrap().columns()
+            );
+            assert_eq!(source.invalid_top_size, restored.invalid_top_size);
+        }
+    }
+
+    #[test]
+    fn fixed_targets_and_duplicate_first_bounds_reject_without_rows_or_headers() {
+        let mut source = ranker(true);
+        source.push(&input(&[(1, 10, 1, -3)]), 0).unwrap();
+        let frame = frames(&source, false).remove(0);
+        let mut fixed = ranker(false);
+        assert!(fixed.import_canonical(&frame).is_err());
+        assert_eq!(fixed.groups.iter().count(), 0);
+        let duplicate = concat_batches(&frame.schema(), [&frame, &frame]).unwrap();
+        let mut variable = ranker(true);
+        assert!(variable.import_canonical(&duplicate).is_err());
+        assert_eq!(variable.groups.iter().count(), 0);
+        variable.import_canonical(&frame).unwrap();
+        assert!(variable.import_canonical(&frame).is_err());
+        assert_eq!(variable.groups.iter().count(), 1);
     }
 }

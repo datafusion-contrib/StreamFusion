@@ -48,3 +48,13 @@ projection without adding metadata: stock and native retain the hidden prefix in
 Exact changelog, tie, checkpoint and rescale controls are written but not yet executed. Keep TTL
 and variable bounds gated; consecutive tie positions are still required. This extension changes
 canonical binding of an existing native range, not its ordinary execution algorithm.
+
+
+A further pending extension carries the existing first-observed variable bound in an explicit
+transient header rather than deriving it from retained rows. The header has inner-rank and kind
+sentinels of -1, an empty unique-key payload, NULL row columns, and the signed bound in the
+otherwise unused TTL-disabled metadata word. Ordinary row records remain unchanged. The stock
+projection writes the released `rankEnd` VALUE descriptor with LongSerializer; raw native
+checkpoints already contain this bound. This introduces no new JNI entry point or private
+state format. Comet's C Data ownership pattern remains unchanged, with all imported roots
+scoped before callback failures propagate. New direct/stock/process controls await execution.

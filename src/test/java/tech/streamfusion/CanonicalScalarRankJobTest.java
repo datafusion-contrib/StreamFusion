@@ -86,6 +86,18 @@ class CanonicalScalarRankJobTest {
     return 1;
   }
 
+  int rankEnd(String key) {
+    return 3;
+  }
+
+  String rankPredicate() {
+    return "rn<=3 AND rn>=" + firstRank();
+  }
+
+  String updatingInput() {
+    return "(SELECT k,v,id,p,COUNT(*) AS c FROM input_table GROUP BY k,v,id,p)";
+  }
+
   Path prepare(String name, String algorithm, String type, String mode, boolean ordinary)
       throws Exception {
     var root = directory.resolve(name);
@@ -105,10 +117,7 @@ class CanonicalScalarRankJobTest {
         algorithm.equals("append")
             ? "AppendFast"
             : algorithm.equals("update") ? "UpdateFast" : "Retract");
-    String source =
-        algorithm.equals("update")
-            ? "(SELECT k,v,id,p,COUNT(*) AS c FROM input_table GROUP BY k,v,id,p)"
-            : "input_table";
+    String source = algorithm.equals("update") ? updatingInput() : "input_table";
     String order =
         (algorithm.equals("update") ? "c DESC," : "")
             + "CAST(v AS "
@@ -122,8 +131,8 @@ class CanonicalScalarRankJobTest {
             + order
             + ") AS rn FROM "
             + source
-            + ") WHERE rn<=3 AND rn>="
-            + firstRank());
+            + ") WHERE "
+            + rankPredicate());
     var rows = new ArrayList<String>();
     int keys = mode.equals("rescale") ? 64 : 2;
     if (mode.equals("rescale")) Files.createFile(root.resolve("disable-chaining"));
@@ -180,7 +189,9 @@ class CanonicalScalarRankJobTest {
     var result = new HashMap<String, Long>();
     for (var rows : groups.values()) {
       rows.sort(order);
-      for (int index = firstRank() - 1; index < Math.min(3, rows.size()); index++) {
+      for (int index = firstRank() - 1;
+          index < Math.min(rankEnd(rows.get(0).get(0)), rows.size());
+          index++) {
         var row = rows.get(index);
         result.merge(row.get(0) + "|" + row.get(2) + "|" + (index + 1), 1L, Long::sum);
       }

@@ -16,7 +16,7 @@ import tech.streamfusion.operator.NativeColumnarTopNOperator;
 
 class CanonicalUpdateRankAdmissionTest {
   static Stream<Arguments> rejected() {
-    return Stream.of("ttl", "offset-ttl", "variable")
+    return Stream.of("ttl", "offset-ttl", "nullable-bound")
         .flatMap(mode -> Stream.of(false, true).map(compiled -> Arguments.of(mode, compiled)));
   }
 
@@ -33,7 +33,9 @@ class CanonicalUpdateRankAdmissionTest {
         "CREATE TABLE output_table(k BIGINT,v BIGINT,n BIGINT) WITH ('connector'='blackhole')");
     String group =
         "SELECT k,v,COUNT(*) AS c"
-            + (mode.equals("variable") ? ",COALESCE(MOD(ABS(k),3)+1,2) AS b" : "")
+            + (mode.equals("nullable-bound")
+                ? ",CASE WHEN k IS NULL THEN CAST(NULL AS BIGINT) ELSE MOD(ABS(k),3)+1 END AS b"
+                : "")
             + " FROM input_table GROUP BY k,v";
     String query =
         "INSERT INTO output_table SELECT k,v,rn FROM (SELECT *,"
@@ -42,7 +44,7 @@ class CanonicalUpdateRankAdmissionTest {
             + ")) WHERE "
             + (mode.equals("offset-ttl") ? "rn>=2 AND " : "")
             + "rn<="
-            + (mode.equals("variable") ? "b" : "3");
+            + (mode.equals("nullable-bound") ? "b" : "3");
     var planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
     var plan = compiled ? table.compilePlanSql(query) : null;
     var transformations =

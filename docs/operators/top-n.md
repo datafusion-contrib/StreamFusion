@@ -928,3 +928,18 @@ New controls cover exact stock changelogs with hidden/projected rank, both befor
 tied keys, nested retained rows, native checkpoint recovery, ordinary/portable SQL and complete-job
 handoff/rescaling with an independent visible-range oracle. These controls await execution in the
 local testing window. Earlier passing counts above apply to their original start-one scope.
+
+
+Updating canonical binding additionally captures the existing first-observed INT/BIGINT variable
+bound, with a required bound column and TTL disabled. The released `rankEnd` VALUE state is
+independent of `data-state-with-update`, including partitions with zero/negative bounds and no
+retained rows. A dedicated header in the transient canonical transfer carries the full signed
+64-bit bound; row tuples and their tied positions retain their existing wire records. No native
+checkpoint format or stock serializer changes. Later proposals do not replace restored bounds.
+
+New resident/raw native visitor controls include bound-only partitions and cross-chunk ties;
+actual stock controls cover both bound widths, hidden/projected ranks, changed later proposals,
+private checkpoint recovery and canonical continuation. Ordinary/portable job fixtures add
+empty returns and rescaling with an independent per-key bound oracle. These additions await
+both-release execution. Updating TTL ages/gapped ties and nullable variable-bound columns remain
+gated; earlier historical passing cohorts retain their original scope.

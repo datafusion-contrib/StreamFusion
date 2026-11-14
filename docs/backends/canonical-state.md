@@ -2548,3 +2548,10 @@ Retracting GROUP BY MIN/MAX additionally captures the existing one-phase mini-ba
 count trigger for the already bound integral/date/time/boolean map views. New raw-state and
 clean-worker continuation/recovery/rescale controls await both-release execution. Filtered and
 local/global extrema keep their existing gates, and the native state format is unchanged.
+
+
+Updating Top-N also has a pending first-bound canonical extension: a transient header projects
+the existing independent native bound to released `rankEnd` VALUE state, including bound-only
+owners and full signed 64-bit values. Stock tuple serializers and native checkpoint layouts are
+unchanged. Required INT/BIGINT bound columns with TTL disabled await both-release component/job
+qualification; nullable columns, updating TTL and inner-position gaps remain gated.

@@ -61,6 +61,23 @@ class CanonicalUpdateRankTypedTest {
     verify(shape, false, rocks, before, rank, false, offset);
   }
 
+  static Stream<Arguments> variableCases() {
+    var cases = new ArrayList<Arguments>();
+    for (String shape : new String[] {"bound-int", "bound-long"})
+      for (boolean rocks : new boolean[] {false, true})
+        for (boolean before : new boolean[] {false, true})
+          for (boolean rank : new boolean[] {false, true})
+            cases.add(Arguments.of(shape, rocks, before, rank));
+    return tech.streamfusion.CanonicalTestMatrix.select(cases.stream());
+  }
+
+  @ParameterizedTest
+  @MethodSource("variableCases")
+  void independentFirstBoundsSurviveEmptyPartitionsAndNativeRecovery(
+      String shape, boolean rocks, boolean before, boolean rank) throws Exception {
+    verify(shape, false, rocks, before, rank, false, 0);
+  }
+
   static Stream<Arguments> cases() {
     var cases = new ArrayList<Arguments>();
     for (String shape :
@@ -132,7 +149,7 @@ class CanonicalUpdateRankTypedTest {
       assertFalse(expected.isEmpty());
       assertEquals(expected, bytes(output, collect(nativeHarness, output)));
       OperatorSubtaskState returned;
-      if (offset == 0) returned = snapshot(nativeHarness);
+      if (offset == 0 && !layout.variable) returned = snapshot(nativeHarness);
       else {
         var checkpoint = nativeHarness.snapshot(3, 0);
         snapshots.add(checkpoint);
@@ -169,10 +186,22 @@ class CanonicalUpdateRankTypedTest {
     final int[] rowKeys;
     final int sort;
     final int[] sortColumns;
+    final boolean variable;
 
     Layout(String shape, boolean twoSorts) {
       this.shape = shape;
-      if (shape.startsWith("payload-")) {
+      variable = shape.startsWith("bound-");
+      if (variable) {
+        type =
+            RowType.of(
+                new IntType(),
+                new BigIntType(),
+                new VarCharType(100),
+                shape.equals("bound-int") ? new IntType(false) : new BigIntType(false));
+        keys = new int[] {0};
+        rowKeys = new int[] {0, 2};
+        sort = 1;
+      } else if (shape.startsWith("payload-")) {
         type =
             RowType.of(
                 new BigIntType(),
@@ -251,11 +280,18 @@ class CanonicalUpdateRankTypedTest {
               : shape.equals("long")
                   ? StringData.fromString(String.format(java.util.Locale.ROOT, "%03d", score))
                   : shape.equals("string") ? (Object) score : score.longValue();
+      if (variable) {
+        long bound = key == null ? 1 : key == 2 ? -2 : 3;
+        Object proposed = shape.equals("bound-int") ? (Object) (int) bound : bound;
+        return GenericRowData.of(partition, value, label, proposed);
+      }
       return GenericRowData.of(partition, value, label);
     }
 
     RowData update(Integer key, Integer score, int id) {
       var row = row(key, score, id);
+      if (variable)
+        ((GenericRowData) row).setField(3, shape.equals("bound-int") ? (Object) 99 : 99L);
       row.setRowKind(RowKind.UPDATE_AFTER);
       return row;
     }
@@ -306,7 +342,7 @@ class CanonicalUpdateRankTypedTest {
                 comparator,
                 sort,
                 RankType.ROW_NUMBER,
-                new ConstantRankRange(offset + 1, 3),
+                layout.variable ? new VariableRankRange(3) : new ConstantRankRange(offset + 1, 3),
                 before,
                 rank,
                 10000);
@@ -336,7 +372,8 @@ class CanonicalUpdateRankTypedTest {
             selector(layout.type, layout.sortColumns),
             keyType,
             layout.type,
-            fast);
+            fast,
+            layout.variable);
     var operator = new CanonicalRank(layout, fast, before, rank, offset);
     operator.setStockStateContract(contract);
     var harness =
@@ -416,7 +453,9 @@ class CanonicalUpdateRankTypedTest {
           false,
           -1,
           0,
-          128);
+          128,
+          layout.variable ? 3 : -1,
+          layout.variable);
     }
 
     String storage() {
