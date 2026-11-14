@@ -8,6 +8,7 @@ class CanonicalVariableExtremaMiniBatchJobTest extends CanonicalVariableExtremaK
   Path prepare(String name, String mode, boolean ordinary) throws Exception {
     var root = super.prepare(name, mode, ordinary);
     Files.writeString(root.resolve("one-phase-mini-batch"), "7");
+    Files.createFile(root.resolve("same-cut-stock-reference"));
     return root;
   }
 }

@@ -117,6 +117,10 @@ class CanonicalUnboundedOverScalarTest {
                 "TIMESTAMP_LTZ(3)",
                 "STRING",
                 "CHAR(32)")
+            .filter(
+                type ->
+                    !type.startsWith("CHAR")
+                        || tech.streamfusion.compat.CanonicalTestCompat.flink22())
             .flatMap(
                 type ->
                     Stream.of(false, true)

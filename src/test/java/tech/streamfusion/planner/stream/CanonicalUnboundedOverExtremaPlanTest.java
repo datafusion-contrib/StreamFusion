@@ -83,6 +83,21 @@ class CanonicalUnboundedOverExtremaPlanTest {
             + (rows ? " ROWS" : " RANGE")
             + " BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)";
     var planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
+    if (type.startsWith("CHAR") && !tech.streamfusion.compat.CanonicalTestCompat.flink22()) {
+      table.getConfig().set("streamfusion.native.enabled", "false");
+      var failure =
+          assertThrows(
+              org.apache.flink.table.api.TableException.class,
+              () -> {
+                if (compiled) {
+                  var stock = table.compilePlanSql(query);
+                  planner.translatePlan(
+                      planner.loadPlan(PlanReference.fromJsonString(stock.asJsonString())));
+                } else CanonicalRegularJoinPlanTest.translate(planner, query);
+              });
+      assertTrue(failure.getMessage().contains("CHAR"), failure.getMessage());
+      return;
+    }
     var plan = compiled ? table.compilePlanSql(query) : null;
     String portable = plan == null ? "" : plan.asJsonString();
     var transformations =

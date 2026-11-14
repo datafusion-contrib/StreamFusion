@@ -366,5 +366,8 @@ class CanonicalJobRunner {
       if (implemented.getPackageName().equals("org.example.canonical"))
         collect(implemented, classes);
     for (Class<?> child : type.getDeclaredClasses()) collect(child, classes);
+    // javac's enum-switch helpers are nest members, but not declared classes.
+    if (type.getNestHost() == type)
+      for (Class<?> member : type.getNestMembers()) collect(member, classes);
   }
 }

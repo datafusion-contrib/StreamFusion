@@ -42,8 +42,11 @@ public final class CanonicalNestedJoinFixture {
     String right = "right_input_table r";
     String condition = "l.k=r.k";
     if (family.equals("WindowJoin")) {
-      left = "TABLE(TUMBLE(TABLE input_table,DESCRIPTOR(rt),INTERVAL '3' SECOND)) l";
-      right = "TABLE(TUMBLE(TABLE right_input_table,DESCRIPTOR(rt),INTERVAL '3' SECOND)) r";
+      left =
+          "(SELECT * FROM TABLE(TUMBLE(TABLE input_table,DESCRIPTOR(rt),INTERVAL '3' SECOND))) l";
+      right =
+          "(SELECT * FROM TABLE(TUMBLE(TABLE right_input_table,DESCRIPTOR(rt),INTERVAL '3'"
+              + " SECOND))) r";
       condition += " AND l.window_start=r.window_start AND l.window_end=r.window_end";
     } else if (family.equals("IntervalJoin")) {
       condition += " AND l.rt BETWEEN r.rt - INTERVAL '1' SECOND AND r.rt + INTERVAL '1' SECOND";
@@ -84,6 +87,7 @@ public final class CanonicalNestedJoinFixture {
     var left = new ArrayList<String>();
     var right = new ArrayList<String>();
     if (rescale) {
+      Files.createFile(root.resolve("disable-chaining"));
       for (int round = 0; round < 6; round++)
         for (int key = 0; key < 64; key++) {
           left.add((key + 1) + "," + (round * 1000 + 100 + key));

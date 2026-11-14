@@ -2215,3 +2215,7 @@ Pending OVER batches reconcile Arrow’s physical list-child aliases (`element`,
 `items`, and `entries`) without copying value buffers. Logical ROW field names, child
 nullability, dictionary definitions, extension metadata, and scalar types must still match;
 a mismatch rejects the handoff before changing live pending state.
+
+The released Flink 1.18 aggregate factory rejects CHAR MIN/MAX OVER calls. Its positive
+scalar-extrema canonical cohort therefore uses VARCHAR for that family and retains explicit
+stock-rejection controls for CHAR; Flink 2.2 also exercises CHAR handoffs.

@@ -90,7 +90,8 @@ class CanonicalGroupRowKeyJobTest {
         root.resolve("input-columns.sql"), "k " + CanonicalRowKeyFixture.sql(nested) + ",v BIGINT");
     Files.writeString(
         root.resolve("query.sql"),
-        "INSERT INTO output_table SELECT k.i,SUM(v),COUNT(DISTINCT v) FROM input_table GROUP BY k");
+        "INSERT INTO output_table SELECT q.group_key.i,q.s,q.n FROM (SELECT k AS group_key,SUM(v)"
+            + " AS s,COUNT(DISTINCT v) AS n FROM input_table GROUP BY k) q");
     if (!variant.equals("eager")) {
       Files.writeString(
           root.resolve(variant.equals("global") ? "two-phase-mini-batch" : "one-phase-mini-batch"),

@@ -2701,3 +2701,7 @@ admission; encoded logical row bytes, nested kinds and stock serializers remain 
 Validated stock-state cleanup clears each selected state/owner/namespace once while streaming
 its immutable snapshot. Repeated map members do not trigger repeated whole-map deletion, and
 unknown real state is still validated independently before any cleanup.
+
+Isolated stock-worker fixture JARs include compiler-generated nest members as well as
+declared user classes. This keeps source value conversion self-contained when javac emits
+synthetic enum-dispatch helpers, while the worker still excludes StreamFusion classes.

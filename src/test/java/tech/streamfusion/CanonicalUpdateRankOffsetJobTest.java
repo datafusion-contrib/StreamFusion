@@ -6,7 +6,7 @@ import org.junit.jupiter.params.provider.Arguments;
 class CanonicalUpdateRankOffsetJobTest extends CanonicalScalarRankJobTest {
   static Stream<Arguments> cases() {
     return CanonicalTestMatrix.select(
-        Stream.of("DOUBLE", "DECIMAL(38,4)")
+        Stream.of("BIGINT", "DECIMAL(38,4)")
             .flatMap(
                 type ->
                     CanonicalGroupArithmeticJobTest.cases()
