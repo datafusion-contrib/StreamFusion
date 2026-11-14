@@ -519,6 +519,12 @@ new controls remain unexecuted. A released fast Top-1 control also checks that a
 remains retained after a finite challenger. Updating rank has its separate unique-key tuple
 contract, whose complete projection does not resolve this comparison-policy difference.
 
+Separate authored append/Top-1 controls retain FLOAT/DOUBLE partition keys and payloads while
+ordering by BIGINT. Opposite signed-zero partition keys remain separate; NaN/signed-zero payload
+bits survive canonical no-input returns and continuation across both engine orders and stores.
+Both engines consume the same serialized physical input in these controls. Execution on both
+released Flink lines remains pending.
+
 The new planner and component matrices include compact/wide decimals, timestamp precision nine,
 binary/interval carriers, signed-zero/NaN sort values, three-field sorting and nested payloads.
 The pending scalar and nested-payload component cases now compare complete raw stock state after

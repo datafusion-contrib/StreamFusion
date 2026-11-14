@@ -132,6 +132,101 @@ class CanonicalAppendRankTypedTest {
     }
   }
 
+  static Stream<Arguments> floatingCarrierCases() {
+    return Stream.of("scalar-float", "scalar-double")
+        .flatMap(
+            shape ->
+                Stream.of(false, true)
+                    .flatMap(
+                        fast ->
+                            Stream.of(false, true)
+                                .flatMap(
+                                    rocks ->
+                                        Stream.of(false, true)
+                                            .map(
+                                                first ->
+                                                    Arguments.of(shape, fast, rocks, first)))));
+  }
+
+  @ParameterizedTest
+  @MethodSource("floatingCarrierCases")
+  void floatingPartitionAndPayloadBitsUseIndependentNonfloatingSorts(
+      String shape, boolean fast, boolean rocks, boolean first) throws Exception {
+    var floating = CanonicalRankScalarFixture.type(shape);
+    var type = RowType.of(floating, new BigIntType(), floating);
+    int[] keys = {0};
+    var keySelector = selector(type, keys);
+    var keyType = (RowType) keySelector.getProducedType().toLogicalType();
+    var contract =
+        new StockAppendTopNStateContract(
+            new RowDataSerializer(keyType),
+            keySelector,
+            selector(type, 1),
+            keyType,
+            type,
+            new int[] {1},
+            fast,
+            false,
+            false,
+            keys);
+    var snapshots = new ArrayList<org.apache.flink.runtime.checkpoint.OperatorSubtaskState>();
+    long allocated = NativeAllocator.SHARED.getAllocatedMemory();
+    try {
+      try (var reference = stock(type, type, keys, 1, 0, fast, false, !rocks);
+          var owner = nativeHarness(type, keys, 1, 0, fast, false, rocks, contract)) {
+        reference.open();
+        synchronizeCacheClock(reference, fast);
+        List<RowData> prefix =
+            List.of(
+                carrier(shape, 10, 20, 50), carrier(shape, 20, 10, 10),
+                carrier(shape, 10, 10, 20), carrier(shape, null, 40, 30));
+        feed(reference, type, prefix);
+        var expected = bytes(type, reference.extractOutputValues());
+        if (first) {
+          owner.open();
+          push(owner, type, CanonicalOverValueFixture.physicalRows(prefix, type), 100);
+          assertEquals(expected, bytes(type, collect(owner, type)));
+        } else {
+          var saved = snapshot(reference);
+          snapshots.add(saved);
+          owner.initializeState(saved);
+          owner.open();
+        }
+        try (var returned = stock(type, type, keys, 1, 0, fast, false, rocks)) {
+          var saved = snapshot(owner);
+          snapshots.add(saved);
+          returned.initializeState(saved);
+          returned.open();
+          synchronizeCacheClock(returned, fast);
+          assertEquals(
+              CanonicalUnboundedOverScalarTest.raw(reference),
+              CanonicalUnboundedOverScalarTest.raw(returned));
+          List<RowData> suffix =
+              List.of(
+                  carrier(shape, 10, 5, 10),
+                  carrier(shape, 20, 8, 50),
+                  carrier(shape, null, 30, 20));
+          feed(reference, type, suffix);
+          feed(returned, type, suffix);
+          push(owner, type, CanonicalOverValueFixture.physicalRows(suffix, type), 200);
+          expected = bytes(type, reference.extractOutputValues());
+          assertEquals(expected, bytes(type, returned.extractOutputValues()));
+          assertEquals(expected, bytes(type, collect(owner, type)));
+        }
+      }
+    } finally {
+      for (var saved : snapshots) saved.discardState();
+    }
+    assertEquals(allocated, NativeAllocator.SHARED.getAllocatedMemory());
+  }
+
+  private static RowData carrier(String shape, Integer key, long sort, Integer payload) {
+    return GenericRowData.of(
+        CanonicalRankScalarFixture.score(shape, key),
+        sort,
+        CanonicalRankScalarFixture.score(shape, payload));
+  }
+
   @ParameterizedTest
   @MethodSource("cases")
   void typedRetainedRowsSurviveBothCanonicalDirections(

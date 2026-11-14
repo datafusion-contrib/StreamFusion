@@ -2672,3 +2672,8 @@ sort bindings remain gated. Actual released heap/RocksDB overlap and first-NaN T
 constructor rejection and ordinary/portable planner controls are authored but await execution
 on both supported lines. Floating payloads/partition
 fields with non-floating sorts remain eligible; no native state format is extended.
+
+Positive floating-carrier controls additionally use BIGINT sort fields with FLOAT/DOUBLE keys
+and payloads, retaining signed-zero partition identity and NaN/zero payload bits through raw
+no-input returns and continuation. These authored append/Top-1 controls exercise both orders and
+stores and remain unexecuted on both releases; they do not qualify floating sort policies.
