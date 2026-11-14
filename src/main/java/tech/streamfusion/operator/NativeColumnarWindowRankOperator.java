@@ -447,7 +447,7 @@ public class NativeColumnarWindowRankOperator extends AbstractNativeStatefulOper
               ArrowSchema schema = ArrowSchema.wrap(schemaAddress)) {
             VectorSchemaRoot out =
                 Data.importVectorSchemaRoot(allocator, array, schema, dictionaries);
-            ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(out));
+            ColumnarRecordMetrics.emitOwned(output, getMetricGroup(), out);
           }
         });
   }

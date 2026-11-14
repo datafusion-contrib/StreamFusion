@@ -227,7 +227,7 @@ batches promptly. No source-specific memory budget is introduced.
 
 ### Window final output
 
-Production aligned-window and session final output uses synchronous bounded receivers rather than one
+Production aligned-window, session and window-rank final output uses synchronous bounded receivers rather than one
 Arrow batch containing an entire watermark backlog. Decode frames and output assembly retain
 separate reservations until their consumers release them. Either can flush early when a larger
 reservation is denied; a single row that cannot fit still fails normally. The maximum batch
@@ -250,3 +250,10 @@ group's state charge as ownership moves. Partial/decode workspace reservations c
 until its receiver returns. The current resident window still requires key sorting, and the largest
 individual accumulator remains a necessary floor. Barrier drains emit every open slice without
 advancing the watermark; no pending transfer cursor becomes checkpoint state.
+
+Window rank copies bounded serialized row frames from pinned RocksDB values before decoding;
+a large retained group does not force full-group hydration during firing. Small groups coalesce
+within a frame, while rank numbers continue across frames of one group. Negative and nonnegative
+window starts are scanned separately before merging so the existing signed timestamp order and
+persisted bytes remain compatible. The resident memory backend transfers retained row ownership;
+window inventory and sorted partition metadata remain working-memory floors.

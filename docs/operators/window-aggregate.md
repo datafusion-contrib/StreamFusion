@@ -1990,7 +1990,8 @@ largest individual group and the window-end/key-group inventory remain working-m
 The memory backend still sorts the keys of its current resident window before emission.
 
 This changes the execution boundary, not supported SQL, state encodings or recovery routing.
-Window rank retains its independent firing path. No mailbox continuations or background state mutation are introduced.
+Window rank also uses bounded receivers with its own rank-state traversal; see [Top-N](top-n.md).
+No mailbox continuations or background state mutation are introduced.
 
 ## Bounded session firing
 
