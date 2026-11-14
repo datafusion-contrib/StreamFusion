@@ -64,7 +64,8 @@ class CanonicalEventUnboundedOverInteropTest {
   }
 
   private static Stream<Arguments> allModes() {
-    return Stream.of("TINYINT", "SMALLINT", "INT", "BIGINT", "FLOAT", "DOUBLE")
+    return Stream.of("TINYINT", "SMALLINT", "INT", "BIGINT", "FLOAT", "DOUBLE",
+        "DECIMAL(18,2)", "DECIMAL(38,2)", "DECIMAL(38,20)")
         .flatMap(
             type ->
                 Stream.of(false, true)

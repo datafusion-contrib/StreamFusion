@@ -52,7 +52,7 @@ class CanonicalBoundedRangeInteropTest {
 
   private static Stream<Arguments> allModes() {
     var out = new ArrayList<Arguments>();
-    for (String type : List.of("TINYINT", "SMALLINT", "INT", "BIGINT", "FLOAT", "DOUBLE", "DECIMAL(38,2)"))
+    for (String type : List.of("TINYINT", "SMALLINT", "INT", "BIGINT", "FLOAT", "DOUBLE", "DECIMAL(18,2)", "DECIMAL(38,2)", "DECIMAL(38,20)"))
       for (boolean keyless : new boolean[] {false, true})
         for (boolean stock : new boolean[] {false, true})
           for (boolean nativeStore : new boolean[] {false, true})

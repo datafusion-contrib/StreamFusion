@@ -1585,7 +1585,8 @@ Bounded views and the complete rescale/version/failure matrix remain open under
 ### Automatic bounded arithmetic state binding (partial)
 
 TINYINT/SMALLINT/INT values now use their existing native arithmetic codes in the stock binding,
-alongside BIGINT/FLOAT/DOUBLE and the existing bounded decimal scope. Raw SUM fields retain their
+alongside BIGINT/FLOAT/DOUBLE. Bounded decimal binding also accepts the existing native decimal
+precisions/scales, with new compact and wide-scale controls awaiting qualification. Raw SUM fields retain their
 declared width and wrapping behavior; AVG retains its widened BIGINT sum and independent count.
 The adapter still transfers raw accumulators rather than replaying retained rows. Shared planner,
 operator and typed event-time job controls now include these integral values on both releases.
@@ -1673,9 +1674,16 @@ error. Source entries are cleared only after the complete import succeeds. Memor
 leave the source available for a fresh target retry. Arrow callbacks retain the original Java
 exception and release their imported buffers on both success and failure.
 
-Unbounded DECIMAL, DISTINCT, selection/UDF/view accumulators and floating-point/nested keys remain outside this
-scalar binding. They require their own exact contracts; the bounded DECIMAL qualification does
-not extend to this path. Event-time V2 uses the separate contract described below. Native checkpoint
+Decimal SUM/SUM0/AVG binding is now implemented for existing native decimal precisions/scales,
+including compact inputs and precision-38 accumulators, and awaits the final testing window.
+The adapter projects native decimal SUM’s internal presence count into stock’s one nullable sum
+field. Import recreates presence bookkeeping from that field; it transfers AVG’s raw sum and count
+independently. NULL sums after overflow and all-NULL input preserve stock continuation without
+replaying rows, and decimal AVG/SUM0 overflow may retain a NULL raw scalar. Native checkpoint
+formats remain unchanged. New operator, planner and clean-worker job matrices await qualification
+on both release lines; historical numeric evidence below does not qualify decimal interchange.
+DISTINCT, selection/UDF/view accumulators and floating-point/nested keys remain outside this
+scalar binding. Event-time V2 uses the separate contract described below. Native checkpoint
 recovery is checked before a canonical savepoint performs any backend change. Broader connector
 transactions, sink-writer rescaling, failure combinations and cross-version interoperability
 remain in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
@@ -1813,7 +1821,7 @@ regression coverage. The V1 canonical qualification below adds actual stock/nati
 overlapping cohorts are not added cumulatively.
 
 Explicit V1 on Flink 2.2, wider scalar keys/payloads and bounded event-ROWS processing cleanup
-now have authored binding extensions awaiting qualification. Unbounded DECIMAL, DISTINCT/views
+and decimal arithmetic now have authored binding extensions awaiting qualification. DISTINCT/views
 and the wider rescale/version/failure/connector matrix remain unfinished in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking stays deferred.
 

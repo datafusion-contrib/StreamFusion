@@ -33,6 +33,7 @@ public final class StockOverFoldStateContract implements StockStateContract {
   private final TypeSerializer<RowData> keys;
   private final RowType keyType, accumulatorType, bridge;
   private final int[] kinds, widths;
+  private final int[] nativeFields, decimalSumCounts;
   private final boolean ttl;
   private final RowData.FieldGetter[] keyGetters, valueGetters;
 
@@ -67,8 +68,23 @@ public final class StockOverFoldStateContract implements StockStateContract {
     var fields = new ArrayList<RowType.RowField>();
     for (int i = 0; i < keyType.getFieldCount(); i++)
       fields.add(new RowType.RowField("key" + i, keyType.getTypeAt(i).copy(true)));
-    for (int i = 0; i < accumulatorType.getFieldCount(); i++)
-      fields.add(new RowType.RowField("state" + i, accumulatorType.getTypeAt(i).copy(true)));
+    nativeFields = new int[accumulatorType.getFieldCount()];
+    decimalSumCounts = new int[accumulatorType.getFieldCount()];
+    Arrays.fill(decimalSumCounts, -1);
+    slot = 0;
+    int nativeSlot = 0;
+    for (int i = 0; i < kinds.length; i++) {
+      for (int p = 0; p < widths[i]; p++) {
+        nativeFields[slot + p] = keyType.getFieldCount() + nativeSlot;
+        fields.add(new RowType.RowField("state" + nativeSlot++,
+            accumulatorType.getTypeAt(slot + p).copy(true)));
+      }
+      if (kinds[i] == 0 && accumulatorType.getTypeAt(slot).is(LogicalTypeRoot.DECIMAL)) {
+        decimalSumCounts[slot] = keyType.getFieldCount() + nativeSlot;
+        fields.add(new RowType.RowField("state" + nativeSlot++, new BigIntType()));
+      }
+      slot += widths[i];
+    }
     fields.add(new RowType.RowField("__over_retention_stamp", new BigIntType(false)));
     bridge = new RowType(fields);
     keyGetters = getters(keyType, 0);
@@ -81,7 +97,9 @@ public final class StockOverFoldStateContract implements StockStateContract {
         || type.is(LogicalTypeRoot.INTEGER)
         || type.is(LogicalTypeRoot.BIGINT)
         || type.is(LogicalTypeRoot.FLOAT)
-        || type.is(LogicalTypeRoot.DOUBLE);
+        || type.is(LogicalTypeRoot.DOUBLE)
+        || type instanceof org.apache.flink.table.types.logical.DecimalType
+            && ((org.apache.flink.table.types.logical.DecimalType) type).getPrecision() == 38;
   }
 
   public static boolean supportsPartitionKey(LogicalType type) {
@@ -136,7 +154,10 @@ public final class StockOverFoldStateContract implements StockStateContract {
       throw new IllegalStateException("Invalid unbounded OVER accumulator");
     int slot = 0;
     for (int i = 0; i < kinds.length; i++) {
-      if (kinds[i] != 0 && value.isNullAt(slot) || widths[i] == 2 && value.isNullAt(slot + 1))
+      if (kinds[i] != 0
+              && !accumulatorType.getTypeAt(slot).is(LogicalTypeRoot.DECIMAL)
+              && value.isNullAt(slot)
+          || widths[i] == 2 && value.isNullAt(slot + 1))
         throw new IllegalStateException("NULL in a required unbounded OVER scalar");
       slot += widths[i];
     }
@@ -205,10 +226,16 @@ public final class StockOverFoldStateContract implements StockStateContract {
 
   private StockNativeValueSnapshot.Decoder<RowData> decoder() {
     var keyRows = new RowDataSerializer(keyType);
-    var getters = getters(accumulatorType, keyType.getFieldCount());
+    var getters = new RowData.FieldGetter[nativeFields.length];
+    for (int i = 0; i < getters.length; i++)
+      getters[i] = RowData.createFieldGetter(accumulatorType.getTypeAt(i).copy(true), nativeFields[i]);
     return (row, receiver) -> {
       var key = copy(row, keyGetters);
-      var accumulator = copy(row, getters);
+      var accumulator = new GenericRowData(nativeFields.length);
+      for (int i = 0; i < nativeFields.length; i++) {
+        boolean emptySum = decimalSumCounts[i] >= 0 && row.getLong(decimalSumCounts[i]) == 0;
+        accumulator.setField(i, emptySum ? null : getters[i].getFieldOrNull(row));
+      }
       validateKey(key);
       validateAccumulator(accumulator);
       receiver.write(
@@ -258,7 +285,11 @@ public final class StockOverFoldStateContract implements StockStateContract {
         for (int i = 0; i < keyGetters.length; i++)
           row.setField(i, keyGetters[i].getFieldOrNull(key));
         for (int i = 0; i < valueGetters.length; i++)
-          row.setField(keyGetters.length + i, valueGetters[i].getFieldOrNull(value));
+          row.setField(nativeFields[i], valueGetters[i].getFieldOrNull(value));
+        for (int i = 0; i < decimalSumCounts.length; i++)
+          if (decimalSumCounts[i] >= 0)
+            // Stock nullable SUM has no count; native needs only presence to emit this scalar.
+            row.setField(decimalSumCounts[i], value.isNullAt(i) ? 0L : 1L);
         row.setField(bridge.getFieldCount() - 1, stored.getLastAccessTimestamp());
         rows.add(row);
         if (rows.size() == CHUNK_ROWS) {

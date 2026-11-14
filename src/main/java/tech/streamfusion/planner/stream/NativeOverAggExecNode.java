@@ -94,8 +94,7 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
     for (int column : valueColumns) {
       if (column < 0 || column >= input.getFieldCount()) return false;
       var type = input.getTypeAt(column);
-      if (!stockArithmeticValueType(type)
-          || !bounded && type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.DECIMAL))
+      if (!stockArithmeticValueType(type))
         return false;
     }
     return true;
@@ -108,9 +107,7 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
         || type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.BIGINT)
         || type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.FLOAT)
         || type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.DOUBLE)
-        || type instanceof org.apache.flink.table.types.logical.DecimalType
-            && ((org.apache.flink.table.types.logical.DecimalType) type).getPrecision() == 38
-            && ((org.apache.flink.table.types.logical.DecimalType) type).getScale() == 2;
+        || type instanceof org.apache.flink.table.types.logical.DecimalType;
   }
 
   public NativeOverAggExecNode withStateMaxParallelism(int maximum) {

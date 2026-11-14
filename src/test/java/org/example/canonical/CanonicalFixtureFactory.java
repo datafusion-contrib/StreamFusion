@@ -459,17 +459,7 @@ public final class CanonicalFixtureFactory
         var row = new GenericRowData(RowKind.valueOf(fields[0]), type.getFieldCount());
         for (int i = 0; i < type.getFieldCount(); i++) {
           String value = fields[i + 1];
-          row.setField(
-              i,
-              value.equals("null")
-                  ? null
-                  : type.getTypeAt(i)
-                          .is(
-                              org.apache.flink.table.types.logical.LogicalTypeRoot
-                                  .TIMESTAMP_WITHOUT_TIME_ZONE)
-                      ? org.apache.flink.table.data.TimestampData.fromEpochMillis(
-                          Long.parseLong(value))
-                      : Long.parseLong(value));
+          row.setField(i, scalar(type.getTypeAt(i), value));
         }
         output.collect(serializer.toBinaryRow(row).copy());
       }
@@ -480,6 +470,45 @@ public final class CanonicalFixtureFactory
           : split.offset == rows.size() && noMoreSplits
               ? InputStatus.END_OF_INPUT
               : InputStatus.NOTHING_AVAILABLE;
+    }
+
+    private static Object scalar(org.apache.flink.table.types.logical.LogicalType type, String value) {
+      if (value.equals("null")) return null;
+      switch (type.getTypeRoot()) {
+        case TINYINT:
+          return Byte.parseByte(value);
+        case SMALLINT:
+          return Short.parseShort(value);
+        case INTEGER:
+        case DATE:
+        case TIME_WITHOUT_TIME_ZONE:
+        case INTERVAL_YEAR_MONTH:
+          return Integer.parseInt(value);
+        case BIGINT:
+        case INTERVAL_DAY_TIME:
+          return Long.parseLong(value);
+        case BOOLEAN:
+          return Boolean.parseBoolean(value);
+        case FLOAT:
+          return Float.parseFloat(value);
+        case DOUBLE:
+          return Double.parseDouble(value);
+        case CHAR:
+        case VARCHAR:
+          return org.apache.flink.table.data.StringData.fromString(value);
+        case DECIMAL:
+          var decimal = (org.apache.flink.table.types.logical.DecimalType) type;
+          return org.apache.flink.table.data.DecimalData.fromBigDecimal(
+              new java.math.BigDecimal(value), decimal.getPrecision(), decimal.getScale());
+        case TIMESTAMP_WITHOUT_TIME_ZONE:
+        case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
+          return org.apache.flink.table.data.TimestampData.fromEpochMillis(Long.parseLong(value));
+        case BINARY:
+        case VARBINARY:
+          return java.util.Base64.getDecoder().decode(value);
+        default:
+          throw new IllegalArgumentException("Use BINARY rows for fixture type " + type);
+      }
     }
 
     private void markReady() throws IOException {

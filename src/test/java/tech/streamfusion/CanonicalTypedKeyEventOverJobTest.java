@@ -19,7 +19,8 @@ class CanonicalTypedKeyEventOverJobTest extends CanonicalEventUnboundedOverJobTe
   private static Stream<Arguments> cases(boolean recovery) {
     return CanonicalTestMatrix.select(Stream.of("rows", "range")
         .flatMap(frame -> Stream.of("INT:BIGINT", "STRING:BIGINT", "BIGINT:TINYINT",
-                "BIGINT:SMALLINT", "BIGINT:INT")
+                "BIGINT:SMALLINT", "BIGINT:INT", "BIGINT:DECIMAL(18,2)",
+                "BIGINT:DECIMAL(38,2)", "BIGINT:DECIMAL(38,20)")
             .flatMap(types -> IntStream.rangeClosed(1, FlinkPlanCompat.unboundedOverVersion())
                 .boxed().flatMap(version -> eventCases(frame, false, false, recovery)
                     .map(args -> Arguments.of(frame + ":" + types + ":" + version,

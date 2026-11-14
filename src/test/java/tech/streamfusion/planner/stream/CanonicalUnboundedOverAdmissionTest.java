@@ -90,7 +90,7 @@ class CanonicalUnboundedOverAdmissionTest {
             .collect(java.util.stream.Collectors.toList());
     boolean event = mode.startsWith("legacy-event-");
     boolean admitted = event || mode.equals("integer-key") || mode.equals("composite-key")
-        || mode.equals("integer-value");
+        || mode.equals("integer-value") || mode.equals("decimal-value");
     if (admitted) {
       assertEquals(1, nativeOwners.size(), graph.getStreamingPlanAsJSON());
       assertInstanceOf(

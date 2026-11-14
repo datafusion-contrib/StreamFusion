@@ -1831,8 +1831,7 @@ final class StockCompiledPlanLowering {
               : call.getArgList().get(0);
       if (columns[i] < 0 || columns[i] >= argumentType.getFieldCount()) return stock;
       var type = argumentType.getTypeAt(columns[i]);
-      if (!NativeOverAggExecNode.stockArithmeticValueType(type)
-          || !bounded && type.is(LogicalTypeRoot.DECIMAL)) return stock;
+      if (!NativeOverAggExecNode.stockArithmeticValueType(type)) return stock;
       types[i] =
           WindowAggregateMatcher.windowValueTypeCode(
               planner.getTypeFactory().createFieldTypeFromLogicalType(type));

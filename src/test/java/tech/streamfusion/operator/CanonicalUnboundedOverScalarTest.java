@@ -55,7 +55,12 @@ import tech.streamfusion.state.StockOverFoldStateContract;
 
 class CanonicalUnboundedOverScalarTest {
   static Stream<Arguments> cases() {
-    return Stream.of("TINYINT", "SMALLINT", "INT", "BIGINT", "FLOAT", "DOUBLE")
+    return tech.streamfusion.CanonicalTestMatrix.select(allCases());
+  }
+
+  private static Stream<Arguments> allCases() {
+    return Stream.of("TINYINT", "SMALLINT", "INT", "BIGINT", "FLOAT", "DOUBLE",
+        "DECIMAL(18,2)", "DECIMAL(38,2)", "DECIMAL(38,20)")
         .flatMap(
             type ->
                 Stream.of(false, true)
@@ -184,6 +189,44 @@ class CanonicalUnboundedOverScalarTest {
             Arguments.of("INT", 2147483647L))
         .flatMap(args -> Stream.of(false, true)
             .map(rocks -> Arguments.of(args.get()[0], args.get()[1], rocks)));
+  }
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+  void decimalNullableSumRestartsWhileOverflowedAverageRemainsNullAcrossHandoffs(boolean rocks)
+      throws Exception {
+    var plan = new Plan("DECIMAL(38,2)", true, false, 0);
+    var maximum = (GenericRowData) plan.row(1L, null);
+    maximum.setField(1, org.apache.flink.table.data.DecimalData.fromBigDecimal(
+        new java.math.BigDecimal("999999999999999999999999999999999999.99"), 38, 2));
+    var extra = (GenericRowData) plan.row(1L, null);
+    extra.setField(1, org.apache.flink.table.data.DecimalData.fromBigDecimal(
+        new java.math.BigDecimal("0.01"), 38, 2));
+    List<RowData> prefix = List.of(plan.row(null, null), maximum, extra);
+    var suffix = List.of(plan.row(1L, null), plan.row(1L, 7L), plan.row(1L, -2L), plan.row(null, 3L));
+    long allocated = NativeAllocator.SHARED.getAllocatedMemory();
+    try (var stock = plan.stock(rocks); var source = plan.nativeHarness(rocks)) {
+      stock.open();
+      source.open();
+      assertEquals(plan.stockInput(stock, prefix), plan.nativeInput(source, prefix));
+      var nativeState = snapshot(source);
+      var stockState = snapshot(stock);
+      try (var returned = plan.stock(rocks); var imported = plan.nativeHarness(rocks)) {
+        returned.initializeState(nativeState);
+        imported.initializeState(stockState);
+        returned.open();
+        imported.open();
+        assertEquals(raw(stock), raw(returned), "Nullable decimal sum and raw AVG overflow are stock state");
+        var expected = plan.stockInput(stock, suffix);
+        assertEquals(expected, plan.stockInput(returned, suffix));
+        assertEquals(expected, plan.nativeInput(imported, suffix));
+        assertEquals(expected, plan.nativeInput(source, suffix));
+      } finally {
+        nativeState.discardState();
+        stockState.discardState();
+      }
+    }
+    assertEquals(allocated, NativeAllocator.SHARED.getAllocatedMemory());
   }
 
   @ParameterizedTest

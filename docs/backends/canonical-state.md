@@ -27,7 +27,7 @@ pages. Historical cohorts are not silently requalified against each newer librar
 | [Sessions](../operators/window-aggregate.md) | Automatic partitioned TVF and legacy event/processing-time SESSION binding, operator recovery and selected complete-job handoffs | Native unpartitioned SESSION TVF assignment and wider merging/timer/recovery matrix |
 | [Window rank](../operators/top-n.md#window-rank-canonical-interchange-partial) | Automatic event-time retained sort-list, timer and watermark binding | Wider bounds/types, processing-time projection and failure/delivery matrix |
 | [Window deduplication](../operators/deduplication.md#window-deduplication-canonical-interchange-partial) | Automatic event-time winner, timer and watermark binding | Wider winner/types, processing-time projection and failure/delivery matrix |
-| [OVER](../operators/over.md#automatic-bounded-arithmetic-state-binding-partial) | Bounded arithmetic, processing-time unbounded scalar and event-time unbounded scalar contracts with automatic binding; narrow integral values, scalar/composite keys and explicit 2.2 V1 implementations and bounded event-ROWS cleanup awaiting qualification | Remaining keys/types, DISTINCT/views and complete new-scope qualification |
+| [OVER](../operators/over.md#automatic-bounded-arithmetic-state-binding-partial) | Bounded arithmetic, processing-time unbounded scalar and event-time unbounded scalar contracts with automatic binding; narrow integral values, scalar/composite keys and decimal values, explicit 2.2 V1 implementations and bounded event-ROWS cleanup awaiting qualification | Remaining keys/types, DISTINCT/views and complete new-scope qualification |
 | [Changelog normalization](../operators/changelog-normalize.md#canonical-savepoint-adapter) | Automatic retained-row/TTL contract and complete jobs | Wider keys, mini-batches, consumers and failure matrix |
 | [Interval joins](../operators/joins/interval-join.md#complete-job-handoff-matrix) | Event/proctime state, four join kinds and selected complete-job/rescale matrices; nested binding awaiting qualification | Wider schemas, cleanup edges and remaining ordinary-SQL combinations |
 | [Temporal joins](../operators/joins/temporal-join.md#complete-job-handoff-matrix) | Qualified INNER/LEFT history/probe/timer state and complete jobs; nested binding awaiting qualification | Legacy proctime variant, wider schemas and commit-failure matrix |
@@ -2336,3 +2336,16 @@ timer domains before installing state. New controls exercise both directions, ov
 pending/processed/empty cuts, native checkpoints, corrupt cleanup ownership, ordinary/compiled
 jobs and keyed rescaling. Testing on Flink 1.18 and 2.2 remains deferred to the final six-hour
 window. This adds canonical compatibility without introducing a new execution operator.
+
+## Decimal OVER projection awaiting qualification
+
+The shared unbounded scalar adapter now projects existing native decimal SUM, SUM0 and AVG
+into released stock accumulator fields. SUM’s native non-null count supplies presence for
+stock’s single nullable field; stock import derives only that internal presence marker. AVG’s
+raw widened sum and independent count transfer exactly, including an overflowed NULL sum.
+All-NULL and post-overflow nullable SUM continuation need no input replay. Existing native
+checkpoint formats retain their original layout. Bounded arithmetic binding also admits the
+existing native decimal precisions/scales. New compact/wide-scale planner, operator, TTL and
+clean-worker continuation/recovery/rescale fixtures await testing on both Flink releases.
+The compatibility source fixture parses declared scalar types so narrow integers, strings and
+decimals retain their physical representation; nested rows continue using its binary protocol.
