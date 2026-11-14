@@ -56,7 +56,10 @@ metadata and uses bounded key cleanup.
 Batch-oriented point reads use RocksDB's optimized MultiGet API on the default column family. The Rust
 binding borrows the batch's key bytes and returns pinned values, which remain valid through the
 batch decode and are then released. Operator state owns its decoded values; it does not retain
-RocksDB cache pins across bundles. Constant AppendFast Top-1 can retain clean,
+RocksDB cache pins across bundles. Generic keyed stores reserve their decoded working set and
+conversion workspace against the shared task off-heap pool before hydration and through bundle
+completion. Operator mini-batch staging has a separate reservation; state metrics include both
+owners. Persisted keys, row encodings, checkpoint handles and key-group routing are unchanged. Constant AppendFast Top-1 can retain clean,
 owned decoded winners in a bounded cache governed by task off-heap reservations;
 [the Top-N page](../operators/top-n.md) describes its admission, metrics and
 checkpoint behavior. This changes the read path without changing persisted keys,

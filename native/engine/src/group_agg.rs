@@ -2048,6 +2048,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         budget_bytes: i64,
     ) -> Result<Self, DataFusionError> {
         self.memory.attach("group-aggregate", budget_bytes, 0)?;
+        self.store.attach_memory(self.memory.state_memory());
         Ok(self)
     }
 
@@ -3470,6 +3471,10 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 self.memory.set(bytes + self.staging_bytes());
             }
         }
+        if self.store.owns_memory() {
+            self.store.account_memory()?;
+            self.memory.set(self.staging_bytes());
+        }
         self.memory.account()?;
 
         // Mini-batch output is produced only by `flush_mini_batch`. Avoid constructing empty key
@@ -3913,6 +3918,9 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         }
         self.store.end_bundle()?;
         self.memory.record(self.store.footprint_delta());
+        if self.store.owns_memory() {
+            self.memory.set(self.staging_bytes());
+        }
         self.memory.account()?;
         Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
             .expect("failed to build mini-batch group-by changelog"))

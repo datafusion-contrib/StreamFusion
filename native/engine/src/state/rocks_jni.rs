@@ -401,7 +401,11 @@ pub extern "system" fn Java_tech_streamfusion_Native_rocksdbGroupAggregatorState
     _class: JClass<'local>,
     handle: jlong,
 ) -> jlong {
-    crate::bridge::jni_guard(env, move |_env| unsafe { &*(handle as *const RocksGroupAggregator) }.memory.state_bytes as jlong)
+    crate::bridge::jni_guard(env, move |_env| {
+        unsafe { &*(handle as *const RocksGroupAggregator) }
+            .memory
+            .state_bytes() as jlong
+    })
 }
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_rocksdbGroupAggregatorStagingBytes<'local>(

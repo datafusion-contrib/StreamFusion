@@ -129,6 +129,20 @@ RocksDB's own memtables and block cache hold the rest, governed by Flink's
 `state.backend.rocksdb.memory.*` options rather than the task off-heap pool (see the
 [RocksDB backend](backends/rocksdb.md) memory section).
 
+Generic native RocksDB keyed stores own their decoded working-set reservations. Hydration
+reserves key and decode space before decoding persisted values, and bundle completion keeps
+live state and encoding workspace charged until writes finish and decoded values are released.
+A failed write retains the working-state charge until the store closes. Operators account
+mini-batch preimages and other staging separately, and `nativeStateBytes` includes the live
+store-owned state. This prevents an immediate bundle from allocating and clearing its decoded
+state between two operator-accounting samples. Raw codecs estimate their owned representation
+from their released encoding; Arrow-row codecs reserve overlapping input, decoded columns and
+owned values. These remain size estimates, not an allocator-level RSS limit.
+
+Read-through point access during an active bundle requires the key to have been hydrated by
+one of its input batches. A hydrated absent key returns no value; an unknown key fails the
+internal contract instead of silently masquerading as absent persisted state.
+
 RocksDB Top-N reconciles its reservation with the current read-through working set, not the
 cumulative size of persisted partition keys. Append-only (including Top-1), retracting and
 update-fast rankers check the live working set before committing a bundle and return its charge

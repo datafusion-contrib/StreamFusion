@@ -96,7 +96,7 @@ macro_rules! state_bytes_getter {
             handle: jlong,
         ) -> jlong {
             let operator = unsafe { &*(handle as *const $ty) };
-            operator.memory.state_bytes as jlong
+            operator.memory.state_bytes() as jlong
         }
     };
 }

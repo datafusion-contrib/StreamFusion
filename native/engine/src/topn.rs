@@ -423,8 +423,11 @@ fn account_topn_state<V>(
     staged_bytes: impl FnOnce() -> usize,
 ) -> Result<(), DataFusionError> {
     let store_delta = store.footprint_delta();
+    store.account_memory()?;
     if memory.tracking() {
-        if let Some(resident) = store.resident_bytes() {
+        if store.owns_memory() {
+            memory.set(staged_bytes());
+        } else if let Some(resident) = store.resident_bytes() {
             memory.set(resident + staged_bytes());
         } else {
             memory.record(delta + store_delta);
@@ -604,6 +607,21 @@ impl crate::state::RocksStateCodec for TopNStateCodec {
             out.extend_from_slice(&bound.written_at.to_le_bytes());
         }
     }
+    fn raw_decoded_bytes(&self, bytes: &[u8]) -> usize {
+        if bytes.starts_with(retract_state::STATE_VERSION) {
+            return bytes.len().saturating_mul(4);
+        }
+        let count = u32::from_le_bytes(bytes[..4].try_into().expect("top-n row count")) as usize;
+        bytes
+            .len()
+            .saturating_add(count.saturating_mul(
+                std::mem::size_of::<TopNRow>()
+                    + 2 * std::mem::size_of::<OwnedRow>()
+                    + 2 * std::mem::size_of::<usize>(),
+            ))
+            .saturating_add(std::mem::size_of::<TopNPartition>())
+    }
+
     fn from_raw(&self, bytes: &[u8]) -> TopNPartition {
         if bytes.starts_with(retract_state::STATE_VERSION) {
             return TopNPartition {
@@ -900,6 +918,7 @@ impl<S: KeyedStateStore<TopNPartition>> TopNRanker<S> {
         budget_bytes: i64,
     ) -> Result<Self, DataFusionError> {
         self.memory.attach("top-n", budget_bytes, 0)?;
+        self.groups.attach_memory(self.memory.state_memory());
         if self.top1_fast && self.limit == 1 && self.rank_end_column.is_none() {
             self.groups
                 .enable_resident_cache(64 * 1024 * 1024, self.memory.temporary_reservation());
@@ -2312,6 +2331,7 @@ impl<S: KeyedStateStore<TopNPartition>> RetractableTopNRanker<S> {
         budget_bytes: i64,
     ) -> Result<Self, DataFusionError> {
         self.memory.attach("retracting-top-n", budget_bytes, 0)?;
+        self.groups.attach_memory(self.memory.state_memory());
         Ok(self)
     }
 
@@ -3240,6 +3260,18 @@ impl crate::state::RocksStateCodec for UpdatableTopNStateCodec {
             out.extend(value.iter().map(|entry| entry.stored_kind as u8));
         }
     }
+    fn raw_decoded_bytes(&self, bytes: &[u8]) -> usize {
+        let count = u32::from_le_bytes(bytes[..4].try_into().expect("top-n row count")) as usize;
+        bytes
+            .len()
+            .saturating_add(count.saturating_mul(
+                std::mem::size_of::<UpdatableRow>()
+                    + 2 * std::mem::size_of::<OwnedRow>()
+                    + 2 * std::mem::size_of::<usize>(),
+            ))
+            .saturating_add(std::mem::size_of::<UpdatableTopNPartition>())
+    }
+
     fn from_raw(&self, bytes: &[u8]) -> UpdatableTopNPartition {
         let mut cursor = RawListCursor::new(bytes);
         let sort_parser = self.sort.parser();
@@ -3432,6 +3464,7 @@ impl<S: KeyedStateStore<UpdatableTopNPartition>> UpdatableTopNRanker<S> {
         budget_bytes: i64,
     ) -> Result<Self, DataFusionError> {
         self.memory.attach("update-fast-top-n", budget_bytes, 0)?;
+        self.groups.attach_memory(self.memory.state_memory());
         Ok(self)
     }
 
@@ -4352,9 +4385,9 @@ impl RocksTopNHandle {
 
     pub(crate) fn state_bytes(&self) -> usize {
         match self {
-            RocksTopNHandle::Append(r) => r.memory.state_bytes,
-            RocksTopNHandle::Retract(r) => r.memory.state_bytes,
-            RocksTopNHandle::UpdateFast(r) => r.memory.state_bytes,
+            RocksTopNHandle::Append(r) => r.memory.state_bytes(),
+            RocksTopNHandle::Retract(r) => r.memory.state_bytes(),
+            RocksTopNHandle::UpdateFast(r) => r.memory.state_bytes(),
         }
     }
 
@@ -5090,9 +5123,9 @@ pub extern "system" fn Java_tech_streamfusion_Native_topNRankerStateBytes<'local
     crate::bridge::jni_guard(env, move |_env| {
         let ranker = unsafe { &*(handle as *const TopNHandle) };
         (match ranker {
-            TopNHandle::Append(r) => r.memory.state_bytes,
-            TopNHandle::Retract(r) => r.memory.state_bytes,
-            TopNHandle::UpdateFast(r) => r.memory.state_bytes,
+            TopNHandle::Append(r) => r.memory.state_bytes(),
+            TopNHandle::Retract(r) => r.memory.state_bytes(),
+            TopNHandle::UpdateFast(r) => r.memory.state_bytes(),
         }) as jlong
     })
 }
