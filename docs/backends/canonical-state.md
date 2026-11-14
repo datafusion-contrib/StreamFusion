@@ -32,7 +32,7 @@ pages. Historical cohorts are not silently requalified against each newer librar
 | [Interval joins](../operators/joins/interval-join.md#complete-job-handoff-matrix) | Event/proctime state, four join kinds and selected complete-job/rescale matrices; nested binding awaiting qualification | Wider schemas, cleanup edges and remaining ordinary-SQL combinations |
 | [Temporal joins](../operators/joins/temporal-join.md#complete-job-handoff-matrix) | Qualified INNER/LEFT history/probe/timer state and complete jobs; nested binding awaiting qualification | Legacy proctime variant, wider schemas and commit-failure matrix |
 | [Event-time sort](../operators/event-time-sort.md#stock-compatible-canonical-interchange) | Automatic single ascending-rowtime contract and complete-job handoffs | Secondary sorting and wider schema/connector/failure/version matrices |
-| [Sink materialization](../operators/sink-upsert-materialize.md#canonical-interchange-qualification) | LEGACY contract on both releases; 2.2 VALUE/MAP/ADAPTIVE layouts; automatic typed-payload/scalar-key stock-sink binding awaiting qualification | Accelerated connector binding, constructed keys and complete new-job/writer-rescale qualification |
+| [Sink materialization](../operators/sink-upsert-materialize.md#canonical-interchange-qualification) | LEGACY contract on both releases; 2.2 VALUE/MAP/ADAPTIVE layouts; automatic typed-payload/scalar-and-ROW-key stock-sink binding awaiting qualification | Accelerated connector binding, array/map keys and complete new-job/writer-rescale qualification |
 | [Window joins](../operators/joins/window-join.md#stock-canonical-savepoint-interoperability) | Qualified event-time INNER/outer window layouts and complete jobs; nested binding awaiting qualification | Wider schemas/residuals and additional exchange/rescale combinations |
 
 ## Release parity and frozen scope
@@ -2377,7 +2377,7 @@ validation, TTL, no-input returns, native checkpoints and keyed rescaling.
 
 The captured stock materializer hook now admits existing Arrow payload types with scalar sink
 and inferred input keys, instead of rejecting every non-BIGINT retained row. ROW/ARRAY/MAP/
-MULTISET payloads use the existing candidate and matching codecs. Constructed keys, empty input
+MULTISET payloads use the existing candidate and matching codecs. ARRAY/MAP/MULTISET key descendants, empty input
 upsert keys, async/unaligned state and independent accelerated-connector contracts retain their
 existing exclusions. New planner and clean-worker fixtures keep typed rows through the stock
 writer, compare committed row bytes and independently check the final candidate table after
@@ -2451,3 +2451,15 @@ Automatic sink-materializer helpers retain a maximum parallelism large enough fo
 input. The native state owner and exchange continue using the captured materializer maximum;
 source-side transpose/split helpers must not inherit a smaller sink-side limit. This refinement
 is awaiting qualification with the automatic materializer extension.
+
+## Materializer ROW keys awaiting qualification
+
+The automatic stock-sink hook now admits ROW-bearing sink and inferred input keys whose
+descendants are scalar or ROW. Its live input, input-schema binding, retained candidate rows
+and V2 matching indexes all use the same original binary-row representation. This retains
+nested row kinds, padding and wide decimal/timestamp NULL slots for stock hashing and matching.
+The explicit legacy state fixture exercises both engine orders, TTL and native checkpoint
+recovery; automatic ordinary/compiled job fixtures cover LEGACY and released V2 strategies,
+committed row bytes, empty returns and keyed rescaling. These additions await both-release
+qualification. ARRAY/MAP/MULTISET key descendants remain gated. Historical private-checkpoint
+upgrade compatibility for earlier ROW representations is outside this new same-build cohort.

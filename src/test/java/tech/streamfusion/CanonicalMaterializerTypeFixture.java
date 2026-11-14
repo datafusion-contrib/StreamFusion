@@ -19,11 +19,16 @@ public final class CanonicalMaterializerTypeFixture {
         "scalar-varbinary",
         "array",
         "row",
-        "map");
+        "map",
+        "row-key",
+        "nested-row-key");
   }
 
   public static String sql(String shape) {
     switch (shape) {
+      case "row-key":
+      case "nested-row-key":
+        return "BIGINT";
       case "scalar-int":
         return "INT";
       case "array":
@@ -39,6 +44,9 @@ public final class CanonicalMaterializerTypeFixture {
 
   public static LogicalType type(String shape) {
     switch (shape) {
+      case "row-key":
+      case "nested-row-key":
+        return new BigIntType();
       case "scalar-int":
         return new IntType();
       case "array":
@@ -55,6 +63,9 @@ public final class CanonicalMaterializerTypeFixture {
   public static Object value(String shape, Long value) {
     if (value == null) return null;
     switch (shape) {
+      case "row-key":
+      case "nested-row-key":
+        return value;
       case "scalar-int":
         return value.intValue();
       case "array":
@@ -67,5 +78,33 @@ public final class CanonicalMaterializerTypeFixture {
       default:
         return CanonicalRankScalarFixture.value(shape, Math.toIntExact(value));
     }
+  }
+
+  public static String keySql(String shape) {
+    return shape.endsWith("row-key")
+        ? tech.streamfusion.operator.CanonicalRowKeyFixture.sql(shape.startsWith("nested"))
+        : "BIGINT";
+  }
+
+  public static LogicalType keyType(String shape) {
+    return shape.endsWith("row-key")
+        ? tech.streamfusion.operator.CanonicalRowKeyFixture.type(shape.startsWith("nested"))
+        : new BigIntType();
+  }
+
+  public static Object key(String shape, long id) {
+    return shape.endsWith("row-key")
+        ? tech.streamfusion.operator.CanonicalRowKeyFixture.key(
+            shape.startsWith("nested"),
+            id,
+            org.apache.flink.types.RowKind.values()[(int) (id % 4)],
+            true)
+        : id;
+  }
+
+  public static long keyId(String shape, org.apache.flink.table.data.RowData row) {
+    return shape.endsWith("row-key")
+        ? row.getRow(0, ((RowType) keyType(shape)).getFieldCount()).getLong(0)
+        : row.getLong(0);
   }
 }

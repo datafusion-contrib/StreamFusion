@@ -73,16 +73,19 @@ class CanonicalTypedMaterializerJobTest {
                     .collect(java.util.stream.Collectors.toList()));
     var type =
         RowType.of(
-            new BigIntType(), CanonicalMaterializerTypeFixture.type(shape), new BigIntType());
+            CanonicalMaterializerTypeFixture.keyType(shape),
+            CanonicalMaterializerTypeFixture.type(shape),
+            new BigIntType());
     var serializer = new RowDataSerializer(type);
     for (var root : List.of(baseline, switched)) {
       var actual = new HashMap<Long, String>();
       for (byte[] bytes : CanonicalFixtureFactory.committedRecords(root.resolve("committed"))) {
         RowData row = serializer.deserialize(new DataInputDeserializer(bytes));
-        if (row.getRowKind() == RowKind.DELETE) actual.remove(row.getLong(0));
+        long id = CanonicalMaterializerTypeFixture.keyId(shape, row);
+        if (row.getRowKind() == RowKind.DELETE) actual.remove(id);
         else {
           row.setRowKind(RowKind.INSERT);
-          actual.put(row.getLong(0), encode(serializer, row));
+          actual.put(id, encode(serializer, row));
         }
       }
       var expected = new HashMap<Long, String>();
@@ -95,7 +98,7 @@ class CanonicalTypedMaterializerJobTest {
             encode(
                 serializer,
                 GenericRowData.of(
-                    key,
+                    CanonicalMaterializerTypeFixture.key(shape, key),
                     CanonicalMaterializerTypeFixture.value(shape, key == 2 ? null : value),
                     value * 10)));
       }
@@ -117,18 +120,24 @@ class CanonicalTypedMaterializerJobTest {
     var root = base.prepare(name, strategy, inputKey, uids, mode, ordinary);
     Files.writeString(
         root.resolve("input-columns.sql"),
-        "k BIGINT NOT NULL,v "
+        "k "
+            + CanonicalMaterializerTypeFixture.keySql(shape)
+            + " NOT NULL,v "
             + CanonicalMaterializerTypeFixture.sql(shape)
             + ",n BIGINT"
             + (inputKey ? ",PRIMARY KEY(k,n) NOT ENFORCED" : ""));
     Files.writeString(
         root.resolve("output-columns.sql"),
-        "k BIGINT,n "
+        "k "
+            + CanonicalMaterializerTypeFixture.keySql(shape)
+            + ",n "
             + CanonicalMaterializerTypeFixture.sql(shape)
             + ",total BIGINT,PRIMARY KEY(k) NOT ENFORCED");
     var input =
         RowType.of(
-            new BigIntType(), CanonicalMaterializerTypeFixture.type(shape), new BigIntType());
+            CanonicalMaterializerTypeFixture.keyType(shape),
+            CanonicalMaterializerTypeFixture.type(shape),
+            new BigIntType());
     var serializer = new RowDataSerializer(input);
     var encoded = new ArrayList<String>();
     for (String line : Files.readAllLines(root.resolve("input.csv"))) {
@@ -136,7 +145,7 @@ class CanonicalTypedMaterializerJobTest {
       var row =
           GenericRowData.ofKind(
               RowKind.valueOf(fields[0]),
-              Long.valueOf(fields[1]),
+              CanonicalMaterializerTypeFixture.key(shape, Long.parseLong(fields[1])),
               CanonicalMaterializerTypeFixture.value(
                   shape, fields[1].equals("2") ? null : Long.valueOf(fields[2])),
               Long.valueOf(fields[3]));

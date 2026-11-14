@@ -69,7 +69,12 @@ final class CanonicalSinkMaterializerRuntime implements CanonicalSinkIdentities 
             "RowDataToArrow",
             SimpleOperatorFactory.of(
                 new RowDataToArrowOperator(
-                    type, NativeConfig.transposeBatchRows(config, 1024), true, null)),
+                    type,
+                    NativeConfig.transposeBatchRows(config, 1024),
+                    true,
+                    null,
+                    false,
+                    contract.inputArrowSchema().serializeAsMessage())),
             ArrowBatchTypeInformation.INSTANCE,
             input.getParallelism(),
             false);

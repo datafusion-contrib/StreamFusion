@@ -196,3 +196,15 @@ routing. Its stateless transpose/split helpers instead also cover the upstream s
 parallelism and maximum, so a narrower sink does not impose its state-owner limit on the source
 side of the exchange. Writer/committer translation still belongs to the released stock sink.
 This topology refinement remains part of the pending two-release qualification.
+
+### ROW-key binding awaiting qualification
+
+The pending automatic binding additionally accepts ROW-bearing sink and inferred input keys
+with scalar/ROW descendants. It preserves their original binary representation through live
+input, canonical schema binding, candidate transfer and V2 matching-index transfer. This is
+required for stock key hashing when nested row kinds or padding distinguish otherwise similar
+logical fields. The same representation also retains ROW payloads when full-row matching needs
+them. New legacy component and released-strategy planner/full-job controls cover both engine
+orders, original TTL ages, native recovery, empty returns and rescaling, with committed byte
+comparison. Qualification on both Flink lines is deferred to the final testing window. Array/map
+key descendants and migration of older private ROW checkpoint representations remain separate.

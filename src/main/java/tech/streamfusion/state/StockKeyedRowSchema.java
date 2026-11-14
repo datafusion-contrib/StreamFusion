@@ -26,7 +26,11 @@ final class StockKeyedRowSchema {
   }
 
   static VectorSchemaRoot write(List<RowData> rows, RowType row, RowType keys) {
-    var root = VectorSchemaRoot.create(schema(row, keys), NativeAllocator.SHARED);
+    return write(rows, row, schema(row, keys));
+  }
+
+  static VectorSchemaRoot write(List<RowData> rows, RowType row, Schema schema) {
+    var root = VectorSchemaRoot.create(schema, NativeAllocator.SHARED);
     try {
       var writer = ArrowConversion.createRowDataArrowWriter(root, row);
       for (var value : rows) writer.write(value);

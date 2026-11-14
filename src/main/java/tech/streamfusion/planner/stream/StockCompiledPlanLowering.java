@@ -3764,12 +3764,14 @@ final class StockCompiledPlanLowering {
         original.getStateKeyType()).toRowType();
     if (!RowDataArrowConverter.supports(inputType)
         || materializerKeyType.getChildren().stream()
-            .anyMatch(type -> type.is(LogicalTypeFamily.CONSTRUCTED)))
+            .anyMatch(type -> !materializerKey(type)))
       return stock;
     int[] upsertKeys = definition.path("inputUpsertKey").isArray()
         ? reader.forType(int[].class).readValue(definition.path("inputUpsertKey")) : null;
     if (upsertKeys != null
-        && (upsertKeys.length == 0 || !scalarFields(inputType, upsertKeys))) return stock;
+        && (upsertKeys.length == 0 || Arrays.stream(upsertKeys)
+            .anyMatch(index -> index < 0 || index >= inputType.getFieldCount()
+                || !materializerKey(inputType.getTypeAt(index))))) return stock;
     var operator = ((SimpleOperatorFactory<?>) original.getOperatorFactory()).getOperator();
     String strategy;
     long ttl;
@@ -3816,6 +3818,12 @@ final class StockCompiledPlanLowering {
     connect(stock.getInputEdges().get(0).getSource(), sink);
     bindings.put(sink, new StockBinding(stock.getId(), stockUids.get(stock.getId()), null));
     return sink;
+  }
+
+  private static boolean materializerKey(LogicalType type) {
+    if (type.is(LogicalTypeRoot.ROW))
+      return type.getChildren().stream().allMatch(StockCompiledPlanLowering::materializerKey);
+    return !type.is(LogicalTypeFamily.CONSTRUCTED);
   }
 
   private OneInputTransformation<?, ?> sinkMaterializer(StreamExecSink stock) {
