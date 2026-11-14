@@ -8,8 +8,8 @@ Repeated C Data exports and tiny Rust Parquet writes dominated the connector.
 These are inclusive sample shares, not independent costs or throughput gains.
 
 The Hudi sink does not consume watermarks. Its planner now retains whole batches
-through a terminal chain of native Calcs when their original programs contain no
-`CURRENT_WATERMARK` call. Candidate evaluation, NULL rowtime failure, periodic
+through a terminal chain of native Calcs without user functions when their
+original programs contain no `CURRENT_WATERMARK` call. Candidate evaluation, NULL rowtime failure, periodic
 progress and final maximum watermark remain. Append sinks can also cross native
 exchanges, mini-batch assigners and inner joins with two insert-only inputs.
 For MOR sinks explicitly configured with commit-time ordering and precombine, the proof also crosses native exchanges,
@@ -27,7 +27,12 @@ they are not elapsed-time speedups.
 Earlier Q0/Q1/Q4 full-value comparisons passed, but macOS power logs later showed
 repeated system suspension during the campaign. Their timing qualification has
 been withdrawn. The [benchmark method](../benchmarks/hudi-nexmark.md) now requires
-an awake host and records both clocks. Controlled release comparisons are pending.
+an awake host and records both clocks. The completed heap-state,
+mini-batching-off comparison uses two million events, four source/sink tasks,
+one warmup and three rotating release trials per engine. Q0 medians are
+986.1 ms stock, 7,143.7 ms previous StreamFusion and 529.9 ms native; Q4 is
+2,039.6 / 85,742.2 / 1,323.7 ms respectively. The benchmark page retains all
+trial ranges and losses. The other three configurations remain in progress.
 
 An awake Q9 CPU capture then identified MOR log serialization (32.9% of samples)
 and its encoder handoff (25.7%, inclusive). Java previously filled metadata for
@@ -35,4 +40,12 @@ every parent row whenever the iterator changed source batches, even when only
 one selected row was encoded. Bounded reference chunks now share the reader
 interleave kernel, gather only selected payloads in Rust and create metadata
 only for dense output rows. Iterator order and repeated positions are preserved.
-Controlled timing qualification of this change is pending.
+In that same completed matrix, Q9 medians are 2,741.7 ms stock,
+166,255.0 ms previous StreamFusion and 2,804.8 ms native. This is near stock
+parity (0.98×) and 59.3× faster than the previous boundaries. These measurements
+include the combined watermark and writer changes; they do not isolate a gain
+from log encoding alone. Windows retain their observable boundaries and remain
+substantially slower than stock.
+[Issue #663](https://github.com/datafusion-contrib/StreamFusion/issues/663)
+tracks the remaining boundary and allocation costs without weakening watermark
+semantics.
