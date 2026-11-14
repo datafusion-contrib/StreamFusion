@@ -46,25 +46,65 @@ the fixed matrix above; the timeout does not exclude slow controls or partial ru
 
 ## Current hosted qualification (partial)
 
-The first post-optimization two-million-event configuration, **RocksDB with
-mini-batching on**, passed all 198 timings and the exact Q7 stock planner
-exclusion. Its geometric mean of median speedups is **1.32× stock / 8.10×
-Hudi-disabled SF** across 22 timed queries; 17 native medians beat stock.
-The other three configurations are still pending, so this is not a complete
-matrix or a measured before/after comparison with the earlier heap-state runs.
+Both post-optimization two-million-event configurations with **mini-batching on**
+have passed: heap and RocksDB. Each retains all 198 timings and the exact Q7
+stock planner exclusion. Geometric means of median speedups across 22 timed
+queries are:
 
-This isolated Linux x86-64 runner had four available processors (AMD EPYC 9V45),
-about 15.6 GiB physical memory and JDK 17.0.21. The fixed configuration retains
-four Hudi source/sink tasks, eight slots, 8 GiB heap, a 48 GiB logical native
-off-heap limit, object reuse, one-second checkpoints, one warmup and three
-rotating trials per engine. All deterministic outputs passed full-value multiset
-comparison; Q12 passed processing-time count invariants. Both native boundaries,
-Rust payload footers, final native resource cleanup and all three actual RocksDB
-engagement checks passed. [Every observation, range, source/library hash and
-configuration field](hudi-nexmark-linux-20261114.json) is retained.
+| State | Stock/native | Previous SF/native | Native medians faster than stock |
+| --- | ---: | ---: | ---: |
+| memory | 1.27× | 10.28× | 17/22 |
+| rocksdb | 1.32× | 8.10× | 17/22 |
 
-Values are median milliseconds (minimum–maximum). Q5/Q8/Q11/Q13/Q14 retain
-large stock losses; Q5/Q13/Q14 also lose to the Hudi-disabled SF control.
+The two mini-batching-off configurations are still pending. This is not a
+complete matrix or a measured before/after comparison with the earlier heap
+runs. Compare engines within each configuration: these are isolated Linux
+x86-64 runners with four available processors, about 15.6 GiB physical memory
+and JDK 17.0.21; heap ran on AMD EPYC 9V74 and RocksDB on AMD EPYC 9V45.
+Their absolute times do not isolate a backend or mini-batch effect.
+
+The fixed configuration retains four Hudi source/sink tasks, eight slots,
+8 GiB heap, a 48 GiB logical native off-heap limit, object reuse, one-second
+checkpoints, one warmup and three rotating trials per engine. All deterministic
+outputs passed full-value multiset comparison; Q12 passed processing-time count
+invariants. Both native boundaries, Rust payload footers and final native
+resource cleanup passed. RocksDB also passed all three actual backend engagement
+checks. [Every observation, range, source/library hash and configuration field](hudi-nexmark-linux-20261114.json) is retained.
+
+Values below are median milliseconds (minimum–maximum). Q5/Q8/Q11/Q13/Q14
+retain large stock losses. Q13/Q14 also lose to the Hudi-disabled SF control
+in both configurations; Q5 additionally loses to that control on RocksDB.
+
+### memory, minibatching true
+
+| Query | Stock ms (range) | Previous SF ms (range) | Native ms (range) | Stock/native |
+| --- | ---: | ---: | ---: | ---: |
+| q0 | 3,245.7 (3,196.0–3,522.4) | 17,987.1 (17,871.2–18,058.0) | 1,237.4 (1,131.2–1,246.5) | 2.62× |
+| q1 | 3,326.9 (3,246.2–3,400.0) | 18,089.1 (18,010.3–18,261.3) | 1,170.7 (1,138.2–1,211.8) | 2.84× |
+| q2 | 1,634.6 (1,582.0–1,740.6) | 10,829.8 (10,777.5–10,999.7) | 580.5 (571.5–617.4) | 2.82× |
+| q3 | 1,359.3 (1,325.7–1,685.2) | 21,122.3 (21,112.4–21,167.5) | 890.1 (852.9–931.0) | 1.53× |
+| q4 | 4,716.9 (4,569.5–5,189.6) | 75,644.5 (75,566.0–77,471.2) | 2,385.7 (2,372.8–2,700.3) | 1.98× |
+| q5 | 12,863.9 (12,741.8–13,468.1) | 58,454.2 (57,812.1–58,469.3) | 52,128.0 (51,530.7–52,181.7) | 0.25× |
+| q8 | 4,279.9 (4,233.5–4,982.1) | 35,296.4 (35,022.9–35,429.2) | 33,261.6 (33,150.0–33,502.8) | 0.13× |
+| q9 | 10,050.4 (9,967.0–10,429.2) | 133,224.3 (131,301.5–137,989.6) | 3,844.0 (3,811.5–4,248.6) | 2.61× |
+| q10 | 3,960.9 (3,907.6–3,967.3) | 29,220.4 (29,098.7–29,260.0) | 1,676.6 (1,599.3–1,723.6) | 2.36× |
+| q11 | 3,103.6 (2,920.6–3,133.5) | 47,776.2 (47,621.4–47,963.9) | 46,404.4 (46,389.2–46,457.6) | 0.07× |
+| q12 | 2,105.8 (2,099.8–2,118.2) | 49,827.6 (49,753.9–49,926.1) | 637.3 (595.3–701.1) | 3.30× |
+| q13 | 3,743.8 (3,720.5–3,751.6) | 22,338.6 (22,275.6–22,439.7) | 25,376.0 (25,046.7–25,790.3) | 0.15× |
+| q14 | 4,263.2 (4,229.2–4,354.9) | 27,790.7 (26,984.6–28,224.1) | 37,951.6 (36,791.6–38,012.9) | 0.11× |
+| q15 | 2,628.6 (2,555.8–2,734.8) | 21,529.1 (21,516.2–21,575.2) | 1,020.6 (952.2–1,066.9) | 2.58× |
+| q16 | 3,351.9 (3,121.3–3,947.3) | 30,024.3 (29,856.2–30,794.9) | 1,632.4 (1,541.4–1,651.2) | 2.05× |
+| q17 | 3,911.6 (3,667.6–3,990.3) | 29,682.8 (29,638.8–32,739.8) | 2,243.1 (2,201.4–2,487.0) | 1.74× |
+| q18 | 13,806.3 (13,787.6–14,715.8) | 138,566.4 (137,447.9–140,900.4) | 10,094.7 (9,230.6–10,534.0) | 1.37× |
+| q19 | 52,309.9 (51,474.2–52,650.5) | 91,735.1 (91,362.3–97,184.0) | 6,646.7 (5,456.2–7,051.5) | 7.87× |
+| q20 | 4,751.5 (4,729.6–5,129.2) | 96,520.9 (95,411.1–96,699.7) | 1,905.5 (1,821.0–1,986.7) | 2.49× |
+| q21 | 2,372.3 (2,342.1–2,374.0) | 19,068.7 (19,051.7–19,410.7) | 1,648.8 (1,638.3–1,828.5) | 1.44× |
+| q22 | 4,385.0 (4,226.1–4,785.7) | 18,864.1 (18,810.0–19,111.5) | 1,395.6 (1,374.0–1,433.4) | 3.14× |
+| q23 | 16,097.9 (15,431.1–19,668.0) | 84,557.3 (82,873.1–84,918.5) | 4,198.8 (4,092.3–4,607.5) | 3.83× |
+
+Geometric mean: **1.271× stock / 10.277× previous SF**.
+
+### rocksdb, minibatching true
 
 | Query | Stock ms (range) | Previous SF ms (range) | Native ms (range) | Stock/native |
 | --- | ---: | ---: | ---: | ---: |
@@ -90,6 +130,9 @@ large stock losses; Q5/Q13/Q14 also lose to the Hudi-disabled SF control.
 | q21 | 1,801.4 (1,637.8–1,984.4) | 14,064.1 (13,378.7–14,271.0) | 1,511.5 (1,210.5–1,630.6) | 1.19× |
 | q22 | 3,167.2 (3,085.8–3,372.1) | 13,088.6 (12,830.2–13,314.7) | 996.5 (888.9–1,169.9) | 3.18× |
 | q23 | 24,150.2 (24,138.3–25,407.8) | 75,257.8 (74,986.9–75,755.3) | 5,928.8 (5,897.7–6,413.8) | 4.07× |
+
+Geometric mean: **1.321× stock / 8.095× previous SF**.
+
 
 The first [isolated comparison](hudi-java-comparison-20261114.json) passed on Linux
 x86-64 with four available processors, JDK 17.0.21, 200k events, heap state and
