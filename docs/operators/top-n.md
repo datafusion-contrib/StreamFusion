@@ -509,10 +509,15 @@ Append-list canonical binding also excludes FLOAT/DOUBLE sort fields. Released a
 writes the current binary sort key even when its sorted buffer ties that key with another value.
 Signed-zero keys can therefore own overlapping retained lists; the compact native ranking buffer
 does not preserve those independent map entries. Reconstructing keys from payloads is insufficient.
-Fast Top-1 uses a single value state and retains its floating binding; floating payloads and
-partition fields with non-floating sorts remain eligible. Authored heap/RocksDB stock controls
+Fast Top-1 has a single value state, but floating sorts also need compatible continuation:
+native encoded rank order places NaNs while the released primitive comparator treats them as
+ties. FLOAT/DOUBLE sorts therefore retain stock owners for append, updating and fast Top-1 as
+well as retracting canonical plans. Floating payloads and partition fields with non-floating
+sorts remain eligible. Authored heap/RocksDB stock controls
 inspect the overlapping lists, and constructor/ordinary/portable controls pin the exclusion. These
-new controls remain unexecuted. Updating rank has its separate unique-key tuple contract.
+new controls remain unexecuted. A released fast Top-1 control also checks that a first NaN
+remains retained after a finite challenger. Updating rank has its separate unique-key tuple
+contract, whose complete projection does not resolve this comparison-policy difference.
 
 The new planner and component matrices include compact/wide decimals, timestamp precision nine,
 binary/interval carriers, signed-zero/NaN sort values, three-field sorting and nested payloads.

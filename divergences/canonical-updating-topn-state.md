@@ -58,3 +58,10 @@ projection writes the released `rankEnd` VALUE descriptor with LongSerializer; r
 checkpoints already contain this bound. This introduces no new JNI entry point or private
 state format. Comet's C Data ownership pattern remains unchanged, with all imported roots
 scoped before callback failures propagate. New direct/stock/process controls await execution.
+
+FLOAT/DOUBLE sort fields remain outside the canonical tuple/winner binding. Even with complete
+raw tuple projection, native encoded rank order places NaNs while the released primitive
+comparator ties them; continuation must match before binding that shape. Floating retained
+payloads and partition/unique keys with non-floating sorts remain separate. Constructor and
+ordinary/portable fallback controls replace unqualified positive floating-sort cases; both-release
+execution is pending. No native checkpoint format is changed.

@@ -130,6 +130,10 @@ class CanonicalUpdateRankTypedTest {
       fields.add(new RowType.RowField("rank", new BigIntType()));
       output = new RowType(fields);
     }
+    if (shape.equals("scalar-float") || shape.equals("scalar-double")) {
+      assertThrows(IllegalArgumentException.class, () -> contract(layout, fast));
+      return;
+    }
     try (var stock = stock(layout, output, fast, rocks, before, rank, offset);
         var nativeHarness = nativeHarness(layout, fast, rocks, before, rank, offset)) {
       stock.open();
@@ -393,22 +397,25 @@ class CanonicalUpdateRankTypedTest {
     return harness;
   }
 
+  private static StockUpdatingTopNStateContract contract(Layout layout, boolean fast) {
+    var selector = selector(layout.type, layout.keys);
+    var keyType = (RowType) selector.getProducedType().toLogicalType();
+    return new StockUpdatingTopNStateContract(
+        new RowDataSerializer(keyType),
+        selector,
+        selector(layout.type, layout.rowKeys),
+        selector(layout.type, layout.sortColumns),
+        keyType,
+        layout.type,
+        fast,
+        layout.variable,
+        layout.keys);
+  }
+
   private KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> nativeHarness(
       Layout layout, boolean fast, boolean rocks, boolean before, boolean rank, int offset)
       throws Exception {
-    var selector = selector(layout.type, layout.keys);
-    var keyType = (RowType) selector.getProducedType().toLogicalType();
-    var contract =
-        new StockUpdatingTopNStateContract(
-            new RowDataSerializer(keyType),
-            selector,
-            selector(layout.type, layout.rowKeys),
-            selector(layout.type, layout.sortColumns),
-            keyType,
-            layout.type,
-            fast,
-            layout.variable,
-            layout.keys);
+    var contract = contract(layout, fast);
     var operator = new CanonicalRank(layout, fast, before, rank, offset);
     operator.setStockStateContract(contract);
     var harness =

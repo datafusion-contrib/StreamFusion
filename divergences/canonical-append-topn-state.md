@@ -51,8 +51,10 @@ Append-list FLOAT/DOUBLE sorts keep stock owners. The released runtime writes th
 sort key even when the sorted buffer ties it with another representation. Opposite signed zeros
 can therefore retain overlapping lists under different MapState keys. The compact native rank
 buffer cannot reconstruct those independent entries from its payloads. Fast Top-1 stores one
-winner value and does not need that map contract. Both released heap/RocksDB overlap controls
-and constructor/planner fallback controls are authored but unexecuted; floating retained values
+winner value, but its native encoded ordering places NaNs instead of retaining the released
+primitive comparator's ties. Its floating sorts also remain gated. Released heap/RocksDB overlap
+and first-NaN Top-1 controls, plus constructor/planner fallback controls, are authored but
+unexecuted; floating retained values
 and partition keys with non-floating sorts remain eligible. This is an explicit remaining scope
 under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569), not an alternate state
 encoding or a claim that floating sort-map interchange is complete.

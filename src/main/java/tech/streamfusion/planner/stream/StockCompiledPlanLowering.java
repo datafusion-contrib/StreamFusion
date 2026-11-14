@@ -3545,12 +3545,11 @@ final class StockCompiledPlanLowering {
             .anyMatch(type -> !retracting && LogicalTypeChecks.isProctimeAttribute(type))
         || Arrays.stream(keys).anyMatch(key -> !scalarOrRowKey(inputType.getTypeAt(key)))
         || !scalarFields(inputType, sort.getFieldIndices())
-        || (retracting || !updating && !top1)
-            && Arrays.stream(sort.getFieldIndices())
-                .anyMatch(
-                    index ->
-                        inputType.getTypeAt(index).is(LogicalTypeRoot.FLOAT)
-                            || inputType.getTypeAt(index).is(LogicalTypeRoot.DOUBLE))
+        || Arrays.stream(sort.getFieldIndices())
+            .anyMatch(
+                index ->
+                    inputType.getTypeAt(index).is(LogicalTypeRoot.FLOAT)
+                        || inputType.getTypeAt(index).is(LogicalTypeRoot.DOUBLE))
         || updating
             && Arrays.stream(rowKeys)
                 .anyMatch(

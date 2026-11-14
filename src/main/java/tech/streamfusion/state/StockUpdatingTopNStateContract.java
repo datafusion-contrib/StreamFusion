@@ -108,6 +108,13 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
     this.top1 = top1;
     rowKeyType = (RowType) rowKeySelector.getProducedType().toLogicalType();
     sortType = (RowType) sortSelector.getProducedType().toLogicalType();
+    if (sortType.getChildren().stream()
+        .anyMatch(
+            type ->
+                type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.FLOAT)
+                    || type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.DOUBLE)))
+      throw new IllegalArgumentException(
+          "Floating rank continuation requires the released comparison policy");
     var fields = new ArrayList<RowType.RowField>();
     for (var field : rowType.getFields())
       fields.add(new RowType.RowField(field.getName(), field.getType().copy(true)));

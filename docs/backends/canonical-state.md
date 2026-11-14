@@ -2666,7 +2666,9 @@ cases; non-floating scalar and ROW-partition matrices remain pending qualificati
 
 Append-list FLOAT/DOUBLE sorts additionally retain stock canonical owners: comparator-equal
 signed zeros can leave overlapping lists under distinct binary MapState keys, which the compact
-native rank buffer cannot reconstruct. Fast Top-1's single value-state contract remains separate.
-Actual released heap/RocksDB overlap controls, constructor rejection and ordinary/portable planner
-controls are authored but await execution on both supported lines. Floating payloads/partition
+native rank buffer cannot reconstruct. Fast Top-1 and updating rank also need the released
+primitive NaN comparison policy rather than native encoded total rank order; their FLOAT/DOUBLE
+sort bindings remain gated. Actual released heap/RocksDB overlap and first-NaN Top-1 controls,
+constructor rejection and ordinary/portable planner controls are authored but await execution
+on both supported lines. Floating payloads/partition
 fields with non-floating sorts remain eligible; no native state format is extended.

@@ -37,16 +37,23 @@ class CanonicalRankScalarPlanTest {
                                     .flatMap(
                                         compiled ->
                                             Stream.of("DISABLED", "ALWAYS")
-                                                .map(
+                                                .flatMap(
                                                     uids ->
-                                                        Arguments.of(
-                                                            shape, mode, compiled, uids))))));
+                                                        (shape.equals("scalar-float")
+                                                                    || shape.equals("scalar-double")
+                                                                ? Stream.of(1, 3)
+                                                                : Stream.of(3))
+                                                            .map(
+                                                                bound ->
+                                                                    Arguments.of(
+                                                                        shape, mode, compiled, uids,
+                                                                        bound)))))));
   }
 
   @ParameterizedTest
   @MethodSource("cases")
   void existingScalarKeysSortsAndRetainedValuesKeepOriginalCanonicalIdentity(
-      String shape, String mode, boolean compiled, String uids) throws Exception {
+      String shape, String mode, boolean compiled, String uids, int bound) throws Exception {
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", "true");
     config.setString("parallelism.default", "2");
@@ -80,7 +87,8 @@ class CanonicalRankScalarPlanTest {
             + order
             + ") AS rn FROM "
             + source
-            + ") WHERE rn<=3";
+            + ") WHERE rn<="
+            + bound;
     var planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
     var plan = compiled ? table.compilePlanSql(query) : null;
     String portable = compiled ? plan.asJsonString() : "";
@@ -98,7 +106,7 @@ class CanonicalRankScalarPlanTest {
                             instanceof NativeColumnarTopNOperator)
             .collect(java.util.stream.Collectors.toList());
     boolean floating = shape.equals("scalar-float") || shape.equals("scalar-double");
-    if (floating && !mode.equals("update")) {
+    if (floating) {
       for (var candidate : owners)
         assertNull(
             GroupAggregateStockTestFixture.field(

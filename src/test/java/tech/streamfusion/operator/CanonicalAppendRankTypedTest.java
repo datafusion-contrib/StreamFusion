@@ -114,6 +114,25 @@ class CanonicalAppendRankTypedTest {
   }
 
   @ParameterizedTest
+  @MethodSource("floatingListCases")
+  void releasedFastTop1RetainsTheFirstNanInsteadOfOrderingIt(String shape, boolean rocks)
+      throws Exception {
+    var type = RowType.of(new IntType(), CanonicalRankScalarFixture.type(shape), new BigIntType());
+    Object nan = CanonicalRankScalarFixture.score(shape, 50);
+    Object finite = CanonicalRankScalarFixture.score(shape, 1);
+    try (var owner = stock(type, type, new int[] {0}, 1, 0, true, false, rocks)) {
+      owner.open();
+      synchronizeCacheClock(owner, true);
+      feed(owner, type, List.of(GenericRowData.of(1, nan, 1L)));
+      assertFalse(owner.extractOutputValues().isEmpty());
+      feed(owner, type, List.of(GenericRowData.of(1, finite, 2L)));
+      assertTrue(
+          owner.extractOutputValues().isEmpty(),
+          "Primitive comparison treats a retained NaN as a tie");
+    }
+  }
+
+  @ParameterizedTest
   @MethodSource("cases")
   void typedRetainedRowsSurviveBothCanonicalDirections(
       String shape, boolean fast, boolean rocks, boolean ttl, boolean rank) throws Exception {
@@ -168,7 +187,7 @@ class CanonicalAppendRankTypedTest {
                 false,
                 ttl,
                 key);
-    if (!fast && (shape.equals("scalar-float") || shape.equals("scalar-double"))) {
+    if (shape.equals("scalar-float") || shape.equals("scalar-double")) {
       assertThrows(IllegalArgumentException.class, factory::call);
       return;
     }

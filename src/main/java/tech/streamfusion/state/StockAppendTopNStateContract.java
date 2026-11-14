@@ -96,14 +96,13 @@ public final class StockAppendTopNStateContract implements StockStateContract {
     this.variableBound = variableBound;
     this.ttl = ttl;
     sortType = (RowType) sortSelector.getProducedType().toLogicalType();
-    if (!top1
-        && sortType.getChildren().stream()
-            .anyMatch(
-                type ->
-                    type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.FLOAT)
-                        || type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.DOUBLE)))
+    if (sortType.getChildren().stream()
+        .anyMatch(
+            type ->
+                type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.FLOAT)
+                    || type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.DOUBLE)))
       throw new IllegalArgumentException(
-          "Floating append rank requires independent stock map keys");
+          "Floating rank continuation requires the released comparison policy");
     var fields = new ArrayList<RowType.RowField>();
     for (var field : rowType.getFields())
       fields.add(new RowType.RowField(field.getName(), field.getType().copy(true)));
