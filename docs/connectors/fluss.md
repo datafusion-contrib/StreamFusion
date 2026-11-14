@@ -446,7 +446,7 @@ input forms and ran all three workloads in one fixture.
 Values below are median seconds with the complete three-run min–max range. Raw
 [100,000-row trials](../benchmarks/fluss-coverage-2026-10-07/100k.csv),
 [500,000-row trials](../benchmarks/fluss-coverage-2026-10-07/500k.csv), and
-[representative executed plans](../benchmarks/fluss-coverage-2026-10-07/plans/500k-output_16_partitioned_write_native_1.plan.txt)
+[representative executed plans](https://datafusion-contrib.github.io/StreamFusion/benchmarks/fluss-coverage-2026-10-07/plans/500k-output_16_partitioned_write_native_1.plan.txt)
 are retained. No slower trial is discarded.
 
 | Rows | Workload | Partitions | Stock seconds | Previous seconds | Native seconds | vs. stock | vs. previous |
@@ -530,7 +530,7 @@ startup, Arrow conversion, JNI, routing, RPC, acknowledgement flush and task tea
 The final [100,000-row trials](../benchmarks/fluss-write-2026-10-08/100k.csv),
 [500,000-row trials](../benchmarks/fluss-write-2026-10-08/500k.csv),
 [configuration](../benchmarks/fluss-write-2026-10-08/environment.json), and
-[representative executed plan](../benchmarks/fluss-write-2026-10-08/plans/500k-output_16_bucketed_statistics_write_native_1.plan.txt)
+[representative executed plan](https://datafusion-contrib.github.io/StreamFusion/benchmarks/fluss-write-2026-10-08/plans/500k-output_16_bucketed_statistics_write_native_1.plan.txt)
 retain all 144 final measured samples. [Every warmup/measured plan, including earlier
 sweeps](https://streamfusion.tech/benchmarks/fluss-write-2026-10-08/all-plans.tar.gz) is archived; representative
 final plans also remain directly readable. Values are median seconds [complete min–max].

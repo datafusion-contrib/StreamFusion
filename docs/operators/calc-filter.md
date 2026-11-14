@@ -770,7 +770,9 @@ Release end-to-end measurements retain both transposes and a rowwise blackhole s
 million rows, paired medians for two shared calls were 0.457/0.843 s stock/native for INT,
 0.453/0.833 s for BIGINT, and 1.064/1.558 s for STRING. Native throughput is about 0.54× stock
 for the integers and 0.68× for strings. One-million-row comparisons also retain the previous
-fallback; all completed trials are in the [raw results](../benchmarks/results/shared-stateful-scalar-2026-10-14.json).
+fallback; all completed trials are in the [structured results](../benchmarks/results/shared-stateful-scalar-2026-10-14.json).
+The report's `raw_log` paths retrieve the exact original log bodies through the
+[evidence archive](../benchmarks/evidence.md#source-repository-and-archived-run-outputs).
 A diagnostic CPU profile records 972 JVM-callback, 2,433 entry-transpose and 673 exit-transpose
 samples among 6,769 total samples. These inclusive stack counts overlap; they identify boundary
 and callback work, not an additive cost breakdown. The row evaluator already reuses its input

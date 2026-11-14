@@ -282,6 +282,13 @@ mvn -Pimage-it,flink-1.18 -pl streamfusion-image-it verify \
   -Dstreamfusion.image.name=streamfusion-flink:1.18-dev
 ```
 
+The repository-root Docker context retains packaged loader JARs and core
+`-runtime.jar` payloads for either artifact suffix, without pinning a project
+version. It excludes other `target` outputs, including test classes, reports,
+unshaded core JARs and loader sources/Javadoc. Reopening a module's target
+directory also requires excluding its contents before admitting the required
+JARs; a directory exception alone would send every build output to Docker.
+
 For an unpacked official distribution, use `bin/install-flink.sh --flink-line 1.18 <FLINK_HOME>`.
 The installer checks the supported distribution version and both payload manifests before
 copying either JAR. Its default remains the 2.2 line.
