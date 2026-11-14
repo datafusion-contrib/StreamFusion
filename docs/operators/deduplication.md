@@ -244,7 +244,8 @@ ROW payloads. It retains their original nested bytes rather than comparing recon
 The scalar path retains its existing byte comparison. New direct, planner and clean-stock job
 controls cover both directions, original TTL ages, nested timestamp/decimal keys, all nested row
 kinds, padding, NULLs, bundles, native checkpoint recovery, no-input returns and rescaling.
-These changes await testing on both release lines during the final six-hour window of #569;
+Selected local results are recorded in the
+[canonical inventory](../backends/canonical-state.md#resumed-scope-local-qualification);
 earlier scalar evidence does not qualify this extension. MAP-bearing keys remain outside the
 existing Arrow key-codec admission. Benchmarking remains deferred.
 
@@ -267,7 +268,7 @@ Buffered keep-first also shares the normalizer's strict internal UTF-16 list-lab
 reconciling that network alias to the bound payload schema. Its decodable key codec uses one fixed
 label in memory, canonical marker transfers and RocksDB initialization. Other child names, types,
 metadata and nullability remain strict. New network/canonical/marker/native-recovery controls
-are authored and unexecuted on both release lines.
+are authored and pending full qualification on both release lines.
 
 Stock-bound buffered keep-first keys normalize their transient Arrow representation before
 decodable row encoding: every non-NULL ROW has its original or stock-encoded owned bytes,

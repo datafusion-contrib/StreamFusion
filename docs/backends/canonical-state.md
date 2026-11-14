@@ -35,6 +35,31 @@ pages. Historical cohorts are not silently requalified against each newer librar
 | [Sink materialization](../operators/sink-upsert-materialize.md#canonical-interchange-qualification) | LEGACY contract on both releases; 2.2 VALUE/MAP/ADAPTIVE layouts; automatic typed-payload/scalar-and-ROW-key stock-sink binding awaiting qualification | Accelerated connector binding, array/map keys and complete new-job/writer-rescale qualification |
 | [Window joins](../operators/joins/window-join.md#stock-canonical-savepoint-interoperability) | Qualified event-time INNER/outer window layouts and complete jobs; nested binding awaiting qualification | Wider schemas/residuals and additional exchange/rescale combinations |
 
+## Resumed scope local qualification
+
+The resumed #569 extension has separate local evidence from the frozen #607 cohorts below.
+The sections marked awaiting qualification describe implemented scope whose complete default
+matrices remain pending. Selected checks establish only the exercised contracts and parameters.
+
+| Selection | Local result |
+| --- | --- |
+| Native library, final production sources | 1,609 passed; two release-only diagnostic ignores |
+| Native memory-only build and workspace formatting | Passed |
+| Flink 1.18 latest selected per-class reports | 4,717 checks across 94 classes; zero failures/errors; 40 explicit release/platform skips |
+| Flink 1.18 unchanged released heap/RocksDB backend-switch fixtures | Eight passed per engine; runtime-only backend evidence |
+| Flink 2.2 clean component/planner selection | 5,106 passed across 67 classes; no failures, errors or skips |
+| Flink 2.2 extended isolated-worker selections | In progress |
+
+Local common arithmetic job smoke limits its shared provider to continued-input, compiled,
+native-first handoffs on both native stores. Other pairwise worker providers retain their own
+engine orders, ordinary/compiled submission, no-input, checkpoint and rescaling cases. Their
+stock workers exclude StreamFusion classes and native libraries and require positive native
+execution in the native stages. Raw-state and malformed-state controls complement output oracles.
+These selections do not replace the exact-head hosted merge gates or unchanged released restore
+fixtures. No benchmark or throughput claim is made. Same-build native recovery does not qualify
+historical physical ROW checkpoint layouts or cross-line state upgrades under
+[#188](https://github.com/datafusion-contrib/StreamFusion/issues/188).
+
 ## Release parity and frozen scope
 
 The historical release-parity baseline froze the admitted logical contracts. Resumed #569 work
@@ -55,7 +80,7 @@ not prerequisites for this scope's canonical bindings and receive no new qualifi
 The frozen sink-materializer cohort used explicit attachment on both lines. Resumed #569 work now
 connects automatic stock-sink binding through the shared materializer hook, including existing
 Arrow payloads and scalar/ROW sink/matching keys; new planner and
-complete-job controls await the final six-hour testing window. Earlier automatic-job qualification
+complete-job controls await complete qualification; selected local results are reported above. Earlier automatic-job qualification
 claims remain withdrawn. This extension is separate from the historical frozen evidence.
 Captured JVM aggregate handlers already store their accumulators/views in released Flink managed
 state. Their bounded bundles/caches drain at the barrier, then Flink's own RocksDB snapshot and
@@ -2340,8 +2365,7 @@ cutoff removal. The flat callback bridge carries armed state separately from a r
 raw frame accumulators and event timers retain their existing protocol. Import validates both
 timer domains before installing state. New controls exercise both directions, overdue callbacks,
 pending/processed/empty cuts, native checkpoints, corrupt cleanup ownership, ordinary/compiled
-jobs and keyed rescaling. Testing on Flink 1.18 and 2.2 remains deferred to the final six-hour
-window. This adds canonical compatibility without introducing a new execution operator.
+jobs and keyed rescaling. Selected Flink 1.18 and 2.2 local results are reported above; complete qualification remains pending. This adds canonical compatibility without introducing a new execution operator.
 
 ## Decimal OVER projection awaiting qualification
 
@@ -2422,8 +2446,7 @@ complete serialized output rows after stock import, an immediate no-input return
 checkpoint recovery and eventual window firing, across fixed window shapes and both stores.
 Clean-worker jobs keep the complete nested payload through a user function, compare committed
 effects and check an independent window-selection/payload checksum oracle for continuation,
-empty returns, recovery and rescaling. Both Flink release lines await the final testing window;
-these authored controls do not extend earlier passing evidence.
+empty returns, recovery and rescaling. Selected local results are reported above; these controls do not extend earlier historical evidence.
 
 ## One-phase decimal group binding awaiting qualification
 
@@ -2435,7 +2458,7 @@ signed non-null count separately. AVG transfers the widened raw sum and full cou
 a latched overflowed NULL sum. Private native checkpoint formats are unchanged. Decimal
 two-phase scalar/DISTINCT reductions and decimal extrema retain their existing canonical
 fallbacks. New compact/wide-scale raw-state, overflow, planner and isolated job controls await
-execution on Flink 1.18 and 2.2 in the final testing window; no passing evidence is claimed yet.
+complete qualification on Flink 1.18 and 2.2; selected local results are reported above.
 
 ## Unbounded OVER extrema binding awaiting qualification
 
@@ -2499,12 +2522,12 @@ the correction is not a new operator or performance qualification.
 New single-phase floating-window job fixtures compare committed serialized rows with an
 independent window/session oracle, retaining negative-zero bits, NULL-only state, source
 progress and transactional writers across the standard handoff/recovery/rescale modes.
-They await both-release qualification; no passing cohort is claimed yet.
+They await both-release qualification; selected local results are reported above.
 
 Ordinary OVER COUNT additionally binds its existing binary, interval and nested argument
 readers while retaining the same BIGINT state. New component/planner/full-job controls cover
 retained input and frame schemas, released timer versions, TTL and recovery/rescaling; these
-remain unexecuted. DISTINCT views and other aggregate argument gates stay separate.
+remain pending full qualification. DISTINCT views and other aggregate argument gates stay separate.
 
 Flink 2.2 additionally has a pending canonical binding for existing single-phase retracting
 fixed event-time COUNT/SUM/SUM0/AVG kernels. It captures the released signed scalar/hidden-count
@@ -2548,7 +2571,7 @@ key representations and other aggregate argument restrictions are unchanged.
 A pending OVER extension binds existing unbounded processing-time COUNT/SUM/SUM0/AVG DISTINCT membership
 transfers for TINYINT/SMALLINT/INT/BIGINT/FLOAT/DOUBLE/DECIMAL arguments with TTL disabled. It preserves the released raw
 counts, wrapping integral sums, shared membership-map serializers and null-state descriptor. Both-release component and
-clean-worker controls are written but unexecuted. Nullable arguments retain independent NULL
+clean-worker controls are written and pending full qualification. Nullable arguments retain independent NULL
 membership without contributing to scalar sums/counts; existing nullable member-list/table
 encodings preserve it through native recovery. Valid NULL-only owners and malformed marker bits
 or orphan owners have pending controls. TTL, event/bounded frames
@@ -2571,13 +2594,13 @@ raw/recovery and complete-job fixtures remain pending. FLOAT/DOUBLE DISTINCT ari
 binds existing raw sums/counts, retaining IEEE addition history instead of replaying unordered
 members. Preflight checks exact AVG cardinality and empty-sum invariants. Cancellation, signed
 zero/NaN, malformed floating sums and fractional clean-worker arithmetic controls are authored
-but unexecuted; no native state field is added.
+and pending full qualification; no native state field is added.
 
 DECIMAL DISTINCT arithmetic additionally preserves existing raw SUM/SUM0/AVG fields. Membership
 bits recover SUM's omitted native count without interpreting an overflowed NULL as an empty set.
 SUM restart and latched AVG/SUM0 overflow remain separate from cardinality. Typed preflight,
 empty-field rejection, actual-stock overflow/recovery and fractional wide-decimal complete-job
-controls are authored but unexecuted on either release. No native persisted field is added.
+controls remain pending full qualification on either release. No native persisted field is added.
 
 Pending bounded and unbounded OVER controls also forbid intermediate native snapshot entry points during
 canonical capture and check the counter after writer completion, while retaining ordinary
@@ -2660,11 +2683,13 @@ still apply. See the Top-N page for the exact pending scope and historical-layou
 
 The pending scalar-rank widening preserves the native retracting FLOAT/DOUBLE sort guard at
 planning time. Stock comparator ties and binary map-key equality require independent floating
-representations, so those sorts keep stock canonical owners. Floating payload/partition types
+representations, so stock-interchange binding excludes those sorts. Portable canonical plans keep
+stock owners; ordinary unbound native routes retain their existing private checkpoint contract.
+Floating payload/partition types
 remain eligible. Explicit both-release fallback controls replace unqualified positive sort
 cases; non-floating scalar and ROW-partition matrices remain pending qualification.
 
-Append-list FLOAT/DOUBLE sorts additionally retain stock canonical owners: comparator-equal
+Append-list FLOAT/DOUBLE sorts additionally stay outside stock-interchange binding: comparator-equal
 signed zeros can leave overlapping lists under distinct binary MapState keys, which the compact
 native rank buffer cannot reconstruct. Fast Top-1 and updating rank also need the released
 primitive NaN comparison policy rather than native encoded total rank order; their FLOAT/DOUBLE
@@ -2676,7 +2701,7 @@ fields with non-floating sorts remain eligible; no native state format is extend
 Positive floating-carrier controls additionally use BIGINT sort fields with FLOAT/DOUBLE keys
 and payloads, retaining signed-zero partition identity and NaN/zero payload bits through raw
 no-input returns and continuation. These authored append/Top-1 controls exercise both orders and
-stores and remain unexecuted on both releases; they do not qualify floating sort policies.
+stores and remain pending full qualification on both releases; they do not qualify floating sort policies.
 
 Retracting GROUP BY MIN/MAX additionally admits existing scalar and composite key codecs,
 retaining complete fixed/variable BinaryRow key bytes in the current header/map protocol. This
@@ -2684,7 +2709,7 @@ includes string/binary, wide DECIMAL and nanosecond TIMESTAMP/LTZ; constructed k
 The transfer checks the minimum fixed prefix and eight-byte alignment, matching typed grouped
 state, while preserving variable bytes opaquely. New eager/mini-batch raw-state, no-input,
 65-column/null-bitmap, TTL and native-recovery controls, native long-key/unaligned-frame checks,
-ordinary/portable admission and compact/variable two-key jobs are authored but unexecuted.
+ordinary/portable admission and compact/variable two-key jobs are authored and pending full qualification.
 Worker checks require both physical key fields on the actual bound extrema contract, and the
 complete jobs retain independent final-value oracles. Existing historical cohorts remain separate.
 
@@ -2692,7 +2717,7 @@ Pending variable-key extrema export additionally uses row/estimated-byte limits 
 headers and companion entries, with an oversized-record allowance. A conversion reservation
 precedes Arrow allocation and remains attached through the same synchronous receiver, including
 native RocksDB conversion. New hot two-MiB-key, denied-build and failed-receiver/retry controls
-are authored but unexecuted; no native state field or stock serializer changes.
+are authored and pending full qualification; no native state field or stock serializer changes.
 
 The retained-row codec also accepts the internal unsigned 16-bit UTF-16 cache child used by
 represented ROW keys. This is a transport implementation field, not additional SQL scalar

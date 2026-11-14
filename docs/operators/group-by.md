@@ -3552,9 +3552,8 @@ and DISTINCT with entry TTL still requires a separate timestamp contract.
 New planner and repeated-switch controls cover nullable/duplicate members, orphan retracts,
 temporary zero counts, group deletion/recreation, both native stores and native-checkpoint
 recovery. Full jobs retain ordinary SQL/compiled submission, both engine orders, stock reference
-jobs stopped at the same bundle cuts, and rescaling. These tests are authored but deferred to
-the final six-hour testing window of the resumed one-day task; the new scope is not included
-in the historical passing evidence below.
+jobs stopped at the same bundle cuts, and rescaling. These tests await complete qualification; selected local results are recorded in the
+[canonical inventory](../backends/canonical-state.md#resumed-scope-local-qualification), separately from historical evidence below.
 
 The local stage produces stock partial fields directly. AVG carries its widened sum and
 independent BIGINT count, with the actual released accumulator type defining the sum carrier.
@@ -3947,7 +3946,8 @@ Two-phase retracting COUNT/SUM/AVG additionally binds signed arithmetic counts a
 input-row counter. Raw SUM partials survive a zero net non-null count; bundle precombination
 retains released Flink's merge order before one retained-state merge. Existing native execution
 and private checkpoint encodings are reused. Retracting global DISTINCT remains excluded.
-These additions are authored but await the requested final six-hour local testing window;
+These additions await complete qualification; selected local results are recorded in the
+[canonical inventory](../backends/canonical-state.md#resumed-scope-local-qualification);
 historical passing cohorts above do not qualify this wider scope.
 
 ### One-phase decimal accumulator projection awaiting qualification
@@ -4017,7 +4017,7 @@ schemas. Clean-stock jobs use independent SMALLINT/compact-DECIMAL or non-inline
 physical key columns, check both fields on the bound extrema contract in every native worker and
 retain independent final-value oracles through eager/mini-batch handoffs and rescaling. Native
 controls additionally preserve long UTF-8 keys and reject unaligned frames without mutation. These controls
-are unexecuted and await Flink 1.18/2.2 qualification; historical counts above do not qualify them.
+await Flink 1.18/2.2 qualification; historical counts above do not qualify them.
 The optional local pairwise selector also applies to grouped complete-job providers; default/CI
 execution retains every original invocation. No performance claim is added.
 

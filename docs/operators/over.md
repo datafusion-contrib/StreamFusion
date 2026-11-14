@@ -1590,8 +1590,8 @@ precisions/scales, with new compact and wide-scale controls awaiting qualificati
 declared width and wrapping behavior; AVG retains its widened BIGINT sum and independent count.
 The adapter still transfers raw accumulators rather than replaying retained rows. Shared planner,
 operator and typed event-time job controls now include these integral values on both releases.
-This added scope is implemented but awaits the final six-hour test window of the resumed #569
-timebox; it is not included in the historical passing counts below.
+This added scope awaits complete qualification; selected local results are recorded in the
+[canonical inventory](../backends/canonical-state.md#resumed-scope-local-qualification), separately from historical counts below.
 
 The resumed #569 implementation also binds existing scalar partition-key carriers in composite
 keys: TINYINT/SMALLINT/INT/BIGINT, BOOLEAN, CHAR/STRING, DECIMAL, DATE, TIME and timestamp types.
@@ -1602,7 +1602,8 @@ use the existing Arrow boundary admission, including already-supported nested pa
 the order attribute remains millisecond precision. Newly authored planner and both-order
 continuation controls cover these keys across bounded and unbounded frames; INT/STRING event-time
 jobs additionally cover ordinary SQL, compiled plans, rescaling and native-checkpoint recovery.
-Execution of this new scope is deferred to the final six-hour test window of the one-day task.
+Selected local results for this new scope are recorded in the
+[canonical inventory](../backends/canonical-state.md#resumed-scope-local-qualification).
 Historical evidence below does not yet qualify the wider key scope.
 
 Ordinary SQL and stock portable plans capture the released bounded operator's actual accumulator
@@ -1675,7 +1676,7 @@ leave the source available for a fresh target retry. Arrow callbacks retain the 
 exception and release their imported buffers on both success and failure.
 
 Decimal SUM/SUM0/AVG binding is now implemented for existing native decimal precisions/scales,
-including compact inputs and precision-38 accumulators, and awaits the final testing window.
+including compact inputs and precision-38 accumulators; complete qualification remains pending.
 The adapter projects native decimal SUM’s internal presence count into stock’s one nullable sum
 field. Import recreates presence bookkeeping from that field; it transfers AVG’s raw sum and count
 independently. NULL sums after overflow and all-NULL input preserve stock continuation without
@@ -2099,7 +2100,7 @@ recorded NULL membership do not gain that lost information through this same-bui
 The integral bridge retains Byte/Short/Integer/Long membership serializers and validates wrapping
 SUM fields at their declared width independently from the wider AVG sum. Component overflow and
 planner controls include every integer width and both nullability forms; a clean-stock nullable
-TINYINT arithmetic fixture adds continuation and rescaling. These additions remain unexecuted.
+TINYINT arithmetic fixture adds continuation and rescaling. These additions remain pending full qualification.
 
 COUNT DISTINCT also binds existing decimal, BOOLEAN, DATE, TIME and TIMESTAMP/LTZ membership
 codecs. The stock BIGINT cardinality stays independent of typed members and nullable markers;
@@ -2130,7 +2131,7 @@ native-recovery, writer and clean-worker count controls include signed zeros, di
 infinities and NULL-only owners. Additional arithmetic controls cover cancellation history,
 corrupt empty/missing sums and a complete DOUBLE arithmetic job with fractional independent
 oracles. Complete OVER job comparisons retain committed record bytes before applying their
-typed independent final-value oracle. These controls are unexecuted and await both-release qualification.
+typed independent final-value oracle. These controls await both-release qualification.
 
 DECIMAL SUM/SUM0/AVG DISTINCT also binds existing raw arithmetic fields. The released nullable
 SUM omits its count; its exact native auxiliary count is recovered from non-NULL membership
@@ -2139,7 +2140,7 @@ new value, while AVG/SUM0 retain overflow. No sum is derived from unordered memb
 checks decimal carrier precision/scale, AVG cardinality and initial empty fields. New complete
 raw-state, no-input, overflow-continuation and native-recovery controls cover both stores and
 engine orders; a clean-worker wide-decimal job uses fractional independent oracles. These are
-unexecuted and await both-release qualification. Scale-38 factory restrictions remain unchanged.
+pending complete qualification on both release lines. Scale-38 factory restrictions remain unchanged.
 
 Bounded and unbounded scalar, ROW-key and DISTINCT component captures additionally guard the native snapshot
 entry points. They reject raw partition serialization or a nonempty native checkpoint directory

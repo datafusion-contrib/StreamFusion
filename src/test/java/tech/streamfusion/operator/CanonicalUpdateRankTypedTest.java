@@ -38,6 +38,51 @@ import tech.streamfusion.state.StockUpdatingTopNStateContract;
 class CanonicalUpdateRankTypedTest {
   private final List<OperatorSubtaskState> snapshots = new ArrayList<>();
 
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+  void independentUpstreamInterleavingsKeepTheSameReleasedRankTable(boolean rocks)
+      throws Exception {
+    var layout = new Layout("bound-int", false);
+    var fields = new ArrayList<>(layout.type.getFields());
+    fields.add(new RowType.RowField("rank", new BigIntType()));
+    var output = new RowType(fields);
+    var changes =
+        List.of(
+            layout.row(1, 20, 1), layout.row(1, 10, 2),
+            layout.update(1, 5, 1), layout.update(1, 0, 2));
+    for (var row : changes) ((GenericRowData) row).setField(3, 1);
+    var changelogs = new ArrayList<List<String>>();
+    var tables = new ArrayList<java.util.Map<String, Long>>();
+    for (var order : new int[][] {{0, 1, 2, 3}, {0, 2, 1, 3}}) {
+      try (var stock = stock(layout, output, false, rocks, true, true, 0)) {
+        stock.open();
+        var ordered = new ArrayList<RowData>();
+        for (int index : order) ordered.add(changes.get(index));
+        feed(stock, layout.type, ordered);
+        var rows = stock.extractOutputValues();
+        changelogs.add(bytes(output, rows));
+        var table = new java.util.TreeMap<String, Long>();
+        var serializer = new RowDataSerializer(output);
+        for (var row : rows) {
+          long sign =
+              row.getRowKind() == RowKind.INSERT || row.getRowKind() == RowKind.UPDATE_AFTER
+                  ? 1
+                  : -1;
+          var value = serializer.copy(row);
+          value.setRowKind(RowKind.INSERT);
+          table.merge(bytes(output, List.of(value)).get(0), sign, Long::sum);
+        }
+        table.values().removeIf(count -> count == 0);
+        tables.add(table);
+      }
+    }
+    assertNotEquals(changelogs.get(0), changelogs.get(1));
+    var winner = GenericRowData.of(1, 0L, StringData.fromString("row-😀-2"), 1, 1L);
+    var expected = java.util.Map.of(bytes(output, List.of(winner)).get(0), 1L);
+    assertEquals(expected, tables.get(0));
+    assertEquals(expected, tables.get(1));
+  }
+
   @org.junit.jupiter.api.AfterEach
   void discardSnapshots() throws Exception {
     for (var state : snapshots) state.discardState();

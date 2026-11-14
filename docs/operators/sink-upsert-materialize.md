@@ -113,8 +113,8 @@ the final runtime primary hash, including generated IDs with UID generation disa
 identity projection maps that owner back to the original stock materializer and accounts for its
 stateless transpose/exchange helpers.
 
-This new automatic path is an implementation awaiting qualification in the final six-hour test
-window of the resumed one-day task. New controls cover both engine orders, ordinary SQL and
+This new automatic path awaits complete qualification; selected local results are recorded in
+the [canonical inventory](../backends/canonical-state.md#resumed-scope-local-qualification). New controls cover both engine orders, ordinary SQL and
 compiled plans, matching keys, strategies, no-input returns, native checkpoint recovery and
 1→3→2 source/materializer/writer rescaling. They are authored but have not run yet. Historical
 component evidence below does not qualify these new jobs. Typed planner and full-job cases additionally retain narrow integers, floating values, wide
@@ -206,7 +206,7 @@ required for stock key hashing when nested row kinds or padding distinguish othe
 logical fields. The same representation also retains ROW payloads when full-row matching needs
 them. New legacy component and released-strategy planner/full-job controls cover both engine
 orders, original TTL ages, native recovery, empty returns and rescaling, with committed byte
-comparison. Qualification on both Flink lines is deferred to the final testing window. Array/map
+comparison. Complete qualification on both Flink lines remains pending. Array/map
 key descendants and migration of older private ROW checkpoint representations remain separate.
 
 The captured materializer uses the released sink's physical consumed schema, including its

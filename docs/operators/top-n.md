@@ -511,13 +511,22 @@ Signed-zero keys can therefore own overlapping retained lists; the compact nativ
 does not preserve those independent map entries. Reconstructing keys from payloads is insufficient.
 Fast Top-1 has a single value state, but floating sorts also need compatible continuation:
 native encoded rank order places NaNs while the released primitive comparator treats them as
-ties. FLOAT/DOUBLE sorts therefore retain stock owners for append, updating and fast Top-1 as
-well as retracting canonical plans. Floating payloads and partition fields with non-floating
+ties. Portable canonical plans with FLOAT/DOUBLE sorts therefore retain stock owners for append,
+updating, fast Top-1 and retracting rank. An ordinary native route that remains unbound keeps its
+existing private checkpoint contract and receives no stock-interchange qualification for these
+sorts. Floating payloads and partition fields with non-floating
 sorts remain eligible. Authored heap/RocksDB stock controls
 inspect the overlapping lists, and constructor/ordinary/portable controls pin the exclusion. These
-new controls remain unexecuted. A released fast Top-1 control also checks that a first NaN
+new controls remain pending full qualification. A released fast Top-1 control also checks that a first NaN
 remains retained after a finite challenger. Updating rank has its separate unique-key tuple
 contract, whose complete projection does not resolve this comparison-policy difference.
+
+Updating-rank rescaling jobs with a preceding GROUP BY compare the complete signed final table
+and its independent rank oracle. Parallel grouped owners can interleave their updates differently
+at the rank owner; repeated released-stock runs have different intermediate changelogs. A
+deterministic heap/RocksDB stock control reproduces that ordering dependence while requiring the
+same final winner. Other scalar-rank job modes retain complete changelog comparison; raw-state
+and canonical/native-recovery controls remain independent of this external-result comparison.
 
 Separate authored append/Top-1 controls retain FLOAT/DOUBLE partition keys and payloads while
 ordering by BIGINT. Opposite signed-zero partition keys remain separate; NaN/signed-zero payload
@@ -536,8 +545,8 @@ rank in a normal user function, preventing projection from hiding retained-paylo
 and DECIMAL rank jobs retain independent final-table oracles, both engine orders, ordinary SQL
 and compiled plans, no-input returns, native checkpoint recovery and rescaling. Updating jobs
 also retain their original unique-key fields through the computed sort projection. These controls
-are authored but not yet run; qualification is deferred to the final six hours of the resumed
-one-day task. The historical passing counts below do not qualify this added scope.
+await complete qualification; selected local results are recorded in the
+[canonical inventory](../backends/canonical-state.md#resumed-scope-local-qualification). The historical passing counts below do not qualify this added scope.
 
 Normal Flink 2.2.1 SQL and portable stock compiled plans bind the released append lists and fast
 Top-1 winners automatically. Initial admission is AppendFast input, one sort column, INT/BIGINT/

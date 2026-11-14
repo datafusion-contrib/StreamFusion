@@ -1990,7 +1990,7 @@ variant on each line, both engine orders and stores, ordinary/portable plans, em
 native checkpoints and source/keyed rescaling. They compare complete committed row bytes to
 an independent nullable floating fold, including negative-zero-only groups, NULL-only owners
 and values near the exact-integer limit. Both transposes and transactional stock writers remain
-in the jobs. These controls are authored but unexecuted; local/global floating job qualification
+in the jobs. These controls are authored and pending full qualification; local/global floating job qualification
 is separate.
 
 ### Retracting fixed-window binding awaiting qualification
@@ -2013,7 +2013,7 @@ plans, checking captured maximum parallelism and portable identities. They alter
 compare every raw namespaced accumulator after each cut, recover through a native checkpoint
 and fire the retained timers. INT/BIGINT/FLOAT/DOUBLE/wide-scale DECIMAL, keyed/global,
 explicit/hidden live counters, filters and both stores are represented. The decimal sequence
-reaches NULL raw AVG at count zero before adding new input. These controls remain unexecuted.
+reaches NULL raw AVG at count zero before adding new input. These controls remain pending full qualification.
 
 Separate complete-job fixtures cover the same three window assignments with INT/BIGINT/DECIMAL
 arithmetic, clean stock workers, both engine orders/stores/submission forms and the standard

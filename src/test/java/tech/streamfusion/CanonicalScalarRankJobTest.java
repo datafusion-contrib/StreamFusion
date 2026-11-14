@@ -56,6 +56,7 @@ class CanonicalScalarRankJobTest {
       throws Exception {
     var baseline = prepare("baseline", algorithm, type, mode, ordinary);
     var switched = prepare("switched", algorithm, type, mode, ordinary);
+    var output = RowType.of(new BigIntType(), new BigIntType(), new BigIntType());
     new CanonicalJobRunner(directory)
         .verifyJoinSwitch(
             baseline,
@@ -63,16 +64,17 @@ class CanonicalScalarRankJobTest {
             nativeFirst,
             backend,
             mode,
-            algorithm.equals("update") ? "GroupAgg,TopN" : "TopN");
-    var output = RowType.of(new BigIntType(), new BigIntType(), new BigIntType());
-    var actual = new HashMap<String, Long>();
-    for (String row :
-        CanonicalFixtureFactory.committedRows(switched.resolve("committed"), output)) {
-      var cells = row.split("\\|", -1);
-      long delta = cells[0].equals("+I") || cells[0].equals("+U") ? 1 : -1;
-      actual.merge(cells[1] + "|" + cells[2] + "|" + cells[3], delta, Long::sum);
-    }
-    actual.values().removeIf(count -> count == 0);
+            algorithm.equals("update") ? "GroupAgg,TopN" : "TopN",
+            root -> {
+              var rows = CanonicalFixtureFactory.committedRows(root.resolve("committed"), output);
+              if (!algorithm.equals("update") || !mode.equals("rescale")) return rows;
+              // Parallel grouped owners can interleave differently before the keyed rank.
+              return materialize(rows).entrySet().stream()
+                  .map(entry -> entry.getKey() + "=" + entry.getValue())
+                  .collect(java.util.stream.Collectors.toList());
+            });
+    var actual =
+        materialize(CanonicalFixtureFactory.committedRows(switched.resolve("committed"), output));
     assertEquals(expected(switched, algorithm), actual);
     if (ordinary) {
       for (String stage : List.of("prefix", "middle", "suffix"))
@@ -80,6 +82,17 @@ class CanonicalScalarRankJobTest {
       assertFalse(Files.exists(switched.resolve("plan.json")));
     } else
       assertFalse(Files.readString(switched.resolve("plan.json")).contains("tech.streamfusion"));
+  }
+
+  private static Map<String, Long> materialize(List<String> rows) {
+    var actual = new HashMap<String, Long>();
+    for (String row : rows) {
+      var cells = row.split("\\|", -1);
+      long delta = cells[0].equals("+I") || cells[0].equals("+U") ? 1 : -1;
+      actual.merge(cells[1] + "|" + cells[2] + "|" + cells[3], delta, Long::sum);
+    }
+    actual.values().removeIf(count -> count == 0);
+    return actual;
   }
 
   int firstRank() {
