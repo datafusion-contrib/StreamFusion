@@ -41,6 +41,11 @@ class CanonicalDecimalUnboundedOverJobTest extends CanonicalUnboundedOverJobTest
     Files.writeString(
         root.resolve("input-columns.sql"),
         Files.readString(root.resolve("input-columns.sql")).replace("v BIGINT", "v " + fields[1]));
+    Files.writeString(
+        root.resolve("query.sql"),
+        Files.readString(root.resolve("query.sql"))
+            .replace("SUM(v) OVER w", "CAST(SUM(v) OVER w AS BIGINT)")
+            .replace("AVG(v) OVER w", "CAST(AVG(v) OVER w AS BIGINT)"));
     return root;
   }
 }

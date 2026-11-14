@@ -2219,3 +2219,6 @@ a mismatch rejects the handoff before changing live pending state.
 The released Flink 1.18 aggregate factory rejects CHAR MIN/MAX OVER calls. Its positive
 scalar-extrema canonical cohort therefore uses VARCHAR for that family and retains explicit
 stock-rejection controls for CHAR; Flink 2.2 also exercises CHAR handoffs.
+
+Decimal unbounded OVER job controls retain decimal SUM/AVG state and cast only their final
+outputs to the shared BIGINT sink schema, preserving its independent final-value oracle.
