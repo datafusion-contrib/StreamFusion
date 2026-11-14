@@ -38,6 +38,12 @@ retractions received from a source that advertised insert-only output.
 The streaming Calc rule prepares its expression plan and declared-result-type check once for
 one candidate. Construction and fallback diagnostics consume that same admission decision;
 explaining a declined Calc does not repeat expression generation or optional native probes.
+Ordinary streaming, bounded batch and stock compiled-plan Calc lowering share an immutable
+Calc specification for the native result-type contract. Its expression pools, output names and
+representation requirements are fixed after admission. Input pruning creates a separate expression
+with remapped references, including whole-Calc JVM input coordinates; it cannot alter a sibling's
+prepared program. Each constructed operator receives its own unopened JVM-function binding.
+Batch and stock compiled-plan paths retain their existing, stricter boundary and state admission.
 Processing-time projection fusion prepares its changed candidate separately and retains the
 original admitted plan if fusion is unsupported. Optional-probe failures still yield to later
 rules, while failures constructing an admitted operator propagate.

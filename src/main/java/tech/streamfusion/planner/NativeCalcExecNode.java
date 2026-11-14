@@ -6,10 +6,16 @@ import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecNode;
 import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.NativeUdf;
+import tech.streamfusion.planner.common.CalcSpec;
 import tech.streamfusion.planner.common.CommonCalcExecNode;
 
 /** Streaming mode marker for the shared stateless implementation. */
 public class NativeCalcExecNode extends CommonCalcExecNode implements StreamExecNode<ArrowBatch> {
+  public NativeCalcExecNode(
+      ReadableConfig tableConfig, InputProperty inputProperty, String description, CalcSpec spec) {
+    super(tableConfig, inputProperty, description, spec);
+  }
+
   public NativeCalcExecNode(
       ReadableConfig tableConfig,
       InputProperty inputProperty,

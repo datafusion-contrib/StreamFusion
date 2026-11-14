@@ -11,7 +11,7 @@ import tech.streamfusion.planner.CollectionExpressionSemantics;
 import tech.streamfusion.planner.ColumnarOutput;
 import tech.streamfusion.planner.ExpressionPlanning;
 import tech.streamfusion.planner.common.Admission;
-import tech.streamfusion.planner.common.CalcOutputTypeCheck;
+import tech.streamfusion.planner.common.CalcSpec;
 import tech.streamfusion.planner.common.EncodedExpression;
 import tech.streamfusion.planner.common.StreamRule.PreparedPlan;
 
@@ -37,24 +37,24 @@ final class CalcMatcher {
 
   static Admission<PreparedPlan> prepare(Calc calc, PlanContext ctx) {
     boolean javaJsonInput = ctx.requiresJavaJsonInput(calc);
-    Admission<EncodedExpression> expression = prepareExpression(calc, javaJsonInput);
+    Admission<CalcSpec> expression = prepareExpression(calc, javaJsonInput);
     if (!expression.isAccepted())
       return expression.status() == Admission.Status.NO_MATCH
           ? Admission.noMatch() : Admission.declined(expression.reason());
     Calc candidate = mergeProcessingTimeProjection(calc);
     if (candidate != calc) {
-      Admission<EncodedExpression> merged = prepareExpression(candidate, javaJsonInput);
+      Admission<CalcSpec> merged = prepareExpression(candidate, javaJsonInput);
       if (merged.isAccepted()) {
         calc = candidate;
         expression = merged;
       }
     }
     Calc preparedCalc = calc;
-    EncodedExpression preparedExpression = expression.value();
+    EncodedExpression preparedExpression = expression.value().expression();
     return Admission.accepted(() -> substitute(preparedCalc, preparedExpression, ctx));
   }
 
-  private static Admission<EncodedExpression> prepareExpression(Calc calc, boolean javaJsonInput) {
+  private static Admission<CalcSpec> prepareExpression(Calc calc, boolean javaJsonInput) {
     if (CollectionExpressionSemantics.unverifiedInput(calc))
       return Admission.declined(
           "Calc: collection input representation is unverified for this columnar producer");
@@ -72,12 +72,8 @@ final class CalcMatcher {
         calc.getInput().getRowType(), encoded.value().supportsStructuredInput()))
       return Admission.declined(
           "Calc: unsupported input column type outside a preserving collection program");
-    String mismatch = outputTypeMismatch(calc, encoded.value());
-    return mismatch == null ? encoded : Admission.declined("Calc: " + mismatch);
-  }
-
-  private static String outputTypeMismatch(Calc calc, EncodedExpression encoded) {
-    return CalcOutputTypeCheck.mismatch(encoded, calc.getInput().getRowType(), calc.getRowType());
+    Admission<CalcSpec> checked = CalcSpec.check(calc, encoded.value(), false);
+    return checked.isAccepted() ? checked : Admission.declined("Calc: " + checked.reason());
   }
 
   /**

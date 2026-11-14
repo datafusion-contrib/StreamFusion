@@ -37,6 +37,15 @@ public class CommonCalcExecNode extends ExecNodeBase<ArrowBatch>
   private final NativeUdf.Binding udfBinding;
 
   public CommonCalcExecNode(
+      ReadableConfig tableConfig, InputProperty inputProperty, String description, CalcSpec spec) {
+    this(tableConfig, inputProperty, spec.outputType(), description,
+        spec.expression().kinds(), spec.expression().payload(), spec.expression().childCounts(),
+        spec.expression().longs(), spec.expression().doubles(), spec.expression().strings(),
+        spec.expression().projectionRoots(), spec.expression().conditionRoot(),
+        spec.expression().outputNames(), spec.expression().udfBinding());
+  }
+
+  public CommonCalcExecNode(
       ReadableConfig tableConfig,
       InputProperty inputProperty,
       RowType outputType,

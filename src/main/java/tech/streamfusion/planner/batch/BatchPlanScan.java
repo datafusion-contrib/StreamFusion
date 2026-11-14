@@ -31,8 +31,7 @@ import tech.streamfusion.planner.ColumnarOutput;
 import tech.streamfusion.planner.ExpressionPlanning;
 import tech.streamfusion.planner.NativeConfig;
 import tech.streamfusion.planner.common.BoundedArrowTypeCheck;
-import tech.streamfusion.planner.common.CalcOutputTypeCheck;
-import tech.streamfusion.planner.common.EncodedExpression;
+import tech.streamfusion.planner.common.CalcSpec;
 import tech.streamfusion.planner.common.NativeProbeFailure;
 import tech.streamfusion.planner.common.NativeRelDigests;
 
@@ -77,7 +76,7 @@ public class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext>
     List<RelNode> result = new ArrayList<>();
     for (RelNode root : roots) {
       RelNode candidate = root;
-      Map<RelNode, EncodedExpression> expressions = new IdentityHashMap<>();
+      Map<RelNode, CalcSpec> expressions = new IdentityHashMap<>();
       Map<RelNode, int[][]> sorts = new IdentityHashMap<>();
       Map<RelNode, BatchAggregateSpec> aggregates = new IdentityHashMap<>();
       boolean admitted;
@@ -118,7 +117,7 @@ public class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext>
   private boolean admit(
       RelNode node,
       boolean root,
-      Map<RelNode, EncodedExpression> expressions,
+      Map<RelNode, CalcSpec> expressions,
       Map<RelNode, int[][]> sorts,
       Map<RelNode, BatchAggregateSpec> aggregates,
       boolean retained) {
@@ -143,14 +142,9 @@ public class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext>
               || encoded.isVariableBinaryProjection(projection))
             return decline("batch Calc: legacy binary result boundaries are unverified");
         }
-        String mismatch =
-            retained
-                ? CalcOutputTypeCheck.retainedMismatch(
-                    encoded, calc.getInput().getRowType(), calc.getRowType())
-                : CalcOutputTypeCheck.mismatch(
-                    encoded, calc.getInput().getRowType(), calc.getRowType());
-        if (mismatch != null) return decline("batch Calc: " + mismatch);
-        expressions.put(node, encoded);
+        var specification = CalcSpec.check(calc, encoded, retained);
+        if (!specification.isAccepted()) return decline("batch Calc: " + specification.reason());
+        expressions.put(node, specification.value());
       } else if (node instanceof BatchPhysicalUnion && ((BatchPhysicalUnion) node).all) {
         if (!NativeConfig.operatorEnabled("union")) return decline("batch UNION ALL: disabled");
       } else if (node instanceof BatchPhysicalGroupAggregateBase) {
@@ -265,7 +259,7 @@ public class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext>
 
   private RelNode rewrite(
       RelNode node,
-      Map<RelNode, EncodedExpression> expressions,
+      Map<RelNode, CalcSpec> expressions,
       Map<RelNode, int[][]> sorts,
       Map<RelNode, BatchAggregateSpec> aggregates) {
     RelNode cached = sharedRewrites.get(node);
@@ -295,7 +289,7 @@ public class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext>
 
   private RelNode rewriteNode(
       RelNode node,
-      Map<RelNode, EncodedExpression> expressions,
+      Map<RelNode, CalcSpec> expressions,
       Map<RelNode, int[][]> sorts,
       Map<RelNode, BatchAggregateSpec> aggregates) {
     if (node.getInputs().isEmpty()) return node;

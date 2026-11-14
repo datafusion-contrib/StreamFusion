@@ -53,6 +53,11 @@ public final class CalcOutputTypeCheck {
         encoded, inputType, FlinkTypeFactory$.MODULE$.toLogicalRowType(outputType), true);
   }
 
+  public static String retainedMismatch(
+      EncodedExpression encoded, RelDataType inputType, RowType declared) {
+    return mismatch(encoded, inputType, declared, true);
+  }
+
   private static String mismatch(
       EncodedExpression encoded, RelDataType inputType, RowType declared, boolean retained) {
     if (encoded.exceedsTreeDepth(MAX_NATIVE_TREE_DEPTH)) {

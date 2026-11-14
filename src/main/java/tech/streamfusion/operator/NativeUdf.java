@@ -313,6 +313,14 @@ public final class NativeUdf {
       this.rowInputColumns = rowInputColumns == null ? null : rowInputColumns.clone();
     }
 
+    /** Copies the declaration without sharing an operator's transient runtime registrations. */
+    public Binding planningCopy(int[] inputMapping) {
+      int[] columns = rowInputColumns == null ? null : rowInputColumns.clone();
+      if (columns != null && inputMapping != null)
+        for (int i = 0; i < columns.length; i++) columns[i] = inputMapping[columns[i]];
+      return new Binding(descriptors.clone(), idSlots.clone(), columns);
+    }
+
     public boolean isEmpty() {
       return descriptors.length == 0;
     }

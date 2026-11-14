@@ -66,7 +66,7 @@ import tech.streamfusion.planner.NativeConfig;
 import tech.streamfusion.planner.NativePlannerExtension;
 import tech.streamfusion.planner.NativeShareExecNode;
 import tech.streamfusion.planner.RowDataToArrowExecNode;
-import tech.streamfusion.planner.common.CalcOutputTypeCheck;
+import tech.streamfusion.planner.common.CalcSpec;
 import tech.streamfusion.planner.common.EncodedExpression;
 import tech.streamfusion.state.CanonicalStateBackend;
 import tech.streamfusion.state.OperatorIdentityProjection;
@@ -3794,28 +3794,14 @@ final class StockCompiledPlanLowering {
             inputRelType, Arrays.asList(projections), condition, outputRelType, builder);
     var calc = LogicalCalc.create(LogicalValues.createEmpty(cluster, inputRelType), program);
     var encoded = ExpressionPlanning.encodeCalc(calc);
-    if (encoded == null
-        || encoded.requiresCollectionRepresentation()
-        || CalcOutputTypeCheck.mismatch(encoded, inputRelType, outputType) != null) return stock;
+    if (encoded == null || encoded.requiresCollectionRepresentation()) return stock;
+    var specification = CalcSpec.check(inputRelType, outputType, encoded, false);
+    if (!specification.isAccepted()) return stock;
     Configuration config = new Configuration(planner.getTableConfig().getConfiguration());
     FlinkPlanCompat.persistedConfig(stock).toMap().forEach(config::setString);
     var entry = arrowInput(input, config, inputType, true);
     var nativeCalc =
-        new NativeCalcExecNode(
-            config,
-            InputProperty.DEFAULT,
-            outputType,
-            "NativeCalc",
-            encoded.kinds(),
-            encoded.payload(),
-            encoded.childCounts(),
-            encoded.longs(),
-            encoded.doubles(),
-            encoded.strings(),
-            encoded.projectionRoots(),
-            encoded.conditionRoot(),
-            encoded.outputNames(),
-            encoded.udfBinding());
+        new NativeCalcExecNode(config, InputProperty.DEFAULT, "NativeCalc", specification.value());
     connect(entry, nativeCalc);
     bindings.put(nativeCalc, new StockBinding(stock.getId(), stockUids.get(stock.getId()), null));
     functionExecutions.put(nativeCalc, PlannerDiagnostics.functionExecution("NativeCalc", encoded));
