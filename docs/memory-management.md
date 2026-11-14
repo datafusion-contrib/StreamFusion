@@ -142,6 +142,14 @@ state between two operator-accounting samples. Raw codecs estimate their owned r
 from their released encoding; Arrow-row codecs reserve overlapping input, decoded columns and
 owned values. These remain size estimates, not an allocator-level RSS limit.
 
+Canonical scalar group imports keep the existing 1,024-row transfer frames but commit
+persistent arithmetic and typed headers in working sets of at most 64 rows. The complete frame
+is validated, including existing target keys, before any of its working sets is installed.
+Each commit releases decoded state and encoding workspace before the next working set, and
+the operator does not retain a second charge for store-owned imported groups. Wide keys or
+aggregate state can still exceed the pool; this is bounded staging, not a spill mechanism.
+The memory backend continues to charge all retained groups.
+
 Read-through point access during an active bundle requires the key to have been hydrated by
 one of its input batches. A hydrated absent key returns no value; an unknown key fails the
 internal contract instead of silently masquerading as absent persisted state.

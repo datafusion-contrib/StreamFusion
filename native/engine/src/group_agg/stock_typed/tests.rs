@@ -543,3 +543,48 @@ fn null_markers_preserve_counts_without_contributing_to_the_distinct_scalar() {
         }
     }
 }
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
+fn persistent_typed_headers_release_each_import_working_frame() {
+    for append in [false, true] {
+        let mut source = Owner::new(false, append);
+        for id in 0..1025 {
+            source.update(&input(
+                Some(&format!("key-{id}")),
+                Some(id),
+                Some("member"),
+                0,
+            ));
+        }
+        let frames = source.frames(None);
+        assert_eq!(
+            frames.iter().map(RecordBatch::num_rows).sum::<usize>(),
+            1025
+        );
+        let expected = raw(source.frames(None));
+        let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(1_000_000));
+        let mut target = Owner::new(true, append);
+        let Owner::Rocks(native, _) = &mut target else {
+            unreachable!()
+        };
+        native
+            .memory
+            .attach_pool("group-aggregate", &pool, 0)
+            .unwrap();
+        native.store.attach_memory(native.memory.state_memory());
+        for validating in [true, false] {
+            for frame in &frames {
+                target.import(None, frame, validating).unwrap();
+                assert_eq!(pool.reserved(), 0);
+            }
+        }
+        assert_eq!(raw(target.frames(None)), expected);
+        let Owner::Rocks(native, _) = &mut target else {
+            unreachable!()
+        };
+        assert_eq!(native.memory.state_bytes(), 0);
+        drop(target);
+        assert_eq!(pool.reserved(), 0);
+    }
+}

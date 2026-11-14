@@ -3148,6 +3148,13 @@ non-null violations, duplicate native groups and pending unflushed input are rej
 validates the complete source and empty target before applying data, consuming source state only
 after success. A resource-denied destination must be closed before retrying on a fresh target.
 
+Persistent arithmetic and typed scalar header imports retain the 1,024-row transfer format,
+but install at most 64 rows per internal working set. All keys in an incoming frame are checked
+before the first set is written, so an existing key in a later set still rejects without partial
+installation. Each set reserves decoded state and encoding overlap through its commit, then
+releases both before proceeding. Imported persistent groups are charged only to their live
+store owner; memory imports continue to retain and charge the complete destination state.
+
 Export visits live memory or raw native RocksDB state in bounded Arrow callbacks, preserving
 actual binary keys. It never writes an intermediate native checkpoint. Decoded persistent state
 and output buffers reserve the task's memory budget. TTL-disabled export emits no write age even
