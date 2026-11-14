@@ -2186,3 +2186,8 @@ arithmetic jobs add canonical/native recovery and rescaling. These combinations 
 release lines. Event/bounded ROW partition keys and collection descendants remain gated.
 Historical native checkpoints with a different physical ROW transport are not qualified
 as an upgrade path by this same-build work.
+
+Native DISTINCT decimal SUM preflight distinguishes its empty initialized raw zero from a
+nonempty sum and an overflowed NULL. An empty initialized zero is valid only with zero
+membership cardinality; stock-facing nullable projection and the native auxiliary count still
+determine SQL NULL output. No arithmetic is replayed from the membership view.

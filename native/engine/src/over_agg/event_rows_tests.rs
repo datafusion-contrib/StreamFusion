@@ -1,7 +1,7 @@
 use super::*;
 
 fn batch(times: Vec<i64>, values: Vec<Option<i64>>) -> RecordBatch {
-    RecordBatch::try_from_iter(vec![
+    let batch = RecordBatch::try_from_iter(vec![
         (
             "key",
             Arc::new(Int64Array::from(vec![None::<i64>; times.len()])) as ArrayRef,
@@ -9,7 +9,14 @@ fn batch(times: Vec<i64>, values: Vec<Option<i64>>) -> RecordBatch {
         ("value", Arc::new(Int64Array::from(values)) as ArrayRef),
         ("time", Arc::new(Int64Array::from(times)) as ArrayRef),
     ])
-    .unwrap()
+    .unwrap();
+    let fields = batch
+        .schema()
+        .fields()
+        .iter()
+        .map(|field| field.as_ref().clone().with_nullable(true))
+        .collect::<Vec<_>>();
+    RecordBatch::try_new(Arc::new(Schema::new(fields)), batch.columns().to_vec()).unwrap()
 }
 
 fn memory(keyless: bool, offset: i64) -> OverWindowAggregator {

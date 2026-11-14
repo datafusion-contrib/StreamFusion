@@ -366,10 +366,12 @@ impl OverWindowAggregator {
                 return Err(invalid("DISTINCT AVG count disagrees with membership"));
             }
         } else if kind == 0 {
-            if (count == 0 && !state[offset].is_null())
-                || (count > 0
-                    && state[offset].is_null()
-                    && !matches!(inner.value_types[index], DataType::Decimal128(..)))
+            let decimal = matches!(inner.value_types[index], DataType::Decimal128(..));
+            if (count == 0
+                && !state[offset].is_null()
+                && !(decimal
+                    && state[offset] == ScalarValue::new_zero(&state[offset].data_type())?))
+                || (count > 0 && state[offset].is_null() && !decimal)
             {
                 return Err(invalid("DISTINCT sum emptiness disagrees with membership"));
             }

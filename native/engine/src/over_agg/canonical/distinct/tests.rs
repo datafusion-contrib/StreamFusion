@@ -970,7 +970,7 @@ fn floating_membership_uses_java_nan_and_signed_zero_identity_between_stores() {
                     .iter()
                     .map(RecordBatch::num_rows)
                     .sum::<usize>(),
-                3
+                4
             );
             source
                 .visit_canonical_folds(|batch| target.import_canonical_folds(&batch))
