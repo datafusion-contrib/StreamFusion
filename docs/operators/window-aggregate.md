@@ -24,25 +24,6 @@ admitted TUMBLE/HOP/CUMULATE bindings on 1.18 and 2.2, admitted SESSION TVFs on 
 event/processing-time SESSION/TUMBLE/HOP group windows on both lines.
 Flink 1.18 has no SESSION TVF.
 
-### Floating SUM preservation awaiting qualification
-
-Existing FLOAT and DOUBLE window/session SUM use the released nullable buffer semantics:
-the first non-NULL value is assigned directly, and later values or partial sums are added in
-arrival order at their declared width. A canonical import must preserve an initial negative
-zero rather than add it to positive zero. DOUBLE no longer delegates this fold to DataFusion's
-batch reduction, whose association can differ from Flink's row sequence. State remains one
-nullable floating field, including for local/global partials; native checkpoint and stock
-canonical serializers do not gain fields. New raw-state/rebuild and physical-batch controls
-await execution. This is a parity correction for existing native shapes, with no performance
-claim; both-release qualification remains pending.
-
-Additional single-phase full-job fixtures cover TUMBLE/HOP/CUMULATE and the released SESSION
-variant on each line, both engine orders and stores, ordinary/portable plans, empty returns,
-native checkpoints and source/keyed rescaling. They compare complete committed row bytes to
-an independent nullable floating fold, including negative-zero-only groups, NULL-only owners
-and values near the exact-integer limit. Both transposes and transactional stock writers remain
-in the jobs. These controls are authored but unexecuted; local/global floating job qualification
-is separate.
 
 Legacy SESSION reuses the released `window-aggs`, `session-window-mapping` and window timer
 serializers. Ordinary SQL and compiled plans bind the original owner and key-group maximum,
@@ -1989,6 +1970,28 @@ disk spool. Past shared slices retain their released semantics; expired unshared
 remain excluded from native installation. Accumulator and shared-timer transfers share a
 1,024-row and four-MiB payload estimate, allowing an oversized value. No whole-job timer or
 owner set is retained in Java heap. Native checkpoint formats and operator admission are unchanged.
+
+## Additional canonical bindings awaiting qualification
+
+### Floating SUM preservation awaiting qualification
+
+Existing FLOAT and DOUBLE window/session SUM use the released nullable buffer semantics:
+the first non-NULL value is assigned directly, and later values or partial sums are added in
+arrival order at their declared width. A canonical import must preserve an initial negative
+zero rather than add it to positive zero. DOUBLE no longer delegates this fold to DataFusion's
+batch reduction, whose association can differ from Flink's row sequence. State remains one
+nullable floating field, including for local/global partials; native checkpoint and stock
+canonical serializers do not gain fields. New raw-state/rebuild and physical-batch controls
+await execution. This is a parity correction for existing native shapes, with no performance
+claim; both-release qualification remains pending.
+
+Additional single-phase full-job fixtures cover TUMBLE/HOP/CUMULATE and the released SESSION
+variant on each line, both engine orders and stores, ordinary/portable plans, empty returns,
+native checkpoints and source/keyed rescaling. They compare complete committed row bytes to
+an independent nullable floating fold, including negative-zero-only groups, NULL-only owners
+and values near the exact-integer limit. Both transposes and transactional stock writers remain
+in the jobs. These controls are authored but unexecuted; local/global floating job qualification
+is separate.
 
 ### Retracting fixed-window binding awaiting qualification
 
