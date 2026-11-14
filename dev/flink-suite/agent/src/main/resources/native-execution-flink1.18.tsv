@@ -1,6 +1,8 @@
 # Flink release-1.18.1 methods and fixture parameters, read from unchanged source.
 # Retracting window TVF and Delta SQL cases are absent on this host line.
 # Unchanged upstream method<TAB>fixture selector<TAB>expected route.
+org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testSelectStar	*	NativeCalcOperator
+org.apache.flink.table.planner.runtime.batch.sql.TableSinkITCase#testCollectSinkConfiguration	*	NativeCalcOperator
 org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testManySelectWithFilter	*	NativeCalcOperator
 org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testFilterOnInteger	*	NativeCalcOperator
 org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testUserDefinedScalarFunction	*	NativeCalcOperator

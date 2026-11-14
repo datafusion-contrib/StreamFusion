@@ -559,7 +559,7 @@ fail the join before it publishes any exact case associations.
 
 The separate `runtime_route` field recognizes `skipped`, `native`, `mixed`, `full_fallback`,
 `unmodified_plan`, `scan_only`,
-`batch_host_only` and `host_failure`; unresolved evidence remains `unclassified`.
+`batch_host_only`, `host_failure` and `job_failure`; unresolved evidence remains `unclassified`.
 Batch host-only requires a nonempty set of successful job results, a submitted batch graph for
 every job, resolved Flink operator classes or Flink's `CodeGenOperatorFactory` for every graph node,
 and a complete partition with
@@ -568,7 +568,15 @@ inventories without counter partitions remain `unclassified`. A host-failure rou
 at least one exceptional execution result with an explicit `FAILED` job status or a matching
 Flink `JobResult` application status of `FAILED`, resolved Flink operator classes in every submitted batch/streaming graph,
 no native work, and all other jobs either successful or similarly confirmed failed. Cancelled,
-suspended or pending jobs cannot establish this route. The agent observes `JobResult` before
+suspended or pending jobs cannot establish this route.
+`job_failure` uses the same confirmed-failure requirement for a resolved graph
+containing native operators. It grants no successful native-execution credit,
+permits partial or absent work counters, and rejects counters for absent operators
+or streaming-only native operators in batch graphs. An invocation containing such
+a failure keeps this failure route even if another job succeeds; any unresolved
+job still makes the invocation unclassified. Successful native jobs continue to
+require positive work for every native operator.
+The agent observes `JobResult` before
 its conversion to an execution result, preserving the authoritative outcome even after an archived
 job's status lookup becomes unavailable. Results join by job ID, including those observed before
 submission returns. Repeated outcomes are deduplicated; conflicting outcomes, a successful result
@@ -662,8 +670,12 @@ replace reports. Audit failure fails the worker and the final upstream gate; no 
 shared-build downloads are added.
 Each audit must match every listed requirement; missing, duplicate or unclassified required
 variants fail. The execution audit retains the exact matched count and any unrequired early returns.
-The batch `TableSinkITCase#testCollectSinkConfiguration` fixture establishes the host-failure
-route while its expected exception remains a passing upstream test.
+The batch `TableSinkITCase#testCollectSinkConfiguration` fixture establishes
+`job_failure`: its deliberately undersized collect buffer fails a job containing
+native computation, then its corrected configuration succeeds. The original
+exception and successful result assertions remain unchanged. Its native contract
+requires positive Calc work from the successful execution. `CalcITCase#testSelectStar`
+also requires positive native Calc work because its released plan includes a filter.
 
 The keyed `AggregateITCase#testGroupByAgg` fixture covers HEAP/ROCKSDB, immediate/mini-batch
 and local/global modes. Local and global native operators must each have positive associated

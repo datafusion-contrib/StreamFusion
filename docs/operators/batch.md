@@ -208,10 +208,12 @@ sorts and admitted global aggregates.
 
 ## Validation
 
-Removing the performance whitelist passes 18 focused local SQL tests and 19
+Removing the performance whitelist passes 18 focused local SQL tests and 21
 unchanged released upstream methods on each supported Flink line, with no skips.
-The upstream methods record 18 positive native-work witnesses and one explicit
-unsupported floating-aggregate fallback per line. Local controls cover standalone
+The upstream methods record 20 positive native-work witnesses and one explicit
+unsupported floating-aggregate fallback per line. The collect-sink configuration
+fixture preserves its expected failure and then records native work on success.
+Local controls cover standalone
 scalar work, a UNION branch without SHA2, global reductions across both phases,
 typed extrema, standalone sorted limits and completed-shuffle recovery. Unsupported
 interiors and disabled operators still retain the whole stock compute query.

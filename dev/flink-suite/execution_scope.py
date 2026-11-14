@@ -2,7 +2,7 @@
 import json
 
 ROUTES = {'native', 'mixed', 'full_fallback', 'batch_host_only', 'unmodified_plan',
-          'scan_only', 'host_failure', 'skipped'}
+          'scan_only', 'host_failure', 'job_failure', 'skipped'}
 
 
 def validate(audit, path, line):

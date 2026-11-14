@@ -1,5 +1,7 @@
 # Unchanged upstream method<TAB>fixture selector<TAB>expected route.
 # Batch Calc uses the same verified expression runtime through batch graph wrappers.
+org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testSelectStar	*	NativeCalcOperator
+org.apache.flink.table.planner.runtime.batch.sql.TableSinkITCase#testCollectSinkConfiguration	*	NativeCalcOperator
 org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testManySelectWithFilter	*	NativeCalcOperator
 org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testFilterOnInteger	*	NativeCalcOperator
 org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testUserDefinedScalarFunction	*	NativeCalcOperator

@@ -6,7 +6,7 @@
       "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testSelectStar",
       "display_name": "testSelectStar()",
       "count": 1,
-      "route": "batch_host_only"
+      "route": "native"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.sql.CalcITCase#testLongProjectionList",
@@ -48,7 +48,7 @@
       "test": "org.apache.flink.table.planner.runtime.batch.sql.TableSinkITCase#testCollectSinkConfiguration",
       "display_name": "testCollectSinkConfiguration()",
       "count": 1,
-      "route": "host_failure"
+      "route": "job_failure"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testGroupByAgg",
