@@ -3948,3 +3948,13 @@ retains released Flink's merge order before one retained-state merge. Existing n
 and private checkpoint encodings are reused. Retracting global DISTINCT remains excluded.
 These additions are authored but await the requested final six-hour local testing window;
 historical passing cohorts above do not qualify this wider scope.
+
+### One-phase decimal accumulator projection awaiting qualification
+
+Existing decimal SUM and AVG now have typed canonical bindings for eager and one-phase bundled
+execution. The projection distinguishes an unseen append SUM from native zero, retains the
+nullable raw accumulator and signed count for retracting SUM, and permits AVG's overflowed NULL
+raw sum with its independent count. Existing shared COUNT DISTINCT views continue through their
+own stock descriptors. New compact/wide-scale controls compare raw stock bytes, post-overflow
+continuation, native checkpoint recovery and full-job effects. Both released Flink lines remain
+awaiting qualification; decimal global partials and extrema are still outside this adapter.

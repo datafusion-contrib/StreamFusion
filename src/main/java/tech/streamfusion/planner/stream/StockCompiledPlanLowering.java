@@ -2464,6 +2464,10 @@ final class StockCompiledPlanLowering {
               : countAll || info.argIndexes().length == 0 ? -1 : info.argIndexes()[0];
       int valueType = value < 0 ? 0 : typedGroupValueCode(sourceType.getTypeAt(value));
       if (valueType < 0) return stock;
+      if (valueType >= 2000) {
+        if (kind != 7 && (global || kind != 0 && kind != 4)) return stock;
+        if (kind == 0 && retract) kind = 40;
+      }
       if (call.filterArg >= 0 && !sourceType.getTypeAt(call.filterArg).is(LogicalTypeRoot.BOOLEAN))
         return stock;
       kinds[actual] = kind;

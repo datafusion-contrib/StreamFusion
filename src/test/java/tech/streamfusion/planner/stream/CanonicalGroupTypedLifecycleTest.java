@@ -20,7 +20,7 @@ class CanonicalGroupTypedLifecycleTest {
   }
 
   private static Stream<Arguments> allCases() {
-    return Stream.of("TINYINT", "SMALLINT", "INT", "BIGINT", "FLOAT", "DOUBLE")
+    return types()
         .flatMap(
             type ->
                 Stream.of(false, true)
@@ -40,12 +40,12 @@ class CanonicalGroupTypedLifecycleTest {
   void sharedFilteredViewsAndTypedRawAccumulatorsSurviveRepeatedSwitches(
       String numeric, boolean append, boolean rocks, boolean nativeFirst) throws Exception {
     var steps = steps(numeric, append);
-    try (var reference = new TypedGroupStockFixture(numeric, append, rocks)) {
+    try (var reference = fixture(numeric, append, rocks)) {
       reference.harness.open();
       OperatorSubtaskState saved = null;
       for (int stage = 0; stage < 3; stage++) {
         boolean nativeStage = stage % 2 == 0 ? nativeFirst : !nativeFirst;
-        try (var stock = new TypedGroupStockFixture(numeric, append, rocks);
+        try (var stock = fixture(numeric, append, rocks);
             var nativeHarness = stock.nativeHarness()) {
           var receiver = nativeStage ? nativeHarness : stock.harness;
           if (saved != null) receiver.initializeState(saved);
@@ -80,7 +80,7 @@ class CanonicalGroupTypedLifecycleTest {
   }
 
   private static Stream<Arguments> allRecoveryCases() {
-    return Stream.of("TINYINT", "SMALLINT", "INT", "BIGINT", "FLOAT", "DOUBLE")
+    return types()
         .flatMap(
             type ->
                 Stream.of(false, true)
@@ -95,10 +95,10 @@ class CanonicalGroupTypedLifecycleTest {
   void nativeCheckpointRetainsNullMarkersAndRawScalarsBeforeStockReturn(
       String numeric, boolean append, boolean rocks) throws Exception {
     var inputs = steps(numeric, append);
-    try (var reference = new TypedGroupStockFixture(numeric, append, rocks)) {
+    try (var reference = fixture(numeric, append, rocks)) {
       reference.harness.open();
       OperatorSubtaskState checkpoint;
-      try (var fixture = new TypedGroupStockFixture(numeric, append, rocks);
+      try (var fixture = fixture(numeric, append, rocks);
           var source = fixture.nativeHarness()) {
         source.open();
         for (int index = 0; index < 4; index++)
@@ -119,7 +119,7 @@ class CanonicalGroupTypedLifecycleTest {
           owner.checkpoint = false;
         }
       }
-      try (var fixture = new TypedGroupStockFixture(numeric, append, rocks);
+      try (var fixture = fixture(numeric, append, rocks);
           var restored = fixture.nativeHarness()) {
         restored.initializeState(checkpoint);
         restored.open();
@@ -137,6 +137,25 @@ class CanonicalGroupTypedLifecycleTest {
         assertState(reference, snapshot(restored), numeric, append, rocks);
       }
     }
+  }
+
+  static Stream<String> types() {
+    return Stream.of(
+        "TINYINT",
+        "SMALLINT",
+        "INT",
+        "BIGINT",
+        "FLOAT",
+        "DOUBLE",
+        "DECIMAL(18,2)",
+        "DECIMAL(38,2)",
+        "DECIMAL(38,20)");
+  }
+
+  private static TypedGroupStockFixture fixture(String numeric, boolean append, boolean rocks)
+      throws Exception {
+    return new TypedGroupStockFixture(
+        numeric, append, rocks, false, false, false, "STRING", numeric.startsWith("DECIMAL"));
   }
 
   static List<RowData> steps(String numeric, boolean append) {
@@ -201,7 +220,13 @@ class CanonicalGroupTypedLifecycleTest {
           number = value.doubleValue();
           break;
         default:
-          throw new IllegalArgumentException(numeric);
+          if (!numeric.startsWith("DECIMAL")) throw new IllegalArgumentException(numeric);
+          var parts = numeric.substring(8, numeric.length() - 1).split(",");
+          number =
+              DecimalData.fromBigDecimal(
+                  java.math.BigDecimal.valueOf(value),
+                  Integer.parseInt(parts[0]),
+                  Integer.parseInt(parts[1]));
       }
     var row =
         GenericRowData.of(
@@ -235,7 +260,7 @@ class CanonicalGroupTypedLifecycleTest {
       boolean append,
       boolean rocks)
       throws Exception {
-    try (var returned = new TypedGroupStockFixture(type, append, rocks)) {
+    try (var returned = fixture(type, append, rocks)) {
       returned.harness.initializeState(saved);
       returned.harness.open();
       assertEquals(

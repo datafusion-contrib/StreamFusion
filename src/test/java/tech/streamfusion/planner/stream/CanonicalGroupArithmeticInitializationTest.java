@@ -312,7 +312,7 @@ class CanonicalGroupArithmeticInitializationTest {
     return row;
   }
 
-  private static List<String> bytes(List<RowData> rows, RowType type) throws Exception {
+  static List<String> bytes(List<RowData> rows, RowType type) throws Exception {
     var serializer = new RowDataSerializer(type);
     var result = new ArrayList<String>();
     for (var row : rows) {

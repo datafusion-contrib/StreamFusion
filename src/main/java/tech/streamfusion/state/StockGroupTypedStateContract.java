@@ -111,6 +111,7 @@ public final class StockGroupTypedStateContract implements StockStateContract {
           && kinds[i] != 10
           && kinds[i] != 11
           && kinds[i] != 22
+          && kinds[i] != 40
           && kinds[i] != 7
           && kinds[i] != 9) throw new IllegalArgumentException("Unsupported scalar aggregate kind");
       if (kinds[i] == 9 && recordCountField >= 0)
@@ -118,13 +119,15 @@ public final class StockGroupTypedStateContract implements StockStateContract {
       if ((kinds[i] == 10 || kinds[i] == 11) && recordCountField >= 0)
         throw new IllegalArgumentException("Scalar MIN/MAX requires append-only input");
       cover(covered, scalarFields[i]);
-      if (kinds[i] == 4 || kinds[i] == 0 && recordCountField >= 0) {
+      if (kinds[i] == 4 || kinds[i] == 40 || kinds[i] == 0 && recordCountField >= 0) {
         cover(covered, countFields[i]);
         if (!accumulatorType.getTypeAt(countFields[i]).is(LogicalTypeRoot.BIGINT))
           throw new IllegalArgumentException("Intermediate count must use BIGINT");
       } else if (countFields[i] != -1)
         throw new IllegalArgumentException("Aggregate has no separate physical count");
       var scalarType = accumulatorType.getTypeAt(scalarFields[i]);
+      if (kinds[i] == 40 && !scalarType.is(LogicalTypeRoot.DECIMAL))
+        throw new IllegalArgumentException("Nullable decimal SUM requires decimal state");
       switch (scalarType.getTypeRoot()) {
         case TINYINT:
         case SMALLINT:
@@ -132,6 +135,14 @@ public final class StockGroupTypedStateContract implements StockStateContract {
         case BIGINT:
         case FLOAT:
         case DOUBLE:
+          break;
+        case DECIMAL:
+          if (globalMerge
+              || (kinds[i] != 0 && kinds[i] != 4 && kinds[i] != 40)
+              || ((org.apache.flink.table.types.logical.DecimalType) scalarType).getPrecision()
+                  != 38)
+            throw new IllegalArgumentException(
+                "Decimal state requires a widened SUM/AVG accumulator");
           break;
         case DATE:
         case TIME_WITHOUT_TIME_ZONE:
@@ -146,7 +157,7 @@ public final class StockGroupTypedStateContract implements StockStateContract {
       if ((kinds[i] == 3 || kinds[i] == 7 || kinds[i] == 22)
           && !scalarType.is(LogicalTypeRoot.BIGINT))
         throw new IllegalArgumentException("COUNT requires the released BIGINT accumulator");
-      fields.add(scalarType.copy(nullableScalar(kinds[i])));
+      fields.add(scalarType.copy(nullableScalar(kinds[i], scalarType)));
       fields.add(new BigIntType(false));
     }
     int placeholders = 0;
@@ -166,7 +177,11 @@ public final class StockGroupTypedStateContract implements StockStateContract {
   }
 
   private static boolean nullableScalar(int kind) {
-    return kind == 0 || kind == 9 || kind == 10 || kind == 11;
+    return kind == 0 || kind == 9 || kind == 10 || kind == 11 || kind == 40;
+  }
+
+  private static boolean nullableScalar(int kind, LogicalType type) {
+    return nullableScalar(kind) || kind == 4 && type.is(LogicalTypeRoot.DECIMAL);
   }
 
   private static void cover(boolean[] fields, int index) {
@@ -287,7 +302,8 @@ public final class StockGroupTypedStateContract implements StockStateContract {
     if (recordCountField >= 0 && row.isNullAt(recordCountField))
       throw new IllegalStateException("NULL group record count");
     for (int i = 0; i < kinds.length; i++) {
-      if (!nullableScalar(kinds[i]) && row.isNullAt(scalarFields[i]))
+      if (!nullableScalar(kinds[i], accumulatorType.getTypeAt(scalarFields[i]))
+          && row.isNullAt(scalarFields[i]))
         throw new IllegalStateException("NULL in a required accumulator scalar");
       if (countFields[i] >= 0 && row.isNullAt(countFields[i]))
         throw new IllegalStateException("NULL in a required accumulator count");

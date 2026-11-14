@@ -64,9 +64,24 @@ final class TypedGroupStockFixture implements AutoCloseable {
       boolean miniBatch,
       String keySql)
       throws Exception {
+    this(numeric, append, rocks, extremaOnly, distinctSum, miniBatch, keySql, false);
+  }
+
+  @SuppressWarnings("unchecked")
+  TypedGroupStockFixture(
+      String numeric,
+      boolean append,
+      boolean rocks,
+      boolean extremaOnly,
+      boolean distinctSum,
+      boolean miniBatch,
+      String keySql,
+      boolean scalarOnly)
+      throws Exception {
     this.rocks = rocks;
     this.miniBatch = miniBatch;
-    var graph = graph(numeric, append, false, extremaOnly, distinctSum, miniBatch, keySql);
+    var graph =
+        graph(numeric, append, false, extremaOnly, distinctSum, miniBatch, keySql, scalarOnly);
     var node =
         graph.getStreamNodes().stream()
             .filter(
@@ -132,7 +147,8 @@ final class TypedGroupStockFixture implements AutoCloseable {
     harness.setup(
         (org.apache.flink.api.common.typeutils.TypeSerializer<RowData>)
             node.getTypeSerializerOut());
-    var nativeGraph = graph(numeric, append, true, extremaOnly, distinctSum, miniBatch, keySql);
+    var nativeGraph =
+        graph(numeric, append, true, extremaOnly, distinctSum, miniBatch, keySql, scalarOnly);
     template =
         (NativeColumnarGroupAggregateOperator)
             nativeGraph.getStreamNodes().stream()
@@ -180,6 +196,20 @@ final class TypedGroupStockFixture implements AutoCloseable {
       boolean miniBatch,
       String keySql)
       throws Exception {
+    return graph(
+        numeric, append, nativeEnabled, extremaOnly, distinctSum, miniBatch, keySql, false);
+  }
+
+  private static StreamGraph graph(
+      String numeric,
+      boolean append,
+      boolean nativeEnabled,
+      boolean extremaOnly,
+      boolean distinctSum,
+      boolean miniBatch,
+      String keySql,
+      boolean scalarOnly)
+      throws Exception {
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", Boolean.toString(nativeEnabled));
     config.setString("pipeline.max-parallelism", "128");
@@ -226,7 +256,7 @@ final class TypedGroupStockFixture implements AutoCloseable {
                     + ",a "
                     + average
                     + ",d BIGINT,e BIGINT"
-                    + (append ? ",lo " + numeric + ",hi " + numeric : "");
+                    + (append && !scalarOnly ? ",lo " + numeric + ",hi " + numeric : "");
     table.executeSql(
         "CREATE TABLE output_table(k "
             + keySql
@@ -240,7 +270,7 @@ final class TypedGroupStockFixture implements AutoCloseable {
                     + "COUNT(DISTINCT v) FILTER(WHERE f),AVG(v),COUNT(DISTINCT s)"
                 : (extremaOnly ? "MIN(v),MAX(v)" : "SUM(v),AVG(v)")
                     + ",COUNT(DISTINCT s),COUNT(DISTINCT s) FILTER(WHERE f)"
-                    + (append && !extremaOnly ? ",MIN(v),MAX(v)" : ""))
+                    + (append && !extremaOnly && !scalarOnly ? ",MIN(v),MAX(v)" : ""))
             + " FROM fixture.db.input_table GROUP BY k,t";
     var planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
     return CanonicalRegularJoinPlanTest.graph(

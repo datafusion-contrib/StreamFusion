@@ -2419,3 +2419,15 @@ Clean-worker jobs keep the complete nested payload through a user function, comp
 effects and check an independent window-selection/payload checksum oracle for continuation,
 empty returns, recovery and rescaling. Both Flink release lines await the final testing window;
 these authored controls do not extend earlier passing evidence.
+
+## One-phase decimal group binding awaiting qualification
+
+The typed scalar adapter now binds existing decimal SUM/AVG for eager and one-phase mini-batch
+GROUP BY, including retracting input and existing shared COUNT DISTINCT views. Append SUM
+exports an unseen native zero accumulator as stock NULL and imports only the necessary presence
+marker. Retracting SUM uses the existing nullable decimal accumulator kind and transfers its
+signed non-null count separately. AVG transfers the widened raw sum and full count, including
+a latched overflowed NULL sum. Private native checkpoint formats are unchanged. Decimal
+two-phase scalar/DISTINCT reductions and decimal extrema retain their existing canonical
+fallbacks. New compact/wide-scale raw-state, overflow, planner and isolated job controls await
+execution on Flink 1.18 and 2.2 in the final testing window; no passing evidence is claimed yet.

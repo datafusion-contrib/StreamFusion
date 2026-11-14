@@ -35,7 +35,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             || self
                 .kinds
                 .iter()
-                .any(|kind| !matches!(kind, 0 | 3 | 4 | 7 | 9 | 10 | 11 | 22))
+                .any(|kind| !matches!(kind, 0 | 3 | 4 | 7 | 9 | 10 | 11 | 22 | 40))
             || self.record_count_column >= 0 && !self.stock_global_merge
             || self.count_columns.iter().enumerate().any(|(i, &column)| {
                 column >= 0 && !(self.stock_global_merge && matches!(self.kinds[i], 0 | 4))
@@ -65,6 +65,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
     fn configure_typed(&mut self, kinds: &[i64], append_only: bool) -> Result<(), DataFusionError> {
         self.typed_shape()?;
         if self.kinds != kinds
+            || append_only && self.kinds.contains(&40)
             || self.stock_global_merge
                 && !append_only
                 && (self.record_count_column < 0
@@ -120,7 +121,10 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             }
             let count = required_longs(batch.column(4 + 2 * i))?;
             for row in 0..batch.num_rows() {
-                if matches!(kind, 3 | 4 | 7 | 22) && scalar.is_null(row) {
+                if (matches!(kind, 3 | 7 | 22)
+                    || *kind == 4 && !matches!(scalar.data_type(), DataType::Decimal128(_, _)))
+                    && scalar.is_null(row)
+                {
                     return Err(invalid("NULL required accumulator"));
                 }
                 if *kind == 7 && count.value(row) != 0 {
@@ -319,7 +323,18 @@ fn headers(
         let mut counts = Vec::with_capacity(groups.len());
         for (_, state) in groups {
             let (scalar, count) = match &state.aggs[i] {
-                GroupAggState::Running { agg, non_null } => (agg.emit(), *non_null),
+                GroupAggState::Running { agg, non_null } => {
+                    let value = if append_only
+                        && *kind == 0
+                        && *non_null == 0
+                        && matches!(agg, RunningAgg::SumDecimal { .. })
+                    {
+                        null_scalar(&types[i])
+                    } else {
+                        agg.emit()
+                    };
+                    (value, *non_null)
+                }
                 GroupAggState::DistinctRunning { agg, live, .. } => (agg.emit(), *live),
                 GroupAggState::Distinct { live, .. } => (ScalarValue::Int64(Some(*live)), 0),
                 _ => return Err(invalid("unsupported retained accumulator")),

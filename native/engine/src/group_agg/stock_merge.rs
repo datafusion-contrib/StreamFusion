@@ -100,6 +100,11 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             || self.value_columns.iter().any(|&column| column < 0)
             || self.filter_columns.iter().any(|&column| column >= 0)
             || self
+                .kinds
+                .iter()
+                .zip(&self.value_types)
+                .any(|(kind, ty)| matches!(kind, 0 | 4) && matches!(ty, DataType::Decimal128(_, _)))
+            || self
                 .count_columns
                 .iter()
                 .enumerate()
