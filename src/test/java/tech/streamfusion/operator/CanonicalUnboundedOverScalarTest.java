@@ -368,7 +368,7 @@ class CanonicalUnboundedOverScalarTest {
   }
 
   static Map<String, String> raw(
-      KeyedOneInputStreamOperatorTestHarness<?, RowData, RowData> harness) throws Exception {
+      org.apache.flink.streaming.util.AbstractStreamOperatorTestHarness<?> harness) throws Exception {
     var backend = (CheckpointableKeyedStateBackend<?>) harness.getOperator().getKeyedStateBackend();
     var resources = backend.savepoint().getSnapshotResources();
     try (AutoCloseable release = resources::release) {

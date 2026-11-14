@@ -2523,3 +2523,9 @@ Pending ROW-key normalizer consumer controls now require the newly bound retract
 aggregate or nested regular join to retain its own canonical owner and perform native work.
 They no longer accept the former consumer fallback as evidence for the combined graph. These
 joint continuation/recovery/rescale controls await both-release execution.
+
+
+Nested regular-join component controls additionally compare serialized canonical keys and values,
+not only projected job output, through no-input returns and native checkpoint recovery. They use
+all released side layouts and join kinds, with nested row kinds and insert-only MAP inputs.
+Execution on Flink 1.18 and 2.2 remains pending.

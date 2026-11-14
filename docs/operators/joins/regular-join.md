@@ -336,3 +336,11 @@ tombstones; both state owners bind to their stock identities. The 52 compiled/or
 scenarios cover both stores/orders, mini-batch barriers, no-input returns, native checkpoints,
 empty state and fixed-max rescaling. Other unqualified upstream native families remain part of
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+
+Additional nested-payload component controls await both-release qualification. They compare
+complete serialized stock state immediately after a no-input canonical return and again after
+native checkpoint recovery, then continue actual stock and native operators. All six join kinds,
+scalar/unique-map/multiset side layouts, both stores and engine orders are included. Nested ROW
+kinds are retained. MAP-bearing inputs stay insert-only; other nested rows also exercise valid
+removal. These controls do not qualify updating MAP equality or binary ROW key metadata.
