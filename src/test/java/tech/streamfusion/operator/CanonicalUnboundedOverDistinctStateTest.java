@@ -28,7 +28,7 @@ class CanonicalUnboundedOverDistinctStateTest {
 
   static Stream<Arguments> cases() {
     var cases = new ArrayList<Arguments>();
-    for (String type : new String[] {"INT NOT NULL", "BIGINT NOT NULL"})
+    for (String type : new String[] {"INT NOT NULL", "BIGINT NOT NULL", "INT", "BIGINT"})
       for (boolean rows : new boolean[] {false, true})
         for (boolean global : new boolean[] {false, true})
           for (boolean rocks : new boolean[] {false, true})
@@ -68,13 +68,19 @@ class CanonicalUnboundedOverDistinctStateTest {
       reference.open();
       long edge = type.startsWith("INT") ? Integer.MAX_VALUE : Long.MAX_VALUE;
       var prefix =
-          List.of(
-              plan.row(1L, 7L),
-              plan.row(1L, 7L),
-              plan.row(2L, 9L),
-              plan.row(null, 3L),
-              plan.row(1L, edge),
-              plan.row(1L, 1L));
+          new ArrayList<>(
+              List.of(
+                  plan.row(1L, 7L),
+                  plan.row(1L, 7L),
+                  plan.row(2L, 9L),
+                  plan.row(null, 3L),
+                  plan.row(1L, edge),
+                  plan.row(1L, 1L)));
+      if (!type.contains("NOT NULL")) {
+        prefix.add(plan.row(1L, null));
+        prefix.add(plan.row(9L, null));
+        prefix.add(plan.row(9L, null));
+      }
       var expected = plan.stockInput(reference, prefix);
       if (first) {
         owner.open();
@@ -112,12 +118,18 @@ class CanonicalUnboundedOverDistinctStateTest {
         returned.open();
         assertEquals(raw(reference), raw(returned));
         var future =
-            List.of(
-                plan.row(1L, 8L),
-                plan.row(1L, 11L),
-                plan.row(2L, 10L),
-                plan.row(null, 4L),
-                plan.row(null, 5L));
+            new ArrayList<>(
+                List.of(
+                    plan.row(1L, 8L),
+                    plan.row(1L, 11L),
+                    plan.row(2L, 10L),
+                    plan.row(null, 4L),
+                    plan.row(null, 5L)));
+        if (!type.contains("NOT NULL")) {
+          future.add(plan.row(9L, null));
+          future.add(plan.row(9L, 1L));
+          future.add(plan.row(1L, null));
+        }
         expected = plan.stockInput(reference, future);
         assertEquals(expected, plan.stockInput(returned, future));
         assertEquals(expected, plan.nativeInput(recovered, future));
@@ -127,7 +139,8 @@ class CanonicalUnboundedOverDistinctStateTest {
   }
 
   static Stream<Arguments> malformedCases() {
-    return Stream.of("bits", "count", "null", "orphan", "sum", "average")
+    return Stream.of(
+            "bits", "count", "null", "orphan", "sum", "average", "null-bits", "null-orphan")
         .flatMap(mode -> Stream.of(false, true).map(rocks -> Arguments.of(mode, rocks)));
   }
 
@@ -138,7 +151,15 @@ class CanonicalUnboundedOverDistinctStateTest {
       throws Exception {
     var plan =
         new CanonicalUnboundedOverScalarTest.Plan(
-            "BIGINT NOT NULL", true, false, 0, "BIGINT", false, false, false, true);
+            mode.startsWith("null-") ? "BIGINT" : "BIGINT NOT NULL",
+            true,
+            false,
+            0,
+            "BIGINT",
+            false,
+            false,
+            false,
+            true);
     try (var source = plan.stock(rocks);
         var target = plan.nativeHarness(rocks)) {
       source.open();
@@ -183,7 +204,11 @@ class CanonicalUnboundedOverDistinctStateTest {
       if (mode.equals("bits")) map.put(7L, 1L << plan.kinds.length);
       else if (mode.equals("count")) map.remove(7L);
       else if (mode.equals("null")) marker.update(1L);
-      else if (mode.equals("orphan")) {
+      else if (mode.equals("null-bits")) marker.update(1L << plan.kinds.length);
+      else if (mode.equals("null-orphan")) {
+        backend.setCurrentKey(plan.selector.getKey(plan.row(99L, 7L)));
+        marker.update(1L);
+      } else if (mode.equals("orphan")) {
         backend.setCurrentKey(plan.selector.getKey(plan.row(99L, 7L)));
         map.put(7L, 1L);
       } else {

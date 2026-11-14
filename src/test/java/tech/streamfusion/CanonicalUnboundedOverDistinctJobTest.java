@@ -9,6 +9,10 @@ import java.util.stream.Stream;
 import org.junit.jupiter.params.provider.Arguments;
 
 class CanonicalUnboundedOverDistinctJobTest extends CanonicalUnboundedOverJobTest {
+  boolean requiredArgument() {
+    return true;
+  }
+
   static Stream<Arguments> continuedCases() {
     return CanonicalTestMatrix.select(CanonicalUnboundedOverJobTest.continuedCases());
   }
@@ -21,11 +25,12 @@ class CanonicalUnboundedOverDistinctJobTest extends CanonicalUnboundedOverJobTes
   Path prepare(String name, String kind, String mode, boolean ordinary) throws Exception {
     var root = super.prepare(name, kind, mode, ordinary);
     Files.writeString(
-        root.resolve("input-columns.sql"), "k BIGINT,v BIGINT NOT NULL,rt TIMESTAMP(3)");
+        root.resolve("input-columns.sql"),
+        "k BIGINT,v BIGINT" + (requiredArgument() ? " NOT NULL" : "") + ",rt TIMESTAMP(3)");
     var rows = new ArrayList<String>();
     for (String line : Files.readAllLines(root.resolve("input.csv"))) {
       var cells = line.split(",", -1);
-      if (cells[2].equals("null")) cells[2] = "0";
+      if (requiredArgument() && cells[2].equals("null")) cells[2] = "0";
       rows.add(String.join(",", cells));
     }
     Files.write(root.resolve("input.csv"), rows);

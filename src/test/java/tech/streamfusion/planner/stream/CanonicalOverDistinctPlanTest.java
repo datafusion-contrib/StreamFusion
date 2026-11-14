@@ -30,8 +30,8 @@ class CanonicalOverDistinctPlanTest {
 
   @ParameterizedTest
   @MethodSource("cases")
-  void onlyTheCapturedNonNullCountMembershipContractIsBound(
-      String type, String mode, boolean compiled) throws Exception {
+  void onlyTheCapturedIntegralMembershipContractIsBound(String type, String mode, boolean compiled)
+      throws Exception {
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", "true");
     config.setString("table.exec.state.ttl", mode.equals("ttl") ? "1 h" : "0 ms");
@@ -70,7 +70,11 @@ class CanonicalOverDistinctPlanTest {
             .filter(NativeOverAggregateOperator.class::isInstance)
             .collect(java.util.stream.Collectors.toList());
     boolean admitted =
-        mode.equals("rows") || mode.equals("range") || mode.equals("sum") || mode.equals("avg");
+        mode.equals("rows")
+            || mode.equals("range")
+            || mode.equals("sum")
+            || mode.equals("avg")
+            || mode.equals("nullable");
     assertEquals(admitted ? 1 : 0, owners.size(), graph.getStreamingPlanAsJSON());
     if (admitted) {
       var contract =

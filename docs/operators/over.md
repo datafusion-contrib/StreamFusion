@@ -2050,20 +2050,26 @@ controls await execution on Flink 1.18 and 2.2; historical passing cohorts do no
 ## Additional unbounded DISTINCT binding awaiting qualification
 
 The Java canonical binding now connects the existing native membership transfer for unbounded
-processing-time COUNT/SUM/SUM0/AVG DISTINCT over required INT/BIGINT arguments, with state TTL disabled.
+processing-time COUNT/SUM/SUM0/AVG DISTINCT over INT/BIGINT arguments, with state TTL disabled.
 ROWS and RANGE use the released scalar accumulator plus its actual shared DISTINCT MAP view,
 stock external serializers and null-state descriptor. Memberships and raw counts transfer
 separately without replay. Complete cardinality, wrapping integral sum and membership-bit validation precedes native
 insertion, and failed preflight retains the source state. Memory and RocksDB capture reuse the
 existing live-state readers; no new native checkpoint format is introduced.
 
-Nullable DISTINCT arguments remain outside this extension because their stock NULL-membership
-marker needs its own native representation. TTL, event-time and bounded DISTINCT, other argument
+Nullable arguments retain a separate NULL-membership marker per aggregate. It does not contribute
+to sums or counts. Memory keeps its presence beside the non-NULL set; persistent state stores a
+typed NULL in the existing membership table. Raw checkpoints retain that NULL in the existing
+nullable membership list, without new record fields. Live NULL input records membership only for
+the bound TTL-disabled processing fold, in bounded temporary memory. Stock export reconstructs
+the original shared null-state bits and the released non-null RAW view placeholder.
+
+TTL, event-time and bounded DISTINCT, other argument
 types, filtered DISTINCT and DISTINCT extrema retain their existing gates.
 
 New actual-stock controls cover exact raw state, continued duplicate suppression, no-input
 returns, native checkpoint recovery, both stores and keyed/global ownership. Malformed bitsets,
-cardinality/sum mismatches, NULL markers and membership-only orphan keys must reject before mutation;
+cardinality/sum mismatches, invalid NULL markers and membership-only orphan keys must reject before mutation;
 a repaired source can retry into the same empty target. Clean-worker jobs add ordinary/portable
 submission, both engine orders and rescaling, with independent counts. These controls await
 Flink 1.18 and 2.2 execution in the final local window. Historical passing counts above do not
@@ -2074,6 +2080,12 @@ accumulator fields, including signed overflow. Component controls compare comple
 duplicate suppression after canonical and native recovery; separate malformed SUM and AVG-sum
 controls require rejection before either table changes. Clean-stock arithmetic jobs use independent
 distinct-set sums/averages through continuation and rescaling. This scope also awaits execution.
+
+Nullable controls additionally include NULL-only owners, repeated NULL input, valid marker-only
+state, invalid bits/orphans and raw native recovery across both stores. Clean-stock COUNT and
+arithmetic jobs retain actual nullable source values with independent non-NULL distinct-set
+oracles. All are pending both-release execution. Historical native checkpoints that never
+recorded NULL membership do not gain that lost information through this same-build extension.
 
 ## Unbounded processing ROW partition keys awaiting qualification
 

@@ -343,6 +343,9 @@ public final class StockOverFoldStateContract implements StockStateContract {
         boolean emptySum = decimalSumCounts[i] >= 0 && row.getLong(decimalSumCounts[i]) == 0;
         accumulator.setField(i, emptySum ? null : getters[i].getFieldOrNull(row));
       }
+      for (int field = nativeFields.length; field < accumulator.getArity(); field++)
+        accumulator.setField(
+            field, org.apache.flink.table.data.binary.BinaryRawValueData.fromBytes(new byte[] {0}));
       validateKey(key);
       validateAccumulator(accumulator);
       receiver.write(

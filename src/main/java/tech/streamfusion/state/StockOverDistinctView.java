@@ -27,7 +27,7 @@ import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.operator.NativeAllocator;
 import tech.streamfusion.operator.RowDataArrowConverter;
 
-/** Released non-null integral DISTINCT memberships alongside an unbounded scalar fold. */
+/** Released integral DISTINCT memberships alongside an unbounded scalar fold. */
 public final class StockOverDistinctView implements Serializable {
   private static final long serialVersionUID = 1L;
   private static final int CHUNK_ROWS = 1024;
@@ -44,8 +44,7 @@ public final class StockOverDistinctView implements Serializable {
       TypeSerializer<?> values,
       TypeSerializer<?> bits,
       int[] aggregates) {
-    if (valueType.isNullable()
-        || !valueType.is(LogicalTypeRoot.INTEGER) && !valueType.is(LogicalTypeRoot.BIGINT)
+    if (!valueType.is(LogicalTypeRoot.INTEGER) && !valueType.is(LogicalTypeRoot.BIGINT)
         || aggregates.length == 0
         || aggregates.length > Long.SIZE
         || java.util.Arrays.stream(aggregates).anyMatch(index -> index < 0)
@@ -146,10 +145,11 @@ public final class StockOverDistinctView implements Serializable {
 
   void exportState(CheckpointableKeyedStateBackend<RowData> backend, long handle) throws Exception {
     var state = state(backend);
+    var marker = nullState(backend);
     var keySerializer = new RowDataSerializer(keyType);
     var getter =
         RowData.createFieldGetter(
-            bridge.getTypeAt(keyType.getFieldCount()), keyType.getFieldCount());
+            bridge.getTypeAt(keyType.getFieldCount()).copy(true), keyType.getFieldCount());
     for (int slot = 0; slot < aggregates.length; slot++) {
       final long flag = 1L << slot;
       visit(
@@ -164,10 +164,15 @@ public final class StockOverDistinctView implements Serializable {
                       .getFieldOrNull(row));
             backend.setCurrentKey(keySerializer.toBinaryRow(key).copy());
             Object member = getter.getFieldOrNull(row);
-            if (member == null)
-              throw new IllegalStateException("NULL in a required DISTINCT argument");
-            Object previous = state.get(member);
-            state.put(values.copy(member), (previous == null ? 0L : (Long) previous) | flag);
+            if (member == null) {
+              if (!bridge.getTypeAt(keyType.getFieldCount()).isNullable())
+                throw new IllegalStateException("NULL in a required DISTINCT argument");
+              Object previous = marker.value();
+              marker.update((previous == null ? 0L : (Long) previous) | flag);
+            } else {
+              Object previous = state.get(member);
+              state.put(values.copy(member), (previous == null ? 0L : (Long) previous) | flag);
+            }
           });
     }
   }
@@ -189,9 +194,15 @@ public final class StockOverDistinctView implements Serializable {
           var key = keys.next();
           keyValidator.accept(key);
           backend.setCurrentKey(key);
-          if (marker.value() != null)
-            throw new IllegalStateException("NULL membership for a required DISTINCT argument");
+          Object nullFlags = marker.value();
+          if (nullFlags != null) {
+            if (!bridge.getTypeAt(keyType.getFieldCount()).isNullable())
+              throw new IllegalStateException("NULL membership for a required DISTINCT argument");
+            validateFlags(nullFlags);
+          }
           var wrapped = accumulators.value();
+          if (wrapped == null && nullFlags != null)
+            throw new IllegalStateException("OVER DISTINCT NULL membership has no scalar owner");
           var counts = new long[aggregates.length];
           var sums = new long[aggregates.length];
           var entries = map.entries();
@@ -203,9 +214,7 @@ public final class StockOverDistinctView implements Serializable {
                       ? !(entry.getKey() instanceof Integer)
                       : !(entry.getKey() instanceof Long)))
                 throw new IllegalStateException("Invalid OVER DISTINCT membership");
-              long flags = (Long) entry.getValue();
-              if (flags == 0 || aggregates.length < Long.SIZE && flags >>> aggregates.length != 0)
-                throw new IllegalStateException("Invalid OVER DISTINCT membership bits");
+              long flags = validateFlags(entry.getValue());
               for (int slot = 0; slot < aggregates.length; slot++) {
                 if ((flags >>> slot & 1) == 0) continue;
                 counts[slot]++;
@@ -242,8 +251,18 @@ public final class StockOverDistinctView implements Serializable {
       }
   }
 
+  private long validateFlags(Object value) {
+    if (!(value instanceof Long))
+      throw new IllegalStateException("Invalid OVER DISTINCT membership bits");
+    long flags = (Long) value;
+    if (flags == 0 || aggregates.length < Long.SIZE && flags >>> aggregates.length != 0)
+      throw new IllegalStateException("Invalid OVER DISTINCT membership bits");
+    return flags;
+  }
+
   void importState(CheckpointableKeyedStateBackend<RowData> backend, long handle) throws Exception {
     var map = state(backend);
+    var marker = nullState(backend);
     var getters = new RowData.FieldGetter[keyType.getFieldCount()];
     for (int field = 0; field < getters.length; field++)
       getters[field] = RowData.createFieldGetter(keyType.getTypeAt(field).copy(true), field);
@@ -270,6 +289,24 @@ public final class StockOverDistinctView implements Serializable {
             }
         }
       }
+      if (bridge.getTypeAt(keyType.getFieldCount()).isNullable())
+        try (var stream = backend.getKeys(name + "_null_state", VoidNamespace.INSTANCE)) {
+          var keys = stream.iterator();
+          while (keys.hasNext()) {
+            var key = keys.next();
+            backend.setCurrentKey(key);
+            var flags = marker.value();
+            if (flags == null || ((Long) flags >>> slot & 1) == 0) continue;
+            var row = new GenericRowData(bridge.getFieldCount());
+            for (int field = 0; field < getters.length; field++)
+              row.setField(field, getters[field].getFieldOrNull(key));
+            rows.add(row);
+            if (rows.size() == CHUNK_ROWS) {
+              transfer(handle, aggregates[slot], rows);
+              rows.clear();
+            }
+          }
+        }
       if (!rows.isEmpty()) transfer(handle, aggregates[slot], rows);
     }
   }

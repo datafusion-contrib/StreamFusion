@@ -2,6 +2,98 @@ use super::*;
 use jni::sys::jint;
 
 impl OverWindowAggregator {
+    pub(in crate::over_agg) fn retain_canonical_distinct_nulls(
+        &mut self,
+        batch: &RecordBatch,
+    ) -> Result<(), DataFusionError> {
+        if !self.proctime
+            || self.min_retention_ms > 0
+            || self.canonical_distinct.is_empty()
+            || !self
+                .canonical_distinct
+                .iter()
+                .any(|&index| batch.column(self.value_columns[index]).null_count() != 0)
+        {
+            return Ok(());
+        }
+        let arrays = self
+            .key_columns
+            .iter()
+            .map(|&column| batch.column(column))
+            .collect::<Vec<_>>();
+        let bytes = arrays
+            .iter()
+            .map(|array| array.get_array_memory_size())
+            .sum::<usize>()
+            .saturating_mul(3)
+            .saturating_add(
+                batch
+                    .num_rows()
+                    .saturating_mul(self.key_columns.len().saturating_mul(32).saturating_add(64)),
+            )
+            .saturating_add(CHUNK_ROWS.min(batch.num_rows()) * std::mem::size_of::<Vec<u8>>());
+        let mut work = self.memory.temporary_reservation();
+        if let Some(work) = &mut work {
+            work.try_resize(bytes)?;
+        }
+        let mut converter = Some(key_row_converter_from_types(&key_types(&arrays)));
+        let keys = encode_keys(&mut converter, &arrays, batch.num_rows());
+        for &index in &self.canonical_distinct {
+            let values = batch.column(self.value_columns[index]);
+            if values.null_count() == 0 {
+                continue;
+            }
+            #[cfg(feature = "rocksdb-state")]
+            let value_type = self.canonical_distinct_type(index)?.clone();
+            #[cfg(feature = "rocksdb-state")]
+            if let Some(store) = &mut self.store {
+                let slot = self
+                    .distinct_slots
+                    .iter()
+                    .position(|&aggregate| aggregate == index)
+                    .ok_or_else(|| invalid("DISTINCT store slot is missing"))?;
+                let null = new_null_array(&value_type, 1);
+                let element = store.encode_distinct_elements(slot, &null)?.remove(0);
+                let mut entries = Vec::with_capacity(CHUNK_ROWS.min(batch.num_rows()));
+                for row in 0..batch.num_rows() {
+                    if !values.is_null(row) {
+                        continue;
+                    }
+                    let group = store.key_group(binary_row_hash(
+                        batch,
+                        &self.key_columns,
+                        row,
+                        &self.key_timestamp_precisions,
+                    ));
+                    let mut key = store.distinct_prefix(slot, group, keys.row(row).data());
+                    key.extend_from_slice(&element);
+                    entries.push(key);
+                    if entries.len() == CHUNK_ROWS {
+                        store.write_distinct(&entries)?;
+                        entries.clear();
+                    }
+                }
+                if !entries.is_empty() {
+                    store.write_distinct(&entries)?;
+                }
+                continue;
+            }
+            let OverInner::Aggregates(inner) = &mut self.inner else {
+                return Err(invalid("NULL membership requires an unbounded fold"));
+            };
+            for row in 0..batch.num_rows() {
+                if values.is_null(row) {
+                    inner
+                        .keys
+                        .get_mut(keys.row(row).data())
+                        .ok_or_else(|| invalid("NULL membership has no scalar owner"))?[index]
+                        .distinct_null = true;
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn bind_canonical_distinct(&mut self, index: usize) -> Result<(), DataFusionError> {
         let OverInner::Aggregates(inner) = &self.inner else {
             return Err(invalid("DISTINCT requires an unbounded fold"));
@@ -39,7 +131,7 @@ impl OverWindowAggregator {
         fields.push(Field::new(
             "value",
             self.canonical_distinct_type(index)?.clone(),
-            false,
+            true,
         ));
         let refs = keys.iter().map(|key| key.as_ref()).collect::<Vec<_>>();
         let mut columns = decode_byte_keys(inner.key_converter.as_ref(), &refs, &inner.key_types);
@@ -92,6 +184,14 @@ impl OverWindowAggregator {
                 }
                 Ok(())
             })?;
+            if states[index].distinct_null {
+                keys.push(key.0.clone());
+                values.push(ScalarValue::try_from(self.canonical_distinct_type(index)?)?);
+                if values.len() == CHUNK_ROWS {
+                    accept(self.distinct_batch(index, &keys, std::mem::take(&mut values))?)?;
+                    keys.clear();
+                }
+            }
         }
         if !values.is_empty() {
             accept(self.distinct_batch(index, &keys, values)?)?;
@@ -110,6 +210,7 @@ impl OverWindowAggregator {
             || batch.num_rows() > CHUNK_ROWS
             || batch.column(arity).data_type() != &value_type
             || batch.column(arity).null_count() != 0
+                && (!self.proctime || self.min_retention_ms > 0)
         {
             return Err(invalid(
                 "invalid DISTINCT membership schema or NULL element",
@@ -132,15 +233,20 @@ impl OverWindowAggregator {
         let mut converter = Some(key_row_converter_from_types(&types));
         let keys = encode_keys(&mut converter, &arrays, batch.num_rows());
         let mut local: HashMap<ByteKey, DistinctSet> = HashMap::default();
+        let mut nulls = ahash::HashSet::default();
         let mut values = Vec::with_capacity(batch.num_rows());
         for row in 0..batch.num_rows() {
             let key = ByteKey::from(keys.row(row).data());
             let value = ScalarValue::try_from_array(batch.column(arity), row)?;
-            if !local
-                .entry(key)
-                .or_insert_with(|| DistinctSet::new(&value_type))
-                .add_scalar(value.clone())
-            {
+            let fresh = if value.is_null() {
+                nulls.insert(key)
+            } else {
+                local
+                    .entry(key)
+                    .or_insert_with(|| DistinctSet::new(&value_type))
+                    .add_scalar(value.clone())
+            };
+            if !fresh {
                 return Err(invalid("duplicate DISTINCT membership in batch"));
             }
             values.push(value);
@@ -188,7 +294,11 @@ impl OverWindowAggregator {
                 return Err(invalid("DISTINCT membership has no accumulator"));
             }
             if state.is_some_and(|state| {
-                state.distinct.as_ref().unwrap().scalar_count(&values[row]) != 0
+                if values[row].is_null() {
+                    state.distinct_null
+                } else {
+                    state.distinct.as_ref().unwrap().scalar_count(&values[row]) != 0
+                }
             }) {
                 return Err(invalid("duplicate retained DISTINCT membership"));
             }
@@ -290,7 +400,7 @@ impl OverWindowAggregator {
                             &fold.key,
                             CHUNK_ROWS,
                             |values| {
-                                count += values.len();
+                                count += values.iter().filter(|value| !value.is_null()).count();
                                 Ok(())
                             },
                         )?;
