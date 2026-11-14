@@ -1,0 +1,3984 @@
+{
+  "status": "partial",
+  "hudi": "1.2.1",
+  "flink": "1.18.1",
+  "scope": "One complete configuration; remaining three configurations pending. Repeated complete Hudi source-to-sink jobs, not sustained stream throughput.",
+  "workflow_run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43630903023",
+  "completed_configurations": 1,
+  "expected_configurations": 4,
+  "timed_observations": 198,
+  "stock_planner_rejections": 1,
+  "configurations": [
+    {
+      "status": "passed",
+      "commit": "8666207641964f672f41d9e09308d6db99ffb6a4",
+      "native_tree": "16d4c0052bb61c9a6c783bd03bdafc6c02fe9896",
+      "native_producer_run": 43624540633,
+      "libraries_sha256": {
+        "libstreamfusion.so": "49f41446c4a45f9b8f03840a3c6bf5ab28669c91e81ffc422f231dc65cbab5dd",
+        "libstreamfusion_parquet.so": "ff679550c487d9bb9014a9d4b6724e9e2cecd8dbf2786e2b9f81ee22b48f742b"
+      },
+      "platform": "Linux-7.0.0-1017-azure-x86_64-with-glibc2.39",
+      "processors": 4,
+      "backend": "rocksdb",
+      "mini_batch": true,
+      "cpu_model": "AMD EPYC 9V45 96-Core Processor",
+      "physical_memory_bytes": 16760344576,
+      "exit_code": 0,
+      "report": {
+        "status": "passed",
+        "rows": 2000000,
+        "input_bids": 1840000,
+        "parallelism": 4,
+        "source_partitions": 4,
+        "sink_partition_modulus": 4,
+        "checkpoint_ms": 1000,
+        "warmups": 1,
+        "runs": 3,
+        "object_reuse": true,
+        "jdk": "17.0.21+9",
+        "architecture": "amd64",
+        "available_processors": 4,
+        "heap_max_bytes": 8589934592,
+        "native_task_off_heap_capacity_bytes": 51539607552,
+        "state_backend_checks": [
+          {
+            "mini_batch": true,
+            "engine": "previous",
+            "query": "q4",
+            "rocksdb_opened": true
+          },
+          {
+            "mini_batch": true,
+            "engine": "native",
+            "query": "q4",
+            "rocksdb_opened": true
+          },
+          {
+            "mini_batch": true,
+            "engine": "stock",
+            "query": "q4",
+            "rocksdb_opened": true
+          }
+        ],
+        "observations": [
+          {
+            "query": "q0",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 2946.94776,
+            "wall_milliseconds": 2946.951435,
+            "started_at_utc": "2026-11-14T19:15:43.930898449Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q0",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 12745.747418,
+            "wall_milliseconds": 12745.751514,
+            "started_at_utc": "2026-11-14T19:16:02.229045555Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q0",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 1104.927656,
+            "wall_milliseconds": 1104.932072,
+            "started_at_utc": "2026-11-14T19:16:30.113272960Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q0",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 980.46488,
+            "wall_milliseconds": 980.468115,
+            "started_at_utc": "2026-11-14T19:16:47.691607409Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q0",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 2584.26066,
+            "wall_milliseconds": 2584.265137,
+            "started_at_utc": "2026-11-14T19:17:03.199063514Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q0",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 13528.554652,
+            "wall_milliseconds": 13528.558538,
+            "started_at_utc": "2026-11-14T19:17:20.204660689Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q0",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 13174.313176,
+            "wall_milliseconds": 13174.317322,
+            "started_at_utc": "2026-11-14T19:17:50.182220751Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q0",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 1055.101124,
+            "wall_milliseconds": 1055.10469,
+            "started_at_utc": "2026-11-14T19:18:18.443333879Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q0",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 2621.619269,
+            "wall_milliseconds": 2621.623705,
+            "started_at_utc": "2026-11-14T19:18:33.998040156Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q1",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 2796.036705,
+            "wall_milliseconds": 2796.040741,
+            "started_at_utc": "2026-11-14T19:20:01.246970037Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q1",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 14020.141134,
+            "wall_milliseconds": 14020.145721,
+            "started_at_utc": "2026-11-14T19:20:20.206721326Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q1",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 895.094892,
+            "wall_milliseconds": 895.099038,
+            "started_at_utc": "2026-11-14T19:20:50.902236259Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q1",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 1031.708061,
+            "wall_milliseconds": 1031.711727,
+            "started_at_utc": "2026-11-14T19:21:09.612415408Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q1",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 2838.093399,
+            "wall_milliseconds": 2838.098016,
+            "started_at_utc": "2026-11-14T19:21:26.905688002Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q1",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 13717.283073,
+            "wall_milliseconds": 13717.287769,
+            "started_at_utc": "2026-11-14T19:21:45.902111Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q1",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 13241.481643,
+            "wall_milliseconds": 13241.485799,
+            "started_at_utc": "2026-11-14T19:22:18.256997531Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q1",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 964.992533,
+            "wall_milliseconds": 964.996379,
+            "started_at_utc": "2026-11-14T19:22:47.502560854Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q1",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 2560.113533,
+            "wall_milliseconds": 2560.117068,
+            "started_at_utc": "2026-11-14T19:23:04.313397614Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q2",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 1265.910892,
+            "wall_milliseconds": 1265.91604,
+            "started_at_utc": "2026-11-14T19:23:36.352484369Z",
+            "output_rows": 14640,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q2",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 8318.102515,
+            "wall_milliseconds": 8318.106601,
+            "started_at_utc": "2026-11-14T19:23:37.970800038Z",
+            "output_rows": 14640,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q2",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 668.894569,
+            "wall_milliseconds": 668.898324,
+            "started_at_utc": "2026-11-14T19:23:47.057445502Z",
+            "output_rows": 14640,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q2",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 498.628712,
+            "wall_milliseconds": 498.632967,
+            "started_at_utc": "2026-11-14T19:23:48.233795893Z",
+            "output_rows": 14640,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q2",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 1353.952594,
+            "wall_milliseconds": 1353.95683,
+            "started_at_utc": "2026-11-14T19:23:48.970835946Z",
+            "output_rows": 14640,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q2",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 8232.540876,
+            "wall_milliseconds": 8232.547857,
+            "started_at_utc": "2026-11-14T19:23:50.674919492Z",
+            "output_rows": 14640,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q2",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 8307.875514,
+            "wall_milliseconds": 8307.879139,
+            "started_at_utc": "2026-11-14T19:23:59.712249273Z",
+            "output_rows": 14640,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q2",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 611.040251,
+            "wall_milliseconds": 611.043666,
+            "started_at_utc": "2026-11-14T19:24:08.826780449Z",
+            "output_rows": 14640,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q2",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 1365.702625,
+            "wall_milliseconds": 1365.706,
+            "started_at_utc": "2026-11-14T19:24:09.768983126Z",
+            "output_rows": 14640,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q3",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 1295.224758,
+            "wall_milliseconds": 1295.228293,
+            "started_at_utc": "2026-11-14T19:24:33.792531330Z",
+            "output_rows": 798,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q3",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 16892.312015,
+            "wall_milliseconds": 16892.316321,
+            "started_at_utc": "2026-11-14T19:24:35.493702099Z",
+            "output_rows": 798,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q3",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 789.983227,
+            "wall_milliseconds": 789.986852,
+            "started_at_utc": "2026-11-14T19:24:53.194619919Z",
+            "output_rows": 798,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q3",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 965.251031,
+            "wall_milliseconds": 965.254897,
+            "started_at_utc": "2026-11-14T19:24:54.328787136Z",
+            "output_rows": 798,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q3",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 1305.377833,
+            "wall_milliseconds": 1305.381407,
+            "started_at_utc": "2026-11-14T19:24:55.565122010Z",
+            "output_rows": 798,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q3",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 16788.298589,
+            "wall_milliseconds": 16788.302715,
+            "started_at_utc": "2026-11-14T19:24:57.148536471Z",
+            "output_rows": 798,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q3",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 16953.245413,
+            "wall_milliseconds": 16953.249569,
+            "started_at_utc": "2026-11-14T19:25:14.690477733Z",
+            "output_rows": 798,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q3",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 873.027227,
+            "wall_milliseconds": 873.031493,
+            "started_at_utc": "2026-11-14T19:25:32.677668194Z",
+            "output_rows": 798,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q3",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 1542.996821,
+            "wall_milliseconds": 1543.000978,
+            "started_at_utc": "2026-11-14T19:25:33.959287496Z",
+            "output_rows": 798,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q4",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 10854.753684,
+            "wall_milliseconds": 10854.756027,
+            "started_at_utc": "2026-11-14T19:27:00.379349932Z",
+            "output_rows": 100,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q4",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 62158.061441,
+            "wall_milliseconds": 62158.064074,
+            "started_at_utc": "2026-11-14T19:27:12.415144689Z",
+            "output_rows": 100,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q4",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 3005.946174,
+            "wall_milliseconds": 3005.948888,
+            "started_at_utc": "2026-11-14T19:28:15.832275997Z",
+            "output_rows": 100,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q4",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 2928.388355,
+            "wall_milliseconds": 2928.390859,
+            "started_at_utc": "2026-11-14T19:28:19.758390968Z",
+            "output_rows": 100,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q4",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 9216.50028,
+            "wall_milliseconds": 9216.502644,
+            "started_at_utc": "2026-11-14T19:28:23.463842104Z",
+            "output_rows": 100,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q4",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 62833.287998,
+            "wall_milliseconds": 62833.290382,
+            "started_at_utc": "2026-11-14T19:28:33.334866053Z",
+            "output_rows": 100,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q4",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 62540.702912,
+            "wall_milliseconds": 62540.704955,
+            "started_at_utc": "2026-11-14T19:29:37.680425432Z",
+            "output_rows": 100,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q4",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 3334.657419,
+            "wall_milliseconds": 3334.660033,
+            "started_at_utc": "2026-11-14T19:30:41.478237885Z",
+            "output_rows": 100,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q4",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 9616.088606,
+            "wall_milliseconds": 9616.09148,
+            "started_at_utc": "2026-11-14T19:30:45.604005078Z",
+            "output_rows": 100,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "reason": "Incomparable types: TIMESTAMP_LTZ(3) and TIMESTAMP(3) NOT NULL",
+            "status": "stock-planner-rejected",
+            "mini_batch": true,
+            "backend": "rocksdb",
+            "query": "q7"
+          },
+          {
+            "query": "q8",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 4903.082162,
+            "wall_milliseconds": 4903.093459,
+            "started_at_utc": "2026-11-14T19:32:07.542920816Z",
+            "output_rows": 40000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q8",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 30895.454016,
+            "wall_milliseconds": 30895.455388,
+            "started_at_utc": "2026-11-14T19:32:13.175595594Z",
+            "output_rows": 40000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q8",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 29470.047407,
+            "wall_milliseconds": 29470.04853,
+            "started_at_utc": "2026-11-14T19:32:45.887046568Z",
+            "output_rows": 40000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q8",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 30247.331964,
+            "wall_milliseconds": 30247.333496,
+            "started_at_utc": "2026-11-14T19:33:16.971272203Z",
+            "output_rows": 40000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q8",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 4784.041142,
+            "wall_milliseconds": 4784.042624,
+            "started_at_utc": "2026-11-14T19:33:48.374858349Z",
+            "output_rows": 40000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q8",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 29868.875832,
+            "wall_milliseconds": 29868.877305,
+            "started_at_utc": "2026-11-14T19:33:53.875565234Z",
+            "output_rows": 40000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q8",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 30026.862165,
+            "wall_milliseconds": 30026.863297,
+            "started_at_utc": "2026-11-14T19:34:25.706231062Z",
+            "output_rows": 40000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q8",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 29171.217532,
+            "wall_milliseconds": 29171.218905,
+            "started_at_utc": "2026-11-14T19:34:57.519544319Z",
+            "output_rows": 40000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q8",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 4610.186831,
+            "wall_milliseconds": 4610.187992,
+            "started_at_utc": "2026-11-14T19:35:27.907772708Z",
+            "output_rows": 40000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q9",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 19127.42499,
+            "wall_milliseconds": 19127.426341,
+            "started_at_utc": "2026-11-14T19:37:55.745024756Z",
+            "output_rows": 120000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q9",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 103916.860961,
+            "wall_milliseconds": 103916.862264,
+            "started_at_utc": "2026-11-14T19:38:18.325936764Z",
+            "output_rows": 120000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q9",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 4250.490715,
+            "wall_milliseconds": 4250.492158,
+            "started_at_utc": "2026-11-14T19:40:12.890321992Z",
+            "output_rows": 120000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q9",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 4681.355289,
+            "wall_milliseconds": 4681.356691,
+            "started_at_utc": "2026-11-14T19:40:20.194976869Z",
+            "output_rows": 120000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q9",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 19205.914801,
+            "wall_milliseconds": 19205.916494,
+            "started_at_utc": "2026-11-14T19:40:27.069538641Z",
+            "output_rows": 120000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q9",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 101478.34462,
+            "wall_milliseconds": 101478.345891,
+            "started_at_utc": "2026-11-14T19:40:49.768331101Z",
+            "output_rows": 120000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q9",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 101381.923544,
+            "wall_milliseconds": 101381.924656,
+            "started_at_utc": "2026-11-14T19:42:45.147720793Z",
+            "output_rows": 120000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q9",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 4046.731236,
+            "wall_milliseconds": 4046.732438,
+            "started_at_utc": "2026-11-14T19:44:39.088348185Z",
+            "output_rows": 120000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q9",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 19129.062856,
+            "wall_milliseconds": 19129.064659,
+            "started_at_utc": "2026-11-14T19:44:45.564478769Z",
+            "output_rows": 120000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q10",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 3377.066744,
+            "wall_milliseconds": 3377.067915,
+            "started_at_utc": "2026-11-14T19:46:26.727792081Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q10",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 20462.150161,
+            "wall_milliseconds": 20462.151192,
+            "started_at_utc": "2026-11-14T19:46:47.654290618Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q10",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 1244.072881,
+            "wall_milliseconds": 1244.074003,
+            "started_at_utc": "2026-11-14T19:47:26.268071607Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q10",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 1267.325562,
+            "wall_milliseconds": 1267.326714,
+            "started_at_utc": "2026-11-14T19:47:47.238232917Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q10",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 2955.446642,
+            "wall_milliseconds": 2955.447834,
+            "started_at_utc": "2026-11-14T19:48:05.667656433Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q10",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 19909.368476,
+            "wall_milliseconds": 19909.369787,
+            "started_at_utc": "2026-11-14T19:48:26.002137453Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q10",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 20640.366244,
+            "wall_milliseconds": 20640.367476,
+            "started_at_utc": "2026-11-14T19:49:05.629869204Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q10",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 1237.337082,
+            "wall_milliseconds": 1237.338274,
+            "started_at_utc": "2026-11-14T19:49:44.553819439Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q10",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 3400.530547,
+            "wall_milliseconds": 3400.531889,
+            "started_at_utc": "2026-11-14T19:50:03.350344559Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q11",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 7649.567963,
+            "wall_milliseconds": 7649.569345,
+            "started_at_utc": "2026-11-14T19:52:45.970320829Z",
+            "output_rows": 46,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q11",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 67393.149077,
+            "wall_milliseconds": 67393.150359,
+            "started_at_utc": "2026-11-14T19:52:53.846191972Z",
+            "output_rows": 46,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q11",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 64734.307373,
+            "wall_milliseconds": 64734.308424,
+            "started_at_utc": "2026-11-14T19:54:01.514201019Z",
+            "output_rows": 46,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q11",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 64046.66072,
+            "wall_milliseconds": 64046.662352,
+            "started_at_utc": "2026-11-14T19:55:06.546199541Z",
+            "output_rows": 46,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q11",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 7729.927193,
+            "wall_milliseconds": 7729.928495,
+            "started_at_utc": "2026-11-14T19:56:10.813426215Z",
+            "output_rows": 46,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q11",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 64530.419221,
+            "wall_milliseconds": 64530.420673,
+            "started_at_utc": "2026-11-14T19:56:18.765746620Z",
+            "output_rows": 46,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q11",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 65190.341705,
+            "wall_milliseconds": 65190.343116,
+            "started_at_utc": "2026-11-14T19:57:23.565565887Z",
+            "output_rows": 46,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q11",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 67745.134776,
+            "wall_milliseconds": 67745.136207,
+            "started_at_utc": "2026-11-14T19:58:29.013383988Z",
+            "output_rows": 46,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q11",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 7443.796758,
+            "wall_milliseconds": 7443.797909,
+            "started_at_utc": "2026-11-14T19:59:36.971033101Z",
+            "output_rows": 46,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q12",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 1579.878977,
+            "wall_milliseconds": 1579.881562,
+            "started_at_utc": "2026-11-14T20:00:25.368466874Z",
+            "output_rows": 0,
+            "sink_partitions": [],
+            "validation": "processing-time bounded counts"
+          },
+          {
+            "query": "q12",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 37066.337676,
+            "wall_milliseconds": 37066.340591,
+            "started_at_utc": "2026-11-14T20:00:27.171303437Z",
+            "output_rows": 184,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "processing-time bounded counts"
+          },
+          {
+            "query": "q12",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 616.823295,
+            "wall_milliseconds": 616.825859,
+            "started_at_utc": "2026-11-14T20:01:04.652225948Z",
+            "output_rows": 0,
+            "sink_partitions": [],
+            "validation": "processing-time bounded counts"
+          },
+          {
+            "query": "q12",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 622.532631,
+            "wall_milliseconds": 622.535075,
+            "started_at_utc": "2026-11-14T20:01:05.542978824Z",
+            "output_rows": 0,
+            "sink_partitions": [],
+            "validation": "processing-time bounded counts"
+          },
+          {
+            "query": "q12",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 1933.865569,
+            "wall_milliseconds": 1933.868144,
+            "started_at_utc": "2026-11-14T20:01:06.388882762Z",
+            "output_rows": 0,
+            "sink_partitions": [],
+            "validation": "processing-time bounded counts"
+          },
+          {
+            "query": "q12",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 36484.25461,
+            "wall_milliseconds": 36484.256964,
+            "started_at_utc": "2026-11-14T20:01:08.673513777Z",
+            "output_rows": 184,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "processing-time bounded counts"
+          },
+          {
+            "query": "q12",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 36910.984066,
+            "wall_milliseconds": 36910.98664,
+            "started_at_utc": "2026-11-14T20:01:45.566386771Z",
+            "output_rows": 184,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "processing-time bounded counts"
+          },
+          {
+            "query": "q12",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 476.430762,
+            "wall_milliseconds": 476.433037,
+            "started_at_utc": "2026-11-14T20:02:22.872282238Z",
+            "output_rows": 0,
+            "sink_partitions": [],
+            "validation": "processing-time bounded counts"
+          },
+          {
+            "query": "q12",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 1555.346095,
+            "wall_milliseconds": 1555.348438,
+            "started_at_utc": "2026-11-14T20:02:23.615316646Z",
+            "output_rows": 0,
+            "sink_partitions": [],
+            "validation": "processing-time bounded counts"
+          },
+          {
+            "query": "q15",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 2049.828137,
+            "wall_milliseconds": 2049.830502,
+            "started_at_utc": "2026-11-14T20:02:46.035984091Z",
+            "output_rows": 1,
+            "sink_partitions": [
+              0
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q15",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 14902.115471,
+            "wall_milliseconds": 14902.117444,
+            "started_at_utc": "2026-11-14T20:02:48.307542404Z",
+            "output_rows": 1,
+            "sink_partitions": [
+              0
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q15",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 1368.262467,
+            "wall_milliseconds": 1368.265051,
+            "started_at_utc": "2026-11-14T20:03:03.641917716Z",
+            "output_rows": 1,
+            "sink_partitions": [
+              0
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q15",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 1122.199487,
+            "wall_milliseconds": 1122.202072,
+            "started_at_utc": "2026-11-14T20:03:05.469025870Z",
+            "output_rows": 1,
+            "sink_partitions": [
+              0
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q15",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 2163.356181,
+            "wall_milliseconds": 2163.358745,
+            "started_at_utc": "2026-11-14T20:03:06.869524711Z",
+            "output_rows": 1,
+            "sink_partitions": [
+              0
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q15",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 14895.716031,
+            "wall_milliseconds": 14895.718496,
+            "started_at_utc": "2026-11-14T20:03:09.265205670Z",
+            "output_rows": 1,
+            "sink_partitions": [
+              0
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q15",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 15177.566223,
+            "wall_milliseconds": 15177.568597,
+            "started_at_utc": "2026-11-14T20:03:24.558758950Z",
+            "output_rows": 1,
+            "sink_partitions": [
+              0
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q15",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 1198.325921,
+            "wall_milliseconds": 1198.328155,
+            "started_at_utc": "2026-11-14T20:03:40.161616198Z",
+            "output_rows": 1,
+            "sink_partitions": [
+              0
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q15",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 2081.527051,
+            "wall_milliseconds": 2081.529454,
+            "started_at_utc": "2026-11-14T20:03:41.640755776Z",
+            "output_rows": 1,
+            "sink_partitions": [
+              0
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q16",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 3541.677802,
+            "wall_milliseconds": 3541.681247,
+            "started_at_utc": "2026-11-14T20:04:14.589707578Z",
+            "output_rows": 8,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q16",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 22060.819394,
+            "wall_milliseconds": 22060.821667,
+            "started_at_utc": "2026-11-14T20:04:18.647734921Z",
+            "output_rows": 8,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q16",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 3389.043928,
+            "wall_milliseconds": 3389.046471,
+            "started_at_utc": "2026-11-14T20:04:43.907249269Z",
+            "output_rows": 8,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q16",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 2771.281642,
+            "wall_milliseconds": 2771.283866,
+            "started_at_utc": "2026-11-14T20:04:47.829818473Z",
+            "output_rows": 8,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q16",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 3968.901429,
+            "wall_milliseconds": 3968.904093,
+            "started_at_utc": "2026-11-14T20:04:51.462567141Z",
+            "output_rows": 8,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q16",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 22554.034593,
+            "wall_milliseconds": 22554.036887,
+            "started_at_utc": "2026-11-14T20:04:56.723168976Z",
+            "output_rows": 8,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q16",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 22133.506934,
+            "wall_milliseconds": 22133.509489,
+            "started_at_utc": "2026-11-14T20:05:21.515599581Z",
+            "output_rows": 8,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q16",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 2534.55097,
+            "wall_milliseconds": 2534.553243,
+            "started_at_utc": "2026-11-14T20:05:46.576296004Z",
+            "output_rows": 8,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q16",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 3181.293926,
+            "wall_milliseconds": 3181.29647,
+            "started_at_utc": "2026-11-14T20:05:49.537891209Z",
+            "output_rows": 8,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q17",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 3356.428891,
+            "wall_milliseconds": 3356.430283,
+            "started_at_utc": "2026-11-14T20:06:27.182860645Z",
+            "output_rows": 120000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q17",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 21416.710169,
+            "wall_milliseconds": 21416.711251,
+            "started_at_utc": "2026-11-14T20:06:32.241213573Z",
+            "output_rows": 120000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q17",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 2101.431385,
+            "wall_milliseconds": 2101.432798,
+            "started_at_utc": "2026-11-14T20:06:56.857864086Z",
+            "output_rows": 120000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q17",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 2474.041927,
+            "wall_milliseconds": 2474.054576,
+            "started_at_utc": "2026-11-14T20:07:01.513613365Z",
+            "output_rows": 120000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q17",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 3585.390749,
+            "wall_milliseconds": 3585.392201,
+            "started_at_utc": "2026-11-14T20:07:05.712841897Z",
+            "output_rows": 120000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q17",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 21446.404669,
+            "wall_milliseconds": 21446.40576,
+            "started_at_utc": "2026-11-14T20:07:11.214884542Z",
+            "output_rows": 120000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q17",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 22147.24875,
+            "wall_milliseconds": 22147.250102,
+            "started_at_utc": "2026-11-14T20:07:36.204759758Z",
+            "output_rows": 120000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q17",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 2164.414312,
+            "wall_milliseconds": 2164.415814,
+            "started_at_utc": "2026-11-14T20:08:01.672921986Z",
+            "output_rows": 120000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q17",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 3638.93317,
+            "wall_milliseconds": 3638.934402,
+            "started_at_utc": "2026-11-14T20:08:05.772946281Z",
+            "output_rows": 120000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q18",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 16038.95186,
+            "wall_milliseconds": 16038.952942,
+            "started_at_utc": "2026-11-14T20:11:41.074707365Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q18",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 102948.312276,
+            "wall_milliseconds": 102948.313758,
+            "started_at_utc": "2026-11-14T20:12:19.168755164Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q18",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 9634.584391,
+            "wall_milliseconds": 9634.585533,
+            "started_at_utc": "2026-11-14T20:14:31.425900470Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q18",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 9505.062525,
+            "wall_milliseconds": 9505.063777,
+            "started_at_utc": "2026-11-14T20:15:04.222588196Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q18",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 15953.101475,
+            "wall_milliseconds": 15953.102808,
+            "started_at_utc": "2026-11-14T20:15:34.167147551Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q18",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 104160.311225,
+            "wall_milliseconds": 104160.312507,
+            "started_at_utc": "2026-11-14T20:16:11.195846242Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q18",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 99611.991099,
+            "wall_milliseconds": 99611.992432,
+            "started_at_utc": "2026-11-14T20:18:30.477869860Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q18",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 9775.077175,
+            "wall_milliseconds": 9775.078397,
+            "started_at_utc": "2026-11-14T20:20:42.129569822Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q18",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 15563.111984,
+            "wall_milliseconds": 15563.113116,
+            "started_at_utc": "2026-11-14T20:21:15.941985181Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q19",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 36532.01634,
+            "wall_milliseconds": 36532.017473,
+            "started_at_utc": "2026-11-14T20:24:59.582851145Z",
+            "output_rows": 1200000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q19",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 73665.700002,
+            "wall_milliseconds": 73665.701254,
+            "started_at_utc": "2026-11-14T20:25:55.285010522Z",
+            "output_rows": 1200000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q19",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 5311.054168,
+            "wall_milliseconds": 5311.05541,
+            "started_at_utc": "2026-11-14T20:27:30.924068524Z",
+            "output_rows": 1200000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q19",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 5221.444604,
+            "wall_milliseconds": 5221.445896,
+            "started_at_utc": "2026-11-14T20:27:51.729999788Z",
+            "output_rows": 1200000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q19",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 37800.576031,
+            "wall_milliseconds": 37800.577123,
+            "started_at_utc": "2026-11-14T20:28:10.461650635Z",
+            "output_rows": 1200000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q19",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 67532.35131,
+            "wall_milliseconds": 67532.352682,
+            "started_at_utc": "2026-11-14T20:29:05.781570886Z",
+            "output_rows": 1200000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q19",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 68775.792291,
+            "wall_milliseconds": 68775.793123,
+            "started_at_utc": "2026-11-14T20:30:34.499102184Z",
+            "output_rows": 1200000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q19",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 7302.132619,
+            "wall_milliseconds": 7302.13378,
+            "started_at_utc": "2026-11-14T20:32:04.563324775Z",
+            "output_rows": 1200000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q19",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 35720.156612,
+            "wall_milliseconds": 35720.157824,
+            "started_at_utc": "2026-11-14T20:32:25.337393767Z",
+            "output_rows": 1200000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q20",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 9041.053408,
+            "wall_milliseconds": 9041.05484,
+            "started_at_utc": "2026-11-14T20:34:49.107869449Z",
+            "output_rows": 18400,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q20",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 71890.215891,
+            "wall_milliseconds": 71890.217353,
+            "started_at_utc": "2026-11-14T20:34:58.817220392Z",
+            "output_rows": 18400,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q20",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 2304.5759,
+            "wall_milliseconds": 2304.577021,
+            "started_at_utc": "2026-11-14T20:36:13.590159933Z",
+            "output_rows": 18400,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q20",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 1825.362223,
+            "wall_milliseconds": 1825.363585,
+            "started_at_utc": "2026-11-14T20:36:16.825583491Z",
+            "output_rows": 18400,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q20",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 9204.604064,
+            "wall_milliseconds": 9204.605536,
+            "started_at_utc": "2026-11-14T20:36:19.037851465Z",
+            "output_rows": 18400,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q20",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 72306.503799,
+            "wall_milliseconds": 72306.505401,
+            "started_at_utc": "2026-11-14T20:36:29.007920755Z",
+            "output_rows": 18400,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q20",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 72230.026547,
+            "wall_milliseconds": 72230.02818,
+            "started_at_utc": "2026-11-14T20:37:44.275183146Z",
+            "output_rows": 18400,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q20",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 2055.460872,
+            "wall_milliseconds": 2055.462073,
+            "started_at_utc": "2026-11-14T20:38:59.313550300Z",
+            "output_rows": 18400,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q20",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 9777.871658,
+            "wall_milliseconds": 9777.872739,
+            "started_at_utc": "2026-11-14T20:39:01.927536779Z",
+            "output_rows": 18400,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q22",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 3085.753351,
+            "wall_milliseconds": 3085.754623,
+            "started_at_utc": "2026-11-14T20:40:18.451655342Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q22",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 13088.618019,
+            "wall_milliseconds": 13088.618901,
+            "started_at_utc": "2026-11-14T20:40:36.848136095Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q22",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 888.944866,
+            "wall_milliseconds": 888.946068,
+            "started_at_utc": "2026-11-14T20:41:05.676103861Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q22",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 996.495955,
+            "wall_milliseconds": 996.497358,
+            "started_at_utc": "2026-11-14T20:41:23.641568281Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q22",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 3167.202845,
+            "wall_milliseconds": 3167.204518,
+            "started_at_utc": "2026-11-14T20:41:40.415401278Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q22",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 12830.160378,
+            "wall_milliseconds": 12830.16137,
+            "started_at_utc": "2026-11-14T20:41:58.875629720Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q22",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 13314.748559,
+            "wall_milliseconds": 13314.749941,
+            "started_at_utc": "2026-11-14T20:42:28.735148964Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q22",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 1169.918795,
+            "wall_milliseconds": 1169.920348,
+            "started_at_utc": "2026-11-14T20:42:57.661985780Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q22",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 3372.078748,
+            "wall_milliseconds": 3372.07995,
+            "started_at_utc": "2026-11-14T20:43:14.324596994Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q5",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 17902.216305,
+            "wall_milliseconds": 17902.217677,
+            "started_at_utc": "2026-11-14T20:48:20.176083311Z",
+            "output_rows": 200000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q5",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 117368.065853,
+            "wall_milliseconds": 117368.067185,
+            "started_at_utc": "2026-11-14T20:48:39.713214586Z",
+            "output_rows": 200000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q5",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 142981.008845,
+            "wall_milliseconds": 142981.010127,
+            "started_at_utc": "2026-11-14T20:50:39.427988244Z",
+            "output_rows": 200000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q5",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 144223.092215,
+            "wall_milliseconds": 144223.093287,
+            "started_at_utc": "2026-11-14T20:53:04.714976189Z",
+            "output_rows": 200000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q5",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 17746.759039,
+            "wall_milliseconds": 17746.760501,
+            "started_at_utc": "2026-11-14T20:55:30.776375617Z",
+            "output_rows": 200000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q5",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 117828.6451,
+            "wall_milliseconds": 117828.646623,
+            "started_at_utc": "2026-11-14T20:55:50.281924831Z",
+            "output_rows": 200000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q5",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 117666.532265,
+            "wall_milliseconds": 117666.533658,
+            "started_at_utc": "2026-11-14T20:57:50.718495662Z",
+            "output_rows": 200000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q5",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 143312.145915,
+            "wall_milliseconds": 143312.147157,
+            "started_at_utc": "2026-11-14T20:59:50.628643428Z",
+            "output_rows": 200000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q5",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 16879.305803,
+            "wall_milliseconds": 16879.307074,
+            "started_at_utc": "2026-11-14T21:02:15.937090969Z",
+            "output_rows": 200000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q13",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 3224.50091,
+            "wall_milliseconds": 3224.502052,
+            "started_at_utc": "2026-11-14T21:03:49.746694535Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q13",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 14875.423825,
+            "wall_milliseconds": 14875.424887,
+            "started_at_utc": "2026-11-14T21:04:05.238128111Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q13",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 16197.765482,
+            "wall_milliseconds": 16197.769998,
+            "started_at_utc": "2026-11-14T21:04:32.777807716Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q13",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 16431.412553,
+            "wall_milliseconds": 16431.413895,
+            "started_at_utc": "2026-11-14T21:05:02.899403720Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q13",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 3223.711695,
+            "wall_milliseconds": 3223.713277,
+            "started_at_utc": "2026-11-14T21:05:31.756453973Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q13",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 14883.592684,
+            "wall_milliseconds": 14883.594227,
+            "started_at_utc": "2026-11-14T21:05:47.326285346Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q13",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 14697.348529,
+            "wall_milliseconds": 14697.349551,
+            "started_at_utc": "2026-11-14T21:06:16.360783818Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q13",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 16337.541833,
+            "wall_milliseconds": 16337.543385,
+            "started_at_utc": "2026-11-14T21:06:43.898454622Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q13",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 2805.347208,
+            "wall_milliseconds": 2805.348249,
+            "started_at_utc": "2026-11-14T21:07:12.645058768Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q14",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 3341.113157,
+            "wall_milliseconds": 3341.1148,
+            "started_at_utc": "2026-11-14T21:09:11.638480890Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q14",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 17392.698381,
+            "wall_milliseconds": 17392.699663,
+            "started_at_utc": "2026-11-14T21:09:33.209503023Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q14",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 23630.997052,
+            "wall_milliseconds": 23630.998353,
+            "started_at_utc": "2026-11-14T21:10:09.247543200Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q14",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 23462.056071,
+            "wall_milliseconds": 23462.057494,
+            "started_at_utc": "2026-11-14T21:10:53.038155576Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q14",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 3219.500954,
+            "wall_milliseconds": 3219.502446,
+            "started_at_utc": "2026-11-14T21:11:35.239839023Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q14",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 17153.257249,
+            "wall_milliseconds": 17153.258631,
+            "started_at_utc": "2026-11-14T21:11:56.624048340Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q14",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 17506.74343,
+            "wall_milliseconds": 17506.744742,
+            "started_at_utc": "2026-11-14T21:12:34.147676784Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q14",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 23838.830726,
+            "wall_milliseconds": 23838.832128,
+            "started_at_utc": "2026-11-14T21:13:10.546729985Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q14",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 3326.425496,
+            "wall_milliseconds": 3326.427239,
+            "started_at_utc": "2026-11-14T21:13:53.180980661Z",
+            "output_rows": 1840000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q21",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 1984.395356,
+            "wall_milliseconds": 1984.396498,
+            "started_at_utc": "2026-11-14T21:14:35.294982456Z",
+            "output_rows": 0,
+            "sink_partitions": [],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q21",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 14271.027693,
+            "wall_milliseconds": 14271.029074,
+            "started_at_utc": "2026-11-14T21:14:37.534042302Z",
+            "output_rows": 0,
+            "sink_partitions": [],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q21",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 1630.621863,
+            "wall_milliseconds": 1630.623086,
+            "started_at_utc": "2026-11-14T21:14:52.098808915Z",
+            "output_rows": 0,
+            "sink_partitions": [],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q21",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 1511.543046,
+            "wall_milliseconds": 1511.544208,
+            "started_at_utc": "2026-11-14T21:14:54.025082363Z",
+            "output_rows": 0,
+            "sink_partitions": [],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q21",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 1801.447842,
+            "wall_milliseconds": 1801.449215,
+            "started_at_utc": "2026-11-14T21:14:55.755159980Z",
+            "output_rows": 0,
+            "sink_partitions": [],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q21",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 14064.07746,
+            "wall_milliseconds": 14064.078562,
+            "started_at_utc": "2026-11-14T21:14:57.798912074Z",
+            "output_rows": 0,
+            "sink_partitions": [],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q21",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 13378.689907,
+            "wall_milliseconds": 13378.69111,
+            "started_at_utc": "2026-11-14T21:15:12.269248732Z",
+            "output_rows": 0,
+            "sink_partitions": [],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q21",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 1210.525998,
+            "wall_milliseconds": 1210.527149,
+            "started_at_utc": "2026-11-14T21:15:25.916757497Z",
+            "output_rows": 0,
+            "sink_partitions": [],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q21",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 1637.817505,
+            "wall_milliseconds": 1637.818637,
+            "started_at_utc": "2026-11-14T21:15:27.343035851Z",
+            "output_rows": 0,
+            "sink_partitions": [],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q23",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 24150.238081,
+            "wall_milliseconds": 24150.239303,
+            "started_at_utc": "2026-11-14T21:19:37.553052361Z",
+            "output_rows": 5520000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q23",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 75755.285046,
+            "wall_milliseconds": 75755.286328,
+            "started_at_utc": "2026-11-14T21:20:46.677670904Z",
+            "output_rows": 5520000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q23",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 0,
+            "milliseconds": 6413.813527,
+            "wall_milliseconds": 6413.814728,
+            "started_at_utc": "2026-11-14T21:22:49.077338019Z",
+            "output_rows": 5520000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q23",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 5897.727736,
+            "wall_milliseconds": 5897.729128,
+            "started_at_utc": "2026-11-14T21:23:45.930569785Z",
+            "output_rows": 5520000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q23",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 24138.30851,
+            "wall_milliseconds": 24138.309792,
+            "started_at_utc": "2026-11-14T21:24:37.449109675Z",
+            "output_rows": 5520000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q23",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 1,
+            "milliseconds": 74986.939775,
+            "wall_milliseconds": 74986.941167,
+            "started_at_utc": "2026-11-14T21:25:46.551605468Z",
+            "output_rows": 5520000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q23",
+            "engine": "previous",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 75257.820658,
+            "wall_milliseconds": 75257.82202,
+            "started_at_utc": "2026-11-14T21:27:53.118227305Z",
+            "output_rows": 5520000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q23",
+            "engine": "native",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 5928.797647,
+            "wall_milliseconds": 5928.798859,
+            "started_at_utc": "2026-11-14T21:29:55.241875338Z",
+            "output_rows": 5520000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          },
+          {
+            "query": "q23",
+            "engine": "stock",
+            "backend": "rocksdb",
+            "mini_batch": true,
+            "trial": 2,
+            "milliseconds": 25407.82184,
+            "wall_milliseconds": 25407.823242,
+            "started_at_utc": "2026-11-14T21:30:46.722729051Z",
+            "output_rows": 5520000,
+            "sink_partitions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "validation": "full-value multiset"
+          }
+        ]
+      },
+      "summary": [
+        {
+          "query": "q0",
+          "stock": {
+            "median_ms": 2621.619269,
+            "min_ms": 2584.26066,
+            "max_ms": 2946.94776
+          },
+          "previous": {
+            "median_ms": 13174.313176,
+            "min_ms": 12745.747418,
+            "max_ms": 13528.554652
+          },
+          "native": {
+            "median_ms": 1055.101124,
+            "min_ms": 980.46488,
+            "max_ms": 1104.927656
+          },
+          "speedup_vs_stock": 2.4847090097498556,
+          "speedup_vs_previous": 12.486303801909322
+        },
+        {
+          "query": "q1",
+          "stock": {
+            "median_ms": 2796.036705,
+            "min_ms": 2560.113533,
+            "max_ms": 2838.093399
+          },
+          "previous": {
+            "median_ms": 13717.283073,
+            "min_ms": 13241.481643,
+            "max_ms": 14020.141134
+          },
+          "native": {
+            "median_ms": 964.992533,
+            "min_ms": 895.094892,
+            "max_ms": 1031.708061
+          },
+          "speedup_vs_stock": 2.897469782805045,
+          "speedup_vs_previous": 14.214911104395044
+        },
+        {
+          "query": "q2",
+          "stock": {
+            "median_ms": 1353.952594,
+            "min_ms": 1265.910892,
+            "max_ms": 1365.702625
+          },
+          "previous": {
+            "median_ms": 8307.875514,
+            "min_ms": 8232.540876,
+            "max_ms": 8318.102515
+          },
+          "native": {
+            "median_ms": 611.040251,
+            "min_ms": 498.628712,
+            "max_ms": 668.894569
+          },
+          "speedup_vs_stock": 2.2158157204606153,
+          "speedup_vs_previous": 13.596281914986315
+        },
+        {
+          "query": "q3",
+          "stock": {
+            "median_ms": 1305.377833,
+            "min_ms": 1295.224758,
+            "max_ms": 1542.996821
+          },
+          "previous": {
+            "median_ms": 16892.312015,
+            "min_ms": 16788.298589,
+            "max_ms": 16953.245413
+          },
+          "native": {
+            "median_ms": 873.027227,
+            "min_ms": 789.983227,
+            "max_ms": 965.251031
+          },
+          "speedup_vs_stock": 1.4952315261526201,
+          "speedup_vs_previous": 19.34912393631453
+        },
+        {
+          "query": "q4",
+          "stock": {
+            "median_ms": 9616.088606,
+            "min_ms": 9216.50028,
+            "max_ms": 10854.753684
+          },
+          "previous": {
+            "median_ms": 62540.702912,
+            "min_ms": 62158.061441,
+            "max_ms": 62833.287998
+          },
+          "native": {
+            "median_ms": 3005.946174,
+            "min_ms": 2928.388355,
+            "max_ms": 3334.657419
+          },
+          "speedup_vs_stock": 3.1990222210811945,
+          "speedup_vs_previous": 20.80566293999115
+        },
+        {
+          "query": "q5",
+          "stock": {
+            "median_ms": 17746.759039,
+            "min_ms": 16879.305803,
+            "max_ms": 17902.216305
+          },
+          "previous": {
+            "median_ms": 117666.532265,
+            "min_ms": 117368.065853,
+            "max_ms": 117828.6451
+          },
+          "native": {
+            "median_ms": 143312.145915,
+            "min_ms": 142981.008845,
+            "max_ms": 144223.092215
+          },
+          "speedup_vs_stock": 0.12383290282685319,
+          "speedup_vs_previous": 0.8210506619221885
+        },
+        {
+          "query": "q8",
+          "stock": {
+            "median_ms": 4784.041142,
+            "min_ms": 4610.186831,
+            "max_ms": 4903.082162
+          },
+          "previous": {
+            "median_ms": 30026.862165,
+            "min_ms": 29868.875832,
+            "max_ms": 30895.454016
+          },
+          "native": {
+            "median_ms": 29470.047407,
+            "min_ms": 29171.217532,
+            "max_ms": 30247.331964
+          },
+          "speedup_vs_stock": 0.16233571245846215,
+          "speedup_vs_previous": 1.0188942606813636
+        },
+        {
+          "query": "q9",
+          "stock": {
+            "median_ms": 19129.062856,
+            "min_ms": 19127.42499,
+            "max_ms": 19205.914801
+          },
+          "previous": {
+            "median_ms": 101478.34462,
+            "min_ms": 101381.923544,
+            "max_ms": 103916.860961
+          },
+          "native": {
+            "median_ms": 4250.490715,
+            "min_ms": 4046.731236,
+            "max_ms": 4681.355289
+          },
+          "speedup_vs_stock": 4.5004363351491286,
+          "speedup_vs_previous": 23.874500951591894
+        },
+        {
+          "query": "q10",
+          "stock": {
+            "median_ms": 3377.066744,
+            "min_ms": 2955.446642,
+            "max_ms": 3400.530547
+          },
+          "previous": {
+            "median_ms": 20462.150161,
+            "min_ms": 19909.368476,
+            "max_ms": 20640.366244
+          },
+          "native": {
+            "median_ms": 1244.072881,
+            "min_ms": 1237.337082,
+            "max_ms": 1267.325562
+          },
+          "speedup_vs_stock": 2.714524844626044,
+          "speedup_vs_previous": 16.447710157102925
+        },
+        {
+          "query": "q11",
+          "stock": {
+            "median_ms": 7649.567963,
+            "min_ms": 7443.796758,
+            "max_ms": 7729.927193
+          },
+          "previous": {
+            "median_ms": 65190.341705,
+            "min_ms": 64530.419221,
+            "max_ms": 67393.149077
+          },
+          "native": {
+            "median_ms": 64734.307373,
+            "min_ms": 64046.66072,
+            "max_ms": 67745.134776
+          },
+          "speedup_vs_stock": 0.11816868478908843,
+          "speedup_vs_previous": 1.007044708602076
+        },
+        {
+          "query": "q12",
+          "stock": {
+            "median_ms": 1579.878977,
+            "min_ms": 1555.346095,
+            "max_ms": 1933.865569
+          },
+          "previous": {
+            "median_ms": 36910.984066,
+            "min_ms": 36484.25461,
+            "max_ms": 37066.337676
+          },
+          "native": {
+            "median_ms": 616.823295,
+            "min_ms": 476.430762,
+            "max_ms": 622.532631
+          },
+          "speedup_vs_stock": 2.5613153553158203,
+          "speedup_vs_previous": 59.84045084743435
+        },
+        {
+          "query": "q13",
+          "stock": {
+            "median_ms": 3223.711695,
+            "min_ms": 2805.347208,
+            "max_ms": 3224.50091
+          },
+          "previous": {
+            "median_ms": 14875.423825,
+            "min_ms": 14697.348529,
+            "max_ms": 14883.592684
+          },
+          "native": {
+            "median_ms": 16337.541833,
+            "min_ms": 16197.765482,
+            "max_ms": 16431.412553
+          },
+          "speedup_vs_stock": 0.19731926185421997,
+          "speedup_vs_previous": 0.9105056303484601
+        },
+        {
+          "query": "q14",
+          "stock": {
+            "median_ms": 3326.425496,
+            "min_ms": 3219.500954,
+            "max_ms": 3341.113157
+          },
+          "previous": {
+            "median_ms": 17392.698381,
+            "min_ms": 17153.257249,
+            "max_ms": 17506.74343
+          },
+          "native": {
+            "median_ms": 23630.997052,
+            "min_ms": 23462.056071,
+            "max_ms": 23838.830726
+          },
+          "speedup_vs_stock": 0.1407653468315451,
+          "speedup_vs_previous": 0.7360120414186238
+        },
+        {
+          "query": "q15",
+          "stock": {
+            "median_ms": 2081.527051,
+            "min_ms": 2049.828137,
+            "max_ms": 2163.356181
+          },
+          "previous": {
+            "median_ms": 14902.115471,
+            "min_ms": 14895.716031,
+            "max_ms": 15177.566223
+          },
+          "native": {
+            "median_ms": 1198.325921,
+            "min_ms": 1122.199487,
+            "max_ms": 1368.262467
+          },
+          "speedup_vs_stock": 1.7370291458462075,
+          "speedup_vs_previous": 12.435778288567954
+        },
+        {
+          "query": "q16",
+          "stock": {
+            "median_ms": 3541.677802,
+            "min_ms": 3181.293926,
+            "max_ms": 3968.901429
+          },
+          "previous": {
+            "median_ms": 22133.506934,
+            "min_ms": 22060.819394,
+            "max_ms": 22554.034593
+          },
+          "native": {
+            "median_ms": 2771.281642,
+            "min_ms": 2534.55097,
+            "max_ms": 3389.043928
+          },
+          "speedup_vs_stock": 1.277992733876018,
+          "speedup_vs_previous": 7.986740358163857
+        },
+        {
+          "query": "q17",
+          "stock": {
+            "median_ms": 3585.390749,
+            "min_ms": 3356.428891,
+            "max_ms": 3638.93317
+          },
+          "previous": {
+            "median_ms": 21446.404669,
+            "min_ms": 21416.710169,
+            "max_ms": 22147.24875
+          },
+          "native": {
+            "median_ms": 2164.414312,
+            "min_ms": 2101.431385,
+            "max_ms": 2474.041927
+          },
+          "speedup_vs_stock": 1.6565177605423265,
+          "speedup_vs_previous": 9.908641127577242
+        },
+        {
+          "query": "q18",
+          "stock": {
+            "median_ms": 15953.101475,
+            "min_ms": 15563.111984,
+            "max_ms": 16038.95186
+          },
+          "previous": {
+            "median_ms": 102948.312276,
+            "min_ms": 99611.991099,
+            "max_ms": 104160.311225
+          },
+          "native": {
+            "median_ms": 9634.584391,
+            "min_ms": 9505.062525,
+            "max_ms": 9775.077175
+          },
+          "speedup_vs_stock": 1.6558162581358824,
+          "speedup_vs_previous": 10.685288342293996
+        },
+        {
+          "query": "q19",
+          "stock": {
+            "median_ms": 36532.01634,
+            "min_ms": 35720.156612,
+            "max_ms": 37800.576031
+          },
+          "previous": {
+            "median_ms": 68775.792291,
+            "min_ms": 67532.35131,
+            "max_ms": 73665.700002
+          },
+          "native": {
+            "median_ms": 5311.054168,
+            "min_ms": 5221.444604,
+            "max_ms": 7302.132619
+          },
+          "speedup_vs_stock": 6.878486866150149,
+          "speedup_vs_previous": 12.949555797300242
+        },
+        {
+          "query": "q20",
+          "stock": {
+            "median_ms": 9204.604064,
+            "min_ms": 9041.053408,
+            "max_ms": 9777.871658
+          },
+          "previous": {
+            "median_ms": 72230.026547,
+            "min_ms": 71890.215891,
+            "max_ms": 72306.503799
+          },
+          "native": {
+            "median_ms": 2055.460872,
+            "min_ms": 1825.362223,
+            "max_ms": 2304.5759
+          },
+          "speedup_vs_stock": 4.478121763049547,
+          "speedup_vs_previous": 35.140550487209666
+        },
+        {
+          "query": "q21",
+          "stock": {
+            "median_ms": 1801.447842,
+            "min_ms": 1637.817505,
+            "max_ms": 1984.395356
+          },
+          "previous": {
+            "median_ms": 14064.07746,
+            "min_ms": 13378.689907,
+            "max_ms": 14271.027693
+          },
+          "native": {
+            "median_ms": 1511.543046,
+            "min_ms": 1210.525998,
+            "max_ms": 1630.621863
+          },
+          "speedup_vs_stock": 1.1917939398200903,
+          "speedup_vs_previous": 9.30445050653225
+        },
+        {
+          "query": "q22",
+          "stock": {
+            "median_ms": 3167.202845,
+            "min_ms": 3085.753351,
+            "max_ms": 3372.078748
+          },
+          "previous": {
+            "median_ms": 13088.618019,
+            "min_ms": 12830.160378,
+            "max_ms": 13314.748559
+          },
+          "native": {
+            "median_ms": 996.495955,
+            "min_ms": 888.944866,
+            "max_ms": 1169.918795
+          },
+          "speedup_vs_stock": 3.178339891003371,
+          "speedup_vs_previous": 13.134642397018059
+        },
+        {
+          "query": "q23",
+          "stock": {
+            "median_ms": 24150.238081,
+            "min_ms": 24138.30851,
+            "max_ms": 25407.82184
+          },
+          "previous": {
+            "median_ms": 75257.820658,
+            "min_ms": 74986.939775,
+            "max_ms": 75755.285046
+          },
+          "native": {
+            "median_ms": 5928.797647,
+            "min_ms": 5897.727736,
+            "max_ms": 6413.813527
+          },
+          "speedup_vs_stock": 4.07337870490826,
+          "speedup_vs_previous": 12.693605877421168
+        }
+      ],
+      "geometric_mean_speedup": {
+        "stock": 1.3208631166640024,
+        "previous": 8.095017447042347
+      }
+    }
+  ]
+}

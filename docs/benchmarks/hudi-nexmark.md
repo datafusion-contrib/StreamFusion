@@ -44,6 +44,53 @@ while retaining the complete byte-for-byte Maven log, including failure output.
 The selected queries, warmups, trials, resources and measured boundaries remain
 the fixed matrix above; the timeout does not exclude slow controls or partial runs.
 
+## Current hosted qualification (partial)
+
+The first post-optimization two-million-event configuration, **RocksDB with
+mini-batching on**, passed all 198 timings and the exact Q7 stock planner
+exclusion. Its geometric mean of median speedups is **1.32× stock / 8.10×
+Hudi-disabled SF** across 22 timed queries; 17 native medians beat stock.
+The other three configurations are still pending, so this is not a complete
+matrix or a measured before/after comparison with the earlier heap-state runs.
+
+This isolated Linux x86-64 runner had four available processors (AMD EPYC 9V45),
+about 15.6 GiB physical memory and JDK 17.0.21. The fixed configuration retains
+four Hudi source/sink tasks, eight slots, 8 GiB heap, a 48 GiB logical native
+off-heap limit, object reuse, one-second checkpoints, one warmup and three
+rotating trials per engine. All deterministic outputs passed full-value multiset
+comparison; Q12 passed processing-time count invariants. Both native boundaries,
+Rust payload footers, final native resource cleanup and all three actual RocksDB
+engagement checks passed. [Every observation, range, source/library hash and
+configuration field](hudi-nexmark-linux-20261114.json) is retained.
+
+Values are median milliseconds (minimum–maximum). Q5/Q8/Q11/Q13/Q14 retain
+large stock losses; Q5/Q13/Q14 also lose to the Hudi-disabled SF control.
+
+| Query | Stock ms (range) | Previous SF ms (range) | Native ms (range) | Stock/native |
+| --- | ---: | ---: | ---: | ---: |
+| q0 | 2,621.6 (2,584.3–2,946.9) | 13,174.3 (12,745.7–13,528.6) | 1,055.1 (980.5–1,104.9) | 2.48× |
+| q1 | 2,796.0 (2,560.1–2,838.1) | 13,717.3 (13,241.5–14,020.1) | 965.0 (895.1–1,031.7) | 2.90× |
+| q2 | 1,354.0 (1,265.9–1,365.7) | 8,307.9 (8,232.5–8,318.1) | 611.0 (498.6–668.9) | 2.22× |
+| q3 | 1,305.4 (1,295.2–1,543.0) | 16,892.3 (16,788.3–16,953.2) | 873.0 (790.0–965.3) | 1.50× |
+| q4 | 9,616.1 (9,216.5–10,854.8) | 62,540.7 (62,158.1–62,833.3) | 3,005.9 (2,928.4–3,334.7) | 3.20× |
+| q5 | 17,746.8 (16,879.3–17,902.2) | 117,666.5 (117,368.1–117,828.6) | 143,312.1 (142,981.0–144,223.1) | 0.12× |
+| q8 | 4,784.0 (4,610.2–4,903.1) | 30,026.9 (29,868.9–30,895.5) | 29,470.0 (29,171.2–30,247.3) | 0.16× |
+| q9 | 19,129.1 (19,127.4–19,205.9) | 101,478.3 (101,381.9–103,916.9) | 4,250.5 (4,046.7–4,681.4) | 4.50× |
+| q10 | 3,377.1 (2,955.4–3,400.5) | 20,462.2 (19,909.4–20,640.4) | 1,244.1 (1,237.3–1,267.3) | 2.71× |
+| q11 | 7,649.6 (7,443.8–7,729.9) | 65,190.3 (64,530.4–67,393.1) | 64,734.3 (64,046.7–67,745.1) | 0.12× |
+| q12 | 1,579.9 (1,555.3–1,933.9) | 36,911.0 (36,484.3–37,066.3) | 616.8 (476.4–622.5) | 2.56× |
+| q13 | 3,223.7 (2,805.3–3,224.5) | 14,875.4 (14,697.3–14,883.6) | 16,337.5 (16,197.8–16,431.4) | 0.20× |
+| q14 | 3,326.4 (3,219.5–3,341.1) | 17,392.7 (17,153.3–17,506.7) | 23,631.0 (23,462.1–23,838.8) | 0.14× |
+| q15 | 2,081.5 (2,049.8–2,163.4) | 14,902.1 (14,895.7–15,177.6) | 1,198.3 (1,122.2–1,368.3) | 1.74× |
+| q16 | 3,541.7 (3,181.3–3,968.9) | 22,133.5 (22,060.8–22,554.0) | 2,771.3 (2,534.6–3,389.0) | 1.28× |
+| q17 | 3,585.4 (3,356.4–3,638.9) | 21,446.4 (21,416.7–22,147.2) | 2,164.4 (2,101.4–2,474.0) | 1.66× |
+| q18 | 15,953.1 (15,563.1–16,039.0) | 102,948.3 (99,612.0–104,160.3) | 9,634.6 (9,505.1–9,775.1) | 1.66× |
+| q19 | 36,532.0 (35,720.2–37,800.6) | 68,775.8 (67,532.4–73,665.7) | 5,311.1 (5,221.4–7,302.1) | 6.88× |
+| q20 | 9,204.6 (9,041.1–9,777.9) | 72,230.0 (71,890.2–72,306.5) | 2,055.5 (1,825.4–2,304.6) | 4.48× |
+| q21 | 1,801.4 (1,637.8–1,984.4) | 14,064.1 (13,378.7–14,271.0) | 1,511.5 (1,210.5–1,630.6) | 1.19× |
+| q22 | 3,167.2 (3,085.8–3,372.1) | 13,088.6 (12,830.2–13,314.7) | 996.5 (888.9–1,169.9) | 3.18× |
+| q23 | 24,150.2 (24,138.3–25,407.8) | 75,257.8 (74,986.9–75,755.3) | 5,928.8 (5,897.7–6,413.8) | 4.07× |
+
 The first [isolated comparison](hudi-java-comparison-20261114.json) passed on Linux
 x86-64 with four available processors, JDK 17.0.21, 200k events, heap state and
 mini-batching off. Two alternating baseline/candidate passes give six timed trials
