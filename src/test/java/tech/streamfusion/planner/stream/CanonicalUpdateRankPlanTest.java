@@ -96,7 +96,7 @@ class CanonicalUpdateRankPlanTest {
                 "offset",
                 (long) start - 1,
                 "outputRankNumber",
-                rank && limit != 1,
+                rank && start != limit,
                 "stateTtlMillis",
                 0L,
                 "netDiff",

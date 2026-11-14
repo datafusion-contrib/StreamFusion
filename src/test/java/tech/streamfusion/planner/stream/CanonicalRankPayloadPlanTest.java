@@ -56,7 +56,15 @@ class CanonicalRankPayloadPlanTest {
         "CREATE TABLE output_table(k BIGINT,n BIGINT,total BIGINT) WITH ('connector'='blackhole')");
     String input =
         algorithm.equals("update")
-            ? "(SELECT k,id,COUNT(*) AS c,LAST_VALUE(p) AS p FROM input_table GROUP BY k,id)"
+            ? "(SELECT k,id,c,CAST("
+                + (maps
+                    ? "ROW(ARRAY[id],MAP['v',id],ROW(id,CAST(id AS STRING)))"
+                    : "ROW(ARRAY[id],ROW(id,CAST(id AS STRING)))")
+                + " AS "
+                + (maps
+                    ? CanonicalFixtureFactory.NestedJoinChecksum.TYPE
+                    : CanonicalFixtureFactory.NestedRowRankChecksum.TYPE)
+                + ") AS p FROM (SELECT k,id,COUNT(*) AS c FROM input_table GROUP BY k,id))"
             : "input_table";
     String query =
         "INSERT INTO output_table SELECT k,id,rank_checksum(p,rn) FROM (SELECT *,"

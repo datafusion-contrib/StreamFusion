@@ -95,6 +95,7 @@ class CanonicalUnboundedOverAdmissionTest {
             || mode.equals("composite-key")
             || mode.equals("integer-value")
             || mode.equals("decimal-value")
+            || mode.equals("distinct")
             || mode.equals("minimum")
             || mode.equals("maximum");
     if (admitted) {

@@ -241,8 +241,7 @@ class CanonicalAppendRankPlanTest {
     var graph = CanonicalRegularJoinPlanTest.graph(planner, table, transformations);
     var field = AbstractNativeStatefulOperator.class.getDeclaredField("stockStateContract");
     field.setAccessible(true);
-    boolean admitted =
-        shape.equals("payload-double") || shape.equals("sort-double") || shape.equals("two-sorts");
+    boolean admitted = shape.equals("payload-double") || shape.equals("two-sorts");
     int owners = 0;
     for (var node : graph.getStreamNodes()) {
       if (!(node.getOperatorFactory() instanceof SimpleOperatorFactory)) continue;

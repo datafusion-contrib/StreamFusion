@@ -240,19 +240,22 @@ final class TypedGroupStockFixture implements AutoCloseable {
             + "')");
     table.useCatalog("default_catalog");
     String average = List.of("FLOAT", "DOUBLE").contains(numeric) ? "DOUBLE" : "BIGINT";
+    String sum = numeric;
+    if (numeric.startsWith("DECIMAL")) {
+      var decimal =
+          (DecimalType)
+              org.apache.flink.table.types.logical.utils.LogicalTypeParser.parse(
+                  numeric, TypedGroupStockFixture.class.getClassLoader());
+      sum = "DECIMAL(38," + decimal.getScale() + ")";
+      average = "DECIMAL(38," + Math.max(6, decimal.getScale()) + ")";
+    }
     String aggregates =
         distinctSum
-            ? "sd "
-                + numeric
-                + ",sf "
-                + numeric
-                + ",dn BIGINT,df BIGINT,av "
-                + average
-                + ",ds BIGINT"
+            ? "sd " + sum + ",sf " + sum + ",dn BIGINT,df BIGINT,av " + average + ",ds BIGINT"
             : extremaOnly
                 ? "lo " + numeric + ",hi " + numeric + ",d BIGINT,e BIGINT"
                 : "total "
-                    + numeric
+                    + sum
                     + ",a "
                     + average
                     + ",d BIGINT,e BIGINT"

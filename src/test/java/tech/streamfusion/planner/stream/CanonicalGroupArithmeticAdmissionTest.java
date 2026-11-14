@@ -80,8 +80,18 @@ class CanonicalGroupArithmeticAdmissionTest {
       assertEquals(2, mapNames.length);
       assertNull(mapNames[0]);
       assertNotNull(mapNames[1]);
-    } else if (java.util.Set.of(
-            "distinct", "filter", "composite", "floating", "integer", "mini", "two-phase")
+    } else if (mode.equals("composite")) {
+      assertEquals(1, nativeOwners.size(), graph.getStreamingPlanAsJSON());
+      var contract =
+          assertInstanceOf(
+              StockGroupArithmeticStateContract.class,
+              GroupAggregateStockTestFixture.field(nativeOwners.get(0), "stockStateContract"));
+      assertEquals(
+          2,
+          ((org.apache.flink.table.types.logical.RowType)
+                  GroupAggregateStockTestFixture.field(contract, "keyType"))
+              .getFieldCount());
+    } else if (java.util.Set.of("distinct", "filter", "floating", "integer", "mini", "two-phase")
         .contains(mode)) {
       assertEquals(1, nativeOwners.size(), graph.getStreamingPlanAsJSON());
       var operator = nativeOwners.get(0);
