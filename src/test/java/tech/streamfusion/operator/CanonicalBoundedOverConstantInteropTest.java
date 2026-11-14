@@ -4,9 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
 import java.util.stream.Stream;
-import org.apache.flink.core.execution.SavepointFormatType;
 import org.apache.flink.runtime.checkpoint.OperatorSubtaskState;
-import org.apache.flink.runtime.checkpoint.SavepointType;
 import org.apache.flink.streaming.util.AbstractStreamOperatorTestHarness;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -92,8 +90,6 @@ class CanonicalBoundedOverConstantInteropTest {
 
   private static OperatorSubtaskState snapshot(AbstractStreamOperatorTestHarness<?> harness)
       throws Exception {
-    return harness
-        .snapshotWithLocalState(1, 100, SavepointType.savepoint(SavepointFormatType.CANONICAL))
-        .getJobManagerOwnedState();
+    return CanonicalOverSnapshotTestSupport.snapshot(harness, 1, 100);
   }
 }

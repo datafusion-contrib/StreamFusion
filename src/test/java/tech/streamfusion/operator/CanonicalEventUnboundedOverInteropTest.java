@@ -1196,7 +1196,7 @@ class CanonicalEventUnboundedOverInteropTest {
     KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> nativeHarness(
         boolean rocks) throws Exception {
       var operator =
-          new NativeOverAggregateOperator(
+          new CanonicalOverSnapshotTestSupport.DirectOver(
                   timeColumn,
                   columns,
                   partitions,

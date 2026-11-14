@@ -2553,7 +2553,7 @@ plus independent clean-stock boolean/decimal/nanosecond timestamp jobs, await bo
 execution. DISTINCT arithmetic remains integral-only; text/floating/complex members and the
 existing clock/TTL exclusions remain outside this binding.
 
-Pending unbounded OVER controls also forbid intermediate native snapshot entry points during
+Pending bounded and unbounded OVER controls also forbid intermediate native snapshot entry points during
 canonical capture and check the counter after writer completion, while retaining ordinary
 checkpoint recovery. This covers both the specialized scalar projection and the pinned full-view
 capture used by DISTINCT; the new guards are authored and await execution.
