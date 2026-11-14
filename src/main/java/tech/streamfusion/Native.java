@@ -3724,4 +3724,35 @@ public final class Native {
   public static native boolean nextPartitionSlice(long handle, long array, long schema);
 
   public static native void closePartitionSplit(long handle);
+  public static native boolean supportsBoundedWindow(
+      long input,
+      long output,
+      int[] partition,
+      int[] order,
+      int[] flags,
+      int[] kinds,
+      int[] columns,
+      boolean rows,
+      boolean whole,
+      long rankStart,
+      long rankEnd,
+      boolean outputRank);
+
+  public static native long createBoundedWindow(
+      long input,
+      long output,
+      int[] partition,
+      int[] order,
+      int[] flags,
+      int[] kinds,
+      int[] columns,
+      boolean rows,
+      boolean whole,
+      long rankStart,
+      long rankEnd,
+      boolean outputRank,
+      String[] directories,
+      int batchRows,
+      long reservation,
+      String taskName);
 }

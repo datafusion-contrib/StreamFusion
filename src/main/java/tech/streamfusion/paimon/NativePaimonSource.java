@@ -15,6 +15,7 @@ import org.apache.paimon.predicate.Predicate;
 import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.table.source.ReadBuilder;
 import tech.streamfusion.operator.ArrowBatch;
+import tech.streamfusion.operator.TaskOffHeapMemory;
 import tech.streamfusion.operator.WatermarkExpression;
 
 /** Paimon's bounded or continuous enumeration and state with an Arrow-emitting task-side reader. */
@@ -101,6 +102,8 @@ public final class NativePaimonSource
 
   @Override
   public SourceReader<ArrowBatch, FileStoreSourceSplit> createReader(SourceReaderContext context) {
+    TaskOffHeapMemory.initialize(context.getConfiguration());
+    TaskOffHeapMemory.registerMetrics(context.metricGroup());
     return new NativePaimonSourceReader(
         table, read, context, batchRows, rowtimeIndex, watermarkExpression, !boundedBatch);
   }

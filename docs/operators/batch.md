@@ -10,8 +10,8 @@ scheduling and batch recovery. This does not accelerate arbitrary DataStream cod
 
 ## Admission
 
-Every interior operator must be an admitted Calc/filter, `UNION ALL`, sort, global
-aggregate, verified bounded join or blocking
+Every interior operator must be an admitted Calc/filter, `UNION ALL`, sort, aggregate,
+Expand, bounded limit, analytic window/rank, verified bounded join or blocking
 singleton/hash/broadcast exchange. All fields
 must use scalar types supported by the existing Arrow boundary, and every expression
 must pass the [Calc encoder and declared-result-type checks](calc-filter.md).
@@ -19,10 +19,11 @@ ARRAY, MAP, MULTISET, ROW, structured/RAW and unverified collection representati
 retain whole-query fallback. Stock sources, constant relations and row sinks may
 remain at the perimeter.
 
-Expressions requiring original Java UTF-16 string-cache sidecars, binary-backed
-STRING results, and legacy variable-width BINARY projections remain outside batch
-admission. Their streaming producer/consumer rules are not inferred for new batch
-boundaries.
+Row-source expressions requiring original Java UTF-16 string-cache sidecars,
+binary-backed STRING results, and legacy variable-width BINARY projections remain
+outside batch admission. Positively admitted native UTF-8 sources can use the
+generated scalar bridge described below. Other streaming producer/consumer rules
+are not inferred for new batch boundaries.
 
 Batch compute admission uses compatibility and the all-or-nothing columnar rule.
 Every supported pipeline is eligible, including standalone scalar/filter jobs,
@@ -92,12 +93,47 @@ retraction state is reused.
 Key-only HashAgg stages implement DISTINCT over the same verified keys. Flink's
 single-argument COUNT/SUM/AVG DISTINCT rewrites may compose with these deduplication
 stages when every resulting physical operator is admitted. Aggregate calls that
-still carry a DISTINCT flag, grouping sets/Expand and unsupported key types retain
-whole-query stock fallback. Complete standalone GROUP BY and DISTINCT comparisons
+still carry a DISTINCT flag and unsupported key types retain whole-query stock fallback. Complete standalone GROUP BY and DISTINCT comparisons
 are recorded separately from global-reduction and SHA2-pipeline measurements.
 
+Grouping sets and rollups use a columnar Expand over Flink's input-reference and typed-literal
+projections. Each projection runs through the existing native Calc evaluator against the same
+borrowed batch. The returned Arrow batches own their buffers before the input is released.
+Unordered bounded LIMIT/OFFSET stages forward selected Arrow ranges and continue consuming
+input after the limit, preserving upstream evaluation and failures.
+
+Batch analytic windows use DataFusion's sorted partition/window plans, following Arroyo and
+Comet. Each physical node contains one window group; Flink can split distinct groups into separate nodes. The verified frames begin at UNBOUNDED PRECEDING and end at CURRENT ROW or
+UNBOUNDED FOLLOWING, with ROWS or RANGE semantics. COUNT, decimal SUM/SUM0, signed-integer/BOOLEAN/DECIMAL/DATE
+MIN/MAX, RANK, DENSE_RANK and ROW_NUMBER use the same signed-integer, STRING,
+BOOLEAN, DECIMAL and DATE partition/order keys as the bounded sorter. Decimal accumulation
+reuses Flink-compatible arithmetic. Bounded rank ranges filter the computed rank and preserve
+peer rows, including plans that omit the rank column from their output.
+When an OVER partition key also appears in ORDER BY, its direction and NULL placement
+follow Flink's combined collation. Physical rank retains Flink's ascending, NULLS FIRST
+partition prefix.
+
+Inner joins with a residual requiring generated scalar evaluation retain their native equality
+match and evaluate the residual in an Arrow Calc afterward. Outer/semi/anti residuals keep their
+existing admission rules. Fallible AND/OR expressions use Flink's generated whole-Calc evaluator
+to retain row short-circuiting. Native UTF-8 source pipelines can use that evaluator for builtins
+requiring Java string evaluation; row-source pipelines retain the original string-cache guard.
+These callbacks are reported in the plan's JVM function list.
+
+`IS DISTINCT FROM` and `IS NOT DISTINCT FROM` between scalar input references lower
+to existing NULL tests and equality. Signed integers, BOOLEAN, DECIMAL, DATE and
+VARCHAR are verified; decimal types must match exactly. Floating, nested and CHAR
+operands retain their existing admission rules. The lowering does not duplicate
+evaluation of computed or effectful expressions.
+
+Shared batches count their deployed chained and network outputs after Flink's reuse processors.
+Several logical consumers can share a single serialized network output, and reuse processors
+can merge consumers. Counting those consumers would retain unused Arrow views until GC. The deployed count releases each batch when
+its actual consumers finish, without increasing the native memory budget.
+
 The existing master and per-operator switches apply. Disabling `calc`, `filter`
-on a Calc with a predicate, `union`, `sort`, or `groupAggregate` declines the affected query as a whole.
+on a Calc with a predicate, `union`, `sort`, `groupAggregate`, `expand`, `limit`,
+`overAggregate`, or `rank` declines the affected query as a whole.
 `NativePlanner.explain(tableEnvironment, sql)` includes batch admission diagnostics.
 The deployed planner applies substitution after all batch sink roots are expanded;
 `NativePlanner.installBatch(tableEnvironment.getConfig())` supplies the per-root
@@ -182,17 +218,17 @@ arbitrary batch SQL or larger-data performance guarantee. See the
 
 ## Remaining gaps
 
-- Other grouping key types, auxiliary grouping, grouping sets/Expand,
+- Other grouping key types and auxiliary grouping,
   remaining DISTINCT aggregate flags, floating SUM/AVG, FLOAT/DOUBLE, STRING/BINARY
   and TIMESTAMP extrema, aggregate user functions, zero-function global/intermediate
   merge-only stages and unverified accumulator layouts. Timestamp input remains
   a two-field Arrow struct to preserve the full Flink range and fractions; scalar
   timestamp aggregation is not inferred from DataFusion's timestamp kernels.
-- ORDER BY with other key types, OFFSET without finite FETCH, unsorted LIMIT/OFFSET, range sorting,
-  OVER/rank and other batch sort operators.
+- ORDER BY with other key types, sorted OFFSET without finite FETCH, range sorting,
+  analytic functions/frames outside the whitelist above, and other batch sort operators.
 - Join predicates requiring unverified JVM/string/collection representations, mixed
   keyed NULL equality, preserved-side broadcasts and external hash-table spilling.
-- Expand/UNNEST/correlate, nested boundary types and set-operation plans outside UNION ALL.
+- Expand projections beyond references/literals, UNNEST/correlate, nested boundary types and set-operation plans outside UNION ALL.
 - Native bounded connector admission beyond the documented filesystem Parquet and
   Paimon whitelists, including batch Iceberg substitution and other native batch sinks.
 - Native compiled batch plans. The deployed batch planner preserves stock compilation;
@@ -293,10 +329,10 @@ native work at scale factors 0.01 and 1. Its initial complete CSV pipeline is
 performance-neutral; this is ongoing work, not a completed acceleration claim.
 See the [TPC-H audit and measurements](../benchmarks/tpch.md).
 
-Scalar-subquery SINGLE_VALUE guards are native only for a planner-proven
-at-most-one-row input: Calc/singleton exchange over a final global aggregate. The
-adapter uses DataFusion first-value semantics in that narrow case. Other
-SINGLE_VALUE inputs retain stock Flink and its multiple-row error.
+Scalar-subquery SINGLE_VALUE uses a Flink-compatible accumulator that counts NULL rows
+as well as non-NULL rows. Empty input returns NULL; a second row raises Flink's multiple-row
+error even if both values are equal or NULL. Local and final stages retain the Java value/count
+state layout rather than placing DataFusion's private state on the shuffle.
 
 A narrowly admitted inner Cartesian join can be reassociated into two linked
 equijoins following DataFusion’s cross-join elimination. The planner restores the

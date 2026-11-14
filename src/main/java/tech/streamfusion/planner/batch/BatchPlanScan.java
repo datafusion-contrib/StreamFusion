@@ -11,10 +11,14 @@ import org.apache.calcite.rel.core.Sort;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalCalc;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalExchange;
+import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalExpand;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalGroupAggregateBase;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalHashJoin;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalJoinBase;
+import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalLimit;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalNestedLoopJoin;
+import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalOverAggregate;
+import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalRank;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalSink;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalSort;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalSortLimit;
@@ -44,6 +48,7 @@ public class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext>
   private int substitutions;
   private boolean completePlan;
   private boolean nativeJoinTasks;
+  private java.util.function.Predicate<RelNode> nativeSources = node -> false;
   private final Map<RelNode, Integer> sharedConsumers = new IdentityHashMap<>();
   private final Map<RelNode, RelNode> sharedRewrites = new IdentityHashMap<>();
 
@@ -70,10 +75,18 @@ public class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext>
 
   List<RelNode> optimizeRoots(
       List<RelNode> roots, java.util.function.UnaryOperator<List<RelNode>> connectorBoundaries) {
+    return optimizeRoots(roots, connectorBoundaries, node -> false);
+  }
+
+  List<RelNode> optimizeRoots(
+      List<RelNode> roots,
+      java.util.function.UnaryOperator<List<RelNode>> connectorBoundaries,
+      java.util.function.Predicate<RelNode> nativeSource) {
     reasons.clear();
     operators.clear();
     substitutions = 0;
     if (!NativeConfig.nativeEnabled()) return roots;
+    nativeSources = nativeSource;
     List<RelNode> result = new ArrayList<>();
     for (RelNode root : roots) {
       RelNode candidate = root;
@@ -82,7 +95,7 @@ public class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext>
       Map<RelNode, BatchAggregateSpec> aggregates = new IdentityHashMap<>();
       boolean admitted;
       try {
-        candidate = BatchCrossJoinRewrite.apply(root);
+        candidate = BatchCrossJoinRewrite.apply(BatchResidualPredicateRewrite.apply(root));
         if (tech.streamfusion.planner.common.SourceReusePolicy.enabled(candidate)) {
           candidate =
               org.apache.flink.table.planner.plan.reuse.SubplanReuser$.MODULE$
@@ -107,7 +120,11 @@ public class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext>
       if (admitted && tech.streamfusion.planner.common.SourceReusePolicy.enabled(candidate))
         countSharedAggregates(candidate, new IdentityHashMap<>());
       result.add(
-          admitted && (!expressions.isEmpty() || !sorts.isEmpty() || !aggregates.isEmpty())
+          admitted
+                  && (!expressions.isEmpty()
+                      || !sorts.isEmpty()
+                      || !aggregates.isEmpty()
+                      || supplementalComputation(candidate))
               ? rewrite(candidate, expressions, sorts, aggregates)
               : root);
     }
@@ -134,9 +151,21 @@ public class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext>
         if (ExpressionPlanning.unverifiedInput(calc))
           return decline("batch Calc: unverified input representation");
         var encoded = ExpressionPlanning.encodeCalc(calc);
-        if (encoded == null || encoded.requiresCollectionRepresentation())
-          return decline("batch Calc: expression or representation is unsupported");
-        if (encoded.requiresOriginalStringInputs())
+        if (encoded == null) {
+          String reason = ExpressionPlanning.reasonForCalc(calc);
+          if (reason.equals(
+              "Fallible expressions under AND/OR require Flink's row short-circuiting"))
+            encoded = ExpressionPlanning.encodeHostCalc(calc, reason);
+        }
+        if (encoded == null)
+          return decline("batch Calc: " + ExpressionPlanning.reasonForCalc(calc));
+        if (encoded.requiresCollectionRepresentation())
+          return decline("batch Calc: collection representation is unsupported");
+        if (encoded.requiresOriginalStringInputs() && allNativeSources(calc.getInput()))
+          encoded =
+              ExpressionPlanning.encodeHostCalc(
+                  calc, "flat native UTF-8 inputs require generated Flink string evaluation");
+        if (encoded == null || encoded.requiresOriginalStringInputs())
           return decline("batch Calc: original Java string-cache inputs are unverified");
         for (int projection = 0; projection < encoded.projectionRoots().length; projection++) {
           if (encoded.isBinaryStringProjection(projection)
@@ -151,6 +180,24 @@ public class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext>
                     encoded, calc.getInput().getRowType(), calc.getRowType());
         if (mismatch != null) return decline("batch Calc: " + mismatch);
         expressions.put(node, encoded);
+      } else if (node instanceof BatchPhysicalRank) {
+        if (!NativeConfig.operatorEnabled("rank")) return decline("batch Rank: disabled");
+        var spec = BatchWindowSpec.createRank((BatchPhysicalRank) node);
+        if (spec == null || !spec.nativeSupported(node))
+          return decline("batch Rank: unverified range, function or native schema");
+        retained = true;
+      } else if (node instanceof BatchPhysicalOverAggregate) {
+        if (!NativeConfig.operatorEnabled("overAggregate")) return decline("batch OVER: disabled");
+        var spec = BatchWindowSpec.create((BatchPhysicalOverAggregate) node);
+        if (spec == null) return decline("batch OVER: unverified function, frame or input layout");
+        if (!spec.nativeSupported((BatchPhysicalOverAggregate) node))
+          return decline("batch OVER: native schema or function mapping is unsupported");
+        retained = true;
+      } else if (node instanceof BatchPhysicalExpand) {
+        if (!NativeConfig.operatorEnabled("expand")) return decline("batch Expand: disabled");
+        if (expandProjections((BatchPhysicalExpand) node) == null)
+          return decline("batch Expand: projection or Arrow representation is unsupported");
+        retained = true;
       } else if (node instanceof BatchPhysicalUnion && ((BatchPhysicalUnion) node).all) {
         if (!NativeConfig.operatorEnabled("union")) return decline("batch UNION ALL: disabled");
       } else if (node instanceof BatchPhysicalGroupAggregateBase) {
@@ -175,6 +222,13 @@ public class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext>
         if (reason != null) return decline("batch join: " + reason);
         if (!new BatchJoinSpec(join).nativeSupported(join))
           return decline("batch join: native schema/key mapping is unsupported");
+        retained = true;
+      } else if (node instanceof BatchPhysicalLimit) {
+        if (!NativeConfig.operatorEnabled("limit")) return decline("batch Limit: disabled");
+        var limit = (Sort) node;
+        long start = SortUtil.getLimitStart(limit.offset),
+            end = SortUtil.getLimitEnd(limit.offset, limit.fetch);
+        if (start < 0 || end < start) return decline("batch Limit: invalid bounds");
         retained = true;
       } else if (isSort(node)) {
         if (!NativeConfig.operatorEnabled("sort")) return decline("batch sort: disabled");
@@ -303,6 +357,10 @@ public class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext>
     boolean columnar =
         node instanceof BatchPhysicalCalc
             || node instanceof BatchPhysicalUnion
+            || node instanceof BatchPhysicalExpand
+            || node instanceof BatchPhysicalOverAggregate
+            || node instanceof BatchPhysicalRank
+            || node instanceof BatchPhysicalLimit
             || node instanceof BatchPhysicalGroupAggregateBase
             || isSort(node)
             || node instanceof BatchPhysicalExchange
@@ -321,6 +379,24 @@ public class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext>
       substitutions++;
       return new BatchPhysicalNativeCalc(
           (BatchPhysicalCalc) node, inputs.get(0), expressions.get(node));
+    }
+    if (node instanceof BatchPhysicalOverAggregate || node instanceof BatchPhysicalRank) {
+      substitutions++;
+      var spec =
+          node instanceof BatchPhysicalRank
+              ? BatchWindowSpec.createRank((BatchPhysicalRank) node)
+              : BatchWindowSpec.create((BatchPhysicalOverAggregate) node);
+      var input = inputs.get(0);
+      if (spec.partition.length != 0
+          && (!(input instanceof BatchPhysicalNativeExchange)
+              || !((BatchPhysicalNativeExchange) input).partitions(spec.partition)))
+        input = new BatchPhysicalNativeExchange(input, input, spec.partition);
+      return new BatchPhysicalNativeWindow(node, input, spec);
+    }
+    if (node instanceof BatchPhysicalExpand) {
+      substitutions++;
+      return new BatchPhysicalNativeExpand(
+          node, inputs.get(0), expandProjections((BatchPhysicalExpand) node));
     }
     if (node instanceof BatchPhysicalUnion) {
       substitutions++;
@@ -354,6 +430,10 @@ public class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext>
       }
       return new BatchPhysicalNativeJoin(node, inputs.get(0), inputs.get(1), spec);
     }
+    if (node instanceof BatchPhysicalLimit) {
+      substitutions++;
+      return new BatchPhysicalNativeLimit((Sort) node, inputs.get(0));
+    }
     if (isSort(node)) {
       substitutions++;
       var encoded = sorts.get(node);
@@ -364,6 +444,42 @@ public class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext>
       return new BatchPhysicalNativeExchange(node, inputs.get(0));
     }
     return node.copy(node.getTraitSet(), inputs);
+  }
+
+  private boolean allNativeSources(RelNode node) {
+    if (node.getInputs().isEmpty()) return nativeSources.test(node);
+    return node.getInputs().stream().allMatch(this::allNativeSources);
+  }
+
+  private static boolean supplementalComputation(RelNode node) {
+    return node instanceof BatchPhysicalOverAggregate
+        || node instanceof BatchPhysicalRank
+        || node instanceof BatchPhysicalExpand
+        || node instanceof BatchPhysicalLimit
+        || node.getInputs().stream().anyMatch(BatchPlanScan::supplementalComputation);
+  }
+
+  private static List<EncodedExpression> expandProjections(BatchPhysicalExpand expand) {
+    var result = new ArrayList<EncodedExpression>();
+    for (var projection : expand.projects()) {
+      // Flink's physical grouping-set expansion consists of input references and typed literals.
+      if (projection.stream()
+          .anyMatch(
+              p ->
+                  !(p instanceof org.apache.calcite.rex.RexInputRef)
+                      && !(p instanceof org.apache.calcite.rex.RexLiteral))) return null;
+      var encoded =
+          ExpressionPlanning.encodeProjections(projection, expand.getRowType().getFieldNames());
+      if (encoded == null
+          || encoded.requiresCollectionRepresentation()
+          || encoded.requiresOriginalStringInputs()
+          || !encoded.udfBinding().isEmpty()
+          || CalcOutputTypeCheck.retainedMismatch(
+                  encoded, expand.getInput().getRowType(), expand.getRowType())
+              != null) return null;
+      result.add(encoded);
+    }
+    return result.isEmpty() ? null : result;
   }
 
   private static boolean isSort(RelNode node) {

@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 
 class BatchScalarSubquerySqlTest {
   @Test
-  void provenSingletonValuesPreserveNullWhileUnprovenInputsKeepTheHostError() throws Exception {
+  void scalarSubqueriesPreserveNullAndRejectMultipleRowsNatively() throws Exception {
     try (var metrics = new RecoveryExecutionMetrics()) {
       metrics.setAsContext(new Configuration(), 2, 128L << 20);
       var stock = BatchSortSqlTest.environment(false, 9, new Configuration());
@@ -28,7 +28,7 @@ class BatchScalarSubquerySqlTest {
       }
       String unproven = "SELECT (SELECT CAST(id AS DECIMAL(15,2)) FROM input) AS v";
       String plan = tech.streamfusion.planner.NativePlanner.explain(nativeEnv, unproven);
-      assertTrue(plan.contains("SINGLE_VALUE requires a proven at-most-one-row input"), plan);
+      assertTrue(plan.contains("NativeAggregate"), plan);
       var failure =
           assertThrows(
               Exception.class, () -> BatchSortSqlTest.collect(nativeEnv.executeSql(unproven)));

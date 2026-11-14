@@ -41,6 +41,8 @@ The optional connector boundary is independent of batch compute admission: a pla
 an unsupported host computation, and a direct table copy can still use native file reading or
 writing. Host operators receive ordinary row boundaries; admitted native computation and
 native sinks exchange Arrow batches. Reused native sources retain buffer views for each consumer.
+The source initializes the TaskManager off-heap authority before constructing its reader or
+starting asynchronous fetches, including when computation stays in Flink.
 
 Ordinary batch `INSERT INTO` and streaming sinks share the table, type, format, merge-engine
 and constraint admission rules and the Arrow routing/writer topology. Bounded writers retain Paimon's end-of-input commit
@@ -82,7 +84,9 @@ retain stock handling. Paimon 1.0 external log stores also retain the original s
 for these Java batch operations remains stock.
 `PaimonBatchSqlTest` checks overwrite partition selection, DELETE/UPDATE row kinds, clustering,
 nested values, nanosecond timestamps, independent job switches and retry commits against stock
-readback, requiring native Parquet footers for admitted files. `PaimonBatchEncodingTest` verifies row reuse, rolling/close
+readback, requiring native Parquet footers for admitted files. Its Unicode UPPER/LOWER controls
+check native input/output with native and stock computation, including initialization under
+the configured source memory budget. `PaimonBatchEncodingTest` verifies row reuse, rolling/close
 drainage and cleanup after encoder open/write/finish failures. The
 unchanged released `AppendOnlyTableITCase`, `AppendTableITCase` and `BatchFileStoreITCase` retain
 their own assertions for Java operation behavior.

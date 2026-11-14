@@ -1,6 +1,7 @@
 # Bounded execution runtime
 
-This runtime executes the [admitted batch SQL sorts and global aggregates](operators/batch.md). It also
+This runtime executes the [admitted batch SQL sorts, aggregates, joins and analytic
+windows](operators/batch.md). It also
 provides native controls for future bounded operators; those controls alone do not
 admit additional SQL operators. Compute islands retain whole-query admission. Optional
 connector boundaries are admitted separately and insert row/Arrow conversions around host computation.
@@ -23,6 +24,9 @@ admitted sources and sinks, removes redundant transposes and retains shared sour
 The original physical source remains visible to Flink's graph processors; its translated source
 is replaced at the conversion boundary. Paimon reuses its exact bounded enumerator and its
 streaming reader/writer implementation with the bounded commit and row-kind contracts.
+An extension can also prepare a stock batch sink before compute admission. Paimon's
+overwrite, mutation and clustering paths use this hook to select native Parquet
+encoding while retaining Java planning, sorting, file IO and commit semantics.
 
 The batch planner, scan, physical/exec nodes, graph boundary rewrites and operator
 specifications live in `planner.batch`. The public `NativePlanner.installBatch`
@@ -87,7 +91,11 @@ owns window time translation and aggregate/rank metrics, and `operator.join.stre
 owns window-join metrics. Logical mini-batch boundaries and metrics shared by
 changelog operators live in `operator.stream`; they are streaming contracts even
 when their inputs arrive as Arrow batches. `operator.batch` owns the bounded native
-output handoff used by sort, aggregate and join.
+output handoff used by sort, aggregate, join and analytic window/rank. Bounded windows
+compose DataFusion sorting and window plans on the same task, EOF protocol and memory
+authority. They do not reuse streaming event-time bins, timers or retraction state.
+Expand evaluates multiple projections over a borrowed batch, and unordered limits
+slice owned Arrow views; neither introduces a row conversion.
 
 Only non-serializable implementation helpers move. Their references in deployed
 operators remain private and transient. Serializable operators keep their existing

@@ -16,6 +16,10 @@ serialized operator configuration rather than process-global state before a stab
   controls the stateless changelog filter. All default on.
   Optional connector operators only activate once the matching connector extension and format JAR
   are installed; otherwise the plan falls back to Flink's own path.
+  Batch grouping sets, unordered limits, analytic windows and bounded ranks use `expand`,
+  `limit`, `overAggregate` and `rank` respectively. `paimonBatchEncoding` independently
+  controls native Parquet encoding beneath Java-owned batch overwrite, mutation and
+  clustering operations; see [Paimon](connectors/paimon.md#bounded-batch-source-and-sink).
 - **`streamfusion.experimental.jvmGroupAggregates`** (system property, default true) — enable
   verified synchronous single-phase JVM UDAFs with VARCHAR/INT/BIGINT inputs/results. Set false
   for the preceding host fallback. Cache and borrowed-exit performance experiments retain their

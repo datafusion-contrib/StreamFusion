@@ -203,7 +203,22 @@ public final class TaskOffHeapMemory {
             + ", reserved="
             + reserved
             + "); increase the task/vertex off-heap resource budget or "
-            + TaskManagerOptions.TASK_OFF_HEAP_MEMORY.key());
+            + TaskManagerOptions.TASK_OFF_HEAP_MEMORY.key()
+            + "; largest reservations="
+            + largestReservations());
+  }
+
+  private static String largestReservations() {
+    return OWNERS.values().stream()
+        .map(
+            owner ->
+                java.util.Map.entry(
+                    owner.category + " [" + owner.name + "]", Math.max(0L, owner.reserved.get())))
+        .filter(entry -> entry.getValue() > 0)
+        .sorted(java.util.Map.Entry.<String, Long>comparingByValue().reversed())
+        .limit(8)
+        .map(entry -> entry.getKey() + "=" + entry.getValue())
+        .collect(java.util.stream.Collectors.joining(", "));
   }
 
   public static void registerMetrics(MetricGroup group) {

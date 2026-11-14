@@ -17,16 +17,31 @@ public class NativeColumnarShareOperator extends FlinkStreamOperator<ArrowBatch>
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
 
   private final int consumers;
+  private transient int deployedConsumers;
 
   public NativeColumnarShareOperator(int consumers) {
     this.consumers = consumers;
   }
 
   @Override
+  public void open() throws Exception {
+    super.open();
+    // A reused network result can serve many logical consumers but takes the root once when
+    // serializing. Only independent deployed outputs spend an ownership share.
+    var loader = getUserCodeClassloader();
+    deployedConsumers =
+        getOperatorConfig().getChainedOutputs(loader).size()
+            + getOperatorConfig().getOperatorNonChainedOutputs(loader).size();
+    if (deployedConsumers < 1)
+      throw new IllegalStateException("Native share has no deployed outputs");
+    getMetricGroup().gauge("sharePlannedConsumers", () -> consumers);
+    getMetricGroup().gauge("shareDeployedConsumers", () -> deployedConsumers);
+  }
+
+  @Override
   public void processElement(StreamRecord<ArrowBatch> element) {
     ColumnarRecordMetrics.countIngested(getMetricGroup(), element.getValue().rowCount());
-    element.getValue().shareAcross(consumers);
-    ColumnarRecordMetrics.forward(
-        output, getMetricGroup(), element, element.getValue().rowCount());
+    element.getValue().shareAcross(deployedConsumers);
+    ColumnarRecordMetrics.forward(output, getMetricGroup(), element, element.getValue().rowCount());
   }
 }

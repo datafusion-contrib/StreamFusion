@@ -15,6 +15,51 @@ import org.junit.jupiter.params.provider.CsvSource;
 class PaimonBatchSqlTest {
   @TempDir Path directory;
 
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(booleans = {true, false})
+  void nativeUtf8SourcesPreserveGeneratedStringEvaluation(boolean nativeComputation)
+      throws Exception {
+    var config = new Configuration();
+    config.setString("parallelism.default", "2");
+    config.setString("table.exec.resource.default-parallelism", "2");
+    config.setString("execution.batch.adaptive.auto-parallelism.enabled", "false");
+    config.setString("streamfusion.operator.calc.enabled", Boolean.toString(nativeComputation));
+    try (var metrics = RecoveryExecutionMetrics.countersOnly()) {
+      metrics.setAsContext(config, 2, 256L << 20);
+      var stock = environment(config, false);
+      for (String name : List.of("input", "stock_copy", "native_copy"))
+        stock.executeSql(ddl(name, false, false, "parquet"));
+      stock
+          .executeSql(
+              "INSERT INTO input VALUES (0,0,'İ'),(1,0,'ß'),(2,0,'Σς'),(3,0,'𐐨😀'),"
+                  + "(4,0,'中文'),(5,0,''),(6,0,CAST(NULL AS STRING)),(7,0,'MiXeD')")
+          .await();
+      String query = "SELECT id,k,UPPER(v)||':'||LOWER(v) FROM input";
+      stock.executeSql("INSERT INTO stock_copy " + query).await();
+      var nativeEnv = environment(config, true);
+      String insert = "INSERT INTO native_copy " + query;
+      String plan = nativeEnv.explainSql(insert);
+      assertEquals(nativeComputation, plan.contains("NativeCalc"), plan);
+      assertTrue(plan.contains("NativeConnectorSource"), plan);
+      assertTrue(plan.contains("NativeConnectorSink"), plan);
+      var result = nativeEnv.executeSql(insert);
+      result.await();
+      String job = result.getJobClient().orElseThrow().getJobID().toString();
+      assertEquals(
+          collect(stock.executeSql("SELECT * FROM stock_copy ORDER BY id")),
+          collect(stock.executeSql("SELECT * FROM native_copy ORDER BY id")));
+      assertEquals(8, metrics.counterValue(job, "nativePaimonSourceRows"));
+      assertEquals(0, metrics.counterValue(job, "paimonSourceFallbackRows"));
+      assertEquals(
+          nativeComputation ? 0 : 8, metrics.counterValue(job, "numInputRows", "RowDataToArrow"));
+      assertEquals(nativeComputation, metrics.recordsIn(job, "NativeCalc") > 0);
+      assertEquals(256L << 20, tech.streamfusion.operator.TaskOffHeapMemory.capacityBytes());
+      assertNativeFiles(table("native_copy"));
+    } finally {
+      tech.streamfusion.compat.FlinkTestContexts.clearForRemoteSubmission();
+    }
+  }
+
   @org.junit.jupiter.api.Test
   void insertOnlyPrivilegesDoNotRequireReadingCommittedSequences() throws Exception {
     try {

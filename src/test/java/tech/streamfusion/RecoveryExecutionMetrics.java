@@ -222,20 +222,27 @@ final class RecoveryExecutionMetrics implements AutoCloseable {
 
               Counter output = ((Counter) outputCandidate);
 
-              observations.add(
-                  Map.of(
-                      "operator",
-                      operator,
-                      "jobId",
-                      variables.getOrDefault("<job_id>", ""),
-                      "subtask",
-                      variables.getOrDefault("<subtask_index>", ""),
-                      "attempt",
-                      variables.getOrDefault("<task_attempt_num>", ""),
-                      "recordsIn",
-                      input.getCount(),
-                      "recordsOut",
-                      output.getCount()));
+              var observation =
+                  new java.util.LinkedHashMap<String, Object>(
+                      Map.of(
+                          "operator",
+                          operator,
+                          "jobId",
+                          variables.getOrDefault("<job_id>", ""),
+                          "subtask",
+                          variables.getOrDefault("<subtask_index>", ""),
+                          "attempt",
+                          variables.getOrDefault("<task_attempt_num>", ""),
+                          "recordsIn",
+                          input.getCount(),
+                          "recordsOut",
+                          output.getCount()));
+              for (String name : List.of("sharePlannedConsumers", "shareDeployedConsumers")) {
+                var metric = metrics.get(name);
+                if (metric instanceof org.apache.flink.metrics.Gauge)
+                  observation.put(name, ((org.apache.flink.metrics.Gauge<?>) metric).getValue());
+              }
+              observations.add(observation);
             });
     observations.sort(java.util.Comparator.comparing(Object::toString));
     return observations;
