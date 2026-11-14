@@ -37,8 +37,11 @@ impl<S: KeyedStateStore<TopNPartition>> TopNRanker<S> {
             if existing
                 .fields()
                 .iter()
-                .map(|field| field.data_type())
-                .ne(schema.fields().iter().map(|field| field.data_type()))
+                .map(|field| crate::logical_input::canonical_list_labels(field.data_type()))
+                .ne(schema
+                    .fields()
+                    .iter()
+                    .map(|field| crate::logical_input::canonical_list_labels(field.data_type())))
             {
                 return Err(invalid("input schema changed"));
             }
@@ -453,6 +456,52 @@ mod tests {
             Field::new("kind", DataType::Int8, false),
         ]);
         RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap()
+    }
+
+    #[test]
+    fn retained_row_capture_accepts_only_physical_collection_aliases() {
+        let owned = crate::flink_key::represented_row_key_fixture(2, false, 100);
+        let input = |payload: ArrayRef| {
+            RecordBatch::try_from_iter(vec![
+                ("k", Arc::new(Int64Array::from(vec![7, 7])) as ArrayRef),
+                ("v", Arc::new(Int64Array::from(vec![10, 5])) as ArrayRef),
+                ("tag", Arc::new(Int64Array::from(vec![1, 2])) as ArrayRef),
+                ("payload", payload),
+            ])
+            .unwrap()
+        };
+        let expected = input(owned.column(0).clone());
+        let network = input(
+            crate::flink_key::row_key_fixture_with_list_label(owned.clone(), "$data$")
+                .column(0)
+                .clone(),
+        );
+        let mut state = ranker(false, 3);
+        state.push(&network, 100).unwrap();
+        state.canonical_schema(expected.schema()).unwrap();
+        let partition = state.groups.iter().next().unwrap().1;
+        assert_eq!(partition.len(), 2);
+        let restored = state
+            .converters
+            .as_ref()
+            .unwrap()
+            .payload
+            .convert_rows(partition.iter().map(|row| row.payload.row()))
+            .unwrap();
+        let ordered = arrow::compute::take(
+            network.column(3).as_ref(),
+            &UInt32Array::from(vec![1, 0]),
+            None,
+        )
+        .unwrap();
+        assert_eq!(restored[3].to_data(), ordered.to_data());
+        let incompatible = input(
+            crate::flink_key::row_key_fixture_with_list_label(owned, "other")
+                .column(0)
+                .clone(),
+        );
+        assert!(state.canonical_schema(incompatible.schema()).is_err());
+        assert_eq!(state.groups.iter().next().unwrap().1.len(), 2);
     }
 
     #[test]

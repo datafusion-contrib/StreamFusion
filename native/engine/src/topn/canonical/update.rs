@@ -28,8 +28,11 @@ impl<S: KeyedStateStore<UpdatableTopNPartition>> UpdatableTopNRanker<S> {
             if existing
                 .fields()
                 .iter()
-                .map(|field| field.data_type())
-                .ne(schema.fields().iter().map(|field| field.data_type()))
+                .map(|field| crate::logical_input::canonical_list_labels(field.data_type()))
+                .ne(schema
+                    .fields()
+                    .iter()
+                    .map(|field| crate::logical_input::canonical_list_labels(field.data_type())))
             {
                 return Err(invalid("update input schema changed"));
             }

@@ -40,8 +40,11 @@ impl<S: KeyedStateStore<TopNPartition>> RetractableTopNRanker<S> {
             if existing
                 .fields()
                 .iter()
-                .map(|f| f.data_type())
-                .ne(schema.fields().iter().map(|f| f.data_type()))
+                .map(|field| crate::logical_input::canonical_list_labels(field.data_type()))
+                .ne(schema
+                    .fields()
+                    .iter()
+                    .map(|field| crate::logical_input::canonical_list_labels(field.data_type())))
             {
                 return Err(invalid("retract input schema changed"));
             }

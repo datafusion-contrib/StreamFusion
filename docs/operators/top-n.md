@@ -1029,3 +1029,8 @@ checkpoint key-layout migration remains outside this same-build qualification.
 Updating Top-N rebuilds spilled projected partition keys with the released key projection
 layout, including reserved NULL slots for wide decimals and precise timestamps. Existing
 owned ROW bytes remain part of the key representation.
+
+Canonical rank capture reconciles physical Arrow collection-child labels in retained ROW
+payloads after network exchange. Append, updating and retracting schema checks use the shared
+logical collection-label normalization; logical ROW names, types and nullability remain strict.
+Retained bytes, arrival order, clocks and the checkpoint encoding remain unchanged.
