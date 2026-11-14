@@ -2582,6 +2582,11 @@ RocksDB initialization and emitted markers. Normalization reuses the existing no
 other schema differences still reject. New buffer-preservation and network/recovery controls await
 execution on both releases.
 
+The pending nested regular-join component controls feed serialized SQL binary rows into both
+engines, matching the existing released-owner fixture. Heap occurrence-map keys and restored
+keys therefore share the same input representation, independent of generic Java object equality.
+This fixture correction adds no runtime binding scope and still awaits execution.
+
 
 Retracting GROUP BY MIN/MAX additionally captures the existing one-phase mini-batch owner and
 count trigger for the already bound integral/date/time/boolean map views. New raw-state and

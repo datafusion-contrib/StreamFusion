@@ -344,3 +344,7 @@ native checkpoint recovery, then continue actual stock and native operators. All
 scalar/unique-map/multiset side layouts, both stores and engine orders are included. Nested ROW
 kinds are retained. MAP-bearing inputs stay insert-only; other nested rows also exercise valid
 removal. These controls do not qualify updating MAP equality or binary ROW key metadata.
+Both stock input and the native Arrow boundary use the released SQL binary-row serialization,
+matching the existing join restore fixture. This keeps heap and RocksDB occurrence-map keys on
+the same serialized input contract through a savepoint; generic-row object identity is not used
+as an oracle for SQL join state. This fixture correction remains awaiting execution.

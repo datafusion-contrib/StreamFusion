@@ -313,7 +313,7 @@ class CanonicalJoinPayloadStateTest {
       harness.getOutput().clear();
       var serializer = new RowDataSerializer(input);
       for (var event : events) {
-        var record = new StreamRecord<>(serializer.copy(event.row));
+        var record = new StreamRecord<RowData>(serializer.toBinaryRow(event.row).copy());
         if (event.left) harness.processElement1(record);
         else harness.processElement2(record);
       }
@@ -324,12 +324,16 @@ class CanonicalJoinPayloadStateTest {
         KeyedTwoInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch, ArrowBatch> harness,
         List<Event> events)
         throws Exception {
+      var inputSerializer = new RowDataSerializer(input);
       for (var event : events) {
         var record =
             new StreamRecord<>(
                 new ArrowBatch(
                     RowDataArrowConverter.write(
-                        List.of(event.row), input, NativeAllocator.SHARED, true)));
+                        List.of(inputSerializer.toBinaryRow(event.row).copy()),
+                        input,
+                        NativeAllocator.SHARED,
+                        true)));
         if (event.left) harness.processElement1(record);
         else harness.processElement2(record);
       }
