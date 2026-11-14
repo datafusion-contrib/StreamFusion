@@ -32,7 +32,6 @@ import org.apache.flink.table.types.logical.*;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.*;
-import tech.streamfusion.Native;
 import tech.streamfusion.NativePlannerTestEnvironment;
 import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.compat.FlinkPlanCompat;
@@ -52,7 +51,17 @@ class CanonicalBoundedRangeInteropTest {
 
   private static Stream<Arguments> allModes() {
     var out = new ArrayList<Arguments>();
-    for (String type : List.of("TINYINT", "SMALLINT", "INT", "BIGINT", "FLOAT", "DOUBLE", "DECIMAL(18,2)", "DECIMAL(38,2)", "DECIMAL(38,20)"))
+    for (String type :
+        List.of(
+            "TINYINT",
+            "SMALLINT",
+            "INT",
+            "BIGINT",
+            "FLOAT",
+            "DOUBLE",
+            "DECIMAL(18,2)",
+            "DECIMAL(38,2)",
+            "DECIMAL(38,20)"))
       for (boolean keyless : new boolean[] {false, true})
         for (boolean stock : new boolean[] {false, true})
           for (boolean nativeStore : new boolean[] {false, true})
@@ -72,17 +81,28 @@ class CanonicalBoundedRangeInteropTest {
 
   static Stream<Arguments> typedKeys() {
     return CanonicalOverKeyFixture.stores()
-        .flatMap(args -> Stream.of("range", "event-rows", "processing-rows")
-            .map(mode -> Arguments.of(args.get()[0], args.get()[1], args.get()[2], mode)));
+        .flatMap(
+            args ->
+                Stream.of("range", "event-rows", "processing-rows")
+                    .map(mode -> Arguments.of(args.get()[0], args.get()[1], args.get()[2], mode)));
   }
 
   @ParameterizedTest
   @MethodSource("typedKeys")
   void scalarAndCompositeKeysRetainRawFoldsFramesAndCallbacks(
       String keyType, boolean composite, boolean rocks, String mode) throws Exception {
-    var plan = new Plan("BIGINT", false, mode.equals("processing-rows"),
-        mode.equals("event-rows"), mode.equals("range") ? 32 : 2, 0, false, null,
-        keyType, composite);
+    var plan =
+        new Plan(
+            "BIGINT",
+            false,
+            mode.equals("processing-rows"),
+            mode.equals("event-rows"),
+            mode.equals("range") ? 32 : 2,
+            0,
+            false,
+            null,
+            keyType,
+            composite);
     verifyInterchange(plan, rocks, rocks, true);
   }
 
@@ -203,6 +223,59 @@ class CanonicalBoundedRangeInteropTest {
     return Stream.of(false, true)
         .flatMap(
             stock -> Stream.of(false, true).map(nativeStore -> Arguments.of(stock, nativeStore)));
+  }
+
+  static Stream<Arguments> decimalInitializationCases() {
+    return Stream.of("DECIMAL(18,2)", "DECIMAL(38,20)")
+        .flatMap(
+            type ->
+                Stream.of("range", "event-rows", "processing-rows")
+                    .flatMap(
+                        mode ->
+                            Stream.of(false, true).map(rocks -> Arguments.of(type, mode, rocks))));
+  }
+
+  @ParameterizedTest
+  @MethodSource("decimalInitializationCases")
+  void boundedDecimalSumKeepsUnseenNullSeparateFromAnEvictedZeroSum(
+      String type, String mode, boolean rocks) throws Exception {
+    boolean processing = mode.equals("processing-rows");
+    var plan = new Plan(type, false, processing, mode.equals("event-rows"), 1, 0);
+    try (var reference = plan.stock(!rocks);
+        var nativeOwner = plan.nativeHarness(rocks)) {
+      reference.open();
+      nativeOwner.open();
+      for (int index = 0; index < 4; index++) {
+        long time = 1000 + index;
+        if (processing) {
+          reference.setProcessingTime(time);
+          nativeOwner.setProcessingTime(time);
+        }
+        var row = index == 1 ? plan.row(1L, 1, time) : plan.nullRow(1L, time);
+        plan.pushStock(reference, row);
+        plan.push(nativeOwner, row);
+        if (!processing) {
+          reference.processWatermark(new Watermark(time));
+          nativeOwner.processWatermark(new Watermark(time));
+        }
+        assertEquals(plan.stockOutput(reference), plan.nativeOutput(nativeOwner));
+        if (index == 0 || index == 3) {
+          var saved = snapshot(nativeOwner);
+          try (var returned = plan.stock(!rocks)) {
+            returned.initializeState(saved);
+            returned.open();
+            assertEquals(
+                CanonicalUnboundedOverScalarTest.raw(reference),
+                CanonicalUnboundedOverScalarTest.raw(returned),
+                index == 0
+                    ? "SUM starts as raw NULL"
+                    : "A previously initialized SUM retains raw zero");
+          } finally {
+            saved.discardState();
+          }
+        }
+      }
+    }
   }
 
   @ParameterizedTest
@@ -591,8 +664,17 @@ class CanonicalBoundedRangeInteropTest {
         boolean starAndLiteral,
         String payload)
         throws Exception {
-      this(type, keyless, processingRows, eventRows, offset, ttl, starAndLiteral, payload,
-          "BIGINT", false);
+      this(
+          type,
+          keyless,
+          processingRows,
+          eventRows,
+          offset,
+          ttl,
+          starAndLiteral,
+          payload,
+          "BIGINT",
+          false);
     }
 
     Plan(
@@ -618,7 +700,9 @@ class CanonicalBoundedRangeInteropTest {
       config.setString("streamfusion.native.enabled", "false");
       var table = NativePlannerTestEnvironment.create(config);
       table.executeSql(
-          "CREATE TABLE range_input(k " + keySqlType + ",v "
+          "CREATE TABLE range_input(k "
+              + keySqlType
+              + ",v "
               + type
               + ",rt TIMESTAMP(3)"
               + (composite ? ",k2 BIGINT" : "")
@@ -626,7 +710,9 @@ class CanonicalBoundedRangeInteropTest {
               + (processingRows ? ",pt AS PROCTIME()" : ",WATERMARK FOR rt AS rt")
               + ") WITH ('connector'='datagen')");
       table.executeSql(
-          "CREATE TABLE range_output(k " + keySqlType + ",v "
+          "CREATE TABLE range_output(k "
+              + keySqlType
+              + ",v "
               + type
               + ",rt TIMESTAMP(3)"
               + (payload == null ? "" : ",payload " + payload)
@@ -660,8 +746,10 @@ class CanonicalBoundedRangeInteropTest {
       input = (RowType) node.getInputEdges().get(0).getOutputType();
       output = (RowType) node.getOutputType();
       assertEquals(List.of("k", "v", "rt"), input.getFieldNames().subList(0, 3));
-      keys = keyless ? new int[0] : composite
-          ? new int[] {0, input.getFieldNames().indexOf("k2")} : new int[] {0};
+      keys =
+          keyless
+              ? new int[0]
+              : composite ? new int[] {0, input.getFieldNames().indexOf("k2")} : new int[] {0};
       keyType =
           RowType.of(Arrays.stream(keys).mapToObj(input::getTypeAt).toArray(LogicalType[]::new));
       selector =

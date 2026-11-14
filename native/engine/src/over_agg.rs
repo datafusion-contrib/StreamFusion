@@ -316,6 +316,9 @@ impl OverAggState {
 
     fn bounded(kind: i64, value_type: &DataType) -> Self {
         let mut state = Self::new(kind, value_type);
+        if kind % 100 == 0 && matches!(value_type, DataType::Decimal128(_, _)) {
+            state.agg = RunningAgg::new(crate::aggregates::RETRACTING_DECIMAL_SUM, value_type);
+        }
         state.retracting_sum = matches!(
             state.agg,
             RunningAgg::SumI8(_)

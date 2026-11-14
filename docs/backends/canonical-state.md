@@ -2463,3 +2463,8 @@ recovery; automatic ordinary/compiled job fixtures cover LEGACY and released V2 
 committed row bytes, empty returns and keyed rescaling. These additions await both-release
 qualification. ARRAY/MAP/MULTISET key descendants remain gated. Historical private-checkpoint
 upgrade compatibility for earlier ROW representations is outside this new same-build cohort.
+
+Bounded decimal SUM uses the existing nullable decimal accumulator at creation so an unseen
+raw sum is NULL, while a previously initialized sum can retain zero after eviction. Raw-state
+controls distinguish those cases across all three admitted bounded time/frame modes and both
+stores. The schema stays unchanged; two-release execution remains deferred to qualification.

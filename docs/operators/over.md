@@ -2020,3 +2020,11 @@ COUNT over the same scalar argument types uses its existing non-null reader and 
 BIGINT accumulator, allowing mixed MIN/MAX/COUNT folds without a numeric-only argument gate.
 The new typed component fixtures feed both engines the same serialized physical rows so
 timestamp precision and string representation are aligned at the boundary.
+
+Bounded decimal SUM initializes its raw retracting accumulator as NULL, matching released Flink.
+Its independent non-null count still determines the visible result; after a real value is
+evicted, the retained raw zero remains distinct from an unseen sum. The existing nullable
+decimal kernel supplies this initialization for ordinary and DISTINCT bounded folds without
+changing the checkpoint schema. A new stock/raw-state regression covers all-NULL initialization
+and later zero history in processing ROWS, event ROWS and event RANGE on both stores. This
+control awaits execution with the pending decimal canonical matrix.
