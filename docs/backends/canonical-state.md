@@ -2479,3 +2479,7 @@ payloads. Raw component snapshots compare complete serialized rows, while full j
 the nested values and global peer order through ordinary/portable submissions, empty returns,
 native recovery and source rescaling. Existing singleton ownership and actual cursor rules
 remain unchanged. These additions await both-release execution in the local testing window.
+
+The new alternating GROUP BY ROW-key fixture releases superseded snapshots after their last
+restore and discards its final snapshot on every exit. Test-owned checkpoint files therefore
+have an explicit lifetime within the qualification run.

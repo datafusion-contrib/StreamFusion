@@ -56,9 +56,9 @@ class CanonicalGroupRowKeyStateTest {
       if (!append && index >= 9) row.setRowKind(RowKind.DELETE);
       rows.add(row);
     }
+    OperatorSubtaskState saved = null;
     try (var reference = fixture(keySql, append, rocks)) {
       reference.harness.open();
-      OperatorSubtaskState saved = null;
       for (int stage = 0; stage < 3; stage++) {
         boolean nativeStage = (stage % 2 == 0) == first;
         try (var stock = fixture(keySql, append, rocks);
@@ -83,7 +83,9 @@ class CanonicalGroupRowKeyStateTest {
             } else actual = stockStep(stock, rows.get(index));
             assertEquals(expected, actual, "input=" + index);
           }
+          var previous = saved;
           saved = snapshot(receiver);
+          if (previous != null) previous.discardState();
           try (var returned = fixture(keySql, append, rocks)) {
             returned.harness.initializeState(saved);
             returned.harness.open();
@@ -94,6 +96,8 @@ class CanonicalGroupRowKeyStateTest {
           }
         }
       }
+    } finally {
+      if (saved != null) saved.discardState();
     }
   }
 
@@ -102,7 +106,7 @@ class CanonicalGroupRowKeyStateTest {
     return new TypedGroupStockFixture("BIGINT", append, rocks, false, false, false, key);
   }
 
-  private static List<String> output(List<ArrowBatch> batches, RowType type) {
+  private static List<String> output(List<ArrowBatch> batches, RowType type) throws Exception {
     var result = new ArrayList<String>();
     var serializer = new org.apache.flink.table.runtime.typeutils.RowDataSerializer(type);
     for (var batch : batches)
