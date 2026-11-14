@@ -402,6 +402,7 @@ final class StockCompiledPlanLowering {
   }
 
   private static boolean needsBinaryRowKeyTemplate(ExecNode<?> node) {
+    if (stockOverNeedsBinaryRows(node)) return true;
     if (node instanceof NativeColumnarTopNExecNode)
       return rowKeys(
           (RowType) node.getInputEdges().get(0).getOutputType(),
@@ -419,6 +420,44 @@ final class StockCompiledPlanLowering {
           ((NativeChangelogNormalizeExecNode) node).stateKeyColumns());
     return node instanceof NativeDeduplicateExecNode
         && rowKeys((RowType) node.getOutputType(), ((NativeDeduplicateExecNode) node).stateKeyColumns());
+  }
+
+  private static boolean stockOverNeedsBinaryRows(ExecNode<?> node) {
+    if (!(node
+            instanceof
+            org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecOverAggregate)
+        || !NativeConfig.operatorEnabled("over")
+        || node.getInputEdges().size() != 1) return false;
+    try {
+      var spec =
+          (org.apache.flink.table.planner.plan.nodes.exec.spec.OverSpec)
+              releasedField(node, "overSpec");
+      var input = (RowType) node.getInputEdges().get(0).getOutputType();
+      if (spec.getGroups().size() != 1 || !rowKeys(input, spec.getPartition().getFieldIndices()))
+        return false;
+      var group = spec.getGroups().get(0);
+      int[] order = group.getSort().getFieldIndices();
+      if (!group.getLowerBound().isUnbounded()
+          || !group.getUpperBound().isCurrentRow()
+          || order.length != 1
+          || !group.getSort().getAscendingOrders()[0]
+          || !LogicalTypeChecks.isProctimeAttribute(input.getTypeAt(order[0]))) return false;
+      for (var call : group.getAggCalls())
+        switch (call.getAggregation().getKind()) {
+          case SUM:
+          case SUM0:
+          case COUNT:
+          case AVG:
+          case MIN:
+          case MAX:
+            break;
+          default:
+            return false;
+        }
+      return true;
+    } catch (IOException failure) {
+      throw new TableException("Cannot inspect captured OVER partition representation", failure);
+    }
   }
 
   private static boolean needsStringTemplate(ExecNode<?> node, SqlPlanOrigins.RuntimeGraph graph) {

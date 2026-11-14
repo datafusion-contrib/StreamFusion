@@ -2573,6 +2573,8 @@ original nested kinds/bytes. New raw-counter, TTL, recovery and clean-worker res
 await both-release execution; the counter serializer and private native state format are unchanged.
 
 Unbounded processing-time OVER additionally binds scalar/ROW-descendant ROW partition keys.
+Ordinary mixed Calc/stock-OVER graphs force the captured stock template for these builtin folds,
+so downstream field projection does not bypass the bound ROW representation.
 The live boundary, transient fold projection and persistent native initialization use the same
 owned binary ROW schema; redundant nested transport caches cannot split restored keys from
 live keys. Original bytes, padding, nested kinds and per-value TTL stamps remain authoritative.

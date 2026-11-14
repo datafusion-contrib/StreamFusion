@@ -26,14 +26,16 @@ class CanonicalOverRowKeyPlanTest {
         for (String mode :
             new String[] {
               "rows", "range", "ttl", "event", "bounded", "distinct", "string-key", "string-min"
-            }) cases.add(Arguments.of(nested, compiled, mode));
+            })
+          for (boolean projected : new boolean[] {false, true})
+            cases.add(Arguments.of(nested, compiled, mode, projected));
     return tech.streamfusion.CanonicalTestMatrix.select(cases.stream());
   }
 
   @ParameterizedTest
   @MethodSource("cases")
   void onlyUnboundedProcessingFoldsBindTheOwnedRowInput(
-      boolean nested, boolean compiled, String mode) throws Exception {
+      boolean nested, boolean compiled, String mode, boolean projected) throws Exception {
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", "true");
     config.setString("table.exec.state.ttl", mode.equals("ttl") ? "1 h" : "0 ms");
@@ -47,12 +49,14 @@ class CanonicalOverRowKeyPlanTest {
             + " WITH ('connector'='canonical-fixture','input'='unused.csv','insert-only'='true')");
     table.executeSql(
         "CREATE TABLE output_table(k "
-            + CanonicalRowKeyFixture.sql(nested)
+            + (projected ? "BIGINT" : CanonicalRowKeyFixture.sql(nested))
             + ",a "
             + (mode.equals("string-min") ? "STRING" : "BIGINT")
             + ") WITH ('connector'='blackhole')");
     String query =
-        "INSERT INTO output_table SELECT k,"
+        "INSERT INTO output_table SELECT "
+            + (projected ? "k.i" : "k")
+            + ","
             + (mode.equals("string-min")
                 ? "MIN(s)"
                 : mode.equals("distinct") ? "COUNT(DISTINCT v)" : "SUM(v)")

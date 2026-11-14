@@ -2108,6 +2108,9 @@ The existing unbounded processing ROWS/RANGE fold can now bind ROW partition key
 descendants use the supported scalar/ROW key types. Live input, raw accumulator transfer and
 persistent-store initialization share a selective binary ROW schema: original-byte metadata
 belongs only to ROW partition columns, while other fields keep their existing representation.
+Ordinary SQL rebuilds these qualified folds from the captured stock template even when the
+original OVER stays rowwise inside a graph with native Calc nodes. Thus a field projection above
+OVER cannot bypass the binary ROW boundary or its canonical state owner.
 Native fold keys retain the
 authoritative stock bytes while clearing redundant nested transport caches; optional UTF-16
 list child names are normalized before Arrow row encoding. Original padding and nested row
