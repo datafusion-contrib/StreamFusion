@@ -197,6 +197,12 @@ parallelism and maximum, so a narrower sink does not impose its state-owner limi
 side of the exchange. Writer/committer translation still belongs to the released stock sink.
 This topology refinement remains part of the pending two-release qualification.
 
+The independent transactional fixture names commits by restored checkpoint generation, writer
+subtask and local sequence. Newly assigned writers after rescaling cannot reuse an earlier
+writer's transaction number; replayed prepared commits retain their original identity. Its
+versioned serializer also reads the earlier single-writer state. This is the custom test sink's
+protocol, separate from any accelerated connector's own transaction contract.
+
 ### ROW-key binding awaiting qualification
 
 The pending automatic binding additionally accepts ROW-bearing sink and inferred input keys

@@ -520,6 +520,13 @@ public final class CanonicalJobWorker {
           var execution = cluster.getExecutionGraph(job.getJobID()).get(5, TimeUnit.SECONDS);
           if (execution.getFailureInfo() != null)
             System.err.println(execution.getFailureInfo().getExceptionAsString());
+          for (var vertex : execution.getAllExecutionVertices()) {
+            System.err.println(
+                vertex.getTaskNameWithSubtaskIndex() + ": " + vertex.getExecutionState());
+            vertex
+                .getFailureInfo()
+                .ifPresent(failure -> System.err.println(failure.getExceptionAsString()));
+          }
           if (job.getJobStatus().get(5, TimeUnit.SECONDS).isGloballyTerminalState()) {
             try {
               job.getJobExecutionResult().get(10, TimeUnit.SECONDS);
@@ -693,14 +700,20 @@ public final class CanonicalJobWorker {
                   .flatMap(entry -> entry.getValue().stream())
                   .filter(counter -> counter.getCount() > 0)
                   .count();
-          int expectedTasks =
-              (Files.exists(root.resolve("global-aggregate")) && family.equals("GroupAgg")
-                      || Files.exists(root.resolve("global-over")) && family.equals("OverAgg")
-                      || Files.exists(root.resolve("singleton-owner"))
-                          && family.equals(
-                              Files.readString(root.resolve("singleton-owner")).trim()))
-                  ? 1
-                  : parallelism;
+          long expectedTasks =
+              cluster
+                  .getExecutionGraph(job.getJobID())
+                  .get(5, TimeUnit.SECONDS)
+                  .getAllVertices()
+                  .values()
+                  .stream()
+                  .filter(
+                      vertex ->
+                          vertex.getName().contains("Native") && vertex.getName().contains(family))
+                  .mapToLong(vertex -> vertex.getParallelism())
+                  .sum();
+          if (expectedTasks == 0)
+            throw new AssertionError("No native " + family + " owner in the executed graph");
           if (activeTasks != expectedTasks)
             throw new AssertionError(
                 "Expected "

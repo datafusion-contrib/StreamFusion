@@ -16,13 +16,15 @@ abstract class CanonicalSinkCompat
 
   @Override
   public RowsWriter createWriter(Sink.InitContext context) throws IOException {
-    return writer(List.of());
+    return writer(List.of())
+        .withIdentity(context.getRestoredCheckpointId().orElse(-1), context.getSubtaskId());
   }
 
   @Override
   public RowsWriter restoreWriter(Sink.InitContext context, Collection<WriterState> restored)
       throws IOException {
-    return writer(restored);
+    return writer(restored)
+        .withIdentity(context.getRestoredCheckpointId().orElse(-1), context.getSubtaskId());
   }
 
   @Override

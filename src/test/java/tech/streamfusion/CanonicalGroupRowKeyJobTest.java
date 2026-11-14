@@ -64,7 +64,8 @@ class CanonicalGroupRowKeyJobTest {
       int keys = mode.equals("rescale") ? 64 : 4;
       for (int key = 0; key < keys; key++)
         expected.put(
-            key == 0 ? "null" : Integer.toString(key), variant.equals("global") ? "10|4" : "6|3");
+            key == 0 ? "null" : Integer.toString(key),
+            variant.equals("global") ? mode.equals("rescale") ? "21|6" : "10|4" : "6|3");
       assertEquals(expected, actual);
     }
   }
@@ -78,7 +79,9 @@ class CanonicalGroupRowKeyJobTest {
     Files.createFile(root.resolve("wait-native-input"));
     Files.writeString(root.resolve("native-ready-families"), "GroupAgg");
     Files.writeString(
-        root.resolve("native-operator"), "NativeColumnarGroupAgg,RowDataToArrow,ArrowToRowData");
+        root.resolve("native-operator"),
+        (variant.equals("global") ? "NativeColumnarLocalGroupAgg," : "")
+            + "NativeColumnarGroupAgg,RowDataToArrow,ArrowToRowData");
     Files.writeString(root.resolve("native-input-families"), "GroupAgg");
     Files.writeString(
         root.resolve("required-plan-node"),
@@ -104,14 +107,15 @@ class CanonicalGroupRowKeyJobTest {
     var rows = new ArrayList<String>();
     var serializer =
         new RowDataSerializer(RowType.of(CanonicalRowKeyFixture.type(nested), new BigIntType()));
-    for (int round = 0; round < (variant.equals("global") ? 4 : 5); round++)
+    int rounds = variant.equals("global") ? mode.equals("rescale") ? 6 : 4 : 5;
+    for (int round = 0; round < rounds; round++)
       for (int key = 0; key < keys; key++) {
         Long id = key == 0 ? null : (long) key;
         var row =
             GenericRowData.of(
                 CanonicalRowKeyFixture.key(nested, id, RowKind.values()[key % 4], true),
-                round == 4 ? 4L : (long) round + 1);
-        if (round == 4) row.setRowKind(RowKind.DELETE);
+                !variant.equals("global") && round == 4 ? 4L : (long) round + 1);
+        if (!variant.equals("global") && round == 4) row.setRowKind(RowKind.DELETE);
         var bytes = new DataOutputSerializer(256);
         serializer.serialize(row, bytes);
         rows.add("BINARY," + Base64.getEncoder().encodeToString(bytes.getCopyOfBuffer()));

@@ -4021,6 +4021,12 @@ await Flink 1.18/2.2 qualification; historical counts above do not qualify them.
 The optional local pairwise selector also applies to grouped complete-job providers; default/CI
 execution retains every original invocation. No performance claim is added.
 
+The global ROW-key rescale fixture retains input beyond both fixed savepoint cuts, then checks
+new aggregate values after the final restore. Its six-round rescale oracle stays separate from
+the four-round continued-input oracle.
+Rescale execution evidence counts every native owner in the executed graph at its actual
+parallelism, including separate local and global grouped stages; both stages are required.
+
 Variable-key extrema export also bounds resident header and companion batches by 256 records
 and four MiB of payload estimates, plus one oversized record. This prevents a hot large key from
 being copied across an entire entry chunk. Both stores reserve conversion capacity before Arrow
