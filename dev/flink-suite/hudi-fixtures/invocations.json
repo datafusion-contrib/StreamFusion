@@ -742,16 +742,16 @@
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestDynamicBucketStreamWrite]/[test-template:testInsertOverwrite(org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#1]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestDynamicBucketStreamWrite]/[test-template:testInsertOverwrite(org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#2]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestDynamicBucketStreamWrite]/[test-template:testWriteAndBootstrapFromRecordIndex(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#1]": {
       "native_work": {
@@ -798,10 +798,10 @@
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[method:tesQueryWithPartitionBucketIndexPruning()]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[method:testAppendWriteWithClusteringBatchRead()]": {
       "native_work": {
@@ -829,52 +829,53 @@
       "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[method:testBatchWriteWithCleaning()]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[method:testBuiltinFunctionWithHMSCatalog()]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[method:testBulkInsertNonPartitionedTable()]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[method:testBulkInsertWithSortByRecordKey()]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[method:testEagerFlushWithDataSkipping()]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[method:testLanceFormatAppendOnlyWriteAndRead()]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[method:testMergeOnReadCompactionWithTimestampPartitioning()]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[method:testParquetLogBlockDataSkipping()]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported",
-        "batch Calc: standalone scalar pipeline has no verified speedup"
+        "batch Calc: expression or representation is unsupported"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[method:testParquetNestedRowExceedingReadBatch()]": {
@@ -884,10 +885,10 @@
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[method:testPredicateForBaseFileWithMor()]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[method:testRLIBootstrap()]": {
       "native_work": {
@@ -899,10 +900,11 @@
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[method:testReadWithParquetPredicatePushDown()]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported",
-        "batch Calc: standalone scalar pipeline has no verified speedup"
+        "batch Calc: expression or representation is unsupported"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[method:testStreamReadEmptyTablePath()]": {
@@ -946,10 +948,10 @@
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[method:testUpdateWithDefaultHoodieRecordPayload()]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[method:testWriteLocalIndex()]": {
       "native_work": {
@@ -961,16 +963,16 @@
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[method:testWriteReadWithComputedColumns()]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[method:testWriteReadWithComputedColumnsInTheMiddle()]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testAppendWrite(boolean)]/[test-template-invocation:#1]": {
       "native_work": {
@@ -1029,108 +1031,116 @@
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBatchModeUpsert(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#1]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBatchModeUpsert(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#2]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBatchModeUpsert(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#3]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBatchModeUpsert(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#4]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBatchModeUpsertWithoutPartition(org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#1]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBatchModeUpsertWithoutPartition(org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#2]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBatchReadWithLimit(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#1]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup",
         "batch: unsupported interior operator BatchPhysicalLimit"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBatchReadWithLimit(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#2]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup",
         "batch: unsupported interior operator BatchPhysicalLimit"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBatchReadWithLimit(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#3]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup",
         "batch: unsupported interior operator BatchPhysicalLimit"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBatchReadWithLimit(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#4]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup",
         "batch: unsupported interior operator BatchPhysicalLimit"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBatchReadWithLimitAndFilter(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#1]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup",
         "batch: unsupported interior operator BatchPhysicalLimit"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBatchReadWithLimitAndFilter(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#2]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup",
         "batch: unsupported interior operator BatchPhysicalLimit"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBatchReadWithLimitAndFilter(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#3]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup",
         "batch: unsupported interior operator BatchPhysicalLimit"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBatchReadWithLimitAndFilter(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#4]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup",
         "batch: unsupported interior operator BatchPhysicalLimit"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBatchUpsertWithMiniBatches(org.apache.hudi.table.ITTestHoodieDataSource$ExecMode, org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#1]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBatchUpsertWithMiniBatches(org.apache.hudi.table.ITTestHoodieDataSource$ExecMode, org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#2]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBatchUpsertWithMiniBatches(org.apache.hudi.table.ITTestHoodieDataSource$ExecMode, org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#3]": {
       "native_work": {
@@ -1151,16 +1161,16 @@
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBatchUpsertWithMiniBatchesGlobalIndex(org.apache.hudi.table.ITTestHoodieDataSource$ExecMode, org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#1]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBatchUpsertWithMiniBatchesGlobalIndex(org.apache.hudi.table.ITTestHoodieDataSource$ExecMode, org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#2]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBatchUpsertWithMiniBatchesGlobalIndex(org.apache.hudi.table.ITTestHoodieDataSource$ExecMode, org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#3]": {
       "native_work": {
@@ -1181,61 +1191,65 @@
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBucketPruning(org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#1]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBucketPruning(org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#2]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBuiltinFunctionWithCatalog(java.lang.String)]/[test-template-invocation:#1]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBuiltinFunctionWithCatalog(java.lang.String)]/[test-template-invocation:#2]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBuiltinFunctionWithCatalog(java.lang.String)]/[test-template-invocation:#3]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBulkInsert(java.lang.String, boolean)]/[test-template-invocation:#1]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported",
-        "batch Calc: standalone scalar pipeline has no verified speedup"
+        "batch Calc: expression or representation is unsupported"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBulkInsert(java.lang.String, boolean)]/[test-template-invocation:#2]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported",
-        "batch Calc: standalone scalar pipeline has no verified speedup"
+        "batch Calc: expression or representation is unsupported"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBulkInsert(java.lang.String, boolean)]/[test-template-invocation:#3]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported",
-        "batch Calc: standalone scalar pipeline has no verified speedup"
+        "batch Calc: expression or representation is unsupported"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBulkInsert(java.lang.String, boolean)]/[test-template-invocation:#4]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported",
-        "batch Calc: standalone scalar pipeline has no verified speedup"
+        "batch Calc: expression or representation is unsupported"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBulkInsertWithPartitionBucketIndex(java.lang.String, java.lang.String)]/[test-template-invocation:#1]": {
@@ -1281,78 +1295,80 @@
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testDataSkippingByFilteringFileSlice(org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#1]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testDataSkippingByFilteringFileSlice(org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#2]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testDataSkippingOnMetadataColumns(org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#1]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported",
-        "batch Calc: standalone scalar pipeline has no verified speedup"
+        "batch Calc: expression or representation is unsupported"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testDataSkippingOnMetadataColumns(org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#2]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported",
-        "batch Calc: standalone scalar pipeline has no verified speedup"
+        "batch Calc: expression or representation is unsupported"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testDataSkippingWithRecordLevelIndex(org.apache.hudi.common.model.HoodieTableType, boolean, boolean)]/[test-template-invocation:#1]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testDataSkippingWithRecordLevelIndex(org.apache.hudi.common.model.HoodieTableType, boolean, boolean)]/[test-template-invocation:#2]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testDataSkippingWithRecordLevelIndex(org.apache.hudi.common.model.HoodieTableType, boolean, boolean)]/[test-template-invocation:#3]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testDataSkippingWithRecordLevelIndex(org.apache.hudi.common.model.HoodieTableType, boolean, boolean)]/[test-template-invocation:#4]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testDataSkippingWithRecordLevelIndex(org.apache.hudi.common.model.HoodieTableType, boolean, boolean)]/[test-template-invocation:#5]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testDataSkippingWithRecordLevelIndex(org.apache.hudi.common.model.HoodieTableType, boolean, boolean)]/[test-template-invocation:#6]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testDataSkippingWithRecordLevelIndex(org.apache.hudi.common.model.HoodieTableType, boolean, boolean)]/[test-template-invocation:#7]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testDataSkippingWithRecordLevelIndex(org.apache.hudi.common.model.HoodieTableType, boolean, boolean)]/[test-template-invocation:#8]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testDynamicPartitionPrune(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#1]": {
       "native_work": {},
@@ -1383,28 +1399,28 @@
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testEnableMetadataTableOnExistingTable(org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#1]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testEnableMetadataTableOnExistingTable(org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#2]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testIgnoreEmitDeleteForBatchReading(boolean)]/[test-template-invocation:#1]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testIgnoreEmitDeleteForBatchReading(boolean)]/[test-template-invocation:#2]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testIncrementalRead(org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#1]": {
       "native_work": {},
@@ -1423,28 +1439,28 @@
       "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testInsertOverwrite(java.lang.String, org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#1]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testInsertOverwrite(java.lang.String, org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#2]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testInsertOverwrite(java.lang.String, org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#3]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testInsertOverwrite(java.lang.String, org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#4]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testLookup(org.apache.hudi.common.model.HoodieTableType, java.lang.String, boolean)]/[test-template-invocation:#1]": {
       "native_work": {
@@ -2243,45 +2259,51 @@
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testUpdateDelete(java.lang.String, org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#1]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported",
-        "batch Calc: standalone scalar pipeline has no verified speedup"
+        "batch Calc: expression or representation is unsupported"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testUpdateDelete(java.lang.String, org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#2]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported",
-        "batch Calc: standalone scalar pipeline has no verified speedup"
+        "batch Calc: expression or representation is unsupported"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testUpdateDelete(java.lang.String, org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#3]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported",
-        "batch Calc: standalone scalar pipeline has no verified speedup"
+        "batch Calc: expression or representation is unsupported"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testUpdateDelete(java.lang.String, org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#4]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported",
-        "batch Calc: standalone scalar pipeline has no verified speedup"
+        "batch Calc: expression or representation is unsupported"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteAndRead(org.apache.hudi.table.ITTestHoodieDataSource$ExecMode, boolean)]/[test-template-invocation:#1]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported",
-        "batch Calc: standalone scalar pipeline has no verified speedup"
+        "batch Calc: expression or representation is unsupported"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteAndRead(org.apache.hudi.table.ITTestHoodieDataSource$ExecMode, boolean)]/[test-template-invocation:#2]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported",
-        "batch Calc: standalone scalar pipeline has no verified speedup"
+        "batch Calc: expression or representation is unsupported"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteAndRead(org.apache.hudi.table.ITTestHoodieDataSource$ExecMode, boolean)]/[test-template-invocation:#3]": {
@@ -2337,17 +2359,19 @@
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteAndReadWithDataSkipping(org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#1]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported",
-        "batch Calc: standalone scalar pipeline has no verified speedup"
+        "batch Calc: expression or representation is unsupported"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteAndReadWithDataSkipping(org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#2]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported",
-        "batch Calc: standalone scalar pipeline has no verified speedup"
+        "batch Calc: expression or representation is unsupported"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteAndReadWithDatePartitioning(java.lang.String)]/[test-template-invocation:#1]": {
@@ -2375,28 +2399,28 @@
       "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteAndReadWithProctimeSequenceWithTsColumnExisting(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#1]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteAndReadWithProctimeSequenceWithTsColumnExisting(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#2]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteAndReadWithProctimeSequenceWithTsColumnExisting(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#3]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteAndReadWithProctimeSequenceWithTsColumnExisting(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#4]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteAndReadWithTimestampMicros(org.apache.hudi.table.ITTestHoodieDataSource$ExecMode)]/[test-template-invocation:#1]": {
       "native_work": {},
@@ -2413,17 +2437,19 @@
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteAndReadWithTimestampPartitioning(org.apache.hudi.table.ITTestHoodieDataSource$ExecMode, boolean)]/[test-template-invocation:#1]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported",
-        "batch Calc: standalone scalar pipeline has no verified speedup"
+        "batch Calc: expression or representation is unsupported"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteAndReadWithTimestampPartitioning(org.apache.hudi.table.ITTestHoodieDataSource$ExecMode, boolean)]/[test-template-invocation:#2]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported",
-        "batch Calc: standalone scalar pipeline has no verified speedup"
+        "batch Calc: expression or representation is unsupported"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteAndReadWithTimestampPartitioning(org.apache.hudi.table.ITTestHoodieDataSource$ExecMode, boolean)]/[test-template-invocation:#3]": {
@@ -2510,16 +2536,16 @@
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteNonPartitionedTable(org.apache.hudi.table.ITTestHoodieDataSource$ExecMode, org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#1]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteNonPartitionedTable(org.apache.hudi.table.ITTestHoodieDataSource$ExecMode, org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#2]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteNonPartitionedTable(org.apache.hudi.table.ITTestHoodieDataSource$ExecMode, org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#3]": {
       "native_work": {
@@ -2540,64 +2566,64 @@
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteReadDecimals(java.lang.String)]/[test-template-invocation:#1]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteReadDecimals(java.lang.String)]/[test-template-invocation:#2]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteReadWithLocalTimestamp(org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#1]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteReadWithLocalTimestamp(org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#2]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteReadWithTimestampWithoutTZ(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#1]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteReadWithTimestampWithoutTZ(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#2]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteReadWithTimestampWithoutTZ(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#3]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteReadWithTimestampWithoutTZ(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#4]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteWithTimelineServerBasedMarker(org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#1]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteWithTimelineServerBasedMarker(org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#2]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteWithoutMetaColumns(org.apache.hudi.common.model.HoodieTableType, org.apache.hudi.common.model.WriteOperationType)]/[test-template-invocation:#1]": {
       "native_work": {
@@ -2618,10 +2644,10 @@
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestSchemaEvolutionBySQLWithDFSCatalog]/[method:testAddColumns()]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestSchemaEvolutionBySQLWithDFSCatalog]/[method:testAddNonPhysicalColumn()]": {
       "native_work": {},
@@ -2640,42 +2666,42 @@
       "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestSchemaEvolutionBySQLWithDFSCatalog]/[method:testDropColumns()]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestSchemaEvolutionBySQLWithDFSCatalog]/[method:testDropPrimaryKeyConstraint()]": {
       "native_work": {},
       "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestSchemaEvolutionBySQLWithDFSCatalog]/[method:testIllegalModifyColumnType()]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestSchemaEvolutionBySQLWithDFSCatalog]/[method:testModifyColumn()]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestSchemaEvolutionBySQLWithDFSCatalog]/[method:testRenameColumns()]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestSchemaEvolutionBySQLWithDFSCatalog]/[method:testSetAndResetProperty()]": {
       "native_work": {},
       "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestSchemaEvolutionBySQLWithHMSCatalog]/[method:testAddColumns()]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestSchemaEvolutionBySQLWithHMSCatalog]/[method:testAddNonPhysicalColumn()]": {
       "native_work": {},
@@ -2694,32 +2720,32 @@
       "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestSchemaEvolutionBySQLWithHMSCatalog]/[method:testDropColumns()]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestSchemaEvolutionBySQLWithHMSCatalog]/[method:testDropPrimaryKeyConstraint()]": {
       "native_work": {},
       "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestSchemaEvolutionBySQLWithHMSCatalog]/[method:testIllegalModifyColumnType()]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestSchemaEvolutionBySQLWithHMSCatalog]/[method:testModifyColumn()]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestSchemaEvolutionBySQLWithHMSCatalog]/[method:testRenameColumns()]": {
-      "native_work": {},
-      "fallback_reasons": [
-        "batch Calc: standalone scalar pipeline has no verified speedup"
-      ]
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestSchemaEvolutionBySQLWithHMSCatalog]/[method:testSetAndResetProperty()]": {
       "native_work": {},

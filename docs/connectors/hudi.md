@@ -350,6 +350,13 @@ unexpected routes and changed fallback reasons. The unchanged upstream
 cases retain their original legacy-source and row-result choices, so many Hudi
 boundaries correctly stay stock while native Calcs execute. The expanded tests
 and Nexmark harness separately require native Hudi source/sink execution.
+A full native replay after the batch-admission policy change passes all 349
+enabled upstream cases. Exactly 99 contracts now require positive native Calc
+work in place of the removed standalone-scalar performance rejection. Every
+other native-work requirement and semantic fallback reason is preserved. This
+credits core Calc execution, not native Hudi I/O. Batch plans must be observed at
+the current two-argument planner boundary; the unchanged vector cases also check
+that unsupported batch representations retain their fallback evidence.
 CI runs the default corpus
 in the Hudi JDK 17 lane and uploads the concise report.
 CI also runs the runner's failure-path regressions: missing or duplicate invocations,
