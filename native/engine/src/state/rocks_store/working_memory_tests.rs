@@ -125,3 +125,24 @@ fn absent_hydrated_keys_are_distinct_from_unknown_bundle_keys() {
     );
     store.end_bundle().unwrap();
 }
+
+#[test]
+fn checkpoint_releases_hydrated_state_before_the_next_bundle() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut store = store(directory.path(), Arc::new(AtomicUsize::new(0)));
+    let (batch, key) = fixture();
+    let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(128 << 10));
+    let mut memory = OperatorMemory::unaccounted();
+    memory.attach_pool("state", &pool, 0).unwrap();
+    store.attach_memory(memory.state_memory());
+    store.begin_batch(&batch, &[0], &[-1]).unwrap();
+    store.insert(key.clone(), vec![1; 1024]);
+    store.account_memory().unwrap();
+    assert!(pool.reserved() > 0);
+    store.checkpoint("").unwrap();
+    assert_eq!(pool.reserved(), 0);
+    store.begin_batch(&batch, &[0], &[-1]).unwrap();
+    assert_eq!(store.get(&key.0).unwrap(), &vec![1; 1024]);
+    store.end_bundle().unwrap();
+    assert_eq!(pool.reserved(), 0);
+}

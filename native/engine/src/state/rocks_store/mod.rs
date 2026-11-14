@@ -1298,7 +1298,9 @@ impl<C: RocksStateCodec> RocksStore<C> {
             cache.clear();
         }
         self.working.clear();
+        self.bundle_open = false;
         self.probed_multiset_keys.clear();
+        self.reserve_working(0)?;
         if snapshot_dir.is_empty() {
             return Ok(RocksCheckpointManifest::absent());
         }
@@ -1347,6 +1349,7 @@ impl<C: RocksStateCodec> RocksStore<C> {
 
     pub(crate) fn finish_canonical_scan(&mut self) {
         self.working.clear();
+        self.bundle_open = false;
         if let Some(memory) = &self.memory {
             memory.try_resize(0).expect("release scan memory");
         }

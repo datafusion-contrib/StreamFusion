@@ -59,7 +59,9 @@ batch decode and are then released. Operator state owns its decoded values; it d
 RocksDB cache pins across bundles. Generic keyed stores reserve their decoded working set and
 conversion workspace against the shared task off-heap pool before hydration and through bundle
 completion. Operator mini-batch staging has a separate reservation; state metrics include both
-owners. Persisted keys, row encodings, checkpoint handles and key-group routing are unchanged. Constant AppendFast Top-1 can retain clean,
+owners. Checkpoint and canonical-scan completion release the decoded working-set charge as
+soon as those values are cleared. Persisted keys, row encodings, checkpoint handles and key-group
+routing are unchanged. Constant AppendFast Top-1 can retain clean,
 owned decoded winners in a bounded cache governed by task off-heap reservations;
 [the Top-N page](../operators/top-n.md) describes its admission, metrics and
 checkpoint behavior. This changes the read path without changing persisted keys,
