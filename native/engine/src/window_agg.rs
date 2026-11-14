@@ -6,6 +6,7 @@ use streamfusion_bridge::timestamp::{timestamp_array, TimestampColumn, Timestamp
 mod canonical;
 mod output;
 mod partial_buffer;
+mod partial_output;
 mod shared;
 #[cfg(test)]
 pub(crate) mod tests;
@@ -1490,52 +1491,31 @@ impl TumblingAggregator {
     }
 
     fn emit_partials(&mut self, ends: Vec<i64>) -> RecordBatch {
-        self.snapshot_cache = None;
-        let state_fields: Vec<Field> = self
-            .aggregates
-            .iter()
-            .flat_map(WindowAggregate::state_fields)
-            .collect();
-        let mut keys: Vec<OwnedRow> = Vec::new();
-        let mut slice_ends = Vec::new();
-        let mut partials: Vec<Vec<ScalarValue>> = vec![Vec::new(); state_fields.len()];
-        for end in ends {
-            let window = self.windows.remove(&end).expect("window present");
-            let mut group: Vec<(OwnedRow, Vec<Box<dyn Accumulator>>)> =
-                window.keys.into_iter().collect();
-            group.sort_by(|(a, _), (b, _)| a.cmp(b));
-            for (key, mut accumulators) in group {
-                self.forget_group_bytes(&key, &accumulators);
-                keys.push(key);
-                slice_ends.push(end);
-                let mut field = 0;
-                for accumulator in &mut accumulators {
-                    for value in accumulator.state().expect("state") {
-                        partials[field].push(value);
-                        field += 1;
-                    }
-                }
-            }
+        let mut batches = Vec::new();
+        self.emit_partials_to(ends, &mut |batch| {
+            batches.push(batch);
+            Ok(())
+        })
+        .expect("partial output");
+        if batches.is_empty() {
+            self.partial_batch(
+                Vec::new(),
+                Vec::new(),
+                vec![Vec::new(); self.partial_fields().len()],
+            )
+        } else if batches.len() == 1 {
+            batches.pop().unwrap()
+        } else {
+            arrow::compute::concat_batches(&batches[0].schema(), &batches).expect("partial output")
         }
-        self.memory.account_shrink();
+    }
 
-        let mut fields = key_fields(&self.key_types);
-        let mut columns = decode_keys(self.key_converter.as_ref(), &keys, &self.key_types);
-        for (i, scalars) in partials.into_iter().enumerate() {
-            // Nullable: a SUM partial is Flink's nullable-sum buffer — NULL for an all-NULL bundle
-            // or an overflowed decimal bundle (the global's merge skips it, as the host's does).
-            let partial_type = state_fields[i].data_type().clone();
-            fields.push(Field::new(
-                format!("partial{i}"),
-                partial_type.clone(),
-                true,
-            ));
-            columns.push(scalars_to_array(scalars, &partial_type));
-        }
-        fields.push(Field::new("slice_end", DataType::Int64, false));
-        columns.push(Arc::new(Int64Array::from(slice_ends)));
-        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
-            .expect("failed to build partial batch")
+    pub(crate) fn drain_partial_to(
+        &mut self,
+        consume: &mut dyn FnMut(RecordBatch) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        let ends = self.windows.keys().copied().collect();
+        self.emit_partials_to(ends, consume)
     }
 
     /// Global half of two-phase aggregation: merges incoming partials
@@ -3009,6 +2989,25 @@ pub extern "system" fn Java_tech_streamfusion_Native_flushTumblingAggregatorBatc
         if let Err(error) = aggregator.flush_to(watermark, &mut |batch| {
             emit_record_batch(&mut env, &receiver, batch)
         }) {
+            throw_memory_limit(&mut env, &error.to_string());
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_drainPartialTumblingAggregatorBatches<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    receiver: jni::objects::JObject<'local>,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let aggregator = unsafe { &mut *(handle as *mut TumblingAggregator) };
+        if let Err(error) =
+            aggregator.drain_partial_to(&mut |batch| emit_record_batch(&mut env, &receiver, batch))
+        {
             throw_memory_limit(&mut env, &error.to_string());
         }
     })

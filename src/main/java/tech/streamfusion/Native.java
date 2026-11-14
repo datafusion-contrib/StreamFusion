@@ -1392,6 +1392,9 @@ public final class Native {
   public static native void drainPartialTumblingAggregator(
       long handle, long outArrayAddress, long outSchemaAddress);
 
+  public static native void drainPartialTumblingAggregatorBatches(
+      long handle, BatchReceiver receiver);
+
   /** Serializes an aggregator's open windows so they can be stored in a checkpoint. */
   public static native byte[] snapshotTumblingAggregator(long handle);
 

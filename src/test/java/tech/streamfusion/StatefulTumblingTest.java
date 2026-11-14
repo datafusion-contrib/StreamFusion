@@ -1,8 +1,8 @@
 package tech.streamfusion;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -187,6 +187,32 @@ class StatefulTumblingTest {
         assertSame(failure, assertThrows(IllegalStateException.class,
             () -> Native.flushTumblingAggregatorBatches(handle, Long.MAX_VALUE,
                 (array, schema) -> { throw failure; })));
+      } finally {
+        Native.closeTumblingAggregator(handle);
+      }
+      assertEquals(0, allocator.getAllocatedMemory());
+    }
+  }
+
+  @Test
+  void partialReceiverFailurePreservesTheJavaExceptionAndReleasesArrowOwnership() {
+    try (BufferAllocator allocator = new RootAllocator();
+        CDataDictionaryProvider provider = new CDataDictionaryProvider()) {
+      long handle =
+          Native.createTumblingAggregator(1000, 1000, new int[] {0}, new int[] {0}, UNBOUNDED);
+      try {
+        update(allocator, provider, handle, new long[] {0, 1000}, new long[] {1, 2});
+        IllegalStateException failure = new IllegalStateException("partial receiver stopped");
+        assertSame(
+            failure,
+            assertThrows(
+                IllegalStateException.class,
+                () ->
+                    Native.drainPartialTumblingAggregatorBatches(
+                        handle,
+                        (array, schema) -> {
+                          throw failure;
+                        })));
       } finally {
         Native.closeTumblingAggregator(handle);
       }

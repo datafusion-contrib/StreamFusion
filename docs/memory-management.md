@@ -237,10 +237,16 @@ pool can cover it. Released Java Arrow buffers remain charged independently afte
 RocksDB firing retains window-end metadata and key-group iterator indices, not all closed or
 future row payloads. The window-end inventory and the largest group still have to fit. Legacy
 single-result JNI helpers retain their compatibility behavior and can collect multiple emitted
-batches; the production fixed-window operators use the bounded receiver entry points.
+batches; the production fixed-window, session and local-partial operators use the bounded receiver entry points.
 
 Session firing merges key-group scans by grouping key and session start. It keeps bounded
 key/end frames for calendar decisions and decodes only closed session payloads. Key-header,
 decode and final-output workspaces use the same shared cap and can flush independently under
 pressure; future payloads remain in RocksDB. Session input still hydrates a touched key's
 neighboring sessions for merging, so a single large key/session remains a working-memory floor.
+
+Local partial transfer moves resident accumulators into bounded output frames and releases each
+group's state charge as ownership moves. Partial/decode workspace reservations cover the transfer
+until its receiver returns. The current resident window still requires key sorting, and the largest
+individual accumulator remains a necessary floor. Barrier drains emit every open slice without
+advancing the watermark; no pending transfer cursor becomes checkpoint state.

@@ -26,6 +26,8 @@ import tech.streamfusion.Native;
  */
 public class NativeColumnarLocalWindowAggregateOperator extends NativeWindowOperatorCore<ArrowBatch>
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
+  private static final long serialVersionUID = 3506469434016650726L;
+
   private boolean stockLocalCheckpointing;
 
   public void useStockLocalCheckpointing() {
@@ -175,11 +177,8 @@ public class NativeColumnarLocalWindowAggregateOperator extends NativeWindowOper
 
   @Override
   public void prepareSnapshotPreBarrier(long checkpointId) {
-    try (ArrowArray array = ArrowArray.allocateNew(allocator);
-        ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
-      Native.drainPartialTumblingAggregator(handle, array.memoryAddress(), schema.memoryAddress());
-      emitPartial(Data.importVectorSchemaRoot(allocator, array, schema, dictionaries));
-    }
+    Native.drainPartialTumblingAggregatorBatches(handle, this::emitPartial);
+
     publishStateBytes();
   }
 
@@ -201,18 +200,22 @@ public class NativeColumnarLocalWindowAggregateOperator extends NativeWindowOper
             windowShiftZone(),
             java.util.TimeZone.getTimeZone(windowShiftZone()).useDaylightTime());
     if (!ready) return;
-    try (ArrowArray array = ArrowArray.allocateNew(allocator);
-        ArrowSchema schema = ArrowSchema.allocateNew(allocator)) {
-      Native.drainPartialTumblingAggregator(handle, array.memoryAddress(), schema.memoryAddress());
-      emitPartial(Data.importVectorSchemaRoot(allocator, array, schema, dictionaries));
-    }
+    Native.drainPartialTumblingAggregatorBatches(handle, this::emitPartial);
   }
 
-  private void emitPartial(VectorSchemaRoot partial) {
-    if (partial.getRowCount() > 0) {
-      ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(partial));
-    } else {
-      partial.close(); // nothing to emit; release the empty batch
+  private void emitPartial(long arrayAddress, long schemaAddress) {
+    if (Thread.currentThread().isInterrupted()) {
+      throw new java.util.concurrent.CancellationException("local window output interrupted");
+    }
+    try (ArrowArray array = ArrowArray.wrap(arrayAddress);
+        ArrowSchema schema = ArrowSchema.wrap(schemaAddress)) {
+      VectorSchemaRoot partial =
+          Data.importVectorSchemaRoot(allocator, array, schema, dictionaries);
+      if (partial.getRowCount() > 0) {
+        ColumnarRecordMetrics.emitOwned(output, getMetricGroup(), partial);
+      } else {
+        partial.close();
+      }
     }
   }
 }

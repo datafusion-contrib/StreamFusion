@@ -28,3 +28,8 @@ scan uses the same ordered iterator merge, but batches key/end headers for calen
 and point-decodes only closed payloads. The memory path walks sorted keys and bounded session
 frames. Both retain the existing (group key, session start) output order, and preserve pending
 sessions and their next processing-time deadline.
+
+Local partial aggregation shares this receiver boundary while preserving Flink's stateless local
+checkpoint contract: every open slice is drained before a barrier, rather than leaving a cursor
+or a private partial backlog in checkpoint state. Its typed accumulator layout and global merge
+semantics remain independent of final-output batches.
