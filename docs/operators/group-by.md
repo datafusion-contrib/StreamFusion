@@ -3392,13 +3392,14 @@ Benchmarking remains deferred.
 ## Typed retracting canonical extrema (partial)
 
 Ordinary SQL and portable stock plans bind single-phase retracting MIN/MAX for BIGINT, INT,
-SMALLINT, TINYINT, DATE, TIME and BOOLEAN. The grouping contract remains one INT/BIGINT key or
-a global singleton. Actual generated accumulator fields, hidden record counts, MapView IDs,
+SMALLINT, TINYINT, DATE, TIME and BOOLEAN. The historical grouping cohort used one INT/BIGINT
+key or a global singleton; additional fixed-width scalar/composite keys are authored below and
+await qualification. Actual generated accumulator fields, hidden record counts, MapView IDs,
 serializers, TTL policy, stock identities and maximum parallelism come from the released owner.
 The captured TIME schema uses the released planner's resolved precision zero; declared TIME(0)
 and TIME(3) queries are tested separately. Arithmetic slots sharing this contract remain BIGINT.
-Other schemas, composite keys, DISTINCT/views, aggregate phases and asynchronous/unaligned owners
-remain outside this structured binding.
+Variable-width grouping keys, other value schemas, DISTINCT/views, aggregate phases and
+asynchronous/unaligned owners remain outside this structured binding.
 
 Each cached selection and map-size counter remains independent of the retained value-to-signed-
 count map. Negative and zero counts, independently written map entries, a cached selection hidden
@@ -3995,3 +3996,26 @@ recreation, both engine orders and native checkpoint recovery; ordinary/portable
 capture the original trigger and retention. Clean-worker jobs add no-input returns and rescaling
 with a separate MIN/MAX oracle. These additions await both-release execution, and earlier eager
 extrema results do not qualify the new mini-batch scope.
+
+## Fixed-width retracting extrema keys awaiting qualification
+
+The existing header/map transfer now admits fixed-width scalar grouping codecs and composites,
+including arbitrary key counts: integer widths, FLOAT/DOUBLE, BOOLEAN, DATE/TIME, intervals,
+compact DECIMAL with precision at most 18 and TIMESTAMP/LTZ with precision at most 3. The native
+transfer already validates the complete fixed BinaryRow key, including its null bitmap; the
+binding retains actual released selectors, serializer metadata, owner IDs and maximum parallelism.
+This widens key admission for existing eager and one-phase mini-batch retracting MIN/MAX without
+changing the signed value carrier, independent headers/map entries, TTL or native state format.
+Variable-width strings/binary, wide DECIMAL, higher-precision timestamps and constructed keys
+remain outside this extension.
+
+Authored actual-stock controls cover complete raw state, opposite signed-zero and NaN keys,
+nullable composite components, a 65-column key crossing a null-bitmap boundary, both engine
+orders/stores, no-input returns, retractions, TTL expiry and native checkpoint recovery. Ordinary
+and portable planner controls require the actual fixed key schema and reject variable-width or
+constructed schemas. Clean-stock jobs use independent SMALLINT/compact-DECIMAL physical key
+columns, check both fields on the bound extrema contract in every native worker and retain
+independent final-value oracles through eager/mini-batch handoffs and rescaling. These controls
+are unexecuted and await Flink 1.18/2.2 qualification; historical counts above do not qualify them.
+The optional local pairwise selector also applies to grouped complete-job providers; default/CI
+execution retains every original invocation. No performance claim is added.

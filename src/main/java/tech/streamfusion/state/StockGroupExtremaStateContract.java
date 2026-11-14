@@ -79,11 +79,8 @@ public final class StockGroupExtremaStateContract implements StockStateContract 
         || kinds.length != mapValueSerializers.length
         || Arrays.stream(kinds).noneMatch(StockGroupExtremaStateContract::mapped))
       throw new IllegalArgumentException("Invalid extrema field mapping");
-    if (keyType.getFieldCount() > 1
-        || keyType.getChildren().stream()
-            .anyMatch(
-                type -> !type.is(LogicalTypeRoot.INTEGER) && !type.is(LogicalTypeRoot.BIGINT)))
-      throw new IllegalArgumentException("Extrema requires one INT/BIGINT key or a global group");
+    if (keyType.getChildren().stream().anyMatch(type -> !supportsKeyType(type)))
+      throw new IllegalArgumentException("Extrema requires fixed-width scalar group keys");
     boolean[] covered = new boolean[accumulatorType.getFieldCount()];
     cover(covered, recordCountField, LogicalTypeRoot.BIGINT);
     var names = new java.util.HashSet<String>();
@@ -153,6 +150,30 @@ public final class StockGroupExtremaStateContract implements StockStateContract 
       case TIME_WITHOUT_TIME_ZONE:
       case BOOLEAN:
         return true;
+      default:
+        return false;
+    }
+  }
+
+  public static boolean supportsKeyType(LogicalType type) {
+    switch (type.getTypeRoot()) {
+      case TINYINT:
+      case SMALLINT:
+      case INTEGER:
+      case BIGINT:
+      case FLOAT:
+      case DOUBLE:
+      case BOOLEAN:
+      case DATE:
+      case TIME_WITHOUT_TIME_ZONE:
+      case INTERVAL_YEAR_MONTH:
+      case INTERVAL_DAY_TIME:
+        return true;
+      case DECIMAL:
+        return ((org.apache.flink.table.types.logical.DecimalType) type).getPrecision() <= 18;
+      case TIMESTAMP_WITHOUT_TIME_ZONE:
+      case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
+        return org.apache.flink.table.types.logical.utils.LogicalTypeChecks.getPrecision(type) <= 3;
       default:
         return false;
     }

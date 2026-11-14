@@ -98,6 +98,24 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
       String valueSqlType,
       boolean miniBatch)
       throws Exception {
+    this(mode, rocks, ttl, beforePolicy, append, integerKey, global, valueSqlType, miniBatch, null);
+  }
+
+  @SuppressWarnings("unchecked")
+  GroupAggregateStockTestFixture(
+      String mode,
+      boolean rocks,
+      long ttl,
+      Boolean beforePolicy,
+      boolean append,
+      boolean integerKey,
+      boolean global,
+      String valueSqlType,
+      boolean miniBatch,
+      RowType groupKeys)
+      throws Exception {
+    if (groupKeys != null && global)
+      throw new IllegalArgumentException("Global fixture has no group fields");
     this.miniBatch = miniBatch;
     if (miniBatch && beforePolicy != null)
       throw new IllegalArgumentException("Use the captured mini-batch before-image policy");
@@ -111,9 +129,31 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
             : org.apache.flink.table.types.logical.utils.LogicalTypeParser.parse(
                 valueSqlType, GroupAggregateStockTestFixture.class.getClassLoader());
     this.ttl = ttl;
-    keyColumns = global ? new int[0] : new int[] {0};
+    var keySchema =
+        groupKeys == null
+            ? RowType.of(
+                org.apache.flink.table.types.logical.utils.LogicalTypeParser.parse(
+                    integerKey ? "INT" : "BIGINT"))
+            : groupKeys;
+    keyColumns =
+        global
+            ? new int[0]
+            : java.util.stream.IntStream.range(0, keySchema.getFieldCount()).toArray();
     maximum = global ? 1 : 128;
-    String keyType = integerKey ? "INT" : "BIGINT";
+    String keyFields =
+        java.util.stream.IntStream.range(0, keySchema.getFieldCount())
+            .mapToObj(index -> groupKeys == null ? "k" : "k" + index)
+            .collect(java.util.stream.Collectors.joining(","));
+    String keyDeclaration =
+        java.util.stream.IntStream.range(0, keySchema.getFieldCount())
+            .mapToObj(
+                index ->
+                    (groupKeys == null ? "k" : "k" + index)
+                        + " "
+                        + keySchema.getTypeAt(index).asSerializableString())
+            .collect(java.util.stream.Collectors.joining(","));
+    var keyedFields = new java.util.ArrayList<LogicalType>(keySchema.getChildren());
+    keyedFields.add(valueType);
     var expectedInput =
         global
             ? (mode.equals("star")
@@ -121,11 +161,7 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
                     new org.apache.flink.table.types.logical.BigIntType(),
                     new org.apache.flink.table.types.logical.BigIntType())
                 : RowType.of(valueType))
-            : RowType.of(
-                integerKey
-                    ? new org.apache.flink.table.types.logical.IntType()
-                    : new org.apache.flink.table.types.logical.BigIntType(),
-                valueType);
+            : RowType.of(keyedFields.toArray(new LogicalType[0]));
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", "false");
     var table = NativePlannerTestEnvironment.create(config);
@@ -146,8 +182,8 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
         });
     table.useCatalog("fixture");
     table.executeSql(
-        "CREATE TABLE input_table(k "
-            + keyType
+        "CREATE TABLE input_table("
+            + keyDeclaration
             + ",v "
             + valueSqlType
             + ") WITH"
@@ -172,7 +208,7 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
                                 : mode.equals("count") ? "COUNT(v) AS a" : "COUNT(*) AS a";
     table.executeSql(
         "CREATE TABLE output_table("
-            + (global ? "" : "k " + keyType + ",")
+            + (global ? "" : keyDeclaration + ",")
             + (mode.equals("counted-extrema")
                 ? "a BIGINT,b " + valueSqlType + ",c " + valueSqlType
                 : mode.equals("hidden-extrema")
@@ -192,10 +228,10 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
         CanonicalRegularJoinPlanTest.translate(
             planner,
             "INSERT INTO output_table SELECT "
-                + (global ? "" : "k,")
+                + (global ? "" : keyFields + ",")
                 + fields
                 + " FROM fixture.db.input_table"
-                + (global ? "" : " GROUP BY k"));
+                + (global ? "" : " GROUP BY " + keyFields));
     var graph = CanonicalRegularJoinPlanTest.graph(planner, table, transforms);
     var node =
         graph.getStreamNodes().stream()
@@ -267,49 +303,49 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
     accumulatorType = RowType.of((LogicalType[]) field(function, "accTypes"));
     outputType = RowType.of((LogicalType[]) field(node.getTypeSerializerOut(), "types"));
     before = (boolean) field(function, "generateUpdateBefore");
+    int valueColumn = global ? 0 : keyColumns.length;
     switch (mode) {
       case "arithmetic":
         kinds = new int[] {3, 3, 22};
         scalarFields = new int[] {0, 1, 2};
         countFields = new int[] {-1, -1, -1};
-        valueColumns = new int[] {-1, global ? 0 : 1, global ? 0 : 1};
+        valueColumns = new int[] {-1, valueColumn, valueColumn};
         break;
       case "hidden":
         kinds = new int[] {0, 4};
         scalarFields = append ? new int[] {0, 1} : new int[] {0, 2};
         countFields = append ? new int[] {-1, 2} : new int[] {1, 3};
-        valueColumns = new int[] {global ? 0 : 1, global ? 0 : 1};
+        valueColumns = new int[] {valueColumn, valueColumn};
         break;
       case "hidden-extrema":
         kinds = append ? new int[] {0, 4, 10, 11} : new int[] {0, 4, 38, 39};
         scalarFields = append ? new int[] {0, 1, 3, 4} : new int[] {0, 2, 4, 5};
         countFields = append ? new int[] {-1, 2, -1, -1} : new int[] {1, 3, -1, -1};
-        valueColumns = new int[] {global ? 0 : 1, global ? 0 : 1, global ? 0 : 1, global ? 0 : 1};
+        valueColumns = new int[] {valueColumn, valueColumn, valueColumn, valueColumn};
         break;
       case "counted-extrema":
         kinds = new int[] {3, 38, 39};
         scalarFields = new int[] {0, 1, 2};
         countFields = new int[] {-1, -1, -1};
-        valueColumns = new int[] {global ? 0 : 1, global ? 0 : 1, global ? 0 : 1};
+        valueColumns = new int[] {valueColumn, valueColumn, valueColumn};
         break;
       case "extrema":
         kinds = append ? new int[] {10, 11} : new int[] {38, 39};
         scalarFields = new int[] {0, 1};
         countFields = new int[] {-1, -1};
-        valueColumns = new int[] {global ? 0 : 1, global ? 0 : 1};
+        valueColumns = new int[] {valueColumn, valueColumn};
         break;
       case "mixed-extrema":
         kinds = append ? new int[] {3, 3, 22, 10, 11} : new int[] {3, 3, 22, 38, 39};
         scalarFields = new int[] {0, 1, 2, 3, 4};
         countFields = new int[] {-1, -1, -1, -1, -1};
-        valueColumns =
-            new int[] {-1, global ? 0 : 1, global ? 0 : 1, global ? 0 : 1, global ? 0 : 1};
+        valueColumns = new int[] {-1, valueColumn, valueColumn, valueColumn, valueColumn};
         break;
       case "count":
         kinds = new int[] {3};
         scalarFields = new int[] {0};
         countFields = new int[] {-1};
-        valueColumns = new int[] {global ? 0 : 1};
+        valueColumns = new int[] {valueColumn};
         break;
       case "star":
         kinds = new int[] {3};

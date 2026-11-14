@@ -394,20 +394,13 @@ public final class CanonicalJobWorker {
           int expected =
               Integer.parseInt(
                   Files.readString(root.resolve("required-over-distinct-views")).trim());
-          String encoded =
-              table
-                  .getConfig()
-                  .getConfiguration()
-                  .getString("streamfusion.canonical.state-contracts", "");
-          java.util.Map<?, ?> registrations =
-              org.apache.flink.util.InstantiationUtil.deserializeObject(
-                  java.util.Base64.getDecoder().decode(encoded),
-                  Thread.currentThread().getContextClassLoader());
+          var registrations = canonicalRegistrations(table);
           int owners = 0;
           for (var bound : registrations.values()) {
             var field = bound.getClass().getDeclaredField("contract");
             field.setAccessible(true);
             Object contract = field.get(bound);
+            if (contract == null) continue;
             if (!contract
                 .getClass()
                 .getName()
@@ -429,6 +422,35 @@ public final class CanonicalJobWorker {
             throw new AssertionError("Expected one bound OVER owner, observed " + owners);
           Files.writeString(
               root.resolve(stage + "-independent-over-views-verified"), Integer.toString(expected));
+        }
+        if (Files.exists(root.resolve("required-extrema-key-fields"))) {
+          int expected =
+              Integer.parseInt(
+                  Files.readString(root.resolve("required-extrema-key-fields")).trim());
+          int owners = 0;
+          for (var bound : canonicalRegistrations(table).values()) {
+            var field = bound.getClass().getDeclaredField("contract");
+            field.setAccessible(true);
+            Object contract = field.get(bound);
+            if (contract == null
+                || !contract
+                    .getClass()
+                    .getName()
+                    .equals("tech.streamfusion.state.StockGroupExtremaStateContract")) continue;
+            var keyField = contract.getClass().getDeclaredField("keyType");
+            keyField.setAccessible(true);
+            int observed =
+                ((org.apache.flink.table.types.logical.RowType) keyField.get(contract))
+                    .getFieldCount();
+            if (observed != expected)
+              throw new AssertionError(
+                  "Expected " + expected + " extrema key fields, observed " + observed);
+            owners++;
+          }
+          if (owners != 1)
+            throw new AssertionError("Expected one bound extrema owner, observed " + owners);
+          Files.writeString(
+              root.resolve(stage + "-extrema-key-fields-verified"), Integer.toString(expected));
         }
         var diagnostics = new StringBuilder();
         for (var entry : table.getConfig().getConfiguration().toMap().entrySet())
@@ -755,6 +777,19 @@ public final class CanonicalJobWorker {
     } finally {
       Thread.currentThread().setContextClassLoader(original);
     }
+  }
+
+  private static java.util.Map<?, ?> canonicalRegistrations(
+      org.apache.flink.table.api.TableEnvironment table) throws Exception {
+    String encoded =
+        table
+            .getConfig()
+            .getConfiguration()
+            .getString("streamfusion.canonical.state-contracts", "");
+    if (encoded.isEmpty()) throw new AssertionError("Missing bound canonical state contracts");
+    return org.apache.flink.util.InstantiationUtil.deserializeObject(
+        java.util.Base64.getDecoder().decode(encoded),
+        Thread.currentThread().getContextClassLoader());
   }
 
   private static void verifyNativePlan(

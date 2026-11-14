@@ -2851,17 +2851,20 @@ final class StockCompiledPlanLowering {
     ExecNode<?> input = stock.getInputEdges().get(0).getSource();
     RowType inputType = (RowType) input.getOutputType();
     RowType outputType = (RowType) stock.getOutputType();
-    if (keys.length > 1) return stock;
-    boolean global = keys.length == 0;
-    var keyRoot = global ? null : inputType.getTypeAt(keys[0]).getTypeRoot();
-    if (!global && !(keyRoot == LogicalTypeRoot.BIGINT || keyRoot == LogicalTypeRoot.INTEGER)
+    if (Arrays.stream(keys)
+            .anyMatch(
+                key ->
+                    !tech.streamfusion.state.StockGroupExtremaStateContract.supportsKeyType(
+                        inputType.getTypeAt(key)))
         || java.util.stream.IntStream.range(0, inputType.getFieldCount())
             .anyMatch(
                 i ->
-                    (global || i != keys[0])
+                    Arrays.stream(keys).noneMatch(key -> key == i)
                         && !tech.streamfusion.state.StockGroupExtremaStateContract
                             .supportsValueType(inputType.getTypeAt(i)))
-        || !global && outputType.getTypeAt(0).getTypeRoot() != keyRoot
+        || java.util.stream.IntStream.range(0, keys.length)
+            .anyMatch(
+                index -> !inputType.getTypeAt(keys[index]).equals(outputType.getTypeAt(index)))
         || outputType.getChildren().stream()
             .skip(keys.length)
             .anyMatch(
