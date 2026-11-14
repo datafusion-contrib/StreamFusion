@@ -226,7 +226,7 @@ public class NativeTemporalJoinOperator extends AbstractNativeStatefulOperator<A
    * that side's first batch arrives.
    */
   private long withSchemas(LongBinaryOperator call) {
-    return withRowSchemas(leftType, rightType, call);
+    return withMapListSchemas(leftType, rightType, call);
   }
 
   @Override

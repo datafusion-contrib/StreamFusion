@@ -441,7 +441,7 @@ public final class StockIntervalJoinStateContract implements StockStateContract 
       final int input = side;
       var batch =
           new StockRowBatch(
-              transfers[side], (rows, a, s) -> send(handle, input, rows, false, a, s));
+              transfers[side], true, (rows, a, s) -> send(handle, input, rows, false, a, s));
       StockMapListSnapshot.visit(
           backend,
           cacheName(side),

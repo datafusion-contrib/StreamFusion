@@ -2321,7 +2321,9 @@ The canonical loader now binds existing native ROW/ARRAY/MAP retained payloads f
 interval, event-time temporal and event-time window joins. Scalar join keys and each family’s
 existing time/predicate/backend restrictions remain. Regular joins retain the insert-only
 restriction for MAP/MULTISET descendants and import stock rows through the same tagged Arrow
-map view as native input. No new join semantics are introduced. New planner and clean-worker
+map view as native input. Interval, temporal and window joins now also declare persistent
+row schemas and import retained payloads through that tagged map view. A no-input stock-to-native
+handoff therefore has the same schema as later live input. No new join semantics are introduced. New planner and clean-worker
 fixtures cover full nested rows, duplicate/NULL inputs, continued and empty handoffs, native
 checkpoint recovery and keyed rescaling. These additions await local qualification on both
 released Flink lines; earlier scalar evidence above does not establish this wider scope.

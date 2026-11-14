@@ -431,7 +431,11 @@ public final class StockTemporalJoinStateContract implements StockStateContract 
         var array = ArrowArray.allocateNew(NativeAllocator.SHARED);
         var schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
       Data.exportVectorSchemaRoot(
-          NativeAllocator.SHARED, root, NativeAllocator.DICTIONARIES, array, schema);
+          NativeAllocator.SHARED,
+          tech.streamfusion.arrow.MapListRepresentation.forExport(root),
+          NativeAllocator.DICTIONARIES,
+          array,
+          schema);
       if (validating)
         Native.validateTemporalJoinCanonicalRows(
             handle, side == 0, array.memoryAddress(), schema.memoryAddress());
