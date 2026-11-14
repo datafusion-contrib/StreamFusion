@@ -36,7 +36,7 @@
     </dependency>
   </dependencies>
   <build>
-    <sourceDirectory>${project.basedir}/../src/main/java</sourceDirectory>
+
     <resources combine.self="override">
       <resource>
         <directory>${project.basedir}/..</directory>
@@ -84,12 +84,6 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
-        <configuration>
-          <includes>
-            <include>tech/streamfusion/fluss/**/*.java</include>
-            <include>tech/streamfusion/planner/**/*Fluss*.java</include>
-          </includes>
-        </configuration>
       </plugin>
     </plugins>
   </build>

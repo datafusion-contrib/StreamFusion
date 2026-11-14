@@ -13,7 +13,11 @@ import tarfile
 import tempfile
 
 
-MODULES = ("streamfusion-core", "streamfusion-json", "streamfusion-runtime")
+MODULES = (
+    "streamfusion-core", "streamfusion-json", "streamfusion-kafka", "streamfusion-csv",
+    "streamfusion-raw", "streamfusion-avro", "streamfusion-avro-confluent-registry",
+    "streamfusion-protobuf", "streamfusion-parquet", "streamfusion-orc", "streamfusion-runtime",
+)
 
 
 def identity(root, line):
@@ -41,6 +45,8 @@ def digest(path):
 
 def require_classes(root):
     for module in MODULES:
+        if module == "streamfusion-runtime":
+            continue
         if not any((root / module / "target/classes").rglob("*.class")):
             raise ValueError(f"Missing compiled module: {module}")
     if not any((root / "streamfusion-runtime/target/test-classes").rglob("Canonical*JobTest.class")):

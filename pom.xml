@@ -204,6 +204,8 @@
             <version>${flink.version}</version>
             <scope>provided</scope>
         </dependency>
+        <!-- Optional connector/format dependencies here are parity baselines. Their owning modules
+             declare the provided APIs needed by production compilation and deployment. -->
         <!-- Flink owns Kafka consumption and production; StreamFusion wraps its byte-array source
              and sink with native format operators. The 5.0.0-2.2 release targets Flink 2.2.x and
              is provided at runtime by the deployment. -->
@@ -211,7 +213,7 @@
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-connector-kafka</artifactId>
             <version>${flink.connector.kafka.version}</version>
-            <scope>provided</scope>
+            <scope>test</scope>
         </dependency>
         <!-- The JSON format factory. Flink instantiates the original kafka+json table source during SQL
              validation (the native node replaces it only at physical-plan time), and the shallow
@@ -220,7 +222,7 @@
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-json</artifactId>
             <version>${flink.version}</version>
-            <scope>provided</scope>
+            <scope>test</scope>
         </dependency>
         <!-- Avro format: the Confluent-Avro benchmark's row-materializing baseline
              (AvroRowDataDeserializationSchema) and its AvroSchemaConverter + Avro writer for generating
@@ -229,7 +231,7 @@
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-avro</artifactId>
             <version>${flink.version}</version>
-            <scope>provided</scope>
+            <scope>test</scope>
         </dependency>
         <!-- Confluent-registry Avro format: the host baseline the native avro-confluent decode is
              compared against, and the format factory Flink needs to validate an avro-confluent table
@@ -249,7 +251,7 @@
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-csv</artifactId>
             <version>${flink.version}</version>
-            <scope>provided</scope>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.flink</groupId>
@@ -261,7 +263,7 @@
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-orc</artifactId>
             <version>${flink.version}</version>
-            <scope>provided</scope>
+            <scope>test</scope>
         </dependency>
         <!-- Flink's protobuf format: the host baseline the native protobuf decode is compared against,
              and its protoc (below) generates the message class a protobuf table names. It needs
@@ -284,7 +286,7 @@
             <groupId>org.apache.hadoop</groupId>
             <artifactId>hadoop-common</artifactId>
             <version>3.3.4</version>
-            <scope>provided</scope>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.hadoop</groupId>
@@ -299,7 +301,7 @@
             <groupId>org.apache.kafka</groupId>
             <artifactId>kafka-clients</artifactId>
             <version>${kafka.clients.version}</version>
-            <scope>provided</scope>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
@@ -347,13 +349,13 @@
     <build>
         <resources>
             <resource>
-                <directory>${project.basedir}/../src/main/resources</directory>
+                <directory>${project.basedir}/src/main/resources</directory>
             </resource>
             <!-- The build stamp: the project version filtered into a classpath resource, compared
                  against the loaded native library's own stamp so a stale library on
                  java.library.path fails loudly instead of silently shadowing the bundled one. -->
             <resource>
-                <directory>${project.basedir}/../src/main/resources-filtered</directory>
+                <directory>${project.basedir}/src/main/resources-filtered</directory>
                 <filtering>true</filtering>
             </resource>
             <!-- The local-development resource. The universal release profile replaces this with
@@ -375,11 +377,8 @@
                 <version>1.7.1</version>
             </extension>
         </extensions>
-        <!-- Releases attach javadoc for every module, and the shared source root lets javadoc see
-             the optional connector sources beside each module's own, so a broken reference or an
-             unresolvable connector class only surfaced at release time. Generating (not packaging)
-             the javadoc in the ordinary test build makes `mvn test` fail the same way the release
-             would; skip it for a quick loop with -Dmaven.javadoc.skip=true. -->
+        <!-- Generate javadoc for each module's owned sources during ordinary tests, so unresolved
+             module references fail before release. Use -Dmaven.javadoc.skip=true for quick loops. -->
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -426,7 +425,7 @@
                         <phase>generate-sources</phase>
                         <goals><goal>add-source</goal></goals>
                         <configuration><sources>
-                            <source>${project.basedir}/../src/main/java-flink${flink.line}</source>
+                            <source>${project.basedir}/src/main/java-flink${flink.line}</source>
                         </sources></configuration>
                     </execution>
 
@@ -451,9 +450,8 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
                 <configuration>
-                    <!-- Each deployment module owns only its explicit includes. Reproducible
-                         dependency JAR timestamps can make javac prefer newer shared sources;
-                         resolve them if needed, but never emit another module's classes. -->
+                    <!-- Resolve project dependencies from their artifacts without implicitly emitting
+                         classes from an added sourcepath into another module. -->
                     <compilerArgs>
                         <arg>-implicit:none</arg>
                     </compilerArgs>
@@ -485,54 +483,6 @@
                 <configuration>
                     <doclint>none</doclint>
                     <quiet>true</quiet>
-                    <!-- Modules document only the sources they compile, but javadoc still
-                         parses the opt-in Fluss, Delta and Paimon sources it finds next to them on the
-                         shared sourcepath, so their connector dependencies must be resolvable. -->
-                    <sourceFileExcludes>
-                        <sourceFileExclude>tech/streamfusion/fluss/**</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/planner/**/*Fluss*.java</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/delta/**</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/planner/**/DeltaPlannerExtension.java</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/planner/**/DeltaSinkMatcher.java</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/planner/**/NativeDeltaSinkExecNode.java</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/planner/**/StreamPhysicalNativeDeltaSink.java</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/paimon/**</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/planner/**/Paimon*.java</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/planner/**/NativePaimon*.java</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/planner/**/StreamPhysicalNativePaimon*.java</sourceFileExclude>
-                    </sourceFileExcludes>
-                    <additionalDependencies>
-                        <additionalDependency>
-                            <groupId>org.apache.fluss</groupId>
-                            <artifactId>fluss-flink-${flink.line}</artifactId>
-                            <version>1.0.0</version>
-                        </additionalDependency>
-                        <additionalDependency>
-                            <groupId>io.delta</groupId>
-                            <artifactId>delta-flink_2.2</artifactId>
-                            <version>${delta.version}</version>
-                        </additionalDependency>
-                        <additionalDependency>
-                            <groupId>io.delta</groupId>
-                            <artifactId>delta-kernel-api</artifactId>
-                            <version>${delta.version}</version>
-                        </additionalDependency>
-                        <additionalDependency>
-                            <groupId>org.apache.parquet</groupId>
-                            <artifactId>parquet-hadoop</artifactId>
-                            <version>1.16.0</version>
-                        </additionalDependency>
-                        <additionalDependency>
-                            <groupId>org.apache.hadoop</groupId>
-                            <artifactId>hadoop-common</artifactId>
-                            <version>3.3.4</version>
-                        </additionalDependency>
-                        <additionalDependency>
-                            <groupId>org.apache.paimon</groupId>
-                            <artifactId>paimon-flink-${flink.line}</artifactId>
-                            <version>${paimon.version}</version>
-                        </additionalDependency>
-                    </additionalDependencies>
                 </configuration>
             </plugin>
             <!-- Generates the protobuf message class a `protobuf`-format table names (and that the host

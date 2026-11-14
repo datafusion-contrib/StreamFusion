@@ -67,6 +67,26 @@ The GitHub release archive includes all optional StreamFusion modules, including
 Install only the modules your jobs use and their stock connector dependencies; the archive does
 not bundle the stock connectors.
 
+## Source and module ownership
+
+Each deployable module owns its Java implementation under its own `src/main/java` tree and its
+Flink-line adapters under `src/main/java-flink<line>`. Core does not compile connector or format
+sources, and optional Kafka, JSON, CSV, Avro, ORC and Hadoop dependencies are declared by their
+owners rather than inherited as runtime dependencies by core. Parent test dependencies remain
+available to the parity baselines.
+
+`streamfusion-runtime` is the development and integration-test assembly. It depends on the real
+core, Kafka, file-format and serialization-format artifacts and compiles only integration tests;
+it does not emit another copy of their production classes. Optional Fluss, Delta and Paimon tests
+can consume the shared runtime test harness without making that assembly depend on those connectors.
+The reactor therefore stays acyclic. Install the deployable core and optional modules in Flink;
+the runtime test assembly is not a deployment artifact.
+
+The Paimon 1 compatibility build retains its explicit generated-source adapter: it combines
+shared Paimon-owned sources with its existing older-API replacements. Those alternative Paimon
+artifacts preserve the same Java package identities and are not installed together. This sharing
+is confined to the incompatible connector release lines, not a global production source tree.
+
 ## Kubernetes or Docker
 
 Generated Calc/filter bindings contain runtime-only functions; code generation remains in the

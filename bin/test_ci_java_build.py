@@ -120,6 +120,7 @@ class SharedJavaBuildTest(unittest.TestCase):
                     build.restore(temporary / "consumer", "2.2", archive)
                 self.assertFalse((temporary / "consumer").exists())
 
+    @patch.object(build, "MODULES", ("streamfusion-core", "streamfusion-json", "streamfusion-runtime"))
     def test_precompiled_lifecycle_resolves_reactor_dependencies_and_retains_tests_and_failures(self):
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory)
