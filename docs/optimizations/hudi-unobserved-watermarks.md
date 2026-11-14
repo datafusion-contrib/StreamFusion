@@ -32,7 +32,7 @@ mini-batching-off comparison uses two million events, four source/sink tasks,
 one warmup and three rotating release trials per engine. Q0 medians are
 986.1 ms stock, 7,143.7 ms previous StreamFusion and 529.9 ms native; Q4 is
 2,039.6 / 85,742.2 / 1,323.7 ms respectively. The benchmark page retains all
-trial ranges and losses. The other three configurations remain in progress.
+trial ranges and losses. The heap/mini-batching-on results are also recorded there; both RocksDB configurations remain in progress.
 
 An awake Q9 CPU capture then identified MOR log serialization (32.9% of samples)
 and its encoder handoff (25.7%, inclusive). Java previously filled metadata for

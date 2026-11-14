@@ -364,9 +364,9 @@ The [four-partition Hudi Nexmark harness](../benchmarks/hudi-nexmark.md)
 adds full-row stock readback and checks the actual Parquet encoder. Expanded
 matrix performance validation is ongoing; the earlier one-writer measurements
 above do not establish performance for the expanded matrix. The completed
-heap/mini-batching-off configuration has a 0.55× geometric mean of median
-speedups over stock Flink: simple I/O improves, but window and lookup paths
-remain substantially slower. The remaining three configurations are pending;
+heap configurations have geometric means of median speedups over stock Flink
+of 0.55× with mini-batching off and 0.64× with it on: simple I/O improves, but
+window and lookup paths remain substantially slower. Both RocksDB configurations are pending;
 the benchmark page retains all trial ranges and the draft's open performance
 disposition in [issue #663](https://github.com/datafusion-contrib/StreamFusion/issues/663).
 
