@@ -231,7 +231,10 @@ and four configured writers. Storage partition count is independent of writer
 parallelism. Buffer tests compare
 stock/control occupancy and exhaustion at inline-string, UTF-8, null-bitset and
 page boundaries. SQL tests require the native sink and verified fallback plans;
-stock-oracle tests cover equal-version, commit-time delete/reinsert and
+partition regressions compare stock and native COW/MOR output values and directory
+paths for two partition fields, NULL/empty values, Hive-style partition names and
+URL-encoded Unicode and slash characters.
+Stock-oracle tests cover equal-version, commit-time delete/reinsert and
 update-before behavior. NULL variable fields consume the same page space as
 Flink's original serializer; their Arrow payloads are never serialized to pages.
 

@@ -13,6 +13,8 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import tech.streamfusion.planner.NativePlanner;
 
 class HudiExpandedCoverageTest {
@@ -395,6 +397,89 @@ class HudiExpandedCoverageTest {
         + "'write.insert.deduplicate'='false','hoodie.populate.meta.fields'='"
         + metadata
         + "','hoodie.parquet.block.size'='1048576','hoodie.parquet.page.size'='65536')";
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void multiplePartitionColumnsRetainNullsAndEscapedPaths(boolean mor) throws Exception {
+    var seed = environment();
+    seed.executeSql(partitionDdl("partition_input", false, true));
+    seed.executeSql(
+            "INSERT INTO partition_input VALUES (1,'north/é = %','a/b',10,'first'),"
+                + "(2,CAST(NULL AS STRING),'plain',10,'second'),"
+                + "(3,'south',CAST(NULL AS STRING),10,'third'),"
+                + "(4,'south','',10,'fourth')")
+        .await();
+    var expected = read(seed, "partition_input");
+    for (boolean nativeEngine : List.of(false, true)) {
+      var sql = environment();
+      sql.executeSql(partitionDdl("partition_input", false, true));
+      String target = "partition_" + mor + "_" + nativeEngine;
+      sql.executeSql(partitionDdl(target, mor, mor));
+      var scan = nativeEngine ? NativePlanner.install(sql) : null;
+      String insert = "INSERT INTO " + target + " SELECT * FROM partition_input";
+      if (nativeEngine) {
+        String plan = sql.explainSql(insert);
+        assertTrue(plan.contains("NativeHudiSource"), plan + scan.explainSummary());
+        assertTrue(plan.contains("NativeHudiSink"), plan);
+        assertFalse(plan.contains("ArrowToRow"), plan);
+      }
+      sql.executeSql(insert).await();
+      var reader = environment();
+      reader.executeSql(partitionDdl(target, mor, mor));
+      assertEquals(expected, read(reader, target));
+    }
+    assertEquals(
+        partitionDirectories("partition_" + mor + "_false"),
+        partitionDirectories("partition_" + mor + "_true"));
+  }
+
+  private List<String> partitionDirectories(String name) throws Exception {
+    var root = temporary.resolve(name);
+    try (var files = java.nio.file.Files.walk(root)) {
+      var partitions =
+          files
+              .filter(
+                  path -> path.getFileName().toString().startsWith(".hoodie_partition_metadata"))
+              .map(path -> root.relativize(path.getParent()).toString())
+              .distinct()
+              .sorted()
+              .collect(java.util.stream.Collectors.toList());
+      assertEquals(3, partitions.size(), partitions.toString());
+      assertTrue(
+          partitions.stream()
+              .allMatch(path -> path.startsWith("region=") && path.contains("/bucket=")),
+          partitions.toString());
+      assertTrue(partitions.stream().anyMatch(path -> path.contains("%2F")), partitions.toString());
+      return partitions;
+    }
+  }
+
+  private String partitionDdl(String name, boolean mor, boolean metadata) {
+    return "CREATE TABLE "
+        + name
+        + " (id BIGINT,region STRING,bucket STRING,version BIGINT NOT NULL,payload STRING,"
+        + "PRIMARY KEY(id) NOT ENFORCED) PARTITIONED BY(region,bucket) WITH ("
+        + "'connector'='hudi','path'='"
+        + temporary.resolve(name).toUri()
+        + "','table.type'='"
+        + (mor ? "MERGE_ON_READ" : "COPY_ON_WRITE")
+        + "','write.operation'='"
+        + (mor ? "upsert" : "insert")
+        + "','write.tasks'='2','read.tasks'='2','read.source-v2.enabled'='true',"
+        + "'metadata.enabled'='false','hoodie.populate.meta.fields'='"
+        + metadata
+        + "',"
+        + "'hoodie.datasource.write.hive_style_partitioning'='true',"
+        + "'hoodie.datasource.write.partitionpath.urlencode'='true',"
+        + "'hoodie.parquet.block.size'='1048576'"
+        + (mor
+            ? ",'index.type'='BUCKET','hoodie.bucket.index.num.buckets'='4',"
+                + "'write.table.version'='9','precombine.field'='version',"
+                + "'hoodie.logfile.data.block.format'='parquet','compaction.async.enabled'='false',"
+                + "'compaction.schedule.enabled'='false'"
+            : "")
+        + ")";
   }
 
   private static StreamTableEnvironment environment() {
