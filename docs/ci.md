@@ -1712,10 +1712,18 @@ materializer cases on Flink 2.2 and 1,232 on Flink 1.18; 560/112 plain materiali
 1,176/784 extrema cases; 896/448 typed event-time cases; and 672/448 COUNT payload cases. The real
 Maven partition regression checks inherited static providers through the existing includes files.
 
-The ten shards, four forks per runner, timeouts and complete default selection remain unchanged.
+The ten shards, four forks per runner and complete default selection remain unchanged.
+Per-worker and per-invocation timeouts remain unchanged.
 Splitting the new large classes lets the existing scheduler place them among those forks rather
 than leave one fork executing thousands of jobs serially. Unmeasured suites receive separately
 labelled placement estimates from their full provider invocation counts and the historical
 per-invocation cost of the existing grouped-arithmetic suite. Measured class/line costs take
 precedence. These are scheduling hints, not full-suite timing measurements or an elapsed-time
 speedup claim. Previously measured cohorts remain historical evidence for their original scope.
+
+The expanded complete inventory receives a 300-minute canonical-job budget. With the separately
+labelled scheduling estimates and four forks, an alphabetical-order model reaches about 233
+minutes on Flink 2.2 and 209 minutes on Flink 1.18. Those are model outputs, not measured job
+times. The previous 180-minute job budget could stop a successful expanded cohort before it
+finished. The larger job guard accommodates the added cases without multiplying runners or
+changing the four-minute worker and eight-minute invocation failure limits.
