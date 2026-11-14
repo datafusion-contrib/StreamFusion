@@ -35,6 +35,7 @@ import tech.streamfusion.state.RocksDBNativeStateSupport;
 public class NativeColumnarKeepLastDeduplicateOperator
     extends AbstractNativeStatefulOperator<ArrowBatch>
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
+  private static final long serialVersionUID = -1052469185645881711L;
 
   private final int[] partitionColumns;
   private final int rowtimeColumn;
@@ -208,7 +209,7 @@ public class NativeColumnarKeepLastDeduplicateOperator
       boundary = new MiniBatchBoundary(miniBatchSize);
       miniBatchMetrics = new MiniBatchMetrics(getMetricGroup(), true);
     }
-    coalescer = BatchCoalescer.create(getProcessingTimeService(), this::ingest);
+    coalescer = ownResource(BatchCoalescer.create(getProcessingTimeService(), this::ingest));
   }
 
   @Override
@@ -372,12 +373,4 @@ public class NativeColumnarKeepLastDeduplicateOperator
     boundary.reset();
   }
 
-  @Override
-  public void close() throws Exception {
-    if (coalescer != null) {
-      coalescer.close();
-      coalescer = null;
-    }
-    super.close();
-  }
 }

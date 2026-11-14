@@ -251,26 +251,24 @@ public final class NativeColumnarJvmOverOperator extends FlinkStreamOperator<Arr
   }
 
   private void discard() {
-    try {
-      if (result != null) result.close();
-    } finally {
-      if (kinds != null) kinds.close();
-      if (caches != null) caches.close();
-      caches = null;
-      result = null;
-      kinds = null;
-      writer = null;
-      count = 0;
-    }
+    var closingResult = result;
+    var closingKinds = kinds;
+    var closingCaches = caches;
+    caches = null;
+    result = null;
+    kinds = null;
+    writer = null;
+    count = 0;
+    NativeResources.closeAllUnchecked(closingResult, closingKinds, closingCaches);
   }
 
   @Override
   public void close() throws Exception {
-    try {
-      function.close();
-    } finally {
-      discard();
-      super.close();
-    }
+    NativeResources.closeAll(
+        () -> {
+          if (function != null) function.close();
+        },
+        this::discard,
+        super::close);
   }
 }

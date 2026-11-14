@@ -45,6 +45,7 @@ import tech.streamfusion.state.StockStateContract;
  */
 public abstract class AbstractNativeStatefulOperator<OUT>
     extends FlinkCanonicalStreamOperator<OUT> {
+  private static final long serialVersionUID = -4752774063963392934L;
 
   private final String stateLabel;
   private final int[] keyTimestampPrecisions;
@@ -63,6 +64,8 @@ public abstract class AbstractNativeStatefulOperator<OUT>
   private StockStateContract stockStateContract;
   private transient CanonicalProjection canonicalProjection;
   private transient CanonicalKeyedStateBackend<?> canonicalBackend;
+  private transient NativeResources resources;
+  private transient boolean closed;
 
   public void setStockStateContract(StockStateContract contract) {
     stockStateContract = contract;
@@ -202,7 +205,7 @@ public abstract class AbstractNativeStatefulOperator<OUT>
   // -------------------------------------------------------------------------------- extra points
 
   /** Runs before the native handle is created, for state a subclass's create call depends on. */
-  protected void beforeHandleCreation() {}
+  protected void beforeHandleCreation() throws Exception {}
 
   /** Runs before raw partitions are written, for input a subclass still holds unflushed. */
   protected void beforeSnapshotState() {}
@@ -216,6 +219,8 @@ public abstract class AbstractNativeStatefulOperator<OUT>
 
   @Override
   public void initializeState(StateInitializationContext context) throws Exception {
+    resources = new NativeResources();
+    closed = false;
     var backend = super.getKeyedStateBackend();
     canonicalBackend =
         backend instanceof CanonicalKeyedStateBackend
@@ -225,6 +230,7 @@ public abstract class AbstractNativeStatefulOperator<OUT>
         backend instanceof CanonicalKeyedStateBackend
             ? ((CanonicalKeyedStateBackend<?>) backend).projection()
             : null;
+    resources.own(canonicalProjection);
     if (usesBackendCanonicalSnapshot() && stockStateContract != null) {
       if (!(backend instanceof CanonicalKeyedStateBackend))
         throw new IllegalStateException("stock canonical snapshot backend was not installed");
@@ -286,16 +292,16 @@ public abstract class AbstractNativeStatefulOperator<OUT>
         restoredProcessingTimeTimerDeadline = canonical.timerDeadline;
       }
     }
-    memoryBudget = NativeMemoryBudget.registerFor(this);
+    memoryBudget = resources.own(NativeMemoryBudget.registerFor(this));
     memoryBudget.registerStateMetric(getMetricGroup());
     beforeHandleCreation();
     RocksDBNativeStateSupport rocksdb = resolveRocksDBState(!snapshots.isEmpty());
     rocksdbState = rocksdb != null;
     if (rocksdbState) {
-      rocksdbSupport = rocksdb;
+      rocksdbSupport = resources.own(rocksdb);
       directRocksDBState = usesDirectRocksDBState();
       if (directRocksDBState) {
-        handle = createRocksDBHandle(rocksdb, snapshots.toArray(new byte[0][]));
+        ownHandle(createRocksDBHandle(rocksdb, snapshots.toArray(new byte[0][])));
         if (carriesProcessingTimeTimer()) {
           restoredProcessingTimeTimerDeadline = rocksdbTimerDeadline();
         }
@@ -311,6 +317,12 @@ public abstract class AbstractNativeStatefulOperator<OUT>
                 rocksdb.keyGroupStart(),
                 rocksdb.keyGroupEnd(),
                 rocksdb.aligned());
+        resources.own(
+            () -> {
+              long closing = rocksdbSnapshotStoreHandle;
+              rocksdbSnapshotStoreHandle = 0;
+              if (closing != 0) Native.closeRocksDBSnapshotStore(closing);
+            });
         byte[][] restored =
             Native.restoreRocksDBSnapshotStorePartitions(rocksdbSnapshotStoreHandle);
         if (carriesProcessingTimeTimer()) {
@@ -320,7 +332,7 @@ public abstract class AbstractNativeStatefulOperator<OUT>
         if (restored.length == 0 && !snapshots.isEmpty()) {
           restored = snapshots.toArray(new byte[0][]);
         }
-        handle = restored.length == 0 ? createHandle() : restoreRawHandle(restored);
+        ownHandle(restored.length == 0 ? createHandle() : restoreRawHandle(restored));
       }
       rocksdb.register(
           new RocksDBNativeState() {
@@ -349,9 +361,26 @@ public abstract class AbstractNativeStatefulOperator<OUT>
       initializeStockState();
       return;
     }
-    handle =
-        snapshots.isEmpty() ? createHandle() : restoreRawHandle(snapshots.toArray(new byte[0][]));
+    ownHandle(
+        snapshots.isEmpty() ? createHandle() : restoreRawHandle(snapshots.toArray(new byte[0][])));
     initializeStockState();
+  }
+
+  private void ownHandle(long acquired) throws Exception {
+    handle = acquired;
+    resources.own(
+        () -> {
+          if (handle == 0) return;
+          try {
+            closeHandle();
+          } finally {
+            handle = 0;
+          }
+        });
+  }
+
+  protected final <T extends AutoCloseable> T ownResource(T resource) throws Exception {
+    return resources.own(resource);
   }
 
   private void initializeStockState() throws Exception {
@@ -571,26 +600,17 @@ public abstract class AbstractNativeStatefulOperator<OUT>
 
   @Override
   public void close() throws Exception {
-    if (canonicalBackend != null) canonicalBackend.closeCanonicalReaders();
-    if (rocksdbSupport != null) rocksdbSupport.closeCanonicalReaders();
-    if (handle != 0) {
-      closeHandle();
-      handle = 0;
-    }
-    if (rocksdbSnapshotStoreHandle != 0) {
-      Native.closeRocksDBSnapshotStore(rocksdbSnapshotStoreHandle);
-      rocksdbSnapshotStoreHandle = 0;
-    }
-    if (rocksdbSupport != null) {
-      rocksdbSupport.close();
-      rocksdbSupport = null;
-    }
-    if (memoryBudget != null) {
-      memoryBudget.close();
-      memoryBudget = null;
-    }
-    if (canonicalProjection != null) canonicalProjection.close();
-    super.close();
+    if (closed) return;
+    closed = true;
+    NativeResources.closeAll(
+        () -> {
+          if (canonicalBackend != null) canonicalBackend.closeCanonicalReaders();
+        },
+        () -> {
+          if (rocksdbSupport != null) rocksdbSupport.closeCanonicalReaders();
+        },
+        resources,
+        super::close);
   }
 
   // ---------------------------------------------------------------------------------- accessors

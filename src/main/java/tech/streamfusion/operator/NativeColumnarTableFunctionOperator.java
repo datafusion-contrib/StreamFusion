@@ -196,17 +196,15 @@ public final class NativeColumnarTableFunctionOperator extends FlinkStreamOperat
   }
 
   private void discard() {
-    try {
-      if (result != null) result.close();
-    } finally {
-      if (resultKinds != null) resultKinds.close();
-      if (caches != null) caches.close();
-      caches = null;
-      result = null;
-      resultKinds = null;
-      writer = null;
-      count = 0;
-    }
+    var closingResult = result;
+    var closingKinds = resultKinds;
+    var closingCaches = caches;
+    caches = null;
+    result = null;
+    resultKinds = null;
+    writer = null;
+    count = 0;
+    NativeResources.closeAllUnchecked(closingResult, closingKinds, closingCaches);
   }
 
   @Override
@@ -218,11 +216,11 @@ public final class NativeColumnarTableFunctionOperator extends FlinkStreamOperat
 
   @Override
   public void close() throws Exception {
-    try {
-      if (evaluator != null) evaluator.close();
-    } finally {
-      discard();
-      super.close();
-    }
+    NativeResources.closeAll(
+        () -> {
+          if (evaluator != null) evaluator.close();
+        },
+        this::discard,
+        super::close);
   }
 }

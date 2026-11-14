@@ -310,26 +310,37 @@ public final class RocksDBNativeKeyedStateBackend<K>
 
   @Override
   public void dispose() {
-    // Shaping first: its thread must be quiescent before the tables are deleted.
-    snapshotStrategy.close();
-    if (delegate != null) {
-      delegate.dispose();
+    try {
+      tech.streamfusion.operator.NativeResources.closeAll(
+          snapshotStrategy::close,
+          () -> {
+            if (delegate != null) delegate.dispose();
+          },
+          canonicalReaders::close,
+          this::deleteWorkingDirectory,
+          this::releaseSharedResources);
+    } catch (Exception failure) {
+      throw new IllegalStateException("failed to dispose native RocksDB backend", failure);
     }
-    canonicalReaders.close();
-    deleteWorkingDirectory();
-    releaseSharedResources();
   }
 
   @Override
   public void close() throws IOException {
-    snapshotStrategy.close();
-    cancelStreamRegistry.close();
-    if (delegate != null) {
-      delegate.close();
+    try {
+      tech.streamfusion.operator.NativeResources.closeAll(
+          snapshotStrategy::close,
+          cancelStreamRegistry,
+          () -> {
+            if (delegate != null) delegate.close();
+          },
+          canonicalReaders::close,
+          this::deleteWorkingDirectory,
+          this::releaseSharedResources);
+    } catch (IOException failure) {
+      throw failure;
+    } catch (Exception failure) {
+      throw new IOException("failed to close native RocksDB backend", failure);
     }
-    canonicalReaders.close();
-    deleteWorkingDirectory();
-    releaseSharedResources();
   }
 
   /** Returns this backend's lease; the native pool itself dies with the slot's last lease. */

@@ -141,7 +141,7 @@ public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<
   }
 
   @Override
-  protected void beforeHandleCreation() {
+  protected void beforeHandleCreation() throws Exception {
     super.beforeHandleCreation();
     mapListInput =
         tech.streamfusion.arrow.MapListRepresentation.requiredForCounts(

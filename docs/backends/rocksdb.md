@@ -5,6 +5,11 @@ state in a RocksDB instance owned and accessed directly by Rust. Java coordinate
 handles and file upload, but native state reads, writes, flushes, and compactions do not cross JNI.
 Host-side fallback state and timers use Flink's `EmbeddedRocksDBStateBackend` delegate.
 
+Backend teardown attempts every independent release even when snapshot, stream or delegate cleanup
+fails. Canonical readers, working directories and shared native-memory leases still receive their
+cleanup attempt; later failures remain suppressed on the first failure. Operator-owned native
+handles close on the task thread before their shared-memory leases are released.
+
 Native builds enable `rocksdb-state` by default. Tests that transfer window
 partials between stores exercise memory-to-memory and all RocksDB combinations
 in that build. A `--no-default-features` build exercises only the memory-store

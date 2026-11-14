@@ -451,30 +451,27 @@ public class NativeColumnarJvmGroupOperator extends FlinkStreamOperator<ArrowBat
   }
 
   private void discard() {
-    try {
-      if (result != null) result.close();
-    } finally {
-      if (kinds != null) kinds.close();
-      result = null;
-      kinds = null;
-      writer = null;
-      count = 0;
-    }
+    var closingResult = result;
+    var closingKinds = kinds;
+    result = null;
+    kinds = null;
+    writer = null;
+    count = 0;
+    NativeResources.closeAllUnchecked(closingResult, closingKinds);
   }
 
   @Override
   public void close() throws Exception {
-    if (accumulatorCache != null) accumulatorCache.invalidate();
-    try {
-      if (coalescer != null) coalescer.close();
-    } finally {
-      try {
-        if (miniBatch != null) miniBatch.close();
-        else if (function != null) function.close();
-      } finally {
-        discard();
-        super.close();
-      }
-    }
+    NativeResources.closeAll(
+        () -> {
+          if (accumulatorCache != null) accumulatorCache.invalidate();
+        },
+        coalescer,
+        () -> {
+          if (miniBatch != null) miniBatch.close();
+          else if (function != null) function.close();
+        },
+        this::discard,
+        super::close);
   }
 }

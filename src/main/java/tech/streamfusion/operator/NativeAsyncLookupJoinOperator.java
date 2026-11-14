@@ -99,11 +99,7 @@ public class NativeAsyncLookupJoinOperator extends FlinkStreamOperator<ArrowBatc
 
   @Override
   public void close() throws Exception {
-    try {
-      closeRunner();
-    } finally {
-      super.close();
-    }
+    NativeResources.closeAll(this::closeRunner, super::close);
   }
 
   private void closeRunner() throws Exception {

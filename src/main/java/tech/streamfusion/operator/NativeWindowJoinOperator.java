@@ -38,6 +38,7 @@ import tech.streamfusion.state.RocksDBNativeStateSupport;
  */
 public class NativeWindowJoinOperator extends AbstractNativeStatefulOperator<ArrowBatch>
     implements TwoInputStreamOperator<ArrowBatch, ArrowBatch, ArrowBatch>, ProcessingTimeCallback {
+  private static final long serialVersionUID = 5975037917494446499L;
 
   private final int[] leftKeys;
   private final int[] rightKeys;
@@ -159,7 +160,8 @@ public class NativeWindowJoinOperator extends AbstractNativeStatefulOperator<Arr
   }
 
   @Override
-  protected void beforeHandleCreation() {
+  protected void beforeHandleCreation() throws Exception {
+    ownResource(predicate::unbind);
     predicate.bind(new org.apache.flink.table.functions.FunctionContext(getRuntimeContext()));
   }
 
@@ -458,9 +460,4 @@ public class NativeWindowJoinOperator extends AbstractNativeStatefulOperator<Arr
     }
   }
 
-  @Override
-  public void close() throws Exception {
-    super.close();
-    predicate.unbind();
-  }
 }

@@ -60,8 +60,7 @@ public class NativeLookupJoinOperator extends FlinkStreamOperator<ArrowBatch>
 
   @Override
   public void close() throws Exception {
-    FunctionUtils.closeFunction(runner);
-    super.close();
+    NativeResources.closeAll(() -> FunctionUtils.closeFunction(runner), super::close);
   }
 
   @Override

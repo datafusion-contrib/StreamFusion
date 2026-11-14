@@ -159,10 +159,9 @@ public final class BatchCoalescer implements AutoCloseable {
 
   @Override
   public void close() {
-    for (VectorSchemaRoot root : pending) {
-      root.close();
-    }
+    var closing = pending.toArray(new AutoCloseable[0]);
     pending.clear();
     pendingRows = 0;
+    NativeResources.closeAllUnchecked(closing);
   }
 }

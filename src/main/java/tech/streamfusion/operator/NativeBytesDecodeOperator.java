@@ -212,17 +212,9 @@ public class NativeBytesDecodeOperator extends FlinkStreamOperator<ArrowBatch>
 
   @Override
   public void close() throws Exception {
-    if (decoder != null) {
-      decoder.close();
-      decoder = null;
-    }
-    if (body != null) {
-      body.close();
-    }
-    if (keys != null) {
-      keys.close();
-    }
-    super.close();
+    var closingDecoder = decoder;
+    decoder = null;
+    NativeResources.closeAll(closingDecoder, body, keys, super::close);
   }
 
 }

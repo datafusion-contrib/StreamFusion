@@ -28,6 +28,7 @@ import tech.streamfusion.state.RocksDBNativeStateSupport;
 public class NativeColumnarChangelogNormalizeOperator
     extends AbstractNativeStatefulOperator<ArrowBatch>
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
+  private static final long serialVersionUID = 4928670428788889540L;
 
   private final int[] keyColumns;
   private final RowType rowType;
@@ -177,7 +178,7 @@ public class NativeColumnarChangelogNormalizeOperator
       boundary = new MiniBatchBoundary(miniBatchSize);
       miniBatchMetrics = new MiniBatchMetrics(getMetricGroup(), true);
     }
-    coalescer = BatchCoalescer.create(getProcessingTimeService(), this::ingest);
+    coalescer = ownResource(BatchCoalescer.create(getProcessingTimeService(), this::ingest));
   }
 
   @Override
@@ -346,12 +347,4 @@ public class NativeColumnarChangelogNormalizeOperator
     boundary.reset();
   }
 
-  @Override
-  public void close() throws Exception {
-    if (coalescer != null) {
-      coalescer.close();
-      coalescer = null;
-    }
-    super.close();
-  }
 }

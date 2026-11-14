@@ -86,8 +86,12 @@ public class NativeCalcOperator extends FlinkStreamOperator<ArrowBatch>
     this.udfBinding = udfBinding;
   }
 
+  private transient NativeResources resources;
+
   @Override
   public void open() throws Exception {
+    resources = new NativeResources();
+    resources.own(udfBinding::unbind);
     super.open();
     watermark = Long.MIN_VALUE;
     NativeAllocator.initializeFor(this);
@@ -119,12 +123,12 @@ public class NativeCalcOperator extends FlinkStreamOperator<ArrowBatch>
 
   @Override
   public void close() throws Exception {
-    if (compiledSchemas != null) {
-      compiledSchemas.values().forEach(calc -> Native.closeCalcExpression(calc.handle));
-      compiledSchemas.clear();
-    }
-    udfBinding.unbind();
-    super.close();
+    NativeResources.closeAll(
+        resources,
+        () -> {
+          if (compiledSchemas != null) compiledSchemas.clear();
+        },
+        super::close);
   }
 
   @Override
@@ -135,7 +139,7 @@ public class NativeCalcOperator extends FlinkStreamOperator<ArrowBatch>
   }
 
   @Override
-  public void processElement(StreamRecord<ArrowBatch> element) {
+  public void processElement(StreamRecord<ArrowBatch> element) throws Exception {
     ColumnarRecordMetrics.countIngested(getMetricGroup(), element.getValue().rowCount());
     // A Calc can sit immediately after a columnar key-group exchange (for example, the planner
     // appends OVER-frame constants there). The projection does not change the batch's routing, so
@@ -208,6 +212,7 @@ public class NativeCalcOperator extends FlinkStreamOperator<ArrowBatch>
                   projectionRoots,
                   conditionRoot,
                   outputNames);
+          resources.own(() -> Native.closeCalcExpression(calc));
           cached = new CompiledCalc(calc);
           compiledSchemas.put(in.getSchema(), cached);
           try (ArrowSchema inSchema = ArrowSchema.allocateNew(inAllocator)) {

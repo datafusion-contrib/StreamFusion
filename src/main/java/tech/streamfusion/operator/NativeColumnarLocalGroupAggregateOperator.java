@@ -92,13 +92,16 @@ public class NativeColumnarLocalGroupAggregateOperator extends FlinkStreamOperat
     this.miniBatchSize = miniBatchSize;
   }
 
+  private transient NativeResources resources;
+
   @Override
   public void open() throws Exception {
+    resources = new NativeResources();
     super.open();
     failed = false;
     allocator = NativeAllocator.SHARED;
     dictionaries = NativeAllocator.DICTIONARIES;
-    memoryBudget = NativeMemoryBudget.registerFor(this);
+    memoryBudget = resources.own(NativeMemoryBudget.registerFor(this));
     memoryBudget.registerStateMetric(getMetricGroup());
     handle =
         Native.createLocalGroupAggregator(
@@ -110,15 +113,15 @@ public class NativeColumnarLocalGroupAggregateOperator extends FlinkStreamOperat
             distinctViewSources,
             keyTimestampPrecisions,
             memoryBudget.nativeHandle());
-    try {
-      if (stockAppendDistinct) Native.configureLocalGroupStockAppendCanonical(handle);
-      if (auxiliaryColumns.length > 0) {
-        Native.configureLocalGroupAggregateArguments(handle, auxiliaryColumns);
-      }
-    } catch (RuntimeException | Error failure) {
-      Native.closeLocalGroupAggregator(handle);
-      handle = 0;
-      throw failure;
+    resources.own(
+        () -> {
+          long closing = handle;
+          handle = 0;
+          if (closing != 0) Native.closeLocalGroupAggregator(closing);
+        });
+    if (stockAppendDistinct) Native.configureLocalGroupStockAppendCanonical(handle);
+    if (auxiliaryColumns.length > 0) {
+      Native.configureLocalGroupAggregateArguments(handle, auxiliaryColumns);
     }
     boundary = new MiniBatchBoundary(miniBatchSize);
     miniBatchMetrics = new MiniBatchMetrics(getMetricGroup(), true);
@@ -233,14 +236,6 @@ public class NativeColumnarLocalGroupAggregateOperator extends FlinkStreamOperat
 
   @Override
   public void close() throws Exception {
-    if (handle != 0) {
-      Native.closeLocalGroupAggregator(handle);
-      handle = 0;
-    }
-    if (memoryBudget != null) {
-      memoryBudget.close();
-      memoryBudget = null;
-    }
-    super.close();
+    NativeResources.closeAll(resources, super::close);
   }
 }

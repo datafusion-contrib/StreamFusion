@@ -37,6 +37,7 @@ import tech.streamfusion.state.RocksDBNativeStateSupport;
  */
 public class NativeTemporalJoinOperator extends AbstractNativeStatefulOperator<ArrowBatch>
     implements TwoInputStreamOperator<ArrowBatch, ArrowBatch, ArrowBatch> {
+  private static final long serialVersionUID = 3556874994392758365L;
 
   private final int[] leftKeys;
   private final int[] rightKeys;
@@ -75,7 +76,8 @@ public class NativeTemporalJoinOperator extends AbstractNativeStatefulOperator<A
   }
 
   @Override
-  protected void beforeHandleCreation() {
+  protected void beforeHandleCreation() throws Exception {
+    ownResource(predicate::unbind);
     predicate.bind(new org.apache.flink.table.functions.FunctionContext(getRuntimeContext()));
   }
 
@@ -354,9 +356,4 @@ public class NativeTemporalJoinOperator extends AbstractNativeStatefulOperator<A
     }
   }
 
-  @Override
-  public void close() throws Exception {
-    super.close();
-    predicate.unbind();
-  }
 }

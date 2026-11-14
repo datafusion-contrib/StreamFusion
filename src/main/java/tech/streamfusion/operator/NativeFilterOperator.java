@@ -37,6 +37,7 @@ public class NativeFilterOperator extends FlinkStreamOperator<ArrowBatch>
   private transient BufferAllocator allocator;
   private transient CDataDictionaryProvider dictionaries;
   private transient long predicate;
+  private transient NativeResources resources;
 
   public NativeFilterOperator(
       int[] projection,
@@ -59,6 +60,8 @@ public class NativeFilterOperator extends FlinkStreamOperator<ArrowBatch>
 
   @Override
   public void open() throws Exception {
+    resources = new NativeResources();
+    resources.own(udfBinding::unbind);
     super.open();
     NativeAllocator.initializeFor(this);
     allocator = NativeAllocator.SHARED;
@@ -71,16 +74,17 @@ public class NativeFilterOperator extends FlinkStreamOperator<ArrowBatch>
             longs, new FunctionContext(getRuntimeContext()), getProcessingTimeService());
     predicate =
         Native.createFilterExpression(kinds, payload, childCounts, boundLongs, doubles, strings);
+    resources.own(
+        () -> {
+          long closing = predicate;
+          predicate = 0;
+          if (closing != 0) Native.closeFilterExpression(closing);
+        });
   }
 
   @Override
   public void close() throws Exception {
-    if (predicate != 0) {
-      Native.closeFilterExpression(predicate);
-      predicate = 0;
-    }
-    udfBinding.unbind();
-    super.close();
+    NativeResources.closeAll(resources, super::close);
   }
 
   @Override

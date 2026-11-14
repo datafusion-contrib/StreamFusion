@@ -32,6 +32,7 @@ import tech.streamfusion.state.RocksDBNativeStateSupport;
  */
 public class NativeColumnarUpdatingJoinOperator extends AbstractNativeStatefulOperator<ArrowBatch>
     implements TwoInputStreamOperator<ArrowBatch, ArrowBatch, ArrowBatch> {
+  private static final long serialVersionUID = -8215475999572835331L;
 
   private final int[] leftKeys;
   private final int[] rightKeys;
@@ -113,7 +114,8 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractNativeStatefulOp
 
   // The residual predicate's bound longs must exist before any create/restore call reads them.
   @Override
-  protected void beforeHandleCreation() {
+  protected void beforeHandleCreation() throws Exception {
+    ownResource(predBinding::unbind);
     boundPredLongs =
         predBinding.bind(
             predLongs, new org.apache.flink.table.functions.FunctionContext(getRuntimeContext()));
@@ -285,8 +287,10 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractNativeStatefulOp
       getMetricGroup().gauge("leftBundleReducedSize", () -> leftBundleReducedSize);
       getMetricGroup().gauge("rightBundleReducedSize", () -> rightBundleReducedSize);
     }
-    leftCoalescer = BatchCoalescer.create(getProcessingTimeService(), in -> ingest(in, true));
-    rightCoalescer = BatchCoalescer.create(getProcessingTimeService(), in -> ingest(in, false));
+    leftCoalescer =
+        ownResource(BatchCoalescer.create(getProcessingTimeService(), in -> ingest(in, true)));
+    rightCoalescer =
+        ownResource(BatchCoalescer.create(getProcessingTimeService(), in -> ingest(in, false)));
   }
 
   @Override
@@ -496,15 +500,5 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractNativeStatefulOp
     return (int) Math.min(Integer.MAX_VALUE, value);
   }
 
-  @Override
-  public void close() throws Exception {
-    if (leftCoalescer != null) {
-      leftCoalescer.close();
-      rightCoalescer.close();
-      leftCoalescer = null;
-      rightCoalescer = null;
-    }
-    super.close();
-    predBinding.unbind();
-  }
+
 }

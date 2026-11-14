@@ -61,6 +61,14 @@ vector. A rejected allocation or a row conversion error closes those vectors, in
 changelog sidecar, before propagating the original failure. Cleanup errors are attached as
 suppressed exceptions so they cannot hide the allocation or conversion error.
 
+Stateful operators register reservations, native handles, predicate bindings and coalescers as
+they acquire them in a task-thread resource scope. Cleanup releases dependent resources first
+and attempts every release, even if another release fails. Later failures are suppressed on the
+first exception. Canonical readers close before native state, and the host operator closes even
+after failed native teardown. Calc/filter bindings and partially initialized state use the same
+ownership rule. These scopes are transient; they do not change deployed operator fields or state
+encodings. They do not dispose task-thread native handles from a concurrent cancellation callback.
+
 Parquet sink writer allocations are not yet connected to this authority. Small allocations made
 inside native libraries, allocator metadata, thread stacks, loaded libraries, and other process
 overhead are also outside the reservation pool. The cap is therefore an allocation authority for

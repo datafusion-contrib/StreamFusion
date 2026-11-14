@@ -39,6 +39,7 @@ import tech.streamfusion.state.RocksDBNativeStateSupport;
  */
 public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<ArrowBatch>
     implements TwoInputStreamOperator<ArrowBatch, ArrowBatch, ArrowBatch>, ProcessingTimeCallback {
+  private static final long serialVersionUID = -6061122096984351234L;
 
   private final int[] leftKeys;
   private final int[] rightKeys;
@@ -108,7 +109,8 @@ public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<A
   }
 
   @Override
-  protected void beforeHandleCreation() {
+  protected void beforeHandleCreation() throws Exception {
+    ownResource(predicate::unbind);
     predicate.bind(new org.apache.flink.table.functions.FunctionContext(getRuntimeContext()));
   }
 
@@ -477,9 +479,4 @@ public class NativeIntervalJoinOperator extends AbstractNativeStatefulOperator<A
     }
   }
 
-  @Override
-  public void close() throws Exception {
-    super.close();
-    predicate.unbind();
-  }
 }
