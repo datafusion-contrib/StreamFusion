@@ -2587,6 +2587,11 @@ engines, matching the existing released-owner fixture. Heap occurrence-map keys 
 keys therefore share the same input representation, independent of generic Java object equality.
 This fixture correction adds no runtime binding scope and still awaits execution.
 
+Independent OVER DISTINCT views have additional pending planner/clean-worker controls. The job
+consumes decimal-value and nullable-key memberships separately, verifies two actual bound MAP
+views in each native worker, and checks independent counts through recovery and rescaling.
+This complements the shared-membership fixtures without adding a new state format or admission.
+
 
 Retracting GROUP BY MIN/MAX additionally captures the existing one-phase mini-batch owner and
 count trigger for the already bound integral/date/time/boolean map views. New raw-state and

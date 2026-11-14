@@ -390,6 +390,46 @@ public final class CanonicalJobWorker {
               ? table.executeSql(Files.readString(root.resolve("query.sql")))
               : plan.execute();
       if (nativeRun) {
+        if (Files.exists(root.resolve("required-over-distinct-views"))) {
+          int expected =
+              Integer.parseInt(
+                  Files.readString(root.resolve("required-over-distinct-views")).trim());
+          String encoded =
+              table
+                  .getConfig()
+                  .getConfiguration()
+                  .getString("streamfusion.canonical.state-contracts", "");
+          java.util.Map<?, ?> registrations =
+              org.apache.flink.util.InstantiationUtil.deserializeObject(
+                  java.util.Base64.getDecoder().decode(encoded),
+                  Thread.currentThread().getContextClassLoader());
+          int owners = 0;
+          for (var bound : registrations.values()) {
+            var field = bound.getClass().getDeclaredField("contract");
+            field.setAccessible(true);
+            Object contract = field.get(bound);
+            if (!contract
+                .getClass()
+                .getName()
+                .equals("tech.streamfusion.state.StockOverFoldStateContract")) continue;
+            var descriptors =
+                (java.util.Map<?, ?>)
+                    contract.getClass().getMethod("stateDescriptors").invoke(contract);
+            long views =
+                descriptors.values().stream()
+                    .filter(
+                        kind -> kind == org.apache.flink.api.common.state.StateDescriptor.Type.MAP)
+                    .count();
+            if (views != expected)
+              throw new AssertionError(
+                  "Expected " + expected + " independent OVER views, observed " + views);
+            owners++;
+          }
+          if (owners != 1)
+            throw new AssertionError("Expected one bound OVER owner, observed " + owners);
+          Files.writeString(
+              root.resolve(stage + "-independent-over-views-verified"), Integer.toString(expected));
+        }
         var diagnostics = new StringBuilder();
         for (var entry : table.getConfig().getConfiguration().toMap().entrySet())
           if (entry.getKey().contains("storage") || entry.getKey().contains("projection-active"))

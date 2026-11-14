@@ -21,7 +21,16 @@ class CanonicalOverDistinctPlanTest {
     return tech.streamfusion.operator.CanonicalOverDistinctValueFixture.countTypes()
         .flatMap(
             type ->
-                Stream.of("rows", "range", "nullable", "ttl", "event", "bounded", "sum", "avg")
+                Stream.of(
+                        "rows",
+                        "range",
+                        "nullable",
+                        "independent",
+                        "ttl",
+                        "event",
+                        "bounded",
+                        "sum",
+                        "avg")
                     .filter(
                         mode ->
                             !mode.equals("sum") && !mode.equals("avg")
@@ -53,16 +62,20 @@ class CanonicalOverDistinctPlanTest {
     table.executeSql(
         "CREATE TABLE output_table(k BIGINT,v "
             + type
-            + ",c BIGINT) WITH ('connector'='blackhole')");
+            + ",c BIGINT"
+            + (mode.equals("independent") ? ",d BIGINT" : "")
+            + ") WITH ('connector'='blackhole')");
     String query =
         "INSERT INTO output_table SELECT k,v,"
             + (mode.equals("sum") ? "SUM" : mode.equals("avg") ? "AVG" : "COUNT")
-            + "(DISTINCT v) OVER (PARTITION BY k ORDER BY "
+            + "(DISTINCT v) OVER w"
+            + (mode.equals("independent") ? ",COUNT(DISTINCT k) OVER w" : "")
+            + " FROM input_table WINDOW w AS (PARTITION BY k ORDER BY "
             + (mode.equals("event") ? "rt" : "pt")
             + (mode.equals("range") ? " RANGE" : " ROWS")
             + " BETWEEN "
             + (mode.equals("bounded") ? "2" : "UNBOUNDED")
-            + " PRECEDING AND CURRENT ROW) FROM input_table";
+            + " PRECEDING AND CURRENT ROW)";
     var planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
     var plan = compiled ? table.compilePlanSql(query) : null;
     String portable = compiled ? plan.asJsonString() : "";
@@ -81,6 +94,7 @@ class CanonicalOverDistinctPlanTest {
         mode.equals("rows")
             || mode.equals("range")
             || mode.equals("nullable")
+            || mode.equals("independent")
             || (mode.equals("sum") || mode.equals("avg"))
                 && tech.streamfusion.operator.CanonicalOverDistinctValueFixture.integral(type);
     var bound = new java.util.ArrayList<Object>();
@@ -92,12 +106,14 @@ class CanonicalOverDistinctPlanTest {
           assertInstanceOf(
               StockOverFoldStateContract.class, field(bound.get(0), "stockStateContract"));
       assertEquals(
-          1,
+          mode.equals("independent") ? 2 : 1,
           contract.stateDescriptors().values().stream()
               .filter(kind -> kind == org.apache.flink.api.common.state.StateDescriptor.Type.MAP)
               .count());
       assertArrayEquals(
-          new int[] {mode.equals("sum") ? 100 : mode.equals("avg") ? 104 : 103},
+          mode.equals("independent")
+              ? new int[] {103, 103}
+              : new int[] {mode.equals("sum") ? 100 : mode.equals("avg") ? 104 : 103},
           (int[]) field(bound.get(0), "aggregateKinds"));
     }
     assertFalse(portable.contains("tech.streamfusion"));

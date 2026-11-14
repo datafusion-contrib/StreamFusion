@@ -2075,6 +2075,12 @@ submission, both engine orders and rescaling, with independent counts. These con
 Flink 1.18 and 2.2 execution in the final local window. Historical passing counts above do not
 qualify this new binding, and no performance claim is made.
 
+Additional pending planner and clean-worker controls retain two independent DISTINCT views with
+different argument types, including separate nullable-key membership. The complete job consumes
+both decimal-value and key counts, checks the two actual bound MAP views in every native worker,
+and uses independent final-count oracles across continuation, native recovery and rescaling.
+These authored controls have not yet run on either release.
+
 Shared integral SUM/COUNT/AVG views additionally retain the released narrow SUM versus wide AVG
 accumulator fields, including signed overflow. Component controls compare complete raw state and
 duplicate suppression after canonical and native recovery; separate malformed SUM and AVG-sum
