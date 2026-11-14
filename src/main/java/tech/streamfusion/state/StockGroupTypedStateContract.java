@@ -75,9 +75,8 @@ public final class StockGroupTypedStateContract implements StockStateContract {
       List<StockGroupDistinctView> views,
       boolean globalMerge) {
     this.globalMerge = globalMerge;
-    if (globalMerge && recordCountField >= 0)
-      throw new IllegalArgumentException(
-          "Global scalar/DISTINCT merge requires append-only accumulators");
+    if (globalMerge && recordCountField >= 0 && !views.isEmpty())
+      throw new IllegalArgumentException("Global DISTINCT merge requires append-only accumulators");
     this.keys = keys.duplicate();
     this.keyType = keyType;
     this.accumulatorType = accumulatorType;

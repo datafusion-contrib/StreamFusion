@@ -36,12 +36,10 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 .kinds
                 .iter()
                 .any(|kind| !matches!(kind, 0 | 3 | 4 | 7 | 9 | 10 | 11 | 22))
-            || self.record_count_column >= 0
-            || self
-                .count_columns
-                .iter()
-                .enumerate()
-                .any(|(i, &column)| column >= 0 && !(self.stock_global_merge && self.kinds[i] == 4))
+            || self.record_count_column >= 0 && !self.stock_global_merge
+            || self.count_columns.iter().enumerate().any(|(i, &column)| {
+                column >= 0 && !(self.stock_global_merge && matches!(self.kinds[i], 0 | 4))
+            })
             || self
                 .distinct_view_columns
                 .iter()
@@ -67,7 +65,10 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
     fn configure_typed(&mut self, kinds: &[i64], append_only: bool) -> Result<(), DataFusionError> {
         self.typed_shape()?;
         if self.kinds != kinds
-            || self.stock_global_merge && !append_only
+            || self.stock_global_merge
+                && !append_only
+                && (self.record_count_column < 0
+                    || self.kinds.iter().any(|kind| matches!(kind, 7 | 9)))
             || (!append_only && self.kinds.iter().any(|kind| matches!(kind, 9 | 10 | 11)))
             || self
                 .stock_append_only

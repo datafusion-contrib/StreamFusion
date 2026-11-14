@@ -84,6 +84,10 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             || self.staged_keys() != 0
             || !self.global_partials.is_empty()
             || self.record_count_column >= 0
+                && self
+                    .kinds
+                    .iter()
+                    .any(|kind| matches!(kind, 7 | 9 | 10 | 11))
             || self
                 .kinds
                 .iter()
@@ -99,10 +103,14 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 .count_columns
                 .iter()
                 .enumerate()
-                .any(|(slot, &column)| (self.kinds[slot] == 4) != (column >= 0))
+                .any(|(slot, &column)| {
+                    (self.kinds[slot] == 4
+                        || self.kinds[slot] == 0 && self.record_count_column >= 0)
+                        != (column >= 0)
+                })
         {
             return Err(DataFusionError::Execution(
-                "stock group merge requires drained scalar/DISTINCT partials with explicit AVG counts"
+                "stock group merge requires drained scalar/DISTINCT partials with explicit arithmetic counts"
                     .into(),
             ));
         }
@@ -190,26 +198,30 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 }
             } else {
                 let scalar = ScalarValue::try_from_array(values, row)?;
-                if let Some(value) = num_from_scalar(&scalar) {
-                    if self.kinds[slot] == 4 {
-                        let counts = batch
-                            .column(self.count_columns[slot] as usize)
-                            .as_any()
-                            .downcast_ref::<Int64Array>()
-                            .ok_or_else(|| {
-                                DataFusionError::Execution(
-                                    "stock AVG partial count is not BIGINT".into(),
-                                )
-                            })?;
-                        if counts.is_null(row) {
-                            return Err(DataFusionError::Execution(
-                                "stock AVG partial count is NULL".into(),
-                            ));
-                        }
-                        state.accumulate_merged(value, counts.value(row));
-                    } else {
-                        state.accumulate(value);
+                if self.count_columns[slot] >= 0 {
+                    let counts = batch
+                        .column(self.count_columns[slot] as usize)
+                        .as_any()
+                        .downcast_ref::<Int64Array>()
+                        .ok_or_else(|| {
+                            DataFusionError::Execution(
+                                "stock arithmetic partial count is not BIGINT".into(),
+                            )
+                        })?;
+                    if counts.is_null(row) {
+                        return Err(DataFusionError::Execution(
+                            "stock arithmetic partial count is NULL".into(),
+                        ));
                     }
+                    let GroupAggState::Running { agg, non_null } = state else {
+                        unreachable!("stock arithmetic partial");
+                    };
+                    if let Some(value) = num_from_scalar(&scalar) {
+                        agg.fold(value);
+                    }
+                    *non_null = non_null.wrapping_add(counts.value(row));
+                } else if let Some(value) = num_from_scalar(&scalar) {
+                    state.accumulate(value);
                 }
             }
         }
@@ -263,15 +275,20 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 }
             } else {
                 let scalar = agg.emit();
-                if let Some(value) = num_from_scalar(&scalar) {
-                    if matches!(
+                if self.count_columns[slot] >= 0 {
+                    let GroupAggState::Running {
                         agg,
-                        RunningAgg::AvgInt { .. }
-                            | RunningAgg::AvgFloat { .. }
-                            | RunningAgg::AvgDecimal { .. }
-                    ) {
-                        target.accumulate_merged(value, non_null);
-                    } else if non_null != 0
+                        non_null: target_count,
+                    } = target
+                    else {
+                        unreachable!("stock arithmetic target");
+                    };
+                    if let Some(value) = num_from_scalar(&scalar) {
+                        agg.fold(value);
+                    }
+                    *target_count = target_count.wrapping_add(non_null);
+                } else if let Some(value) = num_from_scalar(&scalar) {
+                    if non_null != 0
                         || matches!(
                             agg,
                             RunningAgg::ZeroSumInt { .. }

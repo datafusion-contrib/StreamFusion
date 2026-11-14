@@ -3538,7 +3538,8 @@ accumulator contract during SQL and compiled-plan submission. The global stage r
 `accState` under the original operator identity, key serializer and maximum parallelism.
 Its native configuration is rebound before canonical or ordinary native-checkpoint restore;
 no StreamFusion serializer or additional persistent state descriptor enters the savepoint.
-Local/global retracting mini-batches remain outside this typed adapter. Captured managed UDF
+Local/global retracting DISTINCT mini-batches remain outside this typed adapter. The newly added
+scalar local/global binding below awaits qualification. Captured managed UDF
 contracts have their own scope below.
 
 The resumed #569 implementation additionally binds one-phase retracting scalar bundles and
@@ -3933,3 +3934,17 @@ Broader user serializer contracts, key/value schemas, view/phase/TTL/failure com
 connector delivery and cross-version qualification remain in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Every family remains partial.
 Benchmarking remains explicitly deferred.
+
+## Additional canonical bindings awaiting qualification
+
+Typed scalar/shared DISTINCT owners now retain binary ROW-bearing grouping keys at the actual
+stock input boundary. Existing eager, one-phase and append-only two-phase execution uses the
+same raw-key protocol for live input and canonical state. New nested-key state/planner/job
+controls include NULLs, original padding, checkpoint recovery and rescaling on both Flink lines.
+
+Two-phase retracting COUNT/SUM/AVG additionally binds signed arithmetic counts and the hidden
+input-row counter. Raw SUM partials survive a zero net non-null count; bundle precombination
+retains released Flink's merge order before one retained-state merge. Existing native execution
+and private checkpoint encodings are reused. Retracting global DISTINCT remains excluded.
+These additions are authored but await the requested final six-hour local testing window;
+historical passing cohorts above do not qualify this wider scope.

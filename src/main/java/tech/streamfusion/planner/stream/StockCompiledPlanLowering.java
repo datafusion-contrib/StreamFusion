@@ -435,11 +435,7 @@ final class StockCompiledPlanLowering {
             instanceof
             org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecGlobalGroupAggregate))
       return false;
-    try {
-      return !(Boolean) releasedField(graph.originals.get(node), "needRetraction");
-    } catch (IOException failure) {
-      throw new TableException("Cannot inspect global aggregate origins", failure);
-    }
+    return true;
   }
 
   static boolean hasOrdinarySinkMaterializer(SqlPlanOrigins.RuntimeGraph graph) {
@@ -2337,7 +2333,6 @@ final class StockCompiledPlanLowering {
         || Boolean.parseBoolean(config.getString("table.exec.async-state.enabled", "false")))
       return stock;
     boolean retract = definition.path("needRetraction").asBoolean();
-    if (miniBatch && retract && global) return stock;
     var calls =
         reader
             .forType(org.apache.calcite.rel.core.AggregateCall[].class)
@@ -2354,6 +2349,7 @@ final class StockCompiledPlanLowering {
             retract,
             true,
             true);
+    if (global && retract && infos.distinctInfos().length != 0) return stock;
     var localKinds = new ArrayList<Integer>();
     var localTypes = new ArrayList<Integer>();
     var localColumns = new ArrayList<Integer>();
@@ -2392,6 +2388,12 @@ final class StockCompiledPlanLowering {
       int width = info.externalAccTypes().length;
       if (infos.countStarInserted()
           && info.aggIndex() == ((Number) infos.indexOfCountStar().get()).intValue()) {
+        if (global) {
+          localKinds.add(3);
+          localTypes.add(0);
+          localColumns.add(-1);
+          localFilters.add(-1);
+        }
         position += width;
         continue;
       }
@@ -2483,11 +2485,11 @@ final class StockCompiledPlanLowering {
           }
           viewColumns[actual] = view;
         }
-        localKinds.add(kind == 4 ? 8 : kind);
+        localKinds.add(kind == 4 ? 8 : kind == 0 && retract ? 41 : kind);
         localTypes.add(kind == 4 ? typedGroupValueCode(actualTypes[position]) : valueType);
         localColumns.add(value);
         localFilters.add(call.filterArg);
-        if (kind == 4) {
+        if (width == 2) {
           localKinds.add(3);
           localTypes.add(valueType);
           localColumns.add(value);
@@ -2677,11 +2679,11 @@ final class StockCompiledPlanLowering {
                 filters,
                 global
                     ? java.util.stream.IntStream.range(0, kinds.length)
-                        .map(i -> kinds[i] == 4 ? columns[i] + 1 : -1)
+                        .map(i -> counts[i] >= 0 ? localKeys.length + counts[i] : -1)
                         .toArray()
                     : new int[0],
                 global ? viewColumns : new int[0],
-                -1,
+                global && retract ? localKeys.length + recordCount : -1,
                 (Boolean) releasedField(function, "generateUpdateBefore"),
                 retention,
                 FlinkKeyGroupUtils.stockKeyDescriptor(inputType, keys))

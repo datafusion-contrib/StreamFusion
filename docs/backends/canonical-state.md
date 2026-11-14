@@ -19,7 +19,7 @@ pages. Historical cohorts are not silently requalified against each newer librar
 
 | Family | Current stock-interchange scope | Main remaining work |
 | --- | --- | --- |
-| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Arithmetic, typed scalar/shared COUNT DISTINCT and append numeric SUM DISTINCT, append extrema, integral/date/time/boolean retracting MIN/MAX, append scalar and local/global DISTINCT mini-batches, and captured managed UDFs; one-phase retracting scalar/COUNT DISTINCT mini-batches awaiting qualification | Wider types/keys, remaining retracting mini-batches, wider UDF contracts, other views/phases and failures |
+| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Arithmetic, typed scalar/shared COUNT DISTINCT and append numeric SUM DISTINCT, append extrema, integral/date/time/boolean retracting MIN/MAX, append scalar and local/global DISTINCT mini-batches, and captured managed UDFs; one-phase retracting scalar/COUNT DISTINCT and two-phase retracting scalar mini-batches awaiting qualification | Wider types/keys, remaining retracting mini-batches, wider UDF contracts, other views/phases and failures |
 | [Deduplication](../operators/deduplication.md#canonical-state-adapter) | Automatic eager and buffered contracts, selected mini-batch and TTL modes; ROW-key binding awaiting qualification | Remaining schemas/emission variants and full failure matrix |
 | [Top-N / First-N / LIMIT](../operators/top-n.md#first-n-canonical-handoffs) | Automatic first-N, append, updating and retracting rank subsets; wider scalar/arbitrary-sort and nested-payload binding awaiting qualification | Algorithm-specific bounds, TTL, constructed key/sort types and complete new-scope qualification |
 | [Regular joins](../operators/joins/regular-join.md) | Automatic qualified stock layouts and complete-job handoffs; nested payload binding awaiting qualification | Wider uniqueness, mini-batch, schema and TTL combinations |
@@ -2395,4 +2395,16 @@ producer before that boundary. One-phase eager/retracting mini-batches and appen
 partials share this representation; aggregate execution and private checkpoint formats stay on
 the existing paths. New raw-state, planner and clean-worker controls cover both engine orders,
 NULL keys, checkpoint recovery and rescaling. These additions await qualification on Flink 1.18
-and 2.2. Two-phase retracting scalar/DISTINCT layouts remain outside canonical binding.
+and 2.2. Two-phase retracting DISTINCT layouts remain outside canonical binding; scalar layout binding is described below.
+
+## Two-phase retracting scalar binding awaiting qualification
+
+The existing native global bundle policy now carries released scalar SUM/AVG partial counts and
+the signed input-record counter. A zero net count does not erase a floating sum adjustment or
+raw nullable SUM history. The local produces raw SUM plus count, and includes Flink's hidden
+COUNT(*) when it is needed only for liveness. The global precombines these partials before
+merging once into retained state, preserving the stock arithmetic order. Group deletion is
+decided after the complete bundle. Canonical import/export uses the existing typed scalar state
+contract and does not change native checkpoint formats. New raw-state/checkpoint controls and
+clean-worker two-phase jobs await testing on both released lines. Retracting DISTINCT global
+views remain excluded; append DISTINCT and one-phase signed views retain their existing paths.
