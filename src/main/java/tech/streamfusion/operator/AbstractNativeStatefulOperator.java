@@ -667,6 +667,28 @@ public abstract class AbstractNativeStatefulOperator<OUT>
     return withRowSchemas(leftType, rightType, true, call);
   }
 
+  protected static long withRetainedRowSchemas(
+      RowType leftType, RowType rightType, LongBinaryOperator call) {
+    try (ArrowSchema left = ArrowSchema.allocateNew(NativeAllocator.SHARED);
+        ArrowSchema right = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
+      Data.exportSchema(
+          NativeAllocator.SHARED,
+          MapListRepresentation.forIpc(
+              tech.streamfusion.arrow.NestedRepresentation.withBinaryRows(
+                  ArrowConversion.toArrowSchema(leftType))),
+          NativeAllocator.DICTIONARIES,
+          left);
+      Data.exportSchema(
+          NativeAllocator.SHARED,
+          MapListRepresentation.forIpc(
+              tech.streamfusion.arrow.NestedRepresentation.withBinaryRows(
+                  ArrowConversion.toArrowSchema(rightType))),
+          NativeAllocator.DICTIONARIES,
+          right);
+      return call.applyAsLong(left.memoryAddress(), right.memoryAddress());
+    }
+  }
+
   private static long withRowSchemas(
       RowType leftType, RowType rightType, boolean mapList, LongBinaryOperator call) {
     try (ArrowSchema left = ArrowSchema.allocateNew(NativeAllocator.SHARED);

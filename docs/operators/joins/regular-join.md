@@ -348,3 +348,11 @@ Both stock input and the native Arrow boundary use the released SQL binary-row s
 matching the existing join restore fixture. This keeps heap and RocksDB occurrence-map keys on
 the same serialized input contract through a savepoint; generic-row object identity is not used
 as an oracle for SQL join state. This fixture correction remains awaiting execution.
+
+Canonical regular joins retain optional owned binary ROW payloads in their declared
+transport schema. Inputs from ROW-key normalizers keep those bytes, including padding;
+plain ROW inputs receive empty optional transport children. Logical payload columns
+remain at the same ordinals, and typed reconstruction preserves nested ROW state.
+
+Temporary arrays for missing optional ROW transport fields are reserved against the existing
+operator memory pool before allocation and released after the batch is consumed.

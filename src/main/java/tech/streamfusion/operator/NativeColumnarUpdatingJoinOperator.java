@@ -133,7 +133,7 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractNativeStatefulOp
   @Override
   protected long createRocksDBHandle(
       RocksDBNativeStateSupport rocksdb, byte[][] restoredPartitions) {
-    return withMapListSchemas(
+    return withRetainedRowSchemas(
         leftType,
         rightType,
         (left, right) ->
@@ -179,7 +179,7 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractNativeStatefulOp
 
   @Override
   protected long createHandle() {
-    return withMapListSchemas(
+    return withRetainedRowSchemas(
         leftType,
         rightType,
         (left, right) ->
@@ -207,7 +207,7 @@ public class NativeColumnarUpdatingJoinOperator extends AbstractNativeStatefulOp
 
   @Override
   protected long restoreRawHandle(byte[][] snapshots) {
-    return withMapListSchemas(
+    return withRetainedRowSchemas(
         leftType,
         rightType,
         (left, right) ->
