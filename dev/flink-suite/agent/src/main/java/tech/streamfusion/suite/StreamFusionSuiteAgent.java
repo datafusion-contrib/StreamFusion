@@ -129,6 +129,7 @@ public final class StreamFusionSuiteAgent {
                 "org.apache.flink.table.runtime.operators.window.tvf.operator.UnalignedWindowTableFunctionOperator",
                 "org.apache.flink.table.runtime.operators.window.tvf.common.WindowAggOperator",
                 "org.apache.flink.table.runtime.operators.sort.RowTimeSortOperator",
+                "org.apache.flink.streaming.api.operators.KeyedProcessOperator",
                 "org.apache.flink.table.runtime.operators.join.window.WindowJoinOperator"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->

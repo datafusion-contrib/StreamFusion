@@ -311,7 +311,19 @@ public final class NativeExecution {
   public static synchronized void stockOpened(Object operator) {
     if (active == null || !Boolean.getBoolean("streamfusion.flink-suite.canonical")) return;
     String kind;
-    if (operator.getClass().getSimpleName().equals("RowTimeSortOperator")) {
+    if (operator.getClass().getSimpleName().equals("KeyedProcessOperator")) {
+      if (!CONTRACTS.get(active.test).get(active.variant).contains("StockOverAggregate")) return;
+      Object function = field(operator, "userFunction");
+      if (!function
+          .getClass()
+          .getName()
+          .startsWith("org.apache.flink.table.runtime.operators.over.")) return;
+      if (field(function, "accState") == null
+          || field(function, "inputState") == null
+          || field(function, "function") == null)
+        throw new AssertionError("Stock event-time OVER state/handler was not initialized");
+      kind = "StockOverAggregate";
+    } else if (operator.getClass().getSimpleName().equals("RowTimeSortOperator")) {
       if (!CONTRACTS.get(active.test).get(active.variant).contains("StockTemporalSort")) return;
       if (field(operator, "dataState") == null
           || field(operator, "lastTriggeringTsState") == null

@@ -922,8 +922,10 @@ final class StockCompiledPlanLowering {
     else if (node
             instanceof org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecOverAggregate
         && nativeKeyedState
-        && NativeConfig.operatorEnabled("over")) result = lowerOver(node);
-    else if (node
+        && NativeConfig.operatorEnabled("over")) {
+      result = lowerOver(node);
+      if (result == node) recordFallback("over aggregate: released state layout is not bound");
+    } else if (node
             instanceof
             org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecGroupAggregate
         && nativeKeyedState

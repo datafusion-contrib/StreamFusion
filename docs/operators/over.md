@@ -2223,3 +2223,10 @@ stock-rejection controls for CHAR; Flink 2.2 also exercises CHAR handoffs.
 
 Decimal unbounded OVER job controls retain decimal SUM/AVG state and cast only their final
 outputs to the shared BIGINT sink schema, preserving its independent final-value oracle.
+
+The unchanged Flink 2.2.1 `OverAggregateRestoreTest` programs all include the two-argument
+`LTCNT` UDF. They retain the released stock OVER owner: that aggregate has no native execution
+implementation. The canonical audit requires the initialized stock accumulator/input state,
+its generated handler, nonempty stock input, the planner fallback reason and native Calc work;
+an unrelated Calc alone cannot qualify an OVER restore. Native OVER interoperability is tested
+separately with the supported built-in aggregates and clean stock continuation workers.
