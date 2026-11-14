@@ -59,6 +59,30 @@ public final class EncodeFormat implements Serializable {
     return new EncodeFormat(format, options, completion, acceptsChangelog, factory);
   }
 
+  /** Older job graphs carried format codes/options before factories became format-owned. */
+  private Object readResolve() {
+    if (factory != null) return this;
+    int legacyCode = format;
+    NativeMessageEncoderFactory restoredFactory =
+        (resolved, types, names, fields) -> {
+          String identifier = FormatCodes.identifier(legacyCode);
+          var provider =
+              NativeFormatProviders.forIdentifier(identifier)
+                  .orElseThrow(
+                      () ->
+                          new IllegalStateException(
+                              "The native format artifact is required to restore serializer code "
+                                  + legacyCode));
+          var restored = provider.encoderFactory();
+          if (restored == null)
+            throw new IllegalStateException(
+                "The installed format has no native encoder: " + identifier);
+          return restored.create(resolved, types, names, fields);
+        };
+    return new EncodeFormat(
+        format, options, completion, FormatCodes.isCdc(format), restoredFactory);
+  }
+
   public NativeMessageEncoder createEncoder(String[] types, String[] names, int[] fields)
       throws Exception {
     return factory.create(openOptions(), types, names, fields);

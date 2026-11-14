@@ -17,3 +17,18 @@ runtime dependency classpath with Maven's `dependency:build-classpath`, and comp
 dependency classpath. Pass the fixture's output path as its sole argument. The generator rejects
 a superclass that already contains durable options. Keep the historical build in a temporary
 worktree and remove it and its build outputs after regeneration.
+
+`encode-format-v1.bin` contains three unopened sink-format plans serialized by the original
+`EncodeFormat` at commit `281c780762874f38cd7517a745993bfb3b5e9ea0`: plain JSON, Debezium JSON
+and JSON with a deferred completion, with their already-resolved option lines. Its original serial form has only `format`, `options`
+and `completion`, with UID 1. The restoration check opens/closes the owning JSON library's encoders
+and verifies that CDC metadata survives the move to format-owned factories.
+
+SHA-256: `fefcb9c43a11ce1eab74f17885f85dc9722b0b89e840ed460bf8817b73565e51` (345 bytes).
+
+Regenerate using `LegacyEncodeFormatFixture.java` against that commit's compiled runtime and
+its dependency classpath. Alternatively compile that commit's unchanged `EncodeFormat.java`
+ahead of the runtime classes on the generator classpath; compile the test-only
+`LegacyEncodeCompletion.java` alongside it. The generator verifies the old descriptor before
+writing the objects. Use UTF-8 for the historical source. Remove temporary compilation and
+classpath files afterward.

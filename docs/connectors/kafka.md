@@ -13,7 +13,6 @@ The `streamfusion-kafka` connector extension and the matching `streamfusion-*` f
 must both be installed. A missing extension is a planner fallback, never a linkage failure. See
 [Deployment](../deployment.md).
 
-
 Sink formats own their planner admission and task-local encoder factories, following Flink's
 `EncodingFormat` contract. Each encoder handle stays in its format's native library. Kafka composes
 the returned JVM byte slabs into key/value records and upsert tombstones; it does not link JSON,
@@ -25,6 +24,10 @@ An upsert write can use different key and value formats. Each format receives it
 and declared logical schema and crosses its own C Data/JNI facade; schema-registry completion runs
 at task open. Native encoder handles close independently, including when opening the second format
 fails. Encoded slabs retain the distinction between a present zero-byte message and a tombstone.
+Older serialized native Kafka sink plans retain their original option lines and schema-registry
+completion. Reading a pre-factory plan restores its format-owned factory lazily at task open,
+including the CDC changelog contract. Restoring such a plan requires the same matching format
+artifacts as a newly planned sink; deserializing the job graph performs no native or registry I/O.
 This ownership refactor makes no throughput claim; existing performance observations describe the
 implementations and boundary configurations under which they were measured.
 
