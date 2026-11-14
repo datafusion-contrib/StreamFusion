@@ -2663,3 +2663,10 @@ planning time. Stock comparator ties and binary map-key equality require indepen
 representations, so those sorts keep stock canonical owners. Floating payload/partition types
 remain eligible. Explicit both-release fallback controls replace unqualified positive sort
 cases; non-floating scalar and ROW-partition matrices remain pending qualification.
+
+Append-list FLOAT/DOUBLE sorts additionally retain stock canonical owners: comparator-equal
+signed zeros can leave overlapping lists under distinct binary MapState keys, which the compact
+native rank buffer cannot reconstruct. Fast Top-1's single value-state contract remains separate.
+Actual released heap/RocksDB overlap controls, constructor rejection and ordinary/portable planner
+controls are authored but await execution on both supported lines. Floating payloads/partition
+fields with non-floating sorts remain eligible; no native state format is extended.

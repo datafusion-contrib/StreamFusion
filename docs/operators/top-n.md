@@ -505,6 +505,15 @@ would reject. Floating retained payloads and scalar partition keys remain eligib
 both-line planner controls pin this fallback; decimal and wider non-floating sorts remain in the
 positive continuation matrix. These controls await local execution.
 
+Append-list canonical binding also excludes FLOAT/DOUBLE sort fields. Released append state
+writes the current binary sort key even when its sorted buffer ties that key with another value.
+Signed-zero keys can therefore own overlapping retained lists; the compact native ranking buffer
+does not preserve those independent map entries. Reconstructing keys from payloads is insufficient.
+Fast Top-1 uses a single value state and retains its floating binding; floating payloads and
+partition fields with non-floating sorts remain eligible. Authored heap/RocksDB stock controls
+inspect the overlapping lists, and constructor/ordinary/portable controls pin the exclusion. These
+new controls remain unexecuted. Updating rank has its separate unique-key tuple contract.
+
 The new planner and component matrices include compact/wide decimals, timestamp precision nine,
 binary/interval carriers, signed-zero/NaN sort values, three-field sorting and nested payloads.
 The pending scalar and nested-payload component cases now compare complete raw stock state after
@@ -578,7 +587,7 @@ during canonical export. Fifty-two planner cases include variable-bound and reje
 controls. The native suite passes 1,241 tests with two existing ignores; shared Flink 1.18 code
 passes 125 processing/checkpoint controls without claiming stock canonical interchange there.
 
-**Pending for the append contract:** OFFSET, constructed partition/sort keys, qualification of the new scalar/multiple-sort/nested-payload scope,
+**Pending for the append contract:** OFFSET, independent floating sort-map keys, constructed partition/sort keys, qualification of the new scalar/multiple-sort/nested-payload scope,
 async/unaligned state, broader shared/upstream-native graphs, full-job TTL expiry and the complete
 backend/version/connector/delivery matrix. Existing unbound native paths keep their own recovery
 representation; older unbound native checkpoint upgrades are not qualified here. All remain in

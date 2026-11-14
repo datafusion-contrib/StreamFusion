@@ -97,6 +97,18 @@ class CanonicalRankScalarPlanTest {
                         && ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator()
                             instanceof NativeColumnarTopNOperator)
             .collect(java.util.stream.Collectors.toList());
+    boolean floating = shape.equals("scalar-float") || shape.equals("scalar-double");
+    if (floating && !mode.equals("update")) {
+      for (var candidate : owners)
+        assertNull(
+            GroupAggregateStockTestFixture.field(
+                ((SimpleOperatorFactory<?>) candidate.getOperatorFactory()).getOperator(),
+                "stockStateContract"));
+      if (compiled) assertTrue(owners.isEmpty(), graph.getStreamingPlanAsJSON());
+      assertFalse(portable.contains("tech.streamfusion"));
+      if (compiled) assertEquals(portable, plan.asJsonString());
+      return;
+    }
     assertEquals(1, owners.size(), graph.getStreamingPlanAsJSON());
     var owner = owners.get(0);
     var operator = ((SimpleOperatorFactory<?>) owner.getOperatorFactory()).getOperator();

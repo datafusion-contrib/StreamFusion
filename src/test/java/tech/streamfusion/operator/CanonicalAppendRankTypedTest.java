@@ -59,6 +59,60 @@ class CanonicalAppendRankTypedTest {
                                                                     rank))))));
   }
 
+  static Stream<Arguments> floatingListCases() {
+    return Stream.of("scalar-float", "scalar-double")
+        .flatMap(shape -> Stream.of(false, true).map(rocks -> Arguments.of(shape, rocks)));
+  }
+
+  @ParameterizedTest
+  @MethodSource("floatingListCases")
+  void releasedFloatingListsRequireIndependentBinaryKeys(String shape, boolean rocks)
+      throws Exception {
+    var scoreType = CanonicalRankScalarFixture.type(shape);
+    var type = RowType.of(new IntType(), scoreType, new BigIntType());
+    int[] keys = {0};
+    Object negative, positive;
+    if (shape.equals("scalar-float")) {
+      negative = -0.0f;
+      positive = 0.0f;
+    } else {
+      negative = -0.0d;
+      positive = 0.0d;
+    }
+    List<RowData> input =
+        List.of(GenericRowData.of(1, negative, 1L), GenericRowData.of(1, positive, 2L));
+    try (var owner = stock(type, type, keys, 1, 0, false, false, rocks)) {
+      owner.open();
+      feed(owner, type, input);
+      var backend = owner.getOperator().<RowData>getKeyedStateBackend();
+      backend.setCurrentKey(selector(type, keys).getKey(input.get(0)));
+      var state =
+          backend.getPartitionedState(
+              org.apache.flink.runtime.state.VoidNamespace.INSTANCE,
+              org.apache.flink.runtime.state.VoidNamespaceSerializer.INSTANCE,
+              new org.apache.flink.api.common.state.MapStateDescriptor<>(
+                  "data-state-with-append",
+                  new RowDataSerializer(RowType.of(scoreType)),
+                  new org.apache.flink.api.common.typeutils.base.ListSerializer<>(
+                      new RowDataSerializer(type))));
+      var sizes = new ArrayList<Integer>();
+      for (var entry : state.entries()) {
+        sizes.add(entry.getValue().size());
+        if (entry.getValue().size() == 2) {
+          var projected = selector(type, 1).getKey(entry.getValue().get(0));
+          assertNotEquals(
+              entry.getKey(),
+              projected,
+              "A comparator-tied list contains a row whose binary sort key differs from the map"
+                  + " key");
+        }
+      }
+      sizes.sort(Integer::compareTo);
+      assertEquals(
+          List.of(1, 2), sizes, "Signed-zero map entries overlap despite comparator equality");
+    }
+  }
+
   @ParameterizedTest
   @MethodSource("cases")
   void typedRetainedRowsSurviveBothCanonicalDirections(
@@ -100,18 +154,25 @@ class CanonicalAppendRankTypedTest {
     var sortSelector = selector(type, sort);
     var keyType = (RowType) selector.getProducedType().toLogicalType();
     long retention = ttl ? 1000 : 0;
-    var contract =
-        new StockAppendTopNStateContract(
-            new RowDataSerializer(keyType),
-            selector,
-            sortSelector,
-            keyType,
-            type,
-            new int[] {sort},
-            fast,
-            false,
-            ttl,
-            key);
+    RowType retainedType = type;
+    java.util.concurrent.Callable<StockAppendTopNStateContract> factory =
+        () ->
+            new StockAppendTopNStateContract(
+                new RowDataSerializer(keyType),
+                selector,
+                sortSelector,
+                keyType,
+                retainedType,
+                new int[] {sort},
+                fast,
+                false,
+                ttl,
+                key);
+    if (!fast && (shape.equals("scalar-float") || shape.equals("scalar-double"))) {
+      assertThrows(IllegalArgumentException.class, factory::call);
+      return;
+    }
+    var contract = factory.call();
     try (var stock = stock(type, output, key, sort, retention, fast, rank, rocks);
         var nativeHarness =
             nativeHarness(type, key, sort, retention, fast, rank, rocks, contract)) {
