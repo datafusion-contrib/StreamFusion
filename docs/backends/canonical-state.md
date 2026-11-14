@@ -2473,3 +2473,9 @@ For represented ROW keys, the stock local GROUP BY boundary uses binary-key equa
 producing partials, so optional transport children do not split a stock group and reorder its
 floating fold. New mixed-representation/repeated-flush controls await local execution. This
 reuses the key encoder already used by the retained global state; no persisted format changes.
+
+Event-time sort additionally has pending qualification controls for nested ROW/ARRAY/MAP
+payloads. Raw component snapshots compare complete serialized rows, while full jobs assert
+the nested values and global peer order through ordinary/portable submissions, empty returns,
+native recovery and source rescaling. Existing singleton ownership and actual cursor rules
+remain unchanged. These additions await both-release execution in the local testing window.

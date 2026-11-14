@@ -56,14 +56,14 @@ class CanonicalTemporalSortJobTest {
     var baseline = prepare("baseline", mode, ordinary);
     var switched = prepare("switched", mode, ordinary);
     new CanonicalJobRunner(directory)
-        .verifyJoinSwitch(baseline, switched, first, backend, mode, "TemporalSort");
-    var type = RowType.of(new BigIntType(), new BigIntType(), new BigIntType());
-    var rows = CanonicalFixtureFactory.committedRows(switched.resolve("committed"), type);
+        .verifyJoinSwitch(
+            baseline, switched, first, backend, mode, "TemporalSort", this::committedRows);
+    var rows = committedRows(switched);
     assertEquals(
         expected(mode),
         rows,
         "global timestamp order and equal-time arrival order survive handoff");
-    assertEquals(CanonicalFixtureFactory.committedRows(baseline.resolve("committed"), type), rows);
+    assertEquals(committedRows(baseline), rows);
     String maximum = Files.readString(baseline.resolve("baseline-singleton-verified"));
     try (var files = Files.list(switched)) {
       var proofs =
@@ -81,7 +81,13 @@ class CanonicalTemporalSortJobTest {
       assertFalse(Files.readString(switched.resolve("plan.json")).contains("tech.streamfusion"));
   }
 
-  private Path prepare(String name, String mode, boolean ordinary) throws Exception {
+  List<String> committedRows(Path root) throws Exception {
+    return CanonicalFixtureFactory.committedRows(
+        root.resolve("committed"),
+        RowType.of(new BigIntType(), new BigIntType(), new BigIntType()));
+  }
+
+  Path prepare(String name, String mode, boolean ordinary) throws Exception {
     var root = directory.resolve(name);
     Files.createDirectories(root);
     if (ordinary) Files.createFile(root.resolve("ordinary-sql"));
@@ -104,7 +110,7 @@ class CanonicalTemporalSortJobTest {
     return root;
   }
 
-  private static List<String> input(String mode) {
+  static List<String> input(String mode) {
     if (mode.equals("rescale")) {
       var rows = new ArrayList<String>();
       for (int round = 0; round < 6; round++)
@@ -144,7 +150,7 @@ class CanonicalTemporalSortJobTest {
         "WATERMARK,1100");
   }
 
-  private static List<String> expected(String mode) {
+  List<String> expected(String mode) {
     var rows = new ArrayList<String>();
     for (String line : input(mode)) {
       var cells = line.split(",");

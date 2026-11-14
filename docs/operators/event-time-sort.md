@@ -141,3 +141,14 @@ native sort contract. Earlier cohorts overlap these runs and are not cumulative 
 Eight existing global GROUP BY rescaling jobs also pass with the extended singleton-owner harness,
 retaining its prior source/aggregate/sink constraints. This separate regression cohort is not
 added to the 28 sort-job count.
+
+## Nested payload controls awaiting qualification
+
+The existing retained-row boundary now has additional canonical fixtures for a ROW containing
+an ARRAY, MAP and nested ROW, with NULL payloads and elements. Component controls compare full
+serialized pending rows, emitted rows and the actual cutoff through both engine orders and
+stores. Complete jobs compare full serialized payloads and assert global ordering, equal-time
+arrival order, the late-row boundary, clean stock workers, empty returns, native recovery and
+source rescaling for ordinary SQL and portable plans. The singleton sort and sink constraints
+remain the same. These new fixtures await execution on both Flink 1.18 and 2.2; the historical
+counts above do not qualify them. No sort semantics or persisted encoding changes are introduced.

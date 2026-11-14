@@ -328,6 +328,18 @@ public final class CanonicalJobWorker {
                 Files.readString(root.resolve("required-plan-node")).trim())) {
           throw new AssertionError("Fixture compiled a different stock operator: " + portablePlan);
         }
+        if (Files.exists(root.resolve("require-retained-map-owner"))) {
+          String family = Files.readString(root.resolve("require-retained-map-owner")).trim();
+          var graph =
+              new org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper()
+                  .readTree(portablePlan);
+          boolean retainedMap = false;
+          for (var node : graph.path("nodes"))
+            if (node.path("type").asText().startsWith(family))
+              retainedMap |= node.path("outputType").toString().contains("MAP");
+          if (!retainedMap)
+            throw new AssertionError("Fixture did not retain a MAP payload in " + family);
+        }
         if (Files.exists(root.resolve("require-rank-map-state"))) {
           var graph =
               new org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper()
