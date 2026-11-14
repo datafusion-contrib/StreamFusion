@@ -49,6 +49,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arrow::array::Float64Array;
 
     fn bits(value: ScalarValue) -> Option<u64> {
         match value {

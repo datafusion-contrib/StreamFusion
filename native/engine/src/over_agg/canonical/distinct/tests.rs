@@ -1,5 +1,6 @@
 use super::super::tests::{batch, rows_of};
 use super::*;
+use arrow::array::Float64Array;
 
 #[cfg(feature = "rocksdb-state")]
 #[test]
@@ -338,9 +339,9 @@ fn nullable_text_memberships_keep_utf8_equality_across_store_handoffs() {
 #[test]
 fn represented_row_partitions_share_nullable_memberships_across_live_and_restored_transports() {
     let descriptor = [i32::MIN, -1, -1, -1];
-    let input = |binary, prefix| {
+    let input = |binary: bool, prefix: bool| {
         let input = crate::flink_key::represented_row_key_fixture(2051, binary, 0);
-        let mut columns = input.columns().clone();
+        let mut columns = input.columns().to_vec();
         columns[2] = Arc::new(Int64Array::from_iter(
             (0..2051).map(|key| (!prefix || key % 2 != 0).then_some(key as i64)),
         ));
@@ -464,7 +465,7 @@ fn null_membership_outside_the_processing_domain_rejects_before_installation() {
             .visit_canonical_folds(|batch| target.import_canonical_folds(&batch))
             .unwrap();
         let valid = members(&source, 0).pop().unwrap();
-        let mut columns = valid.columns().clone();
+        let mut columns = valid.columns().to_vec();
         columns[1] = new_null_array(&DataType::Float64, 1);
         let invalid = RecordBatch::try_new(valid.schema(), columns).unwrap();
         assert!(target.import_canonical_distinct(0, &invalid).is_err());

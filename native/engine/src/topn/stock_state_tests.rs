@@ -76,7 +76,7 @@ fn represented_partition_rows_keep_rank_payloads_identical_through_native_recove
             if algorithm == 1 {
                 let change = |binary| {
                     let input = crate::flink_key::represented_row_key_fixture(count, binary, 20);
-                    let mut columns = input.columns().clone();
+                    let mut columns = input.columns().to_vec();
                     columns.push(Arc::new(Int8Array::from(vec![3; count])));
                     let mut fields = input
                         .schema()

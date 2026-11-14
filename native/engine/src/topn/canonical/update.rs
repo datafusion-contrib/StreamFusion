@@ -627,7 +627,7 @@ mod tests {
 }
 
 #[cfg(test)]
-mod tests {
+mod first_bound_tests {
     use super::*;
 
     fn input(rows: &[(i64, i64, i64, i64)]) -> RecordBatch {

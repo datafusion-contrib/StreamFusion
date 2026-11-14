@@ -1,4 +1,5 @@
 use super::*;
+use arrow::array::Float64Array;
 
 fn shared(
     path: Option<&std::path::Path>,
