@@ -25,6 +25,15 @@ final class BatchConnectorPlans {
     providers = NativePlannerExtensions.load(loader).extensions();
   }
 
+  /** Proves the input representation for generated string evaluation, independently of cost. */
+  boolean hasNativeUtf8Source(RelNode node) {
+    if (!(node instanceof BatchPhysicalTableSourceScan)) return false;
+    for (var provider : providers)
+      if (provider.planBatchSource((BatchPhysicalTableSourceScan) node, config) != null)
+        return true;
+    return false;
+  }
+
   List<RelNode> lower(List<RelNode> roots) {
     if (!NativeConfig.nativeEnabled()) return roots;
     var result = new ArrayList<RelNode>();
@@ -54,7 +63,8 @@ final class BatchConnectorPlans {
     RelNode target = node;
     if (node instanceof BatchPhysicalSink) {
       for (var provider : providers) {
-        var sink = provider.planBatchSink((BatchPhysicalSink) node, config);
+        target = provider.prepareBatchSink((BatchPhysicalSink) target, config);
+        var sink = provider.planBatchSink((BatchPhysicalSink) target, config);
         if (sink != null) {
           target = new BatchPhysicalNativeConnectorSink(node, node.getInput(0), sink);
           break;

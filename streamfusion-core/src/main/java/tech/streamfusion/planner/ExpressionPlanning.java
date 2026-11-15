@@ -53,6 +53,10 @@ public final class ExpressionPlanning {
     return RexExpression.encode(expression, context);
   }
 
+  public static EncodedExpression encodeHostCalc(Calc calc, String reason) {
+    return RexExpression.encodeHostCalc(calc, reason);
+  }
+
   public static EncodedExpression encodeUnnestOperand(Calc calc) {
     return RexExpression.encodeUnnestOperand(calc);
   }

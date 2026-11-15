@@ -13,10 +13,19 @@ import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 /** Gives union branches one column header while forwarding the same owned Arrow vectors. */
 public final class BatchUnionSchemaOperator extends AbstractStreamOperator<ArrowBatch>
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
+  private static final long serialVersionUID = -951658829619276750L;
+
   private final String[] names;
 
   public BatchUnionSchemaOperator(List<String> names) {
     this.names = names.toArray(new String[0]);
+  }
+
+  @Override
+  public void open() throws Exception {
+    super.open();
+    tech.streamfusion.shuffle.NativeShuffleDecompression.install(
+        getContainingTask(), getMetricGroup());
   }
 
   @Override

@@ -357,6 +357,12 @@ final class RexExpression implements EncodedExpression {
     return Admission.accepted(encoder);
   }
 
+  static RexExpression encodeHostCalc(Calc calc, String reason) {
+    var encoder = forCalc(calc);
+    encoder.jvmExecutionReason = reason;
+    return encoder.emitRowCalc(calc) ? encoder : null;
+  }
+
   static RexExpression encodeUnnestOperand(Calc calc) {
     CalcEncoding encoded = tryEncodeCalc(calc, true);
     return encoded.supported() ? encoded.encoder() : null;
@@ -2104,6 +2110,8 @@ final class RexExpression implements EncodedExpression {
   }
 
   private boolean emitCall(RexCall call) {
+    if ((call.getKind() == SqlKind.IS_NOT_DISTINCT_FROM || call.getKind() == SqlKind.IS_DISTINCT_FROM)
+        && nativeNullSafeReferences(call)) return emitNullSafeReferences(call);
     if (containsMetadataDependentDecimalRounding(call)) {
       if (!validateDecimalRoundingBoundary(call)) return false;
       return emitHostExpression(call, true);
@@ -3249,6 +3257,8 @@ final class RexExpression implements EncodedExpression {
         if (operands.stream().anyMatch(this::requiresRowShortCircuit)) {
           return reject("Fallible expressions under AND/OR require Flink's row short-circuiting");
         }
+        if (operands.size() >= 16 && operands.stream().allMatch(RexExpression::pureBooleanOperand))
+          return emitBalancedBoolean(operands, 0, operands.size(), op);
         // Calcite leaves AND/OR n-ary; the native binary op needs a left-deep nesting, which a
         // pre-order stream encodes as (n-1) call headers followed by the operands in order.
         if (operands.size() < 2) {
@@ -3629,6 +3639,64 @@ final class RexExpression implements EncodedExpression {
       }
     }
     return true;
+  }
+
+  private static boolean nativeNullSafeReferences(RexCall call) {
+    if (call.getOperands().size() != 2
+        || call.getOperands().stream().anyMatch(node -> !(node instanceof RexInputRef)))
+      return false;
+    var left = call.getOperands().get(0).getType();
+    var right = call.getOperands().get(1).getType();
+    if (left.getSqlTypeName() == SqlTypeName.VARCHAR
+        && right.getSqlTypeName() == SqlTypeName.VARCHAR) return true;
+    if (!org.apache.calcite.sql.type.SqlTypeUtil.equalSansNullability(left, right)) return false;
+    return java.util.Set.of(
+            SqlTypeName.BOOLEAN,
+            SqlTypeName.TINYINT,
+            SqlTypeName.SMALLINT,
+            SqlTypeName.INTEGER,
+            SqlTypeName.BIGINT,
+            SqlTypeName.DECIMAL,
+            SqlTypeName.DATE,
+            SqlTypeName.VARCHAR)
+        .contains(left.getSqlTypeName());
+  }
+
+  private boolean emitNullSafeReferences(RexCall call) {
+    var left = call.getOperands().get(0);
+    var right = call.getOperands().get(1);
+    if (call.getKind() == SqlKind.IS_DISTINCT_FROM) add(KIND_CALL, 22, 1);
+    // CASE(a IS NULL, b IS NULL, CASE(b IS NULL, false, a=b)); references have no effects.
+    add(KIND_CALL, 40, 3);
+    add(KIND_CALL, 30, 1);
+    if (!emit(left)) return false;
+    add(KIND_CALL, 30, 1);
+    if (!emit(right)) return false;
+    add(KIND_CALL, 40, 3);
+    add(KIND_CALL, 30, 1);
+    if (!emit(right)) return false;
+    add(KIND_LIT_BOOL, longs.size(), 0);
+    longs.add(0L);
+    add(KIND_CALL, 14, 2);
+    return emit(left) && emit(right);
+  }
+
+  private static boolean pureBooleanOperand(RexNode node) {
+    if (node instanceof RexInputRef || node instanceof RexLiteral) return true;
+    if (!(node instanceof RexCall)) return false;
+    var call = (RexCall) node;
+    return call.getOperator().isDeterministic()
+        && !call.getOperator().isDynamicFunction()
+        && tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator()) == null
+        && call.getOperands().stream().allMatch(RexExpression::pureBooleanOperand);
+  }
+
+  private boolean emitBalancedBoolean(List<RexNode> operands, int start, int end, int operation) {
+    if (end - start == 1) return emit(operands.get(start));
+    add(KIND_CALL, operation, 2);
+    int middle = start + (end - start + 1) / 2;
+    return emitBalancedBoolean(operands, start, middle, operation)
+        && emitBalancedBoolean(operands, middle, end, operation);
   }
 
   private boolean requiresRowShortCircuit(RexNode node) {

@@ -1,7 +1,7 @@
 # String copies and intermediate buffers
 
 **Applies to:** the RowData→Arrow entry transpose, the synchronous lookup join, string expressions
-in [Calc / Filter](../operators/calc-filter.md), and aligned window aggregation.
+in [Calc / Filter](../operators/calc-filter.md), Paimon batch row encoding, and aligned window aggregation.
 
 ## Entry transpose: one copy instead of two
 
@@ -19,6 +19,26 @@ near-memcpy speed for ASCII. A 2026-07-12 profile had this char loop at ~9% of q
 
 **Measured:** with the batched BinaryRow keys above, the string-heavy stateless q22 gained +25%
 native throughput (1.23x → 1.53x) on the 2M-event generator rung.
+
+## Paimon Java rows: copy their existing UTF-8 segment
+
+Paimon's Java overwrite, mutation and clustering writers can feed the native Parquet encoder
+through a bounded Arrow row batch. Top-level strings copy a single heap `BinaryString` segment
+directly into the Arrow vector, including its byte offset. This avoids creating a Flink string
+wrapper and then copying its UTF-8 bytes into an intermediate array. Multi-segment and off-heap
+strings retain Paimon's byte conversion; nested fields retain the existing Flink converter.
+The batch owns the copied values before Paimon reuses the row or its backing memory.
+
+Java file-size checks retain the pending rows while the encoded file plus allocated Arrow memory
+is well below the target. This lets the 4,096-row buffer fill instead of flushing at each
+1,000-record SDK size check. Checks near the roll target and writer close flush the pending rows.
+The allocation threshold is 8 MiB, checked after each row; a single vector growth can exceed it.
+
+The [batch-operation measurements](../benchmarks/results/paimon-batch-operations-20261114.json)
+retain every initial and repeated cohort, including regressions. In the optimized 250k-row
+Flink 2.2 cohort, the five complete jobs run 1.08–1.22× stock and 1.07–1.19× the native
+source/compute path using Java Parquet encoding. Those are complete-job measurements with
+commits and conversions, not isolated string-copy timings.
 
 ## Repeated lazy-string encodings
 

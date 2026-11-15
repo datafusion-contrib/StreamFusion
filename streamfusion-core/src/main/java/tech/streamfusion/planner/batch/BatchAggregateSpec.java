@@ -47,7 +47,7 @@ final class BatchAggregateSpec {
       kinds[index] = kind(call.getAggregation().getKind());
       columns[index] = merge ? state : call.getArgList().isEmpty() ? -1 : call.getArgList().get(0);
       filters[index] = merge ? -1 : call.filterArg;
-      state += kinds[index] == 4 ? 2 : 1;
+      state += kinds[index] == 4 || kinds[index] == 6 ? 2 : 1;
     }
   }
 
@@ -76,14 +76,7 @@ final class BatchAggregateSpec {
       var call = pair._1();
       var function = pair._2();
       int kind = kind(call.getAggregation().getKind());
-      if (kind < 0)
-        return "only SUM/SUM0/COUNT/MIN/MAX/AVG and proven singleton SINGLE_VALUE are verified";
-      if (kind == 6
-          && (aggregate.grouping().length != 0
-              || aggregate.isMerge()
-              || !aggregate.isFinal()
-              || !atMostOne(aggregate.getInput())))
-        return "SINGLE_VALUE requires a proven at-most-one-row input";
+      if (kind < 0) return "only SUM/SUM0/COUNT/MIN/MAX/AVG and SINGLE_VALUE are verified";
       if (call.isDistinct()
           || call.isApproximate()
           || !call.getCollation().getFieldCollations().isEmpty())
@@ -219,22 +212,6 @@ final class BatchAggregateSpec {
         output.release();
       }
     }
-  }
-
-  private static boolean atMostOne(org.apache.calcite.rel.RelNode node) {
-    if (node instanceof org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalCalc)
-      return atMostOne(node.getInput(0));
-    if (node
-            instanceof
-            org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalExchange
-        && ((org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalExchange) node)
-                .getDistribution()
-                .getType()
-            == org.apache.calcite.rel.RelDistribution.Type.SINGLETON)
-      return atMostOne(node.getInput(0));
-    return node instanceof BatchPhysicalGroupAggregateBase
-        && ((BatchPhysicalGroupAggregateBase) node).grouping().length == 0
-        && ((BatchPhysicalGroupAggregateBase) node).isFinal();
   }
 
   private static int kind(SqlKind kind) {

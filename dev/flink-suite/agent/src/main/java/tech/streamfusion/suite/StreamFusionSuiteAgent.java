@@ -510,7 +510,7 @@ public final class StreamFusionSuiteAgent {
             (builder, type, classLoader, module, protectionDomain) ->
                 builder.visit(
                     Advice.to(ReportNativePaimonBundle.class)
-                        .on(named("writeNative").and(takesArguments(1)))))
+                        .on(named("writeRoot").and(takesArguments(3)))))
         .type(named(NATIVE_PAIMON_KEY_VALUE_FILE_WRITER))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
@@ -1363,7 +1363,7 @@ public final class StreamFusionSuiteAgent {
     }
   }
 
-  /** Proves that an untouched upstream Paimon test wrote a data file from a native Arrow bundle. */
+  /** Proves that an untouched upstream test encoded an Arrow batch after Java file planning. */
   public static final class ReportNativePaimonBundle {
 
     private ReportNativePaimonBundle() {}

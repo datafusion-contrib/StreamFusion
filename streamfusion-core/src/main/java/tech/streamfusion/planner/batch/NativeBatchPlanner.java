@@ -98,7 +98,7 @@ public final class NativeBatchPlanner extends BatchPlanner {
           var connectors =
               new BatchConnectorPlans(getTableConfig(), getFlinkContext().getClassLoader());
           return JavaScalaConversionUtil.toScala(
-              scan.optimizeRoots(roots, connectors::lower));
+              scan.optimizeRoots(roots, connectors::lower, connectors::hasNativeUtf8Source));
         }
       }
     };

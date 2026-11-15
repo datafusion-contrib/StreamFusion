@@ -259,14 +259,20 @@ impl AggregatePlan {
                         )?;
                     }
                 }
-                6 if final_output && !merge && keys.is_empty() => append(
-                    &mut aggregates,
-                    &mut predicates,
-                    datafusion::functions_aggregate::first_last::first_value_udaf(),
-                    value,
-                    &schema,
-                    predicate,
-                )?,
+                6 => {
+                    let mut values = vec![value];
+                    if merge {
+                        values.push(input_column(&schema, column as usize + 1)?);
+                    }
+                    append_values(
+                        &mut aggregates,
+                        &mut predicates,
+                        single_value(value_type.clone(), merge, !final_output),
+                        values,
+                        &schema,
+                        predicate,
+                    )?;
+                }
                 _ => return datafusion::common::exec_err!("unverified bounded aggregate kind"),
             }
             results.push((
@@ -275,7 +281,11 @@ impl AggregatePlan {
                 field.data_type().clone(),
                 kind == 4 && matches!(value_type, DataType::Decimal128(_, _)),
             ));
-            cursor += if kind == 4 && !final_output { 2 } else { 1 };
+            cursor += if matches!(kind, 4 | 6) && !final_output {
+                2
+            } else {
+                1
+            };
         }
         if cursor != declared.fields().len() {
             return datafusion::common::exec_err!("bounded aggregate output width mismatch");
@@ -338,7 +348,24 @@ impl AggregatePlan {
                     String::new(),
                 )),
                 1 => outputs.push((zero_if_null(value)?, String::new())),
-                2 | 3 | 6 => outputs.push((value, String::new())),
+                2 | 3 => outputs.push((value, String::new())),
+                6 => {
+                    if final_output {
+                        outputs.push((value, String::new()));
+                    } else {
+                        for name in ["value", "count"] {
+                            outputs.push((
+                                Arc::new(ScalarFunctionExpr::try_new(
+                                    datafusion::functions::core::get_field(),
+                                    vec![value.clone(), lit(ScalarValue::Utf8(Some(name.into())))],
+                                    &aggregate_schema,
+                                    Arc::new(ConfigOptions::default()),
+                                )?),
+                                String::new(),
+                            ));
+                        }
+                    }
+                }
                 4 if decimal_avg => {
                     if final_output {
                         outputs.push((value, String::new()));
@@ -430,7 +457,116 @@ impl AggregatePlan {
     }
 }
 
-fn decimal_sum(input_type: DataType) -> Arc<AggregateUDF> {
+fn single_value(input_type: DataType, merge_inputs: bool, partial: bool) -> Arc<AggregateUDF> {
+    let state_type = input_type.clone();
+    let states = vec![input_type.clone(), DataType::Int32];
+    let fields: arrow::datatypes::Fields = vec![
+        Field::new("value", input_type.clone(), true),
+        Field::new("count", DataType::Int32, false),
+    ]
+    .into();
+    let result_type = if partial {
+        DataType::Struct(fields.clone())
+    } else {
+        input_type.clone()
+    };
+    Arc::new(datafusion::logical_expr::create_udaf(
+        "flink_single_value",
+        if merge_inputs {
+            states.clone()
+        } else {
+            vec![input_type]
+        },
+        Arc::new(result_type),
+        datafusion::logical_expr::Volatility::Immutable,
+        Arc::new(move |_| {
+            Ok(Box::new(SingleValue {
+                value: ScalarValue::try_from(&state_type)?,
+                count: 0,
+                merge_inputs,
+                partial,
+                fields: fields.clone(),
+            }))
+        }),
+        Arc::new(states),
+    ))
+}
+
+#[derive(Debug)]
+struct SingleValue {
+    value: ScalarValue,
+    count: i32,
+    merge_inputs: bool,
+    partial: bool,
+    fields: arrow::datatypes::Fields,
+}
+
+impl SingleValue {
+    fn add(&mut self, value: ScalarValue, count: i32) -> Result<(), DataFusionError> {
+        if !(0..=1).contains(&count) || self.count + count > 1 {
+            return datafusion::common::exec_err!(
+                "SingleValueAggFunction received more than one element."
+            );
+        }
+        if count == 1 {
+            self.value = value;
+            self.count = 1;
+        }
+        Ok(())
+    }
+}
+
+impl datafusion::logical_expr::Accumulator for SingleValue {
+    fn update_batch(&mut self, values: &[ArrayRef]) -> Result<(), DataFusionError> {
+        if self.merge_inputs {
+            return self.merge_batch(values);
+        }
+        let values = &values[0];
+        if values.len() > 1 || self.count != 0 && !values.is_empty() {
+            return datafusion::common::exec_err!(
+                "SingleValueAggFunction received more than one element."
+            );
+        }
+        if !values.is_empty() {
+            self.add(ScalarValue::try_from_array(values, 0)?, 1)?;
+        }
+        Ok(())
+    }
+    fn merge_batch(&mut self, states: &[ArrayRef]) -> Result<(), DataFusionError> {
+        let counts = states[1]
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .ok_or_else(|| DataFusionError::Execution("Invalid SINGLE_VALUE count state".into()))?;
+        for i in 0..counts.len() {
+            self.add(ScalarValue::try_from_array(&states[0], i)?, counts.value(i))?;
+        }
+        Ok(())
+    }
+    fn state(&mut self) -> Result<Vec<ScalarValue>, DataFusionError> {
+        Ok(vec![
+            self.value.clone(),
+            ScalarValue::Int32(Some(self.count)),
+        ])
+    }
+    fn evaluate(&mut self) -> Result<ScalarValue, DataFusionError> {
+        if !self.partial {
+            return Ok(self.value.clone());
+        }
+        let arrays = self
+            .state()?
+            .into_iter()
+            .map(|v| v.to_array())
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(ScalarValue::Struct(Arc::new(
+            arrow::array::StructArray::try_new(self.fields.clone(), arrays, None)?,
+        )))
+    }
+    fn size(&self) -> usize {
+        std::mem::size_of::<Self>() + self.value.size()
+    }
+}
+
+pub(super) fn decimal_sum(input_type: DataType) -> Arc<AggregateUDF> {
     let DataType::Decimal128(_, scale) = input_type else {
         unreachable!()
     };
@@ -447,7 +583,7 @@ fn decimal_sum(input_type: DataType) -> Arc<AggregateUDF> {
     ))
 }
 
-fn grouping_key(data_type: &DataType) -> bool {
+pub(super) fn grouping_key(data_type: &DataType) -> bool {
     signed_integer(data_type)
         || matches!(
             data_type,
@@ -543,7 +679,7 @@ impl datafusion::logical_expr::Accumulator for DecimalAverage {
     }
 }
 
-fn decimal_sum_zero(input_type: DataType, merge_inputs: bool) -> Arc<AggregateUDF> {
+pub(super) fn decimal_sum_zero(input_type: DataType, merge_inputs: bool) -> Arc<AggregateUDF> {
     let DataType::Decimal128(_, scale) = input_type else {
         unreachable!()
     };
@@ -1803,5 +1939,81 @@ mod tests {
                 }
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod single_value_tests {
+    use super::*;
+    use datafusion::logical_expr::Accumulator;
+
+    fn accumulator(partial: bool, merge_inputs: bool) -> SingleValue {
+        SingleValue {
+            value: ScalarValue::Utf8(None),
+            count: 0,
+            partial,
+            merge_inputs,
+            fields: vec![
+                Field::new("value", DataType::Utf8, true),
+                Field::new("count", DataType::Int32, false),
+            ]
+            .into(),
+        }
+    }
+
+    #[test]
+    fn null_rows_count_towards_scalar_subquery_cardinality() {
+        let mut value = accumulator(false, false);
+        assert_eq!(value.evaluate().unwrap(), ScalarValue::Utf8(None));
+        value
+            .update_batch(&[Arc::new(StringArray::from(Vec::<Option<&str>>::new()))])
+            .unwrap();
+        value
+            .update_batch(&[Arc::new(StringArray::from(vec![None::<&str>]))])
+            .unwrap();
+        assert_eq!(value.evaluate().unwrap(), ScalarValue::Utf8(None));
+        assert!(value
+            .update_batch(&[Arc::new(StringArray::from(vec![Some("second")]))])
+            .unwrap_err()
+            .to_string()
+            .contains("received more than one element"));
+        let mut two = accumulator(false, false);
+        assert!(two
+            .update_batch(&[Arc::new(StringArray::from(vec![None::<&str>, None]))])
+            .is_err());
+    }
+
+    #[test]
+    fn partial_and_merge_keep_empty_and_nullable_states_distinct() {
+        let mut local = accumulator(true, false);
+        local
+            .update_batch(&[Arc::new(StringArray::from(vec![Some("owned")]))])
+            .unwrap();
+        let partial = local.evaluate().unwrap();
+        let ScalarValue::Struct(partial) = partial else {
+            panic!("partial SINGLE_VALUE must be structured");
+        };
+        let mut merged = accumulator(false, true);
+        merged.update_batch(partial.columns()).unwrap();
+        assert_eq!(
+            merged.evaluate().unwrap(),
+            ScalarValue::Utf8(Some("owned".into()))
+        );
+        merged
+            .update_batch(&[
+                Arc::new(StringArray::from(vec![None::<&str>])),
+                Arc::new(Int32Array::from(vec![0])),
+            ])
+            .unwrap();
+        assert_eq!(
+            merged.evaluate().unwrap(),
+            ScalarValue::Utf8(Some("owned".into()))
+        );
+        assert!(merged
+            .merge_batch(&[
+                Arc::new(StringArray::from(vec![None::<&str>])),
+                Arc::new(Int32Array::from(vec![1]))
+            ])
+            .is_err());
     }
 }

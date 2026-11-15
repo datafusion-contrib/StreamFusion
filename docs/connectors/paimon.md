@@ -41,13 +41,16 @@ The optional connector boundary is independent of batch compute admission: a pla
 an unsupported host computation, and a direct table copy can still use native file reading or
 writing. Host operators receive ordinary row boundaries; admitted native computation and
 native sinks exchange Arrow batches. Reused native sources retain buffer views for each consumer.
+The source initializes the TaskManager off-heap authority before constructing its reader or
+starting asynchronous fetches, including when computation stays in Flink.
 
-Batch and streaming sinks share the table, type, format, merge-engine and constraint admission
-rules and the Arrow routing/writer topology. Bounded writers retain Paimon's end-of-input commit
+Ordinary batch `INSERT INTO` and streaming sinks share the table, type, format, merge-engine
+and constraint admission rules and the Arrow routing/writer topology. Bounded writers retain Paimon's end-of-input commit
 protocol and bounded compaction mode. Dynamic buckets retain their committed key index across
 jobs. Postpone tables use the released bounded fixed-bucket protocol by default, preserving each
 partition's known bucket count; `postpone.batch-write-fixed-bucket=false` selects staging writes.
-Configured batch clustering retains the stock Paimon sorting and sink topology.
+Configured batch clustering retains Paimon's Java sorting and sink topology, with native Parquet
+encoding at the file boundary.
 Append routing preserves row-level round-robin distribution across the configured writers,
 including when the input has only one Arrow batch. Unexpected retract or update row kinds
 retain Paimon's append-only writer error instead of being discarded during routing.
@@ -56,15 +59,45 @@ default before the native router assigns channels.
 
 Continuous tails, periodic watermarks and consumer-retention cursors apply to streaming jobs.
 Batch reads retain the other source type, format, option and split-level fallbacks below.
-`INSERT OVERWRITE` retains the stock sink in both execution modes. SQL `DELETE` and `UPDATE`
-also retain the stock sink, including Flink's row-kind setter and required-column handling;
-snapshot reads feeding these statements can still use the native source.
+Batch `INSERT OVERWRITE`, SQL `DELETE`/`UPDATE`, and clustering retain Flink's batch sink and
+Paimon's Java topology. For admitted Parquet settings they use the existing parquet-rs Arrow
+writer for data-file bytes. Java still selects files and partitions, assigns buckets, sorts and
+merges rows, handles mutation row kinds and required columns, performs all filesystem IO, and
+commits or recovers the operation. Partition-only DELETE/truncate can remain a metadata-only
+Java operation without producing a data file. Streaming overwrite retains Paimon's normal error.
+
+The planner copies the runtime table and reapplies its existing sink abilities; it does not alter
+the catalog table or install a process-wide encoder switch. At the file boundary, finalized Java
+rows are copied immediately (Paimon reuses row objects) into Arrow batches that flush at 4,096
+rows or 8 MiB of allocated Arrow memory. The memory threshold is checked after each row, so vector
+growth can overshoot it; one oversized row still needs enough task memory to represent it. File rolling and close drain pending rows; Arrow buffers and the native encoder are released
+on failure. Arrow allocations use the task off-heap budget. The native encoder receives Paimon's
+Java output stream and never opens storage itself. Borrowed Arrow bundles retain their direct
+columnar path. This uses released parquet-rs through the optional Parquet module; paimon-rust
+continues to supply the admitted read/merge logic, without moving Java's table algorithms to Rust.
+
+`streamfusion.operator.paimonBatchEncoding.enabled=false` retains the previous Java encoder for
+these operations while preserving native source/compute execution. The master native switch and
+`paimonSink` switch also disable this boundary. Missing native modules, unsupported Parquet writer
+types/options, per-level formats, row tracking, data evolution, BLOBs and specialized file indexes
+retain stock handling. Paimon 1.0 external log stores also retain the original sink. ORC encoding
+for these Java batch operations remains stock.
+`PaimonBatchSqlTest` checks overwrite partition selection, DELETE/UPDATE row kinds, clustering,
+nested values, nanosecond timestamps, independent job switches and retry commits against stock
+readback, requiring native Parquet footers for admitted files. Its Unicode UPPER/LOWER controls
+check native input/output with native and stock computation, including initialization under
+the configured source memory budget. `PaimonBatchEncodingTest` verifies row reuse, rolling/close
+drainage and cleanup after encoder open/write/finish failures. The
+unchanged released `AppendOnlyTableITCase`, `AppendTableITCase` and `BatchFileStoreITCase` retain
+their own assertions for Java operation behavior.
+
 Privilege-protected primary-key tables retain the stock sink: native sequence initialization
 currently scans committed bucket metadata and must not add a `SELECT` privilege requirement
 to an `INSERT`-only user. Paimon's stock writer preserves its original privilege checks.
 
 The [bounded Paimon benchmarks](../benchmarks/paimon-batch.md) describe complete connector copies
-and the unchanged TPC-H workload with committed Paimon outputs.
+and the unchanged TPC-H workload with committed Paimon outputs. The [TPC-DS suite](../benchmarks/tpcds.md)
+adds all 103 released Flink variants for 99 templates with Paimon inputs and committed outputs.
 
 ## Streaming source
 
@@ -793,8 +826,8 @@ Java local merger and its exact buffer grouping. Those inputs are exposed as Arr
 copied into Paimon's row buffer, and merged results are written into new Arrow batches. This pays
 a row conversion cost to preserve aggregation/retraction results and intermediate input changelogs.
 Both paths keep row kinds, hold watermarks behind pending rows, flush before checkpoint barriers
-and end of input, and release uncommitted buffers on cancellation. Batch clustering remains on stock
-Paimon. `PaimonLocalMergeTest`, `PaimonLocalMergeBoundaryTest`, and `PaimonLocalMergeNativeTest` cover
+and end of input, and release uncommitted buffers on cancellation. Batch clustering retains Java
+planning and sorting, with admitted Parquet files encoded natively at the format boundary. `PaimonLocalMergeTest`, `PaimonLocalMergeBoundaryTest`, and `PaimonLocalMergeNativeTest` cover
 SQL writes and reopened jobs, released Java buffer boundaries, and Arrow ownership/checkpoint restore.
 
 ### Merge engines and input ordering
@@ -1063,8 +1096,10 @@ Other bucket modes and unpartitioned tables retain their normal routing, as in s
 force fallback. Paimon 2.0.0 skips range clustering in **STREAMING execution mode**, even for a
 bounded source, so these options do not insert a shuffle or sort. Typed option values are still
 parsed as in Paimon, so malformed booleans and sample factors remain errors. Incremental-clustering
-table settings retain Paimon's Java write and compaction behavior. StreamFusion accelerates only the
-streaming planner; batch range clustering and separate clustering jobs remain stock Paimon.
+table settings retain Paimon's Java write and compaction behavior. Batch SQL range clustering
+keeps the Java sampling, shuffle and sort, with admitted Parquet encoding at the file boundary.
+Paimon 1.0 uses `sink.clustering.by-columns`; Paimon 2.x also accepts that older alias for
+`clustering.columns`. Separate clustering maintenance jobs retain their existing Java handling.
 
 ### Writer and commit coordinators
 

@@ -19,6 +19,10 @@ transport properties remain process settings where explicitly identified below.
   controls the stateless changelog filter. All default on.
   Optional connector operators only activate once the matching connector extension and format JAR
   are installed; otherwise the plan falls back to Flink's own path.
+  Batch grouping sets, unordered limits, analytic windows and bounded ranks use `expand`,
+  `limit`, `overAggregate` and `rank` respectively. `paimonBatchEncoding` independently
+  controls native Parquet encoding beneath Java-owned batch overwrite, mutation and
+  clustering operations; see [Paimon](connectors/paimon.md#bounded-batch-source-and-sink).
 - **`streamfusion.experimental.jvmGroupAggregates`** (system property, default true) — enable
   verified synchronous single-phase JVM UDAFs with VARCHAR/INT/BIGINT inputs/results. Set false
   for the preceding host fallback. Cache and borrowed-exit performance experiments retain their
@@ -96,6 +100,12 @@ transport properties remain process settings where explicitly identified below.
 - **`-Dstreamfusion.exchange.zeroCopyLocal=...`** — vouch for a single-TaskManager deployment so the
   columnar exchange can hand off batches by ownership transfer instead of Arrow IPC on a same-process
   edge. See [Zero-copy local shuffle](optimizations/zero-copy-local-shuffle.md).
+
+- **`streamfusion.shuffle.nativeLz4.enabled`** (default true, TaskManager configuration)
+  — use the bounds-checked JNI LZ4 decoder on StreamFusion tasks' existing shuffle
+  input gates. A JVM `-Dstreamfusion.shuffle.nativeLz4.enabled=false` override retains
+  Flink's decoder. This setting does not alter stock tasks, compression selection,
+  block framing or shuffle IO. See [native LZ4 shuffle decoding](optimizations/native-lz4-shuffle.md).
 - **`-Dstreamfusion.exchange.coalesceRows`** (default 4096) / **`-Dstreamfusion.exchange.coalesceLatencyMs`**
   (default 50) — re-assemble processing-sized batches after the keyed exchange fragments them across
   parallel subtasks. These also accept per-job Flink configuration and are captured before
