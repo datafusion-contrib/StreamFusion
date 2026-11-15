@@ -875,7 +875,7 @@
         "NativeCalcOperator": 1
       },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported"
+        "batch Calc: Flink string ordering depends on its Java or serialized representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[method:testParquetNestedRowExceedingReadBatch()]": {
@@ -904,7 +904,7 @@
         "NativeCalcOperator": 1
       },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported"
+        "batch Calc: Flink string ordering depends on its Java or serialized representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[method:testStreamReadEmptyTablePath()]": {
@@ -1068,67 +1068,59 @@
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBatchReadWithLimit(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#1]": {
       "native_work": {
-        "NativeCalcOperator": 1
+        "NativeCalcOperator": 1,
+        "NativeBatchLimitOperator": 1
       },
-      "fallback_reasons": [
-        "batch: unsupported interior operator BatchPhysicalLimit"
-      ]
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBatchReadWithLimit(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#2]": {
       "native_work": {
-        "NativeCalcOperator": 1
+        "NativeCalcOperator": 1,
+        "NativeBatchLimitOperator": 1
       },
-      "fallback_reasons": [
-        "batch: unsupported interior operator BatchPhysicalLimit"
-      ]
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBatchReadWithLimit(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#3]": {
       "native_work": {
-        "NativeCalcOperator": 1
+        "NativeCalcOperator": 1,
+        "NativeBatchLimitOperator": 1
       },
-      "fallback_reasons": [
-        "batch: unsupported interior operator BatchPhysicalLimit"
-      ]
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBatchReadWithLimit(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#4]": {
       "native_work": {
-        "NativeCalcOperator": 1
+        "NativeCalcOperator": 1,
+        "NativeBatchLimitOperator": 1
       },
-      "fallback_reasons": [
-        "batch: unsupported interior operator BatchPhysicalLimit"
-      ]
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBatchReadWithLimitAndFilter(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#1]": {
       "native_work": {
-        "NativeCalcOperator": 1
+        "NativeCalcOperator": 1,
+        "NativeBatchLimitOperator": 1
       },
-      "fallback_reasons": [
-        "batch: unsupported interior operator BatchPhysicalLimit"
-      ]
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBatchReadWithLimitAndFilter(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#2]": {
       "native_work": {
-        "NativeCalcOperator": 1
+        "NativeCalcOperator": 1,
+        "NativeBatchLimitOperator": 1
       },
-      "fallback_reasons": [
-        "batch: unsupported interior operator BatchPhysicalLimit"
-      ]
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBatchReadWithLimitAndFilter(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#3]": {
       "native_work": {
-        "NativeCalcOperator": 1
+        "NativeCalcOperator": 1,
+        "NativeBatchLimitOperator": 1
       },
-      "fallback_reasons": [
-        "batch: unsupported interior operator BatchPhysicalLimit"
-      ]
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBatchReadWithLimitAndFilter(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#4]": {
       "native_work": {
-        "NativeCalcOperator": 1
+        "NativeCalcOperator": 1,
+        "NativeBatchLimitOperator": 1
       },
-      "fallback_reasons": [
-        "batch: unsupported interior operator BatchPhysicalLimit"
-      ]
+      "fallback_reasons": []
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBatchUpsertWithMiniBatches(org.apache.hudi.table.ITTestHoodieDataSource$ExecMode, org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#1]": {
       "native_work": {
@@ -1225,7 +1217,7 @@
         "NativeCalcOperator": 1
       },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported"
+        "batch Calc: Flink string ordering depends on its Java or serialized representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBulkInsert(java.lang.String, boolean)]/[test-template-invocation:#2]": {
@@ -1233,7 +1225,7 @@
         "NativeCalcOperator": 1
       },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported"
+        "batch Calc: Flink string ordering depends on its Java or serialized representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBulkInsert(java.lang.String, boolean)]/[test-template-invocation:#3]": {
@@ -1241,7 +1233,7 @@
         "NativeCalcOperator": 1
       },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported"
+        "batch Calc: Flink string ordering depends on its Java or serialized representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBulkInsert(java.lang.String, boolean)]/[test-template-invocation:#4]": {
@@ -1249,31 +1241,31 @@
         "NativeCalcOperator": 1
       },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported"
+        "batch Calc: Flink string ordering depends on its Java or serialized representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBulkInsertWithPartitionBucketIndex(java.lang.String, java.lang.String)]/[test-template-invocation:#1]": {
       "native_work": {},
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported"
+        "batch Calc: Flink string ordering depends on its Java or serialized representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBulkInsertWithPartitionBucketIndex(java.lang.String, java.lang.String)]/[test-template-invocation:#2]": {
       "native_work": {},
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported"
+        "batch Calc: Flink string ordering depends on its Java or serialized representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBulkInsertWithPartitionBucketIndex(java.lang.String, java.lang.String)]/[test-template-invocation:#3]": {
       "native_work": {},
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported"
+        "batch Calc: Flink string ordering depends on its Java or serialized representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testBulkInsertWithPartitionBucketIndex(java.lang.String, java.lang.String)]/[test-template-invocation:#4]": {
       "native_work": {},
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported"
+        "batch Calc: Flink string ordering depends on its Java or serialized representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testChangelogCompactionSchedule(java.lang.Boolean)]/[test-template-invocation:#1]": {
@@ -1311,7 +1303,7 @@
         "NativeCalcOperator": 1
       },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported"
+        "batch Calc: Flink string ordering depends on its Java or serialized representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testDataSkippingOnMetadataColumns(org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#2]": {
@@ -1319,7 +1311,7 @@
         "NativeCalcOperator": 1
       },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported"
+        "batch Calc: Flink string ordering depends on its Java or serialized representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testDataSkippingWithRecordLevelIndex(org.apache.hudi.common.model.HoodieTableType, boolean, boolean)]/[test-template-invocation:#1]": {
@@ -2263,7 +2255,7 @@
         "NativeCalcOperator": 1
       },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported"
+        "batch Calc: Flink string ordering depends on its Java or serialized representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testUpdateDelete(java.lang.String, org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#2]": {
@@ -2271,7 +2263,7 @@
         "NativeCalcOperator": 1
       },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported"
+        "batch Calc: Flink string ordering depends on its Java or serialized representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testUpdateDelete(java.lang.String, org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#3]": {
@@ -2279,7 +2271,7 @@
         "NativeCalcOperator": 1
       },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported"
+        "batch Calc: Flink string ordering depends on its Java or serialized representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testUpdateDelete(java.lang.String, org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#4]": {
@@ -2287,7 +2279,7 @@
         "NativeCalcOperator": 1
       },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported"
+        "batch Calc: Flink string ordering depends on its Java or serialized representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteAndRead(org.apache.hudi.table.ITTestHoodieDataSource$ExecMode, boolean)]/[test-template-invocation:#1]": {
@@ -2295,7 +2287,7 @@
         "NativeCalcOperator": 1
       },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported"
+        "batch Calc: Flink string ordering depends on its Java or serialized representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteAndRead(org.apache.hudi.table.ITTestHoodieDataSource$ExecMode, boolean)]/[test-template-invocation:#2]": {
@@ -2303,7 +2295,7 @@
         "NativeCalcOperator": 1
       },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported"
+        "batch Calc: Flink string ordering depends on its Java or serialized representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteAndRead(org.apache.hudi.table.ITTestHoodieDataSource$ExecMode, boolean)]/[test-template-invocation:#3]": {
@@ -2363,7 +2355,7 @@
         "NativeCalcOperator": 1
       },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported"
+        "batch Calc: Flink string ordering depends on its Java or serialized representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteAndReadWithDataSkipping(org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#2]": {
@@ -2371,7 +2363,7 @@
         "NativeCalcOperator": 1
       },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported"
+        "batch Calc: Flink string ordering depends on its Java or serialized representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteAndReadWithDatePartitioning(java.lang.String)]/[test-template-invocation:#1]": {
@@ -2441,7 +2433,7 @@
         "NativeCalcOperator": 1
       },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported"
+        "batch Calc: Flink string ordering depends on its Java or serialized representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteAndReadWithTimestampPartitioning(org.apache.hudi.table.ITTestHoodieDataSource$ExecMode, boolean)]/[test-template-invocation:#2]": {
@@ -2449,7 +2441,7 @@
         "NativeCalcOperator": 1
       },
       "fallback_reasons": [
-        "batch Calc: expression or representation is unsupported"
+        "batch Calc: Flink string ordering depends on its Java or serialized representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteAndReadWithTimestampPartitioning(org.apache.hudi.table.ITTestHoodieDataSource$ExecMode, boolean)]/[test-template-invocation:#3]": {

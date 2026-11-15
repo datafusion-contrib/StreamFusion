@@ -371,6 +371,16 @@ match without refresh, and the released JAR/helper hashes were rechecked.
 The [full local report, log and source/library provenance](https://github.com/jordepic/StreamFusion-contrib/releases/tag/benchmark-evidence-hudi-upstream-20261115-bf877576f)
 were archived and independently hash-verified. This is local compatibility
 evidence; final hosted merge qualification remains separate.
+After the subsequent core integration, a full native corpus inventory again
+passes all 349 enabled cases with the same one disabled case. Its restored batch
+observer preserves the 20 non-scalar fallback contracts, refines 22 generic Calc
+fallbacks to the more specific string-ordering reason, and replaces eight
+unsupported-LIMIT fallbacks with required positive runtime columnar LIMIT work.
+The other 319 contracts and every existing native-work minimum remain unchanged.
+The [original failed observer replay and focused regression proof](https://github.com/jordepic/StreamFusion-contrib/releases/tag/benchmark-evidence-hudi-observer-20261115-e57ee4ce2)
+remain separate from the [complete restored inventory and bounded contract review](https://github.com/jordepic/StreamFusion-contrib/releases/tag/benchmark-evidence-hudi-routes-20261115-e57ee4ce2).
+The inventory retains its inventory status; it does not qualify the default
+both-mode hosted gate or establish additional native Hudi I/O coverage.
 CI runs the default corpus
 in the Hudi JDK 17 lane and uploads the concise report.
 CI also runs the runner's failure-path regressions: missing or duplicate invocations,
