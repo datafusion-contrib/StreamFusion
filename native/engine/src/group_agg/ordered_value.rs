@@ -1,4 +1,5 @@
 use super::DistinctSet;
+use crate::expression_protocol::group_aggregate_kind;
 use crate::*;
 use std::collections::VecDeque;
 
@@ -6,7 +7,7 @@ pub(super) const SINGLE_VALUE_ERROR: &str =
     "SingleValueAggFunction received more than one element.";
 
 pub(super) fn is_ordered_value(kind: i64) -> bool {
-    matches!(kind, 12..=16 | 19..=21)
+    matches!(kind, group_aggregate_kind::FIRST_VALUE_APPEND..=group_aggregate_kind::LAST_VALUE_RETRACT | group_aggregate_kind::FIRST_VALUE_DISTINCT..=group_aggregate_kind::SINGLE_VALUE_COUNT)
 }
 
 pub(super) struct OrderedValueColumn<'a> {
@@ -95,13 +96,22 @@ impl OrderedValueState {
             retained: None,
             distinct_retention_mode: None,
             distinct_payload: 0,
-            distinct: matches!(kind, 19 | 20)
-                .then(|| Box::new(DistinctSet::new(&accumulator_type(kind, value_type)))),
+            distinct: matches!(
+                kind,
+                group_aggregate_kind::FIRST_VALUE_DISTINCT
+                    | group_aggregate_kind::LAST_VALUE_DISTINCT
+            )
+            .then(|| Box::new(DistinctSet::new(&accumulator_type(kind, value_type)))),
         }
     }
 
     pub(super) fn skips_value(&self, is_null: bool) -> bool {
-        self.kind == 12 && !self.value.is_null() || is_null && !matches!(self.kind, 14 | 21)
+        self.kind == group_aggregate_kind::FIRST_VALUE_APPEND && !self.value.is_null()
+            || is_null
+                && !matches!(
+                    self.kind,
+                    group_aggregate_kind::SINGLE_VALUE | group_aggregate_kind::SINGLE_VALUE_COUNT
+                )
     }
 
     pub(super) fn update_with_ttl(
@@ -111,10 +121,14 @@ impl OrderedValueState {
         ttl: StateTtl,
         previous_write: i64,
     ) -> Result<bool, DataFusionError> {
-        if !matches!(self.kind, 15 | 16) || !ttl.enabled() && self.retained.is_none() {
+        if !matches!(
+            self.kind,
+            group_aggregate_kind::FIRST_VALUE_RETRACT | group_aggregate_kind::LAST_VALUE_RETRACT
+        ) || !ttl.enabled() && self.retained.is_none()
+        {
             return self.update(value, retract);
         }
-        let last = self.kind == 16;
+        let last = self.kind == group_aggregate_kind::LAST_VALUE_RETRACT;
         if self.retained.is_none() {
             let mut retained = super::ordered_retention::RetainedOrderedValues::new();
             let mut selected = null_scalar(&self.value.data_type());
@@ -150,7 +164,10 @@ impl OrderedValueState {
         if self.distinct_retention_mode.is_some() {
             return;
         }
-        assert!(matches!(self.kind, 19 | 20));
+        assert!(matches!(
+            self.kind,
+            group_aggregate_kind::FIRST_VALUE_DISTINCT | group_aggregate_kind::LAST_VALUE_DISTINCT
+        ));
         self.distinct_payload = self
             .distinct
             .as_ref()
@@ -174,7 +191,7 @@ impl OrderedValueState {
                     &mut selected,
                     value,
                     false,
-                    self.kind == 20,
+                    self.kind == group_aggregate_kind::LAST_VALUE_DISTINCT,
                     StateTtl::new(i64::MAX, previous_write),
                 );
             }
@@ -217,7 +234,7 @@ impl OrderedValueState {
             return Ok(false);
         }
         if append {
-            if self.kind == 20 || self.value.is_null() {
+            if self.kind == group_aggregate_kind::LAST_VALUE_DISTINCT || self.value.is_null() {
                 self.value = value;
             }
         } else {
@@ -225,7 +242,7 @@ impl OrderedValueState {
                 &mut self.value,
                 value,
                 retract,
-                self.kind == 20,
+                self.kind == group_aggregate_kind::LAST_VALUE_DISTINCT,
                 ttl,
             );
         }
@@ -306,30 +323,36 @@ impl OrderedValueState {
             }
             return Ok(true);
         }
-        if matches!(self.kind, 14 | 21) {
+        if matches!(
+            self.kind,
+            group_aggregate_kind::SINGLE_VALUE | group_aggregate_kind::SINGLE_VALUE_COUNT
+        ) {
             if (retract && !matches!(self.count, 0 | 1)) || (!retract && self.count > 0) {
                 return Err(DataFusionError::Execution(SINGLE_VALUE_ERROR.into()));
             }
             if retract {
-                if self.kind != 21 {
+                if self.kind != group_aggregate_kind::SINGLE_VALUE_COUNT {
                     self.value = null_scalar(&self.value.data_type());
                 }
                 self.count = self.count.wrapping_sub(1);
             } else {
-                if self.kind != 21 {
+                if self.kind != group_aggregate_kind::SINGLE_VALUE_COUNT {
                     self.value = value;
                 }
                 self.count = self.count.wrapping_add(1);
             }
         } else if !value.is_null() {
             match self.kind {
-                12 | 13 => {
+                group_aggregate_kind::FIRST_VALUE_APPEND
+                | group_aggregate_kind::LAST_VALUE_APPEND => {
                     assert!(!retract, "append-only first/last cannot retract");
-                    if self.kind == 13 || self.value.is_null() {
+                    if self.kind == group_aggregate_kind::LAST_VALUE_APPEND || self.value.is_null()
+                    {
                         self.value = value;
                     }
                 }
-                15 | 16 => {
+                group_aggregate_kind::FIRST_VALUE_RETRACT
+                | group_aggregate_kind::LAST_VALUE_RETRACT => {
                     if retract {
                         // Released generic binary MapView keys use byte-array identity.
                         if matches!(
@@ -378,9 +401,15 @@ impl OrderedValueState {
 
     pub(super) fn emit(&self) -> ScalarValue {
         match self.kind {
-            21 => ScalarValue::Int32(Some(self.count)),
-            15 | 19 => self.values.front().unwrap_or(&self.value).clone(),
-            16 | 20 => self.values.back().unwrap_or(&self.value).clone(),
+            group_aggregate_kind::SINGLE_VALUE_COUNT => ScalarValue::Int32(Some(self.count)),
+            group_aggregate_kind::FIRST_VALUE_RETRACT
+            | group_aggregate_kind::FIRST_VALUE_DISTINCT => {
+                self.values.front().unwrap_or(&self.value).clone()
+            }
+            group_aggregate_kind::LAST_VALUE_RETRACT
+            | group_aggregate_kind::LAST_VALUE_DISTINCT => {
+                self.values.back().unwrap_or(&self.value).clone()
+            }
             _ => self.value.clone(),
         }
     }

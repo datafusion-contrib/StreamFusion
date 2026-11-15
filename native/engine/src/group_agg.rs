@@ -1,4 +1,5 @@
 use crate::aggregates::{RAW_SUM_PARTIAL, RETRACTING_DECIMAL_SUM};
+use crate::expression_protocol::group_aggregate_kind;
 use crate::*;
 
 mod canonical;
@@ -433,31 +434,57 @@ pub(crate) fn emit_running(agg: &RunningAgg, count: i64, result_type: &DataType)
 impl GroupAggState {
     fn new(kind: i64, value_type: &DataType) -> Self {
         match kind {
-            48..=53 => Self::Collection(Box::new(CollectionState::new(kind, value_type))),
-            38 | 39 => Self::Mapped(Box::new(MappedExtreme::new(kind == 38))),
-            26..=31 | 42..=45 => Self::Json(Box::new(JsonAggState::new(kind))),
-            24 | 25 | 32 | 33 | 46 | 47 => Self::List(ListAggState::new(kind)),
-            12..=16 | 19..=21 => Self::Ordered(OrderedValueState::new(kind, value_type)),
-            1 => GroupAggState::Extremes {
+            group_aggregate_kind::COLLECT
+                ..=group_aggregate_kind::ARRAY_AGG_DISTINCT_IGNORE_NULLS => {
+                Self::Collection(Box::new(CollectionState::new(kind, value_type)))
+            }
+            group_aggregate_kind::MIN_MAPPED_PARTIAL | group_aggregate_kind::MAX_MAPPED_PARTIAL => {
+                Self::Mapped(Box::new(MappedExtreme::new(
+                    kind == group_aggregate_kind::MIN_MAPPED_PARTIAL,
+                )))
+            }
+            group_aggregate_kind::JSON_ARRAY_ABSENT_ON_NULL
+                ..=group_aggregate_kind::JSON_OBJECT_LEGACY_NULL_ON_NULL
+            | group_aggregate_kind::JSON_OBJECT_MERGE_ABSENT_ON_NULL
+                ..=group_aggregate_kind::JSON_OBJECT_MERGE_LEGACY_NULL_ON_NULL => {
+                Self::Json(Box::new(JsonAggState::new(kind)))
+            }
+            group_aggregate_kind::LISTAGG_APPEND
+            | group_aggregate_kind::LISTAGG_RETRACT
+            | group_aggregate_kind::LISTAGG_DISTINCT_APPEND
+            | group_aggregate_kind::LISTAGG_DISTINCT_RETRACT
+            | group_aggregate_kind::LISTAGG_MERGE
+            | group_aggregate_kind::LISTAGG_MERGE_WITH_SEPARATOR => {
+                Self::List(ListAggState::new(kind))
+            }
+            group_aggregate_kind::FIRST_VALUE_APPEND..=group_aggregate_kind::LAST_VALUE_RETRACT
+            | group_aggregate_kind::FIRST_VALUE_DISTINCT
+                ..=group_aggregate_kind::SINGLE_VALUE_COUNT => {
+                Self::Ordered(OrderedValueState::new(kind, value_type))
+            }
+            group_aggregate_kind::MIN => GroupAggState::Extremes {
                 is_min: true,
                 counts: BTreeMap::new(),
                 journal: None,
                 extreme: None,
                 stale: false,
             }, // MIN
-            2 => GroupAggState::Extremes {
+            group_aggregate_kind::MAX => GroupAggState::Extremes {
                 is_min: false,
                 counts: BTreeMap::new(),
                 journal: None,
                 extreme: None,
                 stale: false,
             }, // MAX
-            7 => GroupAggState::Distinct {
+            group_aggregate_kind::COUNT_DISTINCT => GroupAggState::Distinct {
                 set: DistinctSet::new(value_type),
                 live: 0,
             }, // COUNT(DISTINCT)
             // DISTINCT wraps the ordinary SUM/AVG accumulator and folds only set transitions.
-            9 | 17 | 18 | 34 => GroupAggState::DistinctRunning {
+            group_aggregate_kind::SUM_DISTINCT
+            | group_aggregate_kind::AVG_DISTINCT
+            | group_aggregate_kind::AVG_DISTINCT_PARTIAL_SUM
+            | group_aggregate_kind::SUM_ZERO_DISTINCT => GroupAggState::DistinctRunning {
                 counts: DistinctSet::new(value_type),
                 agg: RunningAgg::new(kind, value_type),
                 live: 0,
@@ -502,13 +529,19 @@ impl GroupAggState {
         else {
             unreachable!("running string extreme")
         };
-        assert!(matches!(kind, 10 | 11), "append string extreme kind");
+        assert!(
+            matches!(
+                *kind,
+                group_aggregate_kind::MIN_APPEND | group_aggregate_kind::MAX_APPEND
+            ),
+            "append string extreme kind"
+        );
         if value.as_deref().is_none_or(|current| {
             let order = match (cache, java_utf16.as_deref()) {
                 (Some(candidate), Some(current)) => candidate.cmp(current),
                 _ => candidate.cmp(current),
             };
-            if *kind == 10 {
+            if *kind == group_aggregate_kind::MIN_APPEND {
                 order.is_lt()
             } else {
                 order.is_gt()
@@ -554,27 +587,28 @@ impl GroupAggState {
     }
 
     fn new_local(kind: i64, value_type: &DataType, append_only: bool) -> Self {
-        if matches!(kind, 10 | 11)
-            && !matches!(
-                value_type,
-                DataType::Utf8
-                    | DataType::Int64
-                    | DataType::Int32
-                    | DataType::Int16
-                    | DataType::Int8
-                    | DataType::Float64
-                    | DataType::Float32
-                    | DataType::Date32
-                    | DataType::Time32(arrow::datatypes::TimeUnit::Millisecond)
-                    | DataType::Boolean
-            )
-        {
+        if matches!(
+            kind,
+            group_aggregate_kind::MIN_APPEND | group_aggregate_kind::MAX_APPEND
+        ) && !matches!(
+            value_type,
+            DataType::Utf8
+                | DataType::Int64
+                | DataType::Int32
+                | DataType::Int16
+                | DataType::Int8
+                | DataType::Float64
+                | DataType::Float32
+                | DataType::Date32
+                | DataType::Time32(arrow::datatypes::TimeUnit::Millisecond)
+                | DataType::Boolean
+        ) {
             return Self::new(kind - 9, value_type);
         }
         // The local half of an insert-only two-phase aggregate never retracts its inputs. Its
         // fixed-width MIN/MAX partial therefore needs one value, not the global/retracting multiset.
         let running_extreme = append_only
-            && matches!(kind, 1 | 2)
+            && matches!(kind, group_aggregate_kind::MIN | group_aggregate_kind::MAX)
             && matches!(
                 value_type,
                 DataType::Int64
@@ -1165,7 +1199,20 @@ impl GroupStateCodec {
         let multiset_aggs: Vec<usize> = kinds
             .iter()
             .enumerate()
-            .filter(|&(_, &kind)| matches!(kind, 1 | 2 | 7 | 9 | 17 | 18 | 34 | 38 | 39))
+            .filter(|&(_, &kind)| {
+                matches!(
+                    kind,
+                    group_aggregate_kind::MIN
+                        | group_aggregate_kind::MAX
+                        | group_aggregate_kind::COUNT_DISTINCT
+                        | group_aggregate_kind::SUM_DISTINCT
+                        | group_aggregate_kind::AVG_DISTINCT
+                        | group_aggregate_kind::AVG_DISTINCT_PARTIAL_SUM
+                        | group_aggregate_kind::SUM_ZERO_DISTINCT
+                        | group_aggregate_kind::MIN_MAPPED_PARTIAL
+                        | group_aggregate_kind::MAX_MAPPED_PARTIAL
+                )
+            })
             .map(|(i, _)| i)
             .collect();
         let distinct_view_columns = if distinct_view_columns.is_empty() {
@@ -1187,7 +1234,7 @@ impl GroupStateCodec {
     /// DISTINCT element is the distinct value itself.
     fn element_type(&self, agg: usize) -> DataType {
         match self.kinds[agg] {
-            1 | 2 => self.state_types[agg].clone(),
+            group_aggregate_kind::MIN | group_aggregate_kind::MAX => self.state_types[agg].clone(),
             _ => self.value_types[agg].clone(),
         }
     }
@@ -1205,10 +1252,18 @@ impl crate::state::RocksStateCodec for GroupStateCodec {
             )
     }
     fn preserve_expired_main(&self) -> bool {
-        self.kinds.iter().any(|kind| matches!(kind, 38 | 39))
+        self.kinds.iter().any(|kind| {
+            matches!(
+                *kind,
+                group_aggregate_kind::MIN_MAPPED_PARTIAL | group_aggregate_kind::MAX_MAPPED_PARTIAL
+            )
+        })
     }
     fn multiset_has_timestamps(&self, table: usize) -> bool {
-        matches!(self.kinds[self.multiset_aggs[table]], 38 | 39)
+        matches!(
+            self.kinds[self.multiset_aggs[table]],
+            group_aggregate_kind::MIN_MAPPED_PARTIAL | group_aggregate_kind::MAX_MAPPED_PARTIAL
+        )
     }
     fn multiset_write_ms(&self, state: &GroupKeyState, table: usize, element: &ScalarValue) -> i64 {
         match &state.aggs[self.multiset_aggs[table]] {
@@ -1243,7 +1298,7 @@ impl crate::state::RocksStateCodec for GroupStateCodec {
             .collect()
     }
     fn multiset_null_is_value(&self, table: usize) -> bool {
-        self.kinds[self.multiset_aggs[table]] == 7
+        self.kinds[self.multiset_aggs[table]] == group_aggregate_kind::COUNT_DISTINCT
     }
     fn arm_multisets(&self, state: &mut GroupKeyState) {
         for &agg in &self.multiset_aggs {
@@ -1295,7 +1350,16 @@ impl crate::state::RocksStateCodec for GroupStateCodec {
             return None;
         }
         let column = batch.column(self.value_columns[agg] as usize);
-        let column = if matches!(self.kinds[agg], 1 | 2 | 7 | 9 | 17 | 18 | 34) {
+        let column = if matches!(
+            self.kinds[agg],
+            group_aggregate_kind::MIN
+                | group_aggregate_kind::MAX
+                | group_aggregate_kind::COUNT_DISTINCT
+                | group_aggregate_kind::SUM_DISTINCT
+                | group_aggregate_kind::AVG_DISTINCT
+                | group_aggregate_kind::AVG_DISTINCT_PARTIAL_SUM
+                | group_aggregate_kind::SUM_ZERO_DISTINCT
+        ) {
             crate::flink_float::canonical_array(column)
         } else {
             column.clone()
@@ -1304,7 +1368,10 @@ impl crate::state::RocksStateCodec for GroupStateCodec {
         Some((column, rows))
     }
     fn multiset_extreme_is_min(&self, table: usize) -> bool {
-        matches!(self.kinds[self.multiset_aggs[table]], 1 | 38)
+        matches!(
+            self.kinds[self.multiset_aggs[table]],
+            group_aggregate_kind::MIN | group_aggregate_kind::MIN_MAPPED_PARTIAL
+        )
     }
     fn multiset_extreme_stale(&self, state: &GroupKeyState, table: usize) -> bool {
         state.aggs[self.multiset_aggs[table]].multiset_extreme_stale()
@@ -1460,7 +1527,11 @@ pub(crate) fn group_state_types(kinds: &[i64], value_types: &[DataType]) -> Vec<
             if is_collection(kind)
                 || is_list_agg(kind)
                 || is_json_agg(kind)
-                || matches!(kind, 38 | 39)
+                || matches!(
+                    kind,
+                    group_aggregate_kind::MIN_MAPPED_PARTIAL
+                        | group_aggregate_kind::MAX_MAPPED_PARTIAL
+                )
             {
                 DataType::Binary
             } else if is_ordered_value(kind) {
@@ -1884,11 +1955,17 @@ impl GroupAggregator {
             .map(|(&kind, vt)| {
                 if is_collection(kind) {
                     collection_agg::result_type(kind, vt)
-                } else if kind == 21 {
+                } else if kind == group_aggregate_kind::SINGLE_VALUE_COUNT {
                     DataType::Int32
                 } else if is_list_agg(kind) || is_json_agg(kind) {
                     DataType::Utf8
-                } else if is_ordered_value(kind) || matches!(kind, 38 | 39) {
+                } else if is_ordered_value(kind)
+                    || matches!(
+                        kind,
+                        group_aggregate_kind::MIN_MAPPED_PARTIAL
+                            | group_aggregate_kind::MAX_MAPPED_PARTIAL
+                    )
+                {
                     vt.clone()
                 } else {
                     RunningAgg::new(kind, vt).result_type()
@@ -1899,7 +1976,15 @@ impl GroupAggregator {
         let filter_columns = vec![-1; kinds.len()];
         let count_columns = vec![-1; kinds.len()];
         let distinct_view_columns = vec![-1; kinds.len()];
-        let has_retractable_extremes = kinds.iter().any(|kind| matches!(kind, 1 | 2 | 38 | 39));
+        let has_retractable_extremes = kinds.iter().any(|kind| {
+            matches!(
+                *kind,
+                group_aggregate_kind::MIN
+                    | group_aggregate_kind::MAX
+                    | group_aggregate_kind::MIN_MAPPED_PARTIAL
+                    | group_aggregate_kind::MAX_MAPPED_PARTIAL
+            )
+        });
         GroupAggregator {
             has_retractable_extremes,
             kinds,
@@ -2168,7 +2253,15 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
     /// reading for this call (only read when state TTL is on).
     fn bind_ordered_value_type(&mut self, index: usize, data_type: &DataType) {
         if self.value_types[index] == DataType::Null
-            && matches!(self.kinds[index], 12 | 13 | 15 | 16 | 19 | 20)
+            && matches!(
+                self.kinds[index],
+                group_aggregate_kind::FIRST_VALUE_APPEND
+                    | group_aggregate_kind::LAST_VALUE_APPEND
+                    | group_aggregate_kind::FIRST_VALUE_RETRACT
+                    | group_aggregate_kind::LAST_VALUE_RETRACT
+                    | group_aggregate_kind::FIRST_VALUE_DISTINCT
+                    | group_aggregate_kind::LAST_VALUE_DISTINCT
+            )
         {
             self.value_types[index] = data_type.clone();
             self.accumulator_types[index] = data_type.clone();
@@ -2228,8 +2321,13 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             .iter()
             .enumerate()
             .map(|(i, kind)| {
-                (self.stock_extrema && matches!(kind, 38 | 39))
-                    .then(|| batch.column(self.value_columns[i] as usize))
+                (self.stock_extrema
+                    && matches!(
+                        *kind,
+                        group_aggregate_kind::MIN_MAPPED_PARTIAL
+                            | group_aggregate_kind::MAX_MAPPED_PARTIAL
+                    ))
+                .then(|| batch.column(self.value_columns[i] as usize))
             })
             .collect();
         self.snapshot_cache = None;
@@ -2304,14 +2402,27 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             .iter()
             .enumerate()
             .map(|(i, kind)| {
-                (matches!(kind, 7 | 9 | 17 | 32 | 33 | 34)
-                    && self.distinct_view_columns[i] >= 0
+                (matches!(
+                    *kind,
+                    group_aggregate_kind::COUNT_DISTINCT
+                        | group_aggregate_kind::SUM_DISTINCT
+                        | group_aggregate_kind::AVG_DISTINCT
+                        | group_aggregate_kind::LISTAGG_DISTINCT_APPEND
+                        | group_aggregate_kind::LISTAGG_DISTINCT_RETRACT
+                        | group_aggregate_kind::SUM_ZERO_DISTINCT
+                ) && self.distinct_view_columns[i] >= 0
                     && (ordered_distinct_type(&self.value_types[i])
                         || self.value_types[i] == DataType::Utf8)
                     && (self.stock_global_merge && ordered_distinct_type(&self.value_types[i])
                         || (0..num_agg).any(|j| {
-                            matches!(self.kinds[j], 9 | 17 | 32 | 33 | 34)
-                                && self.distinct_view_columns[j] >= 0
+                            matches!(
+                                self.kinds[j],
+                                group_aggregate_kind::SUM_DISTINCT
+                                    | group_aggregate_kind::AVG_DISTINCT
+                                    | group_aggregate_kind::LISTAGG_DISTINCT_APPEND
+                                    | group_aggregate_kind::LISTAGG_DISTINCT_RETRACT
+                                    | group_aggregate_kind::SUM_ZERO_DISTINCT
+                            ) && self.distinct_view_columns[j] >= 0
                                 && self.value_types[j] == self.value_types[i]
                                 && same_view(i, j)
                         })))
@@ -2409,7 +2520,14 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         // `self` field while `state` is borrowed.
         let distinct_cols: Vec<Option<usize>> = (0..num_agg)
             .map(|i| {
-                (matches!(self.kinds[i], 7 | 9 | 17 | 18 | 34) && self.distinct_view_columns[i] < 0)
+                (matches!(
+                    self.kinds[i],
+                    group_aggregate_kind::COUNT_DISTINCT
+                        | group_aggregate_kind::SUM_DISTINCT
+                        | group_aggregate_kind::AVG_DISTINCT
+                        | group_aggregate_kind::AVG_DISTINCT_PARTIAL_SUM
+                        | group_aggregate_kind::SUM_ZERO_DISTINCT
+                ) && self.distinct_view_columns[i] < group_aggregate_kind::SUM)
                     .then_some(self.value_columns[i] as usize)
             })
             .collect();
@@ -2440,8 +2558,13 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         // typed running state for insert-only inputs, or the Extremes multiset otherwise.
         let scalar_extreme_cols: Vec<Option<usize>> = (0..num_agg)
             .map(|i| {
-                if matches!(self.kinds[i], 1 | 2 | 10 | 11)
-                    && self.value_columns[i] >= 0
+                if matches!(
+                    self.kinds[i],
+                    group_aggregate_kind::MIN
+                        | group_aggregate_kind::MAX
+                        | group_aggregate_kind::MIN_APPEND
+                        | group_aggregate_kind::MAX_APPEND
+                ) && self.value_columns[i] >= 0
                     && self.distinct_view_columns[i] < 0
                 {
                     let col = self.value_columns[i] as usize;
@@ -2477,7 +2600,11 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             .zip(&self.result_types)
             .enumerate()
             .filter_map(|(slot, (kind, ty))| {
-                (matches!(kind, 10 | 11) && *ty == DataType::Utf8).then_some(slot)
+                (matches!(
+                    *kind,
+                    group_aggregate_kind::MIN_APPEND | group_aggregate_kind::MAX_APPEND
+                ) && *ty == DataType::Utf8)
+                    .then_some(slot)
             })
             .collect();
         let mut string_outputs: Vec<Vec<Option<Arc<[u16]>>>> =
@@ -2537,19 +2664,20 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         // column is the pre-summed sum partial and the count folds from this column, not +1 per row.
         let single_count_cols: Vec<Option<&Int32Array>> = (0..num_agg)
             .map(|i| {
-                (self.count_columns[i] >= 0 && self.kinds[i] == 14).then(|| {
-                    batch
-                        .column(self.count_columns[i] as usize)
-                        .as_any()
-                        .downcast_ref::<Int32Array>()
-                        .expect("single-value count partial must be int")
-                })
+                (self.count_columns[i] >= 0 && self.kinds[i] == group_aggregate_kind::SINGLE_VALUE)
+                    .then(|| {
+                        batch
+                            .column(self.count_columns[i] as usize)
+                            .as_any()
+                            .downcast_ref::<Int32Array>()
+                            .expect("single-value count partial must be int")
+                    })
             })
             .collect();
         let merge_count_cols: Vec<Option<&Int64Array>> = (0..num_agg)
             .map(|i| {
                 (self.count_columns[i] >= 0
-                    && self.kinds[i] != 14
+                    && self.kinds[i] != group_aggregate_kind::SINGLE_VALUE
                     && !is_list_agg(self.kinds[i])
                     && !is_json_agg(self.kinds[i]))
                 .then(|| {
@@ -2646,10 +2774,22 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         let retained_modes = self.distinct_modes.clone();
         let preserved_states = self.preserve_distinct_state.clone();
         let distinct_ordered = !self.mini_batch
-            && self.kinds.iter().any(|kind| matches!(kind, 19 | 20))
+            && self.kinds.iter().any(|kind| {
+                matches!(
+                    *kind,
+                    group_aggregate_kind::FIRST_VALUE_DISTINCT
+                        | group_aggregate_kind::LAST_VALUE_DISTINCT
+                )
+            })
             && self.kinds.iter().enumerate().all(|(i, kind)| {
-                matches!(kind, 19 | 20 | 7)
-                    || *kind == 3 && self.value_columns[i] < 0 && self.count_columns[i] < 0
+                matches!(
+                    *kind,
+                    group_aggregate_kind::FIRST_VALUE_DISTINCT
+                        | group_aggregate_kind::LAST_VALUE_DISTINCT
+                        | group_aggregate_kind::COUNT_DISTINCT
+                ) || *kind == group_aggregate_kind::COUNT
+                    && self.value_columns[i] < 0
+                    && self.count_columns[i] < 0
             })
             && self.distinct_view_columns.iter().all(|column| *column < 0);
         let mut result_changed = vec![false; num_agg];
@@ -2674,12 +2814,21 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         let track = self.memory.tracking();
         // One unfiltered SINGLE_VALUE accumulator already holds the complete result.
         let single_value = self.kinds.as_slice() == [14] && self.filter_columns[0] < 0;
-        let zero_sum_merges: Vec<bool> = self.kinds.iter().map(|&kind| kind == 23).collect();
+        let zero_sum_merges: Vec<bool> = self
+            .kinds
+            .iter()
+            .map(|&kind| kind == group_aggregate_kind::SUM_ZERO_MERGE)
+            .collect();
         let sum_merges: Vec<_> = (0..num_agg)
             .map(|i| {
                 self.mini_batch
                     && self.count_columns[i] >= 0
-                    && matches!(self.kinds[i], 0 | 4 | RETRACTING_DECIMAL_SUM)
+                    && matches!(
+                        self.kinds[i],
+                        group_aggregate_kind::SUM
+                            | group_aggregate_kind::AVG
+                            | RETRACTING_DECIMAL_SUM
+                    )
             })
             .collect();
         let staged_key_batch = self.staged_key_batches.len();
@@ -2833,10 +2982,18 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     state.bytes() - std::mem::size_of::<ListAggState>()
                 });
                 if let Some(buffer) = slot {
-                    buffer.merge(incoming, self.kinds[i] == 47, StateTtl::new(0, now_ms));
+                    buffer.merge(
+                        incoming,
+                        self.kinds[i] == group_aggregate_kind::LISTAGG_MERGE_WITH_SEPARATOR,
+                        StateTtl::new(0, now_ms),
+                    );
                 } else {
                     let mut buffer = ListAggState::new(25);
-                    buffer.merge(incoming, self.kinds[i] == 47, StateTtl::new(0, now_ms));
+                    buffer.merge(
+                        incoming,
+                        self.kinds[i] == group_aggregate_kind::LISTAGG_MERGE_WITH_SEPARATOR,
+                        StateTtl::new(0, now_ms),
+                    );
                     *slot = Some(buffer);
                 }
                 mapped_delta += (slot.as_ref().unwrap().bytes()
@@ -2844,13 +3001,18 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     - before as isize;
             }
             for i in 0..num_agg {
-                if !matches!(self.kinds[i], 38 | 39) || self.distinct_view_columns[i] < 0 {
+                if !matches!(
+                    self.kinds[i],
+                    group_aggregate_kind::MIN_MAPPED_PARTIAL
+                        | group_aggregate_kind::MAX_MAPPED_PARTIAL
+                ) || self.distinct_view_columns[i] < group_aggregate_kind::SUM
+                {
                     continue;
                 }
                 let incoming = MappedExtreme::from_partial(
                     batch.column(self.distinct_view_columns[i] as usize),
                     row,
-                    self.kinds[i] == 38,
+                    self.kinds[i] == group_aggregate_kind::MIN_MAPPED_PARTIAL,
                 );
                 if !self.extreme_partials.contains_key(key) {
                     staged_delta += byte_key_bytes(key)
@@ -2954,7 +3116,11 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 }
                 let buffer = self.sum_partials.get_mut(key).unwrap()[i].get_or_insert_with(|| {
                     RunningAgg::new(
-                        if self.kinds[i] == 4 { 8 } else { self.kinds[i] },
+                        if self.kinds[i] == group_aggregate_kind::AVG {
+                            8
+                        } else {
+                            self.kinds[i]
+                        },
                         batch.column(self.value_columns[i] as usize).data_type(),
                     )
                 });
@@ -3676,7 +3842,11 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                         let GroupAggState::List(list) = &mut state.aggs[i] else {
                             unreachable!()
                         };
-                        list.merge(buffer, self.kinds[i] == 47, ttl);
+                        list.merge(
+                            buffer,
+                            self.kinds[i] == group_aggregate_kind::LISTAGG_MERGE_WITH_SEPARATOR,
+                            ttl,
+                        );
                     }
                 }
                 if self.memory.tracking() {
@@ -3716,7 +3886,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     if let Some(buffer) = buffer {
                         let value = buffer.emit();
                         if value.is_null() {
-                            if self.kinds[i] == 4 {
+                            if self.kinds[i] == group_aggregate_kind::AVG {
                                 state.aggs[i].merge_overflowed(0, false);
                             }
                         } else {
@@ -4049,7 +4219,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     }
                     GroupAggState::DistinctRunning { counts, agg, live } => {
                         // Wide decimal SUM and AVG overflow depends on arrival order.
-                        if self.kinds[i] == 17
+                        if self.kinds[i] == group_aggregate_kind::AVG_DISTINCT
                             || self.wide_distinct_sum(i)
                             || self.preserve_distinct_state[i]
                         {
@@ -4117,7 +4287,21 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             // the retractable representation and a blob round-trips across the two.
             if matches!(
                 self.kinds[i],
-                1 | 2 | 7 | 9 | 10 | 11 | 15 | 16 | 17 | 18 | 19 | 20 | 34 | 38 | 39
+                group_aggregate_kind::MIN
+                    | group_aggregate_kind::MAX
+                    | group_aggregate_kind::COUNT_DISTINCT
+                    | group_aggregate_kind::SUM_DISTINCT
+                    | group_aggregate_kind::MIN_APPEND
+                    | group_aggregate_kind::MAX_APPEND
+                    | group_aggregate_kind::FIRST_VALUE_RETRACT
+                    | group_aggregate_kind::LAST_VALUE_RETRACT
+                    | group_aggregate_kind::AVG_DISTINCT
+                    | group_aggregate_kind::AVG_DISTINCT_PARTIAL_SUM
+                    | group_aggregate_kind::FIRST_VALUE_DISTINCT
+                    | group_aggregate_kind::LAST_VALUE_DISTINCT
+                    | group_aggregate_kind::SUM_ZERO_DISTINCT
+                    | group_aggregate_kind::MIN_MAPPED_PARTIAL
+                    | group_aggregate_kind::MAX_MAPPED_PARTIAL
             ) {
                 let mut f = vec![Field::new("binary_key", DataType::Binary, false)];
                 let mut c: Vec<ArrayRef> = vec![Arc::new(
@@ -4126,7 +4310,14 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 // MIN/MAX values take the aggregate's result type; a distinct value keeps its own type
                 // (a COUNT's bigint result type does not describe it), inferred from the scalars.
                 let values = std::mem::take(&mut multiset_values[i]);
-                let value_array: ArrayRef = if matches!(self.kinds[i], 7 | 9 | 17 | 18 | 34) {
+                let value_array: ArrayRef = if matches!(
+                    self.kinds[i],
+                    group_aggregate_kind::COUNT_DISTINCT
+                        | group_aggregate_kind::SUM_DISTINCT
+                        | group_aggregate_kind::AVG_DISTINCT
+                        | group_aggregate_kind::AVG_DISTINCT_PARTIAL_SUM
+                        | group_aggregate_kind::SUM_ZERO_DISTINCT
+                ) {
                     if values.is_empty() {
                         new_empty_array(&DataType::Int64) // 0 rows — type is immaterial on restore
                     } else {
@@ -4292,7 +4483,9 @@ impl GroupAggregator {
 
 impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
     fn wide_distinct_sum(&self, i: usize) -> bool {
-        self.kinds[i] == 34 || self.kinds[i] == 9 && ordered_distinct_type(&self.value_types[i])
+        self.kinds[i] == group_aggregate_kind::SUM_ZERO_DISTINCT
+            || self.kinds[i] == group_aggregate_kind::SUM_DISTINCT
+                && ordered_distinct_type(&self.value_types[i])
     }
 
     /// Decodes one raw key-group snapshot blob into the backing store through the state seam, so
@@ -4313,7 +4506,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         }
         let preserved_distinct: Vec<_> = (0..num_agg)
             .map(|i| {
-                self.kinds[i] == 17
+                self.kinds[i] == group_aggregate_kind::AVG_DISTINCT
                     || main
                         .schema()
                         .field(2 + 2 * i)
@@ -4456,7 +4649,21 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         for i in 0..num_agg {
             if !matches!(
                 self.kinds[i],
-                1 | 2 | 7 | 9 | 10 | 11 | 15 | 16 | 17 | 18 | 19 | 20 | 34 | 38 | 39
+                group_aggregate_kind::MIN
+                    | group_aggregate_kind::MAX
+                    | group_aggregate_kind::COUNT_DISTINCT
+                    | group_aggregate_kind::SUM_DISTINCT
+                    | group_aggregate_kind::MIN_APPEND
+                    | group_aggregate_kind::MAX_APPEND
+                    | group_aggregate_kind::FIRST_VALUE_RETRACT
+                    | group_aggregate_kind::LAST_VALUE_RETRACT
+                    | group_aggregate_kind::AVG_DISTINCT
+                    | group_aggregate_kind::AVG_DISTINCT_PARTIAL_SUM
+                    | group_aggregate_kind::FIRST_VALUE_DISTINCT
+                    | group_aggregate_kind::LAST_VALUE_DISTINCT
+                    | group_aggregate_kind::SUM_ZERO_DISTINCT
+                    | group_aggregate_kind::MIN_MAPPED_PARTIAL
+                    | group_aggregate_kind::MAX_MAPPED_PARTIAL
             ) {
                 continue;
             }
@@ -4608,7 +4815,12 @@ impl GroupAggregator<RocksGroupStore> {
         &mut self,
         now_ms: i64,
     ) -> Result<(), DataFusionError> {
-        if self.kinds.iter().any(|kind| matches!(kind, 38 | 39)) {
+        if self.kinds.iter().any(|kind| {
+            matches!(
+                *kind,
+                group_aggregate_kind::MIN_MAPPED_PARTIAL | group_aggregate_kind::MAX_MAPPED_PARTIAL
+            )
+        }) {
             if let Some(reader) = self.store.legacy_snapshot_reader()? {
                 reader.migrate(|partitions, _timer| self.import_partitions(partitions, now_ms))?;
             }
@@ -4762,8 +4974,17 @@ impl LocalGroupAggregator {
         let mut arguments = Vec::new();
         for (i, &kind) in self.kinds.iter().enumerate() {
             let argument = (self.value_columns[i], self.auxiliary_columns[i]);
-            if ((matches!(kind, 9 | 18 | 34) && ordered_distinct_type(&self.value_types[i]))
-                || matches!(kind, 32 | 33))
+            if ((matches!(
+                kind,
+                group_aggregate_kind::SUM_DISTINCT
+                    | group_aggregate_kind::AVG_DISTINCT_PARTIAL_SUM
+                    | group_aggregate_kind::SUM_ZERO_DISTINCT
+            ) && ordered_distinct_type(&self.value_types[i]))
+                || matches!(
+                    kind,
+                    group_aggregate_kind::LISTAGG_DISTINCT_APPEND
+                        | group_aggregate_kind::LISTAGG_DISTINCT_RETRACT
+                ))
                 && !arguments.contains(&argument)
             {
                 arguments.push(argument);
@@ -4792,7 +5013,13 @@ impl LocalGroupAggregator {
     ) -> Self {
         let retracting_extremes = kinds
             .iter()
-            .map(|kind| matches!(kind, 38 | 39))
+            .map(|kind| {
+                matches!(
+                    *kind,
+                    group_aggregate_kind::MIN_MAPPED_PARTIAL
+                        | group_aggregate_kind::MAX_MAPPED_PARTIAL
+                )
+            })
             .collect::<Vec<_>>();
 
         let value_types: Vec<DataType> = value_types.iter().map(|&c| value_data_type(c)).collect();
@@ -4809,9 +5036,16 @@ impl LocalGroupAggregator {
                     list_agg::partial_type()
                 } else if json_agg::is_object_merge(kind) {
                     json_agg::object_partial_type()
-                } else if kind == 21 {
+                } else if kind == group_aggregate_kind::SINGLE_VALUE_COUNT {
                     DataType::Int32
-                } else if is_list_agg(kind) || is_ordered_value(kind) || matches!(kind, 38 | 39) {
+                } else if is_list_agg(kind)
+                    || is_ordered_value(kind)
+                    || matches!(
+                        kind,
+                        group_aggregate_kind::MIN_MAPPED_PARTIAL
+                            | group_aggregate_kind::MAX_MAPPED_PARTIAL
+                    )
+                {
                     vt.clone()
                 } else {
                     RunningAgg::new(kind, vt).result_type()
@@ -4826,8 +5060,17 @@ impl LocalGroupAggregator {
         let mut ordered_view_groups = Vec::new();
         let mut columns = Vec::new();
         for (i, &kind) in kinds.iter().enumerate() {
-            if (matches!(kind, 9 | 18 | 34) && ordered_distinct_type(&value_types[i])
-                || matches!(kind, 32 | 33))
+            if (matches!(
+                kind,
+                group_aggregate_kind::SUM_DISTINCT
+                    | group_aggregate_kind::AVG_DISTINCT_PARTIAL_SUM
+                    | group_aggregate_kind::SUM_ZERO_DISTINCT
+            ) && ordered_distinct_type(&value_types[i])
+                || matches!(
+                    kind,
+                    group_aggregate_kind::LISTAGG_DISTINCT_APPEND
+                        | group_aggregate_kind::LISTAGG_DISTINCT_RETRACT
+                ))
                 && !columns.contains(&value_columns[i])
             {
                 columns.push(value_columns[i]);
@@ -4909,7 +5152,12 @@ impl LocalGroupAggregator {
     }
 
     fn recycle_states(&mut self, mut states: Vec<GroupAggState>) {
-        let max_entries = if self.kinds.iter().any(|kind| matches!(kind, 14 | 21)) {
+        let max_entries = if self.kinds.iter().any(|kind| {
+            matches!(
+                *kind,
+                group_aggregate_kind::SINGLE_VALUE | group_aggregate_kind::SINGLE_VALUE_COUNT
+            )
+        }) {
             4096
         } else {
             128
@@ -4920,7 +5168,10 @@ impl LocalGroupAggregator {
                 matches!(
                     state,
                     GroupAggState::Distinct { .. } | GroupAggState::DistinctRunning { .. }
-                ) || matches!(kind, 14 | 21) && matches!(state, GroupAggState::Ordered(_))
+                ) || matches!(
+                    *kind,
+                    group_aggregate_kind::SINGLE_VALUE | group_aggregate_kind::SINGLE_VALUE_COUNT
+                ) && matches!(state, GroupAggState::Ordered(_))
             })
         {
             return;
@@ -5028,7 +5279,9 @@ impl LocalGroupAggregator {
         let canonical = string_input::canonical(batch)?;
         let batch = canonical.as_ref();
         for i in 0..self.kinds.len() {
-            if self.value_types[i] == DataType::Null && self.kinds[i] == 7 {
+            if self.value_types[i] == DataType::Null
+                && self.kinds[i] == group_aggregate_kind::COUNT_DISTINCT
+            {
                 let data_type = batch
                     .column(self.value_columns[i] as usize)
                     .data_type()
@@ -5086,8 +5339,11 @@ impl LocalGroupAggregator {
             .collect();
         if n > 0 {
             for i in 0..num_agg {
-                if matches!(self.kinds[i], 32 | 33)
-                    && self.auxiliary_columns[i] >= 0
+                if matches!(
+                    self.kinds[i],
+                    group_aggregate_kind::LISTAGG_DISTINCT_APPEND
+                        | group_aggregate_kind::LISTAGG_DISTINCT_RETRACT
+                ) && self.auxiliary_columns[i] >= 0
                     && self.argument_separators[i].is_none()
                 {
                     let (_, separator) = list_columns[i].as_ref().unwrap();
@@ -5166,8 +5422,15 @@ impl LocalGroupAggregator {
         // Typed column readers avoid per-row scalar materialization.
         let distinct_cols: Vec<Option<usize>> = (0..num_agg)
             .map(|i| {
-                matches!(self.kinds[i], 7 | 9 | 17 | 18 | 34)
-                    .then_some(self.value_columns[i] as usize)
+                matches!(
+                    self.kinds[i],
+                    group_aggregate_kind::COUNT_DISTINCT
+                        | group_aggregate_kind::SUM_DISTINCT
+                        | group_aggregate_kind::AVG_DISTINCT
+                        | group_aggregate_kind::AVG_DISTINCT_PARTIAL_SUM
+                        | group_aggregate_kind::SUM_ZERO_DISTINCT
+                )
+                .then_some(self.value_columns[i] as usize)
             })
             .collect();
         let distinct_columns: Vec<_> = distinct_cols
@@ -5195,7 +5458,14 @@ impl LocalGroupAggregator {
         // into typed running state for insert-only inputs, or the Extremes multiset otherwise.
         let scalar_extreme_cols: Vec<Option<usize>> = (0..num_agg)
             .map(|i| {
-                if matches!(self.kinds[i], 1 | 2 | 10 | 11) && self.value_columns[i] >= 0 {
+                if matches!(
+                    self.kinds[i],
+                    group_aggregate_kind::MIN
+                        | group_aggregate_kind::MAX
+                        | group_aggregate_kind::MIN_APPEND
+                        | group_aggregate_kind::MAX_APPEND
+                ) && self.value_columns[i] >= group_aggregate_kind::SUM
+                {
                     let col = self.value_columns[i] as usize;
                     let data_type = batch.column(col).data_type();
                     (matches!(
@@ -5231,7 +5501,7 @@ impl LocalGroupAggregator {
             .iter()
             .zip(&self.value_columns)
             .map(|(&kind, &column)| {
-                (is_ordered_value(kind) && kind != 21)
+                (is_ordered_value(kind) && kind != group_aggregate_kind::SINGLE_VALUE_COUNT)
                     .then(|| ordered_value::OrderedValueColumn::new(batch.column(column as usize)))
             })
             .collect();
@@ -5326,7 +5596,12 @@ impl LocalGroupAggregator {
                         continue;
                     }
                 }
-                if retract && matches!(self.kinds[i], 10 | 11) {
+                if retract
+                    && matches!(
+                        self.kinds[i],
+                        group_aggregate_kind::MIN_APPEND | group_aggregate_kind::MAX_APPEND
+                    )
+                {
                     continue;
                 }
                 if self.retracting_extremes[i] {
@@ -5351,7 +5626,11 @@ impl LocalGroupAggregator {
                         .as_ref()
                         .map_or(Some(","), |column| column.at(row))
                         .expect("validated LISTAGG separator");
-                    if matches!(self.kinds[i], 32 | 33) {
+                    if matches!(
+                        self.kinds[i],
+                        group_aggregate_kind::LISTAGG_DISTINCT_APPEND
+                            | group_aggregate_kind::LISTAGG_DISTINCT_RETRACT
+                    ) {
                         list.update_local_retract(values.at(row), separator, retract);
                     } else if list_agg::is_merge(self.kinds[i]) {
                         list.update(values.at(row), separator, retract);
@@ -5361,7 +5640,7 @@ impl LocalGroupAggregator {
                     continue;
                 }
                 if let GroupAggState::Ordered(ordered) = &mut entry.states[i] {
-                    let value = if self.kinds[i] == 21 {
+                    let value = if self.kinds[i] == group_aggregate_kind::SINGLE_VALUE_COUNT {
                         ScalarValue::Null
                     } else {
                         ordered_columns[i]
@@ -5593,7 +5872,9 @@ impl LocalGroupAggregator {
         let mut string_slots = Vec::new();
         let mut string_outputs = Vec::new();
         for (i, rt) in self.result_types.iter().enumerate() {
-            if list_agg::is_merge(self.kinds[i]) || self.kinds[i] == 33 {
+            if list_agg::is_merge(self.kinds[i])
+                || self.kinds[i] == group_aggregate_kind::LISTAGG_DISTINCT_RETRACT
+            {
                 let partials = list_agg::partials(order.iter().map(|key| {
                     let entry = match key {
                         LocalGroupKey::Byte(key) => &states[key],
@@ -5654,7 +5935,11 @@ impl LocalGroupAggregator {
                 ));
                 columns.push(scalars_to_array(separators, &DataType::Utf8));
             }
-            if matches!(self.kinds[i], 10 | 11) && *rt == DataType::Utf8 {
+            if matches!(
+                self.kinds[i],
+                group_aggregate_kind::MIN_APPEND | group_aggregate_kind::MAX_APPEND
+            ) && *rt == DataType::Utf8
+            {
                 string_slots.push(columns.len() - self.key_types.len());
                 string_outputs.push(
                     order
@@ -5731,7 +6016,11 @@ impl LocalGroupAggregator {
                 let accumulator = arrow::array::StructArray::new(
                     vec![
                         Arc::new(Field::new(
-                            if self.kinds[i] == 38 { "min" } else { "max" },
+                            if self.kinds[i] == group_aggregate_kind::MIN_MAPPED_PARTIAL {
+                                "min"
+                            } else {
+                                "max"
+                            },
                             rt.clone(),
                             true,
                         )),

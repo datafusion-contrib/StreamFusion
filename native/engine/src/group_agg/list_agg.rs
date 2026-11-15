@@ -1,13 +1,25 @@
+use crate::expression_protocol::group_aggregate_kind;
 use crate::*;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
 pub(super) fn is_list_agg(kind: i64) -> bool {
-    matches!(kind, 24 | 25 | 32 | 33 | 46 | 47)
+    matches!(
+        kind,
+        group_aggregate_kind::LISTAGG_APPEND
+            | group_aggregate_kind::LISTAGG_RETRACT
+            | group_aggregate_kind::LISTAGG_DISTINCT_APPEND
+            | group_aggregate_kind::LISTAGG_DISTINCT_RETRACT
+            | group_aggregate_kind::LISTAGG_MERGE
+            | group_aggregate_kind::LISTAGG_MERGE_WITH_SEPARATOR
+    )
 }
 
 pub(super) fn is_merge(kind: i64) -> bool {
-    matches!(kind, 46 | 47)
+    matches!(
+        kind,
+        group_aggregate_kind::LISTAGG_MERGE | group_aggregate_kind::LISTAGG_MERGE_WITH_SEPARATOR
+    )
 }
 
 pub(super) fn partials<'a>(states: impl Iterator<Item = &'a ListAggState>) -> ArrayRef {
@@ -68,12 +80,21 @@ pub(crate) struct ListAggState {
 impl ListAggState {
     pub(super) fn new(kind: i64) -> Self {
         Self {
-            append_only: matches!(kind, 24 | 32),
+            append_only: matches!(
+                kind,
+                group_aggregate_kind::LISTAGG_APPEND
+                    | group_aggregate_kind::LISTAGG_DISTINCT_APPEND
+            ),
             prefix: None,
             separator: None,
             values: VecDeque::new(),
             pending_retractions: VecDeque::new(),
-            distinct: matches!(kind, 32 | 33).then(Box::default),
+            distinct: matches!(
+                kind,
+                group_aggregate_kind::LISTAGG_DISTINCT_APPEND
+                    | group_aggregate_kind::LISTAGG_DISTINCT_RETRACT
+            )
+            .then(Box::default),
             timestamps: None,
             distinct_bytes: 0,
             element_bytes: 0,
@@ -81,7 +102,7 @@ impl ListAggState {
     }
 
     pub(super) fn from_partial(partial: &arrow::array::StructArray, row: usize) -> Self {
-        let mut state = Self::new(25);
+        let mut state = Self::new(group_aggregate_kind::LISTAGG_RETRACT);
         for (index, target) in [(0, &mut state.values), (1, &mut state.pending_retractions)] {
             let list = partial
                 .column(index)

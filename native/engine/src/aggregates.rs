@@ -675,7 +675,7 @@ impl WindowAggregate {
         match (kind, value_type) {
             (COUNT_DISTINCT_WITH_COUNTS, _) => WindowAggregate::CountedDistinct(value_type.clone()),
             (
-                22,
+                window_aggregate_kind::SUM_ZERO,
                 DataType::Int8
                 | DataType::Int16
                 | DataType::Int32
@@ -698,44 +698,61 @@ impl WindowAggregate {
             ) => WindowAggregate::RetractingSum(value_type.clone()),
             (RETRACT_COUNT | LIVE_COUNT | HIDDEN_LIVE_COUNT, _) => WindowAggregate::RetractingCount,
             // SUM over a narrow int keeps the host's narrow, wrapping semantics rather than widening.
-            (0, DataType::Int32) => WindowAggregate::WrappingIntSum,
-            (0, DataType::Int16 | DataType::Int8) => {
+            (window_aggregate_kind::SUM, DataType::Int32) => WindowAggregate::WrappingIntSum,
+            (window_aggregate_kind::SUM, DataType::Int16 | DataType::Int8) => {
                 WindowAggregate::WrappingNarrowSum(value_type.clone())
             }
-            (0, DataType::Float32 | DataType::Float64) => {
+            (window_aggregate_kind::SUM, DataType::Float32 | DataType::Float64) => {
                 WindowAggregate::FloatingSum(value_type.clone())
             }
-            (0, DataType::Decimal128(_, s)) => WindowAggregate::DecimalSum { scale: *s },
-            (1 | 2, DataType::Float32 | DataType::Float64) => WindowAggregate::FloatingExtreme {
+            (window_aggregate_kind::SUM, DataType::Decimal128(_, s)) => {
+                WindowAggregate::DecimalSum { scale: *s }
+            }
+            (
+                window_aggregate_kind::MIN | window_aggregate_kind::MAX,
+                DataType::Float32 | DataType::Float64,
+            ) => WindowAggregate::FloatingExtreme {
                 kind,
                 value_type: value_type.clone(),
             },
-            (1 | 2, dt) if streamfusion_bridge::timestamp::is_timestamp(dt) => {
-                WindowAggregate::TimestampExtreme { minimum: kind == 1 }
+            (window_aggregate_kind::MIN | window_aggregate_kind::MAX, dt)
+                if streamfusion_bridge::timestamp::is_timestamp(dt) =>
+            {
+                WindowAggregate::TimestampExtreme {
+                    minimum: kind == window_aggregate_kind::MIN,
+                }
             }
             (
-                1 | 2,
+                window_aggregate_kind::MIN | window_aggregate_kind::MAX,
                 DataType::Date32
                 | DataType::Time32(arrow::datatypes::TimeUnit::Millisecond)
                 | DataType::Boolean,
             ) => WindowAggregate::ScalarExtreme {
-                minimum: kind == 1,
+                minimum: kind == window_aggregate_kind::MIN,
                 value_type: value_type.clone(),
             },
-            (7, DataType::Float32 | DataType::Float64) => WindowAggregate::FloatingDistinctCount(
-                build_builtin(kind, value_type),
-                value_type.clone(),
-            ),
-            (0..=3 | 7, _) => WindowAggregate::Builtin(build_builtin(kind, value_type)),
+            (window_aggregate_kind::COUNT_DISTINCT, DataType::Float32 | DataType::Float64) => {
+                WindowAggregate::FloatingDistinctCount(
+                    build_builtin(kind, value_type),
+                    value_type.clone(),
+                )
+            }
+            (
+                window_aggregate_kind::SUM..=window_aggregate_kind::COUNT
+                | window_aggregate_kind::COUNT_DISTINCT,
+                _,
+            ) => WindowAggregate::Builtin(build_builtin(kind, value_type)),
             // Float AVG sums in double and narrows to float; double AVG stays double; integer AVG
             // truncates to its type.
-            (4, DataType::Float32) => WindowAggregate::FloatAvg,
-            (4, DataType::Float64) => WindowAggregate::DoubleAvg,
-            (4, DataType::Decimal128(_, s)) => WindowAggregate::DecimalAvg {
-                scale: *s,
-                retracting: false,
-            },
-            (4, _) => WindowAggregate::IntegerAvg(value_type.clone()),
+            (window_aggregate_kind::AVG, DataType::Float32) => WindowAggregate::FloatAvg,
+            (window_aggregate_kind::AVG, DataType::Float64) => WindowAggregate::DoubleAvg,
+            (window_aggregate_kind::AVG, DataType::Decimal128(_, s)) => {
+                WindowAggregate::DecimalAvg {
+                    scale: *s,
+                    retracting: false,
+                }
+            }
+            (window_aggregate_kind::AVG, _) => WindowAggregate::IntegerAvg(value_type.clone()),
             (other, _) => panic!("unsupported aggregate kind: {other}"),
         }
     }
@@ -880,7 +897,9 @@ impl WindowAggregate {
         match self {
             WindowAggregate::CountedDistinct(_) => DataType::Int64,
             WindowAggregate::Count => DataType::Int64,
-            WindowAggregate::ZeroSum(value_type) => RunningAgg::new(22, value_type).result_type(),
+            WindowAggregate::ZeroSum(value_type) => {
+                RunningAgg::new(group_aggregate_kind::SUM_ZERO, value_type).result_type()
+            }
             WindowAggregate::RetractingSum(value_type) => value_type.clone(),
             WindowAggregate::RetractingCount => DataType::Int64,
             WindowAggregate::Builtin(aggregate)
@@ -1298,18 +1317,38 @@ pub(crate) enum RunningAgg {
 
 impl RunningAgg {
     pub(crate) fn new_over(kind: i64, value_type: &DataType) -> Self {
-        if matches!(kind, 1 | 2 | 5 | 6) && *value_type == DataType::Utf8 {
+        if matches!(
+            kind,
+            group_aggregate_kind::MIN
+                | group_aggregate_kind::MAX
+                | group_aggregate_kind::FIRST_VALUE_LEGACY
+                | group_aggregate_kind::LAST_VALUE_LEGACY
+        ) && *value_type == DataType::Utf8
+        {
             return Self::OverStringValue {
                 value: None,
                 java_utf16: None,
                 kind,
             };
         }
-        if matches!(kind, 1 | 2 | 5 | 6) && streamfusion_bridge::timestamp::is_timestamp(value_type)
+        if matches!(
+            kind,
+            group_aggregate_kind::MIN
+                | group_aggregate_kind::MAX
+                | group_aggregate_kind::FIRST_VALUE_LEGACY
+                | group_aggregate_kind::LAST_VALUE_LEGACY
+        ) && streamfusion_bridge::timestamp::is_timestamp(value_type)
         {
             return Self::OverTimestampValue { value: None, kind };
         }
-        if let (1 | 2 | 5 | 6, DataType::Decimal128(precision, scale)) = (kind, value_type) {
+        if let (
+            group_aggregate_kind::MIN
+            | group_aggregate_kind::MAX
+            | group_aggregate_kind::FIRST_VALUE_LEGACY
+            | group_aggregate_kind::LAST_VALUE_LEGACY,
+            DataType::Decimal128(precision, scale),
+        ) = (kind, value_type)
+        {
             return Self::OverDecimalValue {
                 value: None,
                 precision: *precision,
@@ -1317,14 +1356,18 @@ impl RunningAgg {
                 kind,
             };
         }
-        if matches!(kind, 1 | 2 | 5 | 6)
-            && matches!(
-                value_type,
-                DataType::Date32
-                    | DataType::Time32(arrow::datatypes::TimeUnit::Millisecond)
-                    | DataType::Boolean
-            )
-        {
+        if matches!(
+            kind,
+            group_aggregate_kind::MIN
+                | group_aggregate_kind::MAX
+                | group_aggregate_kind::FIRST_VALUE_LEGACY
+                | group_aggregate_kind::LAST_VALUE_LEGACY
+        ) && matches!(
+            value_type,
+            DataType::Date32
+                | DataType::Time32(arrow::datatypes::TimeUnit::Millisecond)
+                | DataType::Boolean
+        ) {
             return Self::OverI32Value {
                 value: None,
                 kind,
@@ -1337,7 +1380,7 @@ impl RunningAgg {
     pub(crate) fn new(kind: i64, value_type: &DataType) -> Self {
         use RunningAgg::*;
         if kind == RAW_SUM_PARTIAL {
-            return Self::new(0, value_type);
+            return Self::new(group_aggregate_kind::SUM, value_type);
         }
         if kind == RETRACTING_DECIMAL_SUM {
             let DataType::Decimal128(_, scale) = value_type else {
@@ -1349,7 +1392,12 @@ impl RunningAgg {
                 overflow: true,
             };
         }
-        if matches!(kind, 22 | 23 | 34) {
+        if matches!(
+            kind,
+            group_aggregate_kind::SUM_ZERO
+                | group_aggregate_kind::SUM_ZERO_MERGE
+                | group_aggregate_kind::SUM_ZERO_DISTINCT
+        ) {
             return match value_type {
                 DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
                     ZeroSumInt {
@@ -1367,7 +1415,7 @@ impl RunningAgg {
                 other => panic!("unsupported SUM0 value type: {other:?}"),
             };
         }
-        if kind == 18 {
+        if kind == group_aggregate_kind::AVG_DISTINCT_PARTIAL_SUM {
             let sum_type = match value_type {
                 DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
                     DataType::Int64
@@ -1376,30 +1424,35 @@ impl RunningAgg {
                 DataType::Float32 | DataType::Float64 => DataType::Float64,
                 other => panic!("unsupported distinct average partial type: {other:?}"),
             };
-            return Self::new(8, &sum_type);
+            return Self::new(group_aggregate_kind::AVG_PARTIAL_SUM, &sum_type);
         }
-        if matches!(kind, 10 | 11) && *value_type == DataType::Utf8 {
+        if matches!(
+            kind,
+            group_aggregate_kind::MIN_APPEND | group_aggregate_kind::MAX_APPEND
+        ) && *value_type == DataType::Utf8
+        {
             return OverStringValue {
                 value: None,
                 java_utf16: None,
                 kind,
             };
         }
-        if matches!(kind, 10 | 11)
-            && matches!(
-                value_type,
-                DataType::Date32
-                    | DataType::Time32(arrow::datatypes::TimeUnit::Millisecond)
-                    | DataType::Boolean
-            )
-        {
+        if matches!(
+            kind,
+            group_aggregate_kind::MIN_APPEND | group_aggregate_kind::MAX_APPEND
+        ) && matches!(
+            value_type,
+            DataType::Date32
+                | DataType::Time32(arrow::datatypes::TimeUnit::Millisecond)
+                | DataType::Boolean
+        ) {
             return TypedExtreme {
                 value: None,
-                is_min: kind == 10,
+                is_min: kind == group_aggregate_kind::MIN_APPEND,
                 data_type: value_type.clone(),
             };
         }
-        if kind == 3 || kind == 7 {
+        if kind == group_aggregate_kind::COUNT || kind == group_aggregate_kind::COUNT_DISTINCT {
             return Count(0); // COUNT and COUNT(DISTINCT) both report a bigint count
         }
         // SUM(DISTINCT) (kind 9) runs a plain SUM inside its distinct set (GroupAggState wraps it);
@@ -1407,10 +1460,10 @@ impl RunningAgg {
         // insert-only input: no retraction can ever arrive, so they run as the plain single-value
         // extremes instead of the retractable multiset.
         let kind = match kind {
-            9 => 0,
-            17 => 4, // AVG(DISTINCT) wraps the ordinary widened sum/count state.
-            10 => 1,
-            11 => 2,
+            group_aggregate_kind::SUM_DISTINCT => group_aggregate_kind::SUM,
+            group_aggregate_kind::AVG_DISTINCT => group_aggregate_kind::AVG, // AVG(DISTINCT) wraps the ordinary widened sum/count state.
+            group_aggregate_kind::MIN_APPEND => group_aggregate_kind::MIN,
+            group_aggregate_kind::MAX_APPEND => group_aggregate_kind::MAX,
             kind => kind,
         };
         // kind: 0=SUM, 1=MIN, 2=MAX, 5=FIRST_VALUE, 6=LAST_VALUE (3=COUNT handled above).
@@ -1482,15 +1535,24 @@ impl RunningAgg {
                 overflow: false,
             },
             // MIN/MAX(DECIMAL(p, s)) — the extreme lives in the multiset; result is DECIMAL(p, s).
-            (1 | 2, DataType::Decimal128(p, s)) => MinMaxDecimal {
-                precision: *p,
-                scale: *s,
-            },
+            (group_aggregate_kind::MIN | group_aggregate_kind::MAX, DataType::Decimal128(p, s)) => {
+                MinMaxDecimal {
+                    precision: *p,
+                    scale: *s,
+                }
+            }
             // MIN/MAX(string) — the extreme lives in the multiset; result is the converter's Utf8.
-            (1 | 2, DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View) => MinMaxStr,
-            (1 | 2, dt) if streamfusion_bridge::timestamp::is_timestamp(dt) => MinMaxTimestamp,
             (
-                1 | 2,
+                group_aggregate_kind::MIN | group_aggregate_kind::MAX,
+                DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View,
+            ) => MinMaxStr,
+            (group_aggregate_kind::MIN | group_aggregate_kind::MAX, dt)
+                if streamfusion_bridge::timestamp::is_timestamp(dt) =>
+            {
+                MinMaxTimestamp
+            }
+            (
+                group_aggregate_kind::MIN | group_aggregate_kind::MAX,
                 dt @ (DataType::Date32
                 | DataType::Time32(arrow::datatypes::TimeUnit::Millisecond)
                 | DataType::Boolean),
@@ -1505,10 +1567,10 @@ impl RunningAgg {
         match (self, value) {
             (OverTimestampValue { value, kind }, Num::Timestamp(candidate)) => {
                 if value.is_none_or(|current| match *kind {
-                    1 => candidate < current,
-                    2 => candidate > current,
-                    5 => false,
-                    6 => true,
+                    group_aggregate_kind::MIN => candidate < current,
+                    group_aggregate_kind::MAX => candidate > current,
+                    group_aggregate_kind::FIRST_VALUE_LEGACY => false,
+                    group_aggregate_kind::LAST_VALUE_LEGACY => true,
                     _ => unreachable!("timestamp value aggregate kind"),
                 }) {
                     *value = Some(candidate);
@@ -1516,10 +1578,10 @@ impl RunningAgg {
             }
             (OverI32Value { value, kind, .. }, Num::I32(candidate)) => {
                 if value.is_none_or(|current| match *kind {
-                    1 => candidate < current,
-                    2 => candidate > current,
-                    5 => false,
-                    6 => true,
+                    group_aggregate_kind::MIN => candidate < current,
+                    group_aggregate_kind::MAX => candidate > current,
+                    group_aggregate_kind::FIRST_VALUE_LEGACY => false,
+                    group_aggregate_kind::LAST_VALUE_LEGACY => true,
                     _ => unreachable!("typed 32-bit value aggregate kind"),
                 }) {
                     *value = Some(candidate);
@@ -1527,10 +1589,10 @@ impl RunningAgg {
             }
             (OverDecimalValue { value, kind, .. }, Num::I128(candidate)) => {
                 if value.is_none_or(|current| match *kind {
-                    1 => candidate < current,
-                    2 => candidate > current,
-                    5 => false,
-                    6 => true,
+                    group_aggregate_kind::MIN => candidate < current,
+                    group_aggregate_kind::MAX => candidate > current,
+                    group_aggregate_kind::FIRST_VALUE_LEGACY => false,
+                    group_aggregate_kind::LAST_VALUE_LEGACY => true,
                     _ => unreachable!("decimal value aggregate kind"),
                 }) {
                     *value = Some(candidate);

@@ -1,15 +1,17 @@
 use super::java_map_order::JavaMapOrder;
+use crate::expression_protocol::group_aggregate_kind;
 use crate::*;
 use serde::{Deserialize, Serialize};
 mod elements;
 use elements::{DecimalElement, FloatElement, StringElement, TimestampElement};
 
 pub(super) fn is_collection(kind: i64) -> bool {
-    (48..=53).contains(&kind)
+    (group_aggregate_kind::COLLECT..=group_aggregate_kind::ARRAY_AGG_DISTINCT_IGNORE_NULLS)
+        .contains(&kind)
 }
 
 pub(super) fn result_type(kind: i64, element: &DataType) -> DataType {
-    if kind <= 49 {
+    if kind <= group_aggregate_kind::COLLECT_DISTINCT {
         DataType::Map(
             Arc::new(Field::new(
                 "items",
@@ -31,7 +33,9 @@ pub(super) fn result_type(kind: i64, element: &DataType) -> DataType {
 
 pub(super) fn output_field(name: String, kind: i64, data_type: &DataType) -> Field {
     let field = Field::new(name, data_type.clone(), true);
-    if (50..=53).contains(&kind) {
+    if (group_aggregate_kind::ARRAY_AGG..=group_aggregate_kind::ARRAY_AGG_DISTINCT_IGNORE_NULLS)
+        .contains(&kind)
+    {
         field.with_metadata(std::collections::HashMap::from([(
             "streamfusion.array-copy".into(),
             "1".into(),
@@ -145,7 +149,10 @@ impl CollectionState {
     pub(super) fn new(kind: i64, ty: &DataType) -> Self {
         let storage = match ty {
             DataType::Utf8 => {
-                assert!(kind > 49, "character COLLECT retains the JVM handler");
+                assert!(
+                    kind > group_aggregate_kind::COLLECT_DISTINCT,
+                    "character COLLECT retains the JVM handler"
+                );
                 CollectionStorage::String(TypedCollectionState::new(kind, ty))
             }
             ty if streamfusion_bridge::timestamp::is_component_timestamp(ty) => {
@@ -383,7 +390,10 @@ where
     }
 
     pub(super) fn accepts_null(&self) -> bool {
-        matches!(self.kind, 50 | 51)
+        matches!(
+            self.kind,
+            group_aggregate_kind::ARRAY_AGG | group_aggregate_kind::ARRAY_AGG_DISTINCT
+        )
     }
 
     pub(super) fn forget_distinct(&mut self, value: &ScalarValue) {
@@ -409,11 +419,16 @@ where
         ttl: StateTtl,
         append_distinct: bool,
     ) -> bool {
-        let collect = self.kind <= 49;
+        let collect = self.kind <= group_aggregate_kind::COLLECT_DISTINCT;
         if value.is_none() && !self.accepts_null() {
             return false;
         }
-        if matches!(self.kind, 49 | 51 | 53) {
+        if matches!(
+            self.kind,
+            group_aggregate_kind::COLLECT_DISTINCT
+                | group_aggregate_kind::ARRAY_AGG_DISTINCT
+                | group_aggregate_kind::ARRAY_AGG_DISTINCT_IGNORE_NULLS
+        ) {
             let old = self.distinct.get(&value).copied().unwrap_or(0);
             if append_distinct && old != 0 {
                 return false;
@@ -464,7 +479,7 @@ where
     }
 
     pub(super) fn emit(&self, result: &DataType) -> ScalarValue {
-        if self.kind <= 49 {
+        if self.kind <= group_aggregate_kind::COLLECT_DISTINCT {
             // StateMapView.getMap materializes a fresh HashMap for each result.
             let capacity = (self.order.len().saturating_mul(4).div_ceil(3))
                 .next_power_of_two()

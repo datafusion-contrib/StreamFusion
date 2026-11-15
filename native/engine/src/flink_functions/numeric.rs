@@ -1,3 +1,4 @@
+use crate::expression_protocol::scalar_op;
 use std::sync::Arc;
 
 use arrow::array::{ArrayRef, BooleanArray};
@@ -43,12 +44,12 @@ fn compare(args: &[ArrayRef], op: i64) -> Result<ArrayRef> {
                 .zip(right.iter())
                 .map(|(left, right)| {
                     left.zip(right).map(|(left, right)| match op {
-                        10 => left > right,
-                        11 => left >= right,
-                        12 => left < right,
-                        13 => left <= right,
-                        14 => left == right,
-                        15 => left != right,
+                        scalar_op::GREATER_THAN => left > right,
+                        scalar_op::GREATER_OR_EQUAL => left >= right,
+                        scalar_op::LESS_THAN => left < right,
+                        scalar_op::LESS_OR_EQUAL => left <= right,
+                        scalar_op::EQUAL => left == right,
+                        scalar_op::NOT_EQUAL => left != right,
                         _ => unreachable!("floating comparison opcode"),
                     })
                 })

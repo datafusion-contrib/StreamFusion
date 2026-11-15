@@ -1,3 +1,4 @@
+use crate::expression_protocol::group_aggregate_kind;
 use crate::*;
 use arrow::array::ArrayBuilder;
 use serde::{Deserialize, Serialize};
@@ -11,11 +12,16 @@ struct JsonViewTimestamps {
 }
 
 pub(super) fn is_json_agg(kind: i64) -> bool {
-    (26..=31).contains(&kind) || is_object_merge(kind)
+    (group_aggregate_kind::JSON_ARRAY_ABSENT_ON_NULL
+        ..=group_aggregate_kind::JSON_OBJECT_LEGACY_NULL_ON_NULL)
+        .contains(&kind)
+        || is_object_merge(kind)
 }
 
 pub(super) fn is_object_merge(kind: i64) -> bool {
-    (42..=45).contains(&kind)
+    (group_aggregate_kind::JSON_OBJECT_MERGE_ABSENT_ON_NULL
+        ..=group_aggregate_kind::JSON_OBJECT_MERGE_LEGACY_NULL_ON_NULL)
+        .contains(&kind)
 }
 
 pub(super) fn object_partial_type() -> DataType {
@@ -64,7 +70,8 @@ pub(super) fn object_partials<'a>(states: impl Iterator<Item = &'a JsonAggState>
     let mut values = arrow::array::StringBuilder::new();
     for state in states {
         if let Some(order) = &state.local_order {
-            let legacy_null = state.kind >= 30 && state.legacy_null_key.is_some();
+            let legacy_null = state.kind >= group_aggregate_kind::JSON_OBJECT_LEGACY_ABSENT_ON_NULL
+                && state.legacy_null_key.is_some();
             let mut capacity = 16;
             while order.order.len() > capacity * 3 / 4 {
                 capacity *= 2;
@@ -92,11 +99,13 @@ pub(super) fn object_partials<'a>(states: impl Iterator<Item = &'a JsonAggState>
                 let key = order.keys[index].0.as_deref();
                 // Released 1.18's non-null STRING MapView getter turns a heap NULL key
                 // into an empty key; rebuilding its HashMap also collapses that alias.
-                keys.append_option(if state.kind >= 30 {
-                    Some(key.unwrap_or(""))
-                } else {
-                    key
-                });
+                keys.append_option(
+                    if state.kind >= group_aggregate_kind::JSON_OBJECT_LEGACY_ABSENT_ON_NULL {
+                        Some(key.unwrap_or(""))
+                    } else {
+                        key
+                    },
+                );
                 let value_index = empty_alias
                     .filter(|(first, _)| *first == index)
                     .map_or(index, |(_, last)| last);
@@ -210,7 +219,11 @@ impl JsonAggState {
             self.fields.contains_key(key)
         });
         let kind = self.kind;
-        self.kind = if kind < 30 { kind + 2 } else { kind };
+        self.kind = if kind < group_aggregate_kind::JSON_OBJECT_LEGACY_ABSENT_ON_NULL {
+            kind + 2
+        } else {
+            kind
+        };
         let result = self.update(key, value, retract);
         self.kind = kind;
         if matches!(&result, Err(DataFusionError::External(error)) if error.downcast_ref::<JsonAggregateError>().is_some_and(|error| matches!(error, JsonAggregateError::NullDuplicate)))
@@ -336,7 +349,7 @@ impl JsonAggState {
         let Some(times) = &mut self.timestamps else {
             return Ok(());
         };
-        if self.kind <= 27 {
+        if self.kind <= group_aggregate_kind::JSON_ARRAY_NULL_ON_NULL {
             if self.values.len() > old_len {
                 times.values.push_back(ttl.now());
             } else if self.values.len() < old_len {
@@ -363,7 +376,7 @@ impl JsonAggState {
         retract: bool,
     ) -> Result<(), DataFusionError> {
         let absent = self.kind % 2 == 0;
-        if self.kind <= 27 {
+        if self.kind <= group_aggregate_kind::JSON_ARRAY_NULL_ON_NULL {
             if retract {
                 let value = value.unwrap_or("null");
                 if let Some(index) = self.values.iter().position(|old| old == value) {
@@ -377,7 +390,7 @@ impl JsonAggState {
             return Ok(());
         }
         let Some(key) = key else {
-            if self.kind < 30 {
+            if self.kind < group_aggregate_kind::JSON_OBJECT_LEGACY_ABSENT_ON_NULL {
                 return Err(JsonAggregateError::NullKey.execution());
             }
             if retract {
@@ -419,7 +432,7 @@ impl JsonAggState {
             return Err(JsonAggregateError::Serialization.execution());
         }
         let mut result = String::new();
-        if self.kind <= 27 {
+        if self.kind <= group_aggregate_kind::JSON_ARRAY_NULL_ON_NULL {
             result.push('[');
             for (i, value) in self.values.iter().enumerate() {
                 if i != 0 {

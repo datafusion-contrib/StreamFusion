@@ -38,6 +38,13 @@ Boundary, modifier, family and arity guards run before value-payload preparation
 legacy rejection order even for malformed or unverified aggregate calls. Accepted payloads remain
 cached for construction and repeated diagnostics.
 
+Native factories, state-codec classification and scalar-state normalization use the generated
+group-aggregate vocabulary from the shared compact protocol. Window factories use their separate
+window vocabulary, so overlapping codes retain their context: group SUM DISTINCT and window
+retracting SUM both remain code 9. Collection, JSON, LISTAGG and ordered-value classifiers share
+those generated identities. Changelog RowKinds, storage widths and numeric compatibility fixtures
+remain separate; the encoded state and operation numbers are unchanged.
+
 Canonical qualification remains narrower than ordinary native aggregation. A shared released-state
 qualifier verifies the actual Flink aggregate-function class, generated accumulator types, every
 scalar/count slot, inserted COUNT(*), and extrema MapView layout before the typed or arithmetic
