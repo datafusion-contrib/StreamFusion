@@ -357,6 +357,10 @@ other native-work requirement and semantic fallback reason is preserved. This
 credits core Calc execution, not native Hudi I/O. Batch plans must be observed at
 the current two-argument planner boundary; the unchanged vector cases also check
 that unsupported batch representations retain their fallback evidence.
+The [historical route inventories and observer diagnostics](https://github.com/jordepic/StreamFusion-contrib/releases/tag/benchmark-evidence-hudi-contracts-20261115-905434b62)
+are independently archived with verified bundle/member hashes. They retain the
+withdrawn before-observer-fix observations separately; inventory collection does
+not qualify the default replay.
 A fresh default replay after the bounded-state and resource-ownership integration
 passes all 349 enabled cases in each stock/native mode, with the same one
 upstream-disabled case per mode. All existing native-work/fallback contracts
