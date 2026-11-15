@@ -5,6 +5,7 @@ import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.flink.table.types.logical.LogicalType;
+import tech.streamfusion.planner.common.GroupAggregateKind;
 
 /** Immutable call semantics shared by relational GROUP BY and released-plan qualification. */
 final class AggregateCallSpec {
@@ -24,7 +25,7 @@ final class AggregateCallSpec {
     auxiliaryColumn = auxiliaryColumn(call);
     valueType = physicalValueCode(call, input);
     runningExtreme =
-        (kind == 1 || kind == 2)
+        (kind == GroupAggregateKind.MIN || kind == GroupAggregateKind.MAX)
             && valueColumn >= 0
             && runningExtremeType(input.getFieldList().get(valueColumn).getType().getSqlTypeName());
   }
@@ -61,51 +62,56 @@ final class AggregateCallSpec {
     int result = kind;
     if (call.isDistinct()) {
       switch (kind) {
-        case 3:
-          result = 7;
+        case GroupAggregateKind.COUNT:
+          result = GroupAggregateKind.COUNT_DISTINCT;
           break;
-        case 0:
-          result = 9;
+        case GroupAggregateKind.SUM:
+          result = GroupAggregateKind.SUM_DISTINCT;
           break;
-        case 4:
-          result = 17;
+        case GroupAggregateKind.AVG:
+          result = GroupAggregateKind.AVG_DISTINCT;
           break;
-        case 22:
-          result = 34;
+        case GroupAggregateKind.SUM_ZERO:
+          result = GroupAggregateKind.SUM_ZERO_DISTINCT;
           break;
-        case 24:
-          result = 32;
+        case GroupAggregateKind.LISTAGG_APPEND:
+          result = GroupAggregateKind.LISTAGG_DISTINCT_APPEND;
           break;
-        case 25:
-          result = 33;
+        case GroupAggregateKind.LISTAGG_RETRACT:
+          result = GroupAggregateKind.LISTAGG_DISTINCT_RETRACT;
           break;
-        case 12:
-        case 15:
-          result = 19;
+        case GroupAggregateKind.FIRST_VALUE_APPEND:
+        case GroupAggregateKind.FIRST_VALUE_RETRACT:
+          result = GroupAggregateKind.FIRST_VALUE_DISTINCT;
           break;
-        case 13:
-        case 16:
-          result = 20;
+        case GroupAggregateKind.LAST_VALUE_APPEND:
+        case GroupAggregateKind.LAST_VALUE_RETRACT:
+          result = GroupAggregateKind.LAST_VALUE_DISTINCT;
           break;
         default:
           break;
       }
     }
-    if ((result == 1 || result == 2) && !retracting && runningExtreme)
-      result = result == 1 ? 10 : 11;
+    if ((result == GroupAggregateKind.MIN || result == GroupAggregateKind.MAX)
+        && !retracting
+        && runningExtreme)
+      result =
+          result == GroupAggregateKind.MIN
+              ? GroupAggregateKind.MIN_APPEND
+              : GroupAggregateKind.MAX_APPEND;
     if (retention > 0
-        && (result == 7
-            || result == 9
-            || result == 17
-            || result == 18
-            || result == 19
-            || result == 20
-            || result == 34
-            || result == 49
-            || result == 51
-            || result == 53
-            || result == 32
-            || result == 33)) {
+        && (result == GroupAggregateKind.COUNT_DISTINCT
+            || result == GroupAggregateKind.SUM_DISTINCT
+            || result == GroupAggregateKind.AVG_DISTINCT
+            || result == GroupAggregateKind.AVG_DISTINCT_PARTIAL_SUM
+            || result == GroupAggregateKind.FIRST_VALUE_DISTINCT
+            || result == GroupAggregateKind.LAST_VALUE_DISTINCT
+            || result == GroupAggregateKind.SUM_ZERO_DISTINCT
+            || result == GroupAggregateKind.COLLECT_DISTINCT
+            || result == GroupAggregateKind.ARRAY_AGG_DISTINCT
+            || result == GroupAggregateKind.ARRAY_AGG_DISTINCT_IGNORE_NULLS
+            || result == GroupAggregateKind.LISTAGG_DISTINCT_APPEND
+            || result == GroupAggregateKind.LISTAGG_DISTINCT_RETRACT)) {
       result |= tech.streamfusion.Native.AGGREGATE_DISTINCT_TTL;
       if (!retracting) result |= tech.streamfusion.Native.AGGREGATE_DISTINCT_APPEND;
     }
@@ -138,27 +144,35 @@ final class AggregateCallSpec {
         return ((org.apache.calcite.sql.fun.SqlJsonArrayAggAggFunction) call.getAggregation())
                     .getNullClause()
                 == org.apache.calcite.sql.SqlJsonConstructorNullClause.ABSENT_ON_NULL
-            ? 26
-            : 27;
+            ? GroupAggregateKind.JSON_ARRAY_ABSENT_ON_NULL
+            : GroupAggregateKind.JSON_ARRAY_NULL_ON_NULL;
       case JSON_OBJECTAGG:
-        return (tech.streamfusion.compat.JsonRuntimeCompat.LEGACY_SQL_JSON ? 30 : 28)
+        return (tech.streamfusion.compat.JsonRuntimeCompat.LEGACY_SQL_JSON
+                ? GroupAggregateKind.JSON_OBJECT_LEGACY_ABSENT_ON_NULL
+                : GroupAggregateKind.JSON_OBJECT_ABSENT_ON_NULL)
             + (((org.apache.calcite.sql.fun.SqlJsonObjectAggAggFunction) call.getAggregation())
                         .getNullClause()
                     == org.apache.calcite.sql.SqlJsonConstructorNullClause.ABSENT_ON_NULL
                 ? 0
                 : 1);
       case LISTAGG:
-        return retracting ? 25 : 24;
+        return retracting ? GroupAggregateKind.LISTAGG_RETRACT : GroupAggregateKind.LISTAGG_APPEND;
       case FIRST_VALUE:
-        return retracting ? 15 : 12;
+        return retracting
+            ? GroupAggregateKind.FIRST_VALUE_RETRACT
+            : GroupAggregateKind.FIRST_VALUE_APPEND;
       case LAST_VALUE:
-        return retracting ? 16 : 13;
+        return retracting
+            ? GroupAggregateKind.LAST_VALUE_RETRACT
+            : GroupAggregateKind.LAST_VALUE_APPEND;
       case SINGLE_VALUE:
-        return 14;
+        return GroupAggregateKind.SINGLE_VALUE;
       case SUM0:
         if (call.getArgList().size() != 1) return -1;
         var value = input.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName();
-        return isRunningType(value) || value == SqlTypeName.DECIMAL ? 22 : -1;
+        return isRunningType(value) || value == SqlTypeName.DECIMAL
+            ? GroupAggregateKind.SUM_ZERO
+            : -1;
       default:
         return scalarKind(call.getAggregation().getKind());
     }
@@ -167,19 +181,19 @@ final class AggregateCallSpec {
   static int scalarKind(SqlKind kind) {
     switch (kind) {
       case SUM:
-        return 0;
+        return GroupAggregateKind.SUM;
       case MIN:
-        return 1;
+        return GroupAggregateKind.MIN;
       case MAX:
-        return 2;
+        return GroupAggregateKind.MAX;
       case COUNT:
-        return 3;
+        return GroupAggregateKind.COUNT;
       case AVG:
-        return 4;
+        return GroupAggregateKind.AVG;
       case SUM0:
-        return 22;
+        return GroupAggregateKind.SUM_ZERO;
       case SINGLE_VALUE:
-        return 14;
+        return GroupAggregateKind.SINGLE_VALUE;
       default:
         return -1;
     }
@@ -291,9 +305,12 @@ final class AggregateCallSpec {
   static int collectionKind(AggregateCall call) {
     if (call.getAggregation()
         == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.COLLECT)
-      return call.isDistinct() ? 49 : 48;
+      return call.isDistinct() ? GroupAggregateKind.COLLECT_DISTINCT : GroupAggregateKind.COLLECT;
     if (tech.streamfusion.compat.FlinkCompat.isBuiltinArrayAgg(call.getAggregation()))
-      return (call.ignoreNulls() ? 52 : 50) + (call.isDistinct() ? 1 : 0);
+      return (call.ignoreNulls()
+              ? GroupAggregateKind.ARRAY_AGG_IGNORE_NULLS
+              : GroupAggregateKind.ARRAY_AGG)
+          + (call.isDistinct() ? 1 : 0);
     return -1;
   }
 

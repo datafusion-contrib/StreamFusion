@@ -350,8 +350,8 @@ pub(crate) mod scalar_op {
     pub(crate) const MAP_CONSTRUCTOR_BINARY: i64 = 225;
     pub(crate) const COLLECTION_STRING_LITERAL: i64 = 226;
     pub(crate) const COLLECTION_STRING_MAP_INPUT: i64 = 227;
-    pub(crate) const COLLECTION_STRING_GREATEST: i64 = 228;
-    pub(crate) const COLLECTION_STRING_LEAST: i64 = 229;
+    pub(crate) const STRING_ARRAY_MIN: i64 = 228;
+    pub(crate) const STRING_ARRAY_MAX: i64 = 229;
     pub(crate) const ROUND_INTEGER: i64 = 230;
     pub(crate) const TRUNCATE_INTEGER: i64 = 231;
     pub(crate) const FROM_BASE64: i64 = 232;

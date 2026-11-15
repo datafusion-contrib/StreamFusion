@@ -190,8 +190,8 @@ public final class ScalarOp {
   public static final int MAP_CONSTRUCTOR_BINARY = 225;
   public static final int COLLECTION_STRING_LITERAL = 226;
   public static final int COLLECTION_STRING_MAP_INPUT = 227;
-  public static final int COLLECTION_STRING_GREATEST = 228;
-  public static final int COLLECTION_STRING_LEAST = 229;
+  public static final int STRING_ARRAY_MIN = 228;
+  public static final int STRING_ARRAY_MAX = 229;
   public static final int ROUND_INTEGER = 230;
   public static final int TRUNCATE_INTEGER = 231;
   public static final int FROM_BASE64 = 232;

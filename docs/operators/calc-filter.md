@@ -56,7 +56,7 @@ routing, temporal formatting and UDF overload selection to semantic owners that 
 protocol pools. Shared collection rules use their own shape/type facts, without calling back into
 the encoder. A dedicated
 expression buffer owns node/payload alignment, literal storage, input remapping and exported
-array snapshots. Admission still preserves short-circuiting, shared UDF evaluation and existing
+pool snapshots. Admission still preserves short-circuiting, shared UDF evaluation and existing
 native/JVM choices; this separation changes neither the wire format nor supported SQL.
 Batch and stock compiled-plan paths retain their existing, stricter boundary and state admission.
 Processing-time projection fusion prepares its changed candidate separately and retains the
@@ -92,6 +92,9 @@ codes have separate namespaces because some existing values have different meani
 contexts. Native decoding is exhaustive over node kinds, and CI checks generation drift,
 retired-code reuse and every frozen protocol identity. The compact pools and existing wire values
 remain unchanged; this is a planning maintainability change rather than a throughput claim.
+Scalar producer selection, certified callback dispatch and shared aggregate call specifications
+reference those generated names directly. Argument counts, type codes and accumulator widths
+remain separate from operation identities.
 
 Generated expression code is built entirely in the planner. Serialized Calc/filter bindings
 carry only the generated function, runtime types/schema and user-function references; workers

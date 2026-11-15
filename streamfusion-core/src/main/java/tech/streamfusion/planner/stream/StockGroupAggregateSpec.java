@@ -254,7 +254,9 @@ final class StockGroupAggregateSpec {
     int value =
         kind == GroupAggregateKind.COUNT_DISTINCT
             ? declaration.valueColumn()
-            : countAll || info.argIndexes().length == 0 ? -1 : declaration.valueColumn();
+            : countAll || info.argIndexes().length == GroupAggregateKind.SUM
+                ? -GroupAggregateKind.MIN
+                : declaration.valueColumn();
     boolean mapped = mappedMin || mappedMax;
     if (!typed
         && kind != GroupAggregateKind.COUNT

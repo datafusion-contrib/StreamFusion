@@ -1694,10 +1694,14 @@ final class RexExpression implements EncodedExpression {
       // Qualified primitive formatting/casing produces ASCII, so no UTF-16 identity is lost.
       return emitBuiltinCall(call, ScalarOp.CHAR_LENGTH);
     }
-    int primitiveStringExtremum = isBuiltinDefinition(
-            call, org.apache.flink.table.functions.BuiltInFunctionDefinitions.GREATEST) ? 109
-        : isBuiltinDefinition(
-            call, org.apache.flink.table.functions.BuiltInFunctionDefinitions.LEAST) ? 110 : 0;
+    int primitiveStringExtremum =
+        isBuiltinDefinition(
+                call, org.apache.flink.table.functions.BuiltInFunctionDefinitions.GREATEST)
+            ? ScalarOp.GREATEST
+            : isBuiltinDefinition(
+                    call, org.apache.flink.table.functions.BuiltInFunctionDefinitions.LEAST)
+                ? ScalarOp.LEAST
+                : 0;
     if (primitiveStringExtremum != 0 && isCharacter(call) && call.getOperands().size() >= 2
         && call.getOperands().stream().allMatch(NumericExpressionSemantics::nativePrimitiveAsciiResult)) {
       return emitPrimitiveStringExtremum(call, primitiveStringExtremum);
@@ -1968,7 +1972,10 @@ final class RexExpression implements EncodedExpression {
     if (isExactDoubleTruncate(call)) return emitExactDoubleTruncate(call);
     if (nativeTemporalExtremum(call))
       return emitBuiltinCall(
-          call, "GREATEST".equalsIgnoreCase(call.getOperator().getName()) ? 215 : 216);
+          call,
+          "GREATEST".equalsIgnoreCase(call.getOperator().getName())
+              ? ScalarOp.TEMPORAL_GREATEST
+              : ScalarOp.TEMPORAL_LEAST);
     String zonedExtract = nativeZonedExtract(call);
     if (zonedExtract != null) {
       add(KIND_ZONED_EXTRACT, writer.stringCount(), 1);
@@ -2002,7 +2009,8 @@ final class RexExpression implements EncodedExpression {
     int epochTimestamp = nativeEpochTimestamp(call);
     if (epochTimestamp != 0
         && (!unnestOperand || call.getOperands().size() == 2)
-        && (epochTimestamp == 173 && unnestOperand
+        && (epochTimestamp == ScalarOp.UNNEST_EPOCH_MILLIS
+                && unnestOperand
                 && call.getOperands().get(0).getType().getSqlTypeName() == SqlTypeName.BIGINT
             || call.getOperands().get(0) instanceof RexInputRef
             || call.getOperands().get(0) instanceof RexLiteral
@@ -2303,19 +2311,19 @@ final class RexExpression implements EncodedExpression {
     switch (functionName) {
       case "IS JSON VALUE":
       case "IS NOT JSON VALUE":
-        jsonPredicate = 144;
+        jsonPredicate = ScalarOp.IS_JSON_VALUE;
         break;
       case "IS JSON OBJECT":
       case "IS NOT JSON OBJECT":
-        jsonPredicate = 145;
+        jsonPredicate = ScalarOp.IS_JSON_OBJECT;
         break;
       case "IS JSON ARRAY":
       case "IS NOT JSON ARRAY":
-        jsonPredicate = 146;
+        jsonPredicate = ScalarOp.IS_JSON_ARRAY;
         break;
       case "IS JSON SCALAR":
       case "IS NOT JSON SCALAR":
-        jsonPredicate = 147;
+        jsonPredicate = ScalarOp.IS_JSON_SCALAR;
         break;
       default:
         jsonPredicate = -1;
@@ -2330,25 +2338,52 @@ final class RexExpression implements EncodedExpression {
         return reject(functionName + " retains Flink evaluation for fallible operands");
       int opcode;
       switch (functionName) {
-        case "ARRAY_APPEND": opcode = 182; break;
-        case "ARRAY_PREPEND": opcode = 183; break;
-        case "ARRAY_REMOVE": opcode = 184; break;
+        case "ARRAY_APPEND":
+          opcode = ScalarOp.ARRAY_APPEND;
+          break;
+        case "ARRAY_PREPEND":
+          opcode = ScalarOp.ARRAY_PREPEND;
+          break;
+        case "ARRAY_REMOVE":
+          opcode = ScalarOp.ARRAY_REMOVE;
+          break;
         case "ARRAY_CONTAINS":
           if (unsafeArrayContains(call))
             return reject("ARRAY_CONTAINS retains unchecked non-null needle getters");
-          opcode = 178;
+          opcode = ScalarOp.ARRAY_CONTAINS;
           break;
-        case "ARRAY_POSITION": opcode = 179; break;
-        case "ARRAY_DISTINCT": opcode = 165; break;
-        case "ARRAY_CONCAT": opcode = 185; break;
-        case "ARRAY_UNION": opcode = 220; break;
-        case "ARRAY_EXCEPT": opcode = 187; break;
-        case "ARRAY_INTERSECT": opcode = 188; break;
-        case "ARRAY_MIN": opcode = 228; break;
-        case "ARRAY_MAX": opcode = 229; break;
-        case "ARRAY_SORT": opcode = 224; break;
+        case "ARRAY_POSITION":
+          opcode = ScalarOp.ARRAY_POSITION;
+          break;
+        case "ARRAY_DISTINCT":
+          opcode = ScalarOp.ARRAY_DISTINCT;
+          break;
+        case "ARRAY_CONCAT":
+          opcode = ScalarOp.ARRAY_CONCAT;
+          break;
+        case "ARRAY_UNION":
+          opcode = ScalarOp.ARRAY_UNION_STRUCTURAL;
+          break;
+        case "ARRAY_EXCEPT":
+          opcode = ScalarOp.ARRAY_EXCEPT;
+          break;
+        case "ARRAY_INTERSECT":
+          opcode = ScalarOp.ARRAY_INTERSECT;
+          break;
+        case "ARRAY_MIN":
+          opcode = ScalarOp.STRING_ARRAY_MIN;
+          break;
+        case "ARRAY_MAX":
+          opcode = ScalarOp.STRING_ARRAY_MAX;
+          break;
+        case "ARRAY_SORT":
+          opcode = ScalarOp.ARRAY_TIMSORT;
+          break;
         case "ELEMENT":
-          opcode = tech.streamfusion.compat.FlinkCompat.TABLE_RUNTIME_ELEMENT_EXCEPTION ? 190 : 201;
+          opcode =
+              tech.streamfusion.compat.FlinkCompat.TABLE_RUNTIME_ELEMENT_EXCEPTION
+                  ? ScalarOp.ELEMENT
+                  : ScalarOp.ELEMENT_LEGACY_EXCEPTION;
           break;
         default: return reject("unsupported represented collection operation " + functionName);
       }
@@ -2387,8 +2422,13 @@ final class RexExpression implements EncodedExpression {
           || args.stream().anyMatch(this::requiresRowShortCircuit)) {
         return reject(functionName + " uses Flink evaluation outside total matching basic arrays");
       }
-      return emitBuiltinCall(call, "ARRAY_APPEND".equals(functionName) ? 182
-          : "ARRAY_PREPEND".equals(functionName) ? 183 : 184);
+      return emitBuiltinCall(
+          call,
+          "ARRAY_APPEND".equals(functionName)
+              ? ScalarOp.ARRAY_APPEND
+              : "ARRAY_PREPEND".equals(functionName)
+                  ? ScalarOp.ARRAY_PREPEND
+                  : ScalarOp.ARRAY_REMOVE);
     }
     if (NativeConfig.collectionExpressionsEnabled()
         && ("ARRAY_CONCAT".equals(functionName) || "ARRAY_UNION".equals(functionName)
@@ -2400,9 +2440,15 @@ final class RexExpression implements EncodedExpression {
                   args.get(0).getType(),arg.getType()) || requiresRowShortCircuit(arg))) {
         return reject(functionName + " uses Flink evaluation outside total matching basic arrays");
       }
-      return emitBuiltinCall(call, "ARRAY_CONCAT".equals(functionName) ? 185
-          : "ARRAY_UNION".equals(functionName) ? 186
-          : "ARRAY_EXCEPT".equals(functionName) ? 187 : 188);
+      return emitBuiltinCall(
+          call,
+          "ARRAY_CONCAT".equals(functionName)
+              ? ScalarOp.ARRAY_CONCAT
+              : "ARRAY_UNION".equals(functionName)
+                  ? ScalarOp.ARRAY_UNION
+                  : "ARRAY_EXCEPT".equals(functionName)
+                      ? ScalarOp.ARRAY_EXCEPT
+                      : ScalarOp.ARRAY_INTERSECT);
     }
     if (NativeConfig.collectionExpressionsEnabled() && ("MAP_KEYS".equals(functionName) || "MAP_VALUES".equals(functionName) || "MAP_ENTRIES".equals(functionName))) {
       var args=call.getOperands();
@@ -2412,7 +2458,10 @@ final class RexExpression implements EncodedExpression {
         return reject(functionName + " uses Flink evaluation outside total nullable basic maps");
       // Value-only projections cannot observe the keys' original Java string caches.
       if (represented && !skipMapKeyCaches) preserveCollections = true;
-      int projection = "MAP_KEYS".equals(functionName) ? 192 : "MAP_VALUES".equals(functionName) ? 193 : 194;
+      int projection =
+          "MAP_KEYS".equals(functionName)
+              ? ScalarOp.MAP_KEYS
+              : "MAP_VALUES".equals(functionName) ? ScalarOp.MAP_VALUES : ScalarOp.MAP_ENTRIES;
       return represented && !skipMapKeyCaches ? emitRepresentedCollectionCall(call,projection) : emitBuiltinCall(call, projection);
     }
     if (NativeConfig.collectionExpressionsEnabled() && "MAP_UNION".equals(functionName)) {
@@ -3657,7 +3706,7 @@ final class RexExpression implements EncodedExpression {
     if (!(bitLength instanceof RexLiteral) || ((RexLiteral) bitLength).isNull()) return -1;
     try {
       int bits = ((RexLiteral) bitLength).getValueAs(BigDecimal.class).intValueExact();
-      return bits == ScalarOp.ARRAY_TIMSORT || bits == 256 || bits == 384 || bits == 512
+      return bits == 224 || bits == 256 || bits == 384 || bits == 512
           ? hashOpCode("SHA" + bits)
           : -1;
     } catch (ArithmeticException e) {
@@ -4597,7 +4646,7 @@ final class RexExpression implements EncodedExpression {
       case "REGEXP_REPLACE":
         return CertifiedOp.REGEXP_REPLACE;
       case "REGEXP_EXTRACT":
-        return NativeConfig.allowsIncompatible("REGEXP_EXTRACT") ? 0 : 3;
+        return NativeConfig.allowsIncompatible("REGEXP_EXTRACT") ? 0 : CertifiedOp.REGEXP_EXTRACT;
       case "REGEXP_COUNT":
         return CertifiedOp.REGEXP_COUNT;
       case "REGEXP_INSTR":
@@ -5267,34 +5316,34 @@ final class RexExpression implements EncodedExpression {
     int calendarOp;
     switch (calendarUnit) {
       case "YEAR":
-        calendarOp = 203;
+        calendarOp = ScalarOp.YEAR;
         break;
       case "MONTH":
-        calendarOp = 204;
+        calendarOp = ScalarOp.MONTH;
         break;
       case "DAY":
-        calendarOp = 205;
+        calendarOp = ScalarOp.DAY;
         break;
       case "HOUR":
-        calendarOp = 206;
+        calendarOp = ScalarOp.HOUR;
         break;
       case "MINUTE":
-        calendarOp = 207;
+        calendarOp = ScalarOp.MINUTE;
         break;
       case "SECOND":
-        calendarOp = 208;
+        calendarOp = ScalarOp.SECOND;
         break;
       case "QUARTER":
-        calendarOp = 133;
+        calendarOp = ScalarOp.QUARTER;
         break;
       case "WEEK":
-        calendarOp = 134;
+        calendarOp = ScalarOp.WEEK;
         break;
       case "DOY":
-        calendarOp = 135;
+        calendarOp = ScalarOp.DAY_OF_YEAR;
         break;
       case "DOW":
-        calendarOp = 136;
+        calendarOp = ScalarOp.DAY_OF_WEEK;
         break;
       default:
         calendarOp = -1;

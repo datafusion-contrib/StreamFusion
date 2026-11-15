@@ -969,11 +969,11 @@
       "code": 227
     },
     {
-      "name": "COLLECTION_STRING_GREATEST",
+      "name": "STRING_ARRAY_MIN",
       "code": 228
     },
     {
-      "name": "COLLECTION_STRING_LEAST",
+      "name": "STRING_ARRAY_MAX",
       "code": 229
     },
     {
