@@ -162,7 +162,7 @@ final class FlinkExpressionGenerator {
 
   static FlinkExpressionFunction doubleTruncate(
       RexCall call, LogicalType[] argumentTypes, ReadableConfig config, ClassLoader classLoader) {
-    if (!RexExpression.isExactDoubleTruncate(call)) {
+    if (!NumericExpressionSemantics.isExactDoubleTruncate(call)) {
       throw new IllegalArgumentException("unverified DOUBLE TRUNCATE signature");
     }
     var context = new Context(config, classLoader);
@@ -534,7 +534,7 @@ final class FlinkExpressionGenerator {
     @Override
     public GeneratedExpression visitCall(RexCall call) {
       var generated = super.visitCall(call);
-      if (!RexExpression.isExactDoubleTruncate(call)) {
+      if (!NumericExpressionSemantics.isExactDoubleTruncate(call)) {
         return generated;
       }
       String released =
