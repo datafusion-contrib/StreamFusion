@@ -26,7 +26,7 @@ hosts, connectors, backends, exact SQL and explicitly labelled expression varian
 
 | Workload | Report | Scope |
 | --- | --- | --- |
-| Paimon to Paimon TPC-DS | [Complete SF1 suite](tpcds.md) | All 103 unchanged variants, exact committed results, repeated stock comparison and separate fallback/profiling controls |
+| Paimon to Paimon TPC-DS | [Complete SF1 suite](tpcds.md) | All 103 unchanged variants, exact committed results, matched stock/Java-decoder/JNI-decoder comparison and separate historical profiling controls |
 | Paimon batch writes | [Mutation and clustering comparison](paimon-batch.md) | Java-owned IO and mutation semantics with native Parquet encoding; stock and previous-encoder controls across released adapters |
 | Batch scalar SQL | [Batch scalar comparisons](batch-scalars.md) | Complete row-fed batch jobs, admitted SHA-256 gain, rejected arithmetic/regex candidates and accepted UDF cost |
 | Kafka Nexmark headline | [Benchmark table and reproduction](../benchmarks.md#nexmark-parallelism-4) | Historical headline and its sampling convention |

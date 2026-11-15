@@ -91,7 +91,177 @@ source and compute planning; they do not execute the full suite. SQL operator te
 cover runtime edge cases separately. SF1 verification and repeated comparisons
 add exact committed results, actual compute counters and output encoder checks.
 
-## SF1 comparison, 2026-11-14
+## Native LZ4 matched comparison, 2026-11-15
+
+All **103 variants** completed **3,090 jobs**: three warmups and seven measured
+runs for each of stock Flink, StreamFusion with the preceding Java decoder, and
+StreamFusion with JNI LZ4. Every committed result matched exactly in type and
+multiset. Both StreamFusion controls had native source, real compute and native
+Parquet output evidence, with zero source fallbacks and zero entry transposes.
+
+The geometric mean of per-query median ratios is **2.2823× versus stock Flink**
+and **1.1141× versus the Java-decoder control** (about **10.2% less elapsed time**
+for the latter geometric comparison). JNI-enabled StreamFusion wins **100/103**
+variants against stock and **90/103** against the Java control. These are complete
+job timings, including SQL submission, production Arrow IPC, IO and final Paimon commit.
+
+| Engine | Sum of per-query medians |
+| --- | ---: |
+| Stock Flink | 169.180 s |
+| StreamFusion, Java LZ4 decoder | 69.567 s |
+| StreamFusion, JNI LZ4 decoder | 62.269 s |
+
+These sums exclude fixture preparation, output DDL and stock readback. They are
+not the harness wall-clock duration. All trial times and min/median/max ranges
+are retained in the [structured report](results/tpcds-sf1-native-lz4-20261115.json).
+
+The frozen, clean measured source is `7820d4787c46f50241aba31e0fdbd32e98d2c6c6`,
+based on main `2a304d577`. Both StreamFusion controls use this same source and
+the same release/mimalloc libraries; only the task-local decoder setting changes.
+The environment is Flink 2.2.1, Paimon 2.1.0, Temurin 17.0.17, Apple M4/16 GiB
+on a shared host, 8 GiB heap, default parallelism two, 512 MiB native budget,
+1 GiB Flink managed memory, 8,192-row batches, Snappy Parquet files and production
+Arrow IPC exchanges (`zeroCopyLocal=false`). Input preparation is unchanged.
+
+The resolved codec is `at.yawk.lz4:lz4-java:1.10.3`. All 1,030 JNI-enabled jobs
+registered native decoder gates. Successful JNI calls decoded **10,324,169 blocks**
+and **322,589,762,057 bytes**, with **zero decoder fallbacks**. Stock and Java-decoder
+controls reported zero native decoder calls. Native source-row totals match
+between the two StreamFusion controls: 6,990,877,570 rows each, including warmups.
+
+The remaining losses to stock are **Q88, Q90 and Q96**. JNI LZ4 improves each
+over its Java-decoder control, but does not eliminate those end-to-end losses.
+The 13 losses to the Java control are Q8, Q14b, Q33, Q38, Q41, Q44, Q49, Q57,
+Q70, Q72, Q77, Q94 and Q99. All are retained below; the optimization is not a
+uniform per-query win. This cohort did not profile those remaining losses.
+
+The historical comparison below remains separate. Different source revisions,
+run times and shared-host conditions prevent attributing its entire difference
+from this cohort to LZ4. Use the matched Java/JNI controls to assess this change.
+
+| Query | Stock ms | Java LZ4 ms | JNI LZ4 ms | Stock / JNI | Java / JNI |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | 450.956 | 200.922 | 195.820 | 2.303× | 1.026× |
+| 2 | 1301.305 | 324.082 | 306.799 | 4.242× | 1.056× |
+| 3 | 421.424 | 286.195 | 246.522 | 1.709× | 1.161× |
+| 4 | 2630.796 | 976.732 | 843.743 | 3.118× | 1.158× |
+| 5 | 1465.137 | 750.514 | 580.266 | 2.525× | 1.293× |
+| 6 | 681.680 | 321.118 | 288.270 | 2.365× | 1.114× |
+| 7 | 840.136 | 604.483 | 488.492 | 1.720× | 1.237× |
+| 8 | 2724.236 | 732.472 | 741.614 | 3.673× | 0.988× |
+| 9 | 3984.867 | 3214.370 | 3145.256 | 1.267× | 1.022× |
+| 10 | 611.974 | 398.921 | 356.465 | 1.717× | 1.119× |
+| 11 | 2009.472 | 695.638 | 687.744 | 2.922× | 1.011× |
+| 12 | 311.057 | 188.965 | 178.810 | 1.740× | 1.057× |
+| 13 | 995.682 | 290.340 | 289.249 | 3.442× | 1.004× |
+| 14a | 2224.098 | 1341.018 | 1309.857 | 1.698× | 1.024× |
+| 14b | 3006.021 | 1513.776 | 1628.478 | 1.846× | 0.930× |
+| 15 | 273.379 | 181.636 | 165.447 | 1.652× | 1.098× |
+| 16 | 1098.359 | 316.472 | 268.667 | 4.088× | 1.178× |
+| 17 | 752.413 | 393.794 | 342.769 | 2.195× | 1.149× |
+| 18 | 783.130 | 451.180 | 383.021 | 2.045× | 1.178× |
+| 19 | 468.937 | 428.506 | 354.061 | 1.324× | 1.210× |
+| 20 | 281.869 | 203.187 | 185.846 | 1.517× | 1.093× |
+| 21 | 706.837 | 747.693 | 585.995 | 1.206× | 1.276× |
+| 22 | 3778.347 | 1781.233 | 1673.223 | 2.258× | 1.065× |
+| 23a | 3607.864 | 1237.299 | 1167.086 | 3.091× | 1.060× |
+| 23b | 3398.010 | 1197.934 | 994.227 | 3.418× | 1.205× |
+| 24a | 692.488 | 474.106 | 407.265 | 1.700× | 1.164× |
+| 24b | 645.073 | 429.945 | 365.525 | 1.765× | 1.176× |
+| 25 | 905.917 | 492.973 | 412.015 | 2.199× | 1.196× |
+| 26 | 653.848 | 359.661 | 301.325 | 2.170× | 1.194× |
+| 27 | 868.924 | 592.726 | 501.523 | 1.733× | 1.182× |
+| 28 | 1382.945 | 452.446 | 425.363 | 3.251× | 1.064× |
+| 29 | 929.754 | 519.922 | 446.945 | 2.080× | 1.163× |
+| 30 | 595.633 | 352.991 | 334.108 | 1.783× | 1.057× |
+| 31 | 1940.870 | 874.536 | 576.491 | 3.367× | 1.517× |
+| 32 | 416.030 | 302.925 | 228.293 | 1.822× | 1.327× |
+| 33 | 836.742 | 526.972 | 566.756 | 1.476× | 0.930× |
+| 34 | 607.638 | 412.823 | 371.382 | 1.636× | 1.112× |
+| 35 | 757.991 | 397.704 | 371.664 | 2.039× | 1.070× |
+| 36 | 1597.062 | 676.663 | 537.634 | 2.971× | 1.259× |
+| 37 | 923.974 | 410.748 | 331.081 | 2.791× | 1.241× |
+| 38 | 877.169 | 441.408 | 573.002 | 1.531× | 0.770× |
+| 39a | 4760.094 | 1437.411 | 1160.121 | 4.103× | 1.239× |
+| 39b | 4696.760 | 1680.231 | 1329.804 | 3.532× | 1.264× |
+| 40 | 409.298 | 330.995 | 282.289 | 1.450× | 1.173× |
+| 41 | 374.664 | 160.265 | 191.465 | 1.957× | 0.837× |
+| 42 | 544.622 | 324.390 | 277.419 | 1.963× | 1.169× |
+| 43 | 1203.487 | 376.729 | 310.849 | 3.872× | 1.212× |
+| 44 | 785.780 | 254.258 | 259.234 | 3.031× | 0.981× |
+| 45 | 380.827 | 276.965 | 197.257 | 1.931× | 1.404× |
+| 46 | 892.333 | 1092.512 | 735.421 | 1.213× | 1.486× |
+| 47 | 2604.960 | 1869.289 | 1600.572 | 1.628× | 1.168× |
+| 48 | 1877.448 | 444.766 | 397.670 | 4.721× | 1.118× |
+| 49 | 1333.735 | 384.911 | 554.278 | 2.406× | 0.694× |
+| 50 | 964.850 | 399.866 | 366.511 | 2.633× | 1.091× |
+| 51 | 1670.553 | 994.342 | 823.512 | 2.029× | 1.207× |
+| 52 | 579.512 | 519.575 | 336.132 | 1.724× | 1.546× |
+| 53 | 19610.047 | 1402.012 | 1312.698 | 14.939× | 1.068× |
+| 54 | 728.382 | 343.548 | 323.291 | 2.253× | 1.063× |
+| 55 | 479.375 | 294.292 | 244.422 | 1.961× | 1.204× |
+| 56 | 776.553 | 447.550 | 378.224 | 2.053× | 1.183× |
+| 57 | 1336.258 | 780.304 | 801.329 | 1.668× | 0.974× |
+| 58 | 860.439 | 399.948 | 338.656 | 2.541× | 1.181× |
+| 59 | 1949.591 | 545.636 | 521.231 | 3.740× | 1.047× |
+| 60 | 657.505 | 449.832 | 340.840 | 1.929× | 1.320× |
+| 61 | 1772.408 | 474.075 | 395.768 | 4.478× | 1.198× |
+| 62 | 622.699 | 249.951 | 226.088 | 2.754× | 1.106× |
+| 63 | 20207.449 | 1344.049 | 1341.996 | 15.058× | 1.002× |
+| 64 | 1860.511 | 1589.285 | 1265.884 | 1.470× | 1.255× |
+| 65 | 693.893 | 495.695 | 356.825 | 1.945× | 1.389× |
+| 66 | 1148.814 | 391.483 | 354.032 | 3.245× | 1.106× |
+| 67 | 4668.757 | 1734.361 | 1710.137 | 2.730× | 1.014× |
+| 68 | 813.895 | 761.943 | 701.025 | 1.161× | 1.087× |
+| 69 | 534.516 | 294.316 | 289.462 | 1.847× | 1.017× |
+| 70 | 1216.038 | 387.171 | 395.685 | 3.073× | 0.978× |
+| 71 | 520.574 | 370.446 | 328.346 | 1.585× | 1.128× |
+| 72 | 3385.104 | 1174.564 | 1208.762 | 2.800× | 0.972× |
+| 73 | 429.442 | 292.089 | 261.076 | 1.645× | 1.119× |
+| 74 | 1678.882 | 653.294 | 579.723 | 2.896× | 1.127× |
+| 75 | 1239.880 | 782.729 | 732.225 | 1.693× | 1.069× |
+| 76 | 897.089 | 205.045 | 203.278 | 4.413× | 1.009× |
+| 77 | 848.696 | 505.972 | 514.602 | 1.649× | 0.983× |
+| 78 | 1536.139 | 1062.302 | 880.536 | 1.745× | 1.206× |
+| 79 | 679.988 | 578.398 | 527.766 | 1.288× | 1.096× |
+| 80 | 1040.153 | 755.160 | 662.051 | 1.571× | 1.141× |
+| 81 | 507.861 | 197.869 | 182.333 | 2.785× | 1.085× |
+| 82 | 932.601 | 300.044 | 271.152 | 3.439× | 1.107× |
+| 83 | 347.503 | 252.342 | 213.597 | 1.627× | 1.181× |
+| 84 | 276.885 | 170.576 | 159.988 | 1.731× | 1.066× |
+| 85 | 3571.212 | 396.010 | 342.458 | 10.428× | 1.156× |
+| 86 | 335.020 | 181.298 | 170.249 | 1.968× | 1.065× |
+| 87 | 919.456 | 309.746 | 290.263 | 3.168× | 1.067× |
+| 88 | 4479.318 | 6137.775 | 5234.699 | 0.856× | 1.173× |
+| 89 | 677.509 | 405.080 | 338.697 | 2.000× | 1.196× |
+| 90 | 487.390 | 799.790 | 727.510 | 0.670× | 1.099× |
+| 91 | 622.197 | 180.880 | 173.186 | 3.593× | 1.044× |
+| 92 | 509.805 | 187.037 | 164.686 | 3.096× | 1.136× |
+| 93 | 1396.920 | 578.883 | 532.661 | 2.623× | 1.087× |
+| 94 | 784.711 | 247.235 | 295.530 | 2.655× | 0.837× |
+| 95 | 1724.932 | 324.345 | 310.357 | 5.558× | 1.045× |
+| 96 | 1082.268 | 2084.082 | 1756.729 | 0.616× | 1.186× |
+| 97 | 736.800 | 342.760 | 299.453 | 2.460× | 1.145× |
+| 98 | 470.849 | 307.241 | 260.016 | 1.811× | 1.182× |
+| 99 | 605.163 | 355.443 | 369.147 | 1.639× | 0.963× |
+
+The [native LZ4 evidence manifest](results/paimon-native-lz4-evidence-20261115.json)
+retains the raw full plans/reports, trial log, runtime hashes, compatibility evidence
+and reproduction helpers in a separately versioned public archive. Datasets and
+build trees are excluded. The archive is independently downloaded and verified
+before temporary resources are removed.
+
+```python
+from pathlib import Path
+import sys
+sys.path.insert(0, "dev")
+from benchmark_artifacts import fetch
+fetch(["docs/benchmarks/paimon-native-lz4-20261115-evidence"],
+      Path("/path/to/owned/evidence"), Path("/path/to/owned/cache"),
+      Path("docs/benchmarks/results/paimon-native-lz4-evidence-20261115.json"))
+```
+
+## Historical Java-decoder comparison, 2026-11-14
 
 All 103 variants completed all 2,060 trials, including warmups, with exact committed
 result types/multisets and positive native source, compute and output evidence.
