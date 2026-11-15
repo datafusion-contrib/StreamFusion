@@ -13,6 +13,8 @@ import tempfile
 import time
 import xml.etree.ElementTree as ET
 
+import ci_java_build
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SELECTION = ("CanonicalRegularJoinJobTest#regularStateContinuesAcrossCleanEngineProcesses"
@@ -67,17 +69,13 @@ def profile(output, repetitions, cds=False, parallel=False, gc=False, line="2.2"
             command = ["mvn", "-B", "-ntp", "-pl", "streamfusion-runtime",
                        f"-Dtest={selection}", f"-Dsf.testForks={forks}",
                        "-Dsf.testReuseForks=false", f"-Dsf.extraJvmArgs=-Xmx{heap}",
-                       f"-Dsurefire.reportNameSuffix={suffix}", "surefire:test@default-test"]
+                       f"-Dsurefire.reportNameSuffix={suffix}"]
+            command.extend(ci_java_build.runtime_test_arguments())
             profiles = (["flink-1.18"] if line == "1.18" else [])
             if parallel or worker_mix:
                 profiles.append("canonical-kafka")
             if profiles:
                 command.append("-P" + ",".join(profiles))
-            if parallel or worker_mix:
-                command.remove("surefire:test@default-test")
-                command.extend(["-am", "test", "-Dnative.build.skip=true",
-                                "-Dsf.ci.precompiledJava=true", "-Dsf.protobuf.checkStaleness=true",
-                                "-DskipTests=true", "-Dsf.runtime.tests.skip=false"])
             if not (parallel or worker_mix):
                 command.extend(["-Dstreamfusion.test.regularJoinJobSmoke=true",
                                 "-Dsf.canonical.wideKeys.job.smoke=true"])

@@ -147,8 +147,17 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         batch: &RecordBatch,
         validating: bool,
     ) -> Result<(), DataFusionError> {
+        self.typed_header_columns(batch)?;
+        self.transfer_header_batches(batch, validating, Self::transfer_typed_header_frame)
+    }
+
+    fn transfer_typed_header_frame(
+        &mut self,
+        batch: &RecordBatch,
+        validating: bool,
+    ) -> Result<(), DataFusionError> {
         let (keys, values) = self.typed_header_columns(batch)?;
-        if validating {
+        if validating && !self.store.serializes_values() {
             return Ok(());
         }
         let records = required_longs(batch.column(1))?;
@@ -157,6 +166,9 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             self.store.prepare_canonical_import(keys)?;
             if (0..keys.len()).any(|row| self.store.contains(keys.value(row))) {
                 return Err(invalid("duplicate retained group"));
+            }
+            if validating {
+                return Ok(());
             }
             self.snapshot_cache = None;
             for row in 0..batch.num_rows() {
@@ -192,18 +204,18 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     last_output_bytes: 0,
                     distinct_retention: None,
                 };
-                if self.memory.tracking() {
+                if self.memory.tracking() && !self.store.owns_memory() {
                     self.memory.record(
                         (byte_key_bytes(keys.value(row)) + group_key_state_bytes(&state)) as isize,
                     );
                 }
                 self.store.insert(ByteKey::from(keys.value(row)), state);
             }
-            self.memory.account()
+            self.account_transfer_memory()
         })();
         let committed = self.store.end_bundle();
         self.memory.record(self.store.footprint_delta());
-        let accounted = self.memory.account();
+        let accounted = self.account_transfer_memory();
         result.and(committed).and(accounted)
     }
 

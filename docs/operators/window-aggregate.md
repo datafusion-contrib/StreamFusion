@@ -2021,3 +2021,49 @@ empty-return/checkpoint/rescale modes. An independent signed window fold checks 
 and AVG results. The rescale input reaches a zero-live-row state at the middle cut before new
 rows arrive. Source offsets, both transposes and transactional stock sink state remain in scope;
 execution and the wider delivery/failure matrix are still pending.
+
+## Bounded fixed-window firing
+
+Single-phase and global aligned window aggregates (including shared-slice HOP and CUMULATE)
+synchronously emit Arrow output in batches of at most 1,024 rows with a 4 MiB estimated
+working-size target. A single larger row remains a necessary minimum. Reservations can force
+smaller batches. This bounds the output retained by a watermark flush while preserving its
+existing (deadline, window end, grouping key) order. The downstream watermark is forwarded only
+after all due batches have been emitted; no pending cursor crosses a successful mailbox call or
+checkpoint barrier. A receiver failure fails the task, and recovery uses the preceding completed
+checkpoint.
+
+Direct RocksDB fixed windows merge key-group iterators in that same order instead of loading
+all due payloads into a vector. Iterator indices compare pinned keys, avoiding copies of one
+wide key per key group. Regional calendar firing inventories distinct window ends and their
+released-Flink deadlines, including future ends, without retaining their row payloads. That
+metadata, merge cursors and decode/output workspaces use the shared off-heap authority. The
+largest individual group and the window-end/key-group inventory remain working-memory floors.
+The memory backend still sorts the keys of its current resident window before emission.
+
+This changes the execution boundary, not supported SQL, state encodings or recovery routing.
+Window rank also uses bounded receivers with its own rank-state traversal; see [Top-N](top-n.md).
+No mailbox continuations or background state mutation are introduced.
+
+## Bounded session firing
+
+Final session output uses the same synchronous 1,024-row / 4 MiB estimated working-size target,
+with early emission under reservation pressure and one oversized row as a necessary minimum.
+Memory sessions emit in grouping-key/start order while retaining unfired sessions. Direct
+RocksDB sessions merge key-group iterators in that order and retain bounded key/end candidates;
+regional calendar conversion is batched over those headers. Future session payloads are not
+loaded for firing, and closed state is decoded in smaller frames when the task pool requires it.
+The existing per-key session hydration and largest individual session state remain working-set
+floors. Changelog, timer deadlines, persisted state and canonical formats are unchanged.
+A receiver error releases workspaces and fails the task; the preceding completed checkpoint
+remains the recovery boundary.
+
+## Bounded local partial transfer
+
+The local stage drains partials through the same synchronous bounded Arrow receiver at watermarks
+and before checkpoint barriers. Each transfer contains at most 1,024 groups with a 4 MiB estimated
+working-size target, allowing a larger individual accumulator. Rows retain slice-end/group-key
+order and the existing typed partial schema. Every open slice crosses the pre-barrier drain;
+stock-compatible local snapshots remain stateless. Draining does not advance the input watermark,
+so late partial admission remains the global stage's responsibility. A receiver failure fails the
+task and releases temporary buffers; recovery uses the preceding completed checkpoint.

@@ -172,6 +172,7 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
         budget_bytes: i64,
     ) -> Result<Self, DataFusionError> {
         self.memory.attach("changelog-normalize", budget_bytes, 0)?;
+        self.rows.attach_memory(self.memory.state_memory());
         Ok(self)
     }
 
@@ -405,6 +406,10 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
             self.rows.end_bundle()?;
         }
         self.memory.record(delta + self.rows.footprint_delta());
+        if self.rows.owns_memory() {
+            self.rows.account_memory()?;
+            self.memory.set(self.staged_bytes);
+        }
         self.memory.account()?;
         Ok(self.emit(out_rows, out_kinds))
     }
@@ -468,6 +473,9 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
         self.memory
             .record(self.rows.footprint_delta() - self.staged_bytes as isize);
         self.staged_bytes = 0;
+        if self.rows.owns_memory() {
+            self.memory.set(0);
+        }
         self.memory.account()?;
         Ok(self.emit(out_rows, out_kinds))
     }

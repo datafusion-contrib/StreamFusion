@@ -224,6 +224,7 @@ impl MemoryPool for FlinkTaskOffHeapPool {
 pub(crate) struct OperatorMemory {
     reservation: Option<MemoryReservation>,
     pub(crate) state_bytes: usize,
+    state_owners: Vec<Arc<AtomicUsize>>,
     // A TaskContext sharing the bounded pool, for fragments the operator delegates to DataFusion's
     // execution (the joins' HashJoinExec) — their transient working memory then draws on the same
     // budget as the operator's state.
@@ -235,6 +236,7 @@ impl OperatorMemory {
         OperatorMemory {
             reservation: None,
             state_bytes: 0,
+            state_owners: Vec::new(),
             task_ctx: None,
         }
     }
@@ -290,6 +292,23 @@ impl OperatorMemory {
         self.task_ctx.clone().unwrap_or_default()
     }
 
+    pub(crate) fn state_memory(&mut self) -> StateMemory {
+        let reservation = self.temporary_reservation();
+        let bytes = Arc::new(AtomicUsize::new(0));
+        if reservation.is_some() {
+            self.state_owners.push(Arc::clone(&bytes));
+        }
+        StateMemory { reservation, bytes }
+    }
+
+    pub(crate) fn state_bytes(&self) -> usize {
+        self.state_owners
+            .iter()
+            .fold(self.state_bytes, |bytes, owner| {
+                bytes.saturating_add(owner.load(Relaxed))
+            })
+    }
+
     /// Folds a touched entry's footprint change into the tracked total.
     pub(crate) fn record(&mut self, delta: isize) {
         self.state_bytes = self.state_bytes.saturating_add_signed(delta);
@@ -327,4 +346,37 @@ impl OperatorMemory {
 /// Total Arrow buffer footprint of a set of buffered batches.
 pub(crate) fn buffered_batches_bytes(batches: &[RecordBatch]) -> usize {
     batches.iter().map(RecordBatch::get_array_memory_size).sum()
+}
+
+/// Reservations follow the decoded state's owner, independently of operator staging.
+pub(crate) struct StateMemory {
+    reservation: Option<MemoryReservation>,
+    bytes: Arc<AtomicUsize>,
+}
+
+impl StateMemory {
+    pub(crate) fn tracking(&self) -> bool {
+        self.reservation.is_some()
+    }
+
+    pub(crate) fn try_resize(&self, bytes: usize) -> Result<(), DataFusionError> {
+        if let Some(reservation) = &self.reservation {
+            reservation.try_resize(bytes)?;
+            self.bytes.store(bytes, Relaxed);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn temporary_reservation(&self) -> Option<MemoryReservation> {
+        self.reservation.as_ref().map(MemoryReservation::new_empty)
+    }
+}
+
+impl Drop for StateMemory {
+    fn drop(&mut self) {
+        if let Some(reservation) = &self.reservation {
+            reservation.free();
+        }
+        self.bytes.store(0, Relaxed);
+    }
 }

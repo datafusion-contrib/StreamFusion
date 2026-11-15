@@ -3,7 +3,6 @@ package tech.streamfusion.suite;
 import static net.bytebuddy.matcher.ElementMatchers.isAnnotatedWith;
 import static net.bytebuddy.matcher.ElementMatchers.isBridge;
 import static net.bytebuddy.matcher.ElementMatchers.isConstructor;
-import static net.bytebuddy.matcher.ElementMatchers.isDeclaredBy;
 import static net.bytebuddy.matcher.ElementMatchers.isPrivate;
 import static net.bytebuddy.matcher.ElementMatchers.nameEndsWith;
 import static net.bytebuddy.matcher.ElementMatchers.nameStartsWith;
@@ -16,11 +15,14 @@ import static net.bytebuddy.matcher.ElementMatchers.takesArguments;
 import java.lang.instrument.Instrumentation;
 import java.lang.reflect.InvocationTargetException;
 import java.util.Collections;
+import java.util.List;
 import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.UnaryOperator;
 import net.bytebuddy.agent.builder.AgentBuilder;
 import net.bytebuddy.asm.Advice;
+import net.bytebuddy.dynamic.DynamicType;
 import net.bytebuddy.implementation.bytecode.assign.Assigner;
 
 /**
@@ -207,20 +209,7 @@ public final class StreamFusionSuiteAgent {
                 "tech.streamfusion.planner.batch.BatchPlanScan",
                 "tech.streamfusion.planner.stream.StockCompiledPlanLowering"))
         .transform(
-            (builder, type, classLoader, module, protectionDomain) ->
-                builder
-                    .visit(Advice.to(RecordFallback.class).on(named("recordFallback")))
-                    .visit(
-                        Advice.to(RecordSqlPlan.class)
-                            .on(
-                                named("optimizeConfigured")
-                                    .or(
-                                        named("optimizeRoots")
-                                            .and(takesArguments(3))
-                                            .and(
-                                                isDeclaredBy(
-                                                    named(
-                                                        "tech.streamfusion.planner.batch.BatchPlanScan")))))))
+            (builder, type, classLoader, module, protectionDomain) -> observePlanning(builder))
         .type(
             namedOneOf(
                 "tech.streamfusion.state.StockGroupTypedStateContract",
@@ -353,6 +342,7 @@ public final class StreamFusionSuiteAgent {
                 "tech.streamfusion.operator.NativeColumnarUnnestOperator",
                 "tech.streamfusion.operator.NativeColumnarJvmGroupOperator",
                 "tech.streamfusion.operator.NativeColumnarJvmOverOperator",
+                "tech.streamfusion.operator.NativeOverAggregateOperator",
                 "tech.streamfusion.operator.NativeColumnarTableFunctionOperator",
                 "tech.streamfusion.operator.NativeColumnarGroupAggregateOperator",
                 "tech.streamfusion.operator.NativeColumnarDeduplicateOperator",
@@ -927,6 +917,34 @@ public final class StreamFusionSuiteAgent {
     @Advice.OnMethodEnter
     static void enter(@Advice.Origin("#t") String handler, @Advice.Argument(0) Throwable failure) {
       PaimonTestWatch.clusterFailure(handler, failure);
+    }
+  }
+
+  static <T> DynamicType.Builder<T> observePlanning(DynamicType.Builder<T> builder) {
+    return builder
+        .visit(
+            Advice.to(RecordFallback.class)
+                .on(named("recordFallback").and(takesArguments(String.class))))
+        .visit(
+            Advice.to(RecordNodeFallback.class)
+                .on(
+                    namedOneOf("recordFallback", "recordIslandFallback")
+                        .and(takesArguments(2))
+                        .and(takesArgument(1, String.class))))
+        .visit(
+            Advice.to(RecordSqlPlan.class)
+                .on(
+                    named("optimizeConfigured")
+                        .and(takesArguments(List.class, boolean.class))
+                        .or(
+                            named("optimizeRoots")
+                                .and(takesArguments(List.class, UnaryOperator.class)))));
+  }
+
+  public static final class RecordNodeFallback {
+    @Advice.OnMethodExit
+    static void exit(@Advice.Argument(1) String reason) {
+      NativeExecution.fallback(reason);
     }
   }
 

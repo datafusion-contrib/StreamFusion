@@ -9,6 +9,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+base64.workspace = true
 chrono.workspace = true
 streamfusion-bridge = { path = "../bridge" }
 streamfusion-format-support = { path = "../format-support" }

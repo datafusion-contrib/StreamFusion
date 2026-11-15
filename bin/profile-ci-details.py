@@ -14,6 +14,7 @@ import subprocess
 import time
 import xml.etree.ElementTree as ET
 
+import ci_java_build
 import ci_jfr
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -82,7 +83,7 @@ def profile(output, line, suite, compare_completion=False, compare_transport=Fal
                 command.extend(["-am", "-Dsurefire.failIfNoSpecifiedTests=false",
                                 "-Dsf.protobuf.checkStaleness=true", "-Dnative.build.skip=true", "test"])
             else:
-                command.append("surefire:test@default-test")
+                command.extend(ci_java_build.runtime_test_arguments())
             if attribution:
                 command.append(f"-Dsf.fixtureTimingsDirectory={fixtures}")
             log = output / (suffix + ".log")

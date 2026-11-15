@@ -3,6 +3,7 @@ use crate::*;
 
 mod admission;
 mod canonical;
+mod output;
 
 /// One open session for a key: its end (the latest element's timestamp plus the gap) and the
 /// incremental accumulators folding in its rows. The start is the map key that holds it.
@@ -467,114 +468,21 @@ impl SessionAggregator {
         Ok(())
     }
 
-    /// Finalizes and removes sessions the watermark has closed, emitting
-    /// `[key, window_start, window_end, result0..resultN-1]`. The end is the session's own bound,
-    /// not a fixed offset, so it travels as its own column.
+    /// Compatibility helper; production drains bounded batches through `flush_to`.
     pub(crate) fn flush(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
-        self.require_complete_canonical_import()?;
-        self.current_watermark = self.current_watermark.max(watermark);
-        #[cfg(feature = "rocksdb-state")]
-        if self.store.is_some() {
-            return self.flush_store(watermark);
+        let mut batches = Vec::new();
+        self.flush_to(watermark, &mut |batch| {
+            batches.push(batch);
+            Ok(())
+        })?;
+        if let Some(first) = batches.first() {
+            Ok(arrow::compute::concat_batches(
+                &first.schema(),
+                batches.iter(),
+            )?)
+        } else {
+            Ok(self.emitted_batch(Vec::new()))
         }
-        let deadlines = self.calendar.as_ref().map(|calendar| {
-            let ends = self
-                .sessions
-                .values()
-                .flat_map(|sessions| sessions.values().map(|session| session.end))
-                .collect::<Vec<_>>();
-            ends.iter()
-                .copied()
-                .zip(calendar.exclusive_ends(&ends))
-                .collect::<BTreeMap<_, _>>()
-        });
-        let mut rows: Vec<(OwnedRow, i64, i64, Vec<ScalarValue>)> = Vec::new();
-        let track = self.memory.tracking();
-        let mut freed = 0usize;
-        let mut next_end: Option<i64> = None;
-        for (key, map) in self.sessions.iter_mut() {
-            let closed: Vec<i64> = map
-                .iter()
-                .filter(|(_, s)| {
-                    let deadline = deadlines.as_ref().map_or(s.end, |ends| ends[&s.end]);
-                    if deadline > watermark {
-                        next_end =
-                            Some(next_end.map_or(deadline, |previous| previous.min(deadline)));
-                        false
-                    } else {
-                        true
-                    }
-                })
-                .map(|(start, _)| *start)
-                .collect();
-            for start in closed {
-                let mut session = map.remove(&start).expect("session present");
-                if track {
-                    freed += session_bytes(&session);
-                }
-                let results = session
-                    .accumulators
-                    .iter_mut()
-                    .map(|a| a.evaluate().expect("failed to finalize"))
-                    .collect();
-                rows.push((key.clone(), start, session.end, results));
-            }
-        }
-        self.sessions.retain(|key, map| {
-            if map.is_empty() {
-                if track {
-                    freed += owned_row_bytes(key);
-                }
-                return false;
-            }
-            true
-        });
-        if track {
-            self.memory.forget(freed);
-            self.memory.account_shrink();
-        }
-        self.next_timer_deadline = next_end.map_or(i64::MIN, |end| end.saturating_sub(1));
-        rows.sort_by(|a, b| (&a.0, a.1).cmp(&(&b.0, b.1)));
-        Ok(self.emitted_batch(rows))
-    }
-
-    /// Persistent-state firing: the store removes and returns every closed session in the memory
-    /// path's (key, start) emission order — every fired session leaves the store, so a closed
-    /// session can never re-fire after a restore. Runs on an empty resident map (every bundle
-    /// wrote through), so the committed table is the whole state.
-    #[cfg(feature = "rocksdb-state")]
-    fn flush_store(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
-        let fired = self
-            .store
-            .as_mut()
-            .expect("session-aggregate rocksdb store")
-            .take_closed_with_calendar(watermark, self.calendar.as_ref())?;
-        self.next_timer_deadline = self
-            .store
-            .as_ref()
-            .unwrap()
-            .next_exclusive_end()
-            .map_or(i64::MIN, |end| end.saturating_sub(1));
-        let converter = self
-            .key_converter
-            .as_ref()
-            .expect("session store key converter");
-        let parser = converter.parser();
-        let mut rows: Vec<(OwnedRow, i64, i64, Vec<ScalarValue>)> = Vec::with_capacity(fired.len());
-        for session in &fired {
-            let mut accumulators = self.accumulators_from_scalars(&session.state);
-            let results = accumulators
-                .iter_mut()
-                .map(|a| a.evaluate().expect("failed to finalize"))
-                .collect();
-            rows.push((
-                parser.parse(&session.key).owned(),
-                session.start,
-                session.end,
-                results,
-            ));
-        }
-        Ok(self.emitted_batch(rows))
     }
 
     /// The fired-session output batch `[key.., window_start, window_end, result0..]`.
@@ -1257,5 +1165,23 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreSessionAggregatorPar
             SessionAggregator::restore_partitions(gap_millis, value_types, kinds, &restored)
                 .with_memory_budget(memory_budget_bytes);
         boxed_or_throw(&mut env, aggregator)
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_flushSessionAggregatorBatches<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    watermark: jlong,
+    receiver: jni::objects::JObject<'local>,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let aggregator = unsafe { &mut *(handle as *mut SessionAggregator) };
+        if let Err(error) = aggregator.flush_to(watermark, &mut |batch| {
+            emit_record_batch(&mut env, &receiver, batch)
+        }) {
+            throw_memory_limit(&mut env, &error.to_string());
+        }
     })
 }
