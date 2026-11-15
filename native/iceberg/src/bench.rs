@@ -102,6 +102,9 @@ impl ReadFixture {
                     .map_or(self.size, |range| range.end - range.start),
                 project_ids: project_ids.to_vec(),
                 deletes: vec![],
+                first_row_id: None,
+                data_sequence_number: None,
+                columnar_equality_sets: false,
                 case_sensitive: true,
                 metadata: self
                     .metadata

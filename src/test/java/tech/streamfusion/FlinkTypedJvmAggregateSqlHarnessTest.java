@@ -206,7 +206,7 @@ class FlinkTypedJvmAggregateSqlHarnessTest {
     return environment(name, updating, typedKey, metrics, 1);
   }
 
-  private static TableEnvironment environment(
+  static TableEnvironment environment(
       String name,
       boolean updating,
       boolean typedKey,

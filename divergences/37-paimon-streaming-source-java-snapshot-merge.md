@@ -19,15 +19,22 @@ feeds a borrowed direct buffer during the JNI call. No second storage client or 
 is introduced. Exported Arrow buffers transfer to the source batch; its existing abandoned-batch
 backstop covers records discarded during task failure.
 
-paimon-rust's table/data_file_reader.rs, table/kv_file_reader.rs and arrow/format/parquet.rs were
-reviewed. They couple Parquet decode with their own schema manager, filesystem and read plans.
-For file decoding, the already-released parquet-rs dependency is sufficient; no paimon-rust
-filesystem or table-reader dependency is imported. Java merges unsupported initial primary-key
-snapshot combinations and those logical rows are converted to Arrow. The first native
-snapshot merger adapts paimon-rust's Arrow cursor/output algorithm and partial-update cell
-selection into the optional Paimon library.
-[#53](https://github.com/datafusion-contrib/StreamFusion/issues/53) tracks broader snapshot merge
-coverage while retaining the Java table lifecycle. Batch SQL remains out of scope.
+Both Paimon adapters now import canonical crates.io paimon-rust 0.4.0 rather than maintaining
+copies of its reader algorithms. Its public `Table::from_resolved_schema`, `DataSplit`,
+`ReadBuilder` and `AuditLogRead` APIs accept Java-selected work. A public `FileIOProvider` adapts
+Java seekable inputs to OpenDAL range reads; the actual URI remains bound to Java and is never
+reparsed into a separate storage client. This retains Java discovery, credentials and checkpoint
+ownership. The metadata-only descriptor bridges incompatible Java split serialization versions.
+Append bucket -1 is represented as an unused bucket 0 in the Rust descriptor because the public
+builder rejects -1; original bucket paths and explicit file paths remain authoritative.
+
+The released crate unconditionally includes its Parquet, ORC, Mosaic and index dependencies even
+with default features disabled. Consequently the optional Paimon reader DSO now embeds upstream
+formats. This is an explicit exception to independent connector/format native code packaging,
+chosen to reuse the supported public reader without a fork or copied internals. Generic format
+artifacts remain independent, source admission still requires the selected installed format,
+and encoding still uses the independent format artifacts. No engine/DataFusion or other StreamFusion cdylib is linked
+into this DSO. A future upstream format feature split can remove the duplicate decoder footprint.
 
 The source's native file path is restricted to the current schema without deletion-vector
 selections. Historical schemas, deletion vectors, historical non-Parquet files and specialized
@@ -36,22 +43,28 @@ contract, not a late failure on an unsupported file. Query filters stay as Flink
 filter is silently consumed. Advanced source options and abilities decline at planning time.
 
 The connector coverage page describes the exact gates, memory boundary, validation and release
-file-reader diagnostic (1.30x append and 2.18x changelog throughput on the local fixture).
+comparisons against stock Paimon and the previous StreamFusion implementation.
 
-Native snapshot sections and sorted runs are planned by released Java `IntervalPartition`.
-A Java callback forwards Arrow C structs between the Parquet and Paimon libraries without a
-row conversion or a cross-library Rust handle. Cursors and output gathering use synchronous batch
-pulls and incremental winner retention. Completed batches can be reclaimed even when many keys
-produce no output. The tree ports released Java's leaf states and tie traversal because paimon-rust's
-simpler traversal selects different winners on exact sequence ties. Java also supplies partial-update
-delete and singleton-reducer semantics; paimon-rust supplies per-column cell selection. We gather
-those references by output batch instead of materializing a one-row batch for every key. Sequence
-groups and field aggregates still retain Java. Raw-convertible snapshots emit inserts; selection
-merges preserve the winning add kind, and multi-record partial reductions emit inserts or remove
-the key. Recovery counts emitted merged rows and replays
-the prefix, including when switching between Java and native readers. Apache attribution ships
-in the Paimon JAR's NOTICE. Current coverage, budgets and catch-up measurements are in the
-connector page.
+Released Rust owns run planning and merging. Java interval partitioning and format footer reads
+remain preflight fan-in/memory checks. The public audit reader retains winning snapshot row kinds;
+an Arrow selection removes winning retracts and converts only the row-kind sidecar. Ordinary
+snapshot reads normalize kinds to INSERT and therefore do not preserve Java's source contract.
+Streaming changelog reads use the ordinary public row-kind reader without reconciliation.
+
+Sequence ties retain Java: overlapping file sequence intervals or more rows than distinct
+sequence positions cannot enter native merging. ORC CHAR schemas also retain Java because the
+released reader pads values differently. Partial updates with `ignore-delete=true` also retain
+Java for stored/unknown retracts because initial retract cell handling differs. These gates trade some native coverage for deleting the
+custom loser tree and reducers, following the maintainer's simplicity-first scope. Unsupported
+partial-update sequence groups and field aggregates retain Java. ResourceContext charges projected
+Parquet row groups, not all merge/output memory; the existing encoded-row-group preflight remains.
+Recovery replays emitted logical rows and supports Java/native restoration in either direction.
+Current exact coverage, limits and measurements are in the connector page. Modern compaction now
+reuses this public reader boundary through Java Paimon 2.1's released rewriter factory. The audit
+reader retains stored sequence numbers and winning row kinds; Java's supplied `dropDelete` policy
+controls an Arrow selection before writing physical key-value files. Java still plans sections,
+rolls files, constructs metadata and owns commit/recovery. The source and compaction share footer
+budget checks; neither maintains a local run-merging algorithm.
 
 Finite-file completion flushes the split's final bounded watermark before releasing its Flink
 source output. Flink 2.2.1 removes a split's periodic generator in `releaseOutputForSplit`; an

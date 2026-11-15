@@ -6,19 +6,19 @@ use datafusion::logical_expr::{
 };
 
 pub(super) fn function() -> ScalarUDF {
-    ScalarUDF::new_from_impl(IntegralNegate {
+    ScalarUDF::new_from_impl(FlinkNegate {
         signature: Signature::user_defined(Volatility::Immutable),
     })
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
-struct IntegralNegate {
+struct FlinkNegate {
     signature: Signature,
 }
 
-impl ScalarUDFImpl for IntegralNegate {
+impl ScalarUDFImpl for FlinkNegate {
     fn name(&self) -> &str {
-        "flink_integral_negate"
+        "flink_exact_negate"
     }
 
     fn signature(&self) -> &Signature {
@@ -32,10 +32,12 @@ impl ScalarUDFImpl for IntegralNegate {
 
     fn return_type(&self, types: &[DataType]) -> Result<DataType> {
         match types {
-            [t @ (DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64)] => {
-                Ok(t.clone())
-            }
-            _ => exec_err!("Integral negation requires one signed integer operand"),
+            [t @ (DataType::Int8
+            | DataType::Int16
+            | DataType::Int32
+            | DataType::Int64
+            | DataType::Decimal128(_, _))] => Ok(t.clone()),
+            _ => exec_err!("Exact negation requires one signed integer or DECIMAL operand"),
         }
     }
 
@@ -46,7 +48,7 @@ impl ScalarUDFImpl for IntegralNegate {
 
 fn invoke(args: &[ColumnarValue]) -> Result<ColumnarValue> {
     let [input] = args else {
-        return exec_err!("Integral negation requires one operand");
+        return exec_err!("Exact negation requires one operand");
     };
     Ok(match input {
         ColumnarValue::Array(input) => ColumnarValue::Array(negate(input)?),
@@ -55,7 +57,10 @@ fn invoke(args: &[ColumnarValue]) -> Result<ColumnarValue> {
             ScalarValue::Int16(v) => ScalarValue::Int16(v.map(i16::wrapping_neg)),
             ScalarValue::Int32(v) => ScalarValue::Int32(v.map(i32::wrapping_neg)),
             ScalarValue::Int64(v) => ScalarValue::Int64(v.map(i64::wrapping_neg)),
-            other => return exec_err!("Unsupported integral negation input {other:?}"),
+            ScalarValue::Decimal128(v, p, s) => {
+                ScalarValue::Decimal128(v.map(i128::wrapping_neg), *p, *s)
+            }
+            other => return exec_err!("Unsupported exact negation input {other:?}"),
         }),
     })
 }
@@ -69,8 +74,60 @@ fn negate(input: &ArrayRef) -> Result<ArrayRef> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arrow::array::{Array, Int16Array, Int32Array, Int64Array, Int8Array};
+    use arrow::array::{Array, Decimal128Array, Int16Array, Int32Array, Int64Array, Int8Array};
     use std::sync::Arc;
+
+    #[test]
+    fn decimal_precision_scale_scalars_and_sliced_batches_are_preserved() {
+        for precision in 1..=38 {
+            let max = 10i128.pow(u32::from(precision)) - 1;
+            for scale in 0..=precision as i8 {
+                let ty = DataType::Decimal128(precision, scale);
+                let input = Decimal128Array::from(vec![
+                    Some(1),
+                    Some(-max),
+                    None,
+                    Some(-1),
+                    Some(0),
+                    Some(max),
+                    Some(1),
+                ])
+                .with_data_type(ty.clone())
+                .slice(1, 5);
+                let output = negate(&(Arc::new(input.clone()) as ArrayRef)).unwrap();
+                let output = output.as_any().downcast_ref::<Decimal128Array>().unwrap();
+                assert_eq!(output.data_type(), &ty);
+                assert_eq!(output.nulls(), input.nulls());
+                assert_eq!(
+                    output.iter().collect::<Vec<_>>(),
+                    vec![Some(max), None, Some(1), Some(0), Some(-max)]
+                );
+                assert_eq!(input.value(0), -max);
+                for values in [
+                    input.slice(1, 0),
+                    Decimal128Array::from(vec![None; 3]).with_data_type(ty.clone()),
+                ] {
+                    let output = negate(&(Arc::new(values.clone()) as ArrayRef)).unwrap();
+                    assert_eq!(output.data_type(), &ty);
+                    assert_eq!(output.len(), values.len());
+                    assert_eq!(output.null_count(), values.null_count());
+                }
+                for value in [Some(-max), Some(max), Some(0), None] {
+                    let output = invoke(&[ColumnarValue::Scalar(ScalarValue::Decimal128(
+                        value, precision, scale,
+                    ))])
+                    .unwrap();
+                    let ColumnarValue::Scalar(output) = output else {
+                        panic!("Scalar decimal negation returned an array")
+                    };
+                    assert_eq!(
+                        output,
+                        ScalarValue::Decimal128(value.map(|v| -v), precision, scale)
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn widths_minima_nulls_and_sliced_validity() {
@@ -173,7 +230,7 @@ mod tests {
         for types in [
             vec![],
             vec![DataType::Float64],
-            vec![DataType::Decimal128(18, 3)],
+            vec![DataType::Decimal256(38, 3)],
             vec![DataType::Int32, DataType::Int64],
         ] {
             assert!(f.return_type(&types).is_err());

@@ -21,6 +21,7 @@ concurrency:
 
 jobs:
   prepare:
+    if: github.repository == 'datafusion-contrib/StreamFusion'
     name: Validate release tag
     runs-on: ubuntu-24.04
     environment: release

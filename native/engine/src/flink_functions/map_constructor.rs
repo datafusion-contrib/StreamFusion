@@ -53,8 +53,8 @@ impl ScalarUDFImpl for MapConstructor {
             }
             let (entries, offsets, nulls) = super::map_projection::parts(&result)?;
             super::map_arrays::build(
-                super::collection_string::binary_map_elements(entries.column(0))?,
-                super::collection_string::binary_map_elements(entries.column(1))?,
+                super::collection_string::binary_elements(entries.column(0))?,
+                super::collection_string::binary_elements(entries.column(1))?,
                 offsets.clone(),
                 nulls.cloned(),
             )

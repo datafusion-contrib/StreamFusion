@@ -1,0 +1,6431 @@
+{
+  "date": "2026-11-04",
+  "base": "0f5fc16796d6e7882e34722435480320a25434dd",
+  "previous_head": "0e4ed5710a1039e3bbeefdf62209c3fd5f666e03",
+  "platform": "Apple M4 Pro, macOS arm64, one thread",
+  "jdk": "17.0.12",
+  "java_release": 11,
+  "flink_versions": [
+    "1.18.1",
+    "2.2.1"
+  ],
+  "build": "release --no-default-features --features mimalloc",
+  "scope": "Pure native UTC LTZ CEIL of genuine built-in integer epoch conversion with verified total integer operands and literal 0/3 or separately verified CASE 0/3/NULL precision; only release-supported units. Reuses the component timestamp builder and verified scalar-width specializations; the CEIL rebuild maps whole-millisecond component rounds with Arrow unary and shares parent validity. No transport, JNI or switch change.",
+  "method": {
+    "rows_per_trial": 131072,
+    "warmups": 16,
+    "measurements": 9,
+    "bulk_batch": 1024,
+    "tiny_batch": 16,
+    "input": "Equal prepared GenericRowData/BinaryRowData and Arrow, both NULL modes, signed width extrema, epoch boundary/range/NULL values, integer seconds and milliseconds, runtime 0/3 precision. YEAR consumes the rounded timestamp as INT without discarding the round operation.",
+    "native_timer": "Inside Rust after import and before export; production epoch/round/extraction kernels, output consumption, allocations, conversions and any intrinsic callbacks retained. Perimeter JNI/C Data and transposes excluded only from this prepared functionality timer.",
+    "previous": "Actual preceding encoder/helper from recorded head on archived preceding native runtime and identical fixture, additive build-selected compatibility helper and production TableConfig. Setup requires intended rounding function in candidate native descriptors or previous JVM descriptors; candidate has no evaluators. Independent stock controls run in both JVMs.",
+    "pipeline": "Six complete million-row, bounded row-source/blackhole jobs, one thread, two warmups and five alternating measurements per engine; submission/startup, JNI and both transposes retained. Surrounding JVM process startup outside job timer."
+  },
+  "builder_cells": {},
+  "builder_pipeline": {},
+  "builder_provenance": null,
+  "initial_cells": {
+    "22-0": {
+      "flink_line": "22",
+      "shape": "seconds-year",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": false,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 23.012802124023438,
+          "min": 22.694900512695312,
+          "max": 33.742584228515625
+        },
+        "native": {
+          "median": 18.59728240966797,
+          "min": 18.481887817382812,
+          "max": 18.717453002929688
+        },
+        "prior-stock": {
+          "median": 27.724586486816406,
+          "min": 25.44403076171875,
+          "max": 37.34906768798828
+        },
+        "previous": {
+          "median": 51.16685485839844,
+          "min": 48.53376007080078,
+          "max": 57.993255615234375
+        }
+      }
+    },
+    "22-1": {
+      "flink_line": "22",
+      "shape": "seconds-year",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": false,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 26.175498962402344,
+          "min": 23.983001708984375,
+          "max": 34.357383728027344
+        },
+        "native": {
+          "median": 19.395828247070312,
+          "min": 18.984153747558594,
+          "max": 19.85486602783203
+        },
+        "prior-stock": {
+          "median": 26.615142822265625,
+          "min": 23.880325317382812,
+          "max": 37.30805206298828
+        },
+        "previous": {
+          "median": 55.463478088378906,
+          "min": 50.82734680175781,
+          "max": 69.33434295654297
+        }
+      }
+    },
+    "22-2": {
+      "flink_line": "22",
+      "shape": "seconds-year",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": true,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 20.920120239257812,
+          "min": 20.341873168945312,
+          "max": 35.958290100097656
+        },
+        "native": {
+          "median": 18.65545654296875,
+          "min": 17.85882568359375,
+          "max": 19.538238525390625
+        },
+        "prior-stock": {
+          "median": 22.283554077148438,
+          "min": 21.052993774414062,
+          "max": 26.65424346923828
+        },
+        "previous": {
+          "median": 52.519798278808594,
+          "min": 50.91444396972656,
+          "max": 61.876930236816406
+        }
+      }
+    },
+    "22-3": {
+      "flink_line": "22",
+      "shape": "seconds-year",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 25.779090881347656,
+          "min": 24.16832733154297,
+          "max": 41.58496856689453
+        },
+        "native": {
+          "median": 19.137062072753906,
+          "min": 18.729843139648438,
+          "max": 19.950225830078125
+        },
+        "prior-stock": {
+          "median": 25.862693786621094,
+          "min": 24.7955322265625,
+          "max": 27.286216735839844
+        },
+        "previous": {
+          "median": 62.859535217285156,
+          "min": 53.05322265625,
+          "max": 68.55265045166016
+        }
+      }
+    },
+    "22-4": {
+      "flink_line": "22",
+      "shape": "millis-month",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": false,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 32.407440185546875,
+          "min": 29.315628051757812,
+          "max": 41.347503662109375
+        },
+        "native": {
+          "median": 20.113632202148438,
+          "min": 19.888565063476562,
+          "max": 20.541824340820312
+        },
+        "prior-stock": {
+          "median": 33.14813232421875,
+          "min": 31.337738037109375,
+          "max": 40.28765106201172
+        },
+        "previous": {
+          "median": 55.03813934326172,
+          "min": 52.09033203125,
+          "max": 64.71283721923828
+        }
+      }
+    },
+    "22-5": {
+      "flink_line": "22",
+      "shape": "millis-month",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": false,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 33.795677185058594,
+          "min": 29.741287231445312,
+          "max": 45.16569519042969
+        },
+        "native": {
+          "median": 20.055137634277344,
+          "min": 19.582427978515625,
+          "max": 20.541824340820312
+        },
+        "prior-stock": {
+          "median": 31.911529541015625,
+          "min": 29.175437927246094,
+          "max": 39.659812927246094
+        },
+        "previous": {
+          "median": 55.9571533203125,
+          "min": 53.030967712402344,
+          "max": 84.0752944946289
+        }
+      }
+    },
+    "22-6": {
+      "flink_line": "22",
+      "shape": "millis-month",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": true,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 24.721145629882812,
+          "min": 23.541770935058594,
+          "max": 38.938201904296875
+        },
+        "native": {
+          "median": 19.34178924560547,
+          "min": 19.029937744140625,
+          "max": 20.10028076171875
+        },
+        "prior-stock": {
+          "median": 25.7584228515625,
+          "min": 23.73059844970703,
+          "max": 37.309326171875
+        },
+        "previous": {
+          "median": 59.447288513183594,
+          "min": 55.206298828125,
+          "max": 66.5852279663086
+        }
+      }
+    },
+    "22-7": {
+      "flink_line": "22",
+      "shape": "millis-month",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 30.57257080078125,
+          "min": 27.225494384765625,
+          "max": 36.409698486328125
+        },
+        "native": {
+          "median": 19.568443298339844,
+          "min": 18.957138061523438,
+          "max": 20.030654907226562
+        },
+        "prior-stock": {
+          "median": 27.017593383789062,
+          "min": 25.423362731933594,
+          "max": 33.157981872558594
+        },
+        "previous": {
+          "median": 60.955047607421875,
+          "min": 52.472434997558594,
+          "max": 76.21192932128906
+        }
+      }
+    },
+    "22-8": {
+      "flink_line": "22",
+      "shape": "int-day",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO DAY))",
+      "type": "INT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": false,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 18.974937438964844,
+          "min": 18.38524627685547,
+          "max": 34.018836975097656
+        },
+        "native": {
+          "median": 10.288558959960938,
+          "min": 10.174118041992188,
+          "max": 10.560676574707031
+        },
+        "prior-stock": {
+          "median": 21.90526580810547,
+          "min": 18.289886474609375,
+          "max": 22.42151641845703
+        },
+        "previous": {
+          "median": 53.183876037597656,
+          "min": 48.967674255371094,
+          "max": 65.95770263671875
+        }
+      }
+    },
+    "22-9": {
+      "flink_line": "22",
+      "shape": "int-day",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO DAY))",
+      "type": "INT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": false,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 20.897232055664062,
+          "min": 20.28211212158203,
+          "max": 35.49162292480469
+        },
+        "native": {
+          "median": 10.085746765136719,
+          "min": 10.065078735351562,
+          "max": 10.378524780273438
+        },
+        "prior-stock": {
+          "median": 21.207176208496094,
+          "min": 20.86322021484375,
+          "max": 21.75171661376953
+        },
+        "previous": {
+          "median": 47.73235321044922,
+          "min": 44.61193084716797,
+          "max": 69.93961334228516
+        }
+      }
+    },
+    "22-10": {
+      "flink_line": "22",
+      "shape": "int-day",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO DAY))",
+      "type": "INT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": true,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 18.90691375732422,
+          "min": 17.807640075683594,
+          "max": 29.99401092529297
+        },
+        "native": {
+          "median": 12.031875610351562,
+          "min": 11.800765991210938,
+          "max": 12.441322326660156
+        },
+        "prior-stock": {
+          "median": 18.314041137695312,
+          "min": 16.83489227294922,
+          "max": 27.675308227539062
+        },
+        "previous": {
+          "median": 52.47306823730469,
+          "min": 49.29161071777344,
+          "max": 65.9341812133789
+        }
+      }
+    },
+    "22-11": {
+      "flink_line": "22",
+      "shape": "int-day",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO DAY))",
+      "type": "INT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 18.636070251464844,
+          "min": 17.961822509765625,
+          "max": 27.853652954101562
+        },
+        "native": {
+          "median": 11.836692810058594,
+          "min": 11.550582885742188,
+          "max": 12.0697021484375
+        },
+        "prior-stock": {
+          "median": 19.216537475585938,
+          "min": 18.84587860107422,
+          "max": 28.072677612304688
+        },
+        "previous": {
+          "median": 50.60863494873047,
+          "min": 48.24638366699219,
+          "max": 62.75812530517578
+        }
+      }
+    },
+    "22-12": {
+      "flink_line": "22",
+      "shape": "runtime-hour",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END) TO HOUR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": false,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 16.257286071777344,
+          "min": 15.674591064453125,
+          "max": 26.881851196289062
+        },
+        "native": {
+          "median": 13.520561218261719,
+          "min": 13.0615234375,
+          "max": 13.837181091308594
+        },
+        "prior-stock": {
+          "median": 16.780853271484375,
+          "min": 16.37140655517578,
+          "max": 28.372451782226562
+        },
+        "previous": {
+          "median": 62.31498718261719,
+          "min": 55.739402770996094,
+          "max": 73.32515716552734
+        }
+      }
+    },
+    "22-13": {
+      "flink_line": "22",
+      "shape": "runtime-hour",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END) TO HOUR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": false,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 19.165992736816406,
+          "min": 18.6478271484375,
+          "max": 29.398597717285156
+        },
+        "native": {
+          "median": 13.228416442871094,
+          "min": 12.99285888671875,
+          "max": 13.712882995605469
+        },
+        "prior-stock": {
+          "median": 18.547378540039062,
+          "min": 16.80310821533203,
+          "max": 27.913414001464844
+        },
+        "previous": {
+          "median": 56.8663330078125,
+          "min": 53.91661834716797,
+          "max": 68.58412170410156
+        }
+      }
+    },
+    "22-14": {
+      "flink_line": "22",
+      "shape": "runtime-hour",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END) TO HOUR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": true,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 14.928184509277344,
+          "min": 14.474235534667969,
+          "max": 27.311325073242188
+        },
+        "native": {
+          "median": 14.48822021484375,
+          "min": 14.178596496582031,
+          "max": 14.699295043945312
+        },
+        "prior-stock": {
+          "median": 15.413604736328125,
+          "min": 15.03594970703125,
+          "max": 20.22838592529297
+        },
+        "previous": {
+          "median": 58.37694549560547,
+          "min": 54.155029296875,
+          "max": 70.99628448486328
+        }
+      }
+    },
+    "22-15": {
+      "flink_line": "22",
+      "shape": "runtime-hour",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END) TO HOUR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 16.79515838623047,
+          "min": 16.511917114257812,
+          "max": 26.271507263183594
+        },
+        "native": {
+          "median": 14.115653991699219,
+          "min": 13.979911804199219,
+          "max": 14.435768127441406
+        },
+        "prior-stock": {
+          "median": 17.763778686523438,
+          "min": 16.784988403320312,
+          "max": 28.735794067382812
+        },
+        "previous": {
+          "median": 58.98475646972656,
+          "min": 51.96411895751953,
+          "max": 67.13104248046875
+        }
+      }
+    },
+    "22-16": {
+      "flink_line": "22",
+      "shape": "seconds-year",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 16,
+      "engines": {
+        "flink": {
+          "median": 19.374847412109375,
+          "min": 18.651321411132812,
+          "max": 35.68236541748047
+        },
+        "native": {
+          "median": 87.69384765625,
+          "min": 86.87591552734375,
+          "max": 91.76921844482422
+        },
+        "prior-stock": {
+          "median": 19.797958374023438,
+          "min": 19.010231018066406,
+          "max": 22.77088165283203
+        },
+        "previous": {
+          "median": 919.450439453125,
+          "min": 902.1196365356445,
+          "max": 933.6833953857422
+        }
+      }
+    },
+    "22-17": {
+      "flink_line": "22",
+      "shape": "millis-month",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 16,
+      "engines": {
+        "flink": {
+          "median": 27.41210174560547,
+          "min": 26.170730590820312,
+          "max": 43.685272216796875
+        },
+        "native": {
+          "median": 85.93814086914062,
+          "min": 85.3255615234375,
+          "max": 86.4248275756836
+        },
+        "prior-stock": {
+          "median": 28.2745361328125,
+          "min": 26.163101196289062,
+          "max": 31.159400939941406
+        },
+        "previous": {
+          "median": 944.7905197143555,
+          "min": 939.2681121826172,
+          "max": 983.7573318481445
+        }
+      }
+    },
+    "22-18": {
+      "flink_line": "22",
+      "shape": "int-day",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO DAY))",
+      "type": "INT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 16,
+      "engines": {
+        "flink": {
+          "median": 18.033981323242188,
+          "min": 17.175033569335938,
+          "max": 27.841880798339844
+        },
+        "native": {
+          "median": 80.75778198242188,
+          "min": 79.68107604980469,
+          "max": 81.81285858154297
+        },
+        "prior-stock": {
+          "median": 17.844200134277344,
+          "min": 16.661331176757812,
+          "max": 20.294822692871094
+        },
+        "previous": {
+          "median": 948.7994537353516,
+          "min": 910.4007034301758,
+          "max": 982.4177398681641
+        }
+      }
+    },
+    "22-19": {
+      "flink_line": "22",
+      "shape": "runtime-hour",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END) TO HOUR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 16,
+      "engines": {
+        "flink": {
+          "median": 14.787673950195312,
+          "min": 14.463104248046875,
+          "max": 30.569076538085938
+        },
+        "native": {
+          "median": 124.37820434570312,
+          "min": 123.06340026855469,
+          "max": 126.05508422851562
+        },
+        "prior-stock": {
+          "median": 14.266326904296875,
+          "min": 13.367652893066406,
+          "max": 14.590896606445312
+        },
+        "previous": {
+          "median": 1049.6123580932617,
+          "min": 1025.1925811767578,
+          "max": 1058.393798828125
+        }
+      }
+    },
+    "118-0": {
+      "flink_line": "118",
+      "shape": "seconds-year",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": false,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 24.309158325195312,
+          "min": 22.71906280517578,
+          "max": 39.45891571044922
+        },
+        "previous": {
+          "median": 56.26837158203125,
+          "min": 52.35321807861328,
+          "max": 61.18583679199219
+        },
+        "flink": {
+          "median": 28.01227569580078,
+          "min": 26.424407958984375,
+          "max": 36.43989562988281
+        },
+        "native": {
+          "median": 18.837295532226562,
+          "min": 18.60332489013672,
+          "max": 19.45655059814453
+        }
+      }
+    },
+    "118-1": {
+      "flink_line": "118",
+      "shape": "seconds-year",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": false,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 28.260231018066406,
+          "min": 27.509689331054688,
+          "max": 31.157493591308594
+        },
+        "previous": {
+          "median": 54.2939453125,
+          "min": 50.827980041503906,
+          "max": 66.17069244384766
+        },
+        "flink": {
+          "median": 28.029441833496094,
+          "min": 26.334129333496094,
+          "max": 35.464927673339844
+        },
+        "native": {
+          "median": 19.060134887695312,
+          "min": 18.70282745361328,
+          "max": 19.50836181640625
+        }
+      }
+    },
+    "118-2": {
+      "flink_line": "118",
+      "shape": "seconds-year",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": true,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 24.329505920410156,
+          "min": 23.361839294433594,
+          "max": 25.267913818359375
+        },
+        "previous": {
+          "median": 54.913841247558594,
+          "min": 51.358856201171875,
+          "max": 67.78558349609375
+        },
+        "flink": {
+          "median": 23.659385681152344,
+          "min": 22.62146759033203,
+          "max": 34.865379333496094
+        },
+        "native": {
+          "median": 18.664039611816406,
+          "min": 18.54547119140625,
+          "max": 19.43524932861328
+        }
+      }
+    },
+    "118-3": {
+      "flink_line": "118",
+      "shape": "seconds-year",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 26.145614624023438,
+          "min": 24.95861053466797,
+          "max": 27.214691162109375
+        },
+        "previous": {
+          "median": 60.727760314941406,
+          "min": 55.80870056152344,
+          "max": 76.5218734741211
+        },
+        "flink": {
+          "median": 25.659881591796875,
+          "min": 24.826683044433594,
+          "max": 26.73944091796875
+        },
+        "native": {
+          "median": 19.252777099609375,
+          "min": 19.06108856201172,
+          "max": 19.47815704345703
+        }
+      }
+    },
+    "118-4": {
+      "flink_line": "118",
+      "shape": "millis-month",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": false,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 27.555145263671875,
+          "min": 26.42536163330078,
+          "max": 30.01276397705078
+        },
+        "previous": {
+          "median": 60.812950134277344,
+          "min": 54.07842254638672,
+          "max": 76.61914825439453
+        },
+        "flink": {
+          "median": 33.3878173828125,
+          "min": 30.596092224121094,
+          "max": 42.050048828125
+        },
+        "native": {
+          "median": 19.95563507080078,
+          "min": 19.195556640625,
+          "max": 20.3399658203125
+        }
+      }
+    },
+    "118-5": {
+      "flink_line": "118",
+      "shape": "millis-month",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": false,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 33.54295349121094,
+          "min": 31.439468383789062,
+          "max": 34.235633850097656
+        },
+        "previous": {
+          "median": 53.97065734863281,
+          "min": 51.25682067871094,
+          "max": 62.23011016845703
+        },
+        "flink": {
+          "median": 34.2559814453125,
+          "min": 33.37383270263672,
+          "max": 43.76824188232422
+        },
+        "native": {
+          "median": 20.08660888671875,
+          "min": 19.50550079345703,
+          "max": 21.629966735839844
+        }
+      }
+    },
+    "118-6": {
+      "flink_line": "118",
+      "shape": "millis-month",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": true,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 28.18584442138672,
+          "min": 27.05352020263672,
+          "max": 29.921531677246094
+        },
+        "previous": {
+          "median": 64.83173370361328,
+          "min": 55.632591247558594,
+          "max": 69.4621353149414
+        },
+        "flink": {
+          "median": 28.732940673828125,
+          "min": 26.303932189941406,
+          "max": 40.40495300292969
+        },
+        "native": {
+          "median": 20.63910675048828,
+          "min": 19.364990234375,
+          "max": 22.387184143066406
+        }
+      }
+    },
+    "118-7": {
+      "flink_line": "118",
+      "shape": "millis-month",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 30.090965270996094,
+          "min": 28.32762908935547,
+          "max": 31.122207641601562
+        },
+        "previous": {
+          "median": 61.35877227783203,
+          "min": 55.44440460205078,
+          "max": 74.29822540283203
+        },
+        "flink": {
+          "median": 28.958641052246094,
+          "min": 27.383804321289062,
+          "max": 37.328086853027344
+        },
+        "native": {
+          "median": 19.876792907714844,
+          "min": 19.194602966308594,
+          "max": 20.557090759277344
+        }
+      }
+    },
+    "118-8": {
+      "flink_line": "118",
+      "shape": "int-day",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO DAY))",
+      "type": "INT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": false,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 17.837844848632812,
+          "min": 17.392478942871094,
+          "max": 18.920578002929688
+        },
+        "previous": {
+          "median": 48.95146942138672,
+          "min": 46.4188232421875,
+          "max": 58.27903747558594
+        },
+        "flink": {
+          "median": 17.16931915283203,
+          "min": 17.069183349609375,
+          "max": 34.85075378417969
+        },
+        "native": {
+          "median": 10.135330200195312,
+          "min": 10.025337219238281,
+          "max": 10.35308837890625
+        }
+      }
+    },
+    "118-9": {
+      "flink_line": "118",
+      "shape": "int-day",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO DAY))",
+      "type": "INT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": false,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 20.803131103515625,
+          "min": 19.563674926757812,
+          "max": 21.8232421875
+        },
+        "previous": {
+          "median": 52.88188171386719,
+          "min": 47.78289794921875,
+          "max": 63.101768493652344
+        },
+        "flink": {
+          "median": 19.59546661376953,
+          "min": 19.247695922851562,
+          "max": 40.947593688964844
+        },
+        "native": {
+          "median": 10.720252990722656,
+          "min": 10.300323486328125,
+          "max": 11.847808837890625
+        }
+      }
+    },
+    "118-10": {
+      "flink_line": "118",
+      "shape": "int-day",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO DAY))",
+      "type": "INT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": true,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 17.937026977539062,
+          "min": 16.67150115966797,
+          "max": 18.539108276367188
+        },
+        "previous": {
+          "median": 60.68388366699219,
+          "min": 49.785301208496094,
+          "max": 63.40376281738281
+        },
+        "flink": {
+          "median": 16.321502685546875,
+          "min": 15.929862976074219,
+          "max": 27.635894775390625
+        },
+        "native": {
+          "median": 11.727333068847656,
+          "min": 11.542640686035156,
+          "max": 12.543357849121094
+        }
+      }
+    },
+    "118-11": {
+      "flink_line": "118",
+      "shape": "int-day",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO DAY))",
+      "type": "INT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 19.428253173828125,
+          "min": 18.343612670898438,
+          "max": 21.1029052734375
+        },
+        "previous": {
+          "median": 46.68934631347656,
+          "min": 42.816795349121094,
+          "max": 55.750526428222656
+        },
+        "flink": {
+          "median": 19.052505493164062,
+          "min": 18.784210205078125,
+          "max": 29.316268920898438
+        },
+        "native": {
+          "median": 12.076377868652344,
+          "min": 11.884368896484375,
+          "max": 12.406990051269531
+        }
+      }
+    },
+    "118-12": {
+      "flink_line": "118",
+      "shape": "runtime-hour",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END) TO HOUR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": false,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 15.817008972167969,
+          "min": 15.479721069335938,
+          "max": 19.877120971679688
+        },
+        "previous": {
+          "median": 58.660186767578125,
+          "min": 51.3289794921875,
+          "max": 63.39454650878906
+        },
+        "flink": {
+          "median": 15.466690063476562,
+          "min": 15.170097351074219,
+          "max": 24.98626708984375
+        },
+        "native": {
+          "median": 13.306617736816406,
+          "min": 13.134323120117188,
+          "max": 13.562515258789062
+        }
+      }
+    },
+    "118-13": {
+      "flink_line": "118",
+      "shape": "runtime-hour",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END) TO HOUR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": false,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 18.872901916503906,
+          "min": 17.26659393310547,
+          "max": 21.821975708007812
+        },
+        "previous": {
+          "median": 63.559532165527344,
+          "min": 55.98258972167969,
+          "max": 83.59941101074219
+        },
+        "flink": {
+          "median": 17.414405822753906,
+          "min": 16.75255584716797,
+          "max": 29.022537231445312
+        },
+        "native": {
+          "median": 13.141632080078125,
+          "min": 12.889228820800781,
+          "max": 14.232955932617188
+        }
+      }
+    },
+    "118-14": {
+      "flink_line": "118",
+      "shape": "runtime-hour",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END) TO HOUR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": true,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 15.706375122070312,
+          "min": 14.170646667480469,
+          "max": 25.146484375
+        },
+        "previous": {
+          "median": 62.7730712890625,
+          "min": 56.20002746582031,
+          "max": 66.45647430419922
+        },
+        "flink": {
+          "median": 13.490997314453125,
+          "min": 13.148628234863281,
+          "max": 23.508392333984375
+        },
+        "native": {
+          "median": 14.30511474609375,
+          "min": 14.115966796875,
+          "max": 14.57977294921875
+        }
+      }
+    },
+    "118-15": {
+      "flink_line": "118",
+      "shape": "runtime-hour",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END) TO HOUR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 16.764007568359375,
+          "min": 15.971183776855469,
+          "max": 18.773399353027344
+        },
+        "previous": {
+          "median": 62.6710205078125,
+          "min": 55.60271453857422,
+          "max": 72.05168914794922
+        },
+        "flink": {
+          "median": 15.807472229003906,
+          "min": 14.500938415527344,
+          "max": 26.36687469482422
+        },
+        "native": {
+          "median": 14.349937438964844,
+          "min": 13.843223571777344,
+          "max": 15.17327880859375
+        }
+      }
+    },
+    "118-16": {
+      "flink_line": "118",
+      "shape": "seconds-year",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 16,
+      "engines": {
+        "prior-stock": {
+          "median": 20.565032958984375,
+          "min": 19.22480010986328,
+          "max": 21.777786254882812
+        },
+        "previous": {
+          "median": 934.200927734375,
+          "min": 900.0053405761719,
+          "max": 1006.182991027832
+        },
+        "flink": {
+          "median": 21.579742431640625,
+          "min": 20.170852661132812,
+          "max": 22.315025329589844
+        },
+        "native": {
+          "median": 87.66905212402344,
+          "min": 86.77132415771484,
+          "max": 90.8651351928711
+        }
+      }
+    },
+    "118-17": {
+      "flink_line": "118",
+      "shape": "millis-month",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 16,
+      "engines": {
+        "prior-stock": {
+          "median": 28.274856567382812,
+          "min": 27.712188720703125,
+          "max": 28.692886352539062
+        },
+        "previous": {
+          "median": 925.2249450683594,
+          "min": 912.4816207885742,
+          "max": 944.5981979370117
+        },
+        "flink": {
+          "median": 28.517410278320312,
+          "min": 28.135940551757812,
+          "max": 38.859046936035156
+        },
+        "native": {
+          "median": 88.43231201171875,
+          "min": 85.89108276367188,
+          "max": 90.89469909667969
+        }
+      }
+    },
+    "118-18": {
+      "flink_line": "118",
+      "shape": "int-day",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO DAY))",
+      "type": "INT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 16,
+      "engines": {
+        "prior-stock": {
+          "median": 16.435623168945312,
+          "min": 15.996292114257812,
+          "max": 18.72730255126953
+        },
+        "previous": {
+          "median": 926.3966903686523,
+          "min": 898.9295959472656,
+          "max": 941.6157455444336
+        },
+        "flink": {
+          "median": 16.939163208007812,
+          "min": 16.49030303955078,
+          "max": 27.503646850585938
+        },
+        "native": {
+          "median": 82.6880111694336,
+          "min": 80.7183609008789,
+          "max": 83.70558166503906
+        }
+      }
+    },
+    "118-19": {
+      "flink_line": "118",
+      "shape": "runtime-hour",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END) TO HOUR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 16,
+      "engines": {
+        "prior-stock": {
+          "median": 13.347625732421875,
+          "min": 12.848854064941406,
+          "max": 18.682159423828125
+        },
+        "previous": {
+          "median": 1046.8323974609375,
+          "min": 1027.1555557250977,
+          "max": 1064.2121658325195
+        },
+        "flink": {
+          "median": 14.200210571289062,
+          "min": 13.413429260253906,
+          "max": 23.893035888671875
+        },
+        "native": {
+          "median": 125.05181884765625,
+          "min": 122.47657775878906,
+          "max": 128.2669677734375
+        }
+      }
+    }
+  },
+  "initial_pipeline": {
+    "22-seconds-year": {
+      "flink_line": "22",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+      "secondary": "",
+      "type": "BIGINT",
+      "corpus": "epoch-seconds",
+      "controls": {
+        "candidate": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.511653792
+            },
+            {
+              "engine": "native",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.347954417
+            },
+            {
+              "engine": "native",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.249240584
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.218698458
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.184513833
+            },
+            {
+              "engine": "native",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.209339542
+            },
+            {
+              "engine": "native",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.185489708
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.167886375
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.180627208
+            },
+            {
+              "engine": "native",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.188855416
+            },
+            {
+              "engine": "native",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.186855709
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.168368667
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.176661792
+            },
+            {
+              "engine": "native",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.1863715
+            }
+          ],
+          "stats": {
+            "stock": {
+              "median": 0.176661792,
+              "min": 0.167886375,
+              "max": 0.184513833
+            },
+            "native": {
+              "median": 0.186855709,
+              "min": 0.185489708,
+              "max": 0.209339542
+            }
+          }
+        },
+        "previous": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.473212042
+            },
+            {
+              "engine": "previous",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.409038959
+            },
+            {
+              "engine": "previous",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.255415583
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.184151041
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.171696708
+            },
+            {
+              "engine": "previous",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.229800083
+            },
+            {
+              "engine": "previous",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.22576725
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.173009375
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.186506583
+            },
+            {
+              "engine": "previous",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.223420333
+            },
+            {
+              "engine": "previous",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.222211791
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.174149333
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.165074958
+            },
+            {
+              "engine": "previous",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.217249625
+            }
+          ],
+          "stats": {
+            "stock": {
+              "median": 0.173009375,
+              "min": 0.165074958,
+              "max": 0.186506583
+            },
+            "previous": {
+              "median": 0.223420333,
+              "min": 0.217249625,
+              "max": 0.229800083
+            }
+          }
+        }
+      }
+    },
+    "22-millis-month": {
+      "flink_line": "22",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+      "secondary": "",
+      "type": "BIGINT",
+      "corpus": "epoch-millis",
+      "controls": {
+        "candidate": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.515605416
+            },
+            {
+              "engine": "native",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.357929958
+            },
+            {
+              "engine": "native",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.238843166
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.214994084
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.183746417
+            },
+            {
+              "engine": "native",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.208320791
+            },
+            {
+              "engine": "native",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.195730541
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.187728333
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.174470833
+            },
+            {
+              "engine": "native",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.192881416
+            },
+            {
+              "engine": "native",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.192940958
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.17749925
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.194568459
+            },
+            {
+              "engine": "native",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.19189775
+            }
+          ],
+          "stats": {
+            "stock": {
+              "median": 0.183746417,
+              "min": 0.174470833,
+              "max": 0.194568459
+            },
+            "native": {
+              "median": 0.192940958,
+              "min": 0.19189775,
+              "max": 0.208320791
+            }
+          }
+        },
+        "previous": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.499033042
+            },
+            {
+              "engine": "previous",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.4111095
+            },
+            {
+              "engine": "previous",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.277883208
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.195317666
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.1893785
+            },
+            {
+              "engine": "previous",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.228813083
+            },
+            {
+              "engine": "previous",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.239332375
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.187293208
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.17153075
+            },
+            {
+              "engine": "previous",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.224292333
+            },
+            {
+              "engine": "previous",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.221886875
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.17910875
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.183821541
+            },
+            {
+              "engine": "previous",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.230703417
+            }
+          ],
+          "stats": {
+            "stock": {
+              "median": 0.183821541,
+              "min": 0.17153075,
+              "max": 0.1893785
+            },
+            "previous": {
+              "median": 0.228813083,
+              "min": 0.221886875,
+              "max": 0.239332375
+            }
+          }
+        }
+      }
+    },
+    "22-runtime-hour": {
+      "flink_line": "22",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END) TO HOUR))",
+      "secondary": "",
+      "type": "BIGINT",
+      "corpus": "epoch-seconds",
+      "controls": {
+        "candidate": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.56427425
+            },
+            {
+              "engine": "native",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.36564825
+            },
+            {
+              "engine": "native",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.230994375
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.177220167
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.190544375
+            },
+            {
+              "engine": "native",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.230432333
+            },
+            {
+              "engine": "native",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.201264542
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.179503708
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.186136208
+            },
+            {
+              "engine": "native",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.193398916
+            },
+            {
+              "engine": "native",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.186793334
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.167922625
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.166328
+            },
+            {
+              "engine": "native",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.1905915
+            }
+          ],
+          "stats": {
+            "stock": {
+              "median": 0.179503708,
+              "min": 0.166328,
+              "max": 0.190544375
+            },
+            "native": {
+              "median": 0.193398916,
+              "min": 0.186793334,
+              "max": 0.230432333
+            }
+          }
+        },
+        "previous": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.509255208
+            },
+            {
+              "engine": "previous",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.45426275
+            },
+            {
+              "engine": "previous",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.288297875
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.201876584
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.162679208
+            },
+            {
+              "engine": "previous",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.228322084
+            },
+            {
+              "engine": "previous",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.240015042
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.17041175
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.17489275
+            },
+            {
+              "engine": "previous",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.231744167
+            },
+            {
+              "engine": "previous",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.227554291
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.16202475
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.1728995
+            },
+            {
+              "engine": "previous",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.230908208
+            }
+          ],
+          "stats": {
+            "stock": {
+              "median": 0.17041175,
+              "min": 0.16202475,
+              "max": 0.17489275
+            },
+            "previous": {
+              "median": 0.230908208,
+              "min": 0.227554291,
+              "max": 0.240015042
+            }
+          }
+        }
+      }
+    },
+    "118-seconds-year": {
+      "flink_line": "118",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+      "secondary": "",
+      "type": "BIGINT",
+      "corpus": "epoch-seconds",
+      "controls": {
+        "candidate": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.460219584
+            },
+            {
+              "engine": "native",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.371397292
+            },
+            {
+              "engine": "native",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.232994125
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.181113209
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.197451917
+            },
+            {
+              "engine": "native",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.207556125
+            },
+            {
+              "engine": "native",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.19930275
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.19227675
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.178294125
+            },
+            {
+              "engine": "native",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.193101583
+            },
+            {
+              "engine": "native",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.194152042
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.172918417
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.181623959
+            },
+            {
+              "engine": "native",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.201656333
+            }
+          ],
+          "stats": {
+            "stock": {
+              "median": 0.181623959,
+              "min": 0.172918417,
+              "max": 0.197451917
+            },
+            "native": {
+              "median": 0.19930275,
+              "min": 0.193101583,
+              "max": 0.207556125
+            }
+          }
+        },
+        "previous": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.4403615
+            },
+            {
+              "engine": "previous",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.424221833
+            },
+            {
+              "engine": "previous",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.27377375
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.173939041
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.188700792
+            },
+            {
+              "engine": "previous",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.251429917
+            },
+            {
+              "engine": "previous",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.234631166
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.17059
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.177111875
+            },
+            {
+              "engine": "previous",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.233049
+            },
+            {
+              "engine": "previous",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.21522675
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.190176333
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.179849125
+            },
+            {
+              "engine": "previous",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.225657292
+            }
+          ],
+          "stats": {
+            "previous": {
+              "median": 0.233049,
+              "min": 0.21522675,
+              "max": 0.251429917
+            },
+            "stock": {
+              "median": 0.179849125,
+              "min": 0.17059,
+              "max": 0.190176333
+            }
+          }
+        }
+      }
+    },
+    "118-millis-month": {
+      "flink_line": "118",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+      "secondary": "",
+      "type": "BIGINT",
+      "corpus": "epoch-millis",
+      "controls": {
+        "candidate": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.468609083
+            },
+            {
+              "engine": "native",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.375140458
+            },
+            {
+              "engine": "native",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.2159525
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.187445792
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.184119167
+            },
+            {
+              "engine": "native",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.210816542
+            },
+            {
+              "engine": "native",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.200827958
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.19300775
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.184996625
+            },
+            {
+              "engine": "native",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.191034041
+            },
+            {
+              "engine": "native",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.197566417
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.181314917
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.178895208
+            },
+            {
+              "engine": "native",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.189502833
+            }
+          ],
+          "stats": {
+            "stock": {
+              "median": 0.184119167,
+              "min": 0.178895208,
+              "max": 0.19300775
+            },
+            "native": {
+              "median": 0.197566417,
+              "min": 0.189502833,
+              "max": 0.210816542
+            }
+          }
+        },
+        "previous": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.451173292
+            },
+            {
+              "engine": "previous",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.484822084
+            },
+            {
+              "engine": "previous",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.294012792
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.17900275
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.183913167
+            },
+            {
+              "engine": "previous",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.24554025
+            },
+            {
+              "engine": "previous",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.228941292
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.174395167
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.188880083
+            },
+            {
+              "engine": "previous",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.229556583
+            },
+            {
+              "engine": "previous",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.214874583
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.17575475
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.1811315
+            },
+            {
+              "engine": "previous",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.2217805
+            }
+          ],
+          "stats": {
+            "previous": {
+              "median": 0.228941292,
+              "min": 0.214874583,
+              "max": 0.24554025
+            },
+            "stock": {
+              "median": 0.1811315,
+              "min": 0.174395167,
+              "max": 0.188880083
+            }
+          }
+        }
+      }
+    },
+    "118-runtime-hour": {
+      "flink_line": "118",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END) TO HOUR))",
+      "secondary": "",
+      "type": "BIGINT",
+      "corpus": "epoch-seconds",
+      "controls": {
+        "candidate": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.448552875
+            },
+            {
+              "engine": "native",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.337603459
+            },
+            {
+              "engine": "native",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.224976833
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.196981125
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.180541042
+            },
+            {
+              "engine": "native",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.190415125
+            },
+            {
+              "engine": "native",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.191531042
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.1705125
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.162024958
+            },
+            {
+              "engine": "native",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.192825084
+            },
+            {
+              "engine": "native",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.179486042
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.178507042
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.177086458
+            },
+            {
+              "engine": "native",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.181313083
+            }
+          ],
+          "stats": {
+            "stock": {
+              "median": 0.177086458,
+              "min": 0.162024958,
+              "max": 0.180541042
+            },
+            "native": {
+              "median": 0.190415125,
+              "min": 0.179486042,
+              "max": 0.192825084
+            }
+          }
+        },
+        "previous": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.442424833
+            },
+            {
+              "engine": "previous",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.413359792
+            },
+            {
+              "engine": "previous",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.244235292
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.169099583
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.185290959
+            },
+            {
+              "engine": "previous",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.231218458
+            },
+            {
+              "engine": "previous",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.225806875
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.17234225
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.176145667
+            },
+            {
+              "engine": "previous",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.213532792
+            },
+            {
+              "engine": "previous",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.221620708
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.17322425
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.16135375
+            },
+            {
+              "engine": "previous",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.213076083
+            }
+          ],
+          "stats": {
+            "previous": {
+              "median": 0.221620708,
+              "min": 0.213076083,
+              "max": 0.231218458
+            },
+            "stock": {
+              "median": 0.17322425,
+              "min": 0.16135375,
+              "max": 0.185290959
+            }
+          }
+        }
+      }
+    }
+  },
+  "initial_provenance": {
+    "source_sha256": {
+      "src/main/java/tech/streamfusion/planner/RexExpression.java": "7dcfa08f2051fd6a253774bf16cc6c7109ed11cc0c9fb9f6f8bb6d48f739b2d4",
+      "native/engine/src/flink_functions/temporal_round.rs": "5a40af85c9ec9e841bfd4deab14aaf69f42d3fabb997b11b63ea3417b3048d8f",
+      "native/bridge/src/timestamp.rs": "a759956c59dd9c9d00300023a5b476bf61abf1e8532c16cbe46b258db7ea1a2e"
+    },
+    "artifacts": {
+      "libstreamfusion.dylib": "b0a974f2fc911d934d318a164c67454bd598c582b1beb8e828c8b9a261135950",
+      "integral_expression": "86ff339a3207a2187ece2e4b841ffc2b9c1904ee19370115145181ce30c71633"
+    },
+    "java_validation": {
+      "22-11": {
+        "exit": 0,
+        "result": [
+          "RESULT found=97 succeeded=97 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "22-17": {
+        "exit": 0,
+        "result": [
+          "RESULT found=97 succeeded=97 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "118-11": {
+        "exit": 0,
+        "result": [
+          "RESULT found=97 succeeded=97 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "118-17": {
+        "exit": 0,
+        "result": [
+          "RESULT found=97 succeeded=97 aborted=0 skipped=0 failed=0"
+        ]
+      }
+    },
+    "rust_core_qualification": {
+      "archived": true,
+      "passed": 914
+    }
+  },
+  "cells": {
+    "22-0": {
+      "flink_line": "22",
+      "shape": "seconds-year",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": false,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 23.468971252441406,
+          "min": 23.09099578857422,
+          "max": 35.09998321533203
+        },
+        "native": {
+          "median": 18.851600646972656,
+          "min": 18.619537353515625,
+          "max": 19.79192352294922
+        },
+        "prior-stock": {
+          "median": 26.491477966308594,
+          "min": 25.411605834960938,
+          "max": 28.089523315429688
+        },
+        "previous": {
+          "median": 49.28302764892578,
+          "min": 45.88762664794922,
+          "max": 61.63946533203125
+        }
+      }
+    },
+    "22-1": {
+      "flink_line": "22",
+      "shape": "seconds-year",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": false,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 24.451576232910156,
+          "min": 22.94031524658203,
+          "max": 34.89335632324219
+        },
+        "native": {
+          "median": 18.61412811279297,
+          "min": 18.34075164794922,
+          "max": 19.61994171142578
+        },
+        "prior-stock": {
+          "median": 25.032997131347656,
+          "min": 24.312652587890625,
+          "max": 27.311325073242188
+        },
+        "previous": {
+          "median": 50.079345703125,
+          "min": 48.220001220703125,
+          "max": 60.97698211669922
+        }
+      }
+    },
+    "22-2": {
+      "flink_line": "22",
+      "shape": "seconds-year",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": true,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 21.120391845703125,
+          "min": 20.158767700195312,
+          "max": 36.14997863769531
+        },
+        "native": {
+          "median": 19.47148895263672,
+          "min": 17.718955993652344,
+          "max": 20.593643188476562
+        },
+        "prior-stock": {
+          "median": 22.06866455078125,
+          "min": 21.546051025390625,
+          "max": 22.9371337890625
+        },
+        "previous": {
+          "median": 52.611671447753906,
+          "min": 49.91595458984375,
+          "max": 59.970855712890625
+        }
+      }
+    },
+    "22-3": {
+      "flink_line": "22",
+      "shape": "seconds-year",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 24.317108154296875,
+          "min": 22.722877502441406,
+          "max": 39.967857360839844
+        },
+        "native": {
+          "median": 19.213356018066406,
+          "min": 18.56517791748047,
+          "max": 35.651519775390625
+        },
+        "prior-stock": {
+          "median": 23.978233337402344,
+          "min": 23.45148468017578,
+          "max": 24.62482452392578
+        },
+        "previous": {
+          "median": 54.30570983886719,
+          "min": 51.69995880126953,
+          "max": 60.27539825439453
+        }
+      }
+    },
+    "22-4": {
+      "flink_line": "22",
+      "shape": "millis-month",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": false,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 29.73969268798828,
+          "min": 28.37244415283203,
+          "max": 41.11289978027344
+        },
+        "native": {
+          "median": 19.900009155273438,
+          "min": 19.120216369628906,
+          "max": 20.714447021484375
+        },
+        "prior-stock": {
+          "median": 31.904220581054688,
+          "min": 29.27557373046875,
+          "max": 34.19303894042969
+        },
+        "previous": {
+          "median": 52.11988830566406,
+          "min": 51.119483947753906,
+          "max": 68.60637664794922
+        }
+      }
+    },
+    "22-5": {
+      "flink_line": "22",
+      "shape": "millis-month",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": false,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 32.14740753173828,
+          "min": 30.220985412597656,
+          "max": 41.41203308105469
+        },
+        "native": {
+          "median": 19.300460815429688,
+          "min": 19.11481475830078,
+          "max": 19.63201904296875
+        },
+        "prior-stock": {
+          "median": 31.801856994628906,
+          "min": 28.98565673828125,
+          "max": 40.03620147705078
+        },
+        "previous": {
+          "median": 52.155494689941406,
+          "min": 49.61967468261719,
+          "max": 67.40696716308594
+        }
+      }
+    },
+    "22-6": {
+      "flink_line": "22",
+      "shape": "millis-month",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": true,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 25.780364990234375,
+          "min": 24.001754760742188,
+          "max": 36.80579376220703
+        },
+        "native": {
+          "median": 20.181968688964844,
+          "min": 19.182205200195312,
+          "max": 20.801223754882812
+        },
+        "prior-stock": {
+          "median": 26.765182495117188,
+          "min": 25.841400146484375,
+          "max": 29.56867218017578
+        },
+        "previous": {
+          "median": 55.64466857910156,
+          "min": 53.70585632324219,
+          "max": 68.25096893310547
+        }
+      }
+    },
+    "22-7": {
+      "flink_line": "22",
+      "shape": "millis-month",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 28.799057006835938,
+          "min": 27.025543212890625,
+          "max": 39.244651794433594
+        },
+        "native": {
+          "median": 19.57862091064453,
+          "min": 18.404640197753906,
+          "max": 21.070480346679688
+        },
+        "prior-stock": {
+          "median": 28.193153381347656,
+          "min": 27.00519561767578,
+          "max": 31.99799346923828
+        },
+        "previous": {
+          "median": 53.670562744140625,
+          "min": 51.95013427734375,
+          "max": 67.64856719970703
+        }
+      }
+    },
+    "22-8": {
+      "flink_line": "22",
+      "shape": "int-day",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO DAY))",
+      "type": "INT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": false,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 19.229888916015625,
+          "min": 18.752098083496094,
+          "max": 35.929359436035156
+        },
+        "native": {
+          "median": 6.838798522949219,
+          "min": 6.746612548828125,
+          "max": 6.8896636962890625
+        },
+        "prior-stock": {
+          "median": 18.758132934570312,
+          "min": 18.187210083007812,
+          "max": 21.895729064941406
+        },
+        "previous": {
+          "median": 48.645652770996094,
+          "min": 45.153297424316406,
+          "max": 62.82647705078125
+        }
+      }
+    },
+    "22-9": {
+      "flink_line": "22",
+      "shape": "int-day",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO DAY))",
+      "type": "INT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": false,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 21.5911865234375,
+          "min": 21.005943298339844,
+          "max": 37.137351989746094
+        },
+        "native": {
+          "median": 7.003143310546875,
+          "min": 6.8302154541015625,
+          "max": 7.280670166015625
+        },
+        "prior-stock": {
+          "median": 21.007858276367188,
+          "min": 20.928062438964844,
+          "max": 23.405715942382812
+        },
+        "previous": {
+          "median": 51.89323425292969,
+          "min": 43.943092346191406,
+          "max": 68.94779205322266
+        }
+      }
+    },
+    "22-10": {
+      "flink_line": "22",
+      "shape": "int-day",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO DAY))",
+      "type": "INT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": true,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 17.575584411621094,
+          "min": 17.43347930908203,
+          "max": 26.715591430664062
+        },
+        "native": {
+          "median": 7.4259490966796875,
+          "min": 7.294654846191406,
+          "max": 7.485069274902344
+        },
+        "prior-stock": {
+          "median": 18.07086181640625,
+          "min": 17.53679656982422,
+          "max": 30.28106689453125
+        },
+        "previous": {
+          "median": 53.420387268066406,
+          "min": 47.73426055908203,
+          "max": 62.445640563964844
+        }
+      }
+    },
+    "22-11": {
+      "flink_line": "22",
+      "shape": "int-day",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO DAY))",
+      "type": "INT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 18.66309356689453,
+          "min": 18.453285217285156,
+          "max": 29.454544067382812
+        },
+        "native": {
+          "median": 7.651329040527344,
+          "min": 7.527351379394531,
+          "max": 7.953956604003906
+        },
+        "prior-stock": {
+          "median": 18.41608428955078,
+          "min": 18.117904663085938,
+          "max": 19.458770751953125
+        },
+        "previous": {
+          "median": 55.928863525390625,
+          "min": 48.75627899169922,
+          "max": 63.22351837158203
+        }
+      }
+    },
+    "22-12": {
+      "flink_line": "22",
+      "shape": "runtime-hour",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END) TO HOUR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": false,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 15.742301940917969,
+          "min": 15.347480773925781,
+          "max": 25.865554809570312
+        },
+        "native": {
+          "median": 8.188880920410156,
+          "min": 8.082069396972656,
+          "max": 8.316360473632812
+        },
+        "prior-stock": {
+          "median": 17.079986572265625,
+          "min": 16.13299560546875,
+          "max": 25.870323181152344
+        },
+        "previous": {
+          "median": 60.25091552734375,
+          "min": 57.531036376953125,
+          "max": 67.24866485595703
+        }
+      }
+    },
+    "22-13": {
+      "flink_line": "22",
+      "shape": "runtime-hour",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END) TO HOUR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": false,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 18.33946990966797,
+          "min": 18.073402404785156,
+          "max": 20.149551391601562
+        },
+        "native": {
+          "median": 8.607231140136719,
+          "min": 8.431114196777344,
+          "max": 8.969940185546875
+        },
+        "prior-stock": {
+          "median": 18.84619140625,
+          "min": 17.72943878173828,
+          "max": 27.150474548339844
+        },
+        "previous": {
+          "median": 57.999610900878906,
+          "min": 54.306671142578125,
+          "max": 64.69154357910156
+        }
+      }
+    },
+    "22-14": {
+      "flink_line": "22",
+      "shape": "runtime-hour",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END) TO HOUR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": true,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 15.329048156738281,
+          "min": 15.14593505859375,
+          "max": 31.993553161621094
+        },
+        "native": {
+          "median": 8.538246154785156,
+          "min": 8.333206176757812,
+          "max": 8.890151977539062
+        },
+        "prior-stock": {
+          "median": 15.420272827148438,
+          "min": 14.725997924804688,
+          "max": 23.879371643066406
+        },
+        "previous": {
+          "median": 59.77503204345703,
+          "min": 52.69590759277344,
+          "max": 66.37796020507812
+        }
+      }
+    },
+    "22-15": {
+      "flink_line": "22",
+      "shape": "runtime-hour",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END) TO HOUR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "flink": {
+          "median": 16.273178100585938,
+          "min": 16.10883331298828,
+          "max": 26.707969665527344
+        },
+        "native": {
+          "median": 8.3634033203125,
+          "min": 8.160591125488281,
+          "max": 8.759819030761719
+        },
+        "prior-stock": {
+          "median": 17.18616485595703,
+          "min": 16.085311889648438,
+          "max": 21.233558654785156
+        },
+        "previous": {
+          "median": 70.73274993896484,
+          "min": 58.322906494140625,
+          "max": 93.72742462158203
+        }
+      }
+    },
+    "22-16": {
+      "flink_line": "22",
+      "shape": "seconds-year",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 16,
+      "engines": {
+        "flink": {
+          "median": 20.252227783203125,
+          "min": 19.40949249267578,
+          "max": 38.988433837890625
+        },
+        "native": {
+          "median": 89.89111328125,
+          "min": 87.07332611083984,
+          "max": 99.63544464111328
+        },
+        "prior-stock": {
+          "median": 19.53411102294922,
+          "min": 18.58074951171875,
+          "max": 21.419525146484375
+        },
+        "previous": {
+          "median": 925.3040924072266,
+          "min": 880.0090179443359,
+          "max": 941.2002563476562
+        }
+      }
+    },
+    "22-17": {
+      "flink_line": "22",
+      "shape": "millis-month",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 16,
+      "engines": {
+        "flink": {
+          "median": 28.590835571289062,
+          "min": 27.828529357910156,
+          "max": 44.774688720703125
+        },
+        "native": {
+          "median": 89.40538024902344,
+          "min": 87.64266967773438,
+          "max": 91.15473175048828
+        },
+        "prior-stock": {
+          "median": 28.661727905273438,
+          "min": 27.20928192138672,
+          "max": 31.04400634765625
+        },
+        "previous": {
+          "median": 955.0161361694336,
+          "min": 925.5336074829102,
+          "max": 981.175422668457
+        }
+      }
+    },
+    "22-18": {
+      "flink_line": "22",
+      "shape": "int-day",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO DAY))",
+      "type": "INT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 16,
+      "engines": {
+        "flink": {
+          "median": 16.925498962402344,
+          "min": 16.676902770996094,
+          "max": 27.30560302734375
+        },
+        "native": {
+          "median": 72.14610290527344,
+          "min": 71.42829895019531,
+          "max": 73.13346862792969
+        },
+        "prior-stock": {
+          "median": 17.453834533691406,
+          "min": 16.699478149414062,
+          "max": 18.030487060546875
+        },
+        "previous": {
+          "median": 916.4361953735352,
+          "min": 899.566650390625,
+          "max": 941.5629653930664
+        }
+      }
+    },
+    "22-19": {
+      "flink_line": "22",
+      "shape": "runtime-hour",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END) TO HOUR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 16,
+      "engines": {
+        "flink": {
+          "median": 15.185035705566406,
+          "min": 14.484092712402344,
+          "max": 37.390708923339844
+        },
+        "native": {
+          "median": 113.59628295898438,
+          "min": 112.21440124511719,
+          "max": 117.38046264648438
+        },
+        "prior-stock": {
+          "median": 15.106201171875,
+          "min": 14.394760131835938,
+          "max": 16.837120056152344
+        },
+        "previous": {
+          "median": 1050.4722595214844,
+          "min": 1038.4972839355469,
+          "max": 1085.428237915039
+        }
+      }
+    },
+    "118-0": {
+      "flink_line": "118",
+      "shape": "seconds-year",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": false,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 23.605667114257812,
+          "min": 22.795677185058594,
+          "max": 24.427093505859375
+        },
+        "previous": {
+          "median": 58.05364990234375,
+          "min": 52.670166015625,
+          "max": 72.92525482177734
+        },
+        "flink": {
+          "median": 29.020309448242188,
+          "min": 24.88390350341797,
+          "max": 40.13252258300781
+        },
+        "native": {
+          "median": 20.056411743164062,
+          "min": 19.07825469970703,
+          "max": 20.28338623046875
+        }
+      }
+    },
+    "118-1": {
+      "flink_line": "118",
+      "shape": "seconds-year",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": false,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 26.64947509765625,
+          "min": 24.98468017578125,
+          "max": 27.425453186035156
+        },
+        "previous": {
+          "median": 59.14020538330078,
+          "min": 52.60816955566406,
+          "max": 67.05602264404297
+        },
+        "flink": {
+          "median": 27.81073760986328,
+          "min": 26.054061889648438,
+          "max": 38.27381134033203
+        },
+        "native": {
+          "median": 18.71363067626953,
+          "min": 18.64147186279297,
+          "max": 18.91613006591797
+        }
+      }
+    },
+    "118-2": {
+      "flink_line": "118",
+      "shape": "seconds-year",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": true,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 23.68291473388672,
+          "min": 20.684555053710938,
+          "max": 25.392532348632812
+        },
+        "previous": {
+          "median": 58.383941650390625,
+          "min": 53.88227844238281,
+          "max": 73.54767608642578
+        },
+        "flink": {
+          "median": 25.14171600341797,
+          "min": 22.068336486816406,
+          "max": 33.853843688964844
+        },
+        "native": {
+          "median": 19.755050659179688,
+          "min": 19.453369140625,
+          "max": 20.357765197753906
+        }
+      }
+    },
+    "118-3": {
+      "flink_line": "118",
+      "shape": "seconds-year",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 26.841796875,
+          "min": 26.1414794921875,
+          "max": 37.24384307861328
+        },
+        "previous": {
+          "median": 57.492897033691406,
+          "min": 51.778480529785156,
+          "max": 63.69940185546875
+        },
+        "flink": {
+          "median": 23.990631103515625,
+          "min": 22.716201782226562,
+          "max": 34.55989074707031
+        },
+        "native": {
+          "median": 19.036293029785156,
+          "min": 18.624305725097656,
+          "max": 19.805908203125
+        }
+      }
+    },
+    "118-4": {
+      "flink_line": "118",
+      "shape": "millis-month",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": false,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 27.607276916503906,
+          "min": 26.75501251220703,
+          "max": 29.08007049560547
+        },
+        "previous": {
+          "median": 56.79956817626953,
+          "min": 50.44364929199219,
+          "max": 67.4718246459961
+        },
+        "flink": {
+          "median": 33.530548095703125,
+          "min": 32.923065185546875,
+          "max": 39.53075408935547
+        },
+        "native": {
+          "median": 19.716262817382812,
+          "min": 19.27057647705078,
+          "max": 20.24713897705078
+        }
+      }
+    },
+    "118-5": {
+      "flink_line": "118",
+      "shape": "millis-month",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": false,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 32.81084442138672,
+          "min": 31.766250610351562,
+          "max": 35.86705780029297
+        },
+        "previous": {
+          "median": 54.08827209472656,
+          "min": 53.10630798339844,
+          "max": 65.12260437011719
+        },
+        "flink": {
+          "median": 33.02606201171875,
+          "min": 31.97924041748047,
+          "max": 40.204368591308594
+        },
+        "native": {
+          "median": 19.251190185546875,
+          "min": 19.170761108398438,
+          "max": 19.498184204101562
+        }
+      }
+    },
+    "118-6": {
+      "flink_line": "118",
+      "shape": "millis-month",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": true,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 28.159461975097656,
+          "min": 26.011146545410156,
+          "max": 38.01982116699219
+        },
+        "previous": {
+          "median": 59.55632019042969,
+          "min": 53.00331115722656,
+          "max": 69.37091064453125
+        },
+        "flink": {
+          "median": 28.051376342773438,
+          "min": 27.64892578125,
+          "max": 40.511131286621094
+        },
+        "native": {
+          "median": 20.49095916748047,
+          "min": 19.565902709960938,
+          "max": 24.13208770751953
+        }
+      }
+    },
+    "118-7": {
+      "flink_line": "118",
+      "shape": "millis-month",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 29.724441528320312,
+          "min": 28.569854736328125,
+          "max": 32.07810974121094
+        },
+        "previous": {
+          "median": 63.38755798339844,
+          "min": 56.17840576171875,
+          "max": 69.38648223876953
+        },
+        "flink": {
+          "median": 28.487838745117188,
+          "min": 27.192428588867188,
+          "max": 40.66626739501953
+        },
+        "native": {
+          "median": 19.461952209472656,
+          "min": 18.964767456054688,
+          "max": 20.244285583496094
+        }
+      }
+    },
+    "118-8": {
+      "flink_line": "118",
+      "shape": "int-day",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO DAY))",
+      "type": "INT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": false,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 17.868995666503906,
+          "min": 16.26714324951172,
+          "max": 27.44165802001953
+        },
+        "previous": {
+          "median": 50.520896911621094,
+          "min": 46.611785888671875,
+          "max": 65.08000946044922
+        },
+        "flink": {
+          "median": 17.7001953125,
+          "min": 17.5596923828125,
+          "max": 19.045196533203125
+        },
+        "native": {
+          "median": 6.928443908691406,
+          "min": 6.8209991455078125,
+          "max": 7.740653991699219
+        }
+      }
+    },
+    "118-9": {
+      "flink_line": "118",
+      "shape": "int-day",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO DAY))",
+      "type": "INT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": false,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 20.8861083984375,
+          "min": 19.802413940429688,
+          "max": 23.47723388671875
+        },
+        "previous": {
+          "median": 47.55401611328125,
+          "min": 43.851219177246094,
+          "max": 62.56358337402344
+        },
+        "flink": {
+          "median": 20.3399658203125,
+          "min": 20.002365112304688,
+          "max": 37.496246337890625
+        },
+        "native": {
+          "median": 7.006965637207031,
+          "min": 6.649971008300781,
+          "max": 7.2428436279296875
+        }
+      }
+    },
+    "118-10": {
+      "flink_line": "118",
+      "shape": "int-day",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO DAY))",
+      "type": "INT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": true,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 16.87908172607422,
+          "min": 16.187667846679688,
+          "max": 17.687164306640625
+        },
+        "previous": {
+          "median": 53.148902893066406,
+          "min": 47.35406494140625,
+          "max": 74.74645233154297
+        },
+        "flink": {
+          "median": 16.318008422851562,
+          "min": 15.865638732910156,
+          "max": 26.33031463623047
+        },
+        "native": {
+          "median": 7.685020446777344,
+          "min": 7.468223571777344,
+          "max": 7.863685607910156
+        }
+      }
+    },
+    "118-11": {
+      "flink_line": "118",
+      "shape": "int-day",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO DAY))",
+      "type": "INT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 19.092559814453125,
+          "min": 18.35663604736328,
+          "max": 19.537612915039062
+        },
+        "previous": {
+          "median": 42.985595703125,
+          "min": 39.41949462890625,
+          "max": 53.98304748535156
+        },
+        "flink": {
+          "median": 18.947914123535156,
+          "min": 17.97008514404297,
+          "max": 27.36536407470703
+        },
+        "native": {
+          "median": 7.5108184814453125,
+          "min": 7.442161560058594,
+          "max": 7.850013732910156
+        }
+      }
+    },
+    "118-12": {
+      "flink_line": "118",
+      "shape": "runtime-hour",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END) TO HOUR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": false,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 16.332305908203125,
+          "min": 15.817642211914062,
+          "max": 16.748741149902344
+        },
+        "previous": {
+          "median": 52.69178009033203,
+          "min": 49.99574279785156,
+          "max": 62.64813232421875
+        },
+        "flink": {
+          "median": 16.144119262695312,
+          "min": 15.664413452148438,
+          "max": 27.392066955566406
+        },
+        "native": {
+          "median": 8.634567260742188,
+          "min": 8.266769409179688,
+          "max": 8.81353759765625
+        }
+      }
+    },
+    "118-13": {
+      "flink_line": "118",
+      "shape": "runtime-hour",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END) TO HOUR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": false,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 18.1732177734375,
+          "min": 17.32476043701172,
+          "max": 21.079063415527344
+        },
+        "previous": {
+          "median": 51.29972839355469,
+          "min": 48.05723571777344,
+          "max": 60.875892639160156
+        },
+        "flink": {
+          "median": 17.95800018310547,
+          "min": 17.523765563964844,
+          "max": 29.248870849609375
+        },
+        "native": {
+          "median": 8.144378662109375,
+          "min": 8.057594299316406,
+          "max": 8.640289306640625
+        }
+      }
+    },
+    "118-14": {
+      "flink_line": "118",
+      "shape": "runtime-hour",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END) TO HOUR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": true,
+      "binary": false,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 14.895439147949219,
+          "min": 14.149032592773438,
+          "max": 24.833038330078125
+        },
+        "previous": {
+          "median": 59.52867126464844,
+          "min": 57.285621643066406,
+          "max": 67.82150268554688
+        },
+        "flink": {
+          "median": 13.622596740722656,
+          "min": 13.181686401367188,
+          "max": 23.41143035888672
+        },
+        "native": {
+          "median": 8.266761779785156,
+          "min": 7.636070251464844,
+          "max": 9.177841186523438
+        }
+      }
+    },
+    "118-15": {
+      "flink_line": "118",
+      "shape": "runtime-hour",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END) TO HOUR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 1024,
+      "engines": {
+        "prior-stock": {
+          "median": 17.349876403808594,
+          "min": 16.257286071777344,
+          "max": 18.37921142578125
+        },
+        "previous": {
+          "median": 51.07688903808594,
+          "min": 48.23493957519531,
+          "max": 61.562538146972656
+        },
+        "flink": {
+          "median": 15.911102294921875,
+          "min": 15.676498413085938,
+          "max": 25.82231903076172
+        },
+        "native": {
+          "median": 8.356414794921875,
+          "min": 8.13134765625,
+          "max": 9.766258239746094
+        }
+      }
+    },
+    "118-16": {
+      "flink_line": "118",
+      "shape": "seconds-year",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 16,
+      "engines": {
+        "prior-stock": {
+          "median": 20.999908447265625,
+          "min": 20.072616577148438,
+          "max": 21.96820068359375
+        },
+        "previous": {
+          "median": 911.2151489257812,
+          "min": 895.4327850341797,
+          "max": 929.0987701416016
+        },
+        "flink": {
+          "median": 21.408714294433594,
+          "min": 19.359268188476562,
+          "max": 21.904945373535156
+        },
+        "native": {
+          "median": 87.76155853271484,
+          "min": 85.36846923828125,
+          "max": 90.86258697509766
+        }
+      }
+    },
+    "118-17": {
+      "flink_line": "118",
+      "shape": "millis-month",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 16,
+      "engines": {
+        "prior-stock": {
+          "median": 27.89752197265625,
+          "min": 26.79443359375,
+          "max": 28.313003540039062
+        },
+        "previous": {
+          "median": 928.2016754150391,
+          "min": 898.6457214355469,
+          "max": 965.3069152832031
+        },
+        "flink": {
+          "median": 29.175437927246094,
+          "min": 28.332077026367188,
+          "max": 38.57994079589844
+        },
+        "native": {
+          "median": 90.81204986572266,
+          "min": 87.65570831298828,
+          "max": 93.74141693115234
+        }
+      }
+    },
+    "118-18": {
+      "flink_line": "118",
+      "shape": "int-day",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO DAY))",
+      "type": "INT",
+      "secondary": "",
+      "corpus": "epoch-millis",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 16,
+      "engines": {
+        "prior-stock": {
+          "median": 16.692481994628906,
+          "min": 15.293754577636719,
+          "max": 17.9869384765625
+        },
+        "previous": {
+          "median": 900.6830825805664,
+          "min": 884.2423706054688,
+          "max": 942.8977966308594
+        },
+        "flink": {
+          "median": 16.849830627441406,
+          "min": 16.43848419189453,
+          "max": 26.7623291015625
+        },
+        "native": {
+          "median": 73.20499420166016,
+          "min": 72.33650970458984,
+          "max": 74.65362548828125
+        }
+      }
+    },
+    "118-19": {
+      "flink_line": "118",
+      "shape": "runtime-hour",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END) TO HOUR))",
+      "type": "BIGINT",
+      "secondary": "",
+      "corpus": "epoch-seconds",
+      "retained": false,
+      "nullable": true,
+      "binary": true,
+      "batch": 16,
+      "engines": {
+        "prior-stock": {
+          "median": 13.352394104003906,
+          "min": 12.987136840820312,
+          "max": 22.004127502441406
+        },
+        "previous": {
+          "median": 1068.427719116211,
+          "min": 1032.533332824707,
+          "max": 1204.4833526611328
+        },
+        "flink": {
+          "median": 13.94970703125,
+          "min": 13.587638854980469,
+          "max": 14.785446166992188
+        },
+        "native": {
+          "median": 114.566162109375,
+          "min": 113.2939682006836,
+          "max": 120.68653106689453
+        }
+      }
+    }
+  },
+  "ratios": {
+    "22-1024": {
+      "flink": [
+        1.2449325493328995,
+        1.3136030914123382,
+        1.0846829380679242,
+        1.265635640719476,
+        1.4944562314488865,
+        1.6656290147247752,
+        1.2773959462304902,
+        1.470944104708541,
+        2.8118811881188117,
+        3.08307078207592,
+        2.3667795433016825,
+        2.439196310607005,
+        1.922399665341511,
+        2.13070493996013,
+        1.7953392159052832,
+        1.9457602936668954
+      ],
+      "previous": [
+        2.614262235437289,
+        2.690394382141749,
+        2.7019850190054178,
+        2.8264562311656163,
+        2.6190886596578506,
+        2.7022927166716078,
+        2.757147701330402,
+        2.7412841276762725,
+        7.113187003207363,
+        7.409991763952257,
+        7.193745415242867,
+        7.309692633678175,
+        7.357649489953258,
+        6.738474888912723,
+        7.000856025913102,
+        8.457412279421424
+      ],
+      "prior-stock": [
+        1.4052641185438441,
+        1.344838553794157,
+        1.133383512912752,
+        1.24799817974827,
+        1.60322642729037,
+        1.647725269295385,
+        1.326192846080072,
+        1.4399968981482023,
+        2.7428988983405382,
+        2.999775578593248,
+        2.433475045565037,
+        2.4069131247662967,
+        2.085753442780572,
+        2.1895765431890846,
+        1.8060234558248631,
+        2.054924795294324
+      ]
+    },
+    "22-16": {
+      "flink": [
+        0.2252973296685986,
+        0.31978875870394113,
+        0.23460032185834384,
+        0.13367546287627377
+      ],
+      "previous": [
+        10.293610331781615,
+        10.681864262636086,
+        12.702504480065954,
+        9.247417540068392
+      ],
+      "prior-stock": [
+        0.21730858935778422,
+        0.32058169011127835,
+        0.24192345574934218,
+        0.13298147420307158
+      ]
+    },
+    "118-1024": {
+      "flink": [
+        1.4469342681964703,
+        1.4861219659063623,
+        1.272672818570335,
+        1.2602575021291518,
+        1.7006543484569991,
+        1.715533517325779,
+        1.3689635567324487,
+        1.4637708714160438,
+        2.5547143840330353,
+        2.902820831931465,
+        2.123352635931424,
+        2.5227495738771992,
+        1.8697079743759664,
+        2.2049564402810304,
+        1.6478758071914215,
+        1.904058461122696
+      ],
+      "previous": [
+        2.894518254100487,
+        3.160274262454884,
+        2.9553931628750867,
+        3.020172937227594,
+        2.8808486021089292,
+        2.8096066567008493,
+        2.9064681503512375,
+        3.2569989537095876,
+        7.291810048176187,
+        6.786677511413661,
+        6.915909106703028,
+        5.723157310926418,
+        6.102422796554009,
+        6.298789695550352,
+        7.200966091730724,
+        6.112296994773996
+      ],
+      "prior-stock": [
+        1.176963627220281,
+        1.4240675985686755,
+        1.1988283473665429,
+        1.4100327638895847,
+        1.4002286930444037,
+        1.704354073963695,
+        1.3742383528725801,
+        1.5273103750533632,
+        2.579077770130764,
+        2.9807636400458617,
+        2.1963613295462783,
+        2.5420078865731193,
+        1.8915025403136736,
+        2.2313817330210775,
+        1.8018469075005006,
+        2.0762344653297933
+      ]
+    },
+    "118-16": {
+      "flink": [
+        0.2439418197712735,
+        0.32127276028220647,
+        0.23017323901460376,
+        0.1217611446033461
+      ],
+      "previous": [
+        10.38285058014447,
+        10.221128988801652,
+        12.303574262972083,
+        9.325857648056633
+      ],
+      "prior-stock": [
+        0.23928367725417612,
+        0.3072006635012241,
+        0.22802381417646983,
+        0.11654745047020541
+      ]
+    }
+  },
+  "pipeline": {
+    "22-seconds-year": {
+      "flink_line": "22",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+      "secondary": "",
+      "type": "BIGINT",
+      "corpus": "epoch-seconds",
+      "controls": {
+        "candidate": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.4920915
+            },
+            {
+              "engine": "native",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.366051333
+            },
+            {
+              "engine": "native",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.262829459
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.183943083
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.187756
+            },
+            {
+              "engine": "native",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.219952625
+            },
+            {
+              "engine": "native",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.199429666
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.178156458
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.169518166
+            },
+            {
+              "engine": "native",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.185990625
+            },
+            {
+              "engine": "native",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.188216083
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.177022834
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.174406375
+            },
+            {
+              "engine": "native",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.187291959
+            }
+          ],
+          "stats": {
+            "stock": {
+              "median": 0.177022834,
+              "min": 0.169518166,
+              "max": 0.187756
+            },
+            "native": {
+              "median": 0.188216083,
+              "min": 0.185990625,
+              "max": 0.219952625
+            }
+          }
+        },
+        "previous": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.478425458
+            },
+            {
+              "engine": "previous",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.441781666
+            },
+            {
+              "engine": "previous",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.312948334
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.171589958
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.175291917
+            },
+            {
+              "engine": "previous",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.312590416
+            },
+            {
+              "engine": "previous",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.235529209
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.172478584
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.200260625
+            },
+            {
+              "engine": "previous",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.228716667
+            },
+            {
+              "engine": "previous",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.2250575
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.176367875
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.174930458
+            },
+            {
+              "engine": "previous",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.234544833
+            }
+          ],
+          "stats": {
+            "stock": {
+              "median": 0.175291917,
+              "min": 0.172478584,
+              "max": 0.200260625
+            },
+            "previous": {
+              "median": 0.234544833,
+              "min": 0.2250575,
+              "max": 0.312590416
+            }
+          }
+        }
+      }
+    },
+    "22-millis-month": {
+      "flink_line": "22",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+      "secondary": "",
+      "type": "BIGINT",
+      "corpus": "epoch-millis",
+      "controls": {
+        "candidate": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.492271
+            },
+            {
+              "engine": "native",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.356189208
+            },
+            {
+              "engine": "native",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.208990917
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.197619416
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.187445208
+            },
+            {
+              "engine": "native",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.207718167
+            },
+            {
+              "engine": "native",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.19914025
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.194710166
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.182371666
+            },
+            {
+              "engine": "native",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.194871458
+            },
+            {
+              "engine": "native",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.194297125
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.17719025
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.17926375
+            },
+            {
+              "engine": "native",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.196068667
+            }
+          ],
+          "stats": {
+            "stock": {
+              "median": 0.182371666,
+              "min": 0.17719025,
+              "max": 0.194710166
+            },
+            "native": {
+              "median": 0.196068667,
+              "min": 0.194297125,
+              "max": 0.207718167
+            }
+          }
+        },
+        "previous": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.502403833
+            },
+            {
+              "engine": "previous",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.419814083
+            },
+            {
+              "engine": "previous",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.260558875
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.1926675
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.175931333
+            },
+            {
+              "engine": "previous",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.235886667
+            },
+            {
+              "engine": "previous",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.235856583
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.175693292
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.180223167
+            },
+            {
+              "engine": "previous",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.225036041
+            },
+            {
+              "engine": "previous",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.222461333
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.181264792
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.18043025
+            },
+            {
+              "engine": "previous",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.21883725
+            }
+          ],
+          "stats": {
+            "stock": {
+              "median": 0.180223167,
+              "min": 0.175693292,
+              "max": 0.181264792
+            },
+            "previous": {
+              "median": 0.225036041,
+              "min": 0.21883725,
+              "max": 0.235886667
+            }
+          }
+        }
+      }
+    },
+    "22-runtime-hour": {
+      "flink_line": "22",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END) TO HOUR))",
+      "secondary": "",
+      "type": "BIGINT",
+      "corpus": "epoch-seconds",
+      "controls": {
+        "candidate": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.514001208
+            },
+            {
+              "engine": "native",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.350343417
+            },
+            {
+              "engine": "native",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.205420583
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.182829875
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.170783333
+            },
+            {
+              "engine": "native",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.201391208
+            },
+            {
+              "engine": "native",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.185808208
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.168959292
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.164736
+            },
+            {
+              "engine": "native",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.177089708
+            },
+            {
+              "engine": "native",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.177299416
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.168021584
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.164214125
+            },
+            {
+              "engine": "native",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.180388291
+            }
+          ],
+          "stats": {
+            "stock": {
+              "median": 0.168021584,
+              "min": 0.164214125,
+              "max": 0.170783333
+            },
+            "native": {
+              "median": 0.180388291,
+              "min": 0.177089708,
+              "max": 0.201391208
+            }
+          }
+        },
+        "previous": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.461952667
+            },
+            {
+              "engine": "previous",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.457374333
+            },
+            {
+              "engine": "previous",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.261329292
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.166959958
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.180889917
+            },
+            {
+              "engine": "previous",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.225486041
+            },
+            {
+              "engine": "previous",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.223127417
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.163080542
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.171803
+            },
+            {
+              "engine": "previous",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.217730917
+            },
+            {
+              "engine": "previous",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.22653275
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.168237042
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.168875792
+            },
+            {
+              "engine": "previous",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.221448167
+            }
+          ],
+          "stats": {
+            "stock": {
+              "median": 0.168875792,
+              "min": 0.163080542,
+              "max": 0.180889917
+            },
+            "previous": {
+              "median": 0.223127417,
+              "min": 0.217730917,
+              "max": 0.22653275
+            }
+          }
+        }
+      }
+    },
+    "118-seconds-year": {
+      "flink_line": "118",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+      "secondary": "",
+      "type": "BIGINT",
+      "corpus": "epoch-seconds",
+      "controls": {
+        "candidate": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.451509875
+            },
+            {
+              "engine": "native",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.354734375
+            },
+            {
+              "engine": "native",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.22647875
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.200683042
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.192372584
+            },
+            {
+              "engine": "native",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.203889791
+            },
+            {
+              "engine": "native",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.195993042
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.173584
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.171861375
+            },
+            {
+              "engine": "native",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.192806084
+            },
+            {
+              "engine": "native",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.192528
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.1851865
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.169556083
+            },
+            {
+              "engine": "native",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.187022291
+            }
+          ],
+          "stats": {
+            "native": {
+              "median": 0.192806084,
+              "min": 0.187022291,
+              "max": 0.203889791
+            },
+            "stock": {
+              "median": 0.173584,
+              "min": 0.169556083,
+              "max": 0.192372584
+            }
+          }
+        },
+        "previous": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.454471334
+            },
+            {
+              "engine": "previous",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.410840542
+            },
+            {
+              "engine": "previous",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.24756225
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.176125958
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.169810292
+            },
+            {
+              "engine": "previous",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.229246083
+            },
+            {
+              "engine": "previous",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.226425666
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.176364125
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.181507333
+            },
+            {
+              "engine": "previous",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.22308375
+            },
+            {
+              "engine": "previous",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.21811375
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.177907666
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.165384333
+            },
+            {
+              "engine": "previous",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.215150917
+            }
+          ],
+          "stats": {
+            "stock": {
+              "median": 0.176364125,
+              "min": 0.165384333,
+              "max": 0.181507333
+            },
+            "previous": {
+              "median": 0.22308375,
+              "min": 0.215150917,
+              "max": 0.229246083
+            }
+          }
+        }
+      }
+    },
+    "118-millis-month": {
+      "flink_line": "118",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+      "secondary": "",
+      "type": "BIGINT",
+      "corpus": "epoch-millis",
+      "controls": {
+        "candidate": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.457092583
+            },
+            {
+              "engine": "native",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.392749375
+            },
+            {
+              "engine": "native",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.233741167
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.183138875
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.175189542
+            },
+            {
+              "engine": "native",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.210168375
+            },
+            {
+              "engine": "native",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.200561917
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.19204875
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.177506917
+            },
+            {
+              "engine": "native",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.202865375
+            },
+            {
+              "engine": "native",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.191253875
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.170551417
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.19377825
+            },
+            {
+              "engine": "native",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.191873875
+            }
+          ],
+          "stats": {
+            "native": {
+              "median": 0.200561917,
+              "min": 0.191253875,
+              "max": 0.210168375
+            },
+            "stock": {
+              "median": 0.177506917,
+              "min": 0.170551417,
+              "max": 0.19377825
+            }
+          }
+        },
+        "previous": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.445092542
+            },
+            {
+              "engine": "previous",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.415633
+            },
+            {
+              "engine": "previous",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.258052583
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.181268291
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.18082025
+            },
+            {
+              "engine": "previous",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.237592167
+            },
+            {
+              "engine": "previous",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.233345333
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.178427333
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.183879
+            },
+            {
+              "engine": "previous",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.217814916
+            },
+            {
+              "engine": "previous",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.221206958
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.175669166
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.174772792
+            },
+            {
+              "engine": "previous",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.221420375
+            }
+          ],
+          "stats": {
+            "stock": {
+              "median": 0.178427333,
+              "min": 0.174772792,
+              "max": 0.183879
+            },
+            "previous": {
+              "median": 0.221420375,
+              "min": 0.217814916,
+              "max": 0.237592167
+            }
+          }
+        }
+      }
+    },
+    "118-runtime-hour": {
+      "flink_line": "118",
+      "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,CASE WHEN v<0 THEN 0 ELSE 3 END) TO HOUR))",
+      "secondary": "",
+      "type": "BIGINT",
+      "corpus": "epoch-seconds",
+      "controls": {
+        "candidate": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.4301775
+            },
+            {
+              "engine": "native",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.313214292
+            },
+            {
+              "engine": "native",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.2220295
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.174714
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.170280375
+            },
+            {
+              "engine": "native",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.193978458
+            },
+            {
+              "engine": "native",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.188709958
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.160802
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.160963541
+            },
+            {
+              "engine": "native",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.183823666
+            },
+            {
+              "engine": "native",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.172258625
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.163780375
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.17641975
+            },
+            {
+              "engine": "native",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.176459167
+            }
+          ],
+          "stats": {
+            "native": {
+              "median": 0.183823666,
+              "min": 0.172258625,
+              "max": 0.193978458
+            },
+            "stock": {
+              "median": 0.163780375,
+              "min": 0.160802,
+              "max": 0.17641975
+            }
+          }
+        },
+        "previous": {
+          "trials": [
+            {
+              "engine": "stock",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.434285042
+            },
+            {
+              "engine": "previous",
+              "trial": 0,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.393271875
+            },
+            {
+              "engine": "previous",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.245701542
+            },
+            {
+              "engine": "stock",
+              "trial": 1,
+              "warmup": true,
+              "rows": 1000000,
+              "seconds": 0.169336125
+            },
+            {
+              "engine": "stock",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.180950583
+            },
+            {
+              "engine": "previous",
+              "trial": 2,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.224548084
+            },
+            {
+              "engine": "previous",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.228660625
+            },
+            {
+              "engine": "stock",
+              "trial": 3,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.165694292
+            },
+            {
+              "engine": "stock",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.179922792
+            },
+            {
+              "engine": "previous",
+              "trial": 4,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.218248917
+            },
+            {
+              "engine": "previous",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.2161925
+            },
+            {
+              "engine": "stock",
+              "trial": 5,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.165835458
+            },
+            {
+              "engine": "stock",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.16813825
+            },
+            {
+              "engine": "previous",
+              "trial": 6,
+              "warmup": false,
+              "rows": 1000000,
+              "seconds": 0.215891833
+            }
+          ],
+          "stats": {
+            "stock": {
+              "median": 0.16813825,
+              "min": 0.165694292,
+              "max": 0.180950583
+            },
+            "previous": {
+              "median": 0.218248917,
+              "min": 0.215891833,
+              "max": 0.228660625
+            }
+          }
+        }
+      }
+    }
+  },
+  "pipeline_native_over_stock": [
+    1.063230537818641,
+    1.0751048740213844,
+    1.073601895099382,
+    1.1107364964512858,
+    1.1298822625599432,
+    1.1223790762476884
+  ],
+  "pipeline_native_over_previous": [
+    0.8024737982609917,
+    0.8712767347342376,
+    0.8084541712773917,
+    0.8642766853255783,
+    0.9057970252285952,
+    0.8422661084728316
+  ],
+  "pipeline_native_over_independent_stock": [
+    1.0737293893591227,
+    1.0879215489538037,
+    1.0681713990125952,
+    1.0932273442799094,
+    1.1240537737567373,
+    1.093288802518166
+  ],
+  "raw_samples": 8000,
+  "raw_csv_columns": [
+    "flink_line",
+    "phase",
+    "shape",
+    "expression",
+    "secondary_type",
+    "benchmark",
+    "input_type",
+    "nullable",
+    "binary_row",
+    "batch_rows",
+    "total_rows",
+    "trial",
+    "warmup",
+    "engine",
+    "elapsed_ns",
+    "digest"
+  ],
+  "validation": {
+    "22-11": {
+      "exit": 0,
+      "result": [
+        "RESULT found=97 succeeded=97 aborted=0 skipped=0 failed=0"
+      ]
+    },
+    "22-17": {
+      "exit": 0,
+      "result": [
+        "RESULT found=97 succeeded=97 aborted=0 skipped=0 failed=0"
+      ]
+    },
+    "118-11": {
+      "exit": 0,
+      "result": [
+        "RESULT found=97 succeeded=97 aborted=0 skipped=0 failed=0"
+      ]
+    },
+    "118-17": {
+      "exit": 0,
+      "result": [
+        "RESULT found=97 succeeded=97 aborted=0 skipped=0 failed=0"
+      ]
+    }
+  },
+  "jvm_invocations": 388,
+  "before_validation": {
+    "22-11": {
+      "exit": 1,
+      "result": [
+        "RESULT found=10 succeeded=2 aborted=0 skipped=0 failed=8"
+      ]
+    },
+    "22-17": {
+      "exit": 1,
+      "result": [
+        "RESULT found=10 succeeded=2 aborted=0 skipped=0 failed=8"
+      ]
+    },
+    "118-11": {
+      "exit": 1,
+      "result": [
+        "RESULT found=10 succeeded=2 aborted=0 skipped=0 failed=8"
+      ]
+    },
+    "118-17": {
+      "exit": 1,
+      "result": [
+        "RESULT found=10 succeeded=2 aborted=0 skipped=0 failed=8"
+      ]
+    }
+  },
+  "upstream_oracles": {
+    "22-11": {
+      "exit": 0,
+      "result": [
+        "1 tests successful"
+      ]
+    },
+    "22-17": {
+      "exit": 0,
+      "result": [
+        "1 tests successful"
+      ]
+    },
+    "118-11": {
+      "exit": 0,
+      "result": [
+        "1 tests successful"
+      ]
+    },
+    "118-17": {
+      "exit": 0,
+      "result": [
+        "1 tests successful"
+      ]
+    }
+  },
+  "before_observation": "Per release/JDK: eight positive invocations first match the complete first-query 5,003-row map/schema, then fail the intended empty-evaluator assertion. Further queries in those failed invocations are not reached. Retained/generated and catalog controls pass.",
+  "native_runtime_qualification": {
+    "unchanged": false,
+    "rust_core_passed": 915,
+    "rust_core_ignored": 0,
+    "method": "Fresh release rebuild passes all 915 Rust core tests. Fixed component widths above one millisecond map millisecond values with Arrow unary and reuse the sliced parent bitmap. The actual preceding runtime retains its archived 914-test qualification; no historical result is relabeled."
+  },
+  "artifacts": {
+    "libstreamfusion.dylib": "7ffac3299d271f74d64e632ea38252b5d33c0758ef39773234588b89bba18d3b",
+    "integral_expression": "26b83785141ec812edb0566d8d3d95f3a2af0fbd402f7765c52f77281444ece7"
+  },
+  "previous_artifacts": {
+    "libstreamfusion.dylib": "b0a974f2fc911d934d318a164c67454bd598c582b1beb8e828c8b9a261135950",
+    "integral_expression": "86ff339a3207a2187ece2e4b841ffc2b9c1904ee19370115145181ce30c71633"
+  },
+  "allocator_aliases": {
+    "libstreamfusion.dylib": {
+      "malloc": {
+        "symbol": "0000000000629410",
+        "implementation": "mi_malloc",
+        "address": "0000000000629410",
+        "status": "bound locally"
+      },
+      "calloc": {
+        "symbol": "0000000002e35c64",
+        "implementation": "mi_calloc",
+        "address": "0000000002e35c64",
+        "status": "bound locally"
+      },
+      "free": {
+        "symbol": "0000000000628cfc",
+        "implementation": "sf_free",
+        "address": "0000000000628cfc",
+        "status": "bound locally"
+      },
+      "realloc": {
+        "symbol": "0000000000628d50",
+        "implementation": "sf_realloc",
+        "address": "0000000000628d50",
+        "status": "bound locally"
+      },
+      "strdup": {
+        "symbol": null,
+        "implementation": "mi_strdup",
+        "address": "0000000000629484",
+        "status": "unreferenced/elided"
+      },
+      "strndup": {
+        "symbol": null,
+        "implementation": "mi_strndup",
+        "address": "0000000000629594",
+        "status": "unreferenced/elided"
+      },
+      "posix_memalign": {
+        "symbol": "0000000000629728",
+        "implementation": "mi_posix_memalign",
+        "address": "0000000000629728",
+        "status": "bound locally"
+      },
+      "aligned_alloc": {
+        "symbol": null,
+        "implementation": "mi_aligned_alloc",
+        "address": "0000000002e35ec0",
+        "status": "unreferenced/elided"
+      }
+    },
+    "integral_expression": {
+      "malloc": {
+        "symbol": "00000001001ad294",
+        "implementation": "mi_malloc",
+        "address": "00000001001ad294",
+        "status": "bound locally"
+      },
+      "calloc": {
+        "symbol": "000000010133191c",
+        "implementation": "mi_calloc",
+        "address": "000000010133191c",
+        "status": "bound locally"
+      },
+      "free": {
+        "symbol": "00000001001acb80",
+        "implementation": "sf_free",
+        "address": "00000001001acb80",
+        "status": "bound locally"
+      },
+      "realloc": {
+        "symbol": "00000001001acbd4",
+        "implementation": "sf_realloc",
+        "address": "00000001001acbd4",
+        "status": "bound locally"
+      },
+      "strdup": {
+        "symbol": null,
+        "implementation": "mi_strdup",
+        "address": "00000001001ad308",
+        "status": "unreferenced/elided"
+      },
+      "strndup": {
+        "symbol": null,
+        "implementation": "mi_strndup",
+        "address": "00000001001ad418",
+        "status": "unreferenced/elided"
+      },
+      "posix_memalign": {
+        "symbol": "00000001001ad5ac",
+        "implementation": "mi_posix_memalign",
+        "address": "00000001001ad5ac",
+        "status": "bound locally"
+      },
+      "aligned_alloc": {
+        "symbol": null,
+        "implementation": "mi_aligned_alloc",
+        "address": "0000000101331b78",
+        "status": "unreferenced/elided"
+      }
+    }
+  },
+  "encoder_bytecode": {
+    "22": {
+      "RexExpression": "6842a07f573ba2d54e07296ee8d7ebd7a3b263800ee365a84f14695d59bc73f8",
+      "RexExpression$IntegralPositionRange": "c5d1c161a8305673a93476561e078bfe7186d33d439db422cf487b542b9df714",
+      "IntegerPrintfFormat": "b3dd8e1de01288ab82330e1e1e8dd5202ddf96e0d7f94077ae1e9b449d3edee4",
+      "JvmFunctionCodeGeneratorContext": "810f7d27876f7203c124e66f0543f0da514b4b382f9ffab1edc1e990bd9cbc03",
+      "ExternalContainerConverter": "49f11ff153c4ec54cce90f8bf63014c92d76005ac80e2de35af8e058a77b3f2e"
+    },
+    "118": {
+      "RexExpression": "7ac96f79e2606bbbabfbe8a13baa4bf812c44f10168c659df8eb0ae734e5180c",
+      "RexExpression$IntegralPositionRange": "c5d1c161a8305673a93476561e078bfe7186d33d439db422cf487b542b9df714",
+      "IntegerPrintfFormat": "b3dd8e1de01288ab82330e1e1e8dd5202ddf96e0d7f94077ae1e9b449d3edee4",
+      "JvmFunctionCodeGeneratorContext": "810f7d27876f7203c124e66f0543f0da514b4b382f9ffab1edc1e990bd9cbc03",
+      "ExternalContainerConverter": "49f11ff153c4ec54cce90f8bf63014c92d76005ac80e2de35af8e058a77b3f2e"
+    }
+  },
+  "previous_encoder_bytecode": {
+    "22": {
+      "RexExpression": "08b2e2bf47aa428039ec9abb7aa6963a1f787316f1074481e89d6648794d6600",
+      "IntegerPrintfFormat": "b3dd8e1de01288ab82330e1e1e8dd5202ddf96e0d7f94077ae1e9b449d3edee4"
+    },
+    "118": {
+      "RexExpression": "1545a999a1efa86918f26c3e32fe781e2fc66d1556b8392a1c2d67c2f9016de4",
+      "IntegerPrintfFormat": "b3dd8e1de01288ab82330e1e1e8dd5202ddf96e0d7f94077ae1e9b449d3edee4"
+    }
+  },
+  "fixture_bytecode": {
+    "22": {
+      "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions.class": "3590e3bfd5e57624f20952d0b354bfff26308515cbe676feaf150196976f053d",
+      "tech/streamfusion/IntegralExpressionPipelineBenchmark.class": "7b24fb893d51252241894faf8d5a883bf3f0b0fb414083308d3d306e69479db7",
+      "tech/streamfusion/compat/FlinkCompat.class": "46b38327699f2f860d1b312c3ef59e782dab4253bf5251fc46a025955252a404"
+    },
+    "118": {
+      "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions.class": "3590e3bfd5e57624f20952d0b354bfff26308515cbe676feaf150196976f053d",
+      "tech/streamfusion/IntegralExpressionPipelineBenchmark.class": "7b24fb893d51252241894faf8d5a883bf3f0b0fb414083308d3d306e69479db7",
+      "tech/streamfusion/compat/FlinkCompat.class": "810429f9363718fa6680cc09c529b355a3243843a854501de42e8e026e2fcc0d"
+    }
+  },
+  "compat_bytecode": {
+    "22": "46b38327699f2f860d1b312c3ef59e782dab4253bf5251fc46a025955252a404",
+    "118": "810429f9363718fa6680cc09c529b355a3243843a854501de42e8e026e2fcc0d"
+  },
+  "previous_encoder_source_sha256": {
+    "RexExpression": "cad5ec9ab768c958ab7509747dd682beb17e352279a4ce803f2983a81d0fd3bf",
+    "IntegerPrintfFormat": "2f162f0abf50cf8e6ab3ec3f6a6150aae99f247875ad892164e6aaa838abc4d7"
+  },
+  "source_sha256": {
+    "src/main/java/tech/streamfusion/planner/RexExpression.java": "7dcfa08f2051fd6a253774bf16cc6c7109ed11cc0c9fb9f6f8bb6d48f739b2d4",
+    "src/main/java/tech/streamfusion/planner/IntegerPrintfFormat.java": "2f162f0abf50cf8e6ab3ec3f6a6150aae99f247875ad892164e6aaa838abc4d7",
+    "src/main/java/tech/streamfusion/planner/JvmFunctionCodeGeneratorContext.java": "ac3caaa7129ff0db3c92c2fa53e4a3d505a7bc84d7ad0a6899693177ffd718c6",
+    "src/main/java/tech/streamfusion/planner/ExternalContainerConverter.java": "ccb1b66bed74cd6746bb4543677b74ae192584350b88798ea60be9b65c86a7d7",
+    "src/main/java-flink1.18/tech/streamfusion/compat/FlinkCompat.java": "98806146fee25504ab74d5fa04e74de4993be05eac8bb49d7ab1015ad51ad78e",
+    "src/main/java-flink2.2/tech/streamfusion/compat/FlinkCompat.java": "e0eff6bec850d7b9dadd5734d24696dc216441f9c3e2ee3628bc5cdc8e3bad1c",
+    "src/test/java/tech/streamfusion/FlinkEpochLtzCeilSqlHarnessTest.java": "0362483176252b7540bce893a912bae6fd6b3a974f1091d02a07eb7787d47bae",
+    "src/test/java/tech/streamfusion/FlinkUtcLtzFixedFloorSqlHarnessTest.java": "a284d01db89bdb647413ec4b7b6e61c8af4c86fae48e47568fc75f04677573a9",
+    "src/test/java/tech/streamfusion/FlinkIntegralEpochSqlHarnessTest.java": "24303a978d8f6261fe0257a9f7849aa436d9b2525687c9b73becfd6f2f8ef7da",
+    "src/test/java/tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions.java": "9149041d20b42d6e820879f7990e7e9f1e585ca8045f4baa4648564517ed9949",
+    "src/test/java/tech/streamfusion/IntegralExpressionPipelineBenchmark.java": "6eed2f405be5eed5f2b39428bcfbad9d7a6e7b79beeeeb1f431a99d657a9334c",
+    "src/test/java/tech/streamfusion/planner/UtcLtzCalendarFloorAdmissionTest.java": "e05f2c087230e3eb60aa5bb3224a113c3ca862e069335bef7150f1b01b86b176",
+    "src/test/java/tech/streamfusion/planner/UtcLtzFixedFloorAdmissionTest.java": "1f47ad5518266368996285df3113d57d9e495130a5cf386a320f76997a1600b0",
+    "native/engine/src/flink_functions/temporal_round.rs": "7b7430fa5332b6e49f5c426473c39a5c77f9789c545ee6d2f2298082e440ea21",
+    "native/bridge/src/timestamp.rs": "a759956c59dd9c9d00300023a5b476bf61abf1e8532c16cbe46b258db7ea1a2e",
+    "src/test/java/tech/streamfusion/FlinkEpochLtzRoundSqlHarness.java": "a2fbd4ce957603b60015f5ebb8c322d46073e00e31c45b2f42cbc8903b81aaa1",
+    "src/test/java/tech/streamfusion/FlinkEpochLtzFloorSqlHarnessTest.java": "2ea6042d16b04e40078676c7c5cd6c69219d25d0fa94e14c9573d8d538a80d1d"
+  },
+  "allocation_probes": {
+    "22-0": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",86,67239,0,8320"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",96,14856,0,8320"
+      ]
+    },
+    "22-1": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",86,67239,0,8320"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",96,14856,0,8320"
+      ]
+    },
+    "22-2": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",88,67423,0,8320"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",96,14856,0,8320"
+      ]
+    },
+    "22-3": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",88,67423,0,8320"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",96,14856,0,8320"
+      ]
+    },
+    "22-4": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",84,58991,0,8320"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",96,14856,0,8320"
+      ]
+    },
+    "22-5": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",84,58991,0,8320"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",96,14856,0,8320"
+      ]
+    },
+    "22-6": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",86,59175,0,8320"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",96,14856,0,8320"
+      ]
+    },
+    "22-7": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",86,59175,0,8320"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",96,14856,0,8320"
+      ]
+    },
+    "22-8": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",47,36024,0,8192"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",96,14856,0,8192"
+      ]
+    },
+    "22-9": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",47,36024,0,8192"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",96,14856,0,8192"
+      ]
+    },
+    "22-10": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",49,36208,0,8320"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",96,14856,0,8320"
+      ]
+    },
+    "22-11": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",49,36208,0,8320"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",96,14856,0,8320"
+      ]
+    },
+    "22-12": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",86,38928,0,8320"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",137,21617,0,8320"
+      ]
+    },
+    "22-13": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",86,38928,0,8320"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",137,21617,0,8320"
+      ]
+    },
+    "22-14": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",88,39165,0,8320"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",139,21801,0,8320"
+      ]
+    },
+    "22-15": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",88,39165,0,8320"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",139,21801,0,8320"
+      ]
+    },
+    "22-16": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",64,4495,0,130"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",96,6792,0,130"
+      ]
+    },
+    "22-17": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",62,4249,0,130"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",96,6792,0,130"
+      ]
+    },
+    "22-18": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",49,3712,0,136"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",96,6792,0,130"
+      ]
+    },
+    "22-19": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",88,5633,0,136"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",139,9465,0,130"
+      ]
+    },
+    "118-0": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",86,67239,0,8320"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",96,14856,0,8320"
+      ]
+    },
+    "118-1": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",86,67239,0,8320"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",96,14856,0,8320"
+      ]
+    },
+    "118-2": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",88,67423,0,8320"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",96,14856,0,8320"
+      ]
+    },
+    "118-3": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",88,67423,0,8320"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",96,14856,0,8320"
+      ]
+    },
+    "118-4": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",84,58991,0,8320"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",96,14856,0,8320"
+      ]
+    },
+    "118-5": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",84,58991,0,8320"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",96,14856,0,8320"
+      ]
+    },
+    "118-6": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",86,59175,0,8320"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",96,14856,0,8320"
+      ]
+    },
+    "118-7": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",86,59175,0,8320"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",96,14856,0,8320"
+      ]
+    },
+    "118-8": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",47,36024,0,8192"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",96,14856,0,8192"
+      ]
+    },
+    "118-9": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",47,36024,0,8192"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",96,14856,0,8192"
+      ]
+    },
+    "118-10": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",49,36208,0,8320"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",96,14856,0,8320"
+      ]
+    },
+    "118-11": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",49,36208,0,8320"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",96,14856,0,8320"
+      ]
+    },
+    "118-12": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",86,38928,0,8320"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",137,21617,0,8320"
+      ]
+    },
+    "118-13": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",86,38928,0,8320"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",137,21617,0,8320"
+      ]
+    },
+    "118-14": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",88,39165,0,8320"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",139,21801,0,8320"
+      ]
+    },
+    "118-15": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",88,39165,0,8320"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",139,21801,0,8320"
+      ]
+    },
+    "118-16": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",64,4495,0,130"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",96,6792,0,130"
+      ]
+    },
+    "118-17": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",62,4249,0,130"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",96,6792,0,130"
+      ]
+    },
+    "118-18": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",49,3712,0,136"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",96,6792,0,130"
+      ]
+    },
+    "118-19": {
+      "candidate": [
+        "NATIVE_ALLOCATION,\"integral_expression\",88,5633,0,136"
+      ],
+      "previous": [
+        "NATIVE_ALLOCATION,\"integral_expression\",139,9465,0,130"
+      ]
+    }
+  },
+  "initial_allocation_probe": "\"integral_expression\",92,39541,0,8320",
+  "profile": {
+    "method": "Five-second native stack sample of the initial nullable runtime-precision/HOUR control on Flink 1.18, generic rows. Counts are inclusive sampled frames, not elapsed percentages.",
+    "observation": "1886 inclusive TemporalRound frames, with append_nulls/append_value, per-row validity and timestamp reads below the fixed loop. Mapping the component millisecond buffer with Arrow unary reuses parent validity and avoids rebuilding it or appending zero fractions per row. The initial 0.943x stock bulk median, all initial jobs/trials and source/artifact provenance remain in this record."
+  },
+  "limitations": [
+    "Only verified total built-in epoch producers and release-supported UTC units; nonzero/regional zones, unknown/fallible producers, arbitrary/invalid precision and other units keep their prior correct routes. Same-name UDF identity is never inferred from text.",
+    "Unchanged released temporal-rounding tests run as separate stock oracles. Focused local tests are distinct from full hosted suites, which must qualify the exact pushed head.",
+    "Tiny cells, independent stock medians, variability and all complete-job results are retained. Prepared bulk speedups do not imply universal complete-job acceleration."
+  ]
+}

@@ -2,7 +2,14 @@
 
 **Applies to:** `DATE_FORMAT` expression evaluation
 
-chrono's `format(pattern)` re-parses the strftime pattern inside every `Display`, and the original
+The default plain-TIMESTAMP numeric path compiles the translated fields once per distinct pattern
+per batch and writes into a reused buffer. It derives calendar fields with integer proleptic
+Gregorian arithmetic over the full signed-millisecond range. Java `yyyy`/`yy` use year-of-era:
+year 0 prints `0001`, year -1 prints `0002`, and a year-of-era above 9999 has a leading `+` for
+`yyyy`. This avoids Chrono's smaller date range and differing signed-year formatting. The
+timezone-dependent opt-in path retains the Chrono implementation described below.
+
+Historically, chrono's `format(pattern)` re-parsed the strftime pattern inside every `Display`, and the original
 loop rendered each row into a fresh `String` — a per-row parse plus a per-row allocation for a
 pattern that is a validated literal (the JVM encoder admits only translated literal patterns). A
 Fluss-rung profile surfaced it: `StrftimeItems::next` under `spec_to_string`, once per row.

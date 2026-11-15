@@ -10,6 +10,25 @@ use streamfusion_bridge::timestamp::{is_timestamp, TimestampColumn, TimestampVal
 
 const DEFAULT_SEED: u32 = 42;
 const MAX_INLINE_BYTES: usize = 7;
+const STOCK_KEY_PROJECTION: i32 = i32::MIN;
+
+pub(crate) fn binary_row_payload(data_type: &DataType) -> bool {
+    let field = |field: &Field| {
+        field
+            .metadata()
+            .get("streamfusion.nested-row-binary")
+            .is_some_and(|value| value == "1")
+            || binary_row_payload(field.data_type())
+    };
+    match data_type {
+        DataType::Struct(fields) => fields.iter().any(|child| field(child)),
+        DataType::List(child)
+        | DataType::LargeList(child)
+        | DataType::FixedSizeList(child, _)
+        | DataType::Map(child, _) => field(child),
+        _ => false,
+    }
+}
 
 pub(crate) fn represented_string(data_type: &DataType) -> bool {
     matches!(data_type, DataType::Struct(fields)
@@ -17,6 +36,146 @@ pub(crate) fn represented_string(data_type: &DataType) -> bool {
             && fields[0].name() == "utf8" && fields[0].data_type() == &DataType::Utf8
             && fields[0].metadata().get("streamfusion.nested-string").is_some_and(|v| v == "1")
             && fields[1].name() == "java" && matches!(fields[1].data_type(), DataType::List(_)))
+}
+
+/// A decodable Arrow key must not distinguish optional transports for the same stock ROW bytes.
+pub(crate) fn stock_row_key_columns(
+    batch: &RecordBatch,
+    key_columns: &[usize],
+    timestamp_precisions: &[i32],
+) -> Option<Vec<ArrayRef>> {
+    if timestamp_precisions.first() != Some(&STOCK_KEY_PROJECTION)
+        || !key_columns
+            .iter()
+            .any(|&column| row_binary_field(batch.column(column).data_type()).is_some())
+    {
+        return None;
+    }
+    let encoder = BinaryRowBatchEncoder::new(batch, key_columns, timestamp_precisions);
+    Some(
+        encoder
+            .columns
+            .iter()
+            .zip(&encoder.schemas)
+            .map(|(&column, schema)| {
+                let Some(binary) = row_binary_field(column.data_type()) else {
+                    return column.clone();
+                };
+                let row = column
+                    .as_any()
+                    .downcast_ref::<StructArray>()
+                    .expect("represented ROW key");
+                let existing = row
+                    .column(binary)
+                    .as_any()
+                    .downcast_ref::<BinaryArray>()
+                    .unwrap();
+                let missing = existing.null_count() != 0
+                    && (0..row.len()).any(|index| !row.is_null(index) && existing.is_null(index));
+                let owned = if missing {
+                    Arc::new(BinaryArray::from_iter((0..row.len()).map(|index| {
+                        (!row.is_null(index)).then(|| encode_struct(row, index, schema))
+                    }))) as ArrayRef
+                } else {
+                    row.column(binary).clone()
+                };
+                let mut normalized = clear_row_transports(row);
+                normalized[binary] = owned;
+                canonical_row_transport_fields(&represented_row(row, column, normalized))
+            })
+            .collect(),
+    )
+}
+
+pub(crate) fn stock_row_key_types(schema: &Schema, key_columns: &[usize]) -> Vec<DataType> {
+    key_columns
+        .iter()
+        .map(|&index| {
+            let data_type = schema.field(index).data_type();
+            if row_binary_field(data_type).is_some() {
+                canonical_row_transport_fields(&new_empty_array(data_type))
+                    .data_type()
+                    .clone()
+            } else {
+                data_type.clone()
+            }
+        })
+        .collect()
+}
+
+fn represented_row(row: &StructArray, original: &ArrayRef, columns: Vec<ArrayRef>) -> ArrayRef {
+    if columns
+        .iter()
+        .zip(row.columns())
+        .all(|(left, right)| Arc::ptr_eq(left, right))
+    {
+        original.clone()
+    } else {
+        Arc::new(StructArray::new(
+            row.fields().clone(),
+            columns,
+            row.nulls().cloned(),
+        ))
+    }
+}
+
+fn row_binary_field(data_type: &DataType) -> Option<usize> {
+    let DataType::Struct(fields) = data_type else {
+        return None;
+    };
+    fields.iter().position(|field| {
+        field
+            .metadata()
+            .get("streamfusion.nested-row-binary")
+            .is_some_and(|value| value == "1")
+    })
+}
+
+// The outer owned ROW retains these bytes; nested transports must not create another key.
+fn clear_row_transports(row: &StructArray) -> Vec<ArrayRef> {
+    let string = represented_string(row.data_type());
+    row.fields()
+        .iter()
+        .zip(row.columns())
+        .enumerate()
+        .map(|(index, (field, column))| {
+            if string && index > 0
+                || field
+                    .metadata()
+                    .get("streamfusion.nested-row-binary")
+                    .is_some_and(|value| value == "1")
+            {
+                if column.null_count() == row.len() {
+                    column.clone()
+                } else {
+                    new_null_array(field.data_type(), row.len())
+                }
+            } else if field
+                .metadata()
+                .get("streamfusion.nested-row-kind")
+                .is_some_and(|value| value == "1")
+            {
+                let kinds = column.as_any().downcast_ref::<Int8Array>().unwrap();
+                if kinds.iter().flatten().any(|kind| kind & !3 != 0) {
+                    Arc::new(Int8Array::from_iter(
+                        kinds.iter().map(|kind| kind.map(|kind| kind & 3)),
+                    )) as ArrayRef
+                } else {
+                    column.clone()
+                }
+            } else if let Some(child) = column.as_any().downcast_ref::<StructArray>() {
+                if represented_string(child.data_type())
+                    || row_binary_field(child.data_type()).is_some()
+                {
+                    represented_row(child, column, clear_row_transports(child))
+                } else {
+                    column.clone()
+                }
+            } else {
+                column.clone()
+            }
+        })
+        .collect()
 }
 
 fn represented_element(data_type: &DataType) -> bool {
@@ -29,6 +188,7 @@ fn represented_element(data_type: &DataType) -> bool {
 /// precision stream supplies the one detail Arrow loses: Flink timestamp precision.
 struct KeyTypeSchema {
     timestamp_precision: i32,
+    projected: bool,
     children: Vec<KeyTypeSchema>,
     row_kind: Option<usize>,
     map_list: bool,
@@ -92,6 +252,7 @@ fn key_type_schema(field: &Field, precisions: &[i32], cursor: &mut usize) -> Key
     };
     KeyTypeSchema {
         timestamp_precision,
+        projected: false,
         children,
         row_kind,
         map_list,
@@ -700,6 +861,19 @@ fn write_value(
 ) {
     if array.is_null(row) {
         writer.set_null(pos);
+        if schema.projected {
+            // Generated projections reserve mutable variable slots even for NULL fields.
+            // RowDataSerializer instead writes only the null bit; legacy keys retain that layout.
+            match array.data_type() {
+                DataType::Decimal128(precision, _) if *precision > 18 => {
+                    writer.write_variable(pos, &[], 16);
+                }
+                data_type if is_timestamp(data_type) && schema.timestamp_precision > 3 => {
+                    writer.write_variable(pos, &[], 8);
+                }
+                _ => {}
+            }
+        }
         return;
     }
     if represented_element(array.data_type()) || represented_string(array.data_type()) {
@@ -882,7 +1056,8 @@ fn write_value(
 /// Encodes one batch's rows, projected to the given key columns, as Flink `BinaryRowData` bytes.
 /// `timestamp_precisions` is a pre-order logical-type stream (one entry per type node); `-1` means
 /// the node is not a timestamp. Arrow does not retain Flink timestamp precision, including inside a
-/// nested key, so the JVM supplies this compact schema sidecar.
+/// nested key, so the JVM supplies this compact schema sidecar. A leading i32::MIN selects
+/// generated-projection key layout at the root; unprefixed descriptors retain serializer layout.
 ///
 /// The schema walk, column handles, and row buffer are set up once per batch and every row is
 /// written into the same reused buffer: the per-row variant of this path was almost entirely
@@ -891,6 +1066,7 @@ pub(crate) struct BinaryRowBatchEncoder<'a> {
     columns: Vec<&'a ArrayRef>,
     schemas: Vec<KeyTypeSchema>,
     writer: BinaryRowWriter,
+    projected_keys: bool,
 }
 
 impl<'a> BinaryRowBatchEncoder<'a> {
@@ -899,11 +1075,22 @@ impl<'a> BinaryRowBatchEncoder<'a> {
         key_columns: &[usize],
         timestamp_precisions: &[i32],
     ) -> Self {
+        let projected = timestamp_precisions.first() == Some(&STOCK_KEY_PROJECTION);
+        let timestamp_precisions = if projected {
+            &timestamp_precisions[1..]
+        } else {
+            timestamp_precisions
+        };
         let mut cursor = 0;
         let schema = batch.schema_ref();
         let schemas: Vec<KeyTypeSchema> = key_columns
             .iter()
-            .map(|&column| key_type_schema(schema.field(column), timestamp_precisions, &mut cursor))
+            .map(|&column| {
+                let mut schema =
+                    key_type_schema(schema.field(column), timestamp_precisions, &mut cursor);
+                schema.projected = projected;
+                schema
+            })
             .collect();
         assert_eq!(
             cursor,
@@ -917,13 +1104,34 @@ impl<'a> BinaryRowBatchEncoder<'a> {
                 .collect(),
             schemas,
             writer: BinaryRowWriter::new(key_columns.len()),
+            projected_keys: false,
         }
+    }
+
+    /// Generated JVM key projections retain NULL decimal and timestamp variable slots.
+    /// Native keyed state continues to use the existing serializer layout.
+    pub(crate) fn projected(mut self) -> Self {
+        self.projected_keys = true;
+        self
     }
 
     /// The encoded key of one row, valid until the next call.
     pub(crate) fn encode(&mut self, row: usize) -> &[u8] {
         self.writer.reset();
         for (pos, (column, schema)) in self.columns.iter().zip(&self.schemas).enumerate() {
+            if self.projected_keys && column.is_null(row) {
+                if matches!(column.data_type(), DataType::Decimal128(precision, _) if *precision > 18)
+                {
+                    self.writer.set_null(pos);
+                    self.writer.write_variable(pos, &[], 16);
+                    continue;
+                }
+                if is_timestamp(column.data_type()) && schema.timestamp_precision > 3 {
+                    self.writer.set_null(pos);
+                    self.writer.write_variable(pos, &[], 8);
+                    continue;
+                }
+            }
             write_value(&mut self.writer, pos, column, row, schema);
         }
         self.writer.row_bytes()
@@ -1078,4 +1286,254 @@ pub extern "system" fn Java_tech_streamfusion_Native_flinkBinaryRows<'local>(
         }
         output.into_raw()
     })
+}
+
+/// Canonicalize the decodable transport around authoritative ROW bytes before a state key codec.
+pub(crate) fn canonical_stock_row_key_batch(
+    batch: RecordBatch,
+    key_columns: &[usize],
+    precisions: &[i32],
+) -> Result<RecordBatch, DataFusionError> {
+    let Some(keys) = stock_row_key_columns(&batch, key_columns, precisions) else {
+        return Ok(batch);
+    };
+    let mut columns = batch.columns().to_vec();
+    for (&index, key) in key_columns.iter().zip(keys) {
+        columns[index] = key;
+    }
+    if columns
+        .iter()
+        .zip(batch.columns())
+        .all(|(left, right)| Arc::ptr_eq(left, right))
+    {
+        return Ok(batch);
+    }
+    let fields = batch
+        .schema()
+        .fields()
+        .iter()
+        .zip(&columns)
+        .map(|(field, column)| {
+            field
+                .as_ref()
+                .clone()
+                .with_data_type(column.data_type().clone())
+        })
+        .collect::<Vec<_>>();
+    Ok(RecordBatch::try_new(
+        Arc::new(Schema::new(fields).with_metadata(batch.schema().metadata().clone())),
+        columns,
+    )?)
+}
+
+fn canonical_row_transport_fields(column: &ArrayRef) -> ArrayRef {
+    let Some(row) = column.as_any().downcast_ref::<StructArray>() else {
+        return column.clone();
+    };
+    let string = represented_string(row.data_type());
+    let columns = row
+        .columns()
+        .iter()
+        .enumerate()
+        .map(|(index, child)| {
+            if string && index == 1 {
+                // Arrow Java can rename list children at an exchange. This cache is already NULL;
+                // use the writer's fixed schema so a restored key has the same Arrow row type.
+                let data_type =
+                    DataType::List(Arc::new(Field::new("unit", DataType::UInt16, false)));
+                if child.data_type() == &data_type {
+                    child.clone()
+                } else {
+                    new_null_array(&data_type, child.len())
+                }
+            } else {
+                canonical_row_transport_fields(child)
+            }
+        })
+        .collect::<Vec<_>>();
+    if columns
+        .iter()
+        .zip(row.columns())
+        .all(|(left, right)| Arc::ptr_eq(left, right))
+    {
+        return column.clone();
+    }
+    let fields = row
+        .fields()
+        .iter()
+        .zip(&columns)
+        .map(|(field, column)| {
+            field
+                .as_ref()
+                .clone()
+                .with_data_type(column.data_type().clone())
+        })
+        .collect::<Vec<_>>();
+    Arc::new(StructArray::new(
+        fields.into(),
+        columns,
+        row.nulls().cloned(),
+    ))
+}
+
+#[cfg(test)]
+pub(crate) fn row_key_fixture_with_list_label(batch: RecordBatch, label: &str) -> RecordBatch {
+    fn renamed(data_type: &DataType, label: &str) -> DataType {
+        match data_type {
+            DataType::Struct(fields) => DataType::Struct(
+                fields
+                    .iter()
+                    .map(|field| {
+                        Arc::new(
+                            field
+                                .as_ref()
+                                .clone()
+                                .with_data_type(renamed(field.data_type(), label)),
+                        )
+                    })
+                    .collect(),
+            ),
+            DataType::List(field) if field.data_type() == &DataType::UInt16 => {
+                DataType::List(Arc::new(field.as_ref().clone().with_name(label)))
+            }
+            _ => data_type.clone(),
+        }
+    }
+    let mut columns = batch.columns().to_vec();
+    columns[0] = streamfusion_bridge::timestamp::cast_array(
+        &columns[0],
+        &renamed(columns[0].data_type(), label),
+    )
+    .unwrap();
+    let mut fields = batch
+        .schema()
+        .fields()
+        .iter()
+        .map(|field| field.as_ref().clone())
+        .collect::<Vec<_>>();
+    fields[0] = fields[0]
+        .clone()
+        .with_data_type(columns[0].data_type().clone());
+    RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap()
+}
+
+#[cfg(test)]
+pub(crate) fn represented_row_key_fixture(count: usize, binary: bool, time: i64) -> RecordBatch {
+    use arrow::array::{BinaryArray, Int8Array, ListArray, StructArray};
+    use arrow::datatypes::UInt16Type;
+    let java = ListArray::from_iter_primitive::<UInt16Type, _, _>(
+        (0..count).map(|_| (!binary).then_some(vec![Some(0x03bbu16)])),
+    );
+    let java = ListArray::new(
+        Arc::new(Field::new("unit", DataType::UInt16, false)),
+        java.offsets().clone(),
+        java.values().clone(),
+        java.nulls().cloned(),
+    );
+    let string_fields = vec![
+        Arc::new(Field::new("utf8", DataType::Utf8, true).with_metadata(
+            std::collections::HashMap::from([("streamfusion.nested-string".into(), "1".into())]),
+        )),
+        Arc::new(Field::new("java", java.data_type().clone(), true)),
+        Arc::new(Field::new("array_copy_class", DataType::Int8, true)),
+    ];
+    let strings = Arc::new(StructArray::new(
+        string_fields.into(),
+        vec![
+            Arc::new(StringArray::from(vec!["λ"; count])),
+            Arc::new(java),
+            Arc::new(Int8Array::from(vec![(!binary).then_some(0); count])),
+        ],
+        None,
+    ));
+    let bytes = (0..count)
+        .map(|key| {
+            let mut row = vec![0u8; 24];
+            row[0] = 2;
+            row[8..16].copy_from_slice(&(key as i64).to_ne_bytes());
+            if cfg!(target_endian = "little") {
+                row[16..18].copy_from_slice("λ".as_bytes());
+                row[23] = 0x82;
+            } else {
+                row[16] = 0x82;
+                row[17..19].copy_from_slice("λ".as_bytes());
+            }
+            binary.then_some(row)
+        })
+        .collect::<Vec<_>>();
+    let fields = vec![
+        Arc::new(Field::new("id", DataType::Int64, true)),
+        Arc::new(Field::new("s", strings.data_type().clone(), true)),
+        Arc::new(Field::new("owned", DataType::Binary, true).with_metadata(
+            std::collections::HashMap::from([(
+                "streamfusion.nested-row-binary".into(),
+                "1".into(),
+            )]),
+        )),
+        Arc::new(Field::new("kind", DataType::Int8, true).with_metadata(
+            std::collections::HashMap::from([("streamfusion.nested-row-kind".into(), "1".into())]),
+        )),
+    ];
+    let keys = Arc::new(StructArray::new(
+        fields.into(),
+        vec![
+            Arc::new(Int64Array::from_iter_values(0..count as i64)),
+            strings,
+            Arc::new(BinaryArray::from_iter(bytes)),
+            Arc::new(Int8Array::from(vec![if binary { 6 } else { 2 }; count])),
+        ],
+        None,
+    ));
+    RecordBatch::try_from_iter(vec![
+        ("k", keys as ArrayRef),
+        ("rt", Arc::new(Int64Array::from(vec![time; count]))),
+        ("v", Arc::new(Int64Array::from_iter_values(0..count as i64))),
+    ])
+    .unwrap()
+}
+
+#[cfg(test)]
+mod row_transport_tests {
+    use super::*;
+
+    #[test]
+    fn row_runtime_classes_do_not_split_stock_binary_keys() {
+        let descriptor = [i32::MIN, -1, -1, -1];
+        let logical = canonical_stock_row_key_batch(
+            represented_row_key_fixture(3, false, 0),
+            &[0],
+            &descriptor,
+        )
+        .unwrap();
+        let converter = key_row_converter(&[logical.column(0)]);
+        let expected = converter
+            .convert_columns(&[logical.column(0).clone()])
+            .unwrap();
+        for transport in [0, 4, 8, 16, 24] {
+            let input = represented_row_key_fixture(3, true, 0);
+            let row = input
+                .column(0)
+                .as_any()
+                .downcast_ref::<StructArray>()
+                .unwrap();
+            let mut children = row.columns().to_vec();
+            let kind = nested_row_kind_index(row.fields()).unwrap();
+            children[kind] = Arc::new(Int8Array::from(vec![2 | transport; 3]));
+            let mut columns = input.columns().to_vec();
+            columns[0] = Arc::new(StructArray::new(row.fields().clone(), children, None));
+            let input = RecordBatch::try_new(input.schema(), columns).unwrap();
+            let canonical = canonical_stock_row_key_batch(input, &[0], &descriptor).unwrap();
+            let actual = converter
+                .convert_columns(&[canonical.column(0).clone()])
+                .unwrap();
+            for index in 0..3 {
+                assert_eq!(expected.row(index).data(), actual.row(index).data());
+            }
+            let mut keys = BinaryRowBatchEncoder::new(&canonical, &[0], &descriptor);
+            let mut original = BinaryRowBatchEncoder::new(&logical, &[0], &descriptor);
+            for index in 0..3 {
+                assert_eq!(original.encode(index), keys.encode(index));
+            }
+        }
+    }
 }

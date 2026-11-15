@@ -13,7 +13,10 @@ import xml.etree.ElementTree as ET
 MARKER = re.compile(r"StreamFusion SQL inventory: ([0-9a-f-]{36})")
 CONNECTOR_SUITES = {'formats', 'parquet', 'orc', 'kafka', 'paimon', 'delta'}
 BOUNDARIES = {"Sink", "LegacySink", "TableSourceScan", "LegacyTableSourceScan", "DataStreamScan", "Values", "IntermediateTableScan", "PreparedLegacySink"}
-TRANSPOSES = {'StreamPhysicalRowDataToArrow', 'StreamPhysicalArrowToRowData'}
+TRANSPOSES = {'StreamPhysicalRowDataToArrow', 'StreamPhysicalArrowToRowData',
+              'BatchPhysicalRowDataToArrow', 'BatchPhysicalArrowToRowData'}
+CONNECTOR_BOUNDARIES = {'BatchPhysicalNativeConnectorSource', 'BatchPhysicalNativeConnectorSink',
+                        'BatchPhysicalNativeShare'}
 
 
 def category(reason: str) -> str:
@@ -75,16 +78,18 @@ def classify_plan(plan: dict) -> tuple[str, str, str]:
     if not plan['final_root_observed']:
         return 'should be accelerated', 'unobserved-streaming-plan', 'Final query root was not recorded; substitution counts alone cannot establish whole-query admission.'
     operators = set(plan['operators'])
-    native = {op for op in operators if op.startswith('StreamPhysicalNative')}
+    native = {op for op in operators if op.startswith(('StreamPhysicalNative', 'BatchPhysicalNative'))}
     host = {op for op in operators - native - TRANSPOSES
-            if re.sub(r'^StreamPhysical', '', op) not in BOUNDARIES}
+            if re.sub(r'^(Stream|Batch)Physical', '', op) not in BOUNDARIES}
     if native:
         if host:
+            if not native - CONNECTOR_BOUNDARIES:
+                return 'should be accelerated', 'connector-boundary', 'Native connector boundaries retain host SQL computation: ' + ', '.join(sorted(host))
             return 'should be accelerated', 'all-or-nothing-violation', 'Query is not fully accelerated: native operators coexist with host computation: ' + ', '.join(sorted(host))
         return 'accelerated', 'whole-query-native', 'Entire query admitted by the all-or-nothing gate; no host computation remains between source and sink boundaries.'
     if operators and not host and not plan['fallback_reasons']:
         return 'not accelerated', 'source-or-constant-only', 'Source/sink/constant-only query; no interior SQL computation to accelerate.'
-    reasons = plan['fallback_reasons'] or ['No native substitution for: ' + ', '.join(sorted(re.sub(r'^StreamPhysical', '', op) for op in operators))]
+    reasons = plan['fallback_reasons'] or ['No native substitution for: ' + ', '.join(sorted(re.sub(r'^(Stream|Batch)Physical', '', op) for op in operators))]
     categories = sorted({category(r) for r in reasons})
     label = 'not accelerated' if all(c in ('python-runtime', 'distinct-split-non-goal') for c in categories) else 'should be accelerated'
     return label, ', '.join(categories), '; '.join(dict.fromkeys(reasons))
@@ -112,7 +117,7 @@ def features(record: dict) -> list[str]:
     operators.update(op for plan in record['plans'] for root in plan.get('roots', []) for op in root['operators'])
     families = []
     for family, patterns in (
-        ('connector-boundary', ('NativeFileSink', 'NativeKafka', 'NativePaimon', 'NativeDelta')),
+        ('connector-boundary', ('NativeConnector', 'NativeFileSink', 'NativeKafka', 'NativePaimon', 'NativeDelta')),
         ('async-and-model-functions', ('AsyncCalc', 'MLPredict', 'VectorSearch')),
         ('pattern-matching', ('Match',)),
         ('table-function', ('Correlate', 'Unnest', 'TableAggregate')),
@@ -211,7 +216,7 @@ def classify(record: dict, outcome: str) -> tuple[str, str, str]:
     if native:
         return 'accelerated', features(record)[0], f'All {len(native)} observed query-plan root(s) with native computation passed whole-query admission; upstream assertions passed.' + (f' {boundary} additional source/constant-only root(s).' if boundary else '')
     if translations and all('BatchPlanner' in p for p in translations):
-        return 'not accelerated', 'batch', 'Executed with Flink BatchPlanner; StreamFusion targets streaming SQL.'
+        return 'not accelerated', 'batch', 'Executed with stock Flink BatchPlanner; no batch native admission decision was observed.'
     if any(p['unmodified'] for p in record['planners']):
         return 'not accelerated', 'stock-plan-contract', 'The harness intentionally preserves stock Flink for compiled-plan/operator-name assertions.'
     if boundary:

@@ -228,7 +228,10 @@ class LegacyPaimonValueParityTest {
             finished = !fetched.finishedSplits().isEmpty();
             fetched.recycle();
           }
-          assertTrue(nativeReader.nativeFilesRead() > 0);
+          assertEquals(
+              !format.equals("orc"),
+              nativeReader.nativeFilesRead() > 0,
+              "Wide ORC timestamp bounds retain Java; Parquet must decode natively");
         }
       }
       nativeRows.sort(String::compareTo);

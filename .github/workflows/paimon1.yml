@@ -2,39 +2,17 @@ name: Paimon 1.0.0 compatibility
 
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - 'streamfusion-paimon1/**'
-      - 'streamfusion-paimon/**'
-      - 'src/main/java/tech/streamfusion/paimon/**'
-      - 'src/main/java/tech/streamfusion/planner/*Paimon*'
-      - 'src/main/java/tech/streamfusion/arrow/**'
-      - 'src/main/java/tech/streamfusion/parquet/**'
-      - 'src/main/java/tech/streamfusion/orc/**'
-      - 'src/main/java/tech/streamfusion/operator/**'
-      - 'native/paimon/**'
-      - 'native/parquet/**'
-      - 'native/orc/**'
-      - 'dev/flink-suite/agent/**'
-      - 'dev/flink-suite/paimon-log4j2.properties'
-      - 'native/engine/src/keyed_upsert/**'
-      - 'native/bridge/**'
-      - 'bin/ci-free-disk.py'
-      - 'bin/paimon1-suite.sh'
-      - 'bin/test_paimon1_ci.py'
-      - 'pom.xml'
-      - '.github/workflows/paimon1.yml'
   push:
-    branches: [main]
+    branches: ['main']
     paths:
       - 'streamfusion-paimon1/**'
       - 'streamfusion-paimon/**'
-      - 'src/main/java/tech/streamfusion/paimon/**'
-      - 'src/main/java/tech/streamfusion/planner/*Paimon*'
-      - 'src/main/java/tech/streamfusion/arrow/**'
-      - 'src/main/java/tech/streamfusion/parquet/**'
-      - 'src/main/java/tech/streamfusion/orc/**'
-      - 'src/main/java/tech/streamfusion/operator/**'
+      - 'streamfusion-paimon/src/main/java/tech/streamfusion/paimon/**'
+      - 'streamfusion-paimon/src/main/java/tech/streamfusion/planner/**/*Paimon*'
+      - 'streamfusion-core/src/main/java/tech/streamfusion/arrow/**'
+      - 'streamfusion-parquet/src/main/java/tech/streamfusion/parquet/**'
+      - 'streamfusion-orc/src/main/java/tech/streamfusion/orc/**'
+      - 'streamfusion-core/src/main/java/tech/streamfusion/operator/**'
       - 'native/paimon/**'
       - 'native/parquet/**'
       - 'native/orc/**'
@@ -44,16 +22,19 @@ on:
       - 'native/bridge/**'
       - 'bin/ci-free-disk.py'
       - 'bin/paimon1-suite.sh'
+      - 'bin/paimon-compaction-suite.py'
+      - 'dev/flink-suite/paimon-compaction*'
       - 'bin/test_paimon1_ci.py'
       - 'pom.xml'
       - '.github/workflows/paimon1.yml'
 
 concurrency:
   group: paimon1-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+  cancel-in-progress: true
 
 jobs:
   parity:
+    if: ${{ github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 150
     env:
@@ -84,8 +65,21 @@ jobs:
         run: >-
           mvn -B -ntp -Pflink-1.18,paimon1,bench -pl streamfusion-paimon1 -am
           -Dnative.build.skip=true
-          -Dsf.testForks=1 '-Dtest=LegacyPaimon*Test,PaimonSourceSqlTest,PaimonSplitWatermarksTest,PaimonFetcherLifecycleTest'
+          -Dsf.testForks=1 '-Dtest=LegacyPaimon*Test,PaimonSourceSqlTest,PaimonSplitWatermarksTest,PaimonFetcherLifecycleTest,PaimonCompaction*Test,PaimonMaintenanceTest,PaimonBatchSqlTest,PaimonBatchEncodingTest'
           -Dsurefire.failIfNoSpecifiedTests=false '-Dsf.extraJvmArgs=-Xmx2g -XX:ActiveProcessorCount=2 --add-opens=java.base/java.math=ALL-UNNAMED --add-opens=java.base/java.time=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED' test
+      - name: Plan every released TPC-DS variant with the legacy adapter
+        env:
+          SF_TPCDS: 'true'
+        run: |
+          tpcds_scratch="$RUNNER_TEMP/paimon1-tpcds"
+          trap 'rm -rf "$tpcds_scratch"' EXIT
+          mvn -B -ntp -Pflink-1.18,paimon1,bench,tpcds -pl streamfusion-paimon1 -am \
+            -Dnative.build.skip=true -Dsf.runtime.tests.skip=true \
+            -Dtest=PaimonTpcdsBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
+            -Dsf.tpcds.mode=plan -Dsf.tpcds.scale=0.01 \
+            -Dsf.tpcds.directory="$tpcds_scratch" test
+      - name: Released upstream merge-engine compaction fixtures
+        run: python3 bin/paimon-compaction-suite.py --paimon-version 1.0.0 --release --skip-native-build
       - name: Upstream SQL tests (reuse release libraries)
         env:
           SF_PAIMON1_TEST_FORKS: '1'
@@ -103,4 +97,5 @@ jobs:
             streamfusion-paimon1/target/upstream-suite/inventory/
             streamfusion-paimon1/target/upstream-suite/diagnostics/
             streamfusion-paimon1/target/native-reports/
+            streamfusion-paimon1/target/upstream-compaction/
             native/target/cargo-timings/

@@ -122,6 +122,7 @@ fn rankers_from(
                 .memory
                 .attach_pool("rocks-topn-test", pool, 0)
                 .unwrap();
+            rocks.groups.attach_memory(rocks.memory.state_memory());
             (
                 RocksTopNHandle::Append(rocks),
                 TopNHandle::Append(make_append()),
@@ -137,6 +138,7 @@ fn rankers_from(
                 .memory
                 .attach_pool("rocks-topn-test", pool, 0)
                 .unwrap();
+            rocks.groups.attach_memory(rocks.memory.state_memory());
             (
                 RocksTopNHandle::Retract(rocks),
                 TopNHandle::Retract(make_retract()),
@@ -157,6 +159,7 @@ fn rankers_from(
                 .memory
                 .attach_pool("rocks-topn-test", pool, 0)
                 .unwrap();
+            rocks.groups.attach_memory(rocks.memory.state_memory());
             (
                 RocksTopNHandle::UpdateFast(rocks),
                 TopNHandle::UpdateFast(make_update()),

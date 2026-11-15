@@ -3,6 +3,80 @@ use crate::*;
 mod coalesce;
 pub(crate) use coalesce::coalesce_batches;
 
+pub(crate) fn copy_compact_timestamps(batch: &RecordBatch, columns: &[usize]) -> RecordBatch {
+    let mut values = batch.columns().to_vec();
+    for &index in columns {
+        let source = &values[index];
+        if streamfusion_bridge::timestamp::is_component_timestamp(source.data_type()) {
+            let source = source
+                .as_any()
+                .downcast_ref::<arrow::array::StructArray>()
+                .unwrap();
+            let nanos = source
+                .column(1)
+                .as_any()
+                .downcast_ref::<Int32Array>()
+                .unwrap();
+            if nanos.values().iter().all(|value| *value == 0) {
+                continue;
+            }
+            values[index] = Arc::new(arrow::array::StructArray::new(
+                source.fields().clone(),
+                vec![
+                    source.column(0).clone(),
+                    Arc::new(Int32Array::from_value(0, source.len())),
+                ],
+                source.nulls().cloned(),
+            ));
+        } else {
+            let view = streamfusion_bridge::timestamp::TimestampColumn::try_new(source.as_ref())
+                .expect("compact timestamp exchange column");
+            let compact: ArrayRef = Arc::new(streamfusion_bridge::timestamp::timestamp_array(
+                (0..source.len()).map(|row| {
+                    (!view.is_null(row)).then(|| {
+                        streamfusion_bridge::timestamp::TimestampValue::from_millis(
+                            view.value(row).unwrap().millis(),
+                        )
+                    })
+                }),
+            ));
+            values[index] =
+                streamfusion_bridge::timestamp::cast_timestamp(&compact, source.data_type())
+                    .expect("compact timestamp exchange type");
+        }
+    }
+    RecordBatch::try_new_with_options(
+        batch.schema(),
+        values,
+        &arrow::record_batch::RecordBatchOptions::new().with_row_count(Some(batch.num_rows())),
+    )
+    .expect("compact timestamp exchange batch")
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_copyCompactTimestampFields<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    in_array_address: jlong,
+    in_schema_address: jlong,
+    out_array_address: jlong,
+    out_schema_address: jlong,
+    columns: JIntArray<'local>,
+) {
+    crate::bridge::jni_guard(env, move |env| {
+        let batch = import_record_batch(in_array_address, in_schema_address);
+        let columns: Vec<usize> = read_int_array(&env, &columns)
+            .into_iter()
+            .map(|v| v as usize)
+            .collect();
+        export_record_batch(
+            copy_compact_timestamps(&batch, &columns),
+            out_array_address,
+            out_schema_address,
+        );
+    })
+}
+
 /// Splits a batch into one order-preserving sub-batch per destination channel using
 /// `BinaryRowData.hashCode()` → `MathUtils.murmurHash` → Flink's key-group range assignment.
 /// Each sub-batch carries one representative key group owned by that channel, which lets Flink's
@@ -16,6 +90,24 @@ pub(crate) fn partition_batch(
     max_parallelism: usize,
     parallelism: usize,
 ) -> Vec<(usize, RecordBatch)> {
+    partition_batch_with_layout(
+        batch,
+        key_columns,
+        timestamp_precisions,
+        max_parallelism,
+        parallelism,
+        false,
+    )
+}
+
+fn partition_batch_with_layout(
+    batch: &RecordBatch,
+    key_columns: &[usize],
+    timestamp_precisions: &[i32],
+    max_parallelism: usize,
+    parallelism: usize,
+    projected_keys: bool,
+) -> Vec<(usize, RecordBatch)> {
     let serialized;
     let batch = if has_string_caches(batch) {
         serialized = cold_string_caches(batch);
@@ -27,6 +119,9 @@ pub(crate) fn partition_batch(
     // descriptor; the encoder validates that it is consumed exactly.
     let mut channels: Vec<Option<(usize, Vec<u32>)>> = vec![None; parallelism];
     let mut encoder = BinaryRowBatchEncoder::new(batch, key_columns, timestamp_precisions);
+    if projected_keys {
+        encoder = encoder.projected();
+    }
     for row in 0..batch.num_rows() {
         let key_group = flink_key_group(encoder.hash(row), max_parallelism);
         let channel = key_group * parallelism / max_parallelism;
@@ -67,6 +162,22 @@ pub(crate) fn partition_batch_by_key_group(
     timestamp_precisions: &[i32],
     max_parallelism: usize,
 ) -> Vec<(usize, Vec<i32>, RecordBatch)> {
+    partition_batch_by_key_group_with_layout(
+        batch,
+        key_columns,
+        timestamp_precisions,
+        max_parallelism,
+        false,
+    )
+}
+
+fn partition_batch_by_key_group_with_layout(
+    batch: &RecordBatch,
+    key_columns: &[usize],
+    timestamp_precisions: &[i32],
+    max_parallelism: usize,
+    projected_keys: bool,
+) -> Vec<(usize, Vec<i32>, RecordBatch)> {
     let serialized;
     let batch = if has_string_caches(batch) {
         serialized = cold_string_caches(batch);
@@ -76,6 +187,9 @@ pub(crate) fn partition_batch_by_key_group(
     };
     let mut rows_by_key_group: Vec<Vec<u32>> = vec![Vec::new(); max_parallelism];
     let mut encoder = BinaryRowBatchEncoder::new(batch, key_columns, timestamp_precisions);
+    if projected_keys {
+        encoder = encoder.projected();
+    }
     for row in 0..batch.num_rows() {
         let key_group = flink_key_group(encoder.hash(row), max_parallelism);
         rows_by_key_group[key_group].push(row as u32);
@@ -136,6 +250,55 @@ pub extern "system" fn Java_tech_streamfusion_Native_splitByKey<'local>(
     parallelism: jint,
     recoverable: jboolean,
 ) -> jlong {
+    split_by_key(
+        env,
+        in_array_address,
+        in_schema_address,
+        key_columns,
+        timestamp_precisions,
+        max_parallelism,
+        parallelism,
+        recoverable,
+        false,
+    )
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_splitByProjectedKey<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    in_array_address: jlong,
+    in_schema_address: jlong,
+    key_columns: JIntArray<'local>,
+    timestamp_precisions: JIntArray<'local>,
+    max_parallelism: jint,
+    parallelism: jint,
+    recoverable: jboolean,
+) -> jlong {
+    split_by_key(
+        env,
+        in_array_address,
+        in_schema_address,
+        key_columns,
+        timestamp_precisions,
+        max_parallelism,
+        parallelism,
+        recoverable,
+        true,
+    )
+}
+
+fn split_by_key<'local>(
+    env: JNIEnv<'local>,
+    in_array_address: jlong,
+    in_schema_address: jlong,
+    key_columns: JIntArray<'local>,
+    timestamp_precisions: JIntArray<'local>,
+    max_parallelism: jint,
+    parallelism: jint,
+    recoverable: jboolean,
+    projected_keys: bool,
+) -> jlong {
     crate::bridge::jni_guard(env, move |env| {
         let batch = import_record_batch(in_array_address, in_schema_address);
         let keys: Vec<usize> = read_int_array(&env, &key_columns)
@@ -144,21 +307,28 @@ pub extern "system" fn Java_tech_streamfusion_Native_splitByKey<'local>(
             .collect();
         let precisions = read_i32_array(&env, &timestamp_precisions);
         let parts: Vec<SplitPart> = if recoverable != 0 {
-            partition_batch_by_key_group(&batch, &keys, &precisions, max_parallelism as usize)
-                .into_iter()
-                .map(|(key_group, ordinals, batch)| SplitPart {
-                    key_group,
-                    ordinals,
-                    batch,
-                })
-                .collect()
+            partition_batch_by_key_group_with_layout(
+                &batch,
+                &keys,
+                &precisions,
+                max_parallelism as usize,
+                projected_keys,
+            )
+            .into_iter()
+            .map(|(key_group, ordinals, batch)| SplitPart {
+                key_group,
+                ordinals,
+                batch,
+            })
+            .collect()
         } else {
-            partition_batch(
+            partition_batch_with_layout(
                 &batch,
                 &keys,
                 &precisions,
                 max_parallelism as usize,
                 parallelism as usize,
+                projected_keys,
             )
             .into_iter()
             .map(|(key_group, batch)| SplitPart {
@@ -284,9 +454,136 @@ pub extern "system" fn Java_tech_streamfusion_Native_concatBatches<'local>(
     })
 }
 
+/// Gathers Java-selected rows with Arrow's columnar interleave kernel.
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_interleaveBatches<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    in_array_addresses: JLongArray<'local>,
+    in_schema_addresses: JLongArray<'local>,
+    batch_indices: JIntArray<'local>,
+    row_indices: JIntArray<'local>,
+    out_array_address: jlong,
+    out_schema_address: jlong,
+) {
+    crate::bridge::jni_guard(env, move |env| {
+        let arrays = read_longs(&env, &in_array_addresses);
+        let schemas = read_longs(&env, &in_schema_addresses);
+        assert_eq!(arrays.len(), schemas.len(), "one schema per input array");
+        let batches: Vec<RecordBatch> = arrays
+            .into_iter()
+            .zip(schemas)
+            .map(|(array, schema)| import_record_batch(array, schema))
+            .collect();
+        let sources = read_int_array(&env, &batch_indices);
+        let rows = read_int_array(&env, &row_indices);
+        assert_eq!(sources.len(), rows.len(), "one batch per selected row");
+        let indices: Vec<(usize, usize)> = sources
+            .into_iter()
+            .zip(rows)
+            .map(|(batch, row)| {
+                (
+                    usize::try_from(batch).expect("nonnegative batch index"),
+                    usize::try_from(row).expect("nonnegative row index"),
+                )
+            })
+            .collect();
+        let selected = (|| {
+            let schema = Arc::new(Schema::try_merge(
+                batches.iter().map(|batch| batch.schema().as_ref().clone()),
+            )?);
+            let normalized: Vec<RecordBatch> = batches
+                .iter()
+                .cloned()
+                .map(|batch| batch.with_schema(schema.clone()))
+                .collect::<Result<_, _>>()?;
+            let refs: Vec<&RecordBatch> = normalized.iter().collect();
+            arrow::compute::interleave_record_batch(&refs, &indices)
+        })();
+        drop(batches);
+        match selected {
+            Ok(selected) => export_record_batch(selected, out_array_address, out_schema_address),
+            Err(error) => {
+                env.throw_new("tech/streamfusion/NativeException", error.to_string())
+                    .expect("throw row-selection validation failure");
+            }
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compact_timestamp_copy_keeps_slices_nulls_metadata_and_owned_buffers() {
+        use streamfusion_bridge::timestamp::{
+            timestamp_array, with_timezone, TimestampColumn, TimestampValue,
+        };
+        let values: ArrayRef = Arc::new(timestamp_array([
+            Some(TimestampValue::new(99, 1).unwrap()),
+            Some(TimestampValue::new(i64::MIN, 123).unwrap()),
+            None,
+            Some(TimestampValue::new(-1, 999999).unwrap()),
+            Some(TimestampValue::new(i64::MAX, 999999).unwrap()),
+        ]));
+        let values = with_timezone(&values, "UTC").unwrap();
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("compact", values.data_type().clone(), true),
+                Field::new("precise", values.data_type().clone(), true),
+                Field::new("kind", DataType::Int8, false),
+            ])),
+            vec![
+                values.clone(),
+                values,
+                Arc::new(Int8Array::from(vec![0, 1, 2, 3, 0])),
+            ],
+        )
+        .unwrap()
+        .slice(1, 3);
+        let copied = copy_compact_timestamps(&batch, &[0]);
+        assert_eq!(copied.schema(), batch.schema());
+        assert!(Arc::ptr_eq(copied.column(1), batch.column(1)));
+        assert!(Arc::ptr_eq(copied.column(2), batch.column(2)));
+        let before = batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<arrow::array::StructArray>()
+            .unwrap();
+        let after = copied
+            .column(0)
+            .as_any()
+            .downcast_ref::<arrow::array::StructArray>()
+            .unwrap();
+        assert!(Arc::ptr_eq(before.column(0), after.column(0)));
+        assert_eq!(
+            TimestampColumn::try_new(batch.column(0).as_ref())
+                .unwrap()
+                .value(0)
+                .unwrap()
+                .nano_of_milli(),
+            123
+        );
+        let view = TimestampColumn::try_new(copied.column(0).as_ref()).unwrap();
+        assert_eq!(
+            view.value(0).unwrap(),
+            TimestampValue::from_millis(i64::MIN)
+        );
+        assert!(view.is_null(1));
+        assert_eq!(view.value(2).unwrap(), TimestampValue::from_millis(-1));
+        let repeated = copy_compact_timestamps(&copied, &[0]);
+        assert!(Arc::ptr_eq(repeated.column(0), copied.column(0)));
+        drop(batch);
+        assert_eq!(
+            TimestampColumn::try_new(copied.column(1).as_ref())
+                .unwrap()
+                .value(2)
+                .unwrap()
+                .nano_of_milli(),
+            999999
+        );
+    }
     use arrow::datatypes::Schema;
     use std::sync::Arc;
 

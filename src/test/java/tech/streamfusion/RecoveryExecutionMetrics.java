@@ -14,11 +14,31 @@ import org.apache.flink.streaming.util.TestStreamEnvironment;
 
 /** Keep removed attempt metrics until the scenario has recorded execution and cleanup evidence. */
 final class RecoveryExecutionMetrics implements AutoCloseable {
-  private final InMemoryReporter reporter = InMemoryReporter.createWithRetainedMetrics();
+  private final InMemoryReporter reporter;
   private MiniClusterResource cluster;
+
+  RecoveryExecutionMetrics() {
+    this(InMemoryReporter.createWithRetainedMetrics());
+  }
+
+  private RecoveryExecutionMetrics(InMemoryReporter reporter) {
+    this.reporter = reporter;
+  }
+
+  static RecoveryExecutionMetrics countersOnly() {
+    return new RecoveryExecutionMetrics(
+        new org.apache.flink.runtime.testutils.RetainedCounterReporter());
+  }
+
+  void setAsContext(Configuration config, int parallelism, long budget) {
+    environment(config, parallelism, budget);
+    tech.streamfusion.compat.FlinkTestContexts.setForLocalTests(
+        cluster.getMiniCluster(), parallelism);
+  }
 
   TestStreamEnvironment environment(Configuration jobConfig, int parallelism, long budget) {
     if (cluster == null) {
+      long started = CiFixtureTimings.start();
       Configuration config = reporter.addToConfiguration(new Configuration(jobConfig));
       config.set(
           TaskManagerOptions.TASK_OFF_HEAP_MEMORY,
@@ -34,6 +54,8 @@ final class RecoveryExecutionMetrics implements AutoCloseable {
         cluster.before();
       } catch (Exception failure) {
         throw new IllegalStateException("cannot start recovery metrics cluster", failure);
+      } finally {
+        CiFixtureTimings.record("recovery-metrics.cluster-start", started);
       }
     }
     return new TestStreamEnvironment(
@@ -41,39 +63,126 @@ final class RecoveryExecutionMetrics implements AutoCloseable {
   }
 
   void printTop1Cache(String jobId) {
-    reporter.getMetricsByGroup().forEach((group, metrics) -> {
-      if (!jobId.equals(group.getAllVariables().get("<job_id>"))) return;
-      if (!group.getAllVariables().getOrDefault("<operator_name>", "").startsWith("NativeColumnarTopN")) return;
-      metrics.forEach((name, metric) -> {
-        if (name.startsWith("topn.cache.") && metric instanceof org.apache.flink.metrics.Gauge) {
-          System.out.println("[append-top1-cache] job=" + jobId + " metric=" + name + " value="
-              + ((org.apache.flink.metrics.Gauge<?>) metric).getValue());
-        }
-      });
-    });
+    reporter
+        .getMetricsByGroup()
+        .forEach(
+            (group, metrics) -> {
+              if (!jobId.equals(group.getAllVariables().get("<job_id>"))) return;
+              if (!group
+                  .getAllVariables()
+                  .getOrDefault("<operator_name>", "")
+                  .startsWith("NativeColumnarTopN")) return;
+              metrics.forEach(
+                  (name, metric) -> {
+                    if (name.startsWith("topn.cache.")
+                        && metric instanceof org.apache.flink.metrics.Gauge) {
+                      System.out.println(
+                          "[append-top1-cache] job="
+                              + jobId
+                              + " metric="
+                              + name
+                              + " value="
+                              + ((org.apache.flink.metrics.Gauge<?>) metric).getValue());
+                    }
+                  });
+            });
   }
 
   long recordsIn(String jobId, String operatorPrefix) {
     long[] total = {0};
-    reporter.getMetricsByGroup().forEach((group, metrics) -> {
-      if (!(group instanceof org.apache.flink.metrics.groups.OperatorMetricGroup)) return;
-      var variables = group.getAllVariables();
-      if (jobId.equals(variables.get("<job_id>"))
-          && variables.getOrDefault("<operator_name>", "").startsWith(operatorPrefix)
-          && metrics.get("numRecordsIn") instanceof Counter) {
-        total[0] += ((Counter) metrics.get("numRecordsIn")).getCount();
-      }
-    });
+    reporter
+        .getMetricsByGroup()
+        .forEach(
+            (group, metrics) -> {
+              if (!(group instanceof org.apache.flink.metrics.groups.OperatorMetricGroup)) return;
+              var variables = group.getAllVariables();
+              if (jobId.equals(variables.get("<job_id>"))
+                  && variables.getOrDefault("<operator_name>", "").startsWith(operatorPrefix)
+                  && metrics.get("numRecordsIn") instanceof Counter) {
+                total[0] += ((Counter) metrics.get("numRecordsIn")).getCount();
+              }
+            });
     return total[0];
+  }
+
+  List<String> taskNames(String operatorPrefix) {
+    return reporter.getMetricsByGroup().keySet().stream()
+        .filter(group -> group instanceof org.apache.flink.metrics.groups.OperatorMetricGroup)
+        .map(org.apache.flink.metrics.MetricGroup::getAllVariables)
+        .filter(
+            variables -> variables.getOrDefault("<operator_name>", "").startsWith(operatorPrefix))
+        .map(variables -> variables.getOrDefault("<task_name>", ""))
+        .distinct()
+        .collect(java.util.stream.Collectors.toList());
+  }
+
+  java.util.Set<String> subtasks(String operatorPrefix) {
+    return reporter.getMetricsByGroup().keySet().stream()
+        .filter(group -> group instanceof org.apache.flink.metrics.groups.OperatorMetricGroup)
+        .map(org.apache.flink.metrics.MetricGroup::getAllVariables)
+        .filter(
+            variables -> variables.getOrDefault("<operator_name>", "").startsWith(operatorPrefix))
+        .map(variables -> variables.getOrDefault("<subtask_index>", ""))
+        .collect(java.util.stream.Collectors.toSet());
+  }
+
+  java.util.Set<String> attempts(String operatorPrefix) {
+    return reporter.getMetricsByGroup().keySet().stream()
+        .filter(group -> group instanceof org.apache.flink.metrics.groups.OperatorMetricGroup)
+        .map(org.apache.flink.metrics.MetricGroup::getAllVariables)
+        .filter(
+            variables -> variables.getOrDefault("<operator_name>", "").startsWith(operatorPrefix))
+        .map(variables -> variables.getOrDefault("<task_attempt_num>", ""))
+        .collect(java.util.stream.Collectors.toSet());
   }
 
   long counterValue(String name) {
     long[] total = {0};
-    reporter.getMetricsByGroup().forEach((group, metrics) -> {
-      if (metrics.get(name) instanceof Counter)
-        total[0] += ((Counter) metrics.get(name)).getCount();
-    });
+    reporter
+        .getMetricsByGroup()
+        .forEach(
+            (group, metrics) -> {
+              if (metrics.get(name) instanceof Counter)
+                total[0] += ((Counter) metrics.get(name)).getCount();
+            });
     return total[0];
+  }
+
+  long counterValue(String jobId, String name) {
+    return counterValue(jobId, name, "");
+  }
+
+  long counterValue(String jobId, String name, String operatorPrefix) {
+    long[] total = {0};
+    reporter
+        .getMetricsByGroup()
+        .forEach(
+            (group, metrics) -> {
+              if (jobId.equals(group.getAllVariables().get("<job_id>"))
+                  && group
+                      .getAllVariables()
+                      .getOrDefault("<operator_name>", "")
+                      .startsWith(operatorPrefix)
+                  && metrics.get(name) instanceof Counter)
+                total[0] += ((Counter) metrics.get(name)).getCount();
+            });
+    return total[0];
+  }
+
+  Map<String, Long> countersBySubtask(String jobId, String name) {
+    Map<String, Long> counts = new java.util.TreeMap<>();
+    reporter
+        .getMetricsByGroup()
+        .forEach(
+            (group, metrics) -> {
+              var variables = group.getAllVariables();
+              if (jobId.equals(variables.get("<job_id>")) && metrics.get(name) instanceof Counter)
+                counts.merge(
+                    variables.getOrDefault("<subtask_index>", ""),
+                    ((Counter) metrics.get(name)).getCount(),
+                    Long::sum);
+            });
+    return counts;
   }
 
   long completedCheckpoints(String jobId) {
@@ -113,20 +222,27 @@ final class RecoveryExecutionMetrics implements AutoCloseable {
 
               Counter output = ((Counter) outputCandidate);
 
-              observations.add(
-                  Map.of(
-                      "operator",
-                      operator,
-                      "jobId",
-                      variables.getOrDefault("<job_id>", ""),
-                      "subtask",
-                      variables.getOrDefault("<subtask_index>", ""),
-                      "attempt",
-                      variables.getOrDefault("<task_attempt_num>", ""),
-                      "recordsIn",
-                      input.getCount(),
-                      "recordsOut",
-                      output.getCount()));
+              var observation =
+                  new java.util.LinkedHashMap<String, Object>(
+                      Map.of(
+                          "operator",
+                          operator,
+                          "jobId",
+                          variables.getOrDefault("<job_id>", ""),
+                          "subtask",
+                          variables.getOrDefault("<subtask_index>", ""),
+                          "attempt",
+                          variables.getOrDefault("<task_attempt_num>", ""),
+                          "recordsIn",
+                          input.getCount(),
+                          "recordsOut",
+                          output.getCount()));
+              for (String name : List.of("sharePlannedConsumers", "shareDeployedConsumers")) {
+                var metric = metrics.get(name);
+                if (metric instanceof org.apache.flink.metrics.Gauge)
+                  observation.put(name, ((org.apache.flink.metrics.Gauge<?>) metric).getValue());
+              }
+              observations.add(observation);
             });
     observations.sort(java.util.Comparator.comparing(Object::toString));
     return observations;
@@ -139,7 +255,13 @@ final class RecoveryExecutionMetrics implements AutoCloseable {
             : planOperator.replace("Aggregate", "Agg") + "ExecNode";
     long consumed =
         observations.stream()
-            .filter(row -> row.get("operator").toString().startsWith(metricOperator))
+            .filter(
+                row -> {
+                  String operator = row.get("operator").toString();
+                  return operator.startsWith(metricOperator)
+                      || (planOperator.equals("NativeCalc")
+                          && operator.startsWith("NativeCalcExecNode["));
+                })
             .mapToLong(row -> ((Number) row.get("recordsIn")).longValue())
             .sum();
     org.junit.jupiter.api.Assertions.assertTrue(
@@ -148,10 +270,12 @@ final class RecoveryExecutionMetrics implements AutoCloseable {
 
   @Override
   public void close() {
+    long started = CiFixtureTimings.start();
     try {
       if (cluster != null) cluster.after();
     } finally {
       reporter.close();
+      CiFixtureTimings.record("recovery-metrics.cluster-close", started);
     }
   }
 }

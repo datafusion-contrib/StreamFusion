@@ -1,0 +1,82 @@
+{
+  "date": "2026-11-09",
+  "status": "valid: matching ASC NULLS FIRST; order-sensitive hash including NULL positions checked against sorted reference",
+  "correction": "Earlier operation comparisons are invalid because the host SortSpec flag meant NULLS LAST. They remain marked discarded in the original JSON files. Complete-job comparisons are unaffected.",
+  "configuration": {
+    "poolBytes": 33554432,
+    "warmups": 3,
+    "trials": 7,
+    "nativeBatchRows": 1024,
+    "seed": 724719,
+    "alternatingOrder": true,
+    "types": "all nullable BIGINT",
+    "build": "release, mimalloc, no optional RocksDB",
+    "environment": "same host/Flink2.2.1/JDK17 as batch-sort-jobs-20261109.json"
+  },
+  "timing": "Same prepared RowData/Arrow operation boundaries; Rust timer after import before export, includes compact ownership copies, state, I/O yields and equivalent ordered key-hash consumption.",
+  "cohorts": [
+    {
+      "rows": 131072,
+      "width": 4,
+      "cardinality": 131072,
+      "nullsFirst": true,
+      "nullEvery": 17,
+      "offset": 0,
+      "fetch": null,
+      "validComparison": true,
+      "stockNanos": [
+        41970042,
+        25619208,
+        25590375,
+        25003917,
+        24524459,
+        24369959,
+        23093583
+      ],
+      "nativeNanos": [
+        3574042,
+        3474542,
+        3493041,
+        3503334,
+        3637250,
+        3582666,
+        3312500
+      ],
+      "medianStockOverNative": 7.137177614238323
+    },
+    {
+      "rows": 65536,
+      "width": 8,
+      "cardinality": 127,
+      "nullsFirst": true,
+      "nullEvery": 17,
+      "offset": 0,
+      "fetch": null,
+      "validComparison": true,
+      "stockNanos": [
+        13571000,
+        9987917,
+        10227875,
+        11337709,
+        11079959,
+        11055250,
+        10284917
+      ],
+      "nativeNanos": [
+        2130708,
+        2082458,
+        2062458,
+        2050083,
+        1977791,
+        1973542,
+        2022666
+      ],
+      "medianStockOverNative": 5.3925865440569964
+    }
+  ],
+  "nativeLibrarySha256": "a4358bc0249671a3d1c6928714d2be814a4636db64a3a0ca5ca36069c24231fc",
+  "sourceFingerprints": {
+    "native/engine/src/bounded_sort.rs": "85dd35ff60c6ff2cf2c02f5689bbb77f4d841efddc9c353c5fd7154204c8474c",
+    "src/test/java/tech/streamfusion/operator/BatchSortAdmissionBenchmark.java": "00a568a1ee1c0c4b2b3e156802ab7b107b4e2a094d4dfa942d22f0f496d3c9e4"
+  }
+}

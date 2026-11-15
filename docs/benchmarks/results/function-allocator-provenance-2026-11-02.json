@@ -1,0 +1,67 @@
+{
+  "artifacts": [
+    {
+      "role": "extrema-and-original-if-prior-dso",
+      "sha256": "ef29d70066a2bd8b84be9e6581f9e27206666e6e92059fc78429cdff2e8c3727",
+      "defined_mi_malloc": true,
+      "undefined_system_malloc": false,
+      "allocator": "mimalloc"
+    },
+    {
+      "role": "extrema-prepared-executable",
+      "sha256": "6b830c63371b45ef7f313cda11f6f22193056356beed66064e7421dddcba8fb7",
+      "defined_mi_malloc": false,
+      "undefined_system_malloc": true,
+      "allocator": "System"
+    },
+    {
+      "role": "original-if-prior-prepared-executable",
+      "sha256": "a838d7d70edf6579b05c63fbd4d8b72f59a75dbae0113027809eea7d3af7b262",
+      "defined_mi_malloc": false,
+      "undefined_system_malloc": true,
+      "allocator": "System"
+    },
+    {
+      "role": "calendar-and-epoch-prior-dso",
+      "sha256": "4a10d804f7783b94d73682597dc3506393fa48757042e535c7d75ab77b6a2d98",
+      "defined_mi_malloc": false,
+      "undefined_system_malloc": true,
+      "allocator": "System"
+    },
+    {
+      "role": "matched-current-dso",
+      "sha256": "a6b320ade4a804b638826bfb76a370ee33bf86ca53f736aa724af5ca1ab2c7a5",
+      "defined_mi_malloc": false,
+      "undefined_system_malloc": true,
+      "allocator": "System"
+    },
+    {
+      "role": "matched-current-prepared-executable",
+      "sha256": "edc208a093815cd8c18db2996e361c056fedc4ac6aa050cbec1c150413d5a939",
+      "defined_mi_malloc": false,
+      "undefined_system_malloc": true,
+      "allocator": "System"
+    }
+  ],
+  "method": "Mach-O symbol inspection. A CountingAllocator declaration alone does not prove the final link allocator; DSOs and statically linked prepared executables are separate artifacts.",
+  "limitations": [
+    "The original IF candidate DSO/executable and original calendar executable are not retained for independent link-symbol inspection. Their historical hashes and raw timings remain; no mimalloc qualification is inferred.",
+    "The new matched IF control compiles the actual preceding encoder 289b69f0 on the same current release/System native runtime; it isolates the encoder/selector change and is not a whole historical DSO replay."
+  ],
+  "canonical_base": "76b1e46f",
+  "pre_ci_rebase_head": "14f4c6dc",
+  "rebased_implementation_head": "e5fa9bc32d04a1e773df6bef5f2d4f9927fce28c",
+  "ci_only_rebase_range_diff": [
+    " 1:  8ef0876f =  1:  fb2a7dea Keep verified mixed exact GREATEST comparisons inside Arrow",
+    " 2:  69fa1f38 =  2:  31507a61 Keep verified mixed exact LEAST comparisons inside Arrow",
+    " 3:  01804398 =  3:  fea93313 Select verified noncompact DECIMAL IF branches in one Arrow pass",
+    " 4:  e8d731c0 =  4:  51c123e0 Preserve released DATE hour extraction arithmetic",
+    " 5:  f0c7f1f4 =  5:  f77613f4 Preserve released DATE minute extraction arithmetic",
+    " 6:  94b760c5 =  6:  461f74b5 Preserve released DATE second extraction arithmetic",
+    " 7:  11e13486 =  7:  bff886c4 Record latest-main function parity and verified calendar residuals",
+    " 8:  bc9156b3 =  8:  f60116fa Reuse verified UTC calendar arithmetic for LTZ FLOOR",
+    " 9:  871f269e =  9:  ca8eae35 Reuse verified UTC calendar arithmetic for LTZ CEIL",
+    "10:  14f4c6dc = 10:  e5fa9bc3 Keep verified BIGINT epoch milliseconds in Arrow with shared values"
+  ],
+  "runtime_source_unchanged_by_ci_rebase": true
+}

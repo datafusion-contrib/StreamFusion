@@ -4,7 +4,10 @@ import static org.junit.jupiter.api.Assertions.*;
 import static tech.streamfusion.compat.FlinkTestSources.fromData;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.nio.file.Path;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.configuration.Configuration;
@@ -94,7 +97,6 @@ class FlinkJsonUnionSqlHarnessTest {
   @ValueSource(strings = {
     "SELECT id, v, v = '?', v LIKE '?', CASE WHEN v = '?' THEN 'question' ELSE v END FROM (%s)",
     "SELECT v, COUNT(*) FROM (%s) GROUP BY v",
-    "SELECT id, v FROM (%s) ORDER BY v LIMIT 17",
     "SELECT id, JSON_QUERY(j, '$') AS v FROM src WHERE MOD(id, 2) = 0 UNION ALL "
         + "SELECT id, JSON_QUERY(j, '$') FROM src WHERE MOD(id, 2) = 1",
     "SELECT id, CASE WHEN id > 0 THEN JSON_VALUE(j, '$.v') ELSE '?' END AS v FROM src "
@@ -110,6 +112,18 @@ class FlinkJsonUnionSqlHarnessTest {
   void unverifiedConsumersRetainCompleteQueryFallback(String template) throws Exception {
     String sql = template.contains("%s") ? String.format(template, UNION) : template;
     check(sql, -1, false, true);
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void sortedJsonUnionRetainsCompleteQueryFallback(boolean chaining) throws Exception {
+    Map<List<Object>, Long> expected = new HashMap<>();
+    for (int id : new int[] {5, 7, 14, 17, 18, 24, 26, 33, 36, 37, 43, 45, 52, 55, 56, 62, 64}) {
+      expected.put(Arrays.asList(id, null), 1L);
+    }
+    // UNION arrival order changes intermediate Top-N updates; the unique sort key fixes its final set.
+    check("SELECT id, v FROM (" + UNION + ") ORDER BY v NULLS FIRST, id LIMIT 17",
+        -1, false, chaining, expected);
   }
 
   @ParameterizedTest
@@ -225,7 +239,12 @@ class FlinkJsonUnionSqlHarnessTest {
 
   private static void check(String sql, int arity, boolean expectedNative, boolean chaining)
       throws Exception {
-    List<List<Object>> expected = null;
+    check(sql, arity, expectedNative, chaining, null);
+  }
+
+  private static void check(String sql, int arity, boolean expectedNative, boolean chaining,
+      Map<List<Object>, Long> expectedFinalRows) throws Exception {
+    Map<List<Object>, Long> expected = null;
     List<String> expectedTypes = null;
     for (boolean nativeEnabled : new boolean[] {false, true}) {
       try (var metrics = new RecoveryExecutionMetrics()) {
@@ -249,7 +268,7 @@ class FlinkJsonUnionSqlHarnessTest {
           while (iterator.hasNext()) {
             Row row = iterator.next();
             List<Object> fields = new ArrayList<>();
-            fields.add(row.getKind());
+            fields.add(row.getKind().shortString());
             for (int i = 0; i < row.getArity(); i++) fields.add(row.getField(i));
             rows.add(fields);
           }
@@ -258,12 +277,15 @@ class FlinkJsonUnionSqlHarnessTest {
           assertEquals(ROWS, rows.size());
           assertEquals(ROWS, rows.stream().map(row -> row.get(1)).distinct().count());
         }
+        Map<List<Object>, Long> contents = expectedFinalRows == null
+            ? NativeParity.multiset(rows) : NativeParity.collapsedChangelog(rows);
+        if (expectedFinalRows != null) assertEquals(expectedFinalRows, contents);
         if (!nativeEnabled) {
-          expected = rows;
+          expected = contents;
           expectedTypes = types;
         } else {
           assertEquals(expectedTypes, types);
-          assertEquals(NativeParity.multiset(expected), NativeParity.multiset(rows));
+          assertEquals(expected, contents);
           if (expectedNative) {
             assertTrue(scan.substitutions() >= 3, scan.explainSummary());
             assertTrue(scan.fallbackReasons().isEmpty(), scan.explainSummary());

@@ -1,7 +1,14 @@
+mod shared_snapshot;
 use crate::*;
 
+pub(crate) mod canonical_distinct;
+
+mod counted_distinct;
 mod floating_distinct;
+pub(crate) use counted_distinct::CountedDistinctAccumulator;
+pub(crate) const COUNT_DISTINCT_WITH_COUNTS: i64 = 43;
 mod floating_extreme;
+mod floating_sum;
 mod retracting_window;
 mod scalar_extreme;
 mod timestamp_extreme;
@@ -160,15 +167,7 @@ impl Accumulator for IntegerAvgAccumulator {
     }
 
     fn evaluate(&mut self) -> datafusion::common::Result<ScalarValue> {
-        // Truncating integer division, then a narrowing cast back to the input type (the host's
-        // `cast(sum / count, <type>)`), which wraps the low bits exactly like Rust's `as`.
-        let average = (self.count != 0).then(|| self.sum.wrapping_div(self.count));
-        Ok(match self.result_type {
-            DataType::Int32 => ScalarValue::Int32(average.map(|a| a as i32)),
-            DataType::Int16 => ScalarValue::Int16(average.map(|a| a as i16)),
-            DataType::Int8 => ScalarValue::Int8(average.map(|a| a as i8)),
-            _ => ScalarValue::Int64(average),
-        })
+        Ok(integer_average(self.sum, self.count, &self.result_type))
     }
 
     fn size(&self) -> usize {
@@ -475,52 +474,6 @@ impl Accumulator for WrappingNarrowSumAccumulator {
     }
 }
 
-/// Sum of a float (4-byte) column matching the host: the host keeps the input type and accumulates
-/// the running sum in float, so it rounds to 4-byte precision on every step (unlike DataFusion's
-/// sum, which widens to double). We accumulate in f32 in the same per-row fold order, so the result
-/// is bit-identical. The state is Flink's buffer — the nullable float sum alone (NULL until a
-/// non-null value is seen) — so it is a single-field mergeable partial for the two-phase split.
-#[derive(Debug, Default)]
-pub(crate) struct FloatSumAccumulator {
-    sum: Option<f32>,
-}
-
-impl Accumulator for FloatSumAccumulator {
-    fn update_batch(&mut self, values: &[ArrayRef]) -> datafusion::common::Result<()> {
-        let array = values[0]
-            .as_any()
-            .downcast_ref::<Float32Array>()
-            .expect("value float32");
-        for value in array.iter().flatten() {
-            self.sum = Some(self.sum.unwrap_or(0.0) + value);
-        }
-        Ok(())
-    }
-
-    fn merge_batch(&mut self, states: &[ArrayRef]) -> datafusion::common::Result<()> {
-        let sums = states[0]
-            .as_any()
-            .downcast_ref::<Float32Array>()
-            .expect("sum state float32");
-        for value in sums.iter().flatten() {
-            self.sum = Some(self.sum.unwrap_or(0.0) + value);
-        }
-        Ok(())
-    }
-
-    fn state(&mut self) -> datafusion::common::Result<Vec<ScalarValue>> {
-        Ok(vec![ScalarValue::Float32(self.sum)])
-    }
-
-    fn evaluate(&mut self) -> datafusion::common::Result<ScalarValue> {
-        Ok(ScalarValue::Float32(self.sum))
-    }
-
-    fn size(&self) -> usize {
-        std::mem::size_of::<Self>()
-    }
-}
-
 /// Average of a float column matching the host: the host accumulates the sum in double, divides by
 /// the count in double, then narrows the result to float. The two-field partial state (sum, count)
 /// rides the general checkpoint path.
@@ -656,6 +609,7 @@ impl Accumulator for DoubleAvgAccumulator {
 /// narrow/int32/float wrapping sums are small custom accumulators so their results match the host
 /// exactly. All expose mergeable partial state, so windows accumulate incrementally and checkpoint
 /// uniformly.
+#[derive(Clone)]
 pub(crate) enum WindowAggregate {
     Count,
     ZeroSum(DataType),
@@ -663,10 +617,11 @@ pub(crate) enum WindowAggregate {
     RetractingCount,
     Builtin(AggregateFunctionExpr),
     FloatingDistinctCount(AggregateFunctionExpr, DataType),
+    CountedDistinct(DataType),
     IntegerAvg(DataType),
     WrappingIntSum,
     WrappingNarrowSum(DataType),
-    FloatSum,
+    FloatingSum(DataType),
     FloatAvg,
     DoubleAvg,
     FloatingExtreme { kind: i64, value_type: DataType },
@@ -683,7 +638,7 @@ pub(crate) enum WindowAggregate {
 impl WindowAggregate {
     pub(crate) fn state_requires_restore(&self) -> bool {
         match self {
-            Self::Count => false,
+            Self::Count | Self::CountedDistinct(_) | Self::FloatingSum(_) => false,
             Self::Builtin(aggregate)
                 if !aggregate.is_distinct()
                     && matches!(aggregate.fun().name(), "sum" | "count" | "min" | "max") =>
@@ -716,6 +671,7 @@ impl WindowAggregate {
 
     fn new(kind: i64, value_type: &DataType) -> Self {
         match (kind, value_type) {
+            (COUNT_DISTINCT_WITH_COUNTS, _) => WindowAggregate::CountedDistinct(value_type.clone()),
             (
                 22,
                 DataType::Int8
@@ -744,8 +700,9 @@ impl WindowAggregate {
             (0, DataType::Int16 | DataType::Int8) => {
                 WindowAggregate::WrappingNarrowSum(value_type.clone())
             }
-            // SUM over float keeps the host's 4-byte precision rather than widening to double.
-            (0, DataType::Float32) => WindowAggregate::FloatSum,
+            (0, DataType::Float32 | DataType::Float64) => {
+                WindowAggregate::FloatingSum(value_type.clone())
+            }
             (0, DataType::Decimal128(_, s)) => WindowAggregate::DecimalSum { scale: *s },
             (1 | 2, DataType::Float32 | DataType::Float64) => WindowAggregate::FloatingExtreme {
                 kind,
@@ -811,6 +768,9 @@ impl WindowAggregate {
             WindowAggregate::FloatingDistinctCount(_, value_type) => Box::new(
                 floating_distinct::FloatingDistinctCountAccumulator::new(value_type),
             ),
+            WindowAggregate::CountedDistinct(value_type) => {
+                Box::new(CountedDistinctAccumulator::new(value_type))
+            }
             WindowAggregate::Builtin(aggregate) => aggregate
                 .create_accumulator()
                 .expect("failed to create accumulator"),
@@ -821,7 +781,17 @@ impl WindowAggregate {
             WindowAggregate::WrappingNarrowSum(data_type) => {
                 Box::new(WrappingNarrowSumAccumulator::new(data_type.clone()))
             }
-            WindowAggregate::FloatSum => Box::<FloatSumAccumulator>::default(),
+            WindowAggregate::FloatingSum(DataType::Float32) => {
+                Box::new(floating_sum::FloatingSumAccumulator::<
+                    arrow::datatypes::Float32Type,
+                >::new(ScalarValue::Float32))
+            }
+            WindowAggregate::FloatingSum(DataType::Float64) => {
+                Box::new(floating_sum::FloatingSumAccumulator::<
+                    arrow::datatypes::Float64Type,
+                >::new(ScalarValue::Float64))
+            }
+            WindowAggregate::FloatingSum(other) => unreachable!("floating SUM type: {other}"),
             WindowAggregate::FloatAvg => Box::<FloatAvgAccumulator>::default(),
             WindowAggregate::DoubleAvg => Box::<DoubleAvgAccumulator>::default(),
             WindowAggregate::FloatingExtreme { kind, value_type } => Box::new(
@@ -846,6 +816,9 @@ impl WindowAggregate {
 
     pub(crate) fn state_fields(&self) -> Vec<Field> {
         match self {
+            WindowAggregate::CountedDistinct(value_type) => {
+                CountedDistinctAccumulator::fields(value_type)
+            }
             WindowAggregate::Count => vec![Field::new("count", DataType::Int64, false)],
             WindowAggregate::ZeroSum(_) => vec![Field::new("sum", self.result_type(), true)],
             WindowAggregate::RetractingSum(value_type) => vec![
@@ -872,7 +845,9 @@ impl WindowAggregate {
             WindowAggregate::WrappingNarrowSum(data_type) => {
                 vec![Field::new("sum", data_type.clone(), true)]
             }
-            WindowAggregate::FloatSum => vec![Field::new("sum", DataType::Float32, true)],
+            WindowAggregate::FloatingSum(value_type) => {
+                vec![Field::new("sum", value_type.clone(), true)]
+            }
             WindowAggregate::FloatingExtreme { value_type, .. } => {
                 vec![Field::new("extreme", value_type.clone(), true)]
             }
@@ -901,6 +876,7 @@ impl WindowAggregate {
     /// The aggregate's output type (e.g. int64 for a sum of int64, float64 for a sum of float64).
     pub(crate) fn result_type(&self) -> DataType {
         match self {
+            WindowAggregate::CountedDistinct(_) => DataType::Int64,
             WindowAggregate::Count => DataType::Int64,
             WindowAggregate::ZeroSum(value_type) => RunningAgg::new(22, value_type).result_type(),
             WindowAggregate::RetractingSum(value_type) => value_type.clone(),
@@ -912,7 +888,8 @@ impl WindowAggregate {
             WindowAggregate::IntegerAvg(result_type) => result_type.clone(),
             WindowAggregate::WrappingIntSum => DataType::Int32,
             WindowAggregate::WrappingNarrowSum(data_type) => data_type.clone(),
-            WindowAggregate::FloatSum | WindowAggregate::FloatAvg => DataType::Float32,
+            WindowAggregate::FloatingSum(value_type) => value_type.clone(),
+            WindowAggregate::FloatAvg => DataType::Float32,
             WindowAggregate::DoubleAvg => DataType::Float64,
             WindowAggregate::FloatingExtreme { value_type, .. } => value_type.clone(),
             WindowAggregate::ScalarExtreme { value_type, .. } => value_type.clone(),
@@ -1057,25 +1034,64 @@ pub(crate) fn scalars_to_array(scalars: Vec<ScalarValue>, data_type: &DataType) 
     }
 }
 
-/// Exports an accumulator's intermediate state and rebuilds its live state from that snapshot.
+/// Exports intermediate state, retaining counted state and rebuilding draining factories.
 /// DataFusion's `state` API is consuming for some implementations, such as string
 /// `COUNT(DISTINCT ...)`, while merging the state back into other implementations would double
 /// their values. Replacing the accumulator handles both contracts uniformly.
+pub(crate) fn raw_accumulator(
+    accumulator: &mut dyn Accumulator,
+) -> Result<&mut dyn Accumulator, DataFusionError> {
+    shared_snapshot::raw(accumulator)
+}
+
+pub(crate) fn accumulator_capture_growth(accumulator: &dyn Accumulator) -> usize {
+    shared_snapshot::capture_growth(accumulator)
+}
+
+pub(crate) fn capture_accumulator(
+    accumulator: &mut Box<dyn Accumulator>,
+    aggregate: &Arc<WindowAggregate>,
+) -> Box<dyn Accumulator> {
+    shared_snapshot::capture(accumulator, aggregate)
+}
+
 pub(crate) fn snapshot_accumulator_state(
     accumulator: &mut Box<dyn Accumulator>,
     create: impl FnOnce() -> Box<dyn Accumulator>,
 ) -> Vec<ScalarValue> {
     let state = accumulator.state().expect("state");
+    // Counted state is non-draining. Rebuilding would compact its map behind managed-memory
+    // accounting, changing the live footprint without updating its reservation.
+    if (accumulator.as_ref() as &dyn std::any::Any).is::<CountedDistinctAccumulator>()
+        || shared_snapshot::counted(accumulator.as_ref())
+    {
+        return state;
+    }
     let arrays: Vec<ArrayRef> = state
         .iter()
         .map(|scalar| scalar.to_array().expect("state array"))
         .collect();
     let mut replacement = create();
-    replacement
-        .merge_batch(&arrays)
+    restore_accumulator_state(&mut replacement, &arrays)
         .expect("failed to restore live accumulator state");
     *accumulator = replacement;
     state
+}
+
+pub(crate) fn restore_accumulator_state(
+    accumulator: &mut Box<dyn Accumulator>,
+    states: &[ArrayRef],
+) -> Result<(), DataFusionError> {
+    if let Some(result) = shared_snapshot::restore(accumulator.as_mut(), states) {
+        return result;
+    }
+    if let Some(counted) = (accumulator.as_mut() as &mut dyn std::any::Any)
+        .downcast_mut::<CountedDistinctAccumulator>()
+    {
+        counted.restore_exact(states)
+    } else {
+        accumulator.merge_batch(states)
+    }
 }
 
 /// A typed NULL scalar of the given type (the value an aggregate reports when it has no live input).
@@ -1153,7 +1169,7 @@ impl ValueColumn<'_> {
 /// accumulator call — matching DataFusion's accumulators exactly: integer SUM wraps on overflow (as
 /// `sum_udaf` and the int-sum accumulator do), and all four skip null values. The value type is
 /// fixed per aggregator, so each variant pairs a kind with that type. See divergences/11.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) enum RunningAgg {
     OverStringValue {
         value: Option<Arc<str>>,
@@ -1360,6 +1376,13 @@ impl RunningAgg {
             };
             return Self::new(8, &sum_type);
         }
+        if matches!(kind, 10 | 11) && *value_type == DataType::Utf8 {
+            return OverStringValue {
+                value: None,
+                java_utf16: None,
+                kind,
+            };
+        }
         if matches!(kind, 10 | 11)
             && matches!(
                 value_type,
@@ -1524,7 +1547,7 @@ impl RunningAgg {
             (SumF64(s), Num::F64(v)) => *s = Some(s.map_or(v, |sum| sum + v)),
             (MinF64(m), Num::F64(v)) => *m = Some(m.map_or(v, |x| if v < x { v } else { x })),
             (MaxF64(m), Num::F64(v)) => *m = Some(m.map_or(v, |x| if v > x { v } else { x })),
-            (Count(c), _) => *c += 1,
+            (Count(c), _) => *c = c.wrapping_add(1),
             (SumDecimal { sum, overflow, .. }, Num::I128(v)) => {
                 accumulate_decimal_sum(sum, overflow, v)
             }
@@ -1591,7 +1614,7 @@ impl RunningAgg {
             (SumI16(s), Num::I16(v)) => *s = Some(s.unwrap_or(0).wrapping_sub(v)),
             (SumI8(s), Num::I8(v)) => *s = Some(s.unwrap_or(0).wrapping_sub(v)),
             (SumF32(s), Num::F32(v)) => *s = Some(s.unwrap_or(0.0) - v),
-            (Count(c), _) => *c -= 1,
+            (Count(c), _) => *c = c.wrapping_sub(1),
             (SumDecimal { sum, overflow, .. }, Num::I128(v)) => {
                 accumulate_decimal_sum(sum, overflow, v.wrapping_neg())
             }
@@ -1962,6 +1985,15 @@ pub(crate) fn distinct_num(value: &ScalarValue) -> Num {
     }
 }
 
+/// Flink's signed count, wrapping Java division and narrowing AVG result contract.
+pub(crate) fn integer_average(sum: i64, count: i64, result: &DataType) -> ScalarValue {
+    if count == 0 {
+        null_scalar(result)
+    } else {
+        avg_int_scalar(sum.wrapping_div(count), result)
+    }
+}
+
 /// Casts an integer average (`sum / count`, already truncated toward zero in i64) back to the AVG
 /// input type — Flink's `cast(div(sum, count), resultType)`.
 pub(crate) fn avg_int_scalar(value: i64, result: &DataType) -> ScalarValue {
@@ -2159,6 +2191,71 @@ mod avg_tests {
     }
 
     #[test]
+    fn running_and_window_integer_average_share_null_retraction_and_restore_contracts() {
+        for datatype in [
+            DataType::Int8,
+            DataType::Int16,
+            DataType::Int32,
+            DataType::Int64,
+        ] {
+            let mut window = IntegerAvgAccumulator::new(datatype.clone());
+            let mut running = RunningAgg::new(4, &datatype);
+            let mut count = 0_i64;
+            for (value, kind, expected) in [
+                (Some(10), 0, Some(10)),
+                (None, 0, Some(10)),
+                (Some(11), 0, Some(10)),
+                (Some(10), 1, Some(11)),
+                (Some(11), 3, None),
+                (Some(3), 3, Some(3)),
+                (Some(3), 0, None),
+            ] {
+                let values =
+                    arrow::compute::cast(&Int64Array::from(vec![value]), &datatype).unwrap();
+                window
+                    .update_batch(&[values.clone(), Arc::new(Int8Array::from(vec![kind]))])
+                    .unwrap();
+                if value.is_some() {
+                    let number = distinct_num(&ScalarValue::try_from_array(&values, 0).unwrap());
+                    if matches!(kind, 1 | 3) {
+                        running.retract(number);
+                        count = count.wrapping_sub(1);
+                    } else {
+                        running.fold(number);
+                        count = count.wrapping_add(1);
+                    }
+                }
+                let expected_array =
+                    arrow::compute::cast(&Int64Array::from(vec![expected]), &datatype).unwrap();
+                let expected = ScalarValue::try_from_array(&expected_array, 0).unwrap();
+                assert_eq!(window.evaluate().unwrap(), expected);
+                assert_eq!(
+                    crate::group_agg::emit_running(&running, count, &datatype),
+                    expected
+                );
+                let state = window.state().unwrap();
+                assert_eq!(state, vec![running.emit(), ScalarValue::Int64(Some(count))]);
+                let arrays = state
+                    .iter()
+                    .map(ScalarValue::to_array)
+                    .collect::<Result<Vec<_>, _>>()
+                    .unwrap();
+                let mut restored = IntegerAvgAccumulator::new(datatype.clone());
+                restored.merge_batch(&arrays).unwrap();
+                assert_eq!(restored.evaluate().unwrap(), expected);
+                window = restored;
+                let mut restored = RunningAgg::new(4, &datatype);
+                restored.restore_value(&state[0]);
+                assert_eq!(
+                    crate::group_agg::emit_running(&restored, count, &datatype),
+                    expected
+                );
+                running = restored;
+            }
+        }
+    }
+
+    #[test]
     fn negative_average_division_keeps_java_long_overflow() {
         let mut avg = IntegerAvgAccumulator::new(DataType::Int64);
         avg.update_batch(&[
@@ -2167,5 +2264,20 @@ mod avg_tests {
         ])
         .unwrap();
         assert_eq!(avg.evaluate().unwrap(), ScalarValue::Int64(Some(i64::MIN)));
+        let mut running = RunningAgg::new(4, &DataType::Int64);
+        running.retract(Num::I64(i64::MIN));
+        assert_eq!(
+            crate::group_agg::emit_running(&running, -1, &DataType::Int64),
+            ScalarValue::Int64(Some(i64::MIN))
+        );
+    }
+
+    #[test]
+    fn retained_count_uses_java_wrapping_arithmetic_on_both_edges() {
+        let mut count = RunningAgg::Count(i64::MAX);
+        count.fold(Num::I64(0));
+        assert_eq!(count.emit(), ScalarValue::Int64(Some(i64::MIN)));
+        count.retract(Num::I64(0));
+        assert_eq!(count.emit(), ScalarValue::Int64(Some(i64::MAX)));
     }
 }

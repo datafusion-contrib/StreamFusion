@@ -129,6 +129,34 @@ impl HeapRangeOrder {
         }
     }
 
+    pub(super) fn contains(&self, key: i64) -> bool {
+        if self.table.is_empty() {
+            return false;
+        }
+        let mut link = self.table[Node::new(key).hash as usize & (self.table.len() - 1)];
+        while link != NIL {
+            if self.n(link).key == key {
+                return true;
+            }
+            link = self.n(link).next;
+        }
+        false
+    }
+
+    pub(super) fn insertion_work_bytes(&self) -> usize {
+        let nodes = if self.free.is_empty() && self.nodes.len() == self.nodes.capacity() {
+            (self.nodes.capacity() * 2).max(4) * std::mem::size_of::<Node>()
+        } else {
+            0
+        };
+        let table = if self.table.len() < 64 || self.len + 1 > self.table.len() * 3 / 4 {
+            (self.table.capacity() * 2).max(64) * std::mem::size_of::<u32>()
+        } else {
+            0
+        };
+        nodes + table
+    }
+
     pub(super) fn rank(&self, key: i64) -> (usize, usize) {
         let hash = Node::new(key).hash;
         let bucket = hash as usize & (self.table.len() - 1);

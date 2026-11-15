@@ -515,6 +515,18 @@ class FlinkGroupedValueSqlHarnessTest {
     org.junit.jupiter.api.Assumptions.assumeTrue(
         !type.startsWith("TIME(")
             || tech.streamfusion.compat.FlinkTestCapabilities.CAST_TIME_SINGLE_VALUE);
+    assertSplitSingleValueRecovery(backend, type, false);
+  }
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {"hashmap", "tech.streamfusion.state.RocksDBNativeStateBackendFactory"})
+  void splitSingleValueRejectsDuplicatesDuringCoalescedCheckpointFlush(String backend) {
+    assertSplitSingleValueRecovery(backend, "BOOLEAN", true);
+  }
+
+  private static void assertSplitSingleValueRecovery(
+      String backend, String type, boolean holdAfterInput) {
     List<Row> input = new ArrayList<>();
     for (int id = 0; id < 96; id++)
       input.add(Row.of(id, id % 7 == 0 ? null : value(type, 10 + 10 * (id % 3))));
@@ -532,6 +544,7 @@ class FlinkGroupedValueSqlHarnessTest {
                 24,
                 63)
             .withExecutionMetrics()) {
+      if (holdAfterInput) recovery.holdAfterInput();
       java.util.function.UnaryOperator<TableEnvironment> configure =
           table -> {
             table.getConfig().set("table.optimizer.agg-phase-strategy", "TWO_PHASE");
@@ -553,6 +566,15 @@ class FlinkGroupedValueSqlHarnessTest {
           "SingleValueAggFunction received more than one element.",
           ROW_EVALUATION,
           NATIVE);
+      if (holdAfterInput) {
+        assertTrue(
+            java.util.Arrays.stream(result.nativeRun().rootCause().getStackTrace())
+                .anyMatch(
+                    frame ->
+                        frame.getClassName().equals("tech.streamfusion.operator.BatchCoalescer")
+                            && frame.getMethodName().equals("flush")),
+            result.toString());
+      }
       recovery.verifyRepeatedRecovery();
       RecoveryExecutionMetrics.assertConsumed(
           recovery.nativeExecution(), "NativeColumnarGroupAggregate");

@@ -28,6 +28,7 @@ import org.apache.iceberg.data.IcebergGenerics;
 import org.apache.iceberg.flink.TableLoader;
 import org.apache.iceberg.hadoop.HadoopTables;
 import org.apache.iceberg.types.Types;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -35,6 +36,7 @@ import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.ArrowBatchSubtaskKeySelector;
 import tech.streamfusion.operator.ArrowBatchTypeInformation;
 import tech.streamfusion.operator.NativeAllocator;
+import tech.streamfusion.operator.TaskOffHeapMemory;
 
 /**
  * Extends the core captured-channel recovery fixture through the actual Iceberg writer exchange.
@@ -56,6 +58,21 @@ class NativeIcebergCapturedRecoveryTest {
 
   @TempDir(cleanup = org.junit.jupiter.api.io.CleanupMode.ON_SUCCESS)
   Path temp;
+
+  @AfterEach
+  void releasesCapturedPayloadsBeforeTheNextCluster() throws InterruptedException {
+    long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+    while ((NativeAllocator.SHARED.getAllocatedMemory() != 0
+            || TaskOffHeapMemory.reservedBytes() != 0)
+        && System.nanoTime() < deadline) {
+      // Failed channel handovers can leave unreachable Arrow batches for their cleaner backstop.
+      System.gc();
+      Thread.sleep(20);
+    }
+    assertEquals("", NativeIceberg.liveNativeHandles());
+    assertEquals(0, NativeAllocator.SHARED.getAllocatedMemory(), "Arrow memory after recovery");
+    assertEquals(0, TaskOffHeapMemory.reservedBytes(), "task off-heap memory after recovery");
+  }
 
   @ParameterizedTest
   @CsvSource({

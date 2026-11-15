@@ -1,0 +1,3008 @@
+{
+  "date": "2026-11-06",
+  "issue": 504,
+  "canonical_base": "a9f7c3589a6796e0ccb690d84472134e1212b818",
+  "platform": "26.5 arm64",
+  "scope": "Ordinary Calc CEIL/CEILING over verified total DECIMAL TO_TIMESTAMP_LTZ producers in fixed-zero-offset sessions. Genuine builtins, direct/literal values, total ABS/negation chains and same-scale widening qualify at literal precision 0/3 or released Flink 2.2 default. Preserve truncation, signed-long/seconds wrapping, final millisecond bounds, NULLs and declared types. YEAR/MONTH/DAY/HOUR qualify on both lines; MINUTE/SECOND/MILLISECOND only on 2.2. Runtime precision, arithmetic/narrowing/rescaling, unverified producers/zones/units and UNNEST retain prior routes. Released 1.18 retains its absent default signature and sub-hour initialization failures.",
+  "reference": "Released decimal epoch conversion truncates BigDecimal toward zero, wraps long conversion and seconds multiplication, then bounds final milliseconds. Admitted non-null epochs have zero fractional nanos and bounded millis. Existing CEIL kernels preserve fixed-width rounding and signed-day/int-Julian calendar behavior in zero-offset sessions. General LTZ input retains its dedicated overflow/remainder kernel.",
+  "method": "Production release prepared Calc with YEAR(CEIL(...)) integer output and equivalent checksums. Stock starts on prebuilt Generic/Binary RowData; native starts on prebuilt Arrow RecordBatch. Rust timer starts after setup/import and stops before export; intrinsic allocations/conversions remain timed. Actual preceding-main encoder retains generated temporal evaluation inside NativeCalc. Both candidate and previous use the freshly built identical current-main native runtime. Complete jobs emit TIMESTAMP_LTZ(3) directly and retain startup, JNI and both transposes.",
+  "configuration": {
+    "flink": [
+      "1.18.1",
+      "2.2.1"
+    ],
+    "jdk": "17 for timing; 11/17 for focused parity",
+    "java_release": 11,
+    "rust": "release --no-default-features; System allocator; current-main source",
+    "batch_sizes": [
+      1024,
+      16
+    ],
+    "nullable": [
+      false,
+      true
+    ],
+    "binary_rowdata": [
+      false,
+      true
+    ],
+    "session_zone": "UTC",
+    "prepared_rows_per_trial": 131072,
+    "prepared_jvm_heap": "-Xmx1g",
+    "warmups": 16,
+    "measurements": 9,
+    "input": "Matched compact DECIMAL(18,3) seconds/YEAR, noncompact (19,0) millis/MONTH, wrapping (38,0) seconds/DAY and negative ABS (38,18) millis/HOUR coefficient corpora, including fractions, low-64-bit wraps, bounds and independent NULLs.",
+    "pipeline_rows": 1000000,
+    "pipeline_parallelism": 1,
+    "pipeline_heap": "-Xmx2g for all engines",
+    "pipeline_warmups": 2,
+    "pipeline_measurements": 5
+  },
+  "correctness": {
+    "focused": {
+      "22-11": {
+        "exit": 0,
+        "result": [
+          "RESULT found=162 succeeded=162 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "22-17": {
+        "exit": 0,
+        "result": [
+          "RESULT found=162 succeeded=162 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "118-11": {
+        "exit": 0,
+        "result": [
+          "RESULT found=158 succeeded=158 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "118-17": {
+        "exit": 0,
+        "result": [
+          "RESULT found=158 succeeded=158 aborted=0 skipped=0 failed=0"
+        ]
+      }
+    },
+    "focused_test_invocations": 640,
+    "fresh_focused_jvm_processes": 4,
+    "new_harness_invocations": 68,
+    "related_invocations": 572,
+    "preceding": {
+      "22-17": {
+        "exit": 1,
+        "result": [
+          "RESULT found=18 succeeded=2 aborted=0 skipped=0 failed=16"
+        ]
+      },
+      "118-17": {
+        "exit": 1,
+        "result": [
+          "RESULT found=16 succeeded=3 aborted=0 skipped=0 failed=13"
+        ]
+      }
+    },
+    "stock_temporal_oracles": {
+      "22-11": {
+        "exit": 0,
+        "result": [
+          "1 tests successful"
+        ],
+        "artifact": "flink-table-planner_2.12-2.2.1-tests.jar",
+        "sha256": "6d382af1f84ee5fe3ec26d43ad2a764ff705f4f07db2015d623fd77fd48da441"
+      },
+      "22-17": {
+        "exit": 0,
+        "result": [
+          "1 tests successful"
+        ],
+        "artifact": "flink-table-planner_2.12-2.2.1-tests.jar",
+        "sha256": "6d382af1f84ee5fe3ec26d43ad2a764ff705f4f07db2015d623fd77fd48da441"
+      },
+      "118-11": {
+        "exit": 0,
+        "result": [
+          "1 tests successful"
+        ],
+        "artifact": "flink-table-planner_2.12-1.18.1-tests.jar",
+        "sha256": "a6c3f2c288c7de1c725fef48a1a20a2dbf9e921900224440ea89572780dc854b"
+      },
+      "118-17": {
+        "exit": 0,
+        "result": [
+          "1 tests successful"
+        ],
+        "artifact": "flink-table-planner_2.12-1.18.1-tests.jar",
+        "sha256": "a6c3f2c288c7de1c725fef48a1a20a2dbf9e921900224440ea89572780dc854b"
+      }
+    },
+    "current_base_rust_core": {
+      "passed": 927,
+      "failed": 0,
+      "ignored": 0
+    },
+    "evidence": "Complete 5003-row maps/schema over ten DECIMAL precision/scale pairs, nullable/NOT NULL fields, truncation/wrapping/bounds, total unary/widening trees, pre-epoch/cutover/exact fixed-unit values, all supported units, CEILING alias, consumers, UTC aliases, lazy/all-filtered batches and retained routes. Pure paths consume NativeCalc with no fallback and empty evaluators.",
+    "preceding_scope": "Actual preceding main encoder first compares full map/schema, then fails sixteen expected pure-route assertions on 2.2/JDK17 and thirteen on 1.18/JDK17. Remaining controls pass. Later unreached queries are not preceding-parity evidence.",
+    "stock_oracle_scope": "Four separate fresh unchanged released ScalarFunctionsTest.testTemporalFloor (contains FLOOR and CEIL assertions) stock-method runs, both releases/JDKs; not native route evidence.",
+    "runtime": "Fresh current-base production release library and example plus 927 release core tests; earlier runs against historical frozen artifacts are excluded from this report.",
+    "bytecode_equivalence": "Focused/parity and performance encoder javap -c -p output, including nested classes, matches on both released lines; candidate/preceding benchmark fixtures are byte-identical."
+  },
+  "provenance": {
+    "source_sha256": {
+      "src/main/java/tech/streamfusion/planner/RexExpression.java": "eee0b54683aef718c88b12789876f46e266575f4b30f154a3d9bba72d3cde0e6",
+      "src/main/java/tech/streamfusion/planner/IntegerPrintfFormat.java": "2f162f0abf50cf8e6ab3ec3f6a6150aae99f247875ad892164e6aaa838abc4d7",
+      "src/main/java/tech/streamfusion/planner/JvmFunctionCodeGeneratorContext.java": "ac3caaa7129ff0db3c92c2fa53e4a3d505a7bc84d7ad0a6899693177ffd718c6",
+      "src/main/java/tech/streamfusion/planner/ExternalContainerConverter.java": "ccb1b66bed74cd6746bb4543677b74ae192584350b88798ea60be9b65c86a7d7",
+      "src/main/java-flink2.2/tech/streamfusion/compat/FlinkCompat.java": "e0eff6bec850d7b9dadd5734d24696dc216441f9c3e2ee3628bc5cdc8e3bad1c",
+      "src/main/java-flink1.18/tech/streamfusion/compat/FlinkCompat.java": "98806146fee25504ab74d5fa04e74de4993be05eac8bb49d7ab1015ad51ad78e",
+      "src/test/java/tech/streamfusion/FlinkDecimalEpochCeilSqlHarnessTest.java": "43ab58bc70dafa7d4a16a8f85e83f9e01e9a3bb734f346a3684f1610c7106795",
+      "src/test/java/tech/streamfusion/FlinkDecimalEpochFloorSqlHarnessTest.java": "7b8a009bf43ba850cc40d2cf419220a5f2b1be5191e1e1036e73db6721d81b40",
+      "src/test/java/tech/streamfusion/FlinkDecimalBooleanTryCastSqlHarnessTest.java": "e1e76605bf3611428cd8925133ce3d19d475383b5139e11d8dadfaf0da94f3bc",
+      "src/test/java/tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions.java": "8ae2e1dc1acecdc6ce33027c6ea1cbd3ebddedc46bc52b1974e7c3c23517ac46",
+      "src/test/java/tech/streamfusion/IntegralExpressionPipelineBenchmark.java": "9fc17670a6d9a5c629c453b8b57a85910cdfe27f7f5105396e8c3faaf22bdd00"
+    },
+    "encoder_instruction_sha256": {
+      "22": {
+        "tech.streamfusion.planner.RexExpression$1": "2d9b482027a2a28f87b9254285c8c1cfd2e3837e645dff78cc25918f13770ef4",
+        "tech.streamfusion.planner.RexExpression$2": "53cc33acb677be4c4afbd1471bd71a782531e5e360d06f9d97036ef6869911e7",
+        "tech.streamfusion.planner.RexExpression$3": "9dc530cdc58cdbed52160f5e266b132a6361978db25bcec14f809a7349d6a950",
+        "tech.streamfusion.planner.RexExpression$4": "c0629ac6fb226c7f7c35e355b39793061e901ceacc1fdc8da672cfa8e66bb3aa",
+        "tech.streamfusion.planner.RexExpression$5": "2dc84337d264e586a34701cd133995b2c224fc8788704cd16180a2ae8520d139",
+        "tech.streamfusion.planner.RexExpression$6": "4a135cabb0cca61ddcd540d0ca08cf438d695815056097155c26881a26b9048e",
+        "tech.streamfusion.planner.RexExpression$7": "4cfb098b8d1a7d43333656ec842c0fe9f14f974d4f30007df0529f0e5af3200a",
+        "tech.streamfusion.planner.RexExpression$8": "5db64084c43a3e074569bf51712bc90ef101ba6988d58eba54abb59cf6c51b88",
+        "tech.streamfusion.planner.RexExpression$9": "a665a94d8cbda37de84feee93ffaa0f88604556c17798bd370f4a00a555ac830",
+        "tech.streamfusion.planner.RexExpression$CalcEncoding": "9adc163617ce1fcebbd0ff0f28951b31c9739eb9dd6f972727fe72b7c68ee134",
+        "tech.streamfusion.planner.RexExpression$IntegralPositionRange": "3b72c33c79136de212aedf4d1f94aaad7450ffd1f4b67143f0c0ce372c1b1e02",
+        "tech.streamfusion.planner.RexExpression": "0d2c0cc7678b0497c98eaabbb0d84f3547ed5e0f4902cf3da70c64baf46ec03e"
+      },
+      "118": {
+        "tech.streamfusion.planner.RexExpression$1": "2d9b482027a2a28f87b9254285c8c1cfd2e3837e645dff78cc25918f13770ef4",
+        "tech.streamfusion.planner.RexExpression$2": "53cc33acb677be4c4afbd1471bd71a782531e5e360d06f9d97036ef6869911e7",
+        "tech.streamfusion.planner.RexExpression$3": "9dc530cdc58cdbed52160f5e266b132a6361978db25bcec14f809a7349d6a950",
+        "tech.streamfusion.planner.RexExpression$4": "c0629ac6fb226c7f7c35e355b39793061e901ceacc1fdc8da672cfa8e66bb3aa",
+        "tech.streamfusion.planner.RexExpression$5": "2dc84337d264e586a34701cd133995b2c224fc8788704cd16180a2ae8520d139",
+        "tech.streamfusion.planner.RexExpression$6": "4a135cabb0cca61ddcd540d0ca08cf438d695815056097155c26881a26b9048e",
+        "tech.streamfusion.planner.RexExpression$7": "4cfb098b8d1a7d43333656ec842c0fe9f14f974d4f30007df0529f0e5af3200a",
+        "tech.streamfusion.planner.RexExpression$8": "5db64084c43a3e074569bf51712bc90ef101ba6988d58eba54abb59cf6c51b88",
+        "tech.streamfusion.planner.RexExpression$9": "a665a94d8cbda37de84feee93ffaa0f88604556c17798bd370f4a00a555ac830",
+        "tech.streamfusion.planner.RexExpression$CalcEncoding": "9adc163617ce1fcebbd0ff0f28951b31c9739eb9dd6f972727fe72b7c68ee134",
+        "tech.streamfusion.planner.RexExpression$IntegralPositionRange": "3b72c33c79136de212aedf4d1f94aaad7450ffd1f4b67143f0c0ce372c1b1e02",
+        "tech.streamfusion.planner.RexExpression": "c6d23b926faf4bc0e29a4706ff817679772affa2c7d9815ec3ec3930caf5d605"
+      }
+    },
+    "fixture_class_sha256": {
+      "22": {
+        "candidate": {
+          "tech/streamfusion/IntegralExpressionPipelineBenchmark.class": "f080242c9eb99e82b7a34a2bbb3fb0a242f3853e6b51c2c37c43af0cffd0d8cb",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions$1.class": "5ca56fbc66e56f76b01726dbd8afce80617630b79932c0f3c727a1e3162b2180",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions$2.class": "8b54f58a8322a69894d36d3790d0fa8b81c9bc280bcc4bcfd88c69d5ff21f419",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions.class": "30437fd588801d80b3269e6932fd72cbec7754bf293683137da63f8b1ee21187"
+        },
+        "previous": {
+          "tech/streamfusion/IntegralExpressionPipelineBenchmark.class": "f080242c9eb99e82b7a34a2bbb3fb0a242f3853e6b51c2c37c43af0cffd0d8cb",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions$1.class": "5ca56fbc66e56f76b01726dbd8afce80617630b79932c0f3c727a1e3162b2180",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions$2.class": "8b54f58a8322a69894d36d3790d0fa8b81c9bc280bcc4bcfd88c69d5ff21f419",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions.class": "30437fd588801d80b3269e6932fd72cbec7754bf293683137da63f8b1ee21187"
+        }
+      },
+      "118": {
+        "candidate": {
+          "tech/streamfusion/IntegralExpressionPipelineBenchmark.class": "f080242c9eb99e82b7a34a2bbb3fb0a242f3853e6b51c2c37c43af0cffd0d8cb",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions$1.class": "5ca56fbc66e56f76b01726dbd8afce80617630b79932c0f3c727a1e3162b2180",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions$2.class": "8b54f58a8322a69894d36d3790d0fa8b81c9bc280bcc4bcfd88c69d5ff21f419",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions.class": "30437fd588801d80b3269e6932fd72cbec7754bf293683137da63f8b1ee21187"
+        },
+        "previous": {
+          "tech/streamfusion/IntegralExpressionPipelineBenchmark.class": "f080242c9eb99e82b7a34a2bbb3fb0a242f3853e6b51c2c37c43af0cffd0d8cb",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions$1.class": "5ca56fbc66e56f76b01726dbd8afce80617630b79932c0f3c727a1e3162b2180",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions$2.class": "8b54f58a8322a69894d36d3790d0fa8b81c9bc280bcc4bcfd88c69d5ff21f419",
+          "tech/streamfusion/planner/IntegralExpressionBenchmarkFunctions.class": "30437fd588801d80b3269e6932fd72cbec7754bf293683137da63f8b1ee21187"
+        }
+      }
+    },
+    "runtime": {
+      "libstreamfusion.dylib": "fd65dc1517782ac291737397270e217bfe019ebb9ed6fd4ed2936a088005e22f",
+      "integral_expression": "d65f79adbb535104862d7feb28e9c283dd73e8330c306d307a0eb62a81ebe099"
+    },
+    "native_git_tree": "168e4efcba50ef3c93548ce7bc1d6330277f9a3d",
+    "cargo_lock_sha256": "864dbbbc38fde636abc9ffe0137dd6587b394e65ab9ba46ba7c24390d55ed16e",
+    "released_date_time_utils_bytecode_sha256": {
+      "22": "89416415523793807cd6efa816e372c84f785f27b60c61cbad6b1d1ee0f2fe1f",
+      "118": "a6c76a4b711c85765ee9da16db40510a42b04339e6b60fd42c48c99db344b910"
+    }
+  },
+  "prepared": {
+    "22": {
+      "0": {
+        "shape": "compact-year",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+        "type": "DECIMAL(18,3)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 31.645774841308594,
+            "min": 27.756057739257812,
+            "max": 40.66594696044922
+          },
+          "native": {
+            "median": 20.668350219726562,
+            "min": 20.088829040527344,
+            "max": 22.23682403564453
+          },
+          "prior-stock": {
+            "median": 25.917373657226562,
+            "min": 25.673553466796875,
+            "max": 35.68522644042969
+          },
+          "previous": {
+            "median": 55.403709411621094,
+            "min": 52.91303253173828,
+            "max": 64.29830932617188
+          }
+        }
+      },
+      "1": {
+        "shape": "compact-year",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+        "type": "DECIMAL(18,3)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 33.36492919921875,
+            "min": 27.1895751953125,
+            "max": 36.96473693847656
+          },
+          "native": {
+            "median": 20.639419555664062,
+            "min": 20.36571502685547,
+            "max": 21.713890075683594
+          },
+          "prior-stock": {
+            "median": 27.523040771484375,
+            "min": 26.421546936035156,
+            "max": 39.71672058105469
+          },
+          "previous": {
+            "median": 57.81396484375,
+            "min": 54.80512237548828,
+            "max": 74.85453796386719
+          }
+        }
+      },
+      "2": {
+        "shape": "compact-year",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+        "type": "DECIMAL(18,3)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 26.111602783203125,
+            "min": 24.08727264404297,
+            "max": 34.24358367919922
+          },
+          "native": {
+            "median": 20.338058471679688,
+            "min": 20.16925811767578,
+            "max": 20.797409057617188
+          },
+          "prior-stock": {
+            "median": 23.584678649902344,
+            "min": 23.386001586914062,
+            "max": 23.96392822265625
+          },
+          "previous": {
+            "median": 57.12859344482422,
+            "min": 54.793670654296875,
+            "max": 69.08130645751953
+          }
+        }
+      },
+      "3": {
+        "shape": "compact-year",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+        "type": "DECIMAL(18,3)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 25.53558349609375,
+            "min": 25.183677673339844,
+            "max": 33.63513946533203
+          },
+          "native": {
+            "median": 20.57647705078125,
+            "min": 20.357131958007812,
+            "max": 20.833648681640625
+          },
+          "prior-stock": {
+            "median": 26.97435760498047,
+            "min": 26.15325164794922,
+            "max": 41.43174743652344
+          },
+          "previous": {
+            "median": 61.49418640136719,
+            "min": 55.742584228515625,
+            "max": 70.56649780273438
+          }
+        }
+      },
+      "4": {
+        "shape": "noncompact-month",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+        "type": "DECIMAL(19,0)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 31.563438415527344,
+            "min": 29.69074249267578,
+            "max": 46.15434265136719
+          },
+          "native": {
+            "median": 19.879981994628906,
+            "min": 19.45623016357422,
+            "max": 20.914077758789062
+          },
+          "prior-stock": {
+            "median": 30.921295166015625,
+            "min": 29.17194366455078,
+            "max": 31.697914123535156
+          },
+          "previous": {
+            "median": 74.03755187988281,
+            "min": 62.667213439941406,
+            "max": 80.15282440185547
+          }
+        }
+      },
+      "5": {
+        "shape": "noncompact-month",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+        "type": "DECIMAL(19,0)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 46.990074157714844,
+            "min": 46.27513885498047,
+            "max": 58.79783630371094
+          },
+          "native": {
+            "median": 20.090415954589844,
+            "min": 19.874893188476562,
+            "max": 21.10417938232422
+          },
+          "prior-stock": {
+            "median": 54.11974334716797,
+            "min": 53.24554443359375,
+            "max": 62.090232849121094
+          },
+          "previous": {
+            "median": 68.19088745117188,
+            "min": 64.91661071777344,
+            "max": 86.73126983642578
+          }
+        }
+      },
+      "6": {
+        "shape": "noncompact-month",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+        "type": "DECIMAL(19,0)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 26.689208984375,
+            "min": 25.929771423339844,
+            "max": 43.94054412841797
+          },
+          "native": {
+            "median": 20.2452392578125,
+            "min": 19.704498291015625,
+            "max": 20.583786010742188
+          },
+          "prior-stock": {
+            "median": 27.700103759765625,
+            "min": 25.667510986328125,
+            "max": 29.886566162109375
+          },
+          "previous": {
+            "median": 69.75237274169922,
+            "min": 62.95172119140625,
+            "max": 75.91407012939453
+          }
+        }
+      },
+      "7": {
+        "shape": "noncompact-month",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+        "type": "DECIMAL(19,0)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 39.923988342285156,
+            "min": 37.40278625488281,
+            "max": 46.83843994140625
+          },
+          "native": {
+            "median": 20.28497314453125,
+            "min": 19.559539794921875,
+            "max": 21.007217407226562
+          },
+          "prior-stock": {
+            "median": 41.9921875,
+            "min": 40.358863830566406,
+            "max": 61.02721405029297
+          },
+          "previous": {
+            "median": 72.09046936035156,
+            "min": 63.66984558105469,
+            "max": 84.19132232666016
+          }
+        }
+      },
+      "8": {
+        "shape": "wrapping-day",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO DAY))",
+        "type": "DECIMAL(38,0)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 19.665084838867188,
+            "min": 19.124984741210938,
+            "max": 30.881568908691406
+          },
+          "native": {
+            "median": 13.22015380859375,
+            "min": 13.084098815917969,
+            "max": 13.660118103027344
+          },
+          "prior-stock": {
+            "median": 20.645774841308594,
+            "min": 19.309677124023438,
+            "max": 32.05236053466797
+          },
+          "previous": {
+            "median": 77.78008270263672,
+            "min": 70.48352813720703,
+            "max": 91.62267303466797
+          }
+        }
+      },
+      "9": {
+        "shape": "wrapping-day",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO DAY))",
+        "type": "DECIMAL(38,0)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 47.302879333496094,
+            "min": 40.662445068359375,
+            "max": 53.62256622314453
+          },
+          "native": {
+            "median": 13.677276611328125,
+            "min": 13.129875183105469,
+            "max": 14.945350646972656
+          },
+          "prior-stock": {
+            "median": 46.40769958496094,
+            "min": 43.656349182128906,
+            "max": 53.823158264160156
+          },
+          "previous": {
+            "median": 77.44470977783203,
+            "min": 71.38697052001953,
+            "max": 98.60452270507812
+          }
+        }
+      },
+      "10": {
+        "shape": "wrapping-day",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO DAY))",
+        "type": "DECIMAL(38,0)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 17.530128479003906,
+            "min": 16.78339385986328,
+            "max": 29.79755401611328
+          },
+          "native": {
+            "median": 13.770103454589844,
+            "min": 13.273239135742188,
+            "max": 13.839401245117188
+          },
+          "prior-stock": {
+            "median": 17.730712890625,
+            "min": 17.18871307373047,
+            "max": 28.238296508789062
+          },
+          "previous": {
+            "median": 65.0018081665039,
+            "min": 63.091590881347656,
+            "max": 78.38471221923828
+          }
+        }
+      },
+      "11": {
+        "shape": "wrapping-day",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO DAY))",
+        "type": "DECIMAL(38,0)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 40.019676208496094,
+            "min": 38.19402313232422,
+            "max": 46.66900634765625
+          },
+          "native": {
+            "median": 12.915611267089844,
+            "min": 12.828506469726562,
+            "max": 14.406837463378906
+          },
+          "prior-stock": {
+            "median": 45.604705810546875,
+            "min": 38.166046142578125,
+            "max": 50.64837646484375
+          },
+          "previous": {
+            "median": 77.20057678222656,
+            "min": 69.3534164428711,
+            "max": 85.3722915649414
+          }
+        }
+      },
+      "12": {
+        "shape": "negative-hour",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(-ABS(v),3) TO HOUR))",
+        "type": "DECIMAL(38,18)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 75.20325469970703,
+            "min": 71.53765869140625,
+            "max": 79.67376708984375
+          },
+          "native": {
+            "median": 22.20122528076172,
+            "min": 21.451316833496094,
+            "max": 23.176513671875
+          },
+          "prior-stock": {
+            "median": 79.74115753173828,
+            "min": 75.7293701171875,
+            "max": 81.73465728759766
+          },
+          "previous": {
+            "median": 136.51435089111328,
+            "min": 130.57518005371094,
+            "max": 140.0283203125
+          }
+        }
+      },
+      "13": {
+        "shape": "negative-hour",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(-ABS(v),3) TO HOUR))",
+        "type": "DECIMAL(38,18)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 97.50588989257812,
+            "min": 92.61512756347656,
+            "max": 105.55458068847656
+          },
+          "native": {
+            "median": 21.805763244628906,
+            "min": 21.464035034179688,
+            "max": 22.761024475097656
+          },
+          "prior-stock": {
+            "median": 111.19905853271484,
+            "min": 105.9112548828125,
+            "max": 126.34880828857422
+          },
+          "previous": {
+            "median": 136.9037628173828,
+            "min": 127.52723693847656,
+            "max": 142.55873107910156
+          }
+        }
+      },
+      "14": {
+        "shape": "negative-hour",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(-ABS(v),3) TO HOUR))",
+        "type": "DECIMAL(38,18)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 70.85132598876953,
+            "min": 68.37431335449219,
+            "max": 81.6965103149414
+          },
+          "native": {
+            "median": 21.947227478027344,
+            "min": 20.857810974121094,
+            "max": 23.214340209960938
+          },
+          "prior-stock": {
+            "median": 64.83808898925781,
+            "min": 60.909912109375,
+            "max": 67.73503875732422
+          },
+          "previous": {
+            "median": 126.11930084228516,
+            "min": 118.60370635986328,
+            "max": 134.29927825927734
+          }
+        }
+      },
+      "15": {
+        "shape": "negative-hour",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(-ABS(v),3) TO HOUR))",
+        "type": "DECIMAL(38,18)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 93.52429962158203,
+            "min": 83.7732925415039,
+            "max": 117.8000717163086
+          },
+          "native": {
+            "median": 22.274017333984375,
+            "min": 21.671295166015625,
+            "max": 23.02519989013672
+          },
+          "prior-stock": {
+            "median": 92.41803741455078,
+            "min": 89.95945739746094,
+            "max": 95.8115234375
+          },
+          "previous": {
+            "median": 138.79966735839844,
+            "min": 129.55379486083984,
+            "max": 148.97760009765625
+          }
+        }
+      },
+      "16": {
+        "shape": "compact-year",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+        "type": "DECIMAL(18,3)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 32.61089324951172,
+            "min": 27.854286193847656,
+            "max": 39.856910705566406
+          },
+          "native": {
+            "median": 131.6356658935547,
+            "min": 130.3141860961914,
+            "max": 133.64728546142578
+          },
+          "prior-stock": {
+            "median": 28.481163024902344,
+            "min": 27.7999267578125,
+            "max": 34.92704772949219
+          },
+          "previous": {
+            "median": 1212.154067993164,
+            "min": 1067.1609268188477,
+            "max": 1805.8786392211914
+          }
+        }
+      },
+      "17": {
+        "shape": "noncompact-month",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+        "type": "DECIMAL(19,0)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 68.75165557861328,
+            "min": 36.693260192871094,
+            "max": 207.6883316040039
+          },
+          "native": {
+            "median": 160.0637435913086,
+            "min": 131.7577362060547,
+            "max": 213.28449249267578
+          },
+          "prior-stock": {
+            "median": 35.204566955566406,
+            "min": 34.66510772705078,
+            "max": 38.034759521484375
+          },
+          "previous": {
+            "median": 978.8201599121094,
+            "min": 970.6385955810547,
+            "max": 1001.983642578125
+          }
+        }
+      },
+      "18": {
+        "shape": "wrapping-day",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO DAY))",
+        "type": "DECIMAL(38,0)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 34.12342071533203,
+            "min": 31.470932006835938,
+            "max": 41.425071716308594
+          },
+          "native": {
+            "median": 107.2072982788086,
+            "min": 104.07003021240234,
+            "max": 111.48548126220703
+          },
+          "prior-stock": {
+            "median": 33.390045166015625,
+            "min": 31.624481201171875,
+            "max": 36.06096649169922
+          },
+          "previous": {
+            "median": 1008.8167190551758,
+            "min": 994.0579681396484,
+            "max": 1036.905288696289
+          }
+        }
+      },
+      "19": {
+        "shape": "negative-hour",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(-ABS(v),3) TO HOUR))",
+        "type": "DECIMAL(38,18)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 78.00738525390625,
+            "min": 73.57183837890625,
+            "max": 83.78410339355469
+          },
+          "native": {
+            "median": 133.37580108642578,
+            "min": 130.48394775390625,
+            "max": 137.10753631591797
+          },
+          "prior-stock": {
+            "median": 71.33547973632812,
+            "min": 69.72344970703125,
+            "max": 72.26244354248047
+          },
+          "previous": {
+            "median": 1063.723243713379,
+            "min": 1053.3876419067383,
+            "max": 1076.080322265625
+          }
+        }
+      }
+    },
+    "118": {
+      "0": {
+        "shape": "compact-year",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+        "type": "DECIMAL(18,3)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 27.63494110107422,
+            "min": 26.30297088623047,
+            "max": 38.147926330566406
+          },
+          "native": {
+            "median": 21.416664123535156,
+            "min": 20.45885467529297,
+            "max": 22.472381591796875
+          },
+          "prior-stock": {
+            "median": 25.794662475585938,
+            "min": 24.753257751464844,
+            "max": 30.536331176757812
+          },
+          "previous": {
+            "median": 62.65735626220703,
+            "min": 53.313255310058594,
+            "max": 68.26432800292969
+          }
+        }
+      },
+      "1": {
+        "shape": "compact-year",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+        "type": "DECIMAL(18,3)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 28.87248992919922,
+            "min": 26.668548583984375,
+            "max": 34.334815979003906
+          },
+          "native": {
+            "median": 20.80821990966797,
+            "min": 20.517669677734375,
+            "max": 23.274742126464844
+          },
+          "prior-stock": {
+            "median": 27.53607940673828,
+            "min": 25.873184204101562,
+            "max": 35.46556091308594
+          },
+          "previous": {
+            "median": 56.282676696777344,
+            "min": 51.260948181152344,
+            "max": 67.54143524169922
+          }
+        }
+      },
+      "2": {
+        "shape": "compact-year",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+        "type": "DECIMAL(18,3)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 23.671463012695312,
+            "min": 23.271240234375,
+            "max": 33.16625213623047
+          },
+          "native": {
+            "median": 21.123573303222656,
+            "min": 20.505584716796875,
+            "max": 21.4859619140625
+          },
+          "prior-stock": {
+            "median": 23.44036102294922,
+            "min": 23.209884643554688,
+            "max": 27.880027770996094
+          },
+          "previous": {
+            "median": 60.17620849609375,
+            "min": 54.96533966064453,
+            "max": 68.11396789550781
+          }
+        }
+      },
+      "3": {
+        "shape": "compact-year",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+        "type": "DECIMAL(18,3)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 25.993988037109375,
+            "min": 24.414382934570312,
+            "max": 32.91893005371094
+          },
+          "native": {
+            "median": 20.46649169921875,
+            "min": 20.10059356689453,
+            "max": 22.000625610351562
+          },
+          "prior-stock": {
+            "median": 26.610374450683594,
+            "min": 25.203392028808594,
+            "max": 34.84376525878906
+          },
+          "previous": {
+            "median": 59.616722106933594,
+            "min": 56.020416259765625,
+            "max": 64.37651062011719
+          }
+        }
+      },
+      "4": {
+        "shape": "noncompact-month",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+        "type": "DECIMAL(19,0)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 30.584022521972656,
+            "min": 28.900146484375,
+            "max": 43.20780944824219
+          },
+          "native": {
+            "median": 20.78565216064453,
+            "min": 19.727706909179688,
+            "max": 23.05284881591797
+          },
+          "prior-stock": {
+            "median": 31.0516357421875,
+            "min": 29.074668884277344,
+            "max": 33.62432861328125
+          },
+          "previous": {
+            "median": 60.774803161621094,
+            "min": 56.96614074707031,
+            "max": 73.8341064453125
+          }
+        }
+      },
+      "5": {
+        "shape": "noncompact-month",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+        "type": "DECIMAL(19,0)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 42.931236267089844,
+            "min": 41.048683166503906,
+            "max": 59.242881774902344
+          },
+          "native": {
+            "median": 20.88451385498047,
+            "min": 19.710227966308594,
+            "max": 21.52093505859375
+          },
+          "prior-stock": {
+            "median": 53.64990234375,
+            "min": 52.75726318359375,
+            "max": 69.4249496459961
+          },
+          "previous": {
+            "median": 63.819252014160156,
+            "min": 58.9752197265625,
+            "max": 74.85580444335938
+          }
+        }
+      },
+      "6": {
+        "shape": "noncompact-month",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+        "type": "DECIMAL(19,0)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 26.335716247558594,
+            "min": 25.454200744628906,
+            "max": 38.78593444824219
+          },
+          "native": {
+            "median": 20.3720703125,
+            "min": 19.65045928955078,
+            "max": 21.162673950195312
+          },
+          "prior-stock": {
+            "median": 27.303382873535156,
+            "min": 25.63190460205078,
+            "max": 37.489891052246094
+          },
+          "previous": {
+            "median": 61.51325988769531,
+            "min": 57.198211669921875,
+            "max": 71.98588562011719
+          }
+        }
+      },
+      "7": {
+        "shape": "noncompact-month",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+        "type": "DECIMAL(19,0)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 46.17658996582031,
+            "min": 43.1229248046875,
+            "max": 50.19410705566406
+          },
+          "native": {
+            "median": 20.143508911132812,
+            "min": 19.89301300048828,
+            "max": 20.723663330078125
+          },
+          "prior-stock": {
+            "median": 46.00398254394531,
+            "min": 40.44914245605469,
+            "max": 53.35235595703125
+          },
+          "previous": {
+            "median": 67.1259536743164,
+            "min": 56.558929443359375,
+            "max": 75.39081573486328
+          }
+        }
+      },
+      "8": {
+        "shape": "wrapping-day",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO DAY))",
+        "type": "DECIMAL(38,0)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 18.95618438720703,
+            "min": 18.808998107910156,
+            "max": 30.091598510742188
+          },
+          "native": {
+            "median": 13.640403747558594,
+            "min": 12.960433959960938,
+            "max": 14.238998413085938
+          },
+          "prior-stock": {
+            "median": 20.80376434326172,
+            "min": 19.919715881347656,
+            "max": 29.409408569335938
+          },
+          "previous": {
+            "median": 72.09746551513672,
+            "min": 63.907623291015625,
+            "max": 85.65775299072266
+          }
+        }
+      },
+      "9": {
+        "shape": "wrapping-day",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO DAY))",
+        "type": "DECIMAL(38,0)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 37.595436096191406,
+            "min": 35.52754211425781,
+            "max": 51.451683044433594
+          },
+          "native": {
+            "median": 13.545356750488281,
+            "min": 12.996353149414062,
+            "max": 14.0975341796875
+          },
+          "prior-stock": {
+            "median": 46.13145446777344,
+            "min": 43.76824951171875,
+            "max": 63.262306213378906
+          },
+          "previous": {
+            "median": 76.2522964477539,
+            "min": 72.4051742553711,
+            "max": 87.51264953613281
+          }
+        }
+      },
+      "10": {
+        "shape": "wrapping-day",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO DAY))",
+        "type": "DECIMAL(38,0)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 17.547927856445312,
+            "min": 17.15406036376953,
+            "max": 28.734207153320312
+          },
+          "native": {
+            "median": 13.142898559570312,
+            "min": 12.743629455566406,
+            "max": 13.556480407714844
+          },
+          "prior-stock": {
+            "median": 19.895233154296875,
+            "min": 18.021263122558594,
+            "max": 28.85277557373047
+          },
+          "previous": {
+            "median": 67.17586517333984,
+            "min": 61.06694793701172,
+            "max": 80.75746154785156
+          }
+        }
+      },
+      "11": {
+        "shape": "wrapping-day",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO DAY))",
+        "type": "DECIMAL(38,0)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 39.18933868408203,
+            "min": 34.85456848144531,
+            "max": 52.32715606689453
+          },
+          "native": {
+            "median": 13.449356079101562,
+            "min": 13.156890869140625,
+            "max": 13.976730346679688
+          },
+          "prior-stock": {
+            "median": 41.823387145996094,
+            "min": 40.59918975830078,
+            "max": 54.056800842285156
+          },
+          "previous": {
+            "median": 70.68601989746094,
+            "min": 67.48676300048828,
+            "max": 84.5657958984375
+          }
+        }
+      },
+      "12": {
+        "shape": "negative-hour",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(-ABS(v),3) TO HOUR))",
+        "type": "DECIMAL(38,18)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": false,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 76.32732391357422,
+            "min": 71.95155334472656,
+            "max": 80.12866973876953
+          },
+          "native": {
+            "median": 22.000625610351562,
+            "min": 21.222747802734375,
+            "max": 22.667564392089844
+          },
+          "prior-stock": {
+            "median": 78.64665985107422,
+            "min": 77.16146850585938,
+            "max": 82.04047393798828
+          },
+          "previous": {
+            "median": 129.94066619873047,
+            "min": 126.983642578125,
+            "max": 141.1587371826172
+          }
+        }
+      },
+      "13": {
+        "shape": "negative-hour",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(-ABS(v),3) TO HOUR))",
+        "type": "DECIMAL(38,18)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": false,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 97.64798736572266,
+            "min": 93.30304718017578,
+            "max": 133.54969024658203
+          },
+          "native": {
+            "median": 22.362075805664062,
+            "min": 22.036231994628906,
+            "max": 25.223731994628906
+          },
+          "prior-stock": {
+            "median": 111.1923828125,
+            "min": 102.12007904052734,
+            "max": 158.4930419921875
+          },
+          "previous": {
+            "median": 176.2561798095703,
+            "min": 138.06279754638672,
+            "max": 209.2151641845703
+          }
+        }
+      },
+      "14": {
+        "shape": "negative-hour",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(-ABS(v),3) TO HOUR))",
+        "type": "DECIMAL(38,18)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": true,
+        "binary": false,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 75.75384521484375,
+            "min": 68.18071746826172,
+            "max": 89.01341247558594
+          },
+          "native": {
+            "median": 21.672569274902344,
+            "min": 20.84477996826172,
+            "max": 22.101089477539062
+          },
+          "prior-stock": {
+            "median": 64.75194549560547,
+            "min": 63.007354736328125,
+            "max": 67.72708892822266
+          },
+          "previous": {
+            "median": 128.31243133544922,
+            "min": 118.82051086425781,
+            "max": 149.86515045166016
+          }
+        }
+      },
+      "15": {
+        "shape": "negative-hour",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(-ABS(v),3) TO HOUR))",
+        "type": "DECIMAL(38,18)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 1024,
+        "engines": {
+          "flink": {
+            "median": 84.6535415649414,
+            "min": 81.60082244873047,
+            "max": 103.04578399658203
+          },
+          "native": {
+            "median": 21.60771942138672,
+            "min": 20.86639404296875,
+            "max": 22.439956665039062
+          },
+          "prior-stock": {
+            "median": 91.89510345458984,
+            "min": 88.44947814941406,
+            "max": 96.87869262695312
+          },
+          "previous": {
+            "median": 137.28968048095703,
+            "min": 120.30506134033203,
+            "max": 147.9638442993164
+          }
+        }
+      },
+      "16": {
+        "shape": "compact-year",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR))",
+        "type": "DECIMAL(18,3)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 28.897918701171875,
+            "min": 27.915321350097656,
+            "max": 37.85356140136719
+          },
+          "native": {
+            "median": 127.22460174560547,
+            "min": 125.36907196044922,
+            "max": 128.83250427246094
+          },
+          "prior-stock": {
+            "median": 30.826881408691406,
+            "min": 27.51319122314453,
+            "max": 53.56153106689453
+          },
+          "previous": {
+            "median": 1157.6204299926758,
+            "min": 1044.6860046386719,
+            "max": 1825.458839416504
+          }
+        }
+      },
+      "17": {
+        "shape": "noncompact-month",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,3) TO MONTH))",
+        "type": "DECIMAL(19,0)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 36.04475402832031,
+            "min": 35.36096954345703,
+            "max": 49.76177215576172
+          },
+          "native": {
+            "median": 122.27153778076172,
+            "min": 120.20619201660156,
+            "max": 126.28714752197266
+          },
+          "prior-stock": {
+            "median": 36.076866149902344,
+            "min": 34.58055114746094,
+            "max": 38.214683532714844
+          },
+          "previous": {
+            "median": 1036.3041610717773,
+            "min": 1032.122299194336,
+            "max": 1060.199104309082
+          }
+        }
+      },
+      "18": {
+        "shape": "wrapping-day",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(v,0) TO DAY))",
+        "type": "DECIMAL(38,0)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 34.13232421875,
+            "min": 31.455352783203125,
+            "max": 40.56389617919922
+          },
+          "native": {
+            "median": 112.90010070800781,
+            "min": 110.93807220458984,
+            "max": 115.27729034423828
+          },
+          "prior-stock": {
+            "median": 31.57647705078125,
+            "min": 30.295059204101562,
+            "max": 35.125732421875
+          },
+          "previous": {
+            "median": 1026.5798568725586,
+            "min": 979.7786026000977,
+            "max": 1044.1776885986328
+          }
+        }
+      },
+      "19": {
+        "shape": "negative-hour",
+        "expression": "YEAR(CEIL(TO_TIMESTAMP_LTZ(-ABS(v),3) TO HOUR))",
+        "type": "DECIMAL(38,18)",
+        "secondary": "",
+        "corpus": "decimal-epoch",
+        "retained": false,
+        "nullable": true,
+        "binary": true,
+        "batch": 16,
+        "engines": {
+          "flink": {
+            "median": 75.26079559326172,
+            "min": 70.37512969970703,
+            "max": 79.89946746826172
+          },
+          "native": {
+            "median": 132.71617889404297,
+            "min": 130.387939453125,
+            "max": 135.91162109375
+          },
+          "prior-stock": {
+            "median": 72.25704193115234,
+            "min": 69.39379119873047,
+            "max": 77.23680877685547
+          },
+          "previous": {
+            "median": 1109.8152770996094,
+            "min": 1103.9304733276367,
+            "max": 1371.5670852661133
+          }
+        }
+      }
+    }
+  },
+  "complete_job": {
+    "22": {
+      "compact-year": {
+        "expression": "CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR)",
+        "secondary": "",
+        "type": "DECIMAL(18,3)",
+        "corpus": "decimal-epoch",
+        "controls": {
+          "candidate": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.502720417
+              },
+              {
+                "engine": "native",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.345112875
+              },
+              {
+                "engine": "native",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.22559775
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.237274208
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.201298875
+              },
+              {
+                "engine": "native",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.195825084
+              },
+              {
+                "engine": "native",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.2053275
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.199681542
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.189102125
+              },
+              {
+                "engine": "native",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.202906667
+              },
+              {
+                "engine": "native",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.198865125
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.200826167
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.194110958
+              },
+              {
+                "engine": "native",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.205032625
+              }
+            ],
+            "stats": {
+              "native": {
+                "median": 0.202906667,
+                "min": 0.195825084,
+                "max": 0.2053275
+              },
+              "stock": {
+                "median": 0.199681542,
+                "min": 0.189102125,
+                "max": 0.201298875
+              }
+            }
+          },
+          "previous": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.474955833
+              },
+              {
+                "engine": "previous",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.430944792
+              },
+              {
+                "engine": "previous",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.271643417
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.209139208
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.206627875
+              },
+              {
+                "engine": "previous",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.247303541
+              },
+              {
+                "engine": "previous",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.242024125
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.20822625
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.197147
+              },
+              {
+                "engine": "previous",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.243701833
+              },
+              {
+                "engine": "previous",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.241773292
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.2005365
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.209155083
+              },
+              {
+                "engine": "previous",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.234116417
+              }
+            ],
+            "stats": {
+              "stock": {
+                "median": 0.206627875,
+                "min": 0.197147,
+                "max": 0.209155083
+              },
+              "previous": {
+                "median": 0.242024125,
+                "min": 0.234116417,
+                "max": 0.247303541
+              }
+            }
+          }
+        },
+        "native_over_stock": 1.0161513426213427,
+        "native_over_previous": 0.8383737241070492
+      },
+      "wrapping-day": {
+        "expression": "CEIL(TO_TIMESTAMP_LTZ(v,0) TO DAY)",
+        "secondary": "",
+        "type": "DECIMAL(38,0)",
+        "corpus": "decimal-epoch",
+        "controls": {
+          "candidate": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.509850417
+              },
+              {
+                "engine": "native",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.427919875
+              },
+              {
+                "engine": "native",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.249209875
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.212803625
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.219231333
+              },
+              {
+                "engine": "native",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.232119458
+              },
+              {
+                "engine": "native",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.233891334
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.205568458
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.2150345
+              },
+              {
+                "engine": "native",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.226457375
+              },
+              {
+                "engine": "native",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.225287542
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.2041795
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.2004585
+              },
+              {
+                "engine": "native",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.228201042
+              }
+            ],
+            "stats": {
+              "native": {
+                "median": 0.228201042,
+                "min": 0.225287542,
+                "max": 0.233891334
+              },
+              "stock": {
+                "median": 0.205568458,
+                "min": 0.2004585,
+                "max": 0.219231333
+              }
+            }
+          },
+          "previous": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.473421583
+              },
+              {
+                "engine": "previous",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.511930625
+              },
+              {
+                "engine": "previous",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.293383125
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.210464625
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.194712917
+              },
+              {
+                "engine": "previous",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.285620291
+              },
+              {
+                "engine": "previous",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.270881625
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.195207292
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.191517084
+              },
+              {
+                "engine": "previous",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.268995458
+              },
+              {
+                "engine": "previous",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.270050542
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.198233292
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.19455075
+              },
+              {
+                "engine": "previous",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.273046917
+              }
+            ],
+            "stats": {
+              "stock": {
+                "median": 0.194712917,
+                "min": 0.191517084,
+                "max": 0.198233292
+              },
+              "previous": {
+                "median": 0.270881625,
+                "min": 0.268995458,
+                "max": 0.285620291
+              }
+            }
+          }
+        },
+        "native_over_stock": 1.1100975520281422,
+        "native_over_previous": 0.8424382495490419
+      },
+      "negative-hour": {
+        "expression": "CEIL(TO_TIMESTAMP_LTZ(-ABS(v),3) TO HOUR)",
+        "secondary": "",
+        "type": "DECIMAL(38,18)",
+        "corpus": "decimal-epoch",
+        "controls": {
+          "candidate": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.5753545
+              },
+              {
+                "engine": "native",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.419273125
+              },
+              {
+                "engine": "native",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.251565375
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.268345208
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.2741845
+              },
+              {
+                "engine": "native",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.259011625
+              },
+              {
+                "engine": "native",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.258746333
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.271215084
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.262966083
+              },
+              {
+                "engine": "native",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.251197042
+              },
+              {
+                "engine": "native",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.245976458
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.2722555
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.261913833
+              },
+              {
+                "engine": "native",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.250646042
+              }
+            ],
+            "stats": {
+              "native": {
+                "median": 0.251197042,
+                "min": 0.245976458,
+                "max": 0.259011625
+              },
+              "stock": {
+                "median": 0.271215084,
+                "min": 0.261913833,
+                "max": 0.2741845
+              }
+            }
+          },
+          "previous": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.609338459
+              },
+              {
+                "engine": "previous",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.563110208
+              },
+              {
+                "engine": "previous",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.393743333
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.260861625
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.272002459
+              },
+              {
+                "engine": "previous",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.340532458
+              },
+              {
+                "engine": "previous",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.3373555
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.254106
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.252157041
+              },
+              {
+                "engine": "previous",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.329182958
+              },
+              {
+                "engine": "previous",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.33087825
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.254765584
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.253073125
+              },
+              {
+                "engine": "previous",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.32032425
+              }
+            ],
+            "stats": {
+              "stock": {
+                "median": 0.254106,
+                "min": 0.252157041,
+                "max": 0.272002459
+              },
+              "previous": {
+                "median": 0.33087825,
+                "min": 0.32032425,
+                "max": 0.340532458
+              }
+            }
+          }
+        },
+        "native_over_stock": 0.9261912659695579,
+        "native_over_previous": 0.7591826963543237
+      }
+    },
+    "118": {
+      "compact-year": {
+        "expression": "CEIL(TO_TIMESTAMP_LTZ(v,0) TO YEAR)",
+        "secondary": "",
+        "type": "DECIMAL(18,3)",
+        "corpus": "decimal-epoch",
+        "controls": {
+          "candidate": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.45764875
+              },
+              {
+                "engine": "native",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.348915375
+              },
+              {
+                "engine": "native",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.216939917
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.209085833
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.208638542
+              },
+              {
+                "engine": "native",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.213732583
+              },
+              {
+                "engine": "native",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.212626416
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.189119541
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.20100125
+              },
+              {
+                "engine": "native",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.205987208
+              },
+              {
+                "engine": "native",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.211438042
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.194384667
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.192960792
+              },
+              {
+                "engine": "native",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.203305417
+              }
+            ],
+            "stats": {
+              "stock": {
+                "median": 0.194384667,
+                "min": 0.189119541,
+                "max": 0.208638542
+              },
+              "native": {
+                "median": 0.211438042,
+                "min": 0.203305417,
+                "max": 0.213732583
+              }
+            }
+          },
+          "previous": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.429585584
+              },
+              {
+                "engine": "previous",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.476764375
+              },
+              {
+                "engine": "previous",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.255489083
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.198022208
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.203024166
+              },
+              {
+                "engine": "previous",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.245560791
+              },
+              {
+                "engine": "previous",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.241937458
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.199004291
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.204897625
+              },
+              {
+                "engine": "previous",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.236330666
+              },
+              {
+                "engine": "previous",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.243434833
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.200230583
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.21188675
+              },
+              {
+                "engine": "previous",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.2384395
+              }
+            ],
+            "stats": {
+              "stock": {
+                "median": 0.203024166,
+                "min": 0.199004291,
+                "max": 0.21188675
+              },
+              "previous": {
+                "median": 0.241937458,
+                "min": 0.236330666,
+                "max": 0.245560791
+              }
+            }
+          }
+        },
+        "native_over_stock": 1.0877300419996603,
+        "native_over_previous": 0.8739367758422922
+      },
+      "wrapping-day": {
+        "expression": "CEIL(TO_TIMESTAMP_LTZ(v,0) TO DAY)",
+        "secondary": "",
+        "type": "DECIMAL(38,0)",
+        "corpus": "decimal-epoch",
+        "controls": {
+          "candidate": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.4505245
+              },
+              {
+                "engine": "native",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.442113708
+              },
+              {
+                "engine": "native",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.269964209
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.227715417
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.211980666
+              },
+              {
+                "engine": "native",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.240837792
+              },
+              {
+                "engine": "native",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.23645225
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.206297042
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.209009916
+              },
+              {
+                "engine": "native",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.23457425
+              },
+              {
+                "engine": "native",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.232957041
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.2083085
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.206065666
+              },
+              {
+                "engine": "native",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.231479
+              }
+            ],
+            "stats": {
+              "stock": {
+                "median": 0.2083085,
+                "min": 0.206065666,
+                "max": 0.211980666
+              },
+              "native": {
+                "median": 0.23457425,
+                "min": 0.231479,
+                "max": 0.240837792
+              }
+            }
+          },
+          "previous": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.448816041
+              },
+              {
+                "engine": "previous",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.490291125
+              },
+              {
+                "engine": "previous",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.26695625
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.202975875
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.20448275
+              },
+              {
+                "engine": "previous",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.267395667
+              },
+              {
+                "engine": "previous",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.255290417
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.190000292
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.199654209
+              },
+              {
+                "engine": "previous",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.247064584
+              },
+              {
+                "engine": "previous",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.251673542
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.196903333
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.191279542
+              },
+              {
+                "engine": "previous",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.254111041
+              }
+            ],
+            "stats": {
+              "stock": {
+                "median": 0.196903333,
+                "min": 0.190000292,
+                "max": 0.20448275
+              },
+              "previous": {
+                "median": 0.254111041,
+                "min": 0.247064584,
+                "max": 0.267395667
+              }
+            }
+          }
+        },
+        "native_over_stock": 1.1260906300030964,
+        "native_over_previous": 0.923117110838171
+      },
+      "negative-hour": {
+        "expression": "CEIL(TO_TIMESTAMP_LTZ(-ABS(v),3) TO HOUR)",
+        "secondary": "",
+        "type": "DECIMAL(38,18)",
+        "corpus": "decimal-epoch",
+        "controls": {
+          "candidate": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.571196291
+              },
+              {
+                "engine": "native",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.418623417
+              },
+              {
+                "engine": "native",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.238302917
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.271994
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.255004209
+              },
+              {
+                "engine": "native",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.233155791
+              },
+              {
+                "engine": "native",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.235851917
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.255216917
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.250597875
+              },
+              {
+                "engine": "native",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.241659542
+              },
+              {
+                "engine": "native",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.232277667
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.26534275
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.262134916
+              },
+              {
+                "engine": "native",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.225337042
+              }
+            ],
+            "stats": {
+              "stock": {
+                "median": 0.255216917,
+                "min": 0.250597875,
+                "max": 0.26534275
+              },
+              "native": {
+                "median": 0.233155791,
+                "min": 0.225337042,
+                "max": 0.241659542
+              }
+            }
+          },
+          "previous": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.561727167
+              },
+              {
+                "engine": "previous",
+                "trial": 0,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.640418709
+              },
+              {
+                "engine": "previous",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.345536417
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 1000000,
+                "seconds": 0.261662792
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.270181167
+              },
+              {
+                "engine": "previous",
+                "trial": 2,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.34619275
+              },
+              {
+                "engine": "previous",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.341756958
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.267126167
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.251289166
+              },
+              {
+                "engine": "previous",
+                "trial": 4,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.335060792
+              },
+              {
+                "engine": "previous",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.327833458
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.263463375
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.261282792
+              },
+              {
+                "engine": "previous",
+                "trial": 6,
+                "warmup": false,
+                "rows": 1000000,
+                "seconds": 0.335986709
+              }
+            ],
+            "stats": {
+              "stock": {
+                "median": 0.263463375,
+                "min": 0.251289166,
+                "max": 0.270181167
+              },
+              "previous": {
+                "median": 0.335986709,
+                "min": 0.327833458,
+                "max": 0.34619275
+              }
+            }
+          }
+        },
+        "native_over_stock": 0.9135593115874839,
+        "native_over_previous": 0.6939434946517483
+      }
+    }
+  },
+  "summary": {
+    "bulk_cells": 32,
+    "bulk_stock_speedup": [
+      1.120618309833211,
+      4.471565099497048
+    ],
+    "bulk_previous_speedup": [
+      2.680606280744263,
+      7.881923902830461
+    ],
+    "tiny_cells": 8,
+    "tiny_stock_losses": 8,
+    "tiny_stock_speedup": [
+      0.22714096412701132,
+      0.5848691038291007
+    ],
+    "tiny_previous_losses": 0,
+    "raw_prepared_samples": 4000,
+    "complete_jobs": 6,
+    "complete_stock_losses": 4,
+    "complete_previous_losses": 0,
+    "complete_native_over_stock": [
+      0.9135593115874839,
+      1.1260906300030964
+    ],
+    "complete_native_over_previous": [
+      0.6939434946517483,
+      0.923117110838171
+    ],
+    "focused_invocations": 640,
+    "new_invocations": 68
+  }
+}

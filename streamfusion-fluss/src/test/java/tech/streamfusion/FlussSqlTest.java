@@ -27,6 +27,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executors;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.ExplainDetail;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
@@ -83,13 +86,39 @@ class FlussSqlTest {
 
   @AfterEach
   void closeEnvironments() throws Exception {
+    long started = CiFixtureTimings.start();
     try {
-      IOUtils.closeAll(
+      var catalogs =
           environments.values().stream()
               .<AutoCloseable>map(tables -> tables.getCatalog("fluss").orElseThrow()::close)
-              .collect(ListCollectors.toList()));
+              .collect(ListCollectors.toList());
+      if (Boolean.parseBoolean(System.getProperty("sf.fluss.parallelCatalogClose", "true"))) {
+        var executor = Executors.newFixedThreadPool(2);
+        try {
+          var pending =
+              catalogs.stream()
+                  .map(
+                      catalog ->
+                          CompletableFuture.runAsync(
+                              () -> {
+                                try {
+                                  catalog.close();
+                                } catch (Exception failure) {
+                                  throw new CompletionException(failure);
+                                }
+                              },
+                              executor))
+                  .collect(ListCollectors.toList());
+          CompletableFuture.allOf(pending.toArray(new CompletableFuture<?>[0])).get();
+        } finally {
+          executor.shutdownNow();
+        }
+      } else {
+        IOUtils.closeAll(catalogs);
+      }
     } finally {
       environments.clear();
+      CiFixtureTimings.record("fluss.catalog-close", started);
     }
   }
 
@@ -569,8 +598,10 @@ class FlussSqlTest {
   }
 
   private static void ddl(String sql) throws Exception {
+    long started = CiFixtureTimings.start();
     var tables = environment(false);
     tables.executeSql(sql).await();
+    CiFixtureTimings.record("fluss.ddl", started);
   }
 
   private static List<String> query(
@@ -585,8 +616,13 @@ class FlussSqlTest {
     String sql = "SELECT " + fields + " FROM " + qualified(source) + predicate;
     plan(tables, sql, source + (nativeRun ? "_native_read" : "_stock_read"), nativeSource, false);
     List<String> rows = new ArrayList<>();
-    try (var iterator = tables.executeSql(sql).collect()) {
+    String timing = nativeRun ? "fluss.native." : "fluss.stock.";
+    var result = CiFixtureTimings.measure(timing + "submit", () -> tables.executeSql(sql));
+    long started = CiFixtureTimings.start();
+    try (var iterator = result.collect()) {
       iterator.forEachRemaining(row -> rows.add(row.toString()));
+    } finally {
+      CiFixtureTimings.record(timing + "collect", started);
     }
     return rows;
   }
@@ -596,7 +632,9 @@ class FlussSqlTest {
       throws Exception {
     var tables = environment(nativeRun);
     plan(tables, sql, output + "_insert", nativeSource, nativeSink);
+    long started = CiFixtureTimings.start();
     tables.executeSql(sql).await();
+    CiFixtureTimings.record("fluss.insert", started);
   }
 
   private static void plan(
@@ -606,7 +644,9 @@ class FlussSqlTest {
       boolean nativeSource,
       boolean nativeSink)
       throws Exception {
-    String plan = tables.explainSql(sql, ExplainDetail.JSON_EXECUTION_PLAN);
+    String plan =
+        CiFixtureTimings.measure(
+            "fluss.explain", () -> tables.explainSql(sql, ExplainDetail.JSON_EXECUTION_PLAN));
     Path directory = Path.of("target", "fluss-sql-plans");
     Files.createDirectories(directory);
     Files.writeString(directory.resolve(name + ".txt"), plan);
@@ -625,6 +665,7 @@ class FlussSqlTest {
   private static StreamTableEnvironment environment(boolean nativeRun) {
     var existing = environments.get(nativeRun);
     if (existing != null) return existing;
+    long started = CiFixtureTimings.start();
     var env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     env.enableCheckpointing(1000);
@@ -636,6 +677,7 @@ class FlussSqlTest {
             + "')");
     environments.put(nativeRun, tables);
     if (nativeRun) NativePlanner.install(tables);
+    CiFixtureTimings.record("fluss.environment", started);
     return tables;
   }
 

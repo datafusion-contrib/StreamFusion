@@ -1,17 +1,20 @@
 name: JVM aggregate release diagnostics
 
 on:
-  pull_request:
+  push:
+    branches: ['main']
     paths:
       - '.github/workflows/jvm-aggregates.yml'
       - 'bin/bench-jvm-aggregates.py'
       - 'bin/bench-jvm-previous.py'
-      - 'src/main/java/tech/streamfusion/operator/*Jvm*'
-      - 'src/main/java/tech/streamfusion/operator/ArrowToRowDataOperator.java'
-      - 'src/main/java/tech/streamfusion/arrow/**'
-      - 'src/main/java/tech/streamfusion/planner/*Jvm*'
-      - 'src/main/java-flink*/tech/streamfusion/compat/JvmAggregateCompat.java'
+      - 'streamfusion-core/src/main/java/tech/streamfusion/operator/*Jvm*'
+      - 'streamfusion-core/src/main/java/tech/streamfusion/operator/ArrowToRowDataOperator.java'
+      - 'streamfusion-core/src/main/java/tech/streamfusion/arrow/**'
+      - 'streamfusion-core/src/main/java/tech/streamfusion/planner/**/*Jvm*'
+      - 'streamfusion-core/src/main/java-flink*/tech/streamfusion/compat/JvmAggregateCompat.java'
       - 'src/test/java/tech/streamfusion/*JvmAggregate*'
+      - 'src/test/java/tech/streamfusion/*JvmOver*'
+      - 'src/test/java/tech/streamfusion/operator/NativeJvmOverTimerTest.java'
       - 'src/test/java/tech/streamfusion/StatefulSqlRescaleTest.java'
       - 'src/test/java/tech/streamfusion/PortableSqlRecovery.java'
       - 'src/test/java/tech/streamfusion/operator/JvmStringKeyProbeTest.java'
@@ -27,6 +30,7 @@ concurrency:
 
 jobs:
   release-diagnostics:
+    if: ${{ github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main' }}
     name: JVM aggregate diagnostics (Flink ${{ matrix.line }})
     runs-on: ubuntu-24.04
     timeout-minutes: 150
@@ -78,7 +82,7 @@ jobs:
         id: native-payload
         with:
           path: native/target/release/libstreamfusion.so
-          key: jvm-native-${{ runner.os }}-${{ runner.arch }}-${{ matrix.line }}-rust1.94.0-mimalloc-${{ steps.native-inputs.outputs.fingerprint }}
+          key: jvm-native-${{ runner.os }}-${{ runner.arch }}-${{ matrix.line }}-rust1.95.0-mimalloc-${{ steps.native-inputs.outputs.fingerprint }}
       - name: Build and install release modules before measurements
         run: >-
           mvn -B -ntp -P${{ matrix.profile }} -pl streamfusion-runtime -am
@@ -88,17 +92,25 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: native/target/release/libstreamfusion.so
-          key: jvm-native-${{ runner.os }}-${{ runner.arch }}-${{ matrix.line }}-rust1.94.0-mimalloc-${{ steps.native-inputs.outputs.fingerprint }}
+          key: jvm-native-${{ runner.os }}-${{ runner.arch }}-${{ matrix.line }}-rust1.95.0-mimalloc-${{ steps.native-inputs.outputs.fingerprint }}
       - name: Validate aggregate state and recovery before measurements
         run: |
           for capacity in 65536 3; do
             mvn -B -ntp -P${{ matrix.profile }} -pl streamfusion-runtime \
-              -Dnative.build.skip=true '-Dtest=FlinkJvmAggregateSqlHarnessTest,StatefulSqlRescaleTest,JvmStringKeyProbeTest,StringExitOwnershipTest,TransposeOperatorsTest' \
+              -Dnative.build.skip=true '-Dtest=FlinkJvmAggregateSqlHarnessTest,FlinkJvmMiniBatchSqlHarnessTest,NativeJvmMiniBatchCheckpointTest,SplitByKeyGroupOperatorTest,StatefulSqlRescaleTest,JvmStringKeyProbeTest,StringExitOwnershipTest,TransposeOperatorsTest' \
               -Dsf.testForks=1 \
               '-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false' \
               "-Dsf.extraJvmArgs=-Dstreamfusion.experimental.jvmGroupAggregates=true -Dstreamfusion.experimental.jvmAccumulatorCacheEntries=$capacity -Dstreamfusion.experimental.borrowedStringExit=true" \
               surefire:test@default-test
           done
+      - name: Validate scalar JVM OVER frames and recovery
+        run: >-
+          mvn -B -ntp -P${{ matrix.profile }} -pl streamfusion-runtime
+          -Dnative.build.skip=true
+          '-Dtest=FlinkJvmOverSqlHarnessTest,FlinkJvmOverBoundarySqlHarnessTest,FlinkJvmOverRecoveryTest,NativeJvmOverTimerTest'
+          -Dsf.testForks=1
+          '-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false'
+          surefire:test@default-test
       - name: Install pinned released profiler
         run: |
           curl --fail --location --retry 3 \

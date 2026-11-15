@@ -1,0 +1,4073 @@
+{
+  "transfer": {
+    "source_run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43203430658",
+    "source_commit": "61908c0af4e34b731bf0ff13dcd8a776cc2f9bc9",
+    "artifact_id": 13937995591,
+    "flink_line": "2.2",
+    "jdk": "11.0.33+10",
+    "original_archive_bytes": 811024598,
+    "classes_resources_bytes": 28625775,
+    "native_resource_bytes": 1318153104,
+    "packaged_jar_bytes": 460739751,
+    "slim_archive_bytes": 10387432,
+    "slim_archive_sha256": "7c4d0330214024e017d0959b58da06c33ed3827577b1ee4cb297cc25473c9866",
+    "reduction_fraction": 0.9871922109075167,
+    "method": "Stream the original tar archive; retain compiled classes and non-native resources; omit packaged JARs and native libraries. Repack at gzip level 1. Normal Maven test lifecycle regenerates packages and copies the separately downloaded current native artifact.",
+    "limits": "Artifact-size comparison, not whole-CI timing. Fresh-consumer resource and reactor regressions pass locally on JDK 11 and 17. Hosted qualification remains required."
+  },
+  "initial_worker_attribution": {
+    "platform": "macOS arm64",
+    "jdk": "Temurin 17",
+    "selection": "CanonicalGroupArithmeticJobTest with streamfusion.test.groupArithmeticJobSmoke=true",
+    "outcomes": {
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "recordings": 8,
+    "instrumented_surefire_seconds": 29.44,
+    "limits": "Initial local attribution without metadata archives, using the existing development native library. Instrumented elapsed time is not a speedup measurement. Compiler events used the default profile threshold; no compiler activity events were recorded. Java/native samples and concurrent waits are not exact CPU attribution. This does not qualify the complete CI inventory.",
+    "jfr": {
+      "events": {
+        "jdk.ObjectAllocationSample": 4956,
+        "jdk.ThreadSleep": 1685,
+        "jdk.ThreadPark": 1042,
+        "jdk.NativeMethodSample": 715,
+        "jdk.GCHeapSummary": 232,
+        "jdk.ExecutionSample": 153,
+        "jdk.GarbageCollection": 116,
+        "jdk.JavaMonitorWait": 111
+      },
+      "java_leaf_frames": {
+        "java.util.zip.ZipFile$Source.getEntryPos": 14,
+        "java.lang.StringLatin1.hashCode": 4,
+        "sun.net.www.MessageHeader.grow": 3,
+        "java.util.concurrent.ConcurrentHashMap.transfer": 3,
+        "org.apache.pekko.actor.LightArrayRevolverScheduler$$anon$3.executeBucket$1": 2,
+        "jdk.internal.util.Preconditions.checkIndex": 2,
+        "com.typesafe.config.impl.Tokenizer$TokenIterator.pullQuotedString": 2,
+        "sun.security.provider.SHA2.implCompress0": 2,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.atn.ATNDeserializer.deserialize": 2,
+        "java.net.URLClassLoader.defineClass": 1,
+        "jdk.internal.loader.URLClassPath$JarLoader.getResource": 1,
+        "java.lang.invoke.LambdaForm.methodType": 1,
+        "java.math.BigInteger.<init>": 1,
+        "org.apache.pekko.dispatch.AbstractNodeQueue.pollNode": 1,
+        "java.util.jar.JarFile.isMultiRelease": 1,
+        "scala.collection.convert.WrapAsScala.deprecated$u0020asScalaBuffer$": 1,
+        "java.math.BigInteger.implMulAdd": 1,
+        "org.apache.calcite.plan.AbstractRelOptPlanner.fireRule": 1,
+        "scala.collection.MapLike.$init$": 1,
+        "com.fasterxml.jackson.databind.introspect.POJOPropertiesCollector._addGetterMethod": 1,
+        "java.nio.channels.Channels$WritableByteChannelImpl.<init>": 1,
+        "java.lang.invoke.StringConcatFactory.makeConcatWithConstants": 1,
+        "org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.JavaType.isRecordType": 1,
+        "java.util.HashMap.resize": 1,
+        "org.apache.pekko.dispatch.UnboundedQueueBasedMessageQueue.enqueue$": 1,
+        "org.apache.pekko.actor.LightArrayRevolverScheduler.waitNanos": 1,
+        "java.lang.Thread.<init>": 1,
+        "java.lang.invoke.InnerClassLambdaMetafactory.generateInnerClass": 1,
+        "java.lang.ClassLoader.getResources": 1,
+        "java.util.regex.Pattern$SliceI.match": 1
+      },
+      "java_inclusive_frames": {
+        "org.example.canonical.CanonicalJobWorker.run": 48,
+        "org.example.canonical.CanonicalJobWorker.main": 46,
+        "java.lang.ClassLoader.loadClass": 37,
+        "jdk.internal.loader.BuiltinClassLoader.loadClassOrNull": 36,
+        "jdk.internal.loader.BuiltinClassLoader.loadClass": 36,
+        "jdk.internal.loader.ClassLoaders$AppClassLoader.loadClass": 36,
+        "jdk.internal.loader.BuiltinClassLoader.findClassOnClassPathOrNull": 34,
+        "jdk.internal.loader.URLClassPath.getResource": 23,
+        "jdk.internal.loader.URLClassPath$JarLoader.getResource": 21,
+        "org.apache.flink.runtime.minicluster.MiniCluster.start": 20,
+        "java.util.jar.JarFile.getEntry": 19,
+        "java.util.jar.JarFile.getJarEntry": 18,
+        "java.util.zip.ZipFile$Source.getEntryPos": 17,
+        "java.util.zip.ZipFile.getEntry": 17,
+        "scala.collection.Iterator.foreach$": 17,
+        "scala.collection.Iterator.foreach": 17,
+        "scala.collection.AbstractIterator.foreach": 17,
+        "jdk.internal.loader.BuiltinClassLoader.defineClass": 16,
+        "java.lang.Thread.run": 15,
+        "scala.collection.IterableLike.foreach": 15,
+        "scala.collection.IterableLike.foreach$": 15,
+        "scala.collection.AbstractIterable.foreach": 15,
+        "org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecGroupAggregate.translateToPlanInternal": 13,
+        "org.apache.flink.table.planner.plan.nodes.exec.ExecEdge.translateToPlan": 13,
+        "org.apache.flink.table.planner.plan.nodes.exec.ExecNodeBase.translateToPlan": 13,
+        "scala.collection.TraversableLike.$anonfun$map$1": 13,
+        "org.slf4j.LoggerFactory.getLogger": 12,
+        "scala.collection.TraversableLike.map$": 11,
+        "scala.collection.TraversableLike.map": 11,
+        "org.apache.flink.table.runtime.generated.GeneratedAggsHandleFunction.<init>": 11
+      },
+      "java_sampled_threads": {
+        "main": 110,
+        "flink-scheduler-1": 7,
+        "GroupAggregate[3] -> output_table[4]: Writer -> output_table[4]: Committer (1/1)#0": 6,
+        "NativeColumnarGroupAggExecNode[7] -> ArrowToRowDataExecNode[8] -> output_table[4]: Writer -> output_table[4]: Committer (1/1)#0": 5,
+        "flink-pekko.actor.default-dispatcher-8": 3,
+        "NativeColumnarGroupAggExecNode[17] -> ArrowToRowDataExecNode[18] -> output_table[4]: Writer -> output_table[4]: Committer (1/1)#0": 2,
+        "jobmanager-io-thread-1": 2,
+        "Source: input_table[1] (1/1)#0": 2,
+        "flink-pekko.actor.default-dispatcher-6": 2,
+        "ForkJoinPool.commonPool-worker-2": 2,
+        "flink-rest-server-netty-boss-thread-1": 1,
+        "JFR Periodic Tasks": 1,
+        "Source: input_table[1] -> RowDataToArrowExecNode[6] -> NativeColumnarExchangeExecNode[5] (1/1)#0": 1,
+        "jobmanager-future-thread-8": 1,
+        "flink-metrics-pekko.actor.internal-dispatcher-3": 1,
+        "flink-metrics-pekko.actor.internal-dispatcher-6": 1,
+        "flink-pekko.actor.supervisor-dispatcher-5": 1,
+        "flink-metrics-scheduler-1": 1,
+        "flink-operator-serialization-io-thread-1": 1,
+        "AsyncOperations-thread-1": 1,
+        "flink-pekko.actor.default-dispatcher-4": 1,
+        "flink-pekko.actor.internal-dispatcher-3": 1
+      },
+      "native_leaf_frames": {
+        "sun.nio.ch.Net.accept": 308,
+        "sun.nio.ch.KQueue.poll": 258,
+        "java.util.zip.Inflater.inflateBytesBytes": 61,
+        "jdk.internal.loader.NativeLibraries.load": 47,
+        "sun.nio.ch.FileDispatcherImpl.write0": 9,
+        "java.lang.ClassLoader.defineClass1": 4,
+        "jdk.internal.loader.NativeLibraries.findEntry0": 2,
+        "java.io.UnixFileSystem.getBooleanAttributes0": 2,
+        "org.rocksdb.RocksDB.open": 2,
+        "org.rocksdb.RocksDB.createColumnFamily": 2,
+        "java.net.Inet6AddressImpl.lookupAllHostAddr": 2,
+        "sun.nio.ch.FileDispatcherImpl.force0": 2,
+        "java.io.RandomAccessFile.seek0": 1,
+        "jdk.internal.misc.Unsafe.compareAndSetReference": 1,
+        "java.lang.ClassLoader.findLoadedClass0": 1,
+        "tech.streamfusion.Native.createRocksDBGroupAggregatorWithTtlEmission": 1,
+        "sun.nio.fs.UnixNativeDispatcher.rmdir0": 1,
+        "java.lang.ref.Reference.clear0": 1,
+        "java.lang.Class.isArray": 1,
+        "sun.nio.fs.UnixNativeDispatcher.unlink0": 1,
+        "java.lang.System.identityHashCode": 1,
+        "java.lang.Object.clone": 1,
+        "org.apache.commons.math3.stat.descriptive.moment.StandardDeviation.getResult": 1,
+        "java.lang.Class.getDeclaringClass0": 1,
+        "java.lang.Thread.sleep": 1,
+        "java.io.RandomAccessFile.readBytes": 1,
+        "java.io.FileInputStream.readBytes": 1,
+        "sun.nio.fs.UnixNativeDispatcher.open0": 1
+      },
+      "native_inclusive_frames": {
+        "java.net.ServerSocket.accept": 308,
+        "sun.nio.ch.NioSocketImpl.accept": 308,
+        "org.apache.flink.util.NetUtils.acceptWithoutTimeout": 308,
+        "java.net.ServerSocket.implAccept": 308,
+        "org.apache.flink.runtime.blob.BlobServer.run": 308,
+        "java.net.ServerSocket.platformImplAccept": 308,
+        "sun.nio.ch.Net.accept": 308,
+        "java.lang.Thread.run": 285,
+        "sun.nio.ch.SelectorImpl.lockAndDoSelect": 258,
+        "org.apache.flink.shaded.netty4.io.netty.channel.nio.NioEventLoop.select": 258,
+        "sun.nio.ch.SelectorImpl.select": 258,
+        "sun.nio.ch.KQueueSelectorImpl.doSelect": 258,
+        "org.apache.flink.shaded.netty4.io.netty.util.concurrent.SingleThreadEventExecutor$4.run": 258,
+        "sun.nio.ch.KQueue.poll": 258,
+        "org.apache.flink.shaded.netty4.io.netty.channel.nio.NioEventLoop.run": 258,
+        "org.apache.flink.shaded.netty4.io.netty.util.internal.ThreadExecutorMap$2.run": 258,
+        "org.apache.flink.shaded.netty4.io.netty.channel.nio.SelectedSelectionKeySetSelector.select": 258,
+        "java.util.zip.InflaterInputStream.read": 63,
+        "java.util.zip.Inflater.inflateBytesBytes": 61,
+        "java.util.zip.Inflater.inflate": 61,
+        "java.lang.ClassLoader.loadClass": 52,
+        "org.example.canonical.CanonicalJobWorker.run": 50,
+        "org.apache.flink.streaming.runtime.tasks.RegularOperatorChain.initializeStateAndOpenOperators": 49,
+        "org.apache.flink.streaming.api.operators.AbstractStreamOperator.initializeState": 49,
+        "org.example.canonical.CanonicalJobWorker.main": 47,
+        "jdk.internal.loader.NativeLibraries.load": 47,
+        "jdk.internal.loader.NativeLibraries.loadLibrary": 47,
+        "jdk.internal.loader.NativeLibraries$NativeLibraryImpl.open": 47,
+        "java.lang.ClassLoader.loadLibrary": 47,
+        "java.lang.Runtime.load0": 46
+      },
+      "native_sampled_threads": {
+        "flink-rest-server-netty-boss-thread-1": 258,
+        "main": 74,
+        "BLOB Server listener at 56317": 51,
+        "BLOB Server listener at 56325": 48,
+        "BLOB Server listener at 56332": 48,
+        "BLOB Server listener at 56321": 45,
+        "NativeColumnarGroupAggExecNode[7] -> ArrowToRowDataExecNode[8] -> output_table[4]: Writer -> output_table[4]: Committer (1/1)#0": 33,
+        "BLOB Server listener at 56319": 30,
+        "BLOB Server listener at 56327": 29,
+        "BLOB Server listener at 56315": 29,
+        "BLOB Server listener at 56323": 28,
+        "NativeColumnarGroupAggExecNode[17] -> ArrowToRowDataExecNode[18] -> output_table[4]: Writer -> output_table[4]: Committer (1/1)#0": 21,
+        "AsyncOperations-thread-1": 4,
+        "jobmanager-io-thread-1": 3,
+        "Source: input_table[1] (1/1)#0": 2,
+        "jobmanager-io-thread-5": 2,
+        "flink-metrics-scheduler-1": 1,
+        "flink-pekko.actor.default-dispatcher-4": 1,
+        "ForkJoinPool.commonPool-worker-1": 1,
+        "flink-pekko.actor.default-dispatcher-8": 1,
+        "flink-pekko.actor.default-dispatcher-6": 1,
+        "flink-metrics-pekko.actor.internal-dispatcher-3": 1,
+        "flink-pekko.actor.default-dispatcher-7": 1,
+        "flink-pekko.actor.supervisor-dispatcher-5": 1,
+        "flink-scheduler-1": 1,
+        "jobmanager-io-thread-3": 1
+      },
+      "compilation_events": {},
+      "compilation_activity_seconds": {},
+      "allocation_sample_weight_bytes": {
+        "[B": 2503631384,
+        "[Ljava.util.concurrent.ConcurrentHashMap$Node;": 309152472,
+        "java.lang.String": 130556208,
+        "[Ljava.lang.Class;": 90011384,
+        "[Ljava.lang.Object;": 89308552,
+        "java.lang.reflect.Method": 58320352,
+        "jdk.internal.org.objectweb.asm.SymbolTable$Entry": 52144608,
+        "java.util.WeakHashMap$Entry": 38151176,
+        "java.lang.StringBuilder": 34197352,
+        "[Ljava.nio.channels.SelectionKey;": 30997528,
+        "java.util.HashMap": 20397752,
+        "[Ljava.util.HashMap$Node;": 17136784,
+        "[I": 16813480,
+        "[Ljavax.management.MBeanOperationInfo;": 14582000,
+        "[Ljdk.internal.org.objectweb.asm.SymbolTable$Entry;": 13420048,
+        "java.util.ArrayDeque$DeqIterator": 11893384,
+        "java.lang.Class": 10898696,
+        "java.net.URL": 10415448,
+        "java.util.concurrent.ConcurrentHashMap$Node": 10172376,
+        "java.util.HashMap$Node": 9689104,
+        "[C": 8909064,
+        "[J": 8243192,
+        "java.lang.invoke.MethodType": 7856792,
+        "java.util.LinkedHashMap$Entry": 7815760,
+        "org.apache.flink.runtime.io.network.partition.consumer.BufferOrEvent": 7741824,
+        "java.lang.invoke.MemberName": 7102936,
+        "java.lang.ThreadLocal$ThreadLocalMap$Entry": 7023664,
+        "java.util.ArrayList": 6647184,
+        "org.apache.flink.util.TemporaryClassLoaderContext": 6210440,
+        "java.util.jar.JarFile$JarFileEntry": 5330752
+      },
+      "wait_seconds_by_kind": {
+        "jdk.ThreadPark": 477.9708970409997,
+        "jdk.JavaMonitorWait": 66.03574970099997,
+        "jdk.ThreadSleep": 21.691792189999994
+      },
+      "wait_seconds_by_thread": {
+        "flink-pekko.actor.internal-dispatcher-2": 15.542980085999998,
+        "flink-pekko.actor.internal-dispatcher-3": 15.52174025,
+        "flink-pekko.actor.supervisor-dispatcher-5": 15.304791998999999,
+        "flink-metrics-pekko.actor.internal-dispatcher-2": 15.221357793,
+        "flink-metrics-pekko.actor.internal-dispatcher-3": 15.221004539,
+        "flink-pekko.actor.default-dispatcher-4": 15.107531504999999,
+        "Common-Cleaner": 15.089263956,
+        "Flink-Metric-View-Updater-thread-1": 15.080077749,
+        "Timer-0": 14.672801415,
+        "Timer-1": 14.637304291,
+        "Timer-2": 14.634658331000002,
+        "IOManager writer thread #1": 14.372225333,
+        "IOManager reader thread #1": 14.37208775,
+        "flink-metrics-pekko.actor.supervisor-dispatcher-5": 13.809205541,
+        "flink-metrics-4": 13.330195956999995,
+        "mini-cluster-io-thread-1": 13.29453496,
+        "mini-cluster-io-thread-2": 13.292915580999999,
+        "mini-cluster-io-thread-4": 13.290750376,
+        "mini-cluster-io-thread-3": 13.286715289,
+        "Flink-DispatcherRestEndpoint-thread-1": 13.250552375,
+        "pool-3-thread-1": 13.172086208000001,
+        "resourcemanager_1-main-scheduler-thread-1": 13.160667209000001,
+        "FileSystemWatcher": 13.116239919000002,
+        "taskmanager_0-main-scheduler-thread-1": 13.030511583000001,
+        "flink-pekko.actor.default-dispatcher-7": 12.952047412999997,
+        "flink-pekko.actor.default-dispatcher-6": 12.800894247999999,
+        "flink-pekko.actor.default-dispatcher-8": 12.769007163,
+        "ForkJoinPool.commonPool-worker-2": 12.092426624999998,
+        "ForkJoinPool.commonPool-worker-1": 11.573073538000003,
+        "ForkJoinPool.commonPool-worker-3": 11.001201540999997
+      },
+      "main_wait_seconds_by_stack": {
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.parkNanos > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.timedGet > java.util.concurrent.CompletableFuture.get > org.example.canonical.CanonicalJobWorker.run": 3.667899417,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.parkNanos > java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject.awaitNanos > java.util.concurrent.LinkedBlockingDeque.pollFirst > java.util.concurrent.LinkedBlockingDeque.poll > sun.nio.fs.AbstractWatchService.poll > org.example.canonical.CanonicalJobWorker.run > org.example.canonical.CanonicalJobWorker.main": 2.842882125,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > org.apache.flink.util.AutoCloseableAsync.close": 0.215954958,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > org.apache.flink.streaming.api.graph.StreamingJobGraphGenerator.serializeOperatorCoordinatorsAndStreamConfig": 0.051134417,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > org.apache.flink.streaming.api.graph.StreamGraph$UserDefinedObjectsHolder.serializeOperatorFactories": 0.04476075
+      },
+      "gc_events": {
+        "G1New / G1 Evacuation Pause": 56,
+        "G1Old / Metadata GC Threshold": 29,
+        "G1New / Metadata GC Threshold": 29,
+        "G1New / G1 Preventive Collection": 1,
+        "G1Old / G1 Evacuation Pause": 1
+      },
+      "gc_activity_seconds": {
+        "G1Old / Metadata GC Threshold": 0.22183879199999998,
+        "G1New / G1 Evacuation Pause": 0.11116329000000001,
+        "G1New / Metadata GC Threshold": 0.055648083,
+        "G1Old / G1 Evacuation Pause": 0.008189875,
+        "G1New / G1 Preventive Collection": 0.00230475
+      },
+      "gc_heap_used_max_bytes": {
+        "Before GC": 128116352,
+        "After GC": 65368880
+      }
+    }
+  },
+  "lazy_parent_cluster": {
+    "method": "Three alternating eager/lazy pairs on the same local machine, fresh Surefire JVMs, identical invocation multisets and outcome counts. All modes use first-tier compilation and a 512 MiB code cache. Unit/operator selection has four fresh 2 GiB forks; canonical selection has one 1 GiB fork and two prepared metadata archives shared across both modes.",
+    "platform": "macOS arm64",
+    "unit_selection": [
+      "tech.streamfusion.NativeParityValueTest",
+      "tech.streamfusion.arrow.Utf8WriterReuseTest",
+      "tech.streamfusion.operator.TransposeOperatorsTest"
+    ],
+    "unit_flink22_jdk17": {
+      "trials": [
+        {
+          "mode": "eager",
+          "elapsed_seconds": 3.9707390420371667,
+          "cpu_seconds": 7.161957,
+          "parent_clusters_started": 3,
+          "outcomes": {
+            "tests": 20,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          }
+        },
+        {
+          "mode": "lazy",
+          "elapsed_seconds": 3.435169165953994,
+          "cpu_seconds": 4.312930000000001,
+          "parent_clusters_started": 0,
+          "outcomes": {
+            "tests": 20,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          }
+        },
+        {
+          "mode": "lazy",
+          "elapsed_seconds": 3.401121500064619,
+          "cpu_seconds": 4.336042999999999,
+          "parent_clusters_started": 0,
+          "outcomes": {
+            "tests": 20,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          }
+        },
+        {
+          "mode": "eager",
+          "elapsed_seconds": 4.015521333087236,
+          "cpu_seconds": 7.155142000000001,
+          "parent_clusters_started": 3,
+          "outcomes": {
+            "tests": 20,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          }
+        },
+        {
+          "mode": "eager",
+          "elapsed_seconds": 4.105806292034686,
+          "cpu_seconds": 7.173018000000003,
+          "parent_clusters_started": 3,
+          "outcomes": {
+            "tests": 20,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          }
+        },
+        {
+          "mode": "lazy",
+          "elapsed_seconds": 3.464654291048646,
+          "cpu_seconds": 4.332803,
+          "parent_clusters_started": 0,
+          "outcomes": {
+            "tests": 20,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          }
+        }
+      ],
+      "summary": {
+        "eager": {
+          "elapsed_seconds": 4.015521333087236,
+          "cpu_seconds": 7.161957
+        },
+        "lazy": {
+          "elapsed_seconds": 3.435169165953994,
+          "cpu_seconds": 4.332803
+        },
+        "elapsed_reduction": 0.14452722797192874,
+        "cpu_reduction": 0.3950252703276492
+      }
+    },
+    "unit_flink18_jdk11": {
+      "trials": [
+        {
+          "mode": "eager",
+          "pair": 1,
+          "line": "1.18",
+          "forks": 4,
+          "heap": "2g",
+          "instrumented": false,
+          "fixture_plan_cache": false,
+          "elapsed_seconds": 4.49947245803196,
+          "cpu_seconds": 8.079837,
+          "outcomes": {
+            "tests": 20,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "classes": {
+            "tech.streamfusion.operator.TransposeOperatorsTest": {
+              "tests": 16,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0,
+              "seconds": 2.775
+            },
+            "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+              "tests": 2,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0,
+              "seconds": 1.974
+            },
+            "tech.streamfusion.NativeParityValueTest": {
+              "tests": 2,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0,
+              "seconds": 1.458
+            }
+          },
+          "parent_cluster_starts": 3
+        },
+        {
+          "mode": "lazy",
+          "pair": 1,
+          "line": "1.18",
+          "forks": 4,
+          "heap": "2g",
+          "instrumented": false,
+          "fixture_plan_cache": false,
+          "elapsed_seconds": 3.7568179999943823,
+          "cpu_seconds": 4.998621999999999,
+          "outcomes": {
+            "tests": 20,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "classes": {
+            "tech.streamfusion.NativeParityValueTest": {
+              "tests": 2,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0,
+              "seconds": 0.774
+            },
+            "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+              "tests": 2,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0,
+              "seconds": 1.286
+            },
+            "tech.streamfusion.operator.TransposeOperatorsTest": {
+              "tests": 16,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0,
+              "seconds": 2.097
+            }
+          },
+          "parent_cluster_starts": 0
+        },
+        {
+          "mode": "lazy",
+          "pair": 2,
+          "line": "1.18",
+          "forks": 4,
+          "heap": "2g",
+          "instrumented": false,
+          "fixture_plan_cache": false,
+          "elapsed_seconds": 3.7943507499294356,
+          "cpu_seconds": 4.9742120000000005,
+          "outcomes": {
+            "tests": 20,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "classes": {
+            "tech.streamfusion.NativeParityValueTest": {
+              "tests": 2,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0,
+              "seconds": 0.782
+            },
+            "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+              "tests": 2,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0,
+              "seconds": 1.295
+            },
+            "tech.streamfusion.operator.TransposeOperatorsTest": {
+              "tests": 16,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0,
+              "seconds": 2.136
+            }
+          },
+          "parent_cluster_starts": 0
+        },
+        {
+          "mode": "eager",
+          "pair": 2,
+          "line": "1.18",
+          "forks": 4,
+          "heap": "2g",
+          "instrumented": false,
+          "fixture_plan_cache": false,
+          "elapsed_seconds": 4.530181624926627,
+          "cpu_seconds": 8.110865,
+          "outcomes": {
+            "tests": 20,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "classes": {
+            "tech.streamfusion.NativeParityValueTest": {
+              "tests": 2,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0,
+              "seconds": 1.469
+            },
+            "tech.streamfusion.operator.TransposeOperatorsTest": {
+              "tests": 16,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0,
+              "seconds": 2.811
+            },
+            "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+              "tests": 2,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0,
+              "seconds": 1.991
+            }
+          },
+          "parent_cluster_starts": 3
+        },
+        {
+          "mode": "eager",
+          "pair": 3,
+          "line": "1.18",
+          "forks": 4,
+          "heap": "2g",
+          "instrumented": false,
+          "fixture_plan_cache": false,
+          "elapsed_seconds": 4.565264542005025,
+          "cpu_seconds": 8.153362999999999,
+          "outcomes": {
+            "tests": 20,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "classes": {
+            "tech.streamfusion.operator.TransposeOperatorsTest": {
+              "tests": 16,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0,
+              "seconds": 2.83
+            },
+            "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+              "tests": 2,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0,
+              "seconds": 1.995
+            },
+            "tech.streamfusion.NativeParityValueTest": {
+              "tests": 2,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0,
+              "seconds": 1.462
+            }
+          },
+          "parent_cluster_starts": 3
+        },
+        {
+          "mode": "lazy",
+          "pair": 3,
+          "line": "1.18",
+          "forks": 4,
+          "heap": "2g",
+          "instrumented": false,
+          "fixture_plan_cache": false,
+          "elapsed_seconds": 3.809717540978454,
+          "cpu_seconds": 4.990884999999998,
+          "outcomes": {
+            "tests": 20,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "classes": {
+            "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+              "tests": 2,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0,
+              "seconds": 1.286
+            },
+            "tech.streamfusion.operator.TransposeOperatorsTest": {
+              "tests": 16,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0,
+              "seconds": 2.133
+            },
+            "tech.streamfusion.NativeParityValueTest": {
+              "tests": 2,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0,
+              "seconds": 0.77
+            }
+          },
+          "parent_cluster_starts": 0
+        }
+      ],
+      "summary": {
+        "eager": {
+          "elapsed_seconds": 4.530181624926627,
+          "cpu_seconds": 8.110865
+        },
+        "lazy": {
+          "elapsed_seconds": 3.7943507499294356,
+          "cpu_seconds": 4.990884999999998
+        },
+        "elapsed_reduction": 0.16242855936468314,
+        "cpu_reduction": 0.3846667402305429
+      }
+    },
+    "canonical_flink22_jdk17": {
+      "trials": [
+        {
+          "mode": "eager",
+          "phase": "preparation",
+          "elapsed_seconds": 41.57420229096897,
+          "cpu_seconds": 35.056844999999996,
+          "parent_clusters_started": 1,
+          "outcomes": {
+            "tests": 2,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "archives": 2
+        },
+        {
+          "mode": "eager",
+          "phase": "measurement",
+          "elapsed_seconds": 24.75828512501903,
+          "cpu_seconds": 18.401245000000007,
+          "parent_clusters_started": 1,
+          "outcomes": {
+            "tests": 2,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "archives": 2
+        },
+        {
+          "mode": "lazy",
+          "phase": "measurement",
+          "elapsed_seconds": 24.112405041931197,
+          "cpu_seconds": 17.706443,
+          "parent_clusters_started": 0,
+          "outcomes": {
+            "tests": 2,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "archives": 2
+        },
+        {
+          "mode": "lazy",
+          "phase": "measurement",
+          "elapsed_seconds": 24.10203674994409,
+          "cpu_seconds": 17.717008,
+          "parent_clusters_started": 0,
+          "outcomes": {
+            "tests": 2,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "archives": 2
+        },
+        {
+          "mode": "eager",
+          "phase": "measurement",
+          "elapsed_seconds": 24.825368042103946,
+          "cpu_seconds": 18.492225999999995,
+          "parent_clusters_started": 1,
+          "outcomes": {
+            "tests": 2,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "archives": 2
+        },
+        {
+          "mode": "eager",
+          "phase": "measurement",
+          "elapsed_seconds": 24.64050266693812,
+          "cpu_seconds": 18.520272999999992,
+          "parent_clusters_started": 1,
+          "outcomes": {
+            "tests": 2,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "archives": 2
+        },
+        {
+          "mode": "lazy",
+          "phase": "measurement",
+          "elapsed_seconds": 24.16245745890774,
+          "cpu_seconds": 17.741917000000026,
+          "parent_clusters_started": 0,
+          "outcomes": {
+            "tests": 2,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "archives": 2
+        }
+      ],
+      "summary": {
+        "eager": {
+          "elapsed_seconds": 24.75828512501903,
+          "cpu_seconds": 18.492225999999995
+        },
+        "lazy": {
+          "elapsed_seconds": 24.112405041931197,
+          "cpu_seconds": 17.717008
+        },
+        "elapsed_reduction": 0.026087432139439648,
+        "cpu_reduction": 0.04192129168224501
+      }
+    },
+    "limits": "Selected local workloads, not a whole-CI speedup. The baseline explicitly sets sf.test.lazyCluster=false. The new default defers initialization until an execution-environment lookup; native leak checks, memory budgets and session/class cleanup remain active. Linux cohort validation remains required.",
+    "local_validation": {
+      "flink22_jdk17": {
+        "tests": 79,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "flink18_jdk11": {
+        "tests": 79,
+        "passed": 78,
+        "errors": 1,
+        "failure_reason": "Existing metadata archive control: local macOS JDK 11 reports Shared spaces are not supported in this VM. Lifecycle, operator and SQL controls pass."
+      },
+      "flink18_jdk17_lifecycle_cache_batch": {
+        "tests": 10,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    "java_versions": {
+      "11": "openjdk full version \"11.0.28+6\"",
+      "17": "openjdk full version \"17.0.17+10\""
+    },
+    "hosted_validation": {
+      "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43225947903",
+      "sha": "c3fc3786d779b1950007e94e05bcb3763b2cc14d",
+      "outcome": "success",
+      "timed_invocations": 480,
+      "lifecycle_control_invocations": 320,
+      "cohorts": {
+        "runtime-hotspots-cluster-startup-flink2.2-jdk11": {
+          "trials": [
+            {
+              "mode": "eager",
+              "pair": 1,
+              "line": "2.2",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 8.463123153999987,
+              "cpu_seconds": 19.269257,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 3.786
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 3.154
+                },
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.877
+                }
+              },
+              "parent_cluster_starts": 3
+            },
+            {
+              "mode": "lazy",
+              "pair": 1,
+              "line": "2.2",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 5.669174815000019,
+              "cpu_seconds": 11.481988,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 1.385
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.626
+                },
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.493
+                }
+              },
+              "parent_cluster_starts": 0
+            },
+            {
+              "mode": "lazy",
+              "pair": 2,
+              "line": "2.2",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 5.736385394999985,
+              "cpu_seconds": 11.696231000000001,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.715
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 1.37
+                },
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.301
+                }
+              },
+              "parent_cluster_starts": 0
+            },
+            {
+              "mode": "eager",
+              "pair": 2,
+              "line": "2.2",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 7.837858153000013,
+              "cpu_seconds": 19.662515999999997,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.627
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.898
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 3.417
+                }
+              },
+              "parent_cluster_starts": 3
+            },
+            {
+              "mode": "eager",
+              "pair": 3,
+              "line": "2.2",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 8.026285665000017,
+              "cpu_seconds": 19.553410000000003,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.944
+                },
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.353
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 3.57
+                }
+              },
+              "parent_cluster_starts": 3
+            },
+            {
+              "mode": "lazy",
+              "pair": 3,
+              "line": "2.2",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 5.6980235819999905,
+              "cpu_seconds": 11.490830000000003,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.361
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.564
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 1.358
+                }
+              },
+              "parent_cluster_starts": 0
+            }
+          ],
+          "summary": {
+            "eager": {
+              "elapsed_seconds": 8.026285665000017,
+              "cpu_seconds": 19.553410000000003
+            },
+            "lazy": {
+              "elapsed_seconds": 5.6980235819999905,
+              "cpu_seconds": 11.490830000000003
+            },
+            "elapsed_reduction": 0.29007964333400305,
+            "cpu_reduction": 0.4123362625751723
+          },
+          "lifecycle_controls_passed": 79
+        },
+        "runtime-hotspots-cluster-startup-flink2.2-jdk17": {
+          "trials": [
+            {
+              "mode": "eager",
+              "pair": 1,
+              "line": "2.2",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 8.021736698000012,
+              "cpu_seconds": 19.282125,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 3.199
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.702
+                },
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.408
+                }
+              },
+              "parent_cluster_starts": 3
+            },
+            {
+              "mode": "lazy",
+              "pair": 1,
+              "line": "2.2",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 5.7317933289999985,
+              "cpu_seconds": 12.163841,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 1.164
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.522
+                },
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.336
+                }
+              },
+              "parent_cluster_starts": 0
+            },
+            {
+              "mode": "lazy",
+              "pair": 2,
+              "line": "2.2",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 5.778505739000025,
+              "cpu_seconds": 12.285134000000006,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.551
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 1.2
+                },
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.299
+                }
+              },
+              "parent_cluster_starts": 0
+            },
+            {
+              "mode": "eager",
+              "pair": 2,
+              "line": "2.2",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 7.727467144000002,
+              "cpu_seconds": 19.335807999999997,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.261
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.586
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 3.065
+                }
+              },
+              "parent_cluster_starts": 3
+            },
+            {
+              "mode": "eager",
+              "pair": 3,
+              "line": "2.2",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 7.904164234999996,
+              "cpu_seconds": 19.506961,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.56
+                },
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.164
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 3.1
+                }
+              },
+              "parent_cluster_starts": 3
+            },
+            {
+              "mode": "lazy",
+              "pair": 3,
+              "line": "2.2",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 5.779980579000011,
+              "cpu_seconds": 12.291565999999996,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.284
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.542
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 1.22
+                }
+              },
+              "parent_cluster_starts": 0
+            }
+          ],
+          "summary": {
+            "eager": {
+              "elapsed_seconds": 7.904164234999996,
+              "cpu_seconds": 19.335807999999997
+            },
+            "lazy": {
+              "elapsed_seconds": 5.778505739000025,
+              "cpu_seconds": 12.285134000000006
+            },
+            "elapsed_reduction": 0.2689289383167748,
+            "cpu_reduction": 0.3646433601326612
+          },
+          "lifecycle_controls_passed": 79
+        },
+        "runtime-hotspots-cluster-startup-flink1.18-jdk17": {
+          "trials": [
+            {
+              "mode": "eager",
+              "pair": 1,
+              "line": "1.18",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 5.782342559999989,
+              "cpu_seconds": 12.234299,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 1.632
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 1.785
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.177
+                }
+              },
+              "parent_cluster_starts": 3
+            },
+            {
+              "mode": "lazy",
+              "pair": 1,
+              "line": "1.18",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 4.046984328999997,
+              "cpu_seconds": 7.860825000000003,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.828
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.451
+                },
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.24
+                }
+              },
+              "parent_cluster_starts": 0
+            },
+            {
+              "mode": "lazy",
+              "pair": 2,
+              "line": "1.18",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 4.312825136000015,
+              "cpu_seconds": 8.153615999999998,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.437
+                },
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.238
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.952
+                }
+              },
+              "parent_cluster_starts": 0
+            },
+            {
+              "mode": "eager",
+              "pair": 2,
+              "line": "1.18",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 5.571876932999999,
+              "cpu_seconds": 12.553575000000002,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 1.402
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.127
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 1.705
+                }
+              },
+              "parent_cluster_starts": 3
+            },
+            {
+              "mode": "eager",
+              "pair": 3,
+              "line": "1.18",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 5.501831815000003,
+              "cpu_seconds": 12.239481000000005,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 1.713
+                },
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 1.598
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.068
+                }
+              },
+              "parent_cluster_starts": 3
+            },
+            {
+              "mode": "lazy",
+              "pair": 3,
+              "line": "1.18",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 4.1767344149999985,
+              "cpu_seconds": 7.888418000000004,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.35
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.932
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.411
+                }
+              },
+              "parent_cluster_starts": 0
+            }
+          ],
+          "summary": {
+            "eager": {
+              "elapsed_seconds": 5.571876932999999,
+              "cpu_seconds": 12.239481000000005
+            },
+            "lazy": {
+              "elapsed_seconds": 4.1767344149999985,
+              "cpu_seconds": 7.888418000000004
+            },
+            "elapsed_reduction": 0.2503900453610396,
+            "cpu_reduction": 0.35549407691388213
+          },
+          "lifecycle_controls_passed": 81
+        },
+        "runtime-hotspots-cluster-startup-flink1.18-jdk11": {
+          "trials": [
+            {
+              "mode": "eager",
+              "pair": 1,
+              "line": "1.18",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 8.229844979000006,
+              "cpu_seconds": 17.216402000000002,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.445
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.771
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 3.322
+                }
+              },
+              "parent_cluster_starts": 3
+            },
+            {
+              "mode": "lazy",
+              "pair": 1,
+              "line": "1.18",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 5.419867366000005,
+              "cpu_seconds": 10.747158999999998,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 1.247
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.719
+                },
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.417
+                }
+              },
+              "parent_cluster_starts": 0
+            },
+            {
+              "mode": "lazy",
+              "pair": 2,
+              "line": "1.18",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 5.65703434400001,
+              "cpu_seconds": 10.909402,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.758
+                },
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.563
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 1.337
+                }
+              },
+              "parent_cluster_starts": 0
+            },
+            {
+              "mode": "eager",
+              "pair": 2,
+              "line": "1.18",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 7.154375619999996,
+              "cpu_seconds": 17.211789000000003,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.312
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.919
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.368
+                }
+              },
+              "parent_cluster_starts": 3
+            },
+            {
+              "mode": "eager",
+              "pair": 3,
+              "line": "1.18",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 7.1507861700000035,
+              "cpu_seconds": 17.368139000000006,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.465
+                },
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.148
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 2.931
+                }
+              },
+              "parent_cluster_starts": 3
+            },
+            {
+              "mode": "lazy",
+              "pair": 3,
+              "line": "1.18",
+              "forks": 4,
+              "heap": "2g",
+              "instrumented": false,
+              "fixture_plan_cache": false,
+              "elapsed_seconds": 5.413949656999989,
+              "cpu_seconds": 10.950081999999998,
+              "outcomes": {
+                "tests": 20,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "classes": {
+                "tech.streamfusion.NativeParityValueTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.466
+                },
+                "tech.streamfusion.operator.TransposeOperatorsTest": {
+                  "tests": 16,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 1.245
+                },
+                "tech.streamfusion.arrow.Utf8WriterReuseTest": {
+                  "tests": 2,
+                  "failures": 0,
+                  "errors": 0,
+                  "skipped": 0,
+                  "seconds": 0.706
+                }
+              },
+              "parent_cluster_starts": 0
+            }
+          ],
+          "summary": {
+            "eager": {
+              "elapsed_seconds": 7.154375619999996,
+              "cpu_seconds": 17.216402000000002
+            },
+            "lazy": {
+              "elapsed_seconds": 5.419867366000005,
+              "cpu_seconds": 10.909402
+            },
+            "elapsed_reduction": 0.24244019969418262,
+            "cpu_reduction": 0.36633670612477576
+          },
+          "lifecycle_controls_passed": 81
+        }
+      },
+      "retry": "Three initial jobs failed on HTTP 502 in the producer jobs API before test execution. Rerunning only those failed jobs passed; the successful first-attempt cohort was retained."
+    }
+  },
+  "queue_baseline": {
+    "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43149560105",
+    "sha": "c3c0744be2ec50c296ddc602da19b7726287fac3",
+    "total_ci_jobs": 100,
+    "canonical_jobs": 64,
+    "peak_simultaneous_ci_jobs": 20,
+    "all_canonical_preparations_completed_at": "2026-11-12T04:14:33+00:00",
+    "canonical_eligible_to_start_median_seconds": 4331.5,
+    "canonical_eligible_to_start_max_seconds": 9000.0,
+    "method": "Use completed successful job intervals and actual first-step start times. Canonical eligibility is completion of all four required preparation jobs. Sweep execution intervals for peak overlapping CI jobs.",
+    "limits": "Observed overlap within this CI run, not an account quota declaration. Eligibility-to-start delay includes scheduler/runner waiting; it does not identify which other campaign or scheduler policy caused a delay."
+  },
+  "native_payload_probe": {
+    "source_run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43203430658",
+    "source_sha": "61908c0af4e34b731bf0ff13dcd8a776cc2f9bc9",
+    "artifact": "debug-native-61908c0af4e34b731bf0ff13dcd8a776cc2f9bc9",
+    "method": "GNU binutils 2.39 in a temporary Linux amd64 Alpine container; compare original, strip-debug and strip-unneeded copies. Verify ELF machine remains x86-64 and every allocated section including dynamic symbol/string tables retains identical type, flags, virtual address, size and content. Sum independent raw DEFLATE level-1 stream sizes for each library.",
+    "libraries": [
+      {
+        "name": "libstreamfusion.so",
+        "variants": {
+          "native-original": {
+            "bytes": 620049208,
+            "deflate_level1_bytes": 166172714
+          },
+          "native-no-debug": {
+            "bytes": 258683736,
+            "deflate_level1_bytes": 59273829
+          },
+          "native-unneeded": {
+            "bytes": 169091840,
+            "deflate_level1_bytes": 44128539
+          }
+        }
+      },
+      {
+        "name": "libstreamfusion_avro.so",
+        "variants": {
+          "native-original": {
+            "bytes": 80126496,
+            "deflate_level1_bytes": 15296846
+          },
+          "native-no-debug": {
+            "bytes": 31759408,
+            "deflate_level1_bytes": 6807306
+          },
+          "native-unneeded": {
+            "bytes": 21792456,
+            "deflate_level1_bytes": 5043255
+          }
+        }
+      },
+      {
+        "name": "libstreamfusion_csv.so",
+        "variants": {
+          "native-original": {
+            "bytes": 75562088,
+            "deflate_level1_bytes": 13899931
+          },
+          "native-no-debug": {
+            "bytes": 29623384,
+            "deflate_level1_bytes": 6148850
+          },
+          "native-unneeded": {
+            "bytes": 20280464,
+            "deflate_level1_bytes": 4538068
+          }
+        }
+      },
+      {
+        "name": "libstreamfusion_fluss.so",
+        "variants": {
+          "native-original": {
+            "bytes": 60021792,
+            "deflate_level1_bytes": 10464202
+          },
+          "native-no-debug": {
+            "bytes": 14322680,
+            "deflate_level1_bytes": 3179088
+          },
+          "native-unneeded": {
+            "bytes": 9922728,
+            "deflate_level1_bytes": 2341932
+          }
+        }
+      },
+      {
+        "name": "libstreamfusion_iceberg.so",
+        "variants": {
+          "native-original": {
+            "bytes": 231646672,
+            "deflate_level1_bytes": 48391454
+          },
+          "native-no-debug": {
+            "bytes": 98021688,
+            "deflate_level1_bytes": 23925089
+          },
+          "native-unneeded": {
+            "bytes": 68108744,
+            "deflate_level1_bytes": 18366055
+          }
+        }
+      },
+      {
+        "name": "libstreamfusion_json.so",
+        "variants": {
+          "native-original": {
+            "bytes": 78054688,
+            "deflate_level1_bytes": 14706765
+          },
+          "native-no-debug": {
+            "bytes": 31385968,
+            "deflate_level1_bytes": 6702559
+          },
+          "native-unneeded": {
+            "bytes": 21589360,
+            "deflate_level1_bytes": 4980808
+          }
+        }
+      },
+      {
+        "name": "libstreamfusion_kafka.so",
+        "variants": {
+          "native-original": {
+            "bytes": 83136544,
+            "deflate_level1_bytes": 16375702
+          },
+          "native-no-debug": {
+            "bytes": 32608032,
+            "deflate_level1_bytes": 7410456
+          },
+          "native-unneeded": {
+            "bytes": 22852320,
+            "deflate_level1_bytes": 5600223
+          }
+        }
+      },
+      {
+        "name": "libstreamfusion_orc.so",
+        "variants": {
+          "native-original": {
+            "bytes": 121172496,
+            "deflate_level1_bytes": 22598472
+          },
+          "native-no-debug": {
+            "bytes": 52906704,
+            "deflate_level1_bytes": 11182398
+          },
+          "native-unneeded": {
+            "bytes": 36388864,
+            "deflate_level1_bytes": 8244842
+          }
+        }
+      },
+      {
+        "name": "libstreamfusion_paimon.so",
+        "variants": {
+          "native-original": {
+            "bytes": 202832600,
+            "deflate_level1_bytes": 46687992
+          },
+          "native-no-debug": {
+            "bytes": 94228144,
+            "deflate_level1_bytes": 24609297
+          },
+          "native-unneeded": {
+            "bytes": 65774360,
+            "deflate_level1_bytes": 19089439
+          }
+        }
+      },
+      {
+        "name": "libstreamfusion_parquet.so",
+        "variants": {
+          "native-original": {
+            "bytes": 106264784,
+            "deflate_level1_bytes": 22022143
+          },
+          "native-no-debug": {
+            "bytes": 49704560,
+            "deflate_level1_bytes": 11724369
+          },
+          "native-unneeded": {
+            "bytes": 36381864,
+            "deflate_level1_bytes": 9275486
+          }
+        }
+      },
+      {
+        "name": "libstreamfusion_protobuf.so",
+        "variants": {
+          "native-original": {
+            "bytes": 80857768,
+            "deflate_level1_bytes": 15327544
+          },
+          "native-no-debug": {
+            "bytes": 32640568,
+            "deflate_level1_bytes": 7028802
+          },
+          "native-unneeded": {
+            "bytes": 22549584,
+            "deflate_level1_bytes": 5249610
+          }
+        }
+      },
+      {
+        "name": "libstreamfusion_raw.so",
+        "variants": {
+          "native-original": {
+            "bytes": 74900096,
+            "deflate_level1_bytes": 13693234
+          },
+          "native-no-debug": {
+            "bytes": 29137808,
+            "deflate_level1_bytes": 5990632
+          },
+          "native-unneeded": {
+            "bytes": 19982096,
+            "deflate_level1_bytes": 4417409
+          }
+        }
+      }
+    ],
+    "decision": "Prototype only. Prefer debug-only stripping to retain static function names. Preserve the original full-symbol artifact for diagnostics; test consumers can use separate smaller payloads. Canonical Kafka source/sink fixtures use JSON, requiring core, JSON and Kafka libraries.",
+    "limits": "Offline file-size and allocated-section equivalence checks; no loaded JNI test against stripped copies yet. Deflate totals exclude ZIP container headers. No whole-CI timing claim.",
+    "real_staging_validation": {
+      "libraries": 12,
+      "original_bytes": 1814625232,
+      "test_bytes": 755022680,
+      "allocated_section_comparison": "passed for every library",
+      "tool": "GNU binutils 2.39, Linux amd64, Python 3.10",
+      "status": "offline staging validated; hosted JNI validation pending"
+    }
+  },
+  "canonical_setup_probe": {
+    "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43240390726",
+    "sha": "521d8c5b3ff8c028b33d9721436e7a9e9d8d09c0",
+    "line": "2.2",
+    "jdk": "11.0.32+1",
+    "conclusion": "success",
+    "java_artifact_zip_bytes": 10391513,
+    "outcomes": {
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "classes": {
+      "tech.streamfusion.CanonicalKafkaSinkJobTest": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "tech.streamfusion.CanonicalRegularJoinJobTest": {
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "tech.streamfusion.CanonicalManagedUdfDecimalKeyJobTest": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "tech.streamfusion.CanonicalKafkaSourceJobTest": {
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    "phases": [
+      {
+        "name": "canonical-setup / prepare",
+        "execution_seconds": 170.0,
+        "steps": {
+          "Set up job": 1.0,
+          "Run actions/checkout@v6": 4.0,
+          "Run python3 bin/ci-free-disk.py": 0.0,
+          "Run actions/setup-java@v4": 1.0,
+          "Compile and pack without a native build or library download": 157.0,
+          "Run actions/upload-artifact@v4": 1.0,
+          "Post Run actions/setup-java@v4": 3.0,
+          "Post Run actions/checkout@v6": 0.0,
+          "Complete job": 0.0
+        }
+      },
+      {
+        "name": "canonical-setup / consume",
+        "execution_seconds": 333.0,
+        "steps": {
+          "Set up job": 2.0,
+          "Run actions/checkout@v6": 7.0,
+          "Run python3 bin/ci-free-disk.py": 0.0,
+          "Run actions/setup-java@v4": 6.0,
+          "Run actions/download-artifact@v5": 12.0,
+          "Restore on a fresh runner with the same pinned JDK": 2.0,
+          "Verify the existing native producer": 4.0,
+          "Exercise the smaller canonical native payload": 2.0,
+          "Resolve the restored reactor dependencies": 20.0,
+          "Run isolated recovery and real-broker source/sink checks": 273.0,
+          "Run actions/upload-artifact@v4": 1.0,
+          "Remove probe libraries and worker metadata": 1.0,
+          "Post Run actions/setup-java@v4": 0.0,
+          "Post Run actions/checkout@v6": 0.0,
+          "Complete job": 0.0
+        }
+      }
+    ],
+    "scope": "Two fresh runners. Java preparation had no native library. Consumer verifies exact pinned JDK and archive identity, then loads only stripped core/JSON/Kafka libraries. All selected stock/native recovery and real-broker checkpoint checks pass with positive native evidence. Complete CI parity and net savings remain required."
+  },
+  "jdk_pin_correction": {
+    "failed_probe": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43278831184",
+    "failure_step": "actions/setup-java@v4",
+    "old_pin": "11.0.32+1",
+    "reason": "Earlier probes resolved this cache entry; a different runner had no such entry and the Temurin remote catalog does not publish that build.",
+    "published_pin": "11.0.32+9",
+    "vendor_release": "https://github.com/adoptium/temurin11-binaries/releases/tag/jdk-11.0.32%2B9",
+    "prerelease": false,
+    "diagnostic_change": "check-latest=true forces remote version resolution in Java preparation.",
+    "status": "Release metadata verified; hosted focused validation pending."
+  },
+  "parent_classpath_profile": {
+    "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43280037056",
+    "commit": "b27e0edc93ea6d87c9beb568e9c1d95d078cfe7e",
+    "jdk": "11.0.32+9",
+    "flink": "2.2",
+    "outcomes": {
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "jfr": {
+      "events": {
+        "jdk.NativeMethodSample": 53717,
+        "jdk.ThreadPark": 13831,
+        "jdk.Compilation": 11597,
+        "jdk.ExecutionSample": 1771,
+        "jdk.JavaMonitorWait": 364,
+        "jdk.ThreadSleep": 251,
+        "jdk.GCHeapSummary": 46,
+        "jdk.GarbageCollection": 23
+      },
+      "java_leaf_frames": {
+        "sun.security.provider.SHA2.implCompress0": 1442,
+        "sun.security.provider.ByteArrayAccess.b2iBig64": 51,
+        "java.util.zip.ZipFile$Source.getEntryPos": 50,
+        "java.util.zip.ZipFile$Source.hashN": 13,
+        "java.lang.StringCoding.encodeUTF8": 11,
+        "java.util.zip.ZipFile.getEntry": 9,
+        "sun.security.provider.DigestBase.implCompressMultiBlock0": 6,
+        "java.lang.StringLatin1.newString": 5,
+        "java.lang.AbstractStringBuilder.ensureCapacityInternal": 4,
+        "sun.nio.ch.FileChannelImpl.write": 4,
+        "java.lang.Class.getComponentType": 4,
+        "jdk.internal.util.Preconditions.checkIndex": 3,
+        "sun.security.provider.DigestBase.engineUpdate": 3,
+        "sun.nio.ch.Util.getTemporaryDirectBuffer": 3,
+        "java.lang.StringUTF16.checkIndex": 3,
+        "sun.security.provider.DigestBase.implCompressMultiBlock": 3,
+        "sun.nio.fs.UnixPath.initOffsets": 3,
+        "java.util.regex.Pattern.split": 3,
+        "java.util.zip.ZipFile$CleanableResource.releaseInflater": 2,
+        "java.lang.StringLatin1.hashCode": 2,
+        "java.lang.StringCoding.hasNegatives": 2,
+        "java.io.UnixFileSystem.normalize": 2,
+        "java.util.HashMap.getNode": 2,
+        "org.testcontainers.shaded.com.fasterxml.jackson.databind.deser.BasicDeserializerFactory._constructDefaultValueInstantiator": 2,
+        "java.util.zip.ZipFile.getZipEntry": 2,
+        "java.util.Objects.requireNonNull": 2,
+        "tech.streamfusion.CanonicalJobRunner.run": 2,
+        "sun.nio.ch.Util$BufferCache.offerFirst": 2,
+        "sun.security.provider.SHA2.implCompress": 2,
+        "sun.nio.ch.Util$BufferCache.get": 2,
+        "sun.nio.ch.IOUtil.writeFromNativeBuffer": 2,
+        "sun.security.provider.SHA2.implCompressCheck": 2,
+        "java.util.concurrent.ConcurrentHashMap.get": 2,
+        "java.security.MessageDigest.update": 2,
+        "java.lang.ThreadLocal$ThreadLocalMap.getEntry": 2,
+        "java.util.concurrent.ThreadPoolExecutor.runWorker": 2,
+        "com.github.dockerjava.zerodep.shaded.org.apache.hc.client5.http.classic.ExecChain$Scope.<init>": 1,
+        "java.util.stream.Streams$ConcatSpliterator.estimateSize": 1,
+        "java.util.Properties$LineReader.readLine": 1,
+        "jdk.internal.loader.URLClassPath.getLoader": 1
+      },
+      "java_inclusive_frames": {
+        "jdk.internal.reflect.NativeMethodAccessorImpl.invoke0": 1591,
+        "jdk.internal.reflect.NativeMethodAccessorImpl.invoke": 1590,
+        "java.lang.reflect.Method.invoke": 1587,
+        "jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke": 1586,
+        "org.junit.platform.commons.util.ReflectionUtils.invokeMethod": 1577,
+        "org.junit.jupiter.engine.execution.InvocationInterceptorChain$ValidatingInvocation.proceed": 1576,
+        "org.junit.jupiter.engine.execution.MethodInvocation.proceed": 1576,
+        "org.junit.jupiter.engine.extension.TimeoutExtension.intercept": 1573,
+        "org.junit.jupiter.engine.extension.SameThreadTimeoutInvocation.proceed": 1566,
+        "org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestableMethod": 1564,
+        "org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestTemplateMethod": 1562,
+        "tech.streamfusion.CanonicalJobRunner.run": 1552,
+        "tech.streamfusion.CanonicalWorkerCache.classpath": 1543,
+        "tech.streamfusion.CanonicalWorkerCache.pack": 1540,
+        "java.security.DigestOutputStream.write": 1536,
+        "java.io.InputStream.transferTo": 1528,
+        "java.security.MessageDigest.update": 1513,
+        "sun.security.provider.DigestBase.engineUpdate": 1511,
+        "java.security.MessageDigest$Delegate.engineUpdate": 1511,
+        "sun.security.provider.SHA2.implCompress": 1497,
+        "sun.security.provider.SHA2.implCompress0": 1442,
+        "sun.security.provider.DigestBase.implCompressMultiBlock": 1433,
+        "sun.security.provider.DigestBase.implCompressMultiBlock0": 1429,
+        "org.junit.jupiter.engine.execution.InterceptingExecutableInvoker$ReflectiveInterceptorCall.lambda$ofVoidMethod$0": 1285,
+        "tech.streamfusion.CanonicalWorkerCache.digest": 808,
+        "tech.streamfusion.CanonicalWorkerCache.retain": 806,
+        "java.util.zip.DeflaterOutputStream.deflate": 727,
+        "java.nio.file.Files.copy": 720,
+        "java.util.zip.ZipOutputStream.write": 719,
+        "java.util.zip.DeflaterOutputStream.write": 719,
+        "tech.streamfusion.CanonicalGroupArithmeticJobTest.generatedArithmeticStateContinuesAcrossIsolatedEngines": 632,
+        "tech.streamfusion.CanonicalManagedUdfWideKeyJobTest.generatedArithmeticStateContinuesAcrossIsolatedEngines": 632,
+        "tech.streamfusion.CanonicalJobRunner.verifyJoinSwitch": 632,
+        "org.junit.jupiter.engine.descriptor.TestTemplateInvocationTestDescriptor$$Lambda$593.70555476.apply": 620,
+        "org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.lambda$invoke$0": 571,
+        "tech.streamfusion.CanonicalRegularJoinJobTest.check": 512,
+        "org.junit.jupiter.engine.descriptor.TestTemplateInvocationTestDescriptor$$Lambda$585.1516536489.apply": 511,
+        "tech.streamfusion.CanonicalRegularJoinJobTest.nativeRegularCheckpointResumesBeforeCanonicalSwitch": 510,
+        "tech.streamfusion.CanonicalKafkaSinkJobTest.preservesExactlyOnceSinkEffectsAcrossRepeatedCanonicalSwitches": 393,
+        "org.junit.jupiter.engine.descriptor.TestTemplateInvocationTestDescriptor$$Lambda$749.104826203.apply": 389
+      },
+      "java_sampled_threads": {
+        "main": 1734,
+        "kafka-admin-client-thread | adminclient-1": 21,
+        "docker-java-stream--602349769": 4,
+        "surefire-forkedjvm-stream-flusher": 4,
+        "kafka-producer-network-thread | producer-1": 4,
+        "JFR Periodic Tasks": 2,
+        "docker-java-stream-1433679063": 1,
+        "Thread-5": 1
+      },
+      "native_leaf_frames": {
+        "java.io.FileInputStream.readBytes": 28099,
+        "java.lang.ProcessHandleImpl.waitForProcessExit0": 20134,
+        "sun.nio.ch.FileDispatcherImpl.lock0": 2950,
+        "com.github.dockerjava.transport.DomainSocket.read": 1999,
+        "sun.nio.ch.FileDispatcherImpl.write0": 170,
+        "sun.nio.ch.EPoll.wait": 116,
+        "java.util.zip.Inflater.inflateBytesBytes": 67,
+        "java.io.FileDescriptor.close0": 55,
+        "sun.nio.ch.FileDispatcherImpl.read0": 49,
+        "java.util.zip.Deflater.deflateBytesBytes": 21,
+        "java.io.UnixFileSystem.getBooleanAttributes0": 10,
+        "java.io.RandomAccessFile.readBytes": 7,
+        "sun.nio.fs.UnixNativeDispatcher.unlink0": 6,
+        "sun.nio.fs.UnixNativeDispatcher.stat1": 5,
+        "java.lang.ClassLoader$NativeLibrary.load0": 4,
+        "java.lang.ClassLoader.defineClass1": 4,
+        "java.io.RandomAccessFile.seek0": 3,
+        "java.lang.ProcessImpl.forkAndExec": 3,
+        "jdk.internal.misc.Unsafe.copyMemory0": 2,
+        "java.lang.Class.getDeclaredConstructors0": 1,
+        "com.github.dockerjava.transport.DomainSocket.write": 1,
+        "sun.nio.ch.NativeThread.current": 1,
+        "java.lang.ClassLoader.findBootstrapClass": 1,
+        "java.lang.ProcessHandleImpl.isAlive0": 1,
+        "sun.nio.fs.UnixNativeDispatcher.readdir": 1,
+        "java.lang.Class.getDeclaredMethods0": 1,
+        "sun.nio.ch.FileDispatcherImpl.writev0": 1,
+        "sun.nio.ch.Net.shutdown": 1,
+        "java.util.zip.Inflater.reset": 1,
+        "java.net.Inet6AddressImpl.lookupAllHostAddr": 1,
+        "sun.nio.fs.UnixNativeDispatcher.lstat0": 1,
+        "java.lang.Object.wait": 1
+      },
+      "native_inclusive_frames": {
+        "java.lang.Thread.run": 49398,
+        "java.io.FileInputStream.readBytes": 28099,
+        "java.io.FileInputStream.read": 28099,
+        "java.io.BufferedInputStream.read1": 27948,
+        "java.io.BufferedInputStream.read": 27948,
+        "org.apache.maven.surefire.api.util.internal.AbstractNoninterruptibleReadableChannel.read": 27941,
+        "java.io.BufferedInputStream.fill": 27941,
+        "org.apache.maven.surefire.booter.CommandReader$CommandRunnable.run": 27941,
+        "org.apache.maven.surefire.api.stream.AbstractStreamDecoder.read": 27941,
+        "org.apache.maven.surefire.api.util.internal.Channels$3.readImpl": 27941,
+        "org.apache.maven.surefire.booter.stream.CommandDecoder.decode": 27941,
+        "org.apache.maven.surefire.booter.spi.CommandChannelDecoder.decode": 27941,
+        "org.apache.maven.surefire.api.stream.AbstractStreamDecoder.readMessageType": 27941,
+        "java.util.concurrent.ThreadPoolExecutor.runWorker": 20136,
+        "java.util.concurrent.ThreadPoolExecutor$Worker.run": 20136,
+        "java.lang.ProcessHandleImpl$1.run": 20135,
+        "java.lang.ProcessHandleImpl.waitForProcessExit0": 20134,
+        "jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke": 3342,
+        "jdk.internal.reflect.NativeMethodAccessorImpl.invoke": 3342,
+        "java.lang.reflect.Method.invoke": 3342,
+        "jdk.internal.reflect.NativeMethodAccessorImpl.invoke0": 3342,
+        "org.junit.platform.commons.util.ReflectionUtils.invokeMethod": 3340,
+        "org.junit.jupiter.engine.execution.MethodInvocation.proceed": 3340,
+        "org.junit.jupiter.engine.execution.InvocationInterceptorChain$ValidatingInvocation.proceed": 3340,
+        "org.junit.jupiter.engine.extension.SameThreadTimeoutInvocation.proceed": 3336,
+        "org.junit.jupiter.engine.extension.TimeoutExtension.intercept": 3273,
+        "org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestableMethod": 3267,
+        "org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestTemplateMethod": 3259,
+        "tech.streamfusion.CanonicalJobRunner.run": 3254,
+        "org.junit.jupiter.engine.execution.InterceptingExecutableInvoker$ReflectiveInterceptorCall.lambda$ofVoidMethod$0": 3102,
+        "org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.lambda$invoke$0": 3040,
+        "tech.streamfusion.CanonicalGroupArithmeticJobTest.generatedArithmeticStateContinuesAcrossIsolatedEngines": 3025,
+        "tech.streamfusion.CanonicalManagedUdfWideKeyJobTest.generatedArithmeticStateContinuesAcrossIsolatedEngines": 3025,
+        "tech.streamfusion.CanonicalJobRunner.verifyJoinSwitch": 3025,
+        "org.junit.jupiter.engine.execution.InvocationInterceptorChain$InterceptedInvocation.proceed": 2992,
+        "org.junit.jupiter.engine.execution.InvocationInterceptorChain.proceed": 2985,
+        "org.junit.jupiter.engine.descriptor.TestTemplateInvocationTestDescriptor$$Lambda$593.70555476.apply": 2982,
+        "org.junit.jupiter.engine.execution.InterceptingExecutableInvoker$ReflectiveInterceptorCall$$Lambda$592.624079697.apply": 2974,
+        "org.junit.jupiter.engine.execution.InvocationInterceptorChain.chainAndInvoke": 2972,
+        "org.junit.jupiter.engine.execution.InvocationInterceptorChain.invoke": 2971
+      },
+      "native_sampled_threads": {
+        "surefire-forkedjvm-command-thread": 28092,
+        "process reaper": 20135,
+        "main": 4122,
+        "docker-java-stream--602349769": 682,
+        "docker-java-stream--213039128": 298,
+        "docker-java-stream--624377851": 273,
+        "docker-java-stream--1900126211": 53,
+        "kafka-admin-client-thread | adminclient-1": 37,
+        "kafka-producer-network-thread | producer-1": 5,
+        "kafka-admin-client-thread | adminclient-2": 5,
+        "kafka-producer-network-thread | producer-4": 3,
+        "kafka-producer-network-thread | producer-5": 3,
+        "kafka-producer-network-thread | producer-2": 2,
+        "kafka-producer-network-thread | producer-3": 2,
+        "kafka-producer-network-thread | producer-6": 2,
+        "Thread-2": 1,
+        "awaitility-thread": 1,
+        "JFR Periodic Tasks": 1
+      },
+      "compilation_events": {
+        "c1": 11597
+      },
+      "compilation_activity_seconds": {
+        "c1": 3.0645657450000074
+      },
+      "allocation_sample_weight_bytes": {},
+      "wait_seconds_by_kind": {
+        "jdk.JavaMonitorWait": 1473.5388841469999,
+        "jdk.ThreadPark": 1252.348306406999,
+        "jdk.ThreadSleep": 2.7015020809999992
+      },
+      "wait_seconds_by_thread": {
+        "surefire-forkedjvm-stream-flusher": 546.6541134919999,
+        "junit-jupiter-timeout-watcher": 500.14924495500003,
+        "Common-Cleaner": 439.9664065329999,
+        "main": 437.60339645400006,
+        "testcontainers-ryuk": 273.0694750389999,
+        "Finalizer": 185.67109991400002,
+        "JNA Cleaner": 165.463659736,
+        "process reaper": 96.39699096700002,
+        "testcontainers-pull-watchdog-1": 83.51424527499984,
+        "kafka-producer-network-thread | producer-1": 0.10006027
+      },
+      "main_wait_seconds_by_stack": {
+        "java.lang.Object.wait > java.lang.Object.wait > java.util.concurrent.TimeUnit.timedWait > java.lang.ProcessImpl.waitFor > tech.streamfusion.CanonicalWorkerCache$Archive.trained > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalJobRunner.run": 160.250183199,
+        "java.lang.Object.wait > java.lang.Object.wait > java.util.concurrent.TimeUnit.timedWait > java.lang.ProcessImpl.waitFor > tech.streamfusion.CanonicalWorkerCache$Archive.trained > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalRegularJoinJobTest.check": 69.998435299,
+        "java.lang.Object.wait > java.lang.Object.wait > java.util.concurrent.TimeUnit.timedWait > java.lang.ProcessImpl.waitFor > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalRegularJoinJobTest.check > tech.streamfusion.CanonicalRegularJoinJobTest.nativeRegularCheckpointResumesBeforeCanonicalSwitch": 47.725067323000005,
+        "java.lang.Object.wait > java.lang.Object.wait > java.util.concurrent.TimeUnit.timedWait > java.lang.ProcessImpl.waitFor > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalKafkaSourceJobTest.sourceOffsetsAndCoordinatorSurviveRepeatedCanonicalEngineSwitches": 41.561766857,
+        "java.lang.Object.wait > java.lang.Object.wait > java.util.concurrent.TimeUnit.timedWait > java.lang.ProcessImpl.waitFor > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalRegularJoinJobTest.check > tech.streamfusion.CanonicalRegularJoinJobTest.regularStateContinuesAcrossCleanEngineProcesses": 27.946571316,
+        "java.lang.Object.wait > java.lang.Object.wait > java.util.concurrent.TimeUnit.timedWait > java.lang.ProcessImpl.waitFor > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalKafkaSinkJobTest.preservesExactlyOnceSinkEffectsAcrossRepeatedCanonicalSwitches": 27.729267217,
+        "java.lang.Object.wait > java.lang.Object.wait > java.util.concurrent.TimeUnit.timedWait > java.lang.ProcessImpl.waitFor > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalJobRunner.runStockAtSavepointCuts > tech.streamfusion.CanonicalJobRunner.verifyJoinSwitch": 17.4130981,
+        "java.lang.Object.wait > java.lang.Object.wait > java.util.concurrent.TimeUnit.timedWait > java.lang.ProcessImpl.waitFor > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalJobRunner.verifyJoinSwitch > tech.streamfusion.CanonicalGroupArithmeticJobTest.generatedArithmeticStateContinuesAcrossIsolatedEngines": 16.672901462,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.locks.AbstractQueuedSynchronizer.parkAndCheckInterrupt > java.util.concurrent.locks.AbstractQueuedSynchronizer.doAcquireSharedInterruptibly > java.util.concurrent.locks.AbstractQueuedSynchronizer.acquireSharedInterruptibly > java.util.concurrent.CountDownLatch.await > com.github.dockerjava.api.async.ResultCallbackTemplate.awaitCompletion > org.testcontainers.images.TimeLimitedLoggedPullImageResultCallback.awaitCompletion": 14.945909472,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.parkNanos > java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject.awaitNanos > java.util.concurrent.LinkedBlockingDeque.pollLast > org.testcontainers.containers.output.WaitingConsumer.waitUntil > org.testcontainers.containers.output.WaitingConsumer.waitUntil > org.testcontainers.containers.wait.strategy.LogMessageWaitStrategy.waitUntilReady > org.testcontainers.containers.wait.strategy.AbstractWaitStrategy.waitUntilReady": 9.028648202000001,
+        "java.lang.Thread.sleep > org.testcontainers.containers.output.WaitingConsumer.waitUntil > org.testcontainers.containers.output.WaitingConsumer.waitUntil > org.testcontainers.containers.wait.strategy.LogMessageWaitStrategy.waitUntilReady > org.testcontainers.containers.wait.strategy.AbstractWaitStrategy.waitUntilReady > org.testcontainers.containers.GenericContainer.waitUntilContainerStarted > org.testcontainers.containers.GenericContainer.tryStart > org.testcontainers.containers.GenericContainer.lambda$doStart$0": 2.601441810999999,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.parkNanos > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.timedGet > java.util.concurrent.CompletableFuture.get > org.apache.kafka.common.internals.KafkaFutureImpl.get > tech.streamfusion.CanonicalKafkaSourceJobTest.sourceOffsetsAndCoordinatorSurviveRepeatedCanonicalEngineSwitches": 0.752039236,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.parkNanos > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.timedGet > java.util.concurrent.CompletableFuture.get > org.apache.kafka.common.internals.KafkaFutureImpl.get > tech.streamfusion.CanonicalKafkaSinkJobTest.preservesExactlyOnceSinkEffectsAcrossRepeatedCanonicalSwitches": 0.677054069,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.parkNanos > java.util.concurrent.locks.AbstractQueuedSynchronizer.doAcquireSharedNanos > java.util.concurrent.locks.AbstractQueuedSynchronizer.tryAcquireSharedNanos > java.util.concurrent.CountDownLatch.await > org.apache.kafka.clients.producer.internals.ProduceRequestResult.await > org.apache.kafka.clients.producer.internals.FutureRecordMetadata.get > org.apache.kafka.clients.producer.internals.FutureRecordMetadata.get": 0.219890198,
+        "java.lang.Object.wait > org.apache.kafka.common.utils.SystemTime.waitObject > org.apache.kafka.clients.producer.internals.ProducerMetadata.awaitUpdate > org.apache.kafka.clients.producer.KafkaProducer.waitOnMetadata > org.apache.kafka.clients.producer.KafkaProducer.doSend > org.apache.kafka.clients.producer.KafkaProducer.send > org.apache.kafka.clients.producer.KafkaProducer.send > tech.streamfusion.CanonicalKafkaSourceJobTest.produce": 0.060779121,
+        "java.lang.Object.wait > java.lang.Thread.join > org.apache.kafka.clients.admin.KafkaAdminClient.close > org.apache.kafka.clients.admin.Admin.close > tech.streamfusion.CanonicalKafkaSourceJobTest.sourceOffsetsAndCoordinatorSurviveRepeatedCanonicalEngineSwitches > jdk.internal.reflect.NativeMethodAccessorImpl.invoke0 > jdk.internal.reflect.NativeMethodAccessorImpl.invoke > jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke": 0.010173031,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.parkNanos > java.util.concurrent.locks.AbstractQueuedSynchronizer.doAcquireSharedNanos > java.util.concurrent.locks.AbstractQueuedSynchronizer.tryAcquireSharedNanos > java.util.concurrent.Semaphore.tryAcquire > org.apache.maven.surefire.booter.ForkedBooter.acquireOnePermit > org.apache.maven.surefire.booter.ForkedBooter.acknowledgedExit > org.apache.maven.surefire.booter.ForkedBooter.execute": 0.010170541
+      },
+      "gc_events": {
+        "DefNew / Allocation Failure": 17,
+        "SerialOld / Metadata GC Threshold": 6
+      },
+      "gc_activity_seconds": {
+        "SerialOld / Metadata GC Threshold": 0.28813665199999994,
+        "DefNew / Allocation Failure": 0.178658472
+      },
+      "gc_heap_used_max_bytes": {
+        "Before GC": 106814768,
+        "After GC": 39012016
+      },
+      "recordings": 4,
+      "limits": "Java execution samples and native-method stack samples are separate. Native samples include blocking I/O and are not CPU attribution. Inclusive counts overlap. Neither sample count is exact CPU time. Native samples do not resolve Rust internals. Compilation durations are activity intervals, not compiler CPU seconds. Allocation weights are sampled estimates. Wait durations exclude unrecorded short waits, overlap across threads and are not CPU time. GC activity is not total stop-the-world pause time; heap summaries are maxima at recorded GC boundaries, not peak RSS. Instrumented elapsed times are not speedup evidence."
+    },
+    "decision": "Omit bundled native resources from test-only worker metadata snapshots; retain the original resources and load current libraries through the existing explicit java.library.path. Hosted qualification pending."
+  },
+  "paimon_grouped_setup": {
+    "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43278825199",
+    "commit": "3aba0c5896d5ad699ffff81d323dbc849f67c77d",
+    "jdk": "17.0.21+9",
+    "flink": "2.2",
+    "phases": [
+      {
+        "phase": "compile",
+        "exit_code": 0,
+        "elapsed_seconds": 124.043708365,
+        "cpu_seconds": 303.461704
+      },
+      {
+        "phase": "parquet",
+        "exit_code": 0,
+        "elapsed_seconds": 252.42650419000003,
+        "cpu_seconds": 611.7932589999999,
+        "outcomes": {
+          "tests": 826,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 1
+        }
+      },
+      {
+        "phase": "orc",
+        "exit_code": 0,
+        "elapsed_seconds": 288.39544778699997,
+        "cpu_seconds": 697.7682390000001,
+        "outcomes": {
+          "tests": 826,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 1
+        }
+      }
+    ],
+    "limits": "Both full existing format configurations passed with the existing one skip per format. Focused setup proof; whole-CI timing and other line/JDK qualification remain pending."
+  },
+  "metadata_snapshot_loop": {
+    "platform": "macOS arm64",
+    "payload_bytes": 322677736,
+    "payload": "Synthetic sparse native payload matching the canonical core/JSON/Kafka total size; a compiled fixture and JSON resource remain in both modes.",
+    "configuration": "Three alternating pairs on each installed JDK; fresh C1-only 1 GiB JVM per trial; four independent cache instances sharing one cache directory model fresh Surefire parents.",
+    "trials": [
+      {
+        "jdk": 11,
+        "pair": 0,
+        "include_native": true,
+        "elapsed_seconds": 13.890060583,
+        "snapshot_bytes": 322727962,
+        "cpu_seconds": 13.844899999999999
+      },
+      {
+        "jdk": 11,
+        "pair": 0,
+        "include_native": false,
+        "elapsed_seconds": 0.041995292,
+        "snapshot_bytes": 790,
+        "cpu_seconds": 0.11958300000000044
+      },
+      {
+        "jdk": 11,
+        "pair": 1,
+        "include_native": false,
+        "elapsed_seconds": 0.041230709,
+        "snapshot_bytes": 790,
+        "cpu_seconds": 0.11733900000000075
+      },
+      {
+        "jdk": 11,
+        "pair": 1,
+        "include_native": true,
+        "elapsed_seconds": 13.569081292,
+        "snapshot_bytes": 322727962,
+        "cpu_seconds": 13.627951000000001
+      },
+      {
+        "jdk": 11,
+        "pair": 2,
+        "include_native": true,
+        "elapsed_seconds": 13.529692666,
+        "snapshot_bytes": 322727962,
+        "cpu_seconds": 13.583579999999994
+      },
+      {
+        "jdk": 11,
+        "pair": 2,
+        "include_native": false,
+        "elapsed_seconds": 0.041918041,
+        "snapshot_bytes": 790,
+        "cpu_seconds": 0.11801600000000079
+      },
+      {
+        "jdk": 17,
+        "pair": 0,
+        "include_native": true,
+        "elapsed_seconds": 14.081733042,
+        "snapshot_bytes": 322727962,
+        "cpu_seconds": 14.098978000000002
+      },
+      {
+        "jdk": 17,
+        "pair": 0,
+        "include_native": false,
+        "elapsed_seconds": 0.027403584,
+        "snapshot_bytes": 790,
+        "cpu_seconds": 0.07516600000000473
+      },
+      {
+        "jdk": 17,
+        "pair": 1,
+        "include_native": false,
+        "elapsed_seconds": 0.02738875,
+        "snapshot_bytes": 790,
+        "cpu_seconds": 0.0745309999999968
+      },
+      {
+        "jdk": 17,
+        "pair": 1,
+        "include_native": true,
+        "elapsed_seconds": 13.888674167,
+        "snapshot_bytes": 322727962,
+        "cpu_seconds": 13.89785999999999
+      },
+      {
+        "jdk": 17,
+        "pair": 2,
+        "include_native": true,
+        "elapsed_seconds": 13.9138185,
+        "snapshot_bytes": 322727962,
+        "cpu_seconds": 13.939445999999998
+      },
+      {
+        "jdk": 17,
+        "pair": 2,
+        "include_native": false,
+        "elapsed_seconds": 0.028041458,
+        "snapshot_bytes": 790,
+        "cpu_seconds": 0.07546500000001188
+      }
+    ],
+    "limits": "Isolates packing/hash costs with synthetic bytes, not JNI behavior, an engine benchmark or whole-CI speedup. The hosted parent profile separately identifies the real bottleneck. Seven cache controls pass on JDK 17, including real child archive reuse. Hosted native-worker proof pending."
+  },
+  "metadata_snapshot_hosted_proof": {
+    "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43282442243",
+    "commit": "9fb42e9f14b95c7b1c75ece7fa0e2920f6bc6037",
+    "jdk": "11.0.32+9",
+    "flink": "2.2",
+    "outcomes": {
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "jfr": {
+      "events": {
+        "jdk.NativeMethodSample": 56461,
+        "jdk.ThreadPark": 14700,
+        "jdk.Compilation": 11647,
+        "jdk.JavaMonitorWait": 375,
+        "jdk.ExecutionSample": 269,
+        "jdk.ThreadSleep": 247,
+        "jdk.GCHeapSummary": 44,
+        "jdk.GarbageCollection": 22
+      },
+      "java_leaf_frames": {
+        "java.util.zip.ZipFile$Source.getEntryPos": 57,
+        "sun.security.provider.SHA2.implCompress0": 25,
+        "java.util.zip.ZipFile$Source.hashN": 10,
+        "java.lang.StringCoding.hasNegatives": 6,
+        "java.lang.StringCoding.encodeUTF8": 5,
+        "sun.nio.ch.IOUtil.write": 4,
+        "java.lang.StringUTF16.checkIndex": 4,
+        "sun.nio.cs.UTF_8$Encoder.encodeBufferLoop": 3,
+        "java.util.zip.ZipFile.getEntry": 3,
+        "java.lang.StringLatin1.hashCode": 3,
+        "jdk.internal.loader.URLClassPath.getLoader": 3,
+        "java.util.HashMap.getNode": 3,
+        "java.lang.StringLatin1.indexOf": 3,
+        "java.lang.String.indexOf": 2,
+        "java.util.zip.InflaterInputStream.<init>": 2,
+        "java.util.concurrent.ConcurrentHashMap.get": 2,
+        "java.util.zip.ZipFile$Source.initCEN": 2,
+        "java.lang.String.startsWith": 2,
+        "java.util.concurrent.ConcurrentHashMap.transfer": 2,
+        "jdk.internal.loader.URLClassPath.findResource": 2,
+        "java.util.Objects.requireNonNull": 2,
+        "java.util.concurrent.ThreadPoolExecutor.getTask": 2,
+        "java.lang.StackStreamFactory$AbstractStackWalker.getNextBatch": 1,
+        "java.io.FileDescriptor$1.getHandle": 1,
+        "sun.net.www.ParseUtil.firstEncodeIndex": 1,
+        "java.util.logging.LogManager$LoggerContext.<init>": 1,
+        "java.lang.CompoundEnumeration.next": 1,
+        "java.util.stream.StreamOpFlag.fromCharacteristics": 1,
+        "java.lang.invoke.MethodHandles$Lookup.getDirectMethodCommon": 1,
+        "java.lang.reflect.ProxyGenerator$ConstantPool.getIndirect": 1,
+        "java.lang.Class.getDeclaredAnnotation": 1,
+        "java.lang.Class.getInterfaces": 1,
+        "org.apache.logging.log4j.util.StackLocatorUtil.<clinit>": 1,
+        "sun.util.locale.BaseLocale$Cache.normalizeKey": 1,
+        "com.sun.proxy.$Proxy42.<clinit>": 1,
+        "jdk.internal.misc.Unsafe.getAndAddLong": 1,
+        "sun.security.provider.SHA2.implCompressCheck": 1,
+        "java.lang.ThreadLocal.get": 1,
+        "tech.streamfusion.CanonicalWorkerCache.pack": 1,
+        "java.util.concurrent.FutureTask.runAndReset": 1
+      },
+      "java_inclusive_frames": {
+        "java.lang.ClassLoader.loadClass": 108,
+        "jdk.internal.loader.ClassLoaders$AppClassLoader.loadClass": 108,
+        "jdk.internal.loader.BuiltinClassLoader.loadClassOrNull": 108,
+        "jdk.internal.loader.BuiltinClassLoader.loadClass": 108,
+        "jdk.internal.loader.BuiltinClassLoader.findClassOnClassPathOrNull": 104,
+        "jdk.internal.loader.URLClassPath$JarLoader.getResource": 93,
+        "jdk.internal.loader.URLClassPath.getResource": 91,
+        "jdk.internal.reflect.NativeMethodAccessorImpl.invoke0": 89,
+        "jdk.internal.reflect.NativeMethodAccessorImpl.invoke": 88,
+        "jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke": 87,
+        "java.util.jar.JarFile.getEntry": 87,
+        "java.lang.reflect.Method.invoke": 86,
+        "java.util.jar.JarFile.getJarEntry": 86,
+        "java.util.jar.JarFile.getEntry0": 82,
+        "java.util.zip.ZipFile.getEntry": 82,
+        "java.util.zip.ZipFile$1.getEntry": 82,
+        "org.junit.platform.commons.util.ReflectionUtils.invokeMethod": 79,
+        "org.junit.jupiter.engine.execution.MethodInvocation.proceed": 78,
+        "org.junit.jupiter.engine.execution.InvocationInterceptorChain$ValidatingInvocation.proceed": 76,
+        "org.junit.jupiter.engine.extension.TimeoutExtension.intercept": 72,
+        "java.util.zip.ZipFile$Source.getEntryPos": 67,
+        "org.junit.jupiter.engine.extension.SameThreadTimeoutInvocation.proceed": 65,
+        "org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestTemplateMethod": 62,
+        "org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestableMethod": 62,
+        "org.junit.jupiter.engine.execution.InterceptingExecutableInvoker$ReflectiveInterceptorCall.lambda$ofVoidMethod$0": 55,
+        "tech.streamfusion.CanonicalJobRunner.run": 47,
+        "org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.lambda$invoke$0": 44,
+        "java.util.stream.AbstractPipeline.copyInto": 42,
+        "java.util.stream.AbstractPipeline.wrapAndCopyInto": 41,
+        "tech.streamfusion.CanonicalWorkerCache.classpath": 37,
+        "tech.streamfusion.CanonicalWorkerCache.pack": 37,
+        "java.util.stream.AbstractPipeline.evaluate": 34,
+        "java.security.DigestOutputStream.write": 34,
+        "jdk.internal.reflect.NativeConstructorAccessorImpl.newInstance0": 32,
+        "jdk.internal.reflect.NativeConstructorAccessorImpl.newInstance": 31,
+        "java.lang.Thread.run": 29,
+        "jdk.internal.reflect.DelegatingConstructorAccessorImpl.newInstance": 28,
+        "java.security.MessageDigest.update": 28,
+        "java.util.stream.ReferencePipeline.forEachWithCancel": 27,
+        "java.util.stream.AbstractPipeline.copyIntoWithCancel": 27
+      },
+      "java_sampled_threads": {
+        "main": 240,
+        "kafka-admin-client-thread | adminclient-1": 17,
+        "docker-java-stream--1900126211": 3,
+        "testcontainers-pull-watchdog-1": 3,
+        "surefire-forkedjvm-stream-flusher": 2,
+        "kafka-producer-network-thread | producer-1": 1,
+        "kafka-producer-network-thread | producer-4": 1,
+        "docker-java-stream--602349769": 1,
+        "surefire-forkedjvm-command-thread": 1
+      },
+      "native_leaf_frames": {
+        "java.io.FileInputStream.readBytes": 28586,
+        "java.lang.ProcessHandleImpl.waitForProcessExit0": 21481,
+        "sun.nio.ch.FileDispatcherImpl.lock0": 3848,
+        "com.github.dockerjava.transport.DomainSocket.read": 2234,
+        "sun.nio.ch.EPoll.wait": 115,
+        "java.io.FileDescriptor.close0": 53,
+        "java.util.zip.Inflater.inflateBytesBytes": 49,
+        "sun.nio.ch.FileDispatcherImpl.write0": 34,
+        "java.lang.ClassLoader.defineClass1": 7,
+        "java.lang.ProcessImpl.forkAndExec": 7,
+        "sun.nio.fs.UnixNativeDispatcher.unlink0": 5,
+        "java.io.UnixFileSystem.getBooleanAttributes0": 4,
+        "java.io.RandomAccessFile.readBytes": 4,
+        "sun.nio.fs.UnixNativeDispatcher.stat1": 4,
+        "java.util.zip.Deflater.deflateBytesBytes": 4,
+        "sun.nio.fs.UnixNativeDispatcher.open0": 3,
+        "java.lang.ClassLoader$NativeLibrary.load0": 2,
+        "java.io.RandomAccessFile.seek0": 2,
+        "sun.nio.fs.UnixNativeDispatcher.stat0": 2,
+        "sun.nio.ch.FileDispatcherImpl.read0": 2,
+        "java.util.zip.Deflater.reset": 2,
+        "java.lang.ClassLoader.findBootstrapClass": 2,
+        "com.github.dockerjava.transport.DomainSocket.write": 2,
+        "java.io.FileInputStream.open0": 1,
+        "sun.nio.ch.Net.shutdown": 1,
+        "sun.nio.ch.FileDispatcherImpl.writev0": 1,
+        "sun.nio.ch.IOUtil.write1": 1,
+        "sun.nio.ch.SocketChannelImpl.checkConnect": 1,
+        "sun.nio.ch.EPoll.ctl": 1,
+        "java.security.AccessController.doPrivileged": 1,
+        "org.junit.vintage.engine.discovery.ClassSelectorResolver.<clinit>": 1,
+        "jdk.net.LinuxSocketOptions.quickAckSupported0": 1
+      },
+      "native_inclusive_frames": {
+        "java.lang.Thread.run": 51984,
+        "java.io.FileInputStream.read": 28586,
+        "java.io.FileInputStream.readBytes": 28586,
+        "org.apache.maven.surefire.api.stream.AbstractStreamDecoder.read": 28483,
+        "java.io.BufferedInputStream.fill": 28483,
+        "org.apache.maven.surefire.booter.stream.CommandDecoder.decode": 28483,
+        "org.apache.maven.surefire.api.util.internal.AbstractNoninterruptibleReadableChannel.read": 28483,
+        "java.io.BufferedInputStream.read1": 28483,
+        "org.apache.maven.surefire.booter.spi.CommandChannelDecoder.decode": 28483,
+        "org.apache.maven.surefire.api.stream.AbstractStreamDecoder.readMessageType": 28483,
+        "java.io.BufferedInputStream.read": 28483,
+        "org.apache.maven.surefire.booter.CommandReader$CommandRunnable.run": 28483,
+        "org.apache.maven.surefire.api.util.internal.Channels$3.readImpl": 28483,
+        "java.lang.ProcessHandleImpl$1.run": 21481,
+        "java.util.concurrent.ThreadPoolExecutor.runWorker": 21481,
+        "java.lang.ProcessHandleImpl.waitForProcessExit0": 21481,
+        "java.util.concurrent.ThreadPoolExecutor$Worker.run": 21481,
+        "jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke": 3986,
+        "java.lang.reflect.Method.invoke": 3986,
+        "jdk.internal.reflect.NativeMethodAccessorImpl.invoke": 3986,
+        "jdk.internal.reflect.NativeMethodAccessorImpl.invoke0": 3986,
+        "org.junit.platform.commons.util.ReflectionUtils.invokeMethod": 3984,
+        "org.junit.jupiter.engine.execution.MethodInvocation.proceed": 3984,
+        "org.junit.jupiter.engine.execution.InvocationInterceptorChain$ValidatingInvocation.proceed": 3983,
+        "org.junit.jupiter.engine.extension.SameThreadTimeoutInvocation.proceed": 3981,
+        "org.junit.jupiter.engine.extension.TimeoutExtension.intercept": 3913,
+        "org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestableMethod": 3906,
+        "org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestTemplateMethod": 3898,
+        "tech.streamfusion.CanonicalJobRunner.run": 3895,
+        "org.junit.jupiter.engine.execution.InterceptingExecutableInvoker$ReflectiveInterceptorCall.lambda$ofVoidMethod$0": 3886,
+        "org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.lambda$invoke$0": 3881,
+        "org.junit.jupiter.engine.execution.InvocationInterceptorChain.proceed": 3869,
+        "org.junit.jupiter.engine.execution.InvocationInterceptorChain$InterceptedInvocation.proceed": 3869,
+        "org.junit.jupiter.engine.execution.InvocationInterceptorChain.invoke": 3867,
+        "org.junit.jupiter.engine.execution.InvocationInterceptorChain.chainAndInvoke": 3867,
+        "tech.streamfusion.CanonicalManagedUdfWideKeyJobTest.generatedArithmeticStateContinuesAcrossIsolatedEngines": 3862,
+        "tech.streamfusion.CanonicalJobRunner.verifyJoinSwitch": 3862,
+        "tech.streamfusion.CanonicalGroupArithmeticJobTest.generatedArithmeticStateContinuesAcrossIsolatedEngines": 3862,
+        "org.junit.jupiter.engine.descriptor.TestTemplateInvocationTestDescriptor$$Lambda$593.1781459498.apply": 3856,
+        "org.junit.jupiter.engine.execution.InterceptingExecutableInvoker$ReflectiveInterceptorCall$$Lambda$592.70555476.apply": 3856
+      },
+      "native_sampled_threads": {
+        "surefire-forkedjvm-command-thread": 28585,
+        "process reaper": 21481,
+        "main": 4215,
+        "docker-java-stream--602349769": 1107,
+        "docker-java-stream--1900126211": 464,
+        "docker-java-stream--1739657709": 288,
+        "docker-java-stream-422145341": 264,
+        "kafka-admin-client-thread | adminclient-1": 37,
+        "kafka-producer-network-thread | producer-1": 6,
+        "kafka-producer-network-thread | producer-2": 3,
+        "kafka-producer-network-thread | producer-3": 2,
+        "kafka-admin-client-thread | adminclient-2": 2,
+        "kafka-producer-network-thread | producer-4": 2,
+        "kafka-producer-network-thread | producer-5": 2,
+        "kafka-producer-network-thread | producer-6": 2,
+        "Thread-2": 1
+      },
+      "compilation_events": {
+        "c1": 11647
+      },
+      "compilation_activity_seconds": {
+        "c1": 3.130767613000019
+      },
+      "allocation_sample_weight_bytes": {},
+      "wait_seconds_by_kind": {
+        "jdk.JavaMonitorWait": 1410.7779242729998,
+        "jdk.ThreadPark": 1312.4830673760025,
+        "jdk.ThreadSleep": 2.651572650000002
+      },
+      "wait_seconds_by_thread": {
+        "surefire-forkedjvm-stream-flusher": 574.3874836689978,
+        "junit-jupiter-timeout-watcher": 522.823331586,
+        "main": 481.3647331350002,
+        "Common-Cleaner": 445.59350229,
+        "testcontainers-ryuk": 289.13284616100015,
+        "Finalizer": 194.063172538,
+        "testcontainers-pull-watchdog-1": 89.57360738300018,
+        "process reaper": 83.64248662600001,
+        "JNA Cleaner": 45.231336825,
+        "kafka-producer-network-thread | producer-1": 0.100064086
+      },
+      "main_wait_seconds_by_stack": {
+        "java.lang.Object.wait > java.lang.Object.wait > java.util.concurrent.TimeUnit.timedWait > java.lang.ProcessImpl.waitFor > tech.streamfusion.CanonicalWorkerCache$Archive.trained > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalJobRunner.run": 193.16082962500002,
+        "java.lang.Object.wait > java.lang.Object.wait > java.util.concurrent.TimeUnit.timedWait > java.lang.ProcessImpl.waitFor > tech.streamfusion.CanonicalWorkerCache$Archive.trained > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalRegularJoinJobTest.check": 85.828977766,
+        "java.lang.Object.wait > java.lang.Object.wait > java.util.concurrent.TimeUnit.timedWait > java.lang.ProcessImpl.waitFor > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalRegularJoinJobTest.check > tech.streamfusion.CanonicalRegularJoinJobTest.nativeRegularCheckpointResumesBeforeCanonicalSwitch": 44.006281238999996,
+        "java.lang.Object.wait > java.lang.Object.wait > java.util.concurrent.TimeUnit.timedWait > java.lang.ProcessImpl.waitFor > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalKafkaSourceJobTest.sourceOffsetsAndCoordinatorSurviveRepeatedCanonicalEngineSwitches": 34.109507175,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.locks.AbstractQueuedSynchronizer.parkAndCheckInterrupt > java.util.concurrent.locks.AbstractQueuedSynchronizer.doAcquireSharedInterruptibly > java.util.concurrent.locks.AbstractQueuedSynchronizer.acquireSharedInterruptibly > java.util.concurrent.CountDownLatch.await > com.github.dockerjava.api.async.ResultCallbackTemplate.awaitCompletion > org.testcontainers.images.TimeLimitedLoggedPullImageResultCallback.awaitCompletion": 31.827904866,
+        "java.lang.Object.wait > java.lang.Object.wait > java.util.concurrent.TimeUnit.timedWait > java.lang.ProcessImpl.waitFor > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalRegularJoinJobTest.check > tech.streamfusion.CanonicalRegularJoinJobTest.regularStateContinuesAcrossCleanEngineProcesses": 25.578410659,
+        "java.lang.Object.wait > java.lang.Object.wait > java.util.concurrent.TimeUnit.timedWait > java.lang.ProcessImpl.waitFor > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalKafkaSinkJobTest.preservesExactlyOnceSinkEffectsAcrossRepeatedCanonicalSwitches": 22.212034762,
+        "java.lang.Object.wait > java.lang.Object.wait > java.util.concurrent.TimeUnit.timedWait > java.lang.ProcessImpl.waitFor > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalJobRunner.verifyJoinSwitch > tech.streamfusion.CanonicalGroupArithmeticJobTest.generatedArithmeticStateContinuesAcrossIsolatedEngines": 16.134657354999998,
+        "java.lang.Object.wait > java.lang.Object.wait > java.util.concurrent.TimeUnit.timedWait > java.lang.ProcessImpl.waitFor > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalJobRunner.run > tech.streamfusion.CanonicalJobRunner.runStockAtSavepointCuts > tech.streamfusion.CanonicalJobRunner.verifyJoinSwitch": 15.680670748999997,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.parkNanos > java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject.awaitNanos > java.util.concurrent.LinkedBlockingDeque.pollLast > org.testcontainers.containers.output.WaitingConsumer.waitUntil > org.testcontainers.containers.output.WaitingConsumer.waitUntil > org.testcontainers.containers.wait.strategy.LogMessageWaitStrategy.waitUntilReady > org.testcontainers.containers.wait.strategy.AbstractWaitStrategy.waitUntilReady": 8.658783511,
+        "java.lang.Thread.sleep > org.testcontainers.containers.output.WaitingConsumer.waitUntil > org.testcontainers.containers.output.WaitingConsumer.waitUntil > org.testcontainers.containers.wait.strategy.LogMessageWaitStrategy.waitUntilReady > org.testcontainers.containers.wait.strategy.AbstractWaitStrategy.waitUntilReady > org.testcontainers.containers.GenericContainer.waitUntilContainerStarted > org.testcontainers.containers.GenericContainer.tryStart > org.testcontainers.containers.GenericContainer.lambda$doStart$0": 2.5515085640000015,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.parkNanos > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.timedGet > java.util.concurrent.CompletableFuture.get > org.apache.kafka.common.internals.KafkaFutureImpl.get > tech.streamfusion.CanonicalKafkaSourceJobTest.sourceOffsetsAndCoordinatorSurviveRepeatedCanonicalEngineSwitches": 0.725245468,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.parkNanos > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.timedGet > java.util.concurrent.CompletableFuture.get > org.apache.kafka.common.internals.KafkaFutureImpl.get > tech.streamfusion.CanonicalKafkaSinkJobTest.preservesExactlyOnceSinkEffectsAcrossRepeatedCanonicalSwitches": 0.567843216,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.parkNanos > java.util.concurrent.locks.AbstractQueuedSynchronizer.doAcquireSharedNanos > java.util.concurrent.locks.AbstractQueuedSynchronizer.tryAcquireSharedNanos > java.util.concurrent.CountDownLatch.await > org.apache.kafka.clients.producer.internals.ProduceRequestResult.await > org.apache.kafka.clients.producer.internals.FutureRecordMetadata.get > org.apache.kafka.clients.producer.internals.FutureRecordMetadata.get": 0.25017288600000004,
+        "java.lang.Object.wait > org.apache.kafka.common.utils.SystemTime.waitObject > org.apache.kafka.clients.producer.internals.ProducerMetadata.awaitUpdate > org.apache.kafka.clients.producer.KafkaProducer.waitOnMetadata > org.apache.kafka.clients.producer.KafkaProducer.doSend > org.apache.kafka.clients.producer.KafkaProducer.send > org.apache.kafka.clients.producer.KafkaProducer.send > tech.streamfusion.CanonicalKafkaSourceJobTest.produce": 0.033732536,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.parkNanos > java.util.concurrent.locks.AbstractQueuedSynchronizer.doAcquireSharedNanos > java.util.concurrent.locks.AbstractQueuedSynchronizer.tryAcquireSharedNanos > java.util.concurrent.Semaphore.tryAcquire > org.apache.maven.surefire.booter.ForkedBooter.acquireOnePermit > org.apache.maven.surefire.booter.ForkedBooter.acknowledgedExit > org.apache.maven.surefire.booter.ForkedBooter.execute": 0.026208165,
+        "java.lang.Object.wait > java.lang.Thread.join > org.apache.kafka.clients.admin.KafkaAdminClient.close > org.apache.kafka.clients.admin.Admin.close > tech.streamfusion.CanonicalKafkaSourceJobTest.sourceOffsetsAndCoordinatorSurviveRepeatedCanonicalEngineSwitches > jdk.internal.reflect.NativeMethodAccessorImpl.invoke0 > jdk.internal.reflect.NativeMethodAccessorImpl.invoke > jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke": 0.011964593
+      },
+      "gc_events": {
+        "DefNew / Allocation Failure": 16,
+        "SerialOld / Metadata GC Threshold": 6
+      },
+      "gc_activity_seconds": {
+        "SerialOld / Metadata GC Threshold": 0.317541481,
+        "DefNew / Allocation Failure": 0.231775352
+      },
+      "gc_heap_used_max_bytes": {
+        "Before GC": 108006400,
+        "After GC": 38993288
+      },
+      "recordings": 4,
+      "limits": "Java execution samples and native-method stack samples are separate. Native samples include blocking I/O and are not CPU attribution. Inclusive counts overlap. Neither sample count is exact CPU time. Native samples do not resolve Rust internals. Compilation durations are activity intervals, not compiler CPU seconds. Allocation weights are sampled estimates. Wait durations exclude unrecorded short waits, overlap across threads and are not CPU time. GC activity is not total stop-the-world pause time; heap summaries are maxima at recorded GC boundaries, not peak RSS. Instrumented elapsed times are not speedup evidence."
+    },
+    "comparison": {
+      "prior_java_samples": 1771,
+      "current_java_samples": 269,
+      "prior_classpath_samples": 1543,
+      "current_classpath_samples": 37,
+      "prior_sha2_compress_leaf_samples": 1442,
+      "current_sha2_compress_leaf_samples": 25
+    },
+    "limits": "Separate instrumented runs on hosted Linux, identical eight selected recovery/Kafka invocations and four parent recordings. Sample reductions support removal of redundant packing/hash work, not exact CPU or elapsed speedup. Full required CI and upstream coverage remain separate."
+  },
+  "jdk11_metadata_generator_crash": {
+    "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43284069894",
+    "commit": "87f22de65008ead9f81a6b4d282d4be635368e95",
+    "job": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43284069894/job/131413966522",
+    "jdk": "Temurin 11.0.32+9",
+    "cohort": "flink2.2-jdk11-shard16",
+    "class": "CanonicalGroupArithmeticAppendJobTest",
+    "invocation": "generatedArithmeticStateContinuesAcrossIsolatedEngines[1]",
+    "phase": "separate CDS generator JVM after a completed native middle-stage worker",
+    "fatal_frame": "AdjustPointerClosure::do_oop(oopDesc**)+0x13",
+    "stack": [
+      "SymbolPropertyTable::oops_do",
+      "GenMarkSweep::mark_sweep_phase3",
+      "VM_CollectForMetadataAllocation::doit"
+    ],
+    "collector": "Serial",
+    "rss_kib": 325156,
+    "limits": "Observed HotSpot SIGSEGV, not a successful qualification. Collector-specific G1 metadata generation is a proposed repair; worker Serial settings remain separate. No full-CI improvement claim from this failed run.",
+    "failed_run_timing": {
+      "elapsed_seconds": 11079.0,
+      "runner_seconds": 177062.0,
+      "groups": {
+        "other": {
+          "jobs": 16,
+          "runner_seconds": 10665.0,
+          "max_job_seconds": 1865.0
+        },
+        "canonical preparation": {
+          "jobs": 4,
+          "runner_seconds": 382.0,
+          "max_job_seconds": 121.0
+        },
+        "java": {
+          "jobs": 12,
+          "runner_seconds": 34689.0,
+          "max_job_seconds": 3434.0
+        },
+        "canonical": {
+          "jobs": 64,
+          "runner_seconds": 131326.0,
+          "max_job_seconds": 2979.0
+        }
+      }
+    }
+  },
+  "upstream_archive_footprint": {
+    "run": 43324963308,
+    "head": "af5ab61cbb531f24ea3ace318de1d89ea121ded9",
+    "line": "2.2",
+    "archive_bytes": 2996228021,
+    "archive_sha256": "7631d5994447108c079e6bd353fef80d37e2a95263ecaba3cde5f7ffe24aea3f",
+    "total_file_bytes": 5051088173,
+    "groups": {
+      "Flink source and other inputs": {
+        "files": 24671,
+        "bytes": 198695865
+      },
+      "Flink build outputs": {
+        "files": 31951,
+        "bytes": 381944774
+      },
+      "Flink Git metadata": {
+        "files": 26,
+        "bytes": 55648009
+      },
+      "Maven repository": {
+        "files": 10849,
+        "bytes": 2571642206
+      },
+      "Other prepared inputs": {
+        "files": 80,
+        "bytes": 28531647
+      },
+      "StreamFusion native libraries": {
+        "files": 12,
+        "bytes": 1814625672
+      }
+    },
+    "jar_bytes": 2770564201,
+    "unique_jar_bytes": 2642352756,
+    "redundant_jar_bytes": 128211445,
+    "duplicate_jar_groups": 86,
+    "elapsed_seconds": 192.06423779192846,
+    "limits": "One actual successful prepared Flink2.2 build. Content hashes identify duplicate JAR bytes; potential transfer reduction requires a validated archive implementation. No files were unpacked or modified.",
+    "decision": "Apply existing allocated-section-preserving stripping to private upstream archive native copies; keep shared Cargo outputs and Java payloads intact. Avoid new JAR deduplication format. Integrated qualification required to measure actual archive reduction and full-suite behavior.",
+    "upstream_comparison": {
+      "baseline_run": 43116127235,
+      "baseline_runner_seconds": 14121,
+      "candidate_runner_seconds": 14956,
+      "baseline_elapsed_seconds": 5669,
+      "candidate_elapsed_seconds": 6023,
+      "baseline_download_verify_step_seconds": 682,
+      "candidate_download_verify_step_seconds": 1255,
+      "consumers": 14
+    }
+  },
+  "qualified_control_af5ab61cb": {
+    "baseline_run": 43116124202,
+    "candidate_run": 43324959481,
+    "head": "af5ab61cbb531f24ea3ace318de1d89ea121ded9",
+    "production_source_diff": "git diff b531553fa72b12d4da2d5e96d092c6828920dbf3 af5ab61cbb531f24ea3ace318de1d89ea121ded9 -- native src/main is empty",
+    "baseline_elapsed_seconds": 13034.0,
+    "candidate_elapsed_seconds": 10840.0,
+    "elapsed_reduction_percent": 16.832898572963018,
+    "baseline_ci_runner_seconds": 204900.0,
+    "candidate_ci_runner_seconds": 168673.0,
+    "ci_runner_reduction_percent": 17.68033186920449,
+    "baseline_two_test_workflows_runner_seconds": 219021.0,
+    "candidate_two_test_workflows_runner_seconds": 183629.0,
+    "two_test_workflows_runner_reduction_percent": 16.159181083092488,
+    "canonical_eligibility_to_start": {
+      "prerequisites_ready_delay_seconds": 141.0,
+      "median_seconds": 4873.5,
+      "max_seconds": 8001.0
+    },
+    "peak_ci_execution": 20,
+    "cohorts": {
+      "Flink 2.2, JDK 17": {
+        "runner_seconds": 28595.0,
+        "median_start_delay_seconds": 2517.0
+      },
+      "Flink 2.2, JDK 11": {
+        "runner_seconds": 37074.0,
+        "median_start_delay_seconds": 4889.5
+      },
+      "Flink 1.18, JDK 17": {
+        "runner_seconds": 26828.0,
+        "median_start_delay_seconds": 6137.0
+      },
+      "Flink 1.18, JDK 11": {
+        "runner_seconds": 33597.0,
+        "median_start_delay_seconds": 7483.5
+      }
+    },
+    "canonical_coverage": {
+      "flink1.18-jdk11": {
+        "shards": 16,
+        "selected_classes": 120,
+        "reported_classes": 118,
+        "outcomes": {
+          "tests": 3592,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "case_identities_sha256": "629201a64b8b5317b6c9c215001370b993a0283569e24481f45b88f6e3c8dd20",
+        "inventory_sha256": [
+          "aa0f72bd3192746068a76fb24ab8d0f548e964a6dcb19bd0b3feab7d1f1781ec"
+        ]
+      },
+      "flink1.18-jdk17": {
+        "shards": 16,
+        "selected_classes": 120,
+        "reported_classes": 118,
+        "outcomes": {
+          "tests": 3592,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "case_identities_sha256": "629201a64b8b5317b6c9c215001370b993a0283569e24481f45b88f6e3c8dd20",
+        "inventory_sha256": [
+          "aa0f72bd3192746068a76fb24ab8d0f548e964a6dcb19bd0b3feab7d1f1781ec"
+        ]
+      },
+      "flink2.2-jdk11": {
+        "shards": 16,
+        "selected_classes": 120,
+        "reported_classes": 118,
+        "outcomes": {
+          "tests": 3676,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "case_identities_sha256": "746fa4abeba3c2e12ca32a9203e6ad8baf4c5b2daf2e485c8682957612efcb00",
+        "inventory_sha256": [
+          "aa0f72bd3192746068a76fb24ab8d0f548e964a6dcb19bd0b3feab7d1f1781ec"
+        ]
+      },
+      "flink2.2-jdk17": {
+        "shards": 16,
+        "selected_classes": 120,
+        "reported_classes": 118,
+        "outcomes": {
+          "tests": 3676,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "case_identities_sha256": "746fa4abeba3c2e12ca32a9203e6ad8baf4c5b2daf2e485c8682957612efcb00",
+        "inventory_sha256": [
+          "aa0f72bd3192746068a76fb24ab8d0f548e964a6dcb19bd0b3feab7d1f1781ec"
+        ]
+      }
+    },
+    "limits": "Successful64-shard pre-integration candidate. No production native/Java source changes against baseline; all14536 invocations/outcomes match. Cross-run timings include environment/cache/queue variance. Original baseline overlapped optional Paimon1.0 campaign43116130672; candidate ran merge gates/docs only. Runner seconds are observed execution intervals, not billed minutes. Proposed40-shard and upstream private stripping changes are not qualified by this run.",
+    "groups": {
+      "other": {
+        "jobs": 16,
+        "runner_seconds": 10518.0,
+        "max_job_seconds": 2308.0
+      },
+      "canonical preparation": {
+        "jobs": 4,
+        "runner_seconds": 448.0,
+        "max_job_seconds": 119.0
+      },
+      "java": {
+        "jobs": 12,
+        "runner_seconds": 31613.0,
+        "max_job_seconds": 3615.0
+      },
+      "canonical": {
+        "jobs": 64,
+        "runner_seconds": 126094.0,
+        "max_job_seconds": 2849.0
+      }
+    },
+    "checks": {
+      "ci_jobs": 96,
+      "ci_conclusion": "success",
+      "upstream_run": 43324963308,
+      "upstream_jobs": 19,
+      "upstream_conclusion": "success",
+      "docs_run": 43324967247,
+      "docs_conclusion": "success",
+      "attempts": 1
+    },
+    "all_production_source_changes": []
+  },
+  "dynamic_cds_deferred": {
+    "candidate_commit": "87f22de65008ead9f81a6b4d282d4be635368e95",
+    "platform": "macOS-15.3.1-arm64-arm-64bit-Mach-O",
+    "java": "openjdk full version \"17.0.17+10\"",
+    "selection": "Actual stock CanonicalGroupArithmeticJobTest continue/compiled-plan/hashmap fixture via CanonicalJobRunner. Eight fresh stock workers per trial; three alternating pairs. All48 timed workers retained result and stock-isolation checks, each produced33 committed changes with the expected final aggregate state.",
+    "medians": {
+      "static": {
+        "elapsed_seconds": 21.037583875004202,
+        "cpu_seconds": 21.014348
+      },
+      "dynamic": {
+        "elapsed_seconds": 18.18833579204511,
+        "cpu_seconds": 18.599044
+      }
+    },
+    "limits": "Local stock-only attribution and comparison. No native-engine or hosted Linux proof; no claim about full-CI speedup. Separate generator time real43.99 in first pair conflicts with total/worker monotonic timers and is not used in comparisons. Dynamic class-load control verifies CanonicalJobWorker loaded from shared objects file (top).",
+    "reference": "https://docs.oracle.com/en/java/javase/17/docs/specs/man/java.html",
+    "timed_trials": [
+      {
+        "pair": 0,
+        "dynamic": false,
+        "exit_code": 0,
+        "elapsed_seconds": 21.186884332913905,
+        "cpu_seconds": 21.014348,
+        "workers": [
+          {
+            "index": 0,
+            "elapsed_seconds": 10.049749291,
+            "committed_rows": 33
+          },
+          {
+            "index": 1,
+            "elapsed_seconds": 1.54855975,
+            "committed_rows": 33
+          },
+          {
+            "index": 2,
+            "elapsed_seconds": 1.578503084,
+            "committed_rows": 33
+          },
+          {
+            "index": 3,
+            "elapsed_seconds": 1.577231,
+            "committed_rows": 33
+          },
+          {
+            "index": 4,
+            "elapsed_seconds": 1.573367916,
+            "committed_rows": 33
+          },
+          {
+            "index": 5,
+            "elapsed_seconds": 1.575790208,
+            "committed_rows": 33
+          },
+          {
+            "index": 6,
+            "elapsed_seconds": 1.584234541,
+            "committed_rows": 33
+          },
+          {
+            "index": 7,
+            "elapsed_seconds": 1.579011292,
+            "committed_rows": 33
+          }
+        ],
+        "archive_process_observations": {
+          "real": 43.99,
+          "user": 5.18,
+          "sys": 1.71
+        }
+      },
+      {
+        "pair": 0,
+        "dynamic": true,
+        "exit_code": 0,
+        "elapsed_seconds": 18.093468124978244,
+        "cpu_seconds": 18.541128,
+        "workers": [
+          {
+            "index": 0,
+            "elapsed_seconds": 7.347091125,
+            "committed_rows": 33
+          },
+          {
+            "index": 1,
+            "elapsed_seconds": 1.513807083,
+            "committed_rows": 33
+          },
+          {
+            "index": 2,
+            "elapsed_seconds": 1.522617083,
+            "committed_rows": 33
+          },
+          {
+            "index": 3,
+            "elapsed_seconds": 1.51492725,
+            "committed_rows": 33
+          },
+          {
+            "index": 4,
+            "elapsed_seconds": 1.527537209,
+            "committed_rows": 33
+          },
+          {
+            "index": 5,
+            "elapsed_seconds": 1.515403125,
+            "committed_rows": 33
+          },
+          {
+            "index": 6,
+            "elapsed_seconds": 1.509489708,
+            "committed_rows": 33
+          },
+          {
+            "index": 7,
+            "elapsed_seconds": 1.514446667,
+            "committed_rows": 33
+          }
+        ],
+        "archive_process_observations": {}
+      },
+      {
+        "pair": 1,
+        "dynamic": true,
+        "exit_code": 0,
+        "elapsed_seconds": 18.56846341607161,
+        "cpu_seconds": 18.599044,
+        "workers": [
+          {
+            "index": 0,
+            "elapsed_seconds": 7.372589,
+            "committed_rows": 33
+          },
+          {
+            "index": 1,
+            "elapsed_seconds": 1.510444042,
+            "committed_rows": 33
+          },
+          {
+            "index": 2,
+            "elapsed_seconds": 1.5184965,
+            "committed_rows": 33
+          },
+          {
+            "index": 3,
+            "elapsed_seconds": 1.555137417,
+            "committed_rows": 33
+          },
+          {
+            "index": 4,
+            "elapsed_seconds": 1.859970791,
+            "committed_rows": 33
+          },
+          {
+            "index": 5,
+            "elapsed_seconds": 1.515175916,
+            "committed_rows": 33
+          },
+          {
+            "index": 6,
+            "elapsed_seconds": 1.514551542,
+            "committed_rows": 33
+          },
+          {
+            "index": 7,
+            "elapsed_seconds": 1.54377775,
+            "committed_rows": 33
+          }
+        ],
+        "archive_process_observations": {}
+      },
+      {
+        "pair": 1,
+        "dynamic": false,
+        "exit_code": 0,
+        "elapsed_seconds": 20.910305583965965,
+        "cpu_seconds": 20.967537,
+        "workers": [
+          {
+            "index": 0,
+            "elapsed_seconds": 9.789778458,
+            "committed_rows": 33
+          },
+          {
+            "index": 1,
+            "elapsed_seconds": 1.553369292,
+            "committed_rows": 33
+          },
+          {
+            "index": 2,
+            "elapsed_seconds": 1.561525,
+            "committed_rows": 33
+          },
+          {
+            "index": 3,
+            "elapsed_seconds": 1.573226583,
+            "committed_rows": 33
+          },
+          {
+            "index": 4,
+            "elapsed_seconds": 1.5811855,
+            "committed_rows": 33
+          },
+          {
+            "index": 5,
+            "elapsed_seconds": 1.572209375,
+            "committed_rows": 33
+          },
+          {
+            "index": 6,
+            "elapsed_seconds": 1.57933275,
+            "committed_rows": 33
+          },
+          {
+            "index": 7,
+            "elapsed_seconds": 1.563212,
+            "committed_rows": 33
+          }
+        ],
+        "archive_process_observations": {
+          "real": 6.79,
+          "user": 5.13,
+          "sys": 1.68
+        }
+      },
+      {
+        "pair": 2,
+        "dynamic": false,
+        "exit_code": 0,
+        "elapsed_seconds": 21.037583875004202,
+        "cpu_seconds": 21.216070000000002,
+        "workers": [
+          {
+            "index": 0,
+            "elapsed_seconds": 9.914603208,
+            "committed_rows": 33
+          },
+          {
+            "index": 1,
+            "elapsed_seconds": 1.558573542,
+            "committed_rows": 33
+          },
+          {
+            "index": 2,
+            "elapsed_seconds": 1.581246667,
+            "committed_rows": 33
+          },
+          {
+            "index": 3,
+            "elapsed_seconds": 1.546849042,
+            "committed_rows": 33
+          },
+          {
+            "index": 4,
+            "elapsed_seconds": 1.5805775,
+            "committed_rows": 33
+          },
+          {
+            "index": 5,
+            "elapsed_seconds": 1.568805833,
+            "committed_rows": 33
+          },
+          {
+            "index": 6,
+            "elapsed_seconds": 1.580835042,
+            "committed_rows": 33
+          },
+          {
+            "index": 7,
+            "elapsed_seconds": 1.57224525,
+            "committed_rows": 33
+          }
+        ],
+        "archive_process_observations": {
+          "real": 6.91,
+          "user": 5.22,
+          "sys": 1.71
+        }
+      },
+      {
+        "pair": 2,
+        "dynamic": true,
+        "exit_code": 0,
+        "elapsed_seconds": 18.18833579204511,
+        "cpu_seconds": 18.687162999999995,
+        "workers": [
+          {
+            "index": 0,
+            "elapsed_seconds": 7.392231458,
+            "committed_rows": 33
+          },
+          {
+            "index": 1,
+            "elapsed_seconds": 1.510327209,
+            "committed_rows": 33
+          },
+          {
+            "index": 2,
+            "elapsed_seconds": 1.511941083,
+            "committed_rows": 33
+          },
+          {
+            "index": 3,
+            "elapsed_seconds": 1.518717583,
+            "committed_rows": 33
+          },
+          {
+            "index": 4,
+            "elapsed_seconds": 1.520272916,
+            "committed_rows": 33
+          },
+          {
+            "index": 5,
+            "elapsed_seconds": 1.526852833,
+            "committed_rows": 33
+          },
+          {
+            "index": 6,
+            "elapsed_seconds": 1.531470125,
+            "committed_rows": 33
+          },
+          {
+            "index": 7,
+            "elapsed_seconds": 1.527369041,
+            "committed_rows": 33
+          }
+        ],
+        "archive_process_observations": {}
+      }
+    ],
+    "steady_worker_elapsed_medians_seconds": {
+      "static": 1.573367916,
+      "dynamic": 1.5184965
+    },
+    "decision": "Deferred: stock-only local evidence, no native/Linux qualification or complete CI-cache-lifetime measurement. Keep the validated static archive path for this change; preserve the small probe patch and actual outcomes for a later focused experiment.",
+    "probe_patch": ".claude/wontdos/ci-dynamic-cds.patch",
+    "probe_patch_sha256": "7f3de433fc8ff46b047bd3b3cd0da04e49c2c1aa21a9684f012621e5a5b51ee7"
+  },
+  "inner_loop_followup": {
+    "maven_repository_order": {
+      "trials": [
+        {
+          "pair": 0,
+          "mode": "vendor_first",
+          "artifact": "central-parent",
+          "phase": "cold",
+          "elapsed_seconds": 1.084937792038545,
+          "exit_code": 0,
+          "requests": [
+            {
+              "repository": "confluent",
+              "artifact": "central-parent",
+              "path": "/confluent/test/repository/order/central-parent/1/central-parent-1.pom",
+              "status": 404
+            },
+            {
+              "repository": "central",
+              "artifact": "central-parent",
+              "path": "/central/test/repository/order/central-parent/1/central-parent-1.pom",
+              "status": 200
+            },
+            {
+              "repository": "central",
+              "artifact": "central-parent",
+              "path": "/central/test/repository/order/central-parent/1/central-parent-1.pom.sha1",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "pair": 0,
+          "mode": "vendor_first",
+          "artifact": "central-parent",
+          "phase": "warm",
+          "elapsed_seconds": 0.5803513750433922,
+          "exit_code": 0,
+          "requests": []
+        },
+        {
+          "pair": 0,
+          "mode": "vendor_first",
+          "artifact": "vendor-parent",
+          "phase": "cold",
+          "elapsed_seconds": 0.6593297909712419,
+          "exit_code": 0,
+          "requests": [
+            {
+              "repository": "confluent",
+              "artifact": "vendor-parent",
+              "path": "/confluent/test/repository/order/vendor-parent/1/vendor-parent-1.pom",
+              "status": 200
+            },
+            {
+              "repository": "confluent",
+              "artifact": "vendor-parent",
+              "path": "/confluent/test/repository/order/vendor-parent/1/vendor-parent-1.pom.sha1",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "pair": 0,
+          "mode": "vendor_first",
+          "artifact": "vendor-parent",
+          "phase": "warm",
+          "elapsed_seconds": 0.5635057910112664,
+          "exit_code": 0,
+          "requests": []
+        },
+        {
+          "pair": 0,
+          "mode": "central_first",
+          "artifact": "central-parent",
+          "phase": "cold",
+          "elapsed_seconds": 0.6607119170948863,
+          "exit_code": 0,
+          "requests": [
+            {
+              "repository": "central",
+              "artifact": "central-parent",
+              "path": "/central/test/repository/order/central-parent/1/central-parent-1.pom",
+              "status": 200
+            },
+            {
+              "repository": "central",
+              "artifact": "central-parent",
+              "path": "/central/test/repository/order/central-parent/1/central-parent-1.pom.sha1",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "pair": 0,
+          "mode": "central_first",
+          "artifact": "central-parent",
+          "phase": "warm",
+          "elapsed_seconds": 0.5692808750318363,
+          "exit_code": 0,
+          "requests": []
+        },
+        {
+          "pair": 0,
+          "mode": "central_first",
+          "artifact": "vendor-parent",
+          "phase": "cold",
+          "elapsed_seconds": 0.6588784999912605,
+          "exit_code": 0,
+          "requests": [
+            {
+              "repository": "central",
+              "artifact": "vendor-parent",
+              "path": "/central/test/repository/order/vendor-parent/1/vendor-parent-1.pom",
+              "status": 404
+            },
+            {
+              "repository": "confluent",
+              "artifact": "vendor-parent",
+              "path": "/confluent/test/repository/order/vendor-parent/1/vendor-parent-1.pom",
+              "status": 200
+            },
+            {
+              "repository": "confluent",
+              "artifact": "vendor-parent",
+              "path": "/confluent/test/repository/order/vendor-parent/1/vendor-parent-1.pom.sha1",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "pair": 0,
+          "mode": "central_first",
+          "artifact": "vendor-parent",
+          "phase": "warm",
+          "elapsed_seconds": 0.5918495840160176,
+          "exit_code": 0,
+          "requests": []
+        },
+        {
+          "pair": 1,
+          "mode": "central_first",
+          "artifact": "central-parent",
+          "phase": "cold",
+          "elapsed_seconds": 0.6648289159638807,
+          "exit_code": 0,
+          "requests": [
+            {
+              "repository": "central",
+              "artifact": "central-parent",
+              "path": "/central/test/repository/order/central-parent/1/central-parent-1.pom",
+              "status": 200
+            },
+            {
+              "repository": "central",
+              "artifact": "central-parent",
+              "path": "/central/test/repository/order/central-parent/1/central-parent-1.pom.sha1",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "mode": "central_first",
+          "artifact": "central-parent",
+          "phase": "warm",
+          "elapsed_seconds": 0.5875491669867188,
+          "exit_code": 0,
+          "requests": []
+        },
+        {
+          "pair": 1,
+          "mode": "central_first",
+          "artifact": "vendor-parent",
+          "phase": "cold",
+          "elapsed_seconds": 0.6627274169586599,
+          "exit_code": 0,
+          "requests": [
+            {
+              "repository": "central",
+              "artifact": "vendor-parent",
+              "path": "/central/test/repository/order/vendor-parent/1/vendor-parent-1.pom",
+              "status": 404
+            },
+            {
+              "repository": "confluent",
+              "artifact": "vendor-parent",
+              "path": "/confluent/test/repository/order/vendor-parent/1/vendor-parent-1.pom",
+              "status": 200
+            },
+            {
+              "repository": "confluent",
+              "artifact": "vendor-parent",
+              "path": "/confluent/test/repository/order/vendor-parent/1/vendor-parent-1.pom.sha1",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "mode": "central_first",
+          "artifact": "vendor-parent",
+          "phase": "warm",
+          "elapsed_seconds": 0.5722532499348745,
+          "exit_code": 0,
+          "requests": []
+        },
+        {
+          "pair": 1,
+          "mode": "vendor_first",
+          "artifact": "central-parent",
+          "phase": "cold",
+          "elapsed_seconds": 0.9212309579597786,
+          "exit_code": 0,
+          "requests": [
+            {
+              "repository": "confluent",
+              "artifact": "central-parent",
+              "path": "/confluent/test/repository/order/central-parent/1/central-parent-1.pom",
+              "status": 404
+            },
+            {
+              "repository": "central",
+              "artifact": "central-parent",
+              "path": "/central/test/repository/order/central-parent/1/central-parent-1.pom",
+              "status": 200
+            },
+            {
+              "repository": "central",
+              "artifact": "central-parent",
+              "path": "/central/test/repository/order/central-parent/1/central-parent-1.pom.sha1",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "mode": "vendor_first",
+          "artifact": "central-parent",
+          "phase": "warm",
+          "elapsed_seconds": 0.5669055840699002,
+          "exit_code": 0,
+          "requests": []
+        },
+        {
+          "pair": 1,
+          "mode": "vendor_first",
+          "artifact": "vendor-parent",
+          "phase": "cold",
+          "elapsed_seconds": 0.6650709999958053,
+          "exit_code": 0,
+          "requests": [
+            {
+              "repository": "confluent",
+              "artifact": "vendor-parent",
+              "path": "/confluent/test/repository/order/vendor-parent/1/vendor-parent-1.pom",
+              "status": 200
+            },
+            {
+              "repository": "confluent",
+              "artifact": "vendor-parent",
+              "path": "/confluent/test/repository/order/vendor-parent/1/vendor-parent-1.pom.sha1",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "mode": "vendor_first",
+          "artifact": "vendor-parent",
+          "phase": "warm",
+          "elapsed_seconds": 0.5713342089438811,
+          "exit_code": 0,
+          "requests": []
+        },
+        {
+          "pair": 2,
+          "mode": "vendor_first",
+          "artifact": "central-parent",
+          "phase": "cold",
+          "elapsed_seconds": 0.9140150409657508,
+          "exit_code": 0,
+          "requests": [
+            {
+              "repository": "confluent",
+              "artifact": "central-parent",
+              "path": "/confluent/test/repository/order/central-parent/1/central-parent-1.pom",
+              "status": 404
+            },
+            {
+              "repository": "central",
+              "artifact": "central-parent",
+              "path": "/central/test/repository/order/central-parent/1/central-parent-1.pom",
+              "status": 200
+            },
+            {
+              "repository": "central",
+              "artifact": "central-parent",
+              "path": "/central/test/repository/order/central-parent/1/central-parent-1.pom.sha1",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "mode": "vendor_first",
+          "artifact": "central-parent",
+          "phase": "warm",
+          "elapsed_seconds": 0.5845976669806987,
+          "exit_code": 0,
+          "requests": []
+        },
+        {
+          "pair": 2,
+          "mode": "vendor_first",
+          "artifact": "vendor-parent",
+          "phase": "cold",
+          "elapsed_seconds": 0.6556447909679264,
+          "exit_code": 0,
+          "requests": [
+            {
+              "repository": "confluent",
+              "artifact": "vendor-parent",
+              "path": "/confluent/test/repository/order/vendor-parent/1/vendor-parent-1.pom",
+              "status": 200
+            },
+            {
+              "repository": "confluent",
+              "artifact": "vendor-parent",
+              "path": "/confluent/test/repository/order/vendor-parent/1/vendor-parent-1.pom.sha1",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "mode": "vendor_first",
+          "artifact": "vendor-parent",
+          "phase": "warm",
+          "elapsed_seconds": 0.581948334001936,
+          "exit_code": 0,
+          "requests": []
+        },
+        {
+          "pair": 2,
+          "mode": "central_first",
+          "artifact": "central-parent",
+          "phase": "cold",
+          "elapsed_seconds": 0.6603571249870583,
+          "exit_code": 0,
+          "requests": [
+            {
+              "repository": "central",
+              "artifact": "central-parent",
+              "path": "/central/test/repository/order/central-parent/1/central-parent-1.pom",
+              "status": 200
+            },
+            {
+              "repository": "central",
+              "artifact": "central-parent",
+              "path": "/central/test/repository/order/central-parent/1/central-parent-1.pom.sha1",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "mode": "central_first",
+          "artifact": "central-parent",
+          "phase": "warm",
+          "elapsed_seconds": 0.5685543329454958,
+          "exit_code": 0,
+          "requests": []
+        },
+        {
+          "pair": 2,
+          "mode": "central_first",
+          "artifact": "vendor-parent",
+          "phase": "cold",
+          "elapsed_seconds": 0.6697018329286948,
+          "exit_code": 0,
+          "requests": [
+            {
+              "repository": "central",
+              "artifact": "vendor-parent",
+              "path": "/central/test/repository/order/vendor-parent/1/vendor-parent-1.pom",
+              "status": 404
+            },
+            {
+              "repository": "confluent",
+              "artifact": "vendor-parent",
+              "path": "/confluent/test/repository/order/vendor-parent/1/vendor-parent-1.pom",
+              "status": 200
+            },
+            {
+              "repository": "confluent",
+              "artifact": "vendor-parent",
+              "path": "/confluent/test/repository/order/vendor-parent/1/vendor-parent-1.pom.sha1",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "mode": "central_first",
+          "artifact": "vendor-parent",
+          "phase": "warm",
+          "elapsed_seconds": 0.5941720829578117,
+          "exit_code": 0,
+          "requests": []
+        }
+      ],
+      "all_24_invocations_succeeded": true,
+      "wrong_vendor_requests_for_central": {
+        "vendor_first": 3,
+        "central_first": 0
+      },
+      "limits": "Controlled real-Maven parent-model resolution with two loopback repositories, tiny private local caches and simulated200ms vendor not-found latency. Measures routing and fallback semantics, not a CI speedup. Cold/warm release resolution retains-U; vendor-only parent must still resolve."
+    },
+    "canonical_runner_utilization": {
+      "source_run": 43324959481,
+      "head": "af5ab61cbb531f24ea3ace318de1d89ea121ded9",
+      "jobs": [
+        {
+          "job": 131556234990,
+          "name": "Canonical savepoint jobs (Flink 1.18, JDK 11) (shard 10)",
+          "execution_seconds": 2098.0,
+          "samples_30_seconds": 67,
+          "cpu_idle_percent_median": 6,
+          "cpu_idle_percent_mean": 14.955223880597014,
+          "cpu_user_percent_mean": 75.34328358208955,
+          "cpu_system_percent_mean": 9.671641791044776,
+          "cpu_io_wait_percent_mean": 0.014925373134328358,
+          "free_memory_kib_min": 7403380,
+          "swap_used_kib_max": 0,
+          "run_queue_median": 6
+        },
+        {
+          "job": 131556234534,
+          "name": "Canonical savepoint jobs (Flink 1.18, JDK 17) (shard 3)",
+          "execution_seconds": 1619.0,
+          "samples_30_seconds": 52,
+          "cpu_idle_percent_median": 10.0,
+          "cpu_idle_percent_mean": 23.173076923076923,
+          "cpu_user_percent_mean": 64.40384615384616,
+          "cpu_system_percent_mean": 11.557692307692308,
+          "cpu_io_wait_percent_mean": 0.8846153846153846,
+          "free_memory_kib_min": 7674652,
+          "swap_used_kib_max": 0,
+          "run_queue_median": 6.0
+        },
+        {
+          "job": 131556234360,
+          "name": "Canonical savepoint jobs (Flink 2.2, JDK 11) (shard 1)",
+          "execution_seconds": 2461.0,
+          "samples_30_seconds": 80,
+          "cpu_idle_percent_median": 10.5,
+          "cpu_idle_percent_mean": 27.95,
+          "cpu_user_percent_mean": 63.9375,
+          "cpu_system_percent_mean": 8.0125,
+          "cpu_io_wait_percent_mean": 0.075,
+          "free_memory_kib_min": 6841812,
+          "swap_used_kib_max": 0,
+          "run_queue_median": 4.0
+        },
+        {
+          "job": 131556234131,
+          "name": "Canonical savepoint jobs (Flink 2.2, JDK 17) (shard 13)",
+          "execution_seconds": 1833.0,
+          "samples_30_seconds": 59,
+          "cpu_idle_percent_median": 6,
+          "cpu_idle_percent_mean": 18.864406779661017,
+          "cpu_user_percent_mean": 72.08474576271186,
+          "cpu_system_percent_mean": 8.813559322033898,
+          "cpu_io_wait_percent_mean": 0.1016949152542373,
+          "free_memory_kib_min": 7793480,
+          "swap_used_kib_max": 0,
+          "run_queue_median": 7
+        }
+      ],
+      "limits": "One median-execution job per cohort, with first vmstat average-since-boot row dropped.30s interval samples include within-job tail/idle/setup; they do not measure an isolated case or establish a fork-count speedup."
+    },
+    "prep_dependency_delay": {
+      "run": 43350750332,
+      "head": "3859e0ef7fecb8b184f32943081fd445b6228d30",
+      "job": 131641000081,
+      "job_name": "Prepare canonical Java Flink2.2/JDK11",
+      "largest_log_gaps": [
+        {
+          "seconds": 61.395648,
+          "before": "[WARNING] commons-codec:commons-codec:pom:1.17.0 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution",
+          "after": "[WARNING] org.apache.maven.shared:maven-invoker:jar:3.3.0 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution"
+        },
+        {
+          "seconds": 60.391401,
+          "before": "[WARNING] com.thoughtworks.qdox:qdox:pom:2.0.3 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution",
+          "after": "[WARNING] org.apache.maven.shared:maven-shared-incremental:jar:1.1 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution"
+        },
+        {
+          "seconds": 60.368826,
+          "before": "[WARNING] org.codehaus.plexus:plexus:pom:8 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution",
+          "after": "[WARNING] org.apache-extras.beanshell:bsh:jar:2.0b6 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution"
+        },
+        {
+          "seconds": 60.07758,
+          "before": "[WARNING] org.apache.maven:maven-parent:pom:23 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution",
+          "after": "[WARNING] com.thoughtworks.qdox:qdox:pom:2.0.3 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution"
+        },
+        {
+          "seconds": 59.457154,
+          "before": "[WARNING] org.junit:junit-bom:pom:5.8.0-M1 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution",
+          "after": "[WARNING] commons-codec:commons-codec:pom:1.17.0 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution"
+        },
+        {
+          "seconds": 56.859175,
+          "before": "[WARNING] org.apache.maven.wagon:wagon-provider-api:pom:3.0.0 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution",
+          "after": "[WARNING] org.slf4j:slf4j-api:pom:1.7.25 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution"
+        },
+        {
+          "seconds": 56.563543,
+          "before": "[WARNING] org.apache:apache:pom:17 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution",
+          "after": "[WARNING] com.vladsch.flexmark:flexmark-util-collection:pom:0.62.2 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution"
+        },
+        {
+          "seconds": 33.20485,
+          "before": "[WARNING] com.nimbusds:nimbus-jose-jwt:pom:3.10 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution",
+          "after": "[WARNING] org.junit.jupiter:junit-jupiter:jar:5.10.2 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution"
+        },
+        {
+          "seconds": 32.431888,
+          "before": "[WARNING] org.apache.maven.surefire:surefire-logger-api:pom:3.2.5 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution",
+          "after": "[WARNING] org.apache.maven.shared:maven-common-artifact-filters:pom:3.1.1 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution"
+        },
+        {
+          "seconds": 19.143641,
+          "before": "[WARNING] org.apache.hadoop.thirdparty:hadoop-shaded-protobuf_3_7:pom:1.1.1 was downloaded from https://repo.maven.apache.org/maven2 while a cached not-found from a previous attempt suppresses re-checking https://packages.confluent.io/maven/; expiring the cached not-found so that repository is checked again on the next resolution",
+          "after": "Resolving Maven dependencies (attempt 2/3)"
+        }
+      ],
+      "limits": "Gaps between emitted job-log lines, not CPU or exclusive network attribution; job completed successfully."
+    },
+    "owner_queue_visibility": {
+      "visible_owned_repositories": 59,
+      "recently_pushed_repositories_checked": 1,
+      "active_runs": [
+        {
+          "repo": "StreamFusion-contrib",
+          "id": 43350750332,
+          "name": "CI",
+          "status": "in_progress"
+        }
+      ],
+      "limits": "Only visible nonarchived repositories pushed in last7days, first100 owned repositories; cannot rule out hidden/private or older scheduled activity."
+    },
+    "github_limits_source": "https://docs.github.com/en/actions/reference/limits",
+    "account_plan": "Authenticated user API did not expose the plan; observed20 concurrent jobs is not proof of configured limit. Optional user clarification requested.",
+    "maven_repository_regressions": {
+      "tests": 9,
+      "elapsed_seconds": 9.46,
+      "success": true,
+      "includes": "Actual project repository ordering with cold/warm Central and vendor-only loopback parent resolution."
+    }
+  },
+  "integrated_3859_failure": {
+    "run": 43350750332,
+    "head": "3859e0ef7fecb8b184f32943081fd445b6228d30",
+    "job": 131646312079,
+    "class": "tech.streamfusion.CanonicalKafkaSinkJobTest",
+    "invocation": "preservesExactlyOnceSinkEffectsAcrossRepeatedCanonicalSwitches(String, boolean, boolean, String)[26]",
+    "provider": {
+      "mode": "rescale",
+      "ordinary": true,
+      "nativeFirst": false,
+      "naming": "pooling"
+    },
+    "failure": "Existing assertion requires real precommitted state; writer inventory reported0 and Flink2.2 committer inspector returned an unconditional empty list. Actual committer bytes were never inspected. No assertion or provider removed.",
+    "shard_outcomes": {
+      "tests": 396,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "upstream_run": 43350752646,
+    "upstream_conclusion": "success",
+    "docs_run": 43350754874,
+    "docs_conclusion": "success",
+    "remaining_ci_action": "Canceled only this task CI after concrete failure required a repair, freeing capacity for the10-case focused regression. Failed qualification is not a successful timing comparison.",
+    "repair_status": "Released Flink2.2 collector/Kafka serializers now inspect every pending request across checkpoints/writers. Two codec controls pass locally on JDK17 in0.129s excluding build; hosted rescale and full matrices still required.",
+    "local_codec_validation": {
+      "jdk17": {
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "junit_elapsed_seconds": 0.129
+      },
+      "jdk11": {
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "junit_elapsed_seconds": 0.162
+      },
+      "scope": "Actual released serializers, pending transactions across2checkpoints/3writers, empty and invalid-version states. Local Java-only runs disable native leak auto-extension because no native JNI is used; hosted/full workflows retain it."
+    }
+  }
+}

@@ -22,6 +22,9 @@ row/Arrow transposes remain in the execution. EXPLAIN and each job's cluster set
 before the clock; the complete `executeSql().await()` is timed. Native plans must consume
 rows, stock plans must execute no native operators, and previous nested callbacks must
 fall back. The previous primitive calculation must still execute natively.
+The consumed-row check recognizes the previous runtime's `NativeCalcExecNode[...]`
+metric name as well as the candidate's `NativeCalc(...)` name. Both require positive
+input counters; an empty counter or an unrelated operator cannot satisfy the check.
 
 Every runtime has its own stock controls. Keep all trials and ranges: cross-JVM stock
 drift prevents assigning the complete observed difference solely to the new implementation.

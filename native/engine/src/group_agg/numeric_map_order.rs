@@ -2,17 +2,53 @@ use super::{decimal_map_order::DecimalMapOrder, OrdF64};
 use crate::*;
 use streamfusion_bridge::java_map_order::JavaMapOrder;
 
+#[derive(Clone)]
 enum Order {
     Decimal(DecimalMapOrder),
     Floating(JavaMapOrder<Option<FloatingKey>>),
     String(super::string_map_order::StringMapOrder),
 }
 
-#[derive(Clone, Copy)]
-struct FloatingKey {
-    value: OrdF64,
+#[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub(super) struct FloatingKey {
+    pub(super) value: OrdF64,
     // Widening FLOAT to DOUBLE quiets signaling NaNs; transport retains the original key bits.
-    bits: u64,
+    pub(super) bits: u64,
+}
+
+impl FloatingKey {
+    pub(super) fn from_f32(value: f32) -> Self {
+        Self {
+            value: OrdF64::new(value as f64),
+            bits: value.to_bits() as u64,
+        }
+    }
+    pub(super) fn from_f64(value: f64) -> Self {
+        Self {
+            value: OrdF64::new(value),
+            bits: value.to_bits(),
+        }
+    }
+}
+
+impl From<FloatingKey> for String {
+    fn from(key: FloatingKey) -> Self {
+        format!("{:016x}:{:016x}", key.value.0.to_bits(), key.bits)
+    }
+}
+
+impl TryFrom<String> for FloatingKey {
+    type Error = String;
+    fn try_from(encoded: String) -> Result<Self, Self::Error> {
+        let (value, bits) = encoded.split_once(':').ok_or("invalid floating key")?;
+        let value = u64::from_str_radix(value, 16).map_err(|error| error.to_string())?;
+        let bits = u64::from_str_radix(bits, 16).map_err(|error| error.to_string())?;
+        Ok(Self {
+            value: OrdF64::new(f64::from_bits(value)),
+            bits,
+        })
+    }
 }
 
 impl PartialEq for FloatingKey {
@@ -35,6 +71,7 @@ impl Ord for FloatingKey {
     }
 }
 
+#[derive(Clone)]
 pub(super) struct NumericMapOrder {
     data_type: DataType,
     order: Order,
@@ -63,18 +100,12 @@ impl NumericMapOrder {
                 order.insert_optional(*value);
             }
             (Order::Floating(order), ScalarValue::Float32(value)) => {
-                let key = value.map(|v| FloatingKey {
-                    value: OrdF64::new(v as f64),
-                    bits: v.to_bits() as u64,
-                });
+                let key = value.map(FloatingKey::from_f32);
                 let hash = key.map_or(0, |v| (v.value.canonical() as f32).to_bits());
                 order.insert(key, (hash ^ (hash >> 16)) as i32);
             }
             (Order::Floating(order), ScalarValue::Float64(value)) => {
-                let key = value.map(|v| FloatingKey {
-                    value: OrdF64::new(v),
-                    bits: v.to_bits(),
-                });
+                let key = value.map(FloatingKey::from_f64);
                 let bits = key.map_or(0, |v| v.value.canonical().to_bits());
                 let hash = (bits ^ (bits >> 32)) as u32;
                 order.insert(key, (hash ^ (hash >> 16)) as i32);
@@ -100,18 +131,12 @@ impl NumericMapOrder {
                 order.remove_optional(*value);
             }
             (Order::Floating(order), ScalarValue::Float32(value)) => {
-                let key = value.map(|v| FloatingKey {
-                    value: OrdF64::new(v as f64),
-                    bits: v.to_bits() as u64,
-                });
+                let key = value.map(FloatingKey::from_f32);
                 let hash = key.map_or(0, |v| (v.value.canonical() as f32).to_bits());
                 order.remove(key, (hash ^ (hash >> 16)) as i32);
             }
             (Order::Floating(order), ScalarValue::Float64(value)) => {
-                let key = value.map(|v| FloatingKey {
-                    value: OrdF64::new(v),
-                    bits: v.to_bits(),
-                });
+                let key = value.map(FloatingKey::from_f64);
                 let bits = key.map_or(0, |v| v.value.canonical().to_bits());
                 let hash = (bits ^ (bits >> 32)) as u32;
                 order.remove(key, (hash ^ (hash >> 16)) as i32);

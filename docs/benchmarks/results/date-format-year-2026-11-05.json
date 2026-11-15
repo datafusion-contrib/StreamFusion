@@ -1,0 +1,751 @@
+{
+  "date": "2026-11-05",
+  "issue": 603,
+  "canonical_base": "9954a19c",
+  "parent": "d9e0c32a6c514974f94b16265fbeedd0d0dda3ef",
+  "method": "Correctness repair of an already-enabled numeric DATE_FORMAT path. Complete bounded row-source/blackhole jobs retain both perimeter transposes, planning, JNI and output consumption. No isolated-function acceleration claim.",
+  "configuration": {
+    "flink": [
+      "1.18.1",
+      "2.2.1"
+    ],
+    "jdk": "17 for timing; 11/17 for parity",
+    "java_release": 11,
+    "rust": "release --no-default-features",
+    "parallelism": 1,
+    "rows": 1000000,
+    "trials": 5,
+    "warmups": 2,
+    "measured": 3,
+    "input": "TIMESTAMP(9), deterministic modern Gregorian dates in years 1900..2099, NULL every 37th row"
+  },
+  "correctness": {
+    "jvm_invocations": {
+      "22-11": {
+        "exit": 0,
+        "result": [
+          "RESULT found=7 succeeded=7 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "22-17": {
+        "exit": 0,
+        "result": [
+          "RESULT found=7 succeeded=7 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "118-11": {
+        "exit": 0,
+        "result": [
+          "RESULT found=7 succeeded=7 aborted=0 skipped=0 failed=0"
+        ]
+      },
+      "118-17": {
+        "exit": 0,
+        "result": [
+          "RESULT found=7 succeeded=7 aborted=0 skipped=0 failed=0"
+        ]
+      }
+    },
+    "released_unchanged_oracles": {
+      "testDateFormat-22-11": {
+        "exit": 0,
+        "result": [
+          "1 tests successful"
+        ],
+        "sha256": "6d382af1f84ee5fe3ec26d43ad2a764ff705f4f07db2015d623fd77fd48da441"
+      },
+      "testDateFormatShanghai-22-11": {
+        "exit": 0,
+        "result": [
+          "1 tests successful"
+        ],
+        "sha256": "6d382af1f84ee5fe3ec26d43ad2a764ff705f4f07db2015d623fd77fd48da441"
+      },
+      "testDateFormatLosAngeles-22-11": {
+        "exit": 0,
+        "result": [
+          "1 tests successful"
+        ],
+        "sha256": "6d382af1f84ee5fe3ec26d43ad2a764ff705f4f07db2015d623fd77fd48da441"
+      },
+      "testDateFormat-22-17": {
+        "exit": 0,
+        "result": [
+          "1 tests successful"
+        ],
+        "sha256": "6d382af1f84ee5fe3ec26d43ad2a764ff705f4f07db2015d623fd77fd48da441"
+      },
+      "testDateFormatShanghai-22-17": {
+        "exit": 0,
+        "result": [
+          "1 tests successful"
+        ],
+        "sha256": "6d382af1f84ee5fe3ec26d43ad2a764ff705f4f07db2015d623fd77fd48da441"
+      },
+      "testDateFormatLosAngeles-22-17": {
+        "exit": 0,
+        "result": [
+          "1 tests successful"
+        ],
+        "sha256": "6d382af1f84ee5fe3ec26d43ad2a764ff705f4f07db2015d623fd77fd48da441"
+      },
+      "testDateFormat-118-11": {
+        "exit": 0,
+        "result": [
+          "1 tests successful"
+        ],
+        "sha256": "a6c3f2c288c7de1c725fef48a1a20a2dbf9e921900224440ea89572780dc854b"
+      },
+      "testDateFormatShanghai-118-11": {
+        "exit": 0,
+        "result": [
+          "1 tests successful"
+        ],
+        "sha256": "a6c3f2c288c7de1c725fef48a1a20a2dbf9e921900224440ea89572780dc854b"
+      },
+      "testDateFormatLosAngeles-118-11": {
+        "exit": 0,
+        "result": [
+          "1 tests successful"
+        ],
+        "sha256": "a6c3f2c288c7de1c725fef48a1a20a2dbf9e921900224440ea89572780dc854b"
+      },
+      "testDateFormat-118-17": {
+        "exit": 0,
+        "result": [
+          "1 tests successful"
+        ],
+        "sha256": "a6c3f2c288c7de1c725fef48a1a20a2dbf9e921900224440ea89572780dc854b"
+      },
+      "testDateFormatShanghai-118-17": {
+        "exit": 0,
+        "result": [
+          "1 tests successful"
+        ],
+        "sha256": "a6c3f2c288c7de1c725fef48a1a20a2dbf9e921900224440ea89572780dc854b"
+      },
+      "testDateFormatLosAngeles-118-17": {
+        "exit": 0,
+        "result": [
+          "1 tests successful"
+        ],
+        "sha256": "a6c3f2c288c7de1c725fef48a1a20a2dbf9e921900224440ea89572780dc854b"
+      }
+    },
+    "rust_core_passed": 927,
+    "preceding_expected_value_failures": {
+      "22-17": {
+        "exit": 1,
+        "result": [
+          "RESULT found=7 succeeded=3 aborted=0 skipped=0 failed=4"
+        ]
+      },
+      "118-17": {
+        "exit": 1,
+        "result": [
+          "RESULT found=7 succeeded=3 aborted=0 skipped=0 failed=4"
+        ]
+      }
+    },
+    "evidence": "Complete 5003-row maps and schema match for TIMESTAMP(0/3/6/9), wide/BCE dates, signed millisecond endpoints, NULLs, filtered batches and empty batches; consumed NativeCalc, no fallback, empty JVM evaluators. Prior failure stops at the first query, so later queries are not prior-parity evidence."
+  },
+  "provenance": {
+    "integral_expression": "a1824a3f3b22a2bfbeccbe2463d3598e11bdf00e1f7f16ef747e7d45c267e9ba",
+    "libstreamfusion.dylib": "1d7c4479a2e1251c762d6de89cc4e41de2a5eb2b8e38d9ca88ec8203c7b1db41",
+    "source_sha256": {
+      "src/main/java/tech/streamfusion/planner/RexExpression.java": "901c583ce0ecf3824a6736c0c4f5edd185f5ce95e9b2726ddfd2ae06094466e5",
+      "native/engine/src/expr.rs": "02a70ce847bd4577809742215d552f98038c4c360bff0038570277eeed00fa3e",
+      "native/engine/src/flink_functions/date_format.rs": "61c159f18451e1a796c5fcc38a8bdfc1d20993f31cc91f3a5aa9c1d57cc41984",
+      "native/engine/src/flink_functions/mod.rs": "911e6eabfcb0fe4d4cba21b56b0abfc0a32f0bd68c878f758d23a17d478de214",
+      "src/test/java/tech/streamfusion/FlinkDateFormatExtendedYearSqlHarnessTest.java": "6aed7df2a24e6bb57d2ab78c0dcbd7f64e135ad8502c74bc0f8171f9d2275a93"
+    }
+  },
+  "complete_job": {
+    "22": {
+      "yyyy-MM-dd": {
+        "previous": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 689989333,
+              "job_ms": 630
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 244922417,
+              "job_ms": 228
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 248503334,
+              "job_ms": 231
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 254898167,
+              "job_ms": 243
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 245219666,
+              "job_ms": 234
+            }
+          ],
+          "median_elapsed_ns": 248503334,
+          "median_job_ms": 234
+        },
+        "native": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 630760958,
+              "job_ms": 577
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 249066792,
+              "job_ms": 232
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 244366875,
+              "job_ms": 227
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 250538167,
+              "job_ms": 238
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 240280250,
+              "job_ms": 227
+            }
+          ],
+          "median_elapsed_ns": 244366875,
+          "median_job_ms": 227
+        },
+        "stock": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 615411041,
+              "job_ms": 565
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 308489125,
+              "job_ms": 292
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 287665709,
+              "job_ms": 275
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 283715083,
+              "job_ms": 272
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 283842917,
+              "job_ms": 272
+            }
+          ],
+          "median_elapsed_ns": 283842917,
+          "median_job_ms": 272
+        },
+        "native_over_stock": 0.8609229273105307,
+        "native_over_previous": 0.9833545130625894
+      },
+      "yyyy-MM-dd HH:mm:ss": {
+        "stock": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 618977708,
+              "job_ms": 575
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 338878583,
+              "job_ms": 323
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 316950042,
+              "job_ms": 304
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 326050958,
+              "job_ms": 315
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 359888958,
+              "job_ms": 348
+            }
+          ],
+          "median_elapsed_ns": 326050958,
+          "median_job_ms": 315
+        },
+        "native": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 606006875,
+              "job_ms": 558
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 265969958,
+              "job_ms": 249
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 261827250,
+              "job_ms": 248
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 257453417,
+              "job_ms": 246
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 244826291,
+              "job_ms": 231
+            }
+          ],
+          "median_elapsed_ns": 257453417,
+          "median_job_ms": 246
+        },
+        "previous": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 626384250,
+              "job_ms": 569
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 266104291,
+              "job_ms": 250
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 260068083,
+              "job_ms": 243
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 257271416,
+              "job_ms": 243
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 256911250,
+              "job_ms": 244
+            }
+          ],
+          "median_elapsed_ns": 257271416,
+          "median_job_ms": 243
+        },
+        "native_over_stock": 0.7896109816061329,
+        "native_over_previous": 1.0007074279872583
+      },
+      "yy-MM-dd": {
+        "previous": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 656983458,
+              "job_ms": 597
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 286384959,
+              "job_ms": 268
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 275901458,
+              "job_ms": 260
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 269063417,
+              "job_ms": 257
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 268662208,
+              "job_ms": 256
+            }
+          ],
+          "median_elapsed_ns": 269063417,
+          "median_job_ms": 257
+        },
+        "native": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 631126250,
+              "job_ms": 569
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 255446542,
+              "job_ms": 239
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 256554917,
+              "job_ms": 240
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 262054750,
+              "job_ms": 249
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 253079792,
+              "job_ms": 240
+            }
+          ],
+          "median_elapsed_ns": 256554917,
+          "median_job_ms": 240
+        },
+        "stock": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 592677792,
+              "job_ms": 543
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 297391375,
+              "job_ms": 280
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 277579042,
+              "job_ms": 265
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 279825166,
+              "job_ms": 269
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 283299958,
+              "job_ms": 273
+            }
+          ],
+          "median_elapsed_ns": 279825166,
+          "median_job_ms": 269
+        },
+        "native_over_stock": 0.9168400421854838,
+        "native_over_previous": 0.9535109598344245
+      }
+    },
+    "118": {
+      "yyyy-MM-dd": {
+        "previous": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 653887875,
+              "job_ms": 587
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 267251917,
+              "job_ms": 248
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 268858083,
+              "job_ms": 256
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 259030833,
+              "job_ms": 248
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 266307333,
+              "job_ms": 256
+            }
+          ],
+          "median_elapsed_ns": 266307333,
+          "median_job_ms": 256
+        },
+        "native": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 621384250,
+              "job_ms": 562
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 251525750,
+              "job_ms": 235
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 252722542,
+              "job_ms": 239
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 246730458,
+              "job_ms": 234
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 246221042,
+              "job_ms": 236
+            }
+          ],
+          "median_elapsed_ns": 246730458,
+          "median_job_ms": 236
+        },
+        "stock": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 590167958,
+              "job_ms": 531
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 311445208,
+              "job_ms": 295
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 315616042,
+              "job_ms": 299
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 280787959,
+              "job_ms": 267
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 289954125,
+              "job_ms": 276
+            }
+          ],
+          "median_elapsed_ns": 289954125,
+          "median_job_ms": 276
+        },
+        "native_over_stock": 0.8509292909697354,
+        "native_over_previous": 0.926487660781012
+      },
+      "yyyy-MM-dd HH:mm:ss": {
+        "stock": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 651375875,
+              "job_ms": 590
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 358957334,
+              "job_ms": 344
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 350291125,
+              "job_ms": 337
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 347821041,
+              "job_ms": 334
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 376701541,
+              "job_ms": 365
+            }
+          ],
+          "median_elapsed_ns": 350291125,
+          "median_job_ms": 337
+        },
+        "native": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 603596000,
+              "job_ms": 548
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 273755500,
+              "job_ms": 257
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 266862625,
+              "job_ms": 254
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 260499334,
+              "job_ms": 244
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 258810958,
+              "job_ms": 249
+            }
+          ],
+          "median_elapsed_ns": 260499334,
+          "median_job_ms": 249
+        },
+        "previous": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 626700500,
+              "job_ms": 563
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 277410083,
+              "job_ms": 260
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 273184666,
+              "job_ms": 259
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 267091292,
+              "job_ms": 253
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 270914792,
+              "job_ms": 260
+            }
+          ],
+          "median_elapsed_ns": 270914792,
+          "median_job_ms": 259
+        },
+        "native_over_stock": 0.7436652413046434,
+        "native_over_previous": 0.9615544875822063
+      },
+      "yy-MM-dd": {
+        "previous": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 637725792,
+              "job_ms": 572
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 285386958,
+              "job_ms": 268
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 279141000,
+              "job_ms": 265
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 280489709,
+              "job_ms": 266
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 275389833,
+              "job_ms": 264
+            }
+          ],
+          "median_elapsed_ns": 279141000,
+          "median_job_ms": 265
+        },
+        "native": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 652121542,
+              "job_ms": 586
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 271404042,
+              "job_ms": 253
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 267526750,
+              "job_ms": 254
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 254906500,
+              "job_ms": 243
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 268294083,
+              "job_ms": 258
+            }
+          ],
+          "median_elapsed_ns": 267526750,
+          "median_job_ms": 254
+        },
+        "stock": {
+          "trials": [
+            {
+              "trial": 0,
+              "elapsed_ns": 563586709,
+              "job_ms": 508
+            },
+            {
+              "trial": 1,
+              "elapsed_ns": 297274125,
+              "job_ms": 282
+            },
+            {
+              "trial": 2,
+              "elapsed_ns": 276886041,
+              "job_ms": 264
+            },
+            {
+              "trial": 3,
+              "elapsed_ns": 278817792,
+              "job_ms": 268
+            },
+            {
+              "trial": 4,
+              "elapsed_ns": 281264459,
+              "job_ms": 270
+            }
+          ],
+          "median_elapsed_ns": 278817792,
+          "median_job_ms": 268
+        },
+        "native_over_stock": 0.9595038683901492,
+        "native_over_previous": 0.9583928910478934
+      }
+    }
+  }
+}

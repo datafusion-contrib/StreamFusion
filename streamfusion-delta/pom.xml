@@ -78,9 +78,15 @@
             <version>3.4.2</version>
             <scope>test</scope>
         </dependency>
+
+        <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-common</artifactId>
+            <version>3.3.4</version>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
     <build>
-        <sourceDirectory>${project.basedir}/../src/main/java</sourceDirectory>
         <resources combine.self="override">
             <resource><directory>${project.basedir}/src/main/resources</directory></resource>
         </resources>
@@ -98,12 +104,6 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
-                <configuration><includes>
-                    <include>tech/streamfusion/delta/**/*.java</include>
-                    <include>tech/streamfusion/planner/Delta*.java</include>
-                    <include>tech/streamfusion/planner/NativeDelta*.java</include>
-                    <include>tech/streamfusion/planner/StreamPhysicalNativeDelta*.java</include>
-                </includes></configuration>
             </plugin>
         </plugins>
     </build>

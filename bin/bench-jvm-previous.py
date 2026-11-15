@@ -18,11 +18,27 @@ FIXTURES = [
     "JvmAggregateBenchmark.java",
     "TableFunctionBenchmark.java",
     "RecoveryExecutionMetrics.java",
+    "CiFixtureTimings.java",
 ]
 
 
 def git(*args):
     return subprocess.check_output(["git", *args], cwd=ROOT, text=True).strip()
+
+
+def copy_fixtures(source, worktree, flink_line):
+    fixtures = [Path("src/test/java/tech/streamfusion") / name for name in FIXTURES]
+    fixtures.append(
+        Path(f"src/test/java-flink{flink_line}")
+        / "tech/streamfusion/compat/FlinkTestContexts.java"
+    )
+    hashes = {}
+    for relative in fixtures:
+        target = worktree / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source / relative, target)
+        hashes[str(relative)] = hashlib.sha256(target.read_bytes()).hexdigest()
+    return hashes
 
 
 def main():
@@ -93,13 +109,7 @@ def main():
     if same_native:
         native.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / "native/target/release" / library_name, native)
-    fixture_hashes = {}
-    for name in FIXTURES:
-        relative = Path("src/test/java/tech/streamfusion") / name
-        shutil.copy2(ROOT / relative, args.worktree / relative)
-        fixture_hashes[str(relative)] = hashlib.sha256(
-            (ROOT / relative).read_bytes()
-        ).hexdigest()
+    fixture_hashes = copy_fixtures(ROOT, args.worktree, args.flink_line)
     profile = "bench" + (",flink-1.18" if args.flink_line == "1.18" else "")
     base = ["mvn", "-B", "-ntp", "-P" + profile, "-pl", "streamfusion-runtime"]
     report = dict(

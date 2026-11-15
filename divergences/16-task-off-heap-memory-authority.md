@@ -39,3 +39,20 @@ files durable, just as checkpointing a local-disk state backend is separate from
 Parquet sink writer allocations are not yet wired to this pool. Flink's Java Kafka client memory
 remains part of the JVM heap, not task off-heap. The cap is process-local, matching Flink's ordinary
 one-TaskManager-per-process deployment model.
+
+
+## Arrow startup before task budget initialization
+
+Comet's `spark/src/main/scala/org/apache/comet/package.scala` keeps a process-wide Arrow root;
+`vector/NativeUtil.scala` transfers C Data buffers through it, while `CometTaskMemoryManager`
+tracks matching allocation and release balances. StreamFusion retains that shared allocator and
+ownership model. Flink source readers can initialize independently of downstream tasks, so their
+schema buffers may exist before the task off-heap capacity is first reported.
+
+The pool retains the early live balance under the initialization lock and adopts it before
+publishing capacity. Early release removes that balance; a denied initial capacity leaves it
+available for cleanup or retry. Once initialized, normal allocation/release uses the existing
+reservation path. This avoids depending on task-open ordering and does not suppress unbalanced
+releases, create a new allocator, change C Data ownership or modify state formats. Deterministic
+buffer-lifetime, denial/retry and cross-thread tests complement the real Kafka startup case.
+Benchmarking remains deferred under #569.

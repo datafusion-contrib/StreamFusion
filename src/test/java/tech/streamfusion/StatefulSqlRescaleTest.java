@@ -85,6 +85,86 @@ class StatefulSqlRescaleTest {
       boolean typedTable,
       boolean typedJvm)
       throws Exception {
+    groupedScenario(rocks, directory, jvm, savepoint, typedTable, typedJvm, false);
+  }
+
+  @ParameterizedTest(name = "mini-jvm-rescale-rocks={0}-savepoint={1}")
+  @CsvSource({"false,false", "true,false", "false,true", "true,true"})
+  @org.junit.jupiter.api.condition.DisabledIfSystemProperty(
+      named = "streamfusion.experimental.jvmGroupAggregates",
+      matches = "false")
+  void miniBatchJvmStateAcrossBothDirections(
+      boolean rocks, boolean savepoint, @TempDir Path directory) throws Exception {
+    groupedScenario(rocks, directory, true, savepoint, false, false, true);
+  }
+
+  private void groupedScenario(
+      boolean rocks,
+      Path directory,
+      boolean jvm,
+      boolean savepoint,
+      boolean typedTable,
+      boolean typedJvm,
+      boolean miniBatch)
+      throws Exception {
+    groupedScenario(rocks, directory, jvm, savepoint, typedTable, typedJvm, miniBatch, false);
+  }
+
+  @ParameterizedTest(name = "two-phase-jvm-rescale-rocks={0}-savepoint={1}")
+  @CsvSource({"false,false", "true,false", "false,true", "true,true"})
+  @org.junit.jupiter.api.condition.DisabledIfSystemProperty(
+      named = "streamfusion.experimental.jvmGroupAggregates",
+      matches = "false")
+  void twoPhaseJvmStateAcrossBothDirections(
+      boolean rocks, boolean savepoint, @TempDir Path directory) throws Exception {
+    groupedScenario(rocks, directory, true, savepoint, false, false, true, true);
+  }
+
+  private void groupedScenario(
+      boolean rocks,
+      Path directory,
+      boolean jvm,
+      boolean savepoint,
+      boolean typedTable,
+      boolean typedJvm,
+      boolean miniBatch,
+      boolean twoPhase)
+      throws Exception {
+    groupedScenario(
+        rocks, directory, jvm, savepoint, typedTable, typedJvm, miniBatch, twoPhase, null);
+  }
+
+  @ParameterizedTest(name = "jvm-over-rescale-rocks={0}-savepoint={1}-frame={2}")
+  @CsvSource({
+    "false,false,ROWS UNBOUNDED PRECEDING",
+    "true,false,ROWS UNBOUNDED PRECEDING",
+    "false,true,ROWS BETWEEN 2 PRECEDING AND CURRENT ROW",
+    "true,true,ROWS BETWEEN 2 PRECEDING AND CURRENT ROW",
+    "false,false,RANGE BETWEEN INTERVAL '1' SECOND PRECEDING AND CURRENT ROW",
+    "true,true,RANGE UNBOUNDED PRECEDING",
+    "false,false,pt:ROWS UNBOUNDED PRECEDING",
+    "true,true,pt:ROWS UNBOUNDED PRECEDING",
+    "false,true,pt:RANGE UNBOUNDED PRECEDING",
+    "true,false,pt:RANGE UNBOUNDED PRECEDING",
+    "false,false,pt:ROWS BETWEEN 2 PRECEDING AND CURRENT ROW",
+    "true,true,pt:ROWS BETWEEN 2 PRECEDING AND CURRENT ROW"
+  })
+  void jvmOverFramesAndViewsAcrossBothDirections(
+      boolean rocks, boolean savepoint, String frame, @TempDir Path directory) throws Exception {
+    groupedScenario(rocks, directory, true, savepoint, false, false, false, false, frame);
+  }
+
+  private void groupedScenario(
+      boolean rocks,
+      Path directory,
+      boolean jvm,
+      boolean savepoint,
+      boolean typedTable,
+      boolean typedJvm,
+      boolean miniBatch,
+      boolean twoPhase,
+      String overFrame)
+      throws Exception {
     List<Row> input = new ArrayList<>();
     String text = "long-duplicate-é🙂".repeat(128);
     for (int k = 0; k < 128; k++) {
@@ -102,6 +182,35 @@ class StatefulSqlRescaleTest {
     Map<String, Long> expected = new TreeMap<>();
     for (int k = 0; k < 128; k++)
       expected.put(k + (jvm ? "|0|2|[0]" + (typedJvm ? "|null" : "") : "|-0.50|1"), 1L);
+    if (overFrame != null) {
+      input.clear();
+      expected.clear();
+      for (int stage = 0; stage < 3; stage++)
+        for (int k = 0; k < 128; k++)
+          for (int peer = 0; peer < 2; peer++) {
+            input.add(Row.of(k, new BigDecimal((stage + 1) * 1000), "key-" + k));
+            String bounds = overFrame.replace("pt:", "");
+            long count =
+                (bounds.startsWith("ROWS UNBOUNDED")
+                        || overFrame.startsWith("pt:") && bounds.contains("UNBOUNDED"))
+                    ? stage * 2 + peer + 1
+                    : bounds.startsWith("ROWS")
+                        ? Math.min(3, stage * 2 + peer + 1)
+                        : bounds.contains("UNBOUNDED")
+                            ? (stage + 1) * 2
+                            : Math.min(4, (stage + 1) * 2);
+            expected.merge(
+                k
+                    + "|"
+                    + (k * count)
+                    + "|"
+                    + count
+                    + "|"
+                    + java.util.Collections.nCopies((int) count, (long) k),
+                1L,
+                Long::sum);
+          }
+    }
     String backend = rocks ? "tech.streamfusion.state.RocksDBNativeStateBackendFactory" : "hashmap";
     Map<String, Object> report = new java.util.LinkedHashMap<>();
     List<Map<String, Object>> stageEvidence = new ArrayList<>();
@@ -113,9 +222,11 @@ class StatefulSqlRescaleTest {
     report.put("maxParallelism", 128);
     report.put("sourceOffsets", List.of(256, 512, 768));
     report.put("physicalBatchRows", 5);
-    report.put("logicalMiniBatchRows", jvm ? 0 : 3);
+    report.put("logicalMiniBatchRows", jvm && !miniBatch ? 0 : 3);
     report.put("jvmAggregate", jvm);
     report.put("typedJvmAggregate", typedJvm);
+    report.put("twoPhaseJvmAggregate", twoPhase);
+    report.put("jvmOverFrame", overFrame);
     report.put("snapshotFormat", savepoint ? "CANONICAL savepoint" : "externalized checkpoint");
     report.put("stages", stageEvidence);
     RESULTS.put(
@@ -123,7 +234,10 @@ class StatefulSqlRescaleTest {
             + (savepoint ? "savepoint-" : "")
             + (rocks ? "rocksdb" : "memory")
             + (typedTable ? "-typed-table" : "")
-            + (typedJvm ? "-typed-distinct" : ""),
+            + (typedJvm ? "-typed-distinct" : "")
+            + (miniBatch ? "-mini-batch" : "")
+            + (twoPhase ? "-two-phase" : "")
+            + (overFrame == null ? "" : "-over-" + overFrame),
         report);
     try {
       var reference =
@@ -139,7 +253,10 @@ class StatefulSqlRescaleTest {
               false,
               typedTable,
               typedJvm,
-              expected);
+              miniBatch,
+              twoPhase,
+              expected,
+              overFrame);
       report.put("reference", reference.evidence());
       List<Stage> stages = new ArrayList<>();
       Path restore = null;
@@ -158,7 +275,10 @@ class StatefulSqlRescaleTest {
                 savepoint,
                 typedTable,
                 typedJvm,
-                i == 2 ? expected : null);
+                miniBatch,
+                twoPhase,
+                i == 2 ? expected : null,
+                overFrame);
         stages.add(stage);
         stageEvidence.add(stage.evidence());
         restore = stage.checkpoint();
@@ -259,32 +379,46 @@ class StatefulSqlRescaleTest {
       boolean savepoint,
       boolean typedTable,
       boolean typedJvm,
-      Map<String, Long> expected)
+      boolean miniBatch,
+      boolean twoPhase,
+      Map<String, Long> expected,
+      String overFrame)
       throws Exception {
     var type =
         Types.ROW_NAMED(
             new String[] {"k", "amount", "text_value"}, Types.INT, Types.BIG_DEC, Types.STRING);
-    var schema =
+    var schemaBuilder =
         Schema.newBuilder()
             .column("k", DataTypes.INT())
             .column("amount", DataTypes.DECIMAL(20, 2))
-            .column("text_value", DataTypes.STRING())
-            .build();
+            .column("text_value", DataTypes.STRING());
+    if (overFrame != null)
+      schemaBuilder
+          .columnByExpression("rt", "TO_TIMESTAMP_LTZ(CAST(amount AS BIGINT),3)")
+          .watermark("rt", "SOURCE_WATERMARK()");
+    if (overFrame != null && overFrame.startsWith("pt:"))
+      schemaBuilder.columnByExpression("pt", "PROCTIME()");
+    var schema = schemaBuilder.build();
     try (var recovery =
-        new PortableSqlRecovery(backend, input, type, schema, true)
+        new PortableSqlRecovery(backend, input, type, schema, overFrame == null)
             .withExecutionMetrics()
             .holdAfterInput()
             .withRescaleDeployment(parallelism, checkpoints, restore)) {
+      if (overFrame != null) recovery.withWatermarks(Map.of(256, 999L, 512, 1999L, 768, 3000L));
       var table = (StreamTableEnvironment) recovery.uninterrupted();
       if (typedTable) recovery.executionEnvironment().enableCheckpointing(1000);
       table.getConfig().set("streamfusion.transpose.batchRows", "5");
-      table.getConfig().set("table.exec.mini-batch.enabled", Boolean.toString(!jvm));
+      table.getConfig().set("table.exec.mini-batch.enabled", Boolean.toString(!jvm || miniBatch));
       table.getConfig().set("table.exec.mini-batch.size", "3");
       table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");
+      if (twoPhase) table.getConfig().set("table.optimizer.agg-phase-strategy", "TWO_PHASE");
       if (jvm) {
         table.createTemporarySystemFunction("test_aggregate", new PortableSqlFixtures.Sum());
         table.createTemporarySystemFunction(
-            "view_aggregate", new FlinkJvmAggregateSqlHarnessTest.ViewAggregate());
+            "view_aggregate",
+            twoPhase
+                ? new FlinkJvmTwoPhaseSqlHarnessTest.SignedViewAggregate()
+                : new FlinkJvmAggregateSqlHarnessTest.ViewAggregate());
       }
       if (nativeRun) tech.streamfusion.planner.NativePlanner.install(table);
       String sql =
@@ -292,6 +426,13 @@ class StatefulSqlRescaleTest {
               ? "SELECT k, test_aggregate(CAST(amount AS BIGINT)), COUNT(text_value),"
                   + " view_aggregate(CAST(amount AS BIGINT)) FROM recovery_input GROUP BY k"
               : "SELECT k, SUM(amount), COUNT(DISTINCT text_value) FROM recovery_input GROUP BY k";
+      if (twoPhase)
+        sql =
+            sql.replace("test_aggregate(CAST", "test_aggregate(DISTINCT CAST")
+                .replace(
+                    "view_aggregate(CAST(amount AS BIGINT))",
+                    "view_aggregate(DISTINCT CAST(amount AS BIGINT)) FILTER (WHERE amount IS NOT"
+                        + " NULL)");
       if (typedJvm) {
         FlinkTypedJvmAggregateSqlHarnessTest.register(table, DataTypes.DECIMAL(20, 2));
         sql =
@@ -308,9 +449,22 @@ class StatefulSqlRescaleTest {
             "SELECT s.k, SUM(t.v), COUNT(DISTINCT s.text_value) FROM recovery_input s, LATERAL"
                 + " TABLE(typed_rows(2, s.amount)) AS t(v, pos) WHERE t.pos = 0 GROUP BY s.k";
       }
+      if (overFrame != null)
+        sql =
+            "SELECT k,test_aggregate(CAST(k AS BIGINT)) OVER w,COUNT(text_value) OVER"
+                + " w,view_aggregate(CAST(k AS BIGINT)) OVER w FROM recovery_input WINDOW w AS"
+                + " (PARTITION BY k ORDER BY "
+                + (overFrame.startsWith("pt:") ? "pt " : "rt ")
+                + overFrame.replace("pt:", "")
+                + ")";
       var query = table.sqlQuery(sql);
       String plan = query.explain();
-      String operatorPrefix = jvm ? "NativeJvmGroup" : "NativeColumnarGroupAggregate";
+      String operatorPrefix =
+          overFrame != null
+              ? "NativeJvmOver"
+              : twoPhase
+                  ? "NativeJvmTwoPhaseGroup"
+                  : jvm ? "NativeJvmGroup" : "NativeColumnarGroupAggregate";
       if (nativeRun) assertTrue(plan.contains(operatorPrefix), plan);
       if (nativeRun && typedTable) assertTrue(plan.contains("NativeTableFunction"), plan);
       var rows = table.toChangelogStream(query);
@@ -351,7 +505,12 @@ class StatefulSqlRescaleTest {
               .filter(
                   n ->
                       n.getOperatorName()
-                          .contains(jvm ? "NativeJvmGroup" : "NativeColumnarGroupAggExecNode"))
+                          .contains(
+                              overFrame != null
+                                  ? "NativeJvmOver"
+                                  : twoPhase
+                                      ? "NativeJvmGlobalGroup"
+                                      : jvm ? "NativeJvmGroup" : "NativeColumnarGroupAggExecNode"))
               .map(n -> new OperatorID(hashes.get(n.getId())))
               .collect(ListCollectors.toList());
       if (nativeRun) assertEquals(1, aggregateIds.size(), graph.getStreamNodes().toString());
@@ -369,12 +528,17 @@ class StatefulSqlRescaleTest {
           triggeredSavepoint = Path.of(java.net.URI.create(location));
           assertTrue(Files.isRegularFile(triggeredSavepoint.resolve("_metadata")));
         }
-        if (nativeRun)
-          RecoveryExecutionMetrics.assertConsumed(recovery.nativeExecution(), operatorPrefix);
-        else assertTrue(recovery.nativeExecution().isEmpty());
+        if (nativeRun) {
+          if (twoPhase) FlinkJvmTwoPhaseSqlHarnessTest.assertPhases(recovery.nativeExecution());
+          else RecoveryExecutionMetrics.assertConsumed(recovery.nativeExecution(), operatorPrefix);
+        } else assertTrue(recovery.nativeExecution().isEmpty());
         if (nativeRun && typedTable)
           RecoveryExecutionMetrics.assertConsumed(
               recovery.nativeExecution(), "NativeTableFunction");
+        if (nativeRun && miniBatch) {
+          assertTrue(recovery.counterValue("jvmMiniBatchRows") > 0);
+          assertTrue(recovery.counterValue("jvmMiniBatchBundles") > 0);
+        }
         if (expected != null) {
           long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
           while (!expected.equals(materialized(output)) && System.nanoTime() < deadline)

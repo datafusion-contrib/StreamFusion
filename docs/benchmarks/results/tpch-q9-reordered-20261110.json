@@ -1,0 +1,303 @@
+{
+  "mode": "compare",
+  "format": "parquet",
+  "resultOrderValidation": "Exact rows and multiplicities, preserving ORDER BY key order; row order within equal-key groups is immaterial",
+  "profile": false,
+  "scale": 1.0,
+  "javaVersion": "17.0.17",
+  "javaVm": "OpenJDK 64-Bit Server VM",
+  "os": "Mac OS X aarch64",
+  "maxHeapBytes": 8589934592,
+  "generator": "io.airlift.tpch:tpch:0.10",
+  "schema": "TPC-H identifiers BIGINT, integer INT, numeric DECIMAL(15,2), date DATE, text STRING",
+  "parallelism": 2,
+  "nativeBytes": 536870912,
+  "nativeBatchRows": 8192,
+  "warmups": 3,
+  "trials": 7,
+  "tables": {
+    "customer": {
+      "bytes": 24196144,
+      "sha256": "a035a33a703d3a043ecf97746b4e3a7988316c1c04923fda63231a59d5e46092",
+      "rows": 150000
+    },
+    "orders": {
+      "bytes": 170452161,
+      "sha256": "3f111871419ea6f319fcc51c235d199b3edf16754c5e100be92927527e5f6c97",
+      "rows": 1500000
+    },
+    "lineitem": {
+      "bytes": 753862072,
+      "sha256": "4feb529dfa255799bbf0243d2f2c5028375dfb684e592eb94775345602aa2728",
+      "rows": 6001215
+    },
+    "part": {
+      "bytes": 23935125,
+      "sha256": "cecd01146ae002aebe47e6b58bd81644df1d51d9c14da3425aea2b4976e02d60",
+      "rows": 200000
+    },
+    "partsupp": {
+      "bytes": 118184616,
+      "sha256": "3a68b7b7757cd3aacccb39c4bc092dc3edf3b7e0e7609a259c39238cae0be41e",
+      "rows": 800000
+    },
+    "supplier": {
+      "bytes": 1399184,
+      "sha256": "f5699b5df22724f41bee9b8521798d8fc0cecd5beb0bd3bca96547ac58095547",
+      "rows": 10000
+    },
+    "nation": {
+      "bytes": 2199,
+      "sha256": "7d47bc9397da331054fa92b8fb92e4c074004bad72dcbb893012093218dccf6c",
+      "rows": 25
+    },
+    "region": {
+      "bytes": 384,
+      "sha256": "5a7c2fe9718db00ff5e5bc82a9ebfa8abc492cc75260d3c0ffb411974f235ab0",
+      "rows": 5
+    }
+  },
+  "queries": [
+    {
+      "query": 9,
+      "sqlSha256": "0adb679bcda7561efec2c45c9bbc3de42549f21c3aee299cf6ef47f9e58662f0",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "streamfusion",
+          "trial": -3,
+          "jobId": "40bfa0bbcd9b45d8092578b96744d06f",
+          "nativeRows": 11716494
+        },
+        {
+          "engine": "stock",
+          "trial": -3,
+          "jobId": "646192a7e9978cf13d1b8f7793036ae3",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": -2,
+          "jobId": "7e3d9339d803902945df392f0742967b",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -2,
+          "jobId": "f3ad243caeb0cb6c6a296cbefa9b668f",
+          "nativeRows": 11716494
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -1,
+          "jobId": "f34db8e0cc70d76c6eeddff4569f280f",
+          "nativeRows": 11716494
+        },
+        {
+          "engine": "stock",
+          "trial": -1,
+          "jobId": "1015d735c908e605f15de5c43b4a5ba6",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "4910fc64f297d9ff3d6f28048779da95",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "83ac073b2944de003227d445cf8b998f",
+          "nativeRows": 11716494
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 1,
+          "jobId": "2605ea977e985151a0e6480545ef16bc",
+          "nativeRows": 11716494
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "jobId": "11701189ae517f4eb125334730e0795d",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "jobId": "f0f6c66d6cdf4fc2111b5d776b094b9b",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 2,
+          "jobId": "b2e5e8b1a225a93b269863faa6de2dad",
+          "nativeRows": 11716494
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 3,
+          "jobId": "7b8b99b1416734709dc595097beede5a",
+          "nativeRows": 11716494
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "jobId": "85ce4fa0fa176ecbe414c70dc56ead2c",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "jobId": "9d71124c9fd87f53b98154bdfaee0cb8",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 4,
+          "jobId": "5b10f90a1f12071b1bd94347304f4428",
+          "nativeRows": 11716494
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 5,
+          "jobId": "76a46304280e6e8f7e71282d6593decd",
+          "nativeRows": 11716494
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "jobId": "872e9b705c95bac912751033fb34e24b",
+          "nativeRows": 0
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "jobId": "3651530c2bcfa91e80993cf09f06a4e0",
+          "nativeRows": 0
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 6,
+          "jobId": "bf7ac803edb75eb4db5ca3acee998df0",
+          "nativeRows": 11716494
+        }
+      ],
+      "resultType": "ROW<`nation` STRING, `o_year` BIGINT, `sum_profit` DECIMAL(38, 4)> NOT NULL",
+      "rows": 175,
+      "resultSha256": "3b613980782bfb45ac22960abcf25777d749da7d02489ba954186ff5e0b3b666",
+      "stockNanos": [
+        86125194625,
+        87225288209,
+        26132583042,
+        25045783958,
+        25448942958,
+        27230348083,
+        29674316250
+      ],
+      "nativeNanos": [
+        8398234584,
+        8598272292,
+        1919768334,
+        1898471500,
+        1813365958,
+        1806832708,
+        2128392042
+      ],
+      "stockRuntimeMs": [
+        85856,
+        792281,
+        25887,
+        369047,
+        25241,
+        27079,
+        29547
+      ],
+      "nativeRuntimeMs": [
+        7885,
+        8116,
+        1805,
+        1789,
+        1699,
+        1725,
+        1976
+      ],
+      "status": "passed",
+      "stockMedianMs": 27230.348083,
+      "nativeMedianMs": 1919.768334,
+      "medianSpeedup": 14.184184414722198
+    }
+  ],
+  "parquet": {
+    "writer": "stock Flink filesystem/Parquet, SNAPPY, outside query timing",
+    "writerParallelism": 2,
+    "sourceCsvManifestSha256": "16e94dd4fce1906f108d6a0b56bbcace8d84248d4e64c661a0d118125e2c72a8",
+    "writerJobIds": [
+      "af8463e57c9ff056860f66cf51a0c68e",
+      "0d62115f6f4fd494e0cc12f826abd8f4",
+      "308dcdfb4c732300dd731add4d65bdd8",
+      "8cff436bdb4621cc11dc47e8a82b7e7e",
+      "4a016f1d56a49ebb770d34f2ce648a5b",
+      "82331dd1cd9e9bf66e5ec7ca4cb95b35",
+      "b082e17830399ca351f1c724b77a1c00",
+      "72f3732d9d21c837d1ad31ab19e7300a"
+    ],
+    "files": [
+      {
+        "path": "customer/part-5a9f8698-69f1-4688-9b9e-847d3344984b-task-0-file-0",
+        "bytes": 12443660,
+        "sha256": "c7f3f7fe2192d98f32ea5b43809e6a6b5c2ef55f0ffd470db2d375bf0bb72e63"
+      },
+      {
+        "path": "lineitem/part-1bb14d04-1376-4ac3-a9b5-8f14b70118cd-task-0-file-0",
+        "bytes": 228153614,
+        "sha256": "aa95d444d34fc6031e6a8de1f49d76a60692876cb3b6e572c1125c517fe93691"
+      },
+      {
+        "path": "nation/part-d374492a-1852-4603-8936-885809df8af8-task-0-file-0",
+        "bytes": 2793,
+        "sha256": "a7b0a4ddd2d67b6f2bf432eb1c098eaa52c98346a4fa95309445b9e6e68b4676"
+      },
+      {
+        "path": "orders/part-1c44d96d-0077-4adf-a294-f67fc22e936a-task-0-file-0",
+        "bytes": 56372199,
+        "sha256": "4df886a7db6687745b95c9b0c81b944947929282dddb559e7cb3153d2caef970"
+      },
+      {
+        "path": "part/part-21aa7ead-39d2-4deb-bff0-474a4cd9aa16-task-0-file-0",
+        "bytes": 6232371,
+        "sha256": "ac5474f0fa3faeaf9f4ac0fe753148656b845b3910b7a705efc33cf859cf7fee"
+      },
+      {
+        "path": "partsupp/part-b6c04884-1c99-4cbd-ad6f-58039082ff68-task-1-file-0",
+        "bytes": 42491907,
+        "sha256": "094fe50675f13e597d60613c56f2860b04eb2f7deec0ff797d1c4d72b1b4c971"
+      },
+      {
+        "path": "region/part-53e3ebd4-941d-4677-97a0-501b8c582b4b-task-0-file-0",
+        "bytes": 1300,
+        "sha256": "bdfe0271626a3580480267e985880f60262c62ef678c1eef960b00a7ddc11568"
+      },
+      {
+        "path": "supplier/part-dba60e28-6215-4fc0-9f71-ad47b0355e03-task-0-file-0",
+        "bytes": 797572,
+        "sha256": "0eb4fdb8d39610f248ae0b558629947994694f6ebbf696beafe78e16d081f944"
+      }
+    ]
+  },
+  "status": "passed focused Q9 rerun after Cartesian elimination; separate cohort from first full run",
+  "build": {
+    "librarySha256": "c1420f1eae458fc4f87f90a8083d6916e08b8ef61dd0bd96c241154b6dd95c4f",
+    "nativeSourceSha256": {
+      "native/engine/src/bounded_join.rs": "c615b62fd95f2b406f1246ae718ec420c9be870123f0f0c272df3baf6f85ea66",
+      "native/engine/src/bounded_task.rs": "2b04b35bfd2f8eb994a9a02a5215b7198f61f10b0ff1118a3862ff309bf8490b",
+      "native/engine/src/bounded_aggregate.rs": "d5ca6cb0c81249fa0ff8825c0c18306787b8544a160678fbe2f4dc853b086fae",
+      "native/engine/src/bounded_sort.rs": "a3512183b0aa8337c911b4674749278d683a6da68e7f4d0625846a736556198e"
+    },
+    "javaSourceSha256": {
+      "src/main/java/tech/streamfusion/planner/BatchCrossJoinRewrite.java": "7eef7cbef70d8328b37dcaeb5ba511a955bcfafba2dee6e3efaa928f0dd69bc7",
+      "src/main/java/tech/streamfusion/planner/BatchPlanScan.java": "eebd1c445b2dbb6009a09b36aa37013fa6129f752b12ce576881bfd685caf90b"
+    }
+  }
+}

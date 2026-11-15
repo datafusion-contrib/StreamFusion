@@ -5,6 +5,18 @@ state in a RocksDB instance owned and accessed directly by Rust. Java coordinate
 handles and file upload, but native state reads, writes, flushes, and compactions do not cross JNI.
 Host-side fallback state and timers use Flink's `EmbeddedRocksDBStateBackend` delegate.
 
+Backend teardown attempts every independent release even when snapshot, stream or delegate cleanup
+fails. Canonical readers, working directories and shared native-memory leases still receive their
+cleanup attempt; later failures remain suppressed on the first failure. Operator-owned native
+handles close on the task thread before their shared-memory leases are released.
+
+Native builds enable `rocksdb-state` by default. Tests that transfer window
+partials between stores exercise memory-to-memory and all RocksDB combinations
+in that build. A `--no-default-features` build exercises only the memory-store
+combination; it has no RocksDB implementation or JNI entries. Use the default
+feature build for RocksDB recovery validation rather than treating a memory-only
+test run as persistent-backend evidence.
+
 Select the backend with the normal Flink setting:
 
 ```properties
@@ -44,7 +56,12 @@ metadata and uses bounded key cleanup.
 Batch-oriented point reads use RocksDB's optimized MultiGet API on the default column family. The Rust
 binding borrows the batch's key bytes and returns pinned values, which remain valid through the
 batch decode and are then released. Operator state owns its decoded values; it does not retain
-RocksDB cache pins across bundles. Constant AppendFast Top-1 can retain clean,
+RocksDB cache pins across bundles. Generic keyed stores reserve their decoded working set and
+conversion workspace against the shared task off-heap pool before hydration and through bundle
+completion. Operator mini-batch staging has a separate reservation; state metrics include both
+owners. Checkpoint and canonical-scan completion release the decoded working-set charge as
+soon as those values are cleared. Persisted keys, row encodings, checkpoint handles and key-group
+routing are unchanged. Constant AppendFast Top-1 can retain clean,
 owned decoded winners in a bounded cache governed by task off-heap reservations;
 [the Top-N page](../operators/top-n.md) describes its admission, metrics and
 checkpoint behavior. This changes the read path without changing persisted keys,
@@ -128,8 +145,12 @@ remain tracked in
   multisets as companion element tables: a bundle point-reads only the elements its batches name,
   the running count/sum/extreme rides the main row, changes write through as element-level deltas,
   and a retraction that removes the current extreme reseeks the ordered element table (a numeric
-  MIN/MAX over an insert-only input needs no multiset at all and runs as a plain running value). Typed
-  stores persist an operator's processing-time timer deadline under a reserved key, so proctime
+  MIN/MAX over an insert-only input needs no multiset at all and runs as a plain running value).
+  Fixed/session COUNT DISTINCT stores likewise separate scalar headers from per-value set/count
+  records. Canonical capture pins those records and converts bounded frames asynchronously;
+  execution can reconstruct the touched window/session. Previous snapshot-backed checkpoints
+  migrate one key-group blob at a time when opened, preserving processing deadlines.
+  Typed stores persist an operator's processing-time timer deadline under a reserved key, so proctime
   windows, sessions, rank, and the window and interval joins run direct too. Every native operator
   now reads and writes RocksDB per key; the generic snapshot path remains only as the fallback for
   a shape whose state has no fixed-type native codec (a DISTINCT over a value type with no faithful
@@ -154,7 +175,11 @@ materialize the backend-independent [StreamFusion canonical state format](canoni
 use Flink's full-snapshot writer, producing `KeyGroupsSavepointStateHandle` state. They can restore
 onto either this backend or the memory backend. A direct store scans and decodes its logical rows
 for this operation, so canonical savepoints are intentionally full and more expensive than ordinary
-incremental checkpoints.
+incremental checkpoints. Qualified stock-interchange adapters instead project live state into
+Flink's original descriptors and serializers; see [canonical state](canonical-state.md). The frozen
+stock-canonical retracting MIN/MAX subset (integral/date/time/boolean values) uses direct native
+RocksDB records, including independent view-entry TTL ages. Wider accelerated aggregate shapes
+without a stock-canonical contract may still use snapshot-backed execution.
 
 Restoring a canonical savepoint (or legacy raw keyed state) onto this backend decodes the blob key
 groups once at open and bulk-writes them — rows, TTL stamps, watermarks, sequence high-water marks,
@@ -171,14 +196,22 @@ version. Older snapshots fail with a format-version error; see the
 
 ## Flink 1.18 canonical projection
 
-The 1.18 development profile keeps native incremental checkpoints and ordinary host operators on
-RocksDB. Native canonical savepoints use a temporary heap backend to preserve independent
-synthetic keys and key-group IDs through the released host API. The snapshot takes ownership
-before live projection entries are cleared; temporary heap use scales with serialized canonical
-state. The native snapshot layout is unchanged. Use the StreamFusion native backend for this
-path, selected automatically for stock RocksDB configurations as described above. Unverified custom
-backends still decline keyed native operators during planning; stateless operators remain eligible. See
-[Flink line compatibility](../flink-compatibility.md) for outstanding recovery validation.
+Flink 1.18 and 2.2 use the same disk-backed stock projection for bound canonical contracts.
+At a canonical-savepoint barrier, direct native RocksDB operators flush pending bundles and pin an
+independent read view. Flink's async writer converts bounded records with the released stock
+serializers. Complex map/list/timer layouts reuse the shared disk spool and a temporary stock
+RocksDB backend; direct scalar layouts stream without that intermediate projection. Neither path
+loads the whole operator into heap. The largest encoded native or stock value remains a
+working-memory floor. Overlapping captures retain independent views through completion,
+cancellation and live-operator closure. Ordinary native checkpoints keep the incremental SST path.
+
+The synthetic-key projection used for private native-format compatibility is distinct from a
+bound stock contract. Release adapters retain independent serialized keys/key groups where that
+format needs them. Use the StreamFusion native backend, selected automatically for supported
+stock RocksDB configurations on 1.18 as described above; 2.2 requires the explicit factory.
+Unverified custom backends still decline keyed native operators during planning. See
+[canonical state](canonical-state.md#release-parity-and-frozen-scope) for the frozen operator scope
+and [Flink line compatibility](../flink-compatibility.md) for release-specific behavior.
 
 ## Failed and aborted checkpoints
 
@@ -263,6 +296,29 @@ layouts remain unchanged. See [OVER checkpoint semantics](../operators/over.md#p
 for the limit on reconstructing arithmetic history discarded by old writers.
 
 
+### Canonical conversion reservations
+
+A captured read context carries the operator's memory authority onto Flink's asynchronous writer.
+Shared scan batches reserve copied keys/values, vector capacity and the continuation key before
+allocation. Refused frames retain their prior cursor position and can retry after memory becomes
+available. Frames split before crossing their byte limit, except for an individual oversized
+record. Direct scalar cursors include a decoding estimate. Window-rank buckets and DISTINCT
+membership keys are borrowed from pinned iterators; their decoded transfer frames reserve work
+before construction. The encoded RocksDB value still has an intrinsic memory floor, and estimates
+for other conversion stages remain part of the accounting audit.
+
+### Retained nested rows
+
+Buffered event-time deduplication, event-time sort, window rank/deduplication, OVER retained input
+and interval/temporal join payloads share a retained-row
+codec for scalar, ROW, ARRAY and MAP payloads. It reuses Arrow's row encoding, treating map payloads
+as their equivalent list/struct buffers without copying the columns or changing entry order.
+Decode restores the declared child fields and metadata. Scalar row bytes remain unchanged.
+These layouts use pinned native RocksDB canonical capture instead of the former memory capture
+with snapshot-backed checkpoints. Legacy databases migrate one opaque key-group partition at a
+time; this compatibility path retains a partition-sized memory floor. Keys and sort semantics
+retain their existing independent admission rules.
+
 ### Scalar window keys
 
 Direct fixed-window and session stores decode newly admitted TINYINT/SMALLINT, TIME,
@@ -310,3 +366,56 @@ Previously admitted scalar schemas and bytes are unchanged; these MAP-bearing sh
 fell back. Updating Top-N/LIMIT and MAP-bearing updating join inputs still use stock execution until the retained-row
 contract in [#437](https://github.com/datafusion-contrib/StreamFusion/issues/437) is implemented.
 Join/partition/order/unique-key contracts remain separately checked.
+
+
+Grouped multiset companion tables reserve identifier zero for the main row and encode aggregate
+positions 0–254 as identifiers 1–255. The codec rejects larger companion positions before opening
+a database; it does not truncate an index into a different table. Scalar-only wide rows do not
+need companion IDs. Canonical DISTINCT planning falls back to the captured stock owner for an
+unencodable view layout; see [grouped-state admission](../operators/group-by.md#native-companion-table-index-admission).
+Wider native companion encoding remains pending in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+
+Captured JVM UDF aggregate accumulators and data views remain Flink managed state. With the
+RocksDB configuration they use the released embedded RocksDB delegate, rather than the native
+grouped-table codec. The [managed UDF canonical scope](../operators/group-by.md#captured-managed-udf-canonical-state-partial) keeps this distinction explicit; native grouped-table
+coverage does not qualify user accumulator state or its full restore matrix.
+
+
+Captured one-phase mini-batch UDFs retain this same managed RocksDB delegate and released
+serializers. Their transient bundles and optional cached accumulators drain before canonical
+barriers; the [one-phase qualification](../operators/group-by.md#captured-one-phase-udf-mini-batches-partial) includes both stores, backend changes, TTL ages and ordinary recovery. This is separate from
+the native grouped-table codec and from the global owner's separately qualified two-stage contract.
+
+
+Captured local/global UDFs use the same released managed backend at the global owner. Local
+partials are transient Arrow events serialized with the original stock local serializer and
+drain before canonical barriers; they do not use the native grouped-table codec. The
+[two-stage qualification](../operators/group-by.md#captured-localglobal-udf-canonical-handoffs-partial) includes heap/RocksDB, backend changes, original TTL ages, checkpoint returns, local/global UDF
+fault recovery and 56 complete-job handoffs. Wider user/key/type and failure matrices remain open.
+
+
+Captured managed UDF key qualification additionally compares the original canonical key and view
+bytes through heap/RocksDB backend changes for wide decimal, nanosecond timestamp and selected
+composite/nested/container keys. These operators use the released managed backend and key
+serializer, not a new native RocksDB key format. The combined component passes 1,190 focused
+checks and 168 full-job handoffs, including selected heap/RocksDB changes, no-input returns,
+native checkpoint recovery and 1→3→2 key redistribution. Original nested binary-row key payloads
+survive the managed Arrow boundaries. See the [exact key scope and remaining requirements](../operators/group-by.md#captured-managed-udf-key-layouts-partial).
+Benchmarking remains deferred.
+
+The all-operator backend-transition controls require supported window DISTINCT sets to use direct
+native RocksDB, including ordinary checkpoint and memory/disk transitions. Their original
+continued-output assertions remain in place; the former snapshot-backed route expectation is
+obsolete for these already-admitted layouts.
+
+Optimized Linux builds resolve native database paths into a caller-owned `realpath` buffer before
+copying the result into the DSO's allocator. The snapshot registry still uses resolved filesystem
+identities, including symlinks. This avoids returning a host library's allocated path to a different
+allocator during ordinary RocksDB initialization or asynchronous snapshot lookup. The release
+image SQL smoke exercises this path with the production allocator enabled.
+
+Ordered native scans merge pinned iterator heads using a heap of indices. A scan comparator
+requires each input range to already be monotonic under that comparison; layouts with an
+unbiased signed field split its negative and nonnegative spans into separate ranges. This
+preserves logical ordering without copying an entire key or payload backlog into the merge.

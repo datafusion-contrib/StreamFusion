@@ -2,6 +2,8 @@
 
 **Status:** native, with boundary restrictions.
 
+For bounded execution, see the separate [batch SQL admission](batch.md).
+
 `UNION ALL` substitutes to a native `Union` operator that simply concatenates its inputs' Arrow
 batches — no state, no key. It admits any row type the columnar boundary can carry.
 
@@ -11,6 +13,11 @@ native code aligns logical columns by position and sidecars by identity: missing
 become INSERT, while missing string caches remain absent values. UPDATE_BEFORE, UPDATE_AFTER
 and DELETE tags are preserved. Logical arity/type mismatches fail before Arrow concatenation.
 No row conversion is added inside the island.
+
+Batch unions give their branches the same field names and nullability before forwarding their
+batches. The header adjustment retains Arrow vectors, physical types and field metadata; it does
+not transpose rows or copy column buffers. Downstream bounded operators therefore see one schema
+when input aliases differ, including when `UNION` adds a deduplication aggregate.
 
 ## Final JSON_VALUE projections
 

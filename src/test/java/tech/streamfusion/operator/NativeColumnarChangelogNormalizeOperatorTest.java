@@ -27,8 +27,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 /**
  * The changelog normalizer keeps the last row per key and emits the normalized changelog: the first
  * row inserts, a changed row retracts the previous then appends the new (when generateUpdateBefore),
- * an unchanged row is suppressed, and a delete retracts the stored full row. This verifies the exact
- * emitted change sequence, which the SQL harness's collapsed comparison cannot see.
+ * unchanged rows follow the host release's equality, and a delete retracts the stored full row.
+ * This verifies the emitted change sequence, which the SQL harness's collapsed comparison cannot see.
  */
 @ExtendWith(CoalescingOff.class)
 class NativeColumnarChangelogNormalizeOperatorTest {
@@ -47,17 +47,22 @@ class NativeColumnarChangelogNormalizeOperatorTest {
             row(RowKind.INSERT, 1L, 10L), // first row for key 1 → +I
             row(RowKind.UPDATE_AFTER, 1L, 20L), // changed → -U(prev) +U(new)
             row(RowKind.INSERT, 2L, 5L), // first row for key 2 → +I
-            row(RowKind.UPDATE_AFTER, 2L, 5L), // unchanged → suppressed
+            row(RowKind.UPDATE_AFTER, 2L, 5L),
             row(RowKind.DELETE, 1L, 20L)); // delete key 1 → -D(stored row)
 
-    assertEquals(
-        List.of(
-            List.of("+I", 1L, 10L),
-            List.of("-U", 1L, 10L),
-            List.of("+U", 1L, 20L),
-            List.of("+I", 2L, 5L),
-            List.of("-D", 1L, 20L)),
-        out);
+    var expected =
+        new ArrayList<>(
+            List.of(
+                List.of("+I", 1L, 10L),
+                List.of("-U", 1L, 10L),
+                List.of("+U", 1L, 20L),
+                List.of("+I", 2L, 5L)));
+    if (tech.streamfusion.compat.StateCompat.normalizerComparesRowKind()) {
+      expected.add(List.of("-U", 2L, 5L));
+      expected.add(List.of("+U", 2L, 5L));
+    }
+    expected.add(List.of("-D", 1L, 20L));
+    assertEquals(expected, out);
   }
 
   @Test

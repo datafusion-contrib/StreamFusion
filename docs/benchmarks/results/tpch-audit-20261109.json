@@ -1,0 +1,457 @@
+{
+  "date": "2026-11-09",
+  "phase": "initial_stock_correctness_and_native_admission_audit",
+  "flink": "2.2.1",
+  "scale": 0.01,
+  "schema": "TPC-H identifiers BIGINT, integer INT, numeric DECIMAL(15,2), date DATE, text STRING",
+  "generator": "io.airlift.tpch:tpch:0.10",
+  "parallelism": 2,
+  "nativeBytes": 536870912,
+  "timing": "Cold single-run stock diagnostic only. No acceleration ratio or performance admission claim.",
+  "tables": {
+    "customer": {
+      "bytes": 239490,
+      "rows": 1500,
+      "sha256": "22156f2770387f5adadbc72774f2282d353aedd5092bd8fc54871b3bf5e74cba"
+    },
+    "orders": {
+      "bytes": 1644137,
+      "rows": 15000,
+      "sha256": "a444603dfba6c47e902e24b517608a5eb3b117127e99dff16a40f4eaa47b812c"
+    },
+    "lineitem": {
+      "bytes": 7204075,
+      "rows": 60175,
+      "sha256": "517b566190fbeadc638602554d109a463631e19788936ccb97196ebd407b51f1"
+    },
+    "part": {
+      "bytes": 235134,
+      "rows": 2000,
+      "sha256": "604232ee10e95dca875c196f759c07babf34293dfac8c99b9f1f0c2708f0561b"
+    },
+    "partsupp": {
+      "bytes": 1153705,
+      "rows": 8000,
+      "sha256": "906f58419af6ad5d62489a7e2105257654bb6d8458a7fd8fe19b76655aac50c7"
+    },
+    "supplier": {
+      "bytes": 13695,
+      "rows": 100,
+      "sha256": "b199bef3350840676cfe4be096091851bc47b6a57cd8a71b3f559d42b7d9dacd"
+    },
+    "nation": {
+      "bytes": 2199,
+      "rows": 25,
+      "sha256": "7d47bc9397da331054fa92b8fb92e4c074004bad72dcbb893012093218dccf6c"
+    },
+    "region": {
+      "bytes": 384,
+      "rows": 5,
+      "sha256": "5a7c2fe9718db00ff5e5bc82a9ebfa8abc492cc75260d3c0ffb411974f235ab0"
+    }
+  },
+  "queries": [
+    {
+      "query": 1,
+      "status": "passed",
+      "rows": 4,
+      "sqlSha256": "864a088f29bb394a6397b71c28a5bdb1dbd74e667f690917feff0d9e293df4e6",
+      "resultSha256": "9ec085e2998adc5572315b4ad435c9fa0c643bbc38c2ab22fce26a8719507df0",
+      "nativePlanned": false,
+      "firstFallback": "batch sort: only signed integer keys are verified",
+      "physicalOperators": {
+        "Sort": 1,
+        "Exchange": 2,
+        "HashAggregate": 1,
+        "LocalHashAggregate": 1,
+        "Calc": 1,
+        "TableSourceScan": 1
+      }
+    },
+    {
+      "query": 2,
+      "status": "passed",
+      "rows": 4,
+      "sqlSha256": "f42e396d36f43602ff020b8f4d37f44a3734aaf0cfb5ce468f674f07555cb79d",
+      "resultSha256": "b9ecb7f74e0cb46abe3628e8311fbf0fa89fadc14f54551e9fb739eae43b5c9e",
+      "nativePlanned": false,
+      "firstFallback": "batch sort: only signed integer keys are verified",
+      "physicalOperators": {
+        "SortLimit": 2,
+        "Exchange": 10,
+        "Calc": 13,
+        "NestedLoopJoin": 4,
+        "HashJoin": 4,
+        "TableSourceScan": 9,
+        "HashAggregate": 1,
+        "LocalHashAggregate": 1
+      }
+    },
+    {
+      "query": 3,
+      "status": "passed",
+      "rows": 10,
+      "sqlSha256": "d8d2f7579eac245cd2609e49f572025a6efa1725dc30e3ccc3c6887f4c4f0bbf",
+      "resultSha256": "68cd033f95f528eec57ffa8bcf64e8d6e0ccac13181514c03e9e9d4e38916491",
+      "nativePlanned": false,
+      "firstFallback": "batch sort: only signed integer keys are verified",
+      "physicalOperators": {
+        "Calc": 6,
+        "SortLimit": 2,
+        "Exchange": 4,
+        "HashAggregate": 1,
+        "LocalHashAggregate": 1,
+        "HashJoin": 2,
+        "TableSourceScan": 3
+      }
+    },
+    {
+      "query": 4,
+      "status": "passed",
+      "rows": 5,
+      "sqlSha256": "04297c2ddbbcc2bd3999494f3f531235e8bf5d723e678796ee485c0309711594",
+      "resultSha256": "7e56380468cb51ff6ffe7601b7d279b8b6a53fb8be7398b02e35982042159670",
+      "nativePlanned": false,
+      "firstFallback": "batch sort: only signed integer keys are verified",
+      "physicalOperators": {
+        "Sort": 1,
+        "Exchange": 3,
+        "HashAggregate": 1,
+        "LocalHashAggregate": 1,
+        "Calc": 3,
+        "HashJoin": 1,
+        "TableSourceScan": 2
+      }
+    },
+    {
+      "query": 5,
+      "status": "passed",
+      "rows": 5,
+      "sqlSha256": "c4fe1313161ee7e67d0c554a54126ac20560c0df04b86e33aa5ec251f908c315",
+      "resultSha256": "4be9310584821abd3672dd8c5a5fe52fd24373ff9935679e2c18d2506dd3ddab",
+      "nativePlanned": false,
+      "firstFallback": "batch sort: only signed integer keys are verified",
+      "physicalOperators": {
+        "Sort": 3,
+        "Exchange": 7,
+        "SortAggregate": 1,
+        "LocalSortAggregate": 1,
+        "Calc": 7,
+        "NestedLoopJoin": 1,
+        "HashJoin": 4,
+        "TableSourceScan": 6
+      }
+    },
+    {
+      "query": 6,
+      "status": "passed",
+      "rows": 1,
+      "sqlSha256": "9a0f373ae3a61ce5596f4b77647988f09b3f8261661853a11db1930708771c21",
+      "resultSha256": "1618df4be83c3b8f05deb7f16459269384a8fabf25faccfc7f883c39244dc83c",
+      "nativePlanned": false,
+      "firstFallback": "batch aggregate: SUM/AVG require signed integers; MIN/MAX require signed integers, BOOLEAN, DECIMAL, DATE or TIME",
+      "physicalOperators": {
+        "HashAggregate": 1,
+        "Exchange": 1,
+        "LocalHashAggregate": 1,
+        "Calc": 1,
+        "TableSourceScan": 1
+      }
+    },
+    {
+      "query": 7,
+      "status": "passed",
+      "rows": 4,
+      "sqlSha256": "ae45f801e45c97c4a69a9156b2709b29a7373b5a3a82741bf1a4fb1415fa100b",
+      "resultSha256": "7210ea9d6979246007769e271f182a35d8ad1b45c5542e31e9b648b858c05599",
+      "nativePlanned": false,
+      "firstFallback": "batch sort: only signed integer keys are verified",
+      "physicalOperators": {
+        "Sort": 2,
+        "Exchange": 7,
+        "SortAggregate": 1,
+        "Calc": 8,
+        "NestedLoopJoin": 2,
+        "HashJoin": 3,
+        "TableSourceScan": 6
+      }
+    },
+    {
+      "query": 8,
+      "status": "passed",
+      "rows": 2,
+      "sqlSha256": "32f7a9d5fa9a84fecdc2c25f2acf33491d1cf8e176eaca5c2d48bcf5a8c41c31",
+      "resultSha256": "2b88fd12aa466431ccbcc107c0d21d207fb65edfc559d7430812843ebf98283d",
+      "nativePlanned": false,
+      "firstFallback": "batch aggregate: grouped SortAgg is unverified",
+      "physicalOperators": {
+        "Sort": 3,
+        "Exchange": 9,
+        "Calc": 12,
+        "SortAggregate": 1,
+        "LocalSortAggregate": 1,
+        "NestedLoopJoin": 2,
+        "HashJoin": 5,
+        "TableSourceScan": 8
+      }
+    },
+    {
+      "query": 9,
+      "status": "passed",
+      "rows": 173,
+      "sqlSha256": "0adb679bcda7561efec2c45c9bbc3de42549f21c3aee299cf6ef47f9e58662f0",
+      "resultSha256": "6c1cb82ff0e006e203ef1aad7dd92ee83dfe4cadd862264a402a9f6897b00b48",
+      "nativePlanned": false,
+      "firstFallback": "batch sort: only signed integer keys are verified",
+      "physicalOperators": {
+        "Sort": 1,
+        "Exchange": 7,
+        "HashAggregate": 1,
+        "LocalHashAggregate": 1,
+        "Calc": 5,
+        "HashJoin": 4,
+        "NestedLoopJoin": 1,
+        "TableSourceScan": 6
+      }
+    },
+    {
+      "query": 10,
+      "status": "passed",
+      "rows": 20,
+      "sqlSha256": "2c82e9ab8c67d6423ed357ef3c945f60cc140f50d489a1a098cbb290fd1f191e",
+      "resultSha256": "f8cf8af189283b7bad4e806729559e512b2a3cec030afdb2fa735f05ff15bc6b",
+      "nativePlanned": false,
+      "firstFallback": "batch sort: only signed integer keys are verified",
+      "physicalOperators": {
+        "Calc": 6,
+        "SortLimit": 2,
+        "Exchange": 5,
+        "HashAggregate": 1,
+        "LocalHashAggregate": 1,
+        "HashJoin": 3,
+        "TableSourceScan": 4
+      }
+    },
+    {
+      "query": 11,
+      "status": "passed",
+      "rows": 359,
+      "sqlSha256": "6c13dffd3aa87a4bb45ccb379ff54b834d12b87d070ee3dafd63906c8c6ce8ce",
+      "resultSha256": "6f8c69ff95b7659ffbf2a2da0e1429ebef702290d9bc6ab203e4f6f2b6b6c954",
+      "nativePlanned": false,
+      "firstFallback": "batch sort: only signed integer keys are verified",
+      "physicalOperators": {
+        "Sort": 1,
+        "Exchange": 8,
+        "Calc": 9,
+        "NestedLoopJoin": 3,
+        "HashAggregate": 3,
+        "LocalHashAggregate": 2,
+        "HashJoin": 2,
+        "TableSourceScan": 6
+      }
+    },
+    {
+      "query": 12,
+      "status": "passed",
+      "rows": 2,
+      "sqlSha256": "8622e45700f76a2b08b67c19a124013fc4e021623a8bd2c0d65845b1a1a3e9b0",
+      "resultSha256": "c6c7bcef5322699f445da4d52fa4cbed4e78a3d1e60f9bf8959ab7972fe7e4da",
+      "nativePlanned": false,
+      "firstFallback": "batch sort: only signed integer keys are verified",
+      "physicalOperators": {
+        "Sort": 1,
+        "Exchange": 3,
+        "HashAggregate": 1,
+        "LocalHashAggregate": 1,
+        "Calc": 2,
+        "HashJoin": 1,
+        "TableSourceScan": 2
+      }
+    },
+    {
+      "query": 13,
+      "status": "passed",
+      "rows": 33,
+      "sqlSha256": "38b57cf5cb9b9f964337c1abfada5989add38d7c3bad9d339d49ee812ef387a9",
+      "resultSha256": "b4a93aa33cc5ce65310822781fc7aaf990192bff4cd1d1bda67c55cc6101e0b8",
+      "nativePlanned": false,
+      "firstFallback": "batch: unsupported interior operator BatchPhysicalHashJoin",
+      "physicalOperators": {
+        "Sort": 1,
+        "Exchange": 4,
+        "HashAggregate": 2,
+        "LocalHashAggregate": 2,
+        "Calc": 3,
+        "HashJoin": 1,
+        "TableSourceScan": 2
+      }
+    },
+    {
+      "query": 14,
+      "status": "passed",
+      "rows": 1,
+      "sqlSha256": "a8b179c98ec22511cd9e4333d9ee3000eb89ca2cc83291824e76d71fabe88b2c",
+      "resultSha256": "00d74dda8105046f3247bffec02cc305ba169e3bdc180c1167e9a55261149c83",
+      "nativePlanned": false,
+      "firstFallback": "batch aggregate: SUM/AVG require signed integers; MIN/MAX require signed integers, BOOLEAN, DECIMAL, DATE or TIME",
+      "physicalOperators": {
+        "Calc": 3,
+        "HashAggregate": 1,
+        "Exchange": 2,
+        "LocalHashAggregate": 1,
+        "HashJoin": 1,
+        "TableSourceScan": 2
+      }
+    },
+    {
+      "query": 15,
+      "status": "passed",
+      "rows": 1,
+      "sqlSha256": "24ffeb12ad93550c3241dbea68868484c9ad6fe71d3185aeb49b844539b0ec27",
+      "resultSha256": "71bf5a765d0300a567172c868ce9ad15ed37b7665c8555dbf4837c6e28c4a6c9",
+      "nativePlanned": false,
+      "firstFallback": "batch: unsupported interior operator BatchPhysicalNestedLoopJoin",
+      "physicalOperators": {
+        "Sort": 1,
+        "Exchange": 6,
+        "Calc": 5,
+        "NestedLoopJoin": 1,
+        "HashJoin": 1,
+        "TableSourceScan": 3,
+        "HashAggregate": 3,
+        "LocalHashAggregate": 3
+      }
+    },
+    {
+      "query": 16,
+      "status": "passed",
+      "rows": 296,
+      "sqlSha256": "71a2bdd941e0fe9929daed3b93b988e6d666625b7ed7c70faa9678d3d5ce6079",
+      "resultSha256": "3c59a1e7bdb551f04c803051f67e9777ffffd62a2be08a2687118360aeebafdf",
+      "nativePlanned": false,
+      "firstFallback": "batch sort: only signed integer keys are verified",
+      "physicalOperators": {
+        "Sort": 1,
+        "Exchange": 5,
+        "HashAggregate": 2,
+        "LocalHashAggregate": 2,
+        "NestedLoopJoin": 1,
+        "Calc": 3,
+        "HashJoin": 1,
+        "TableSourceScan": 3
+      }
+    },
+    {
+      "query": 17,
+      "status": "passed",
+      "rows": 1,
+      "sqlSha256": "3bf63af45d8c0120013a1dc302df5a4d7923b12522ed10ce0d251922b118cd4b",
+      "resultSha256": "15e47eee2b762359729cbeaaad535d9e3f135cb024af14f2ebe5912a92b310b8",
+      "nativePlanned": false,
+      "firstFallback": "batch aggregate: SUM/AVG require signed integers; MIN/MAX require signed integers, BOOLEAN, DECIMAL, DATE or TIME",
+      "physicalOperators": {
+        "Calc": 5,
+        "HashAggregate": 2,
+        "Exchange": 4,
+        "LocalHashAggregate": 2,
+        "HashJoin": 2,
+        "TableSourceScan": 3
+      }
+    },
+    {
+      "query": 18,
+      "status": "passed",
+      "rows": 2,
+      "sqlSha256": "99f8f2933f20acf8a17b3886cfd40418749d8a33cb33d126b11cf9e465f393d4",
+      "resultSha256": "27db06402edc67460400ddc368344bda7609783bc2d6305a53e50d2d9e385be6",
+      "nativePlanned": false,
+      "firstFallback": "batch sort: only signed integer keys are verified",
+      "physicalOperators": {
+        "Calc": 4,
+        "SortLimit": 2,
+        "Exchange": 6,
+        "HashAggregate": 2,
+        "LocalHashAggregate": 2,
+        "HashJoin": 3,
+        "TableSourceScan": 4
+      }
+    },
+    {
+      "query": 19,
+      "status": "passed",
+      "rows": 1,
+      "sqlSha256": "8428fa6c46796c312c1eb99ff458dbd4587c201a5ebb7ed31208e68e34f42e5b",
+      "resultSha256": "7cc0e0c6b80be8fc2955ed742793f04b8b81129ea0d4d199aabffe3993d6c20d",
+      "nativePlanned": false,
+      "firstFallback": "batch aggregate: SUM/AVG require signed integers; MIN/MAX require signed integers, BOOLEAN, DECIMAL, DATE or TIME",
+      "physicalOperators": {
+        "HashAggregate": 1,
+        "Exchange": 2,
+        "LocalHashAggregate": 1,
+        "Calc": 3,
+        "HashJoin": 1,
+        "TableSourceScan": 2
+      }
+    },
+    {
+      "query": 20,
+      "status": "passed",
+      "rows": 1,
+      "sqlSha256": "4187d0ff2534a26399db48983cd9f4e1c5eb0283c4a43f791d38dfed85007e8d",
+      "resultSha256": "4d22941cf4b8739bf46614e7b07d41e497b042dc565c71a65a30f4bf6e7cc778",
+      "nativePlanned": false,
+      "firstFallback": "batch sort: only signed integer keys are verified",
+      "physicalOperators": {
+        "Sort": 1,
+        "Exchange": 6,
+        "Calc": 6,
+        "HashJoin": 3,
+        "NestedLoopJoin": 1,
+        "TableSourceScan": 5,
+        "HashAggregate": 1,
+        "LocalHashAggregate": 1
+      }
+    },
+    {
+      "query": 21,
+      "status": "passed",
+      "rows": 1,
+      "sqlSha256": "07ae101f42fa177606cf17744335782723f50c4149ea0dcb02c528b9732b0c7a",
+      "resultSha256": "0173745cbea9c4130c92ae1b92a990ca5ff07dd24d8b2d86c998d0be50997efc",
+      "nativePlanned": false,
+      "firstFallback": "batch sort: only signed integer keys are verified",
+      "physicalOperators": {
+        "SortLimit": 2,
+        "Exchange": 8,
+        "HashAggregate": 1,
+        "LocalHashAggregate": 1,
+        "Calc": 8,
+        "HashJoin": 4,
+        "NestedLoopJoin": 1,
+        "TableSourceScan": 6
+      }
+    },
+    {
+      "query": 22,
+      "status": "passed",
+      "rows": 7,
+      "sqlSha256": "21b5e9cedbbb4bb9ee5a987ce9a901f9aaeb8736e96d7daf0ad3fbfea7632100",
+      "resultSha256": "4264a833449813448998b6554531bcc23bb48102f910a9ef671e8d9a5ca19d06",
+      "nativePlanned": false,
+      "firstFallback": "batch sort: only signed integer keys are verified",
+      "physicalOperators": {
+        "Sort": 3,
+        "Exchange": 5,
+        "SortAggregate": 1,
+        "LocalSortAggregate": 1,
+        "Calc": 3,
+        "NestedLoopJoin": 1,
+        "HashJoin": 1,
+        "TableSourceScan": 3,
+        "HashAggregate": 1,
+        "LocalHashAggregate": 1
+      }
+    }
+  ]
+}

@@ -1,7 +1,6 @@
 package tech.streamfusion.paimon;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static tech.streamfusion.paimon.PaimonSnapshotMergeTest.collect;
 import static tech.streamfusion.paimon.PaimonSnapshotMergeTest.stock;
 
@@ -129,7 +128,11 @@ class PaimonValueTypesTest {
         var data = (DataSplit) split;
         var decoded = collect(table, read, data, true, 2, 0, Integer.MAX_VALUE);
         assertEquals(stock(read, data), decoded.rows());
-        assertTrue(decoded.merged() > 0, "scalar values must use native snapshot decoding");
+        assertEquals(
+            !format.equals("orc")
+                || valueType.getTypeRoot() != org.apache.paimon.types.DataTypeRoot.CHAR,
+            decoded.merged() > 0,
+            "ORC CHAR retains Java; other scalar values must decode natively");
       }
     }
     var expected = PaimonTestTables.dataFiles(stock);

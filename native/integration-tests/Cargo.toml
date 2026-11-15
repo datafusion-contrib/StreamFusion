@@ -8,9 +8,23 @@ publish = false
 [dependencies]
 
 [dev-dependencies]
-streamfusion-kafka = { path = "../kafka" }
+streamfusion-format-support = { path = "../format-support" }
+streamfusion-json = { path = "../json" }
+streamfusion-csv = { path = "../csv" }
+streamfusion-raw = { path = "../raw" }
+streamfusion-benchmark-support.workspace = true
+criterion.workspace = true
+base64.workspace = true
 streamfusion-protobuf = { path = "../protobuf" }
 streamfusion-avro = { path = "../avro" }
 streamfusion-bridge = { path = "../bridge" }
 arrow.workspace = true
 prost-reflect.workspace = true
+
+[[bench]]
+name = "kafka_sink"
+harness = false
+
+[[bench]]
+name = "format_encode"
+harness = false

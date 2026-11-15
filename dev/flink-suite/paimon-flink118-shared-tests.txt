@@ -9,3 +9,8 @@ org.apache.paimon.flink.FlinkJobRecoveryITCase#testRestoreFromSavepointWithJobGr
 org.apache.paimon.flink.FlinkJobRecoveryITCase#testRestoreFromSavepointWithIgnoreSinkState
 org.apache.paimon.flink.PrimaryKeyFileStoreTableITCase#testTableReadWriteBranch
 org.apache.paimon.flink.PrimaryKeyFileStoreTableITCase#testDropTableWithBranchExternalPaths
+org.apache.paimon.flink.AppendOnlyTableITCase
+org.apache.paimon.flink.BatchFileStoreITCase
+!org.apache.paimon.flink.BatchFileStoreITCase#testIgnoreDelete
+!org.apache.paimon.flink.BatchFileStoreITCase#testIgnoreUpdateBeforeWithRowKindField
+!org.apache.paimon.flink.BatchFileStoreITCase#testNoOverwriteUpgradeWhenFilesOverlapped

@@ -41,6 +41,7 @@ import tech.streamfusion.operator.RowDataArrowConverter;
 
 class NativeIcebergKeyedTest {
   private static final int INITIAL_ROWS = 3;
+  private static final Map<Integer, Integer> EXPECTED_ROWS = Map.of(1, 11, 3, 30, 5, 50);
 
   @TempDir(cleanup = org.junit.jupiter.api.io.CleanupMode.ON_SUCCESS)
   Path temp;
@@ -87,10 +88,50 @@ class NativeIcebergKeyedTest {
   }
 
   private static boolean initialRowsCommitted(Table table) {
+    return recordsCommitted(table, INITIAL_ROWS);
+  }
+
+  private static boolean recordsCommitted(Table table, int records) {
     var snapshot = table.currentSnapshot();
     return snapshot != null
-        && Integer.toString(INITIAL_ROWS)
+        && Integer.toString(records)
             .equals(snapshot.summary().get(SnapshotSummary.TOTAL_RECORDS_PROP));
+  }
+
+  private static boolean updatesCommitted(Table table) throws java.io.IOException {
+    if (!recordsCommitted(table, INITIAL_ROWS + 3)) return false;
+    var remaining = new java.util.HashMap<>(EXPECTED_ROWS);
+    try (var rows = IcebergGenerics.read(table).build()) {
+      for (var row : rows) {
+        Integer expected = remaining.remove((Integer) row.getField("id"));
+        if (expected == null || !expected.equals(row.getField("value"))) return false;
+      }
+    }
+    return remaining.isEmpty();
+  }
+
+  @Test
+  void sourceCompletionRequiresAllUpdateFilesToCommit() {
+    var table =
+        new HadoopTables(new org.apache.hadoop.conf.Configuration())
+            .create(
+                new Schema(Types.NestedField.required(1, "id", Types.IntegerType.get())),
+                PartitionSpec.unpartitioned(),
+                Map.of(TableProperties.FORMAT_VERSION, "2"),
+                temp.resolve("complete-updates").toUri().toString());
+    int[] sizes = {INITIAL_ROWS, 1, 2};
+    for (int file = 0; file < sizes.length; file++) {
+      table
+          .newAppend()
+          .appendFile(
+              DataFiles.builder(table.spec())
+                  .withPath(temp.resolve("updates-" + file + ".parquet").toString())
+                  .withFileSizeInBytes(1)
+                  .withRecordCount(sizes[file])
+                  .build())
+          .commit();
+      assertEquals(file == 2, recordsCommitted(table, INITIAL_ROWS + 3));
+    }
   }
 
   @Test
@@ -132,6 +173,78 @@ class NativeIcebergKeyedTest {
         assertThrows(
             IllegalStateException.class, () -> source.awaitRecoveryBoundary(10, System.nanoTime()));
     assertTrue(failure.getMessage().contains("committed recovery boundary timed out"));
+  }
+
+  @Test
+  void emittedUpdatesAdvanceRecoveryProgressBeforeTheInjectedFailure() throws Exception {
+    var table =
+        new HadoopTables(new org.apache.hadoop.conf.Configuration())
+            .create(
+                new Schema(Types.NestedField.required(1, "id", Types.IntegerType.get())),
+                PartitionSpec.unpartitioned(),
+                Map.of(TableProperties.FORMAT_VERSION, "2"),
+                temp.resolve("emitted-progress").toUri().toString());
+    table
+        .newAppend()
+        .appendFile(
+            DataFiles.builder(table.spec())
+                .withPath(temp.resolve("initial.parquet").toString())
+                .withFileSizeInBytes(1)
+                .withRecordCount(INITIAL_ROWS)
+                .build())
+        .commit();
+    var source = new PhasedSource(true, table.location());
+    source.next = 1;
+    source.completed = 1;
+    source.latestSnapshotId = 10;
+    source.latestCompletedId = 11;
+    var emitted = new java.util.concurrent.atomic.AtomicInteger();
+    Object lock = new Object();
+    SourceFunction.SourceContext<ArrowBatch> context =
+        new SourceFunction.SourceContext<>() {
+          @Override
+          public void collect(ArrowBatch batch) {
+            assertTrue(Thread.holdsLock(lock));
+            try (var root = batch.root()) {
+              emitted.addAndGet(root.getRowCount());
+            }
+          }
+
+          @Override
+          public void collectWithTimestamp(ArrowBatch batch, long timestamp) {
+            throw new UnsupportedOperationException();
+          }
+
+          @Override
+          public void emitWatermark(org.apache.flink.streaming.api.watermark.Watermark mark) {
+            throw new UnsupportedOperationException();
+          }
+
+          @Override
+          public void markAsTemporarilyIdle() {
+            throw new UnsupportedOperationException();
+          }
+
+          @Override
+          public Object getCheckpointLock() {
+            return lock;
+          }
+
+          @Override
+          public void close() {}
+        };
+    FAILED.set(false);
+    try {
+      var failure = assertThrows(IllegalStateException.class, () -> source.run(context));
+      assertTrue(failure.getMessage().contains("injected failure"));
+      assertEquals(6, emitted.get());
+      synchronized (lock) {
+        assertEquals(2, source.next, "a checkpoint after failure must not replay emitted updates");
+      }
+    } finally {
+      FAILED.set(false);
+      source.cancel();
+    }
   }
 
   @ParameterizedTest
@@ -223,7 +336,7 @@ class NativeIcebergKeyedTest {
             () -> "Duplicate row " + row + "; " + recoveryDiagnostics(table));
       }
     }
-    assertEquals(Map.of(1, 11, 3, 30, 5, 50), actual, () -> recoveryDiagnostics(table));
+    assertEquals(EXPECTED_ROWS, actual, () -> recoveryDiagnostics(table));
     assertTrue(
         java.util.stream.StreamSupport.stream(table.snapshots().spliterator(), false).count() >= 2);
     var deleteKinds = java.util.EnumSet.noneOf(org.apache.iceberg.FileContent.class);
@@ -356,15 +469,24 @@ class NativeIcebergKeyedTest {
         synchronized (context.getCheckpointLock()) {
           EVENTS.add("emit updates");
           context.collect(batch(1));
+          // A queued checkpoint can acquire this lock before the source failure reaches the task.
+          next = 2;
           if (fail && FAILED.compareAndSet(false, true)) {
             throw new IllegalStateException("injected failure after an uncommitted update batch");
           }
-          next = 2;
         }
       }
       while (running && completed < 2) {
         if (System.nanoTime() > deadline) throw new IllegalStateException("checkpoint timed out");
         Thread.sleep(5);
+      }
+      var committed = new HadoopTables(new org.apache.hadoop.conf.Configuration()).load(location);
+      while (running && !updatesCommitted(committed)) {
+        if (System.nanoTime() > deadline)
+          throw new IllegalStateException(
+              "update files were not committed before source completion; " + EVENTS);
+        Thread.sleep(5);
+        committed.refresh();
       }
     }
 

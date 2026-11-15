@@ -1,0 +1,4857 @@
+{
+  "feature": "Recursive external JVM table-function ARRAY/List conversions",
+  "candidate_parent": "2bb52ca2f6aa66f62cb40098a31e9d1ded7d6f7f",
+  "previous_production": "2bb52ca2f6aa66f62cb40098a31e9d1ded7d6f7f",
+  "configuration": {
+    "runtime": "Complete Flink SQL jobs; elapsed submission through completion after symmetric EXPLAIN",
+    "java": "Temurin 17",
+    "rust": "1.95.0 release with mimalloc",
+    "native_build": [
+      "cargo",
+      "build",
+      "--release",
+      "-p",
+      "streamfusion",
+      "--locked"
+    ],
+    "platform": "Darwin",
+    "architecture": "arm64",
+    "cpu": "Apple M4",
+    "task_parallelism": 1,
+    "heap_gib": 2,
+    "arrow_batch_rows": 1024,
+    "zero_copy_local": false,
+    "jvm_timezone": "UTC",
+    "session_timezone": "America/New_York",
+    "rows": 262144,
+    "source": "Row source generates fresh payloads cycling through 48 logical shapes; blackhole row sink",
+    "perimeter": "Both RowData-to-Arrow and Arrow-to-RowData transposes retained, plus released conversions, production JNI and owned output writes",
+    "warmup_pairs": 2,
+    "measured_pairs": 5,
+    "order": "Alternating engine order within each pair; separate serial JVM for each case/revision/Flink line",
+    "callback": "Two mutable-output emissions per non-null input; matching argument/result types return the argument, result-only custom Lists are constructed recursively",
+    "route": "Candidate requires positive consumed work from NativeTableFunction and both transposes; preceding production requires zero substitutions and no native work"
+  },
+  "native_library_sha256": "10d38f8fe5cdb9764b621d06f9b13f2ae98da3922ccb26ae171019e12a6bd869",
+  "candidate_sources_sha256": {
+    "src/main/java/tech/streamfusion/planner/ExternalContainerConverter.java": "ccb1b66bed74cd6746bb4543677b74ae192584350b88798ea60be9b65c86a7d7",
+    "src/main/java/tech/streamfusion/planner/JvmFunctionCodeGeneratorContext.java": "ac3caaa7129ff0db3c92c2fa53e4a3d505a7bc84d7ad0a6899693177ffd718c6",
+    "src/main/java/tech/streamfusion/planner/TableFunctionMatcher.java": "c45812fa1e3e4a515e9ef5eb1ee419b61f3d94b46ce6890fefa42554cfd9b484",
+    "src/main/java/tech/streamfusion/planner/NativeTableFunctionExecNode.java": "f37c6cc904eacb4e060d1814e893036d14142ac659cb627ec978791edd68d335",
+    "src/main/java/tech/streamfusion/planner/StreamPhysicalNativeTableFunction.java": "c7c4aee7d63ee3c99b099cfc74ebdbad44e043387efdfaa7648319536cd486d7",
+    "src/test/java/tech/streamfusion/FlinkRecursiveTableFunctionSqlHarnessTest.java": "4f12ade57e271b395bff0a56f70cb76608393c147d4e2a16969a293280c42264",
+    "src/test/java/tech/streamfusion/RecursiveTableFunctionBenchmark.java": "52cf1aa9f426e8d2bf18ac3013540910c12bca1e8cfa7f7a521c69cb13861112",
+    "src/test/java/tech/streamfusion/UdfTypeBoundaryBenchmark.java": "6972eb7e58ceb67914d6e725b60d4e2f04287c3b62f58f6bd4e49b064d3ba8aa"
+  },
+  "previous_sources_sha256": {
+    "src/main/java/tech/streamfusion/planner/ExternalContainerConverter.java": null,
+    "src/main/java/tech/streamfusion/planner/JvmFunctionCodeGeneratorContext.java": "777da3bf9f1756075bc77546a89cffbd4bd32f907d33780f612ec64d09be6b3a",
+    "src/main/java/tech/streamfusion/planner/TableFunctionMatcher.java": "563e6c62f31aee929658da2231a9a5e18c496ad1459e06829fff4db1a95264c7",
+    "src/main/java/tech/streamfusion/planner/NativeTableFunctionExecNode.java": "694058dc5c36fab5a22147c7c5b94ad9f1ad865ae933171f5e1b172cb19961c9",
+    "src/main/java/tech/streamfusion/planner/StreamPhysicalNativeTableFunction.java": "13761465083b5285abd0ab5b145a95f87ce2c8d041d05f2c223d016dea30e2bf",
+    "src/test/java/tech/streamfusion/FlinkRecursiveTableFunctionSqlHarnessTest.java": "4f12ade57e271b395bff0a56f70cb76608393c147d4e2a16969a293280c42264",
+    "src/test/java/tech/streamfusion/RecursiveTableFunctionBenchmark.java": "52cf1aa9f426e8d2bf18ac3013540910c12bca1e8cfa7f7a521c69cb13861112",
+    "src/test/java/tech/streamfusion/UdfTypeBoundaryBenchmark.java": "6972eb7e58ceb67914d6e725b60d4e2f04287c3b62f58f6bd4e49b064d3ba8aa"
+  },
+  "correctness": {
+    "2.2": {
+      "counts": {
+        "tests": 1823,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "suites": [
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkNestedBridgeTableFunctionSqlHarnessTest",
+          "time": "217.905",
+          "tests": "375",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkTableFunctionIntervalListSqlHarnessTest",
+          "time": "1.212",
+          "tests": "4",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkTableFunctionConversionSqlHarnessTest",
+          "time": "37.245",
+          "tests": "82",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkNestedBridgeGuardSqlHarnessTest",
+          "time": "1.481",
+          "tests": "5",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkAlternateTemporalTableFunctionSqlHarnessTest",
+          "time": "133.209",
+          "tests": "106",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkTableFunctionSqlHarnessTest",
+          "time": "5.84",
+          "tests": "15",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkPrimitiveTemporalTableFunctionSqlHarnessTest",
+          "time": "100.195",
+          "tests": "42",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkPrimitiveResultTableFunctionSqlHarnessTest",
+          "time": "127.649",
+          "tests": "133",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkBoxedDateTableFunctionSqlHarnessTest",
+          "time": "7.903",
+          "tests": "14",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkNestedTableFunctionSqlHarnessTest",
+          "time": "48.423",
+          "tests": "61",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkRecursiveTableFunctionValidationSqlHarnessTest",
+          "time": "1.519",
+          "tests": "8",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkNestedBridgeRecoverySqlHarnessTest",
+          "time": "5.303",
+          "tests": "8",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkTypedTableFunctionSqlHarnessTest",
+          "time": "55.96",
+          "tests": "64",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkMixedPrimitiveTableFunctionSqlHarnessTest",
+          "time": "26.684",
+          "tests": "48",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkDateIntArgumentTableFunctionSqlHarnessTest",
+          "time": "9.347",
+          "tests": "21",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkNestedBridgeNullMetadataSqlHarnessTest",
+          "time": "20.935",
+          "tests": "6",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkDateIntResultTableFunctionSqlHarnessTest",
+          "time": "13.813",
+          "tests": "24",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkRecursiveTableFunctionBoundarySqlHarnessTest",
+          "time": "19.577",
+          "tests": "34",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest",
+          "time": "668.201",
+          "tests": "683",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkNestedBridgeLifecycleSqlHarnessTest",
+          "time": "6.777",
+          "tests": "17",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkConcreteListTableFunctionSqlHarnessTest",
+          "time": "39.963",
+          "tests": "73",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        }
+      ],
+      "qualification_base": "ca4b8bee17fc56c89f2d3864352b20601ae3f5f5"
+    },
+    "1.18": {
+      "counts": {
+        "tests": 1824,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "suites": [
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkNestedBridgeTableFunctionSqlHarnessTest",
+          "time": "240.794",
+          "tests": "375",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkTableFunctionIntervalListSqlHarnessTest",
+          "time": "1.39",
+          "tests": "4",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkLegacyNestedTableFunctionTest",
+          "time": "0.368",
+          "tests": "1",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkTableFunctionConversionSqlHarnessTest",
+          "time": "41.015",
+          "tests": "82",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkNestedBridgeGuardSqlHarnessTest",
+          "time": "1.662",
+          "tests": "5",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkAlternateTemporalTableFunctionSqlHarnessTest",
+          "time": "77.668",
+          "tests": "106",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkTableFunctionSqlHarnessTest",
+          "time": "5.932",
+          "tests": "15",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkPrimitiveTemporalTableFunctionSqlHarnessTest",
+          "time": "109.044",
+          "tests": "42",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkPrimitiveResultTableFunctionSqlHarnessTest",
+          "time": "978.404",
+          "tests": "133",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkBoxedDateTableFunctionSqlHarnessTest",
+          "time": "8.108",
+          "tests": "14",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkNestedTableFunctionSqlHarnessTest",
+          "time": "73.357",
+          "tests": "61",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkRecursiveTableFunctionValidationSqlHarnessTest",
+          "time": "2.061",
+          "tests": "8",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkNestedBridgeRecoverySqlHarnessTest",
+          "time": "5.478",
+          "tests": "8",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkTypedTableFunctionSqlHarnessTest",
+          "time": "67.462",
+          "tests": "64",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkMixedPrimitiveTableFunctionSqlHarnessTest",
+          "time": "27.727",
+          "tests": "48",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkDateIntArgumentTableFunctionSqlHarnessTest",
+          "time": "9.963",
+          "tests": "21",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkNestedBridgeNullMetadataSqlHarnessTest",
+          "time": "14.96",
+          "tests": "6",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkDateIntResultTableFunctionSqlHarnessTest",
+          "time": "14.701",
+          "tests": "24",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkRecursiveTableFunctionBoundarySqlHarnessTest",
+          "time": "20.638",
+          "tests": "34",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest",
+          "time": "449.323",
+          "tests": "683",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkNestedBridgeLifecycleSqlHarnessTest",
+          "time": "8.474",
+          "tests": "17",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkConcreteListTableFunctionSqlHarnessTest",
+          "time": "43.648",
+          "tests": "73",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        }
+      ],
+      "qualification_base": "ca4b8bee17fc56c89f2d3864352b20601ae3f5f5"
+    }
+  },
+  "interpretation": "UDF coverage under the accepted performance exception. Includes startup/JIT, intrinsic conversions and all measured end-to-end costs. Separate-JVM stock drift is retained. No acceleration claim or causal profiling attribution.",
+  "optimization_passes": 0,
+  "cases": [
+    {
+      "flink": "1.18.1",
+      "rows": 262144,
+      "signature": "list/row:default-STRING:both",
+      "candidate": {
+        "trials": [
+          {
+            "engine": "stock",
+            "trial": 0,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.817499
+          },
+          {
+            "engine": "native",
+            "trial": 0,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 1.143562
+          },
+          {
+            "engine": "native",
+            "trial": 1,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.975557
+          },
+          {
+            "engine": "stock",
+            "trial": 1,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.481273
+          },
+          {
+            "engine": "stock",
+            "trial": 2,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.477714
+          },
+          {
+            "engine": "native",
+            "trial": 2,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.929091
+          },
+          {
+            "engine": "native",
+            "trial": 3,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.903654
+          },
+          {
+            "engine": "stock",
+            "trial": 3,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.486199
+          },
+          {
+            "engine": "stock",
+            "trial": 4,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.486078
+          },
+          {
+            "engine": "native",
+            "trial": 4,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.916689
+          },
+          {
+            "engine": "native",
+            "trial": 5,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.908418
+          },
+          {
+            "engine": "stock",
+            "trial": 5,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.488956
+          },
+          {
+            "engine": "stock",
+            "trial": 6,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.494609
+          },
+          {
+            "engine": "native",
+            "trial": 6,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.906676
+          }
+        ],
+        "measurements": {
+          "stock": {
+            "samples_seconds": [
+              0.477714,
+              0.486199,
+              0.486078,
+              0.488956,
+              0.494609
+            ],
+            "median_seconds": 0.486199,
+            "min_seconds": 0.477714,
+            "max_seconds": 0.494609,
+            "stdev_seconds": 0.0061038363100594335
+          },
+          "native": {
+            "samples_seconds": [
+              0.929091,
+              0.903654,
+              0.916689,
+              0.908418,
+              0.906676
+            ],
+            "median_seconds": 0.908418,
+            "min_seconds": 0.903654,
+            "max_seconds": 0.929091,
+            "stdev_seconds": 0.010256947172526539
+          }
+        },
+        "command": [
+          "mvn",
+          "-q",
+          "-Pbench,flink-1.18",
+          "-pl",
+          "streamfusion-runtime",
+          "surefire:test@default-test",
+          "-Dtest=RecursiveTableFunctionBenchmark",
+          "-Dnative.build.skip=true",
+          "-Dsf.testForks=1",
+          "-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC",
+          "-Dboundary.rows=262144",
+          "-Dboundary.warmups=2",
+          "-Dboundary.runs=5",
+          "-Dboundary.expectNative=true",
+          "-Drecursive.bench.signatures=list/row:default-STRING:both"
+        ],
+        "log_sha256": "3f4c2e71fe324c29b8cbe8b4090fee501fc1ab6b7b3f9a1d0b9c7d3d94930a85"
+      },
+      "previous": {
+        "trials": [
+          {
+            "engine": "stock",
+            "trial": 0,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.85234
+          },
+          {
+            "engine": "native",
+            "trial": 0,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.479013
+          },
+          {
+            "engine": "native",
+            "trial": 1,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.47676
+          },
+          {
+            "engine": "stock",
+            "trial": 1,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.478945
+          },
+          {
+            "engine": "stock",
+            "trial": 2,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.479317
+          },
+          {
+            "engine": "native",
+            "trial": 2,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.479145
+          },
+          {
+            "engine": "native",
+            "trial": 3,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.477536
+          },
+          {
+            "engine": "stock",
+            "trial": 3,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.48212
+          },
+          {
+            "engine": "stock",
+            "trial": 4,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.487246
+          },
+          {
+            "engine": "native",
+            "trial": 4,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.492507
+          },
+          {
+            "engine": "native",
+            "trial": 5,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.482355
+          },
+          {
+            "engine": "stock",
+            "trial": 5,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.486476
+          },
+          {
+            "engine": "stock",
+            "trial": 6,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.481227
+          },
+          {
+            "engine": "native",
+            "trial": 6,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.485757
+          }
+        ],
+        "measurements": {
+          "stock": {
+            "samples_seconds": [
+              0.479317,
+              0.48212,
+              0.487246,
+              0.486476,
+              0.481227
+            ],
+            "median_seconds": 0.48212,
+            "min_seconds": 0.479317,
+            "max_seconds": 0.487246,
+            "stdev_seconds": 0.0034354516005905334
+          },
+          "native": {
+            "samples_seconds": [
+              0.479145,
+              0.477536,
+              0.492507,
+              0.482355,
+              0.485757
+            ],
+            "median_seconds": 0.482355,
+            "min_seconds": 0.477536,
+            "max_seconds": 0.492507,
+            "stdev_seconds": 0.005959413645653393
+          }
+        },
+        "command": [
+          "mvn",
+          "-q",
+          "-Pbench,flink-1.18",
+          "-pl",
+          "streamfusion-runtime",
+          "surefire:test@default-test",
+          "-Dtest=RecursiveTableFunctionBenchmark",
+          "-Dnative.build.skip=true",
+          "-Dsf.testForks=1",
+          "-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC",
+          "-Dboundary.rows=262144",
+          "-Dboundary.warmups=2",
+          "-Dboundary.runs=5",
+          "-Dboundary.expectNative=false",
+          "-Drecursive.bench.signatures=list/row:default-STRING:both"
+        ],
+        "log_sha256": "82efda17da58dc2bd807883daa1f4a785467b7a958deb33cde228608fe0d8010"
+      }
+    },
+    {
+      "flink": "1.18.1",
+      "rows": 262144,
+      "signature": "row/primitive:primitive-DOUBLE:both",
+      "candidate": {
+        "trials": [
+          {
+            "engine": "stock",
+            "trial": 0,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.757708
+          },
+          {
+            "engine": "native",
+            "trial": 0,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.913683
+          },
+          {
+            "engine": "native",
+            "trial": 1,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.738585
+          },
+          {
+            "engine": "stock",
+            "trial": 1,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.490879
+          },
+          {
+            "engine": "stock",
+            "trial": 2,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.484712
+          },
+          {
+            "engine": "native",
+            "trial": 2,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.727085
+          },
+          {
+            "engine": "native",
+            "trial": 3,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.734379
+          },
+          {
+            "engine": "stock",
+            "trial": 3,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.489548
+          },
+          {
+            "engine": "stock",
+            "trial": 4,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.494662
+          },
+          {
+            "engine": "native",
+            "trial": 4,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.735164
+          },
+          {
+            "engine": "native",
+            "trial": 5,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.72599
+          },
+          {
+            "engine": "stock",
+            "trial": 5,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.494763
+          },
+          {
+            "engine": "stock",
+            "trial": 6,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.488029
+          },
+          {
+            "engine": "native",
+            "trial": 6,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.725654
+          }
+        ],
+        "measurements": {
+          "stock": {
+            "samples_seconds": [
+              0.484712,
+              0.489548,
+              0.494662,
+              0.494763,
+              0.488029
+            ],
+            "median_seconds": 0.489548,
+            "min_seconds": 0.484712,
+            "max_seconds": 0.494763,
+            "stdev_seconds": 0.0043555982023139005
+          },
+          "native": {
+            "samples_seconds": [
+              0.727085,
+              0.734379,
+              0.735164,
+              0.72599,
+              0.725654
+            ],
+            "median_seconds": 0.727085,
+            "min_seconds": 0.725654,
+            "max_seconds": 0.735164,
+            "stdev_seconds": 0.0047093094292050995
+          }
+        },
+        "command": [
+          "mvn",
+          "-q",
+          "-Pbench,flink-1.18",
+          "-pl",
+          "streamfusion-runtime",
+          "surefire:test@default-test",
+          "-Dtest=RecursiveTableFunctionBenchmark",
+          "-Dnative.build.skip=true",
+          "-Dsf.testForks=1",
+          "-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC",
+          "-Dboundary.rows=262144",
+          "-Dboundary.warmups=2",
+          "-Dboundary.runs=5",
+          "-Dboundary.expectNative=true",
+          "-Drecursive.bench.signatures=row/primitive:primitive-DOUBLE:both"
+        ],
+        "log_sha256": "8eff702aee6afbf4e3026f86fe36933e7bd973efd20640bb8ba708b07a0a665d"
+      },
+      "previous": {
+        "trials": [
+          {
+            "engine": "stock",
+            "trial": 0,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.759494
+          },
+          {
+            "engine": "native",
+            "trial": 0,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.473397
+          },
+          {
+            "engine": "native",
+            "trial": 1,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.47499
+          },
+          {
+            "engine": "stock",
+            "trial": 1,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.479253
+          },
+          {
+            "engine": "stock",
+            "trial": 2,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.480539
+          },
+          {
+            "engine": "native",
+            "trial": 2,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.522035
+          },
+          {
+            "engine": "native",
+            "trial": 3,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.483341
+          },
+          {
+            "engine": "stock",
+            "trial": 3,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.486496
+          },
+          {
+            "engine": "stock",
+            "trial": 4,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.478814
+          },
+          {
+            "engine": "native",
+            "trial": 4,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.487352
+          },
+          {
+            "engine": "native",
+            "trial": 5,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.483691
+          },
+          {
+            "engine": "stock",
+            "trial": 5,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.488063
+          },
+          {
+            "engine": "stock",
+            "trial": 6,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.483207
+          },
+          {
+            "engine": "native",
+            "trial": 6,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.483586
+          }
+        ],
+        "measurements": {
+          "stock": {
+            "samples_seconds": [
+              0.480539,
+              0.486496,
+              0.478814,
+              0.488063,
+              0.483207
+            ],
+            "median_seconds": 0.483207,
+            "min_seconds": 0.478814,
+            "max_seconds": 0.488063,
+            "stdev_seconds": 0.003891655136314111
+          },
+          "native": {
+            "samples_seconds": [
+              0.522035,
+              0.483341,
+              0.487352,
+              0.483691,
+              0.483586
+            ],
+            "median_seconds": 0.483691,
+            "min_seconds": 0.483341,
+            "max_seconds": 0.522035,
+            "stdev_seconds": 0.016870968273931412
+          }
+        },
+        "command": [
+          "mvn",
+          "-q",
+          "-Pbench,flink-1.18",
+          "-pl",
+          "streamfusion-runtime",
+          "surefire:test@default-test",
+          "-Dtest=RecursiveTableFunctionBenchmark",
+          "-Dnative.build.skip=true",
+          "-Dsf.testForks=1",
+          "-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC",
+          "-Dboundary.rows=262144",
+          "-Dboundary.warmups=2",
+          "-Dboundary.runs=5",
+          "-Dboundary.expectNative=false",
+          "-Drecursive.bench.signatures=row/primitive:primitive-DOUBLE:both"
+        ],
+        "log_sha256": "35af5690b21a02e30761601ce5d85020b64a95141df4bb440f4202cfca285dba"
+      }
+    },
+    {
+      "flink": "1.18.1",
+      "rows": 262144,
+      "signature": "row/custom/map:default-DECIMAL(38,18):result",
+      "candidate": {
+        "trials": [
+          {
+            "engine": "stock",
+            "trial": 0,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 1.28797
+          },
+          {
+            "engine": "native",
+            "trial": 0,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 2.006489
+          },
+          {
+            "engine": "native",
+            "trial": 1,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 1.784002
+          },
+          {
+            "engine": "stock",
+            "trial": 1,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.862243
+          },
+          {
+            "engine": "stock",
+            "trial": 2,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.842899
+          },
+          {
+            "engine": "native",
+            "trial": 2,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 1.727208
+          },
+          {
+            "engine": "native",
+            "trial": 3,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 1.71992
+          },
+          {
+            "engine": "stock",
+            "trial": 3,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.851182
+          },
+          {
+            "engine": "stock",
+            "trial": 4,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.855898
+          },
+          {
+            "engine": "native",
+            "trial": 4,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 1.727383
+          },
+          {
+            "engine": "native",
+            "trial": 5,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 1.72217
+          },
+          {
+            "engine": "stock",
+            "trial": 5,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.853406
+          },
+          {
+            "engine": "stock",
+            "trial": 6,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.86074
+          },
+          {
+            "engine": "native",
+            "trial": 6,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 1.733708
+          }
+        ],
+        "measurements": {
+          "stock": {
+            "samples_seconds": [
+              0.842899,
+              0.851182,
+              0.855898,
+              0.853406,
+              0.86074
+            ],
+            "median_seconds": 0.853406,
+            "min_seconds": 0.842899,
+            "max_seconds": 0.86074,
+            "stdev_seconds": 0.006588873955388743
+          },
+          "native": {
+            "samples_seconds": [
+              1.727208,
+              1.71992,
+              1.727383,
+              1.72217,
+              1.733708
+            ],
+            "median_seconds": 1.727208,
+            "min_seconds": 1.71992,
+            "max_seconds": 1.733708,
+            "stdev_seconds": 0.005347668950112791
+          }
+        },
+        "command": [
+          "mvn",
+          "-q",
+          "-Pbench,flink-1.18",
+          "-pl",
+          "streamfusion-runtime",
+          "surefire:test@default-test",
+          "-Dtest=RecursiveTableFunctionBenchmark",
+          "-Dnative.build.skip=true",
+          "-Dsf.testForks=1",
+          "-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC",
+          "-Dboundary.rows=262144",
+          "-Dboundary.warmups=2",
+          "-Dboundary.runs=5",
+          "-Dboundary.expectNative=true",
+          "-Drecursive.bench.signatures=row/custom/map:default-DECIMAL(38,18):result"
+        ],
+        "log_sha256": "5f881784117a86105d7c3c3937dee5adb7c81fbb01db329c23e369bf9e1ce11c"
+      },
+      "previous": {
+        "trials": [
+          {
+            "engine": "stock",
+            "trial": 0,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 1.279176
+          },
+          {
+            "engine": "native",
+            "trial": 0,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.852045
+          },
+          {
+            "engine": "native",
+            "trial": 1,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.845083
+          },
+          {
+            "engine": "stock",
+            "trial": 1,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.848856
+          },
+          {
+            "engine": "stock",
+            "trial": 2,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.842261
+          },
+          {
+            "engine": "native",
+            "trial": 2,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.842401
+          },
+          {
+            "engine": "native",
+            "trial": 3,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.847211
+          },
+          {
+            "engine": "stock",
+            "trial": 3,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.843441
+          },
+          {
+            "engine": "stock",
+            "trial": 4,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.894781
+          },
+          {
+            "engine": "native",
+            "trial": 4,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.846457
+          },
+          {
+            "engine": "native",
+            "trial": 5,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.842594
+          },
+          {
+            "engine": "stock",
+            "trial": 5,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.8489
+          },
+          {
+            "engine": "stock",
+            "trial": 6,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.844486
+          },
+          {
+            "engine": "native",
+            "trial": 6,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.852213
+          }
+        ],
+        "measurements": {
+          "stock": {
+            "samples_seconds": [
+              0.842261,
+              0.843441,
+              0.894781,
+              0.8489,
+              0.844486
+            ],
+            "median_seconds": 0.844486,
+            "min_seconds": 0.842261,
+            "max_seconds": 0.894781,
+            "stdev_seconds": 0.022505104569852614
+          },
+          "native": {
+            "samples_seconds": [
+              0.842401,
+              0.847211,
+              0.846457,
+              0.842594,
+              0.852213
+            ],
+            "median_seconds": 0.846457,
+            "min_seconds": 0.842401,
+            "max_seconds": 0.852213,
+            "stdev_seconds": 0.004021097511874114
+          }
+        },
+        "command": [
+          "mvn",
+          "-q",
+          "-Pbench,flink-1.18",
+          "-pl",
+          "streamfusion-runtime",
+          "surefire:test@default-test",
+          "-Dtest=RecursiveTableFunctionBenchmark",
+          "-Dnative.build.skip=true",
+          "-Dsf.testForks=1",
+          "-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC",
+          "-Dboundary.rows=262144",
+          "-Dboundary.warmups=2",
+          "-Dboundary.runs=5",
+          "-Dboundary.expectNative=false",
+          "-Drecursive.bench.signatures=row/custom/map:default-DECIMAL(38,18):result"
+        ],
+        "log_sha256": "e918f7adfd947cc5d2a23c656acb1d0dc48fd2d6911f296f6ca7991b2a557b15"
+      }
+    },
+    {
+      "flink": "2.2.1",
+      "rows": 262144,
+      "signature": "list/row:default-STRING:both",
+      "candidate": {
+        "trials": [
+          {
+            "engine": "stock",
+            "trial": 0,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.833072
+          },
+          {
+            "engine": "native",
+            "trial": 0,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 1.132839
+          },
+          {
+            "engine": "native",
+            "trial": 1,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.914465
+          },
+          {
+            "engine": "stock",
+            "trial": 1,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.484074
+          },
+          {
+            "engine": "stock",
+            "trial": 2,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.482059
+          },
+          {
+            "engine": "native",
+            "trial": 2,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.902527
+          },
+          {
+            "engine": "native",
+            "trial": 3,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.896725
+          },
+          {
+            "engine": "stock",
+            "trial": 3,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.487015
+          },
+          {
+            "engine": "stock",
+            "trial": 4,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.488181
+          },
+          {
+            "engine": "native",
+            "trial": 4,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.897217
+          },
+          {
+            "engine": "native",
+            "trial": 5,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.906672
+          },
+          {
+            "engine": "stock",
+            "trial": 5,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.488116
+          },
+          {
+            "engine": "stock",
+            "trial": 6,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.488733
+          },
+          {
+            "engine": "native",
+            "trial": 6,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.91133
+          }
+        ],
+        "measurements": {
+          "stock": {
+            "samples_seconds": [
+              0.482059,
+              0.487015,
+              0.488181,
+              0.488116,
+              0.488733
+            ],
+            "median_seconds": 0.488116,
+            "min_seconds": 0.482059,
+            "max_seconds": 0.488733,
+            "stdev_seconds": 0.0027338914023786525
+          },
+          "native": {
+            "samples_seconds": [
+              0.902527,
+              0.896725,
+              0.897217,
+              0.906672,
+              0.91133
+            ],
+            "median_seconds": 0.902527,
+            "min_seconds": 0.896725,
+            "max_seconds": 0.91133,
+            "stdev_seconds": 0.006242174276644305
+          }
+        },
+        "command": [
+          "mvn",
+          "-q",
+          "-Pbench",
+          "-pl",
+          "streamfusion-runtime",
+          "surefire:test@default-test",
+          "-Dtest=RecursiveTableFunctionBenchmark",
+          "-Dnative.build.skip=true",
+          "-Dsf.testForks=1",
+          "-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC",
+          "-Dboundary.rows=262144",
+          "-Dboundary.warmups=2",
+          "-Dboundary.runs=5",
+          "-Dboundary.expectNative=true",
+          "-Drecursive.bench.signatures=list/row:default-STRING:both"
+        ],
+        "log_sha256": "4c4def7070bf68b6245cfc8f588e67191efcf9df3d47a7c7db947f85a5949a94"
+      },
+      "previous": {
+        "trials": [
+          {
+            "engine": "stock",
+            "trial": 0,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.831442
+          },
+          {
+            "engine": "native",
+            "trial": 0,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.522823
+          },
+          {
+            "engine": "native",
+            "trial": 1,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.482107
+          },
+          {
+            "engine": "stock",
+            "trial": 1,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.482355
+          },
+          {
+            "engine": "stock",
+            "trial": 2,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.467592
+          },
+          {
+            "engine": "native",
+            "trial": 2,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.470952
+          },
+          {
+            "engine": "native",
+            "trial": 3,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.470439
+          },
+          {
+            "engine": "stock",
+            "trial": 3,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.474684
+          },
+          {
+            "engine": "stock",
+            "trial": 4,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.476109
+          },
+          {
+            "engine": "native",
+            "trial": 4,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.474294
+          },
+          {
+            "engine": "native",
+            "trial": 5,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.47969
+          },
+          {
+            "engine": "stock",
+            "trial": 5,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.480602
+          },
+          {
+            "engine": "stock",
+            "trial": 6,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.472528
+          },
+          {
+            "engine": "native",
+            "trial": 6,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.475007
+          }
+        ],
+        "measurements": {
+          "stock": {
+            "samples_seconds": [
+              0.467592,
+              0.474684,
+              0.476109,
+              0.480602,
+              0.472528
+            ],
+            "median_seconds": 0.474684,
+            "min_seconds": 0.467592,
+            "max_seconds": 0.480602,
+            "stdev_seconds": 0.004776828027048901
+          },
+          "native": {
+            "samples_seconds": [
+              0.470952,
+              0.470439,
+              0.474294,
+              0.47969,
+              0.475007
+            ],
+            "median_seconds": 0.474294,
+            "min_seconds": 0.470439,
+            "max_seconds": 0.47969,
+            "stdev_seconds": 0.003722177628754444
+          }
+        },
+        "command": [
+          "mvn",
+          "-q",
+          "-Pbench",
+          "-pl",
+          "streamfusion-runtime",
+          "surefire:test@default-test",
+          "-Dtest=RecursiveTableFunctionBenchmark",
+          "-Dnative.build.skip=true",
+          "-Dsf.testForks=1",
+          "-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC",
+          "-Dboundary.rows=262144",
+          "-Dboundary.warmups=2",
+          "-Dboundary.runs=5",
+          "-Dboundary.expectNative=false",
+          "-Drecursive.bench.signatures=list/row:default-STRING:both"
+        ],
+        "log_sha256": "c3531cc4086d5bf45fdd63c4f8c53d470a89d5fdf7f4707364a7ab4a3f3442d4"
+      }
+    },
+    {
+      "flink": "2.2.1",
+      "rows": 262144,
+      "signature": "row/primitive:primitive-DOUBLE:both",
+      "candidate": {
+        "trials": [
+          {
+            "engine": "stock",
+            "trial": 0,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.781942
+          },
+          {
+            "engine": "native",
+            "trial": 0,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.914477
+          },
+          {
+            "engine": "native",
+            "trial": 1,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.729052
+          },
+          {
+            "engine": "stock",
+            "trial": 1,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.484101
+          },
+          {
+            "engine": "stock",
+            "trial": 2,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.486855
+          },
+          {
+            "engine": "native",
+            "trial": 2,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.73079
+          },
+          {
+            "engine": "native",
+            "trial": 3,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.721458
+          },
+          {
+            "engine": "stock",
+            "trial": 3,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.485361
+          },
+          {
+            "engine": "stock",
+            "trial": 4,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.490652
+          },
+          {
+            "engine": "native",
+            "trial": 4,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.744315
+          },
+          {
+            "engine": "native",
+            "trial": 5,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.731864
+          },
+          {
+            "engine": "stock",
+            "trial": 5,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.492201
+          },
+          {
+            "engine": "stock",
+            "trial": 6,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.488131
+          },
+          {
+            "engine": "native",
+            "trial": 6,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.764888
+          }
+        ],
+        "measurements": {
+          "stock": {
+            "samples_seconds": [
+              0.486855,
+              0.485361,
+              0.490652,
+              0.492201,
+              0.488131
+            ],
+            "median_seconds": 0.488131,
+            "min_seconds": 0.485361,
+            "max_seconds": 0.492201,
+            "stdev_seconds": 0.002780558037516933
+          },
+          "native": {
+            "samples_seconds": [
+              0.73079,
+              0.721458,
+              0.744315,
+              0.731864,
+              0.764888
+            ],
+            "median_seconds": 0.731864,
+            "min_seconds": 0.721458,
+            "max_seconds": 0.764888,
+            "stdev_seconds": 0.01676244525718129
+          }
+        },
+        "command": [
+          "mvn",
+          "-q",
+          "-Pbench",
+          "-pl",
+          "streamfusion-runtime",
+          "surefire:test@default-test",
+          "-Dtest=RecursiveTableFunctionBenchmark",
+          "-Dnative.build.skip=true",
+          "-Dsf.testForks=1",
+          "-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC",
+          "-Dboundary.rows=262144",
+          "-Dboundary.warmups=2",
+          "-Dboundary.runs=5",
+          "-Dboundary.expectNative=true",
+          "-Drecursive.bench.signatures=row/primitive:primitive-DOUBLE:both"
+        ],
+        "log_sha256": "602014cea2b4f3a745897157a374369e1c144960ed96a67f8281008291e58940"
+      },
+      "previous": {
+        "trials": [
+          {
+            "engine": "stock",
+            "trial": 0,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.790584
+          },
+          {
+            "engine": "native",
+            "trial": 0,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.570777
+          },
+          {
+            "engine": "native",
+            "trial": 1,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.510722
+          },
+          {
+            "engine": "stock",
+            "trial": 1,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.492862
+          },
+          {
+            "engine": "stock",
+            "trial": 2,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.487037
+          },
+          {
+            "engine": "native",
+            "trial": 2,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.489871
+          },
+          {
+            "engine": "native",
+            "trial": 3,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.486991
+          },
+          {
+            "engine": "stock",
+            "trial": 3,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.493692
+          },
+          {
+            "engine": "stock",
+            "trial": 4,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.498247
+          },
+          {
+            "engine": "native",
+            "trial": 4,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.495149
+          },
+          {
+            "engine": "native",
+            "trial": 5,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.488943
+          },
+          {
+            "engine": "stock",
+            "trial": 5,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.495168
+          },
+          {
+            "engine": "stock",
+            "trial": 6,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.492844
+          },
+          {
+            "engine": "native",
+            "trial": 6,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.498676
+          }
+        ],
+        "measurements": {
+          "stock": {
+            "samples_seconds": [
+              0.487037,
+              0.493692,
+              0.498247,
+              0.495168,
+              0.492844
+            ],
+            "median_seconds": 0.493692,
+            "min_seconds": 0.487037,
+            "max_seconds": 0.498247,
+            "stdev_seconds": 0.004107960966221563
+          },
+          "native": {
+            "samples_seconds": [
+              0.489871,
+              0.486991,
+              0.495149,
+              0.488943,
+              0.498676
+            ],
+            "median_seconds": 0.489871,
+            "min_seconds": 0.486991,
+            "max_seconds": 0.498676,
+            "stdev_seconds": 0.004832850297702174
+          }
+        },
+        "command": [
+          "mvn",
+          "-q",
+          "-Pbench",
+          "-pl",
+          "streamfusion-runtime",
+          "surefire:test@default-test",
+          "-Dtest=RecursiveTableFunctionBenchmark",
+          "-Dnative.build.skip=true",
+          "-Dsf.testForks=1",
+          "-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC",
+          "-Dboundary.rows=262144",
+          "-Dboundary.warmups=2",
+          "-Dboundary.runs=5",
+          "-Dboundary.expectNative=false",
+          "-Drecursive.bench.signatures=row/primitive:primitive-DOUBLE:both"
+        ],
+        "log_sha256": "05d342dd88eb2ba05d507965d51324ea2d3b84dbb98e2d6aaf10e86f9b155dd7"
+      }
+    },
+    {
+      "flink": "2.2.1",
+      "rows": 262144,
+      "signature": "row/custom/map:default-DECIMAL(38,18):result",
+      "candidate": {
+        "trials": [
+          {
+            "engine": "stock",
+            "trial": 0,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 1.281997
+          },
+          {
+            "engine": "native",
+            "trial": 0,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 1.983767
+          },
+          {
+            "engine": "native",
+            "trial": 1,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 1.740552
+          },
+          {
+            "engine": "stock",
+            "trial": 1,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.858361
+          },
+          {
+            "engine": "stock",
+            "trial": 2,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.862048
+          },
+          {
+            "engine": "native",
+            "trial": 2,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 1.730784
+          },
+          {
+            "engine": "native",
+            "trial": 3,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 1.741634
+          },
+          {
+            "engine": "stock",
+            "trial": 3,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.852891
+          },
+          {
+            "engine": "stock",
+            "trial": 4,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.85621
+          },
+          {
+            "engine": "native",
+            "trial": 4,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 1.727899
+          },
+          {
+            "engine": "native",
+            "trial": 5,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 1.733449
+          },
+          {
+            "engine": "stock",
+            "trial": 5,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.858125
+          },
+          {
+            "engine": "stock",
+            "trial": 6,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.858608
+          },
+          {
+            "engine": "native",
+            "trial": 6,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 1.736942
+          }
+        ],
+        "measurements": {
+          "stock": {
+            "samples_seconds": [
+              0.862048,
+              0.852891,
+              0.85621,
+              0.858125,
+              0.858608
+            ],
+            "median_seconds": 0.858125,
+            "min_seconds": 0.852891,
+            "max_seconds": 0.862048,
+            "stdev_seconds": 0.0033608179510351637
+          },
+          "native": {
+            "samples_seconds": [
+              1.730784,
+              1.741634,
+              1.727899,
+              1.733449,
+              1.736942
+            ],
+            "median_seconds": 1.733449,
+            "min_seconds": 1.727899,
+            "max_seconds": 1.741634,
+            "stdev_seconds": 0.0053549398969548875
+          }
+        },
+        "command": [
+          "mvn",
+          "-q",
+          "-Pbench",
+          "-pl",
+          "streamfusion-runtime",
+          "surefire:test@default-test",
+          "-Dtest=RecursiveTableFunctionBenchmark",
+          "-Dnative.build.skip=true",
+          "-Dsf.testForks=1",
+          "-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC",
+          "-Dboundary.rows=262144",
+          "-Dboundary.warmups=2",
+          "-Dboundary.runs=5",
+          "-Dboundary.expectNative=true",
+          "-Drecursive.bench.signatures=row/custom/map:default-DECIMAL(38,18):result"
+        ],
+        "log_sha256": "504f7b8c2c338f347346578e007e1b6fe02adb4f44a66aa84838cb5a88046f0c"
+      },
+      "previous": {
+        "trials": [
+          {
+            "engine": "stock",
+            "trial": 0,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 1.329435
+          },
+          {
+            "engine": "native",
+            "trial": 0,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.846716
+          },
+          {
+            "engine": "native",
+            "trial": 1,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.853786
+          },
+          {
+            "engine": "stock",
+            "trial": 1,
+            "warmup": true,
+            "rows": 262144,
+            "seconds": 0.851471
+          },
+          {
+            "engine": "stock",
+            "trial": 2,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.85986
+          },
+          {
+            "engine": "native",
+            "trial": 2,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.846031
+          },
+          {
+            "engine": "native",
+            "trial": 3,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.846313
+          },
+          {
+            "engine": "stock",
+            "trial": 3,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.850158
+          },
+          {
+            "engine": "stock",
+            "trial": 4,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.85301
+          },
+          {
+            "engine": "native",
+            "trial": 4,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.853064
+          },
+          {
+            "engine": "native",
+            "trial": 5,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.853499
+          },
+          {
+            "engine": "stock",
+            "trial": 5,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.900984
+          },
+          {
+            "engine": "stock",
+            "trial": 6,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.854212
+          },
+          {
+            "engine": "native",
+            "trial": 6,
+            "warmup": false,
+            "rows": 262144,
+            "seconds": 0.854562
+          }
+        ],
+        "measurements": {
+          "stock": {
+            "samples_seconds": [
+              0.85986,
+              0.850158,
+              0.85301,
+              0.900984,
+              0.854212
+            ],
+            "median_seconds": 0.854212,
+            "min_seconds": 0.850158,
+            "max_seconds": 0.900984,
+            "stdev_seconds": 0.0211690282535595
+          },
+          "native": {
+            "samples_seconds": [
+              0.846031,
+              0.846313,
+              0.853064,
+              0.853499,
+              0.854562
+            ],
+            "median_seconds": 0.853064,
+            "min_seconds": 0.846031,
+            "max_seconds": 0.854562,
+            "stdev_seconds": 0.004164825290453399
+          }
+        },
+        "command": [
+          "mvn",
+          "-q",
+          "-Pbench",
+          "-pl",
+          "streamfusion-runtime",
+          "surefire:test@default-test",
+          "-Dtest=RecursiveTableFunctionBenchmark",
+          "-Dnative.build.skip=true",
+          "-Dsf.testForks=1",
+          "-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC",
+          "-Dboundary.rows=262144",
+          "-Dboundary.warmups=2",
+          "-Dboundary.runs=5",
+          "-Dboundary.expectNative=false",
+          "-Drecursive.bench.signatures=row/custom/map:default-DECIMAL(38,18):result"
+        ],
+        "log_sha256": "6d05ca7276e02e63ac8799d395441de037c19980ca03b8a94ede4e3dc2b452e4"
+      }
+    }
+  ],
+  "additional_alias_verification": {
+    "tests_per_line": 9,
+    "failures": 0,
+    "errors": 0,
+    "description": "Final scalar fast-path plus eight retained-alias producer/consumer controls, on both released Flink lines; one added direct-binary case and eight repeated controls."
+  },
+  "integration_qualification": {
+    "2.2": {
+      "base": "2bb52ca2f6aa66f62cb40098a31e9d1ded7d6f7f",
+      "counts": {
+        "tests": 323,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "suites": [
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkTableFunctionConversionSqlHarnessTest",
+          "time": "39.544",
+          "tests": "82",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkTableFunctionSqlHarnessTest",
+          "time": "5.717",
+          "tests": "15",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkNestedTableFunctionSqlHarnessTest",
+          "time": "44.299",
+          "tests": "61",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkRecursiveTableFunctionValidationSqlHarnessTest",
+          "time": "1.478",
+          "tests": "8",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkTypedTableFunctionSqlHarnessTest",
+          "time": "45.84",
+          "tests": "64",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkDateIntArgumentTableFunctionSqlHarnessTest",
+          "time": "8.942",
+          "tests": "21",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkDateIntResultTableFunctionSqlHarnessTest",
+          "time": "12.982",
+          "tests": "24",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkRecursiveTableFunctionBoundarySqlHarnessTest",
+          "time": "18.534",
+          "tests": "35",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest",
+          "time": "6.87",
+          "tests": "13",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        }
+      ]
+    },
+    "1.18": {
+      "base": "2bb52ca2f6aa66f62cb40098a31e9d1ded7d6f7f",
+      "counts": {
+        "tests": 323,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "suites": [
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkTableFunctionConversionSqlHarnessTest",
+          "time": "40.899",
+          "tests": "82",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkTableFunctionSqlHarnessTest",
+          "time": "5.753",
+          "tests": "15",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkNestedTableFunctionSqlHarnessTest",
+          "time": "47.844",
+          "tests": "61",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkRecursiveTableFunctionValidationSqlHarnessTest",
+          "time": "1.679",
+          "tests": "8",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkTypedTableFunctionSqlHarnessTest",
+          "time": "45.398",
+          "tests": "64",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkDateIntArgumentTableFunctionSqlHarnessTest",
+          "time": "9.319",
+          "tests": "21",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkDateIntResultTableFunctionSqlHarnessTest",
+          "time": "13.841",
+          "tests": "24",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkRecursiveTableFunctionBoundarySqlHarnessTest",
+          "time": "19.683",
+          "tests": "35",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        },
+        {
+          "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+          "version": "3.0",
+          "name": "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest",
+          "time": "7.533",
+          "tests": "13",
+          "errors": "0",
+          "skipped": "0",
+          "failures": "0"
+        }
+      ]
+    }
+  },
+  "earlier_baseline_diagnostic": {
+    "reason": "Earlier comparison used canonical ca4b8bee and its qualified native library. Final comparison was repeated after integration onto canonical 2bb52ca2 and a fresh release build. Earlier trials are retained as diagnostics, excluded from the final table.",
+    "record": {
+      "feature": "Recursive external JVM table-function ARRAY/List conversions",
+      "candidate_parent": "ca4b8bee17fc56c89f2d3864352b20601ae3f5f5",
+      "previous_production": "ca4b8bee17fc56c89f2d3864352b20601ae3f5f5",
+      "configuration": {
+        "runtime": "Complete Flink SQL jobs; elapsed submission through completion after symmetric EXPLAIN",
+        "java": "Temurin 17",
+        "rust": "1.95.0 release with mimalloc",
+        "native_build": [
+          "cargo",
+          "build",
+          "--release",
+          "-p",
+          "streamfusion",
+          "--locked"
+        ],
+        "platform": "Darwin",
+        "architecture": "arm64",
+        "cpu": "Apple M4",
+        "task_parallelism": 1,
+        "heap_gib": 2,
+        "arrow_batch_rows": 1024,
+        "zero_copy_local": false,
+        "jvm_timezone": "UTC",
+        "session_timezone": "America/New_York",
+        "rows": 262144,
+        "source": "Row source generates fresh payloads cycling through 48 logical shapes; blackhole row sink",
+        "perimeter": "Both RowData-to-Arrow and Arrow-to-RowData transposes retained, plus released conversions, production JNI and owned output writes",
+        "warmup_pairs": 2,
+        "measured_pairs": 5,
+        "order": "Alternating engine order within each pair; separate serial JVM for each case/revision/Flink line",
+        "callback": "Two mutable-output emissions per non-null input; matching argument/result types return the argument, result-only custom Lists are constructed recursively",
+        "route": "Candidate requires positive consumed work from NativeTableFunction and both transposes; preceding production requires zero substitutions and no native work"
+      },
+      "native_library_sha256": "007b5668a6547dd72a6134ee0e0bdb31b932cf5e7d2c5b8d93a32ecff527af3a",
+      "candidate_sources_sha256": {
+        "src/main/java/tech/streamfusion/planner/ExternalContainerConverter.java": "ccb1b66bed74cd6746bb4543677b74ae192584350b88798ea60be9b65c86a7d7",
+        "src/main/java/tech/streamfusion/planner/JvmFunctionCodeGeneratorContext.java": "ac3caaa7129ff0db3c92c2fa53e4a3d505a7bc84d7ad0a6899693177ffd718c6",
+        "src/main/java/tech/streamfusion/planner/TableFunctionMatcher.java": "edd5df682fb106cd3e0e567ef8559ceccd0f77db96fef5991cfffb6c170011c7",
+        "src/main/java/tech/streamfusion/planner/NativeTableFunctionExecNode.java": "f37c6cc904eacb4e060d1814e893036d14142ac659cb627ec978791edd68d335",
+        "src/main/java/tech/streamfusion/planner/StreamPhysicalNativeTableFunction.java": "c7c4aee7d63ee3c99b099cfc74ebdbad44e043387efdfaa7648319536cd486d7",
+        "src/test/java/tech/streamfusion/FlinkRecursiveTableFunctionSqlHarnessTest.java": "4f12ade57e271b395bff0a56f70cb76608393c147d4e2a16969a293280c42264",
+        "src/test/java/tech/streamfusion/RecursiveTableFunctionBenchmark.java": "52cf1aa9f426e8d2bf18ac3013540910c12bca1e8cfa7f7a521c69cb13861112",
+        "src/test/java/tech/streamfusion/UdfTypeBoundaryBenchmark.java": "6972eb7e58ceb67914d6e725b60d4e2f04287c3b62f58f6bd4e49b064d3ba8aa"
+      },
+      "previous_sources_sha256": {
+        "src/main/java/tech/streamfusion/planner/ExternalContainerConverter.java": null,
+        "src/main/java/tech/streamfusion/planner/JvmFunctionCodeGeneratorContext.java": "777da3bf9f1756075bc77546a89cffbd4bd32f907d33780f612ec64d09be6b3a",
+        "src/main/java/tech/streamfusion/planner/TableFunctionMatcher.java": "563e6c62f31aee929658da2231a9a5e18c496ad1459e06829fff4db1a95264c7",
+        "src/main/java/tech/streamfusion/planner/NativeTableFunctionExecNode.java": "694058dc5c36fab5a22147c7c5b94ad9f1ad865ae933171f5e1b172cb19961c9",
+        "src/main/java/tech/streamfusion/planner/StreamPhysicalNativeTableFunction.java": "13761465083b5285abd0ab5b145a95f87ce2c8d041d05f2c223d016dea30e2bf",
+        "src/test/java/tech/streamfusion/FlinkRecursiveTableFunctionSqlHarnessTest.java": "4f12ade57e271b395bff0a56f70cb76608393c147d4e2a16969a293280c42264",
+        "src/test/java/tech/streamfusion/RecursiveTableFunctionBenchmark.java": "52cf1aa9f426e8d2bf18ac3013540910c12bca1e8cfa7f7a521c69cb13861112",
+        "src/test/java/tech/streamfusion/UdfTypeBoundaryBenchmark.java": "6972eb7e58ceb67914d6e725b60d4e2f04287c3b62f58f6bd4e49b064d3ba8aa"
+      },
+      "correctness": {
+        "2.2": {
+          "counts": {
+            "tests": 1823,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "suites": [
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkNestedBridgeTableFunctionSqlHarnessTest",
+              "time": "217.905",
+              "tests": "375",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkTableFunctionIntervalListSqlHarnessTest",
+              "time": "1.212",
+              "tests": "4",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkTableFunctionConversionSqlHarnessTest",
+              "time": "37.245",
+              "tests": "82",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkNestedBridgeGuardSqlHarnessTest",
+              "time": "1.481",
+              "tests": "5",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkAlternateTemporalTableFunctionSqlHarnessTest",
+              "time": "133.209",
+              "tests": "106",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkTableFunctionSqlHarnessTest",
+              "time": "5.84",
+              "tests": "15",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkPrimitiveTemporalTableFunctionSqlHarnessTest",
+              "time": "100.195",
+              "tests": "42",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkPrimitiveResultTableFunctionSqlHarnessTest",
+              "time": "127.649",
+              "tests": "133",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkBoxedDateTableFunctionSqlHarnessTest",
+              "time": "7.903",
+              "tests": "14",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkNestedTableFunctionSqlHarnessTest",
+              "time": "48.423",
+              "tests": "61",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkRecursiveTableFunctionValidationSqlHarnessTest",
+              "time": "1.519",
+              "tests": "8",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkNestedBridgeRecoverySqlHarnessTest",
+              "time": "5.303",
+              "tests": "8",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkTypedTableFunctionSqlHarnessTest",
+              "time": "55.96",
+              "tests": "64",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkMixedPrimitiveTableFunctionSqlHarnessTest",
+              "time": "26.684",
+              "tests": "48",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkDateIntArgumentTableFunctionSqlHarnessTest",
+              "time": "9.347",
+              "tests": "21",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkNestedBridgeNullMetadataSqlHarnessTest",
+              "time": "20.935",
+              "tests": "6",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkDateIntResultTableFunctionSqlHarnessTest",
+              "time": "13.813",
+              "tests": "24",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkRecursiveTableFunctionBoundarySqlHarnessTest",
+              "time": "19.577",
+              "tests": "34",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest",
+              "time": "668.201",
+              "tests": "683",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkNestedBridgeLifecycleSqlHarnessTest",
+              "time": "6.777",
+              "tests": "17",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkConcreteListTableFunctionSqlHarnessTest",
+              "time": "39.963",
+              "tests": "73",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            }
+          ]
+        },
+        "1.18": {
+          "counts": {
+            "tests": 1824,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "suites": [
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkNestedBridgeTableFunctionSqlHarnessTest",
+              "time": "240.794",
+              "tests": "375",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkTableFunctionIntervalListSqlHarnessTest",
+              "time": "1.39",
+              "tests": "4",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkLegacyNestedTableFunctionTest",
+              "time": "0.368",
+              "tests": "1",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkTableFunctionConversionSqlHarnessTest",
+              "time": "41.015",
+              "tests": "82",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkNestedBridgeGuardSqlHarnessTest",
+              "time": "1.662",
+              "tests": "5",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkAlternateTemporalTableFunctionSqlHarnessTest",
+              "time": "77.668",
+              "tests": "106",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkTableFunctionSqlHarnessTest",
+              "time": "5.932",
+              "tests": "15",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkPrimitiveTemporalTableFunctionSqlHarnessTest",
+              "time": "109.044",
+              "tests": "42",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkPrimitiveResultTableFunctionSqlHarnessTest",
+              "time": "978.404",
+              "tests": "133",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkBoxedDateTableFunctionSqlHarnessTest",
+              "time": "8.108",
+              "tests": "14",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkNestedTableFunctionSqlHarnessTest",
+              "time": "73.357",
+              "tests": "61",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkRecursiveTableFunctionValidationSqlHarnessTest",
+              "time": "2.061",
+              "tests": "8",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkNestedBridgeRecoverySqlHarnessTest",
+              "time": "5.478",
+              "tests": "8",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkTypedTableFunctionSqlHarnessTest",
+              "time": "67.462",
+              "tests": "64",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkMixedPrimitiveTableFunctionSqlHarnessTest",
+              "time": "27.727",
+              "tests": "48",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkDateIntArgumentTableFunctionSqlHarnessTest",
+              "time": "9.963",
+              "tests": "21",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkNestedBridgeNullMetadataSqlHarnessTest",
+              "time": "14.96",
+              "tests": "6",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkDateIntResultTableFunctionSqlHarnessTest",
+              "time": "14.701",
+              "tests": "24",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkRecursiveTableFunctionBoundarySqlHarnessTest",
+              "time": "20.638",
+              "tests": "34",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest",
+              "time": "449.323",
+              "tests": "683",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkNestedBridgeLifecycleSqlHarnessTest",
+              "time": "8.474",
+              "tests": "17",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            },
+            {
+              "{http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation": "https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd",
+              "version": "3.0",
+              "name": "tech.streamfusion.FlinkConcreteListTableFunctionSqlHarnessTest",
+              "time": "43.648",
+              "tests": "73",
+              "errors": "0",
+              "skipped": "0",
+              "failures": "0"
+            }
+          ]
+        }
+      },
+      "interpretation": "UDF coverage under the accepted performance exception. Includes startup/JIT, intrinsic conversions and all measured end-to-end costs. Separate-JVM stock drift is retained. No acceleration claim or causal profiling attribution.",
+      "optimization_passes": 0,
+      "cases": [
+        {
+          "flink": "1.18.1",
+          "rows": 262144,
+          "signature": "list/row:default-STRING:both",
+          "candidate": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.810477
+              },
+              {
+                "engine": "native",
+                "trial": 0,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 1.105726
+              },
+              {
+                "engine": "native",
+                "trial": 1,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.902459
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.472498
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.471783
+              },
+              {
+                "engine": "native",
+                "trial": 2,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.895298
+              },
+              {
+                "engine": "native",
+                "trial": 3,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.893117
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.47776
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.475175
+              },
+              {
+                "engine": "native",
+                "trial": 4,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.896867
+              },
+              {
+                "engine": "native",
+                "trial": 5,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.89405
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.478369
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.479863
+              },
+              {
+                "engine": "native",
+                "trial": 6,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.886626
+              }
+            ],
+            "measurements": {
+              "stock": {
+                "samples_seconds": [
+                  0.471783,
+                  0.47776,
+                  0.475175,
+                  0.478369,
+                  0.479863
+                ],
+                "median_seconds": 0.47776,
+                "min_seconds": 0.471783,
+                "max_seconds": 0.479863,
+                "stdev_seconds": 0.003176308549243909
+              },
+              "native": {
+                "samples_seconds": [
+                  0.895298,
+                  0.893117,
+                  0.896867,
+                  0.89405,
+                  0.886626
+                ],
+                "median_seconds": 0.89405,
+                "min_seconds": 0.886626,
+                "max_seconds": 0.896867,
+                "stdev_seconds": 0.003930489956735662
+              }
+            },
+            "command": [
+              "mvn",
+              "-q",
+              "-Pbench,flink-1.18",
+              "-pl",
+              "streamfusion-runtime",
+              "surefire:test@default-test",
+              "-Dtest=RecursiveTableFunctionBenchmark",
+              "-Dnative.build.skip=true",
+              "-Dsf.testForks=1",
+              "-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC",
+              "-Dboundary.rows=262144",
+              "-Dboundary.warmups=2",
+              "-Dboundary.runs=5",
+              "-Dboundary.expectNative=true",
+              "-Drecursive.bench.signatures=list/row:default-STRING:both"
+            ],
+            "log_sha256": "dcfdc69ca7d45107c163dfe58a0086e1383c77049e48b0964b9275b04434da46"
+          },
+          "previous": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.785368
+              },
+              {
+                "engine": "native",
+                "trial": 0,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.471668
+              },
+              {
+                "engine": "native",
+                "trial": 1,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.466365
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.462219
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.464533
+              },
+              {
+                "engine": "native",
+                "trial": 2,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.466033
+              },
+              {
+                "engine": "native",
+                "trial": 3,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.465296
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.471839
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.469483
+              },
+              {
+                "engine": "native",
+                "trial": 4,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.472124
+              },
+              {
+                "engine": "native",
+                "trial": 5,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.470122
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.473007
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.469873
+              },
+              {
+                "engine": "native",
+                "trial": 6,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.469793
+              }
+            ],
+            "measurements": {
+              "stock": {
+                "samples_seconds": [
+                  0.464533,
+                  0.471839,
+                  0.469483,
+                  0.473007,
+                  0.469873
+                ],
+                "median_seconds": 0.469873,
+                "min_seconds": 0.464533,
+                "max_seconds": 0.473007,
+                "stdev_seconds": 0.00325097800669277
+              },
+              "native": {
+                "samples_seconds": [
+                  0.466033,
+                  0.465296,
+                  0.472124,
+                  0.470122,
+                  0.469793
+                ],
+                "median_seconds": 0.469793,
+                "min_seconds": 0.465296,
+                "max_seconds": 0.472124,
+                "stdev_seconds": 0.002899876255980595
+              }
+            },
+            "command": [
+              "mvn",
+              "-q",
+              "-Pbench,flink-1.18",
+              "-pl",
+              "streamfusion-runtime",
+              "surefire:test@default-test",
+              "-Dtest=RecursiveTableFunctionBenchmark",
+              "-Dnative.build.skip=true",
+              "-Dsf.testForks=1",
+              "-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC",
+              "-Dboundary.rows=262144",
+              "-Dboundary.warmups=2",
+              "-Dboundary.runs=5",
+              "-Dboundary.expectNative=false",
+              "-Drecursive.bench.signatures=list/row:default-STRING:both"
+            ],
+            "log_sha256": "515fce18bb010230975d533247bdeaad874cd70d2964569c75e5f8ae4efd4cae"
+          }
+        },
+        {
+          "flink": "1.18.1",
+          "rows": 262144,
+          "signature": "row/primitive:primitive-DOUBLE:both",
+          "candidate": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.748825
+              },
+              {
+                "engine": "native",
+                "trial": 0,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.905917
+              },
+              {
+                "engine": "native",
+                "trial": 1,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.746253
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.479368
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.478839
+              },
+              {
+                "engine": "native",
+                "trial": 2,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.73253
+              },
+              {
+                "engine": "native",
+                "trial": 3,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.724874
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.480638
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.482019
+              },
+              {
+                "engine": "native",
+                "trial": 4,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.735761
+              },
+              {
+                "engine": "native",
+                "trial": 5,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.722533
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.483893
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.486275
+              },
+              {
+                "engine": "native",
+                "trial": 6,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.718027
+              }
+            ],
+            "measurements": {
+              "stock": {
+                "samples_seconds": [
+                  0.478839,
+                  0.480638,
+                  0.482019,
+                  0.483893,
+                  0.486275
+                ],
+                "median_seconds": 0.482019,
+                "min_seconds": 0.478839,
+                "max_seconds": 0.486275,
+                "stdev_seconds": 0.0028789156291909646
+              },
+              "native": {
+                "samples_seconds": [
+                  0.73253,
+                  0.724874,
+                  0.735761,
+                  0.722533,
+                  0.718027
+                ],
+                "median_seconds": 0.724874,
+                "min_seconds": 0.718027,
+                "max_seconds": 0.735761,
+                "stdev_seconds": 0.007280102849548225
+              }
+            },
+            "command": [
+              "mvn",
+              "-q",
+              "-Pbench,flink-1.18",
+              "-pl",
+              "streamfusion-runtime",
+              "surefire:test@default-test",
+              "-Dtest=RecursiveTableFunctionBenchmark",
+              "-Dnative.build.skip=true",
+              "-Dsf.testForks=1",
+              "-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC",
+              "-Dboundary.rows=262144",
+              "-Dboundary.warmups=2",
+              "-Dboundary.runs=5",
+              "-Dboundary.expectNative=true",
+              "-Drecursive.bench.signatures=row/primitive:primitive-DOUBLE:both"
+            ],
+            "log_sha256": "c013912f6940d6fab4f7f7aad40d442a77d678671416d668b91c1fabc39541fb"
+          },
+          "previous": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.74058
+              },
+              {
+                "engine": "native",
+                "trial": 0,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.489651
+              },
+              {
+                "engine": "native",
+                "trial": 1,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.480752
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.4774
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.475705
+              },
+              {
+                "engine": "native",
+                "trial": 2,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.477133
+              },
+              {
+                "engine": "native",
+                "trial": 3,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.476024
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.479636
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.476622
+              },
+              {
+                "engine": "native",
+                "trial": 4,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.484145
+              },
+              {
+                "engine": "native",
+                "trial": 5,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.4833
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.481622
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.483036
+              },
+              {
+                "engine": "native",
+                "trial": 6,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.481902
+              }
+            ],
+            "measurements": {
+              "stock": {
+                "samples_seconds": [
+                  0.475705,
+                  0.479636,
+                  0.476622,
+                  0.481622,
+                  0.483036
+                ],
+                "median_seconds": 0.479636,
+                "min_seconds": 0.475705,
+                "max_seconds": 0.483036,
+                "stdev_seconds": 0.0031446405517960344
+              },
+              "native": {
+                "samples_seconds": [
+                  0.477133,
+                  0.476024,
+                  0.484145,
+                  0.4833,
+                  0.481902
+                ],
+                "median_seconds": 0.481902,
+                "min_seconds": 0.476024,
+                "max_seconds": 0.484145,
+                "stdev_seconds": 0.003689948874984589
+              }
+            },
+            "command": [
+              "mvn",
+              "-q",
+              "-Pbench,flink-1.18",
+              "-pl",
+              "streamfusion-runtime",
+              "surefire:test@default-test",
+              "-Dtest=RecursiveTableFunctionBenchmark",
+              "-Dnative.build.skip=true",
+              "-Dsf.testForks=1",
+              "-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC",
+              "-Dboundary.rows=262144",
+              "-Dboundary.warmups=2",
+              "-Dboundary.runs=5",
+              "-Dboundary.expectNative=false",
+              "-Drecursive.bench.signatures=row/primitive:primitive-DOUBLE:both"
+            ],
+            "log_sha256": "fdbb5ea3daca33b9db512c590251553cdbca1f04d7bea379eb1265d435ab244c"
+          }
+        },
+        {
+          "flink": "1.18.1",
+          "rows": 262144,
+          "signature": "row/custom/map:default-DECIMAL(38,18):result",
+          "candidate": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 1.246397
+              },
+              {
+                "engine": "native",
+                "trial": 0,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 1.960723
+              },
+              {
+                "engine": "native",
+                "trial": 1,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 1.727183
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.870591
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.862922
+              },
+              {
+                "engine": "native",
+                "trial": 2,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 1.727256
+              },
+              {
+                "engine": "native",
+                "trial": 3,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 1.725393
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.864362
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.865854
+              },
+              {
+                "engine": "native",
+                "trial": 4,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 1.730356
+              },
+              {
+                "engine": "native",
+                "trial": 5,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 1.729578
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.865168
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.866956
+              },
+              {
+                "engine": "native",
+                "trial": 6,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 1.729493
+              }
+            ],
+            "measurements": {
+              "stock": {
+                "samples_seconds": [
+                  0.862922,
+                  0.864362,
+                  0.865854,
+                  0.865168,
+                  0.866956
+                ],
+                "median_seconds": 0.865168,
+                "min_seconds": 0.862922,
+                "max_seconds": 0.866956,
+                "stdev_seconds": 0.0015243748882738809
+              },
+              "native": {
+                "samples_seconds": [
+                  1.727256,
+                  1.725393,
+                  1.730356,
+                  1.729578,
+                  1.729493
+                ],
+                "median_seconds": 1.729493,
+                "min_seconds": 1.725393,
+                "max_seconds": 1.730356,
+                "stdev_seconds": 0.002046820632102417
+              }
+            },
+            "command": [
+              "mvn",
+              "-q",
+              "-Pbench,flink-1.18",
+              "-pl",
+              "streamfusion-runtime",
+              "surefire:test@default-test",
+              "-Dtest=RecursiveTableFunctionBenchmark",
+              "-Dnative.build.skip=true",
+              "-Dsf.testForks=1",
+              "-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC",
+              "-Dboundary.rows=262144",
+              "-Dboundary.warmups=2",
+              "-Dboundary.runs=5",
+              "-Dboundary.expectNative=true",
+              "-Drecursive.bench.signatures=row/custom/map:default-DECIMAL(38,18):result"
+            ],
+            "log_sha256": "e94ebc7c6e1a480c9ae0a9527ec88b28cf0411391b0be7f562007d394332c8a5"
+          },
+          "previous": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 1.272666
+              },
+              {
+                "engine": "native",
+                "trial": 0,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.866525
+              },
+              {
+                "engine": "native",
+                "trial": 1,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.840742
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.842825
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.840878
+              },
+              {
+                "engine": "native",
+                "trial": 2,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.848469
+              },
+              {
+                "engine": "native",
+                "trial": 3,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.847987
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.847681
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.875053
+              },
+              {
+                "engine": "native",
+                "trial": 4,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.851944
+              },
+              {
+                "engine": "native",
+                "trial": 5,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.850043
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.8496
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.850267
+              },
+              {
+                "engine": "native",
+                "trial": 6,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.848598
+              }
+            ],
+            "measurements": {
+              "stock": {
+                "samples_seconds": [
+                  0.840878,
+                  0.847681,
+                  0.875053,
+                  0.8496,
+                  0.850267
+                ],
+                "median_seconds": 0.8496,
+                "min_seconds": 0.840878,
+                "max_seconds": 0.875053,
+                "stdev_seconds": 0.013039709111019291
+              },
+              "native": {
+                "samples_seconds": [
+                  0.848469,
+                  0.847987,
+                  0.851944,
+                  0.850043,
+                  0.848598
+                ],
+                "median_seconds": 0.848598,
+                "min_seconds": 0.847987,
+                "max_seconds": 0.851944,
+                "stdev_seconds": 0.0016117989018484937
+              }
+            },
+            "command": [
+              "mvn",
+              "-q",
+              "-Pbench,flink-1.18",
+              "-pl",
+              "streamfusion-runtime",
+              "surefire:test@default-test",
+              "-Dtest=RecursiveTableFunctionBenchmark",
+              "-Dnative.build.skip=true",
+              "-Dsf.testForks=1",
+              "-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC",
+              "-Dboundary.rows=262144",
+              "-Dboundary.warmups=2",
+              "-Dboundary.runs=5",
+              "-Dboundary.expectNative=false",
+              "-Drecursive.bench.signatures=row/custom/map:default-DECIMAL(38,18):result"
+            ],
+            "log_sha256": "6aa1882565268290396cc9cd7375560d31824dbdd1dbec55b26fb0fba8f05a2c"
+          }
+        },
+        {
+          "flink": "2.2.1",
+          "rows": 262144,
+          "signature": "list/row:default-STRING:both",
+          "candidate": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.806212
+              },
+              {
+                "engine": "native",
+                "trial": 0,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 1.10135
+              },
+              {
+                "engine": "native",
+                "trial": 1,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.880232
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.47185
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.477058
+              },
+              {
+                "engine": "native",
+                "trial": 2,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.883712
+              },
+              {
+                "engine": "native",
+                "trial": 3,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.88225
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.481402
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.480342
+              },
+              {
+                "engine": "native",
+                "trial": 4,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.894553
+              },
+              {
+                "engine": "native",
+                "trial": 5,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.889374
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.484199
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.486277
+              },
+              {
+                "engine": "native",
+                "trial": 6,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.892272
+              }
+            ],
+            "measurements": {
+              "stock": {
+                "samples_seconds": [
+                  0.477058,
+                  0.481402,
+                  0.480342,
+                  0.484199,
+                  0.486277
+                ],
+                "median_seconds": 0.481402,
+                "min_seconds": 0.477058,
+                "max_seconds": 0.486277,
+                "stdev_seconds": 0.003555066989523555
+              },
+              "native": {
+                "samples_seconds": [
+                  0.883712,
+                  0.88225,
+                  0.894553,
+                  0.889374,
+                  0.892272
+                ],
+                "median_seconds": 0.889374,
+                "min_seconds": 0.88225,
+                "max_seconds": 0.894553,
+                "stdev_seconds": 0.005329050778515812
+              }
+            },
+            "command": [
+              "mvn",
+              "-q",
+              "-Pbench",
+              "-pl",
+              "streamfusion-runtime",
+              "surefire:test@default-test",
+              "-Dtest=RecursiveTableFunctionBenchmark",
+              "-Dnative.build.skip=true",
+              "-Dsf.testForks=1",
+              "-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC",
+              "-Dboundary.rows=262144",
+              "-Dboundary.warmups=2",
+              "-Dboundary.runs=5",
+              "-Dboundary.expectNative=true",
+              "-Drecursive.bench.signatures=list/row:default-STRING:both"
+            ],
+            "log_sha256": "315fb9722b08a1431d7beef81ad97da08223f8d7ab0bee5b8f3a1b507f0dec30"
+          },
+          "previous": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.813605
+              },
+              {
+                "engine": "native",
+                "trial": 0,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.507221
+              },
+              {
+                "engine": "native",
+                "trial": 1,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.473684
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.478048
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.471272
+              },
+              {
+                "engine": "native",
+                "trial": 2,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.47741
+              },
+              {
+                "engine": "native",
+                "trial": 3,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.470355
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.476292
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.479898
+              },
+              {
+                "engine": "native",
+                "trial": 4,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.476955
+              },
+              {
+                "engine": "native",
+                "trial": 5,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.477699
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.47721
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.481348
+              },
+              {
+                "engine": "native",
+                "trial": 6,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.478892
+              }
+            ],
+            "measurements": {
+              "stock": {
+                "samples_seconds": [
+                  0.471272,
+                  0.476292,
+                  0.479898,
+                  0.47721,
+                  0.481348
+                ],
+                "median_seconds": 0.47721,
+                "min_seconds": 0.471272,
+                "max_seconds": 0.481348,
+                "stdev_seconds": 0.0038875048553024235
+              },
+              "native": {
+                "samples_seconds": [
+                  0.47741,
+                  0.470355,
+                  0.476955,
+                  0.477699,
+                  0.478892
+                ],
+                "median_seconds": 0.47741,
+                "min_seconds": 0.470355,
+                "max_seconds": 0.478892,
+                "stdev_seconds": 0.0033790779363607327
+              }
+            },
+            "command": [
+              "mvn",
+              "-q",
+              "-Pbench",
+              "-pl",
+              "streamfusion-runtime",
+              "surefire:test@default-test",
+              "-Dtest=RecursiveTableFunctionBenchmark",
+              "-Dnative.build.skip=true",
+              "-Dsf.testForks=1",
+              "-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC",
+              "-Dboundary.rows=262144",
+              "-Dboundary.warmups=2",
+              "-Dboundary.runs=5",
+              "-Dboundary.expectNative=false",
+              "-Drecursive.bench.signatures=list/row:default-STRING:both"
+            ],
+            "log_sha256": "4357950f6f100279a9db9217781399f46bb520c63c24c3a22747233f451528ad"
+          }
+        },
+        {
+          "flink": "2.2.1",
+          "rows": 262144,
+          "signature": "row/primitive:primitive-DOUBLE:both",
+          "candidate": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.782099
+              },
+              {
+                "engine": "native",
+                "trial": 0,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.909106
+              },
+              {
+                "engine": "native",
+                "trial": 1,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.743687
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.491403
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.487893
+              },
+              {
+                "engine": "native",
+                "trial": 2,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.735542
+              },
+              {
+                "engine": "native",
+                "trial": 3,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.728591
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.489894
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.495567
+              },
+              {
+                "engine": "native",
+                "trial": 4,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.738768
+              },
+              {
+                "engine": "native",
+                "trial": 5,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.737568
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.497358
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.490977
+              },
+              {
+                "engine": "native",
+                "trial": 6,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.730684
+              }
+            ],
+            "measurements": {
+              "stock": {
+                "samples_seconds": [
+                  0.487893,
+                  0.489894,
+                  0.495567,
+                  0.497358,
+                  0.490977
+                ],
+                "median_seconds": 0.490977,
+                "min_seconds": 0.487893,
+                "max_seconds": 0.497358,
+                "stdev_seconds": 0.003975245992388393
+              },
+              "native": {
+                "samples_seconds": [
+                  0.735542,
+                  0.728591,
+                  0.738768,
+                  0.737568,
+                  0.730684
+                ],
+                "median_seconds": 0.735542,
+                "min_seconds": 0.728591,
+                "max_seconds": 0.738768,
+                "stdev_seconds": 0.004411050532469562
+              }
+            },
+            "command": [
+              "mvn",
+              "-q",
+              "-Pbench",
+              "-pl",
+              "streamfusion-runtime",
+              "surefire:test@default-test",
+              "-Dtest=RecursiveTableFunctionBenchmark",
+              "-Dnative.build.skip=true",
+              "-Dsf.testForks=1",
+              "-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC",
+              "-Dboundary.rows=262144",
+              "-Dboundary.warmups=2",
+              "-Dboundary.runs=5",
+              "-Dboundary.expectNative=true",
+              "-Drecursive.bench.signatures=row/primitive:primitive-DOUBLE:both"
+            ],
+            "log_sha256": "7bc623e717fc9a3434be05b3fc37f0f6620c2842161b2622b4a3e2ac87b5f137"
+          },
+          "previous": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.783153
+              },
+              {
+                "engine": "native",
+                "trial": 0,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.510691
+              },
+              {
+                "engine": "native",
+                "trial": 1,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.482928
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.488742
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.486958
+              },
+              {
+                "engine": "native",
+                "trial": 2,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.490068
+              },
+              {
+                "engine": "native",
+                "trial": 3,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.485069
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.49336
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.495447
+              },
+              {
+                "engine": "native",
+                "trial": 4,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.48966
+              },
+              {
+                "engine": "native",
+                "trial": 5,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.492491
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.492701
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.493132
+              },
+              {
+                "engine": "native",
+                "trial": 6,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.495645
+              }
+            ],
+            "measurements": {
+              "stock": {
+                "samples_seconds": [
+                  0.486958,
+                  0.49336,
+                  0.495447,
+                  0.492701,
+                  0.493132
+                ],
+                "median_seconds": 0.493132,
+                "min_seconds": 0.486958,
+                "max_seconds": 0.495447,
+                "stdev_seconds": 0.0031786505470089116
+              },
+              "native": {
+                "samples_seconds": [
+                  0.490068,
+                  0.485069,
+                  0.48966,
+                  0.492491,
+                  0.495645
+                ],
+                "median_seconds": 0.490068,
+                "min_seconds": 0.485069,
+                "max_seconds": 0.495645,
+                "stdev_seconds": 0.0038982558022787705
+              }
+            },
+            "command": [
+              "mvn",
+              "-q",
+              "-Pbench",
+              "-pl",
+              "streamfusion-runtime",
+              "surefire:test@default-test",
+              "-Dtest=RecursiveTableFunctionBenchmark",
+              "-Dnative.build.skip=true",
+              "-Dsf.testForks=1",
+              "-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC",
+              "-Dboundary.rows=262144",
+              "-Dboundary.warmups=2",
+              "-Dboundary.runs=5",
+              "-Dboundary.expectNative=false",
+              "-Drecursive.bench.signatures=row/primitive:primitive-DOUBLE:both"
+            ],
+            "log_sha256": "640b4c598ea447cfed39e1df80428133f175d6eaa069153c7bc01e230f4bc820"
+          }
+        },
+        {
+          "flink": "2.2.1",
+          "rows": 262144,
+          "signature": "row/custom/map:default-DECIMAL(38,18):result",
+          "candidate": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 1.319216
+              },
+              {
+                "engine": "native",
+                "trial": 0,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 1.95365
+              },
+              {
+                "engine": "native",
+                "trial": 1,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 1.752195
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.851133
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.854451
+              },
+              {
+                "engine": "native",
+                "trial": 2,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 1.751874
+              },
+              {
+                "engine": "native",
+                "trial": 3,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 1.753442
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.853819
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.851534
+              },
+              {
+                "engine": "native",
+                "trial": 4,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 1.748499
+              },
+              {
+                "engine": "native",
+                "trial": 5,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 1.745065
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.861396
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.858535
+              },
+              {
+                "engine": "native",
+                "trial": 6,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 1.747264
+              }
+            ],
+            "measurements": {
+              "stock": {
+                "samples_seconds": [
+                  0.854451,
+                  0.853819,
+                  0.851534,
+                  0.861396,
+                  0.858535
+                ],
+                "median_seconds": 0.854451,
+                "min_seconds": 0.851534,
+                "max_seconds": 0.861396,
+                "stdev_seconds": 0.003956965819918111
+              },
+              "native": {
+                "samples_seconds": [
+                  1.751874,
+                  1.753442,
+                  1.748499,
+                  1.745065,
+                  1.747264
+                ],
+                "median_seconds": 1.748499,
+                "min_seconds": 1.745065,
+                "max_seconds": 1.753442,
+                "stdev_seconds": 0.0034087539805623505
+              }
+            },
+            "command": [
+              "mvn",
+              "-q",
+              "-Pbench",
+              "-pl",
+              "streamfusion-runtime",
+              "surefire:test@default-test",
+              "-Dtest=RecursiveTableFunctionBenchmark",
+              "-Dnative.build.skip=true",
+              "-Dsf.testForks=1",
+              "-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC",
+              "-Dboundary.rows=262144",
+              "-Dboundary.warmups=2",
+              "-Dboundary.runs=5",
+              "-Dboundary.expectNative=true",
+              "-Drecursive.bench.signatures=row/custom/map:default-DECIMAL(38,18):result"
+            ],
+            "log_sha256": "d771db2ecad9e0dcce7c5d17c187c6bef6029e7a529e52dff69990bc00af4c13"
+          },
+          "previous": {
+            "trials": [
+              {
+                "engine": "stock",
+                "trial": 0,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 1.301928
+              },
+              {
+                "engine": "native",
+                "trial": 0,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.866268
+              },
+              {
+                "engine": "native",
+                "trial": 1,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.841624
+              },
+              {
+                "engine": "stock",
+                "trial": 1,
+                "warmup": true,
+                "rows": 262144,
+                "seconds": 0.843099
+              },
+              {
+                "engine": "stock",
+                "trial": 2,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.841474
+              },
+              {
+                "engine": "native",
+                "trial": 2,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.844637
+              },
+              {
+                "engine": "native",
+                "trial": 3,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.837438
+              },
+              {
+                "engine": "stock",
+                "trial": 3,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.846073
+              },
+              {
+                "engine": "stock",
+                "trial": 4,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.847607
+              },
+              {
+                "engine": "native",
+                "trial": 4,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.84904
+              },
+              {
+                "engine": "native",
+                "trial": 5,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.845993
+              },
+              {
+                "engine": "stock",
+                "trial": 5,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.848304
+              },
+              {
+                "engine": "stock",
+                "trial": 6,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.848487
+              },
+              {
+                "engine": "native",
+                "trial": 6,
+                "warmup": false,
+                "rows": 262144,
+                "seconds": 0.850176
+              }
+            ],
+            "measurements": {
+              "stock": {
+                "samples_seconds": [
+                  0.841474,
+                  0.846073,
+                  0.847607,
+                  0.848304,
+                  0.848487
+                ],
+                "median_seconds": 0.847607,
+                "min_seconds": 0.841474,
+                "max_seconds": 0.848487,
+                "stdev_seconds": 0.002907294016779144
+              },
+              "native": {
+                "samples_seconds": [
+                  0.844637,
+                  0.837438,
+                  0.84904,
+                  0.845993,
+                  0.850176
+                ],
+                "median_seconds": 0.845993,
+                "min_seconds": 0.837438,
+                "max_seconds": 0.850176,
+                "stdev_seconds": 0.0050092640876679756
+              }
+            },
+            "command": [
+              "mvn",
+              "-q",
+              "-Pbench",
+              "-pl",
+              "streamfusion-runtime",
+              "surefire:test@default-test",
+              "-Dtest=RecursiveTableFunctionBenchmark",
+              "-Dnative.build.skip=true",
+              "-Dsf.testForks=1",
+              "-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC",
+              "-Dboundary.rows=262144",
+              "-Dboundary.warmups=2",
+              "-Dboundary.runs=5",
+              "-Dboundary.expectNative=false",
+              "-Drecursive.bench.signatures=row/custom/map:default-DECIMAL(38,18):result"
+            ],
+            "log_sha256": "108d57500892f0e94074d5fc458efc2f156ab399de6d876d49d9347c8e26eb5b"
+          }
+        }
+      ],
+      "additional_alias_verification": {
+        "tests_per_line": 9,
+        "failures": 0,
+        "errors": 0,
+        "description": "Final scalar fast-path plus eight retained-alias producer/consumer controls, on both released Flink lines; one added direct-binary case and eight repeated controls."
+      }
+    }
+  }
+}

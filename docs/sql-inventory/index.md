@@ -1,15 +1,26 @@
 # Upstream SQL inventory
 
-[Open the searchable inventory](report.html). Download the per-line CSV files below.
+[Open the searchable inventory](https://streamfusion.tech/sql-inventory/report.html). Download the per-line CSV files below.
+
+The compressed JSON snapshots are the maintained data source. MkDocs generates the
+HTML and CSV downloads during the documentation build, preserving their public paths.
+To render them separately without rerunning SQL or changing historical provenance:
+
+```sh
+python3 dev/flink-suite/render_sql_inventory.py \
+  --snapshot docs/sql-inventory/flink-1.18.json.gz \
+  --snapshot docs/sql-inventory/flink-2.2.json.gz \
+  --output target/sql-inventory
+```
 
 The primary label answers whether the actual query passes StreamFusion's all-or-nothing gate. Every interior operator must run natively; rowwise source/sink boundaries and their transposes are allowed. One unsupported interior operator sends the entire query to Flink. Labels require passing upstream assertions and describe admission, not speedup or per-query runtime work. All in-scope streaming SQL gaps are targets.
 
 | Flink | Passing cases | Accelerated | Should be accelerated | Not accelerated |
 |---|---:|---:|---:|---:|
-| [1.18](flink-1.18.csv) | 6,014 | 1,430 | 1,861 | 2,723 |
-| [2.2](flink-2.2.csv) | 9,155 | 3,280 | 2,864 | 3,011 |
+| [1.18](https://streamfusion.tech/sql-inventory/flink-1.18.csv) | 6,014 | 1,430 | 1,861 | 2,723 |
+| [2.2](https://streamfusion.tech/sql-inventory/flink-2.2.csv) | 9,155 | 3,280 | 2,864 | 3,011 |
 
-Each row remains one test invocation. Expand **Query plans** in the report or download the [Flink 1.18 query-plan CSV](flink-1.18-queries.csv) and [Flink 2.2 query-plan CSV](flink-2.2-queries.csv) for individual root verdicts. A test with both admitted and fallback queries remains a coverage target. Source/constant-only roots have no interior SQL computation. Observed roots can repeat during planning and are not counts of distinct SQL strings or completed executions; the existing observations do not associate SQL strings or individual translation failures with roots. Expected translation-only failures receive no admission credit.
+Each row remains one test invocation. Expand **Query plans** in the report or download the [Flink 1.18 query-plan CSV](https://streamfusion.tech/sql-inventory/flink-1.18-queries.csv) and [Flink 2.2 query-plan CSV](https://streamfusion.tech/sql-inventory/flink-2.2-queries.csv) for individual root verdicts. A test with both admitted and fallback queries remains a coverage target. Source/constant-only roots have no interior SQL computation. Observed roots can repeat during planning and are not counts of distinct SQL strings or completed executions; the existing observations do not associate SQL strings or individual translation failures with roots. Expected translation-only failures receive no admission credit.
 
 ## Suites
 

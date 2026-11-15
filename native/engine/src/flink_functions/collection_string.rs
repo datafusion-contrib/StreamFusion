@@ -154,7 +154,7 @@ fn binary_snapshot(array: &ArrayRef, containing_array: bool) -> Result<ArrayRef>
     Ok(array.clone())
 }
 
-pub(super) fn binary_map_elements(array: &ArrayRef) -> Result<ArrayRef> {
+pub(super) fn binary_elements(array: &ArrayRef) -> Result<ArrayRef> {
     if crate::flink_key::represented_string(array.data_type()) {
         let value = datafusion::common::cast::as_struct_array(array)?;
         let mut columns = value.columns().to_vec();

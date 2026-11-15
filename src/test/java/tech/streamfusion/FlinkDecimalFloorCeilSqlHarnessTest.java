@@ -112,7 +112,7 @@ class FlinkDecimalFloorCeilSqlHarnessTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"FLOOR(d)", "CEIL(d)", "ABS(FLOOR(d))",
+  @ValueSource(strings = {"FLOOR(d)", "CEIL(d)", "ABS(FLOOR(d))", "-FLOOR(d)",
       "COALESCE(FLOOR(d), CAST(0 AS DECIMAL(20,0)))",
       "FLOOR(d), JSON_VALUE(CAST(n AS STRING), '$')"})
   void unnormalizedDecimalResultsRetainTheHostWriterFailure(String expression) {

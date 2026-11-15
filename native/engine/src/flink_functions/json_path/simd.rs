@@ -8,6 +8,7 @@ pub(crate) struct Reader {
     tape: Option<Tape<'static>>,
     buffer_size: usize,
     legacy: bool,
+    row_buffers: Option<Vec<usize>>,
 }
 
 impl Reader {
@@ -18,6 +19,7 @@ impl Reader {
             tape: Some(Tape::null()),
             buffer_size,
             legacy: false,
+            row_buffers: None,
         }
     }
 
@@ -32,6 +34,88 @@ impl Reader {
 
     pub fn buffer_size(&self) -> usize {
         self.buffer_size
+    }
+
+    pub(super) fn with_row_buffers(mut self, capacities: Option<Vec<usize>>) -> Self {
+        self.row_buffers = capacities;
+        self
+    }
+
+    pub(super) fn set_buffer_size(&mut self, capacity: usize) {
+        self.buffer_size = capacity;
+    }
+
+    pub fn begin_row(&mut self, row: usize) {
+        if let Some(capacities) = &self.row_buffers {
+            self.buffer_size = capacities[row];
+        }
+    }
+
+    pub fn write_query_container(
+        &mut self,
+        path: &Path<'_>,
+        input: &str,
+        wrapper: &str,
+        out: &mut impl std::fmt::Write,
+    ) -> Option<std::fmt::Result> {
+        if !path.definite() || !candidate(input) {
+            return None;
+        }
+        self.scratch.clear();
+        self.scratch.extend_from_slice(input.as_bytes());
+        let mut tape = self.tape.take().unwrap_or_else(Tape::null).reset();
+        let valid = simd_json::fill_tape(&mut self.scratch, &mut self.buffers, &mut tape).is_ok()
+            && compatible(&tape);
+        let result = (|| {
+            if !valid {
+                return None;
+            }
+            let selected = select_nodes(tape.0.as_slice(), &path.steps)?;
+            let object = match selected.first()? {
+                Node::Object { .. } => true,
+                Node::Array { .. } => false,
+                _ => return None,
+            };
+            let units = input.encode_utf16().count();
+            if units <= 32768 {
+                self.buffer_size = self.buffer_size.max(units);
+            }
+            let wrap = wrapper == "UNCONDITIONAL_ARRAY" || wrapper == "CONDITIONAL_ARRAY" && object;
+            Some((|| {
+                if wrap {
+                    out.write_char('[')?;
+                }
+                super::query::write_tape(selected, self.legacy, out)?;
+                if wrap {
+                    out.write_char(']')?;
+                }
+                Ok(())
+            })())
+        })();
+        self.tape = Some(tape.reset());
+        result
+    }
+
+    pub fn read_query<'a>(
+        &mut self,
+        path: &Path<'_>,
+        input: &'a str,
+        surrogate_escapes: &'a [usize],
+    ) -> Result<Value<'a>, ()> {
+        if !path.definite() {
+            return Err(());
+        }
+        let units = input.encode_utf16().count() - 5 * surrogate_escapes.len();
+        if units <= 32768 {
+            self.buffer_size = self.buffer_size.max(units);
+        }
+        path.apply_policy(path.parse_selected(
+            input,
+            self.buffer_size,
+            self.legacy,
+            surrogate_escapes,
+            true,
+        ))
     }
 
     pub fn read<'a>(&'a mut self, path: &Path<'_>, input: &'a str) -> Result<Value<'a>, ()> {
@@ -113,10 +197,20 @@ fn compatible(tape: &Tape<'_>) -> bool {
     // A small tape cannot exceed the nesting limit. Floating numbers require the
     // original spelling and Jackson's BigDecimal validation, even in unselected fields.
     tape.0.len() <= 1000
-        && !tape
-            .0
-            .iter()
-            .any(|node| matches!(node, Node::Static(StaticNode::F64(_))))
+        && tape.0.iter().all(|node| {
+            matches!(
+                node,
+                Node::Object { .. }
+                    | Node::Array { .. }
+                    | Node::String(_)
+                    | Node::Static(
+                        StaticNode::Null
+                            | StaticNode::Bool(_)
+                            | StaticNode::I64(_)
+                            | StaticNode::U64(_)
+                    )
+            )
+        })
 }
 
 fn select<'a>(tape: &Tape<'a>, steps: &[Step<'_>]) -> Option<Value<'a>> {
@@ -177,7 +271,47 @@ fn select<'a>(tape: &Tape<'a>, steps: &[Step<'_>]) -> Option<Value<'a>> {
     }
 }
 
-fn width(node: &Node<'_>) -> usize {
+fn select_nodes<'t, 'a>(mut nodes: &'t [Node<'a>], steps: &[Step<'_>]) -> Option<&'t [Node<'a>]> {
+    for step in steps {
+        nodes = match (nodes.first()?, step) {
+            (Node::Object { len, .. }, Step::Member(name)) => {
+                let mut rest = &nodes[1..];
+                let mut selected = None;
+                for _ in 0..*len {
+                    let Node::String(key) = rest.first()? else {
+                        return None;
+                    };
+                    rest = &rest[1..];
+                    let (value, tail) = rest.split_at(width(rest.first()?));
+                    if *key == name.as_ref() {
+                        selected = Some(value);
+                    }
+                    rest = tail;
+                }
+                selected?
+            }
+            (Node::Array { len, .. }, Step::Index(index)) => {
+                let offset = if *index < 0 {
+                    len.checked_sub(index.unsigned_abs() as usize)?
+                } else {
+                    *index as usize
+                };
+                if offset >= *len {
+                    return None;
+                }
+                let mut rest = &nodes[1..];
+                for _ in 0..offset {
+                    rest = &rest[width(rest.first()?)..];
+                }
+                &rest[..width(rest.first()?)]
+            }
+            _ => return None,
+        };
+    }
+    Some(nodes)
+}
+
+pub(super) fn width(node: &Node<'_>) -> usize {
     match node {
         Node::Object { count, .. } | Node::Array { count, .. } => count + 1,
         _ => 1,
@@ -192,6 +326,55 @@ mod tests {
         (0..16)
             .map(|i| format!(r#", "k{i}": "value{i}""#))
             .collect()
+    }
+
+    #[test]
+    fn query_containers_reuse_compatible_tapes_and_preserve_provider_order() {
+        let selected = r#"{"z":[0],"a":{},"z":[{"x":1,"x":2}],"?":3,"中":4,"😀":5}"#;
+        let input = format!(r#"{{"a":{selected}{}}}"#, fields());
+        for legacy in [false, true] {
+            for suffix in ["$", "$.a", "$.a.z", "$.a.z[-1]"] {
+                let path = Path::parse(suffix, "13.0").unwrap();
+                let mut reader = Reader::new(4000).with_legacy_semantics(legacy);
+                for wrapper in ["WITHOUT_ARRAY", "CONDITIONAL_ARRAY", "UNCONDITIONAL_ARRAY"] {
+                    let mut actual = String::new();
+                    reader
+                        .write_query_container(&path, &input, wrapper, &mut actual)
+                        .unwrap()
+                        .unwrap();
+                    let Value::CapturedContainer(raw) =
+                        reader.read_query(&path, &input, &[]).unwrap()
+                    else {
+                        panic!("expected selected container")
+                    };
+                    let mut expected = String::new();
+                    let wrap = wrapper == "UNCONDITIONAL_ARRAY"
+                        || wrapper == "CONDITIONAL_ARRAY" && raw.starts_with('{');
+                    if wrap {
+                        expected.push('[');
+                    }
+                    super::super::write_container(raw, legacy, &mut expected).unwrap();
+                    if wrap {
+                        expected.push(']');
+                    }
+                    assert_eq!(actual, expected, "{suffix}, legacy={legacy}, {wrapper}");
+                }
+            }
+            let path = Path::parse("$.a", "13.0").unwrap();
+            for tail in [
+                r#", "bad": 1.2300"#,
+                r#", "bad": "\uD800""#,
+                r#", "bad": }"#,
+            ] {
+                let input = format!(r#"{{"a":{selected}{}{tail}}}"#, fields());
+                let mut reader = Reader::new(4000).with_legacy_semantics(legacy);
+                let mut output = String::new();
+                assert!(reader
+                    .write_query_container(&path, &input, "WITHOUT_ARRAY", &mut output)
+                    .is_none());
+                assert!(output.is_empty());
+            }
+        }
     }
 
     fn equivalent(path: &Path<'_>, input: &str, reader: &mut Reader) {

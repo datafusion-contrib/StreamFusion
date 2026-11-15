@@ -36,6 +36,7 @@ impl OutputStorage {
             chunk: env.new_global_ref(chunk).expect("Iceberg transfer buffer"),
             buffered: Vec::with_capacity(JavaOutput::CHUNK_BYTES),
             closed: false,
+            written_bytes: 0,
         };
         Self {
             output: Some(Arc::new(Mutex::new(Some(output)))),
@@ -95,6 +96,7 @@ struct JavaOutput {
     chunk: GlobalRef,
     buffered: Vec<u8>,
     closed: bool,
+    written_bytes: u64,
 }
 
 impl JavaOutput {
@@ -137,6 +139,7 @@ impl FileWrite for JavaOutput {
         if self.closed {
             return Err(Error::new(ErrorKind::Unexpected, "Iceberg output closed"));
         }
+        self.written_bytes += bytes.len() as u64;
         while !bytes.is_empty() {
             let count = (Self::CHUNK_BYTES - self.buffered.len()).min(bytes.len());
             self.buffered.extend_from_slice(&bytes.split_to(count));
@@ -147,7 +150,7 @@ impl FileWrite for JavaOutput {
         Ok(())
     }
 
-    async fn close(&mut self) -> Result<()> {
+    async fn close(&mut self) -> Result<FileMetadata> {
         if self.closed {
             return Err(Error::new(
                 ErrorKind::Unexpected,
@@ -157,6 +160,8 @@ impl FileWrite for JavaOutput {
         self.emit()?;
         // The Java appender owns the actual stream's flush/close and failure cleanup.
         self.closed = true;
-        Ok(())
+        Ok(FileMetadata {
+            size: self.written_bytes,
+        })
     }
 }

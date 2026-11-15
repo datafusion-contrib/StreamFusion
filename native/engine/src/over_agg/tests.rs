@@ -387,6 +387,69 @@ fn decimal_average_result_overflow_does_not_replace_the_checkpointed_sum() {
 }
 
 #[test]
+fn unbounded_nullable_decimal_sum_restarts_after_overflow_and_restore() {
+    for proctime in [false, true] {
+        for frame in [0, 3] {
+            let mut over = OverWindowAggregator::new(
+                vec![5800],
+                vec![0],
+                1,
+                vec![3],
+                vec![0],
+                frame,
+                0,
+                proctime,
+            );
+            let prefix = reductions(
+                &[100, 200],
+                vec![None; 2],
+                vec![Some(DECIMAL128_MAX - 1), Some(1)],
+                38,
+                0,
+            );
+            let output = if proctime {
+                over.push_proctime(prefix, 0).unwrap()
+            } else {
+                over.push(prefix, 0).unwrap();
+                over.flush(200, 0).unwrap()
+            };
+            assert!(output.column(4).is_null(1));
+            let snapshots = over
+                .snapshot_partitions(8, &[-1])
+                .into_values()
+                .collect::<Vec<_>>();
+            let mut restored = OverWindowAggregator::restore_partitions(
+                vec![5800],
+                vec![0],
+                1,
+                vec![3],
+                vec![0],
+                frame,
+                0,
+                proctime,
+                &snapshots,
+                0,
+                0,
+            );
+            for operator in [&mut over, &mut restored] {
+                let suffix = reductions(&[300, 400], vec![None; 2], vec![None, Some(7)], 38, 0);
+                let output = if proctime {
+                    operator.push_proctime(suffix, 0).unwrap()
+                } else {
+                    operator.push(suffix, 0).unwrap();
+                    operator.flush(400, 0).unwrap()
+                };
+                assert!(output.column(4).is_null(0));
+                assert_eq!(
+                    ScalarValue::try_from_array(output.column(4), 1).unwrap(),
+                    ScalarValue::Decimal128(Some(7), 38, 0)
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn decimal_extrema_and_first_last_keep_input_precision_through_every_frame_restore() {
     for (precision, scale) in [(12, 2), (38, 0), (38, 38)] {
         let code = 2000 + precision as i64 * 100 + scale as i64;
@@ -1394,6 +1457,7 @@ fn zero_sum_restores_legacy_primitive_null_and_negative_zero_snapshots() {
                         offset,
                         proctime,
                     );
+                    let negative_zero = first.is_some();
                     let first = input(code, 100, first);
                     if proctime {
                         before.push_proctime(first, 0).unwrap();
@@ -1401,10 +1465,16 @@ fn zero_sum_restores_legacy_primitive_null_and_negative_zero_snapshots() {
                         before.push(first, 0).unwrap();
                         before.flush(100, 0).unwrap();
                     }
-                    let snapshots = before
-                        .snapshot_partitions(8, &[-1])
-                        .into_values()
-                        .collect::<Vec<_>>();
+                    let snapshots = if matches!(frame, 1 | 2) {
+                        vec![legacy_frame_fixture(&format!(
+                            "primitive-{code}-{frame}-{proctime}-{negative_zero}"
+                        ))]
+                    } else {
+                        before
+                            .snapshot_partitions(8, &[-1])
+                            .into_values()
+                            .collect::<Vec<_>>()
+                    };
                     let mut restored = OverWindowAggregator::restore_partitions(
                         vec![code],
                         vec![22],
@@ -1590,8 +1660,20 @@ fn bounded_zero_sum_rocks_frames_read_legacy_and_versioned_rows() {
             .with_key_timestamp_precisions(vec![-1])
             .with_store(store, vec![DataType::Int64])
     };
-    let mut old = operator(0, create(0, "old"));
-    execute_zero(&mut old, floating_zero_input(6, 0, &[None]), false);
+    let mut old = operator(22, create(22, "old"));
+    let input = floating_zero_input(6, 0, &[None]);
+    let mut converter = None;
+    let keys = encode_keys(&mut converter, &[input.column(0)], 1);
+    let store = old.store.as_mut().unwrap();
+    let group = store.key_group(binary_row_hash(&input, &[0], 0, &[-1]));
+    store.insert_frame_fixture(
+        &store.frame_prefix(group, keys.row(0).data()),
+        1000,
+        0,
+        &legacy_frame_fixture("rocks-unmarked-null-f32"),
+    );
+    store.adopt_next_seq(1);
+    old.watermark = 1000;
     let checkpoint = directory.path().join("checkpoint");
     let manifest = old.checkpoint_store(checkpoint.to_str().unwrap()).unwrap();
     drop(old);
@@ -1674,14 +1756,9 @@ fn zero_sum_legacy_frame_migration_preserves_decimal_folds_and_string_views() {
                 )
             };
             let prefix = input(0, &[None, Some(2.0)]);
-            let mut old = operator(0);
             let mut current = operator(22);
-            execute_zero(&mut old, prefix.clone(), proctime);
             execute_zero(&mut current, prefix, proctime);
-            let snapshots = old
-                .snapshot_partitions(8, &[-1])
-                .into_values()
-                .collect::<Vec<_>>();
+            let snapshots = vec![legacy_frame_fixture(&format!("mixed-{frame}-{proctime}"))];
             let mut migrated = OverWindowAggregator::restore_partitions(
                 vec![6, 3, 3202],
                 vec![22, 5, 22],

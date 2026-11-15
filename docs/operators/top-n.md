@@ -24,7 +24,10 @@ implementations, chosen from the input's changelog kind and key structure. Strea
 three natively:
 
 - **Append-only ranker** — the input is insert-only; a per-partition sorted list of the current
-  top rows. TTL expires per sort-key list — every list write refreshes all of that list's tie rows.
+  top rows. Projected-rank plans also retain Flink's first overflow sort group, even though it
+  emits nothing beyond the visible bound. This hidden state can affect later TTL behavior and
+  must survive canonical handoff. Mini-batch result diffs include only visible ranks. TTL expires
+  per sort-key list — every list write refreshes all of that list's tie rows.
 - **Update-fast ranker** — the input carries a unique key and the sort key is inferred monotonic
   against updates on that key (e.g. ranking by a descending `COUNT(*)`), mirroring Flink's
   `UpdatableTopNFunction`. For the constant `rn <= 1` special case this is `FastTop1Function`: rather than
@@ -36,6 +39,12 @@ three natively:
   `RetractableTopNFunction`. TTL expires the *whole* per-partition buffer at once, on a clock
   refreshed by every record processed for that partition — modeling Flink's own per-record
   `SortedMap` rewrite.
+
+Constant AppendFast Top-1 uses Flink's update changelog even when the rank column is hidden:
+replacement emits UPDATE_BEFORE when requested, followed by UPDATE_AFTER. Its generic and
+specialized implementations follow the same contract in immediate and mini-batch modes.
+Projected wider ranks retain the hidden overflow group in both modes, with result diffs limited
+to visible ranks. These correctness changes do not change the native checkpoint encoding.
 
 With the RocksDB backend, all three strategies charge their live read-through working sets
 rather than accumulating reservations for persisted keys. Active mini-batches retain charges
@@ -75,11 +84,13 @@ Also native: a projected rank number and both insert-only and retracting changel
 a projected or hidden rank. `RANK`/`DENSE_RANK` never reach the matcher at all —
 Flink itself rejects them in streaming, so that's parity, not a gap.
 
-An update-fast offset retains ranks 1 through rankEnd, including the hidden prefix, so unique-key
-updates can move rows across the visible boundary. Its output uses Flink's positional update
+An update-fast offset retains the hidden prefix, so unique-key updates can move rows across the
+visible boundary. Projected ranks and offsets also preserve the first overflow sort group visited
+by Flink's rank iteration. That group can own a unique key whose later version moves into view. Its output uses Flink's positional update
 cascades even when rank is not projected. An updated row moving into the hidden prefix retracts
 its former visible position before the remaining visible transitions. Checkpoints and canonical
-memory/RocksDB transitions retain the prefix and reapply the selected range on restore.
+memory/RocksDB transitions retain the prefix, overflow group and original row kinds, then reapply
+the selected range on restore. Kind-less legacy native snapshots still read as INSERT rows.
 
 A hidden-rank retracting offset follows the selected Flink backend's value-copy semantics.
 With heap state, a cascade mutates shared retained row kinds; later retractions compare those
@@ -371,9 +382,25 @@ shift, firing at the last millisecond of the window. It does
 not apply another zone shift on output. Plain TIMESTAMP uses a zero offset. This also supports
 input from an aggregate whose boundaries are already rendered locally.
 
-Regional RocksDB firing scans keys to collect distinct local window ends before converting their
-deadlines. Its subsequent row scan retains only closed groups. Pending rank buffers remain in
-RocksDB, and fixed-offset firing retains its ordered-prefix scan.
+Watermark and processing-time firing hand output to the JVM synchronously in batches bounded by
+1,024 rows and a conservative 4 MiB workspace target. A single wider row may exceed that target,
+but still must fit the task memory budget. A large top-N group spans batches without restarting
+its rank numbers; small dedup groups share batches. Scalar-to-Arrow overlap, frame copies and
+firing metadata reserve task off-heap memory before allocation. The memory backend moves retained
+rows into output and releases the exact partition-key and row state charges as ownership moves.
+
+RocksDB firing inventories distinct local ends with prefix seeks, converts regional deadlines,
+and visits due ends in `(deadline, end)` order. Within each end it merges separate negative-start
+and nonnegative-start spans from each key group: starts keep their released raw signed-BE layout,
+whose byte ordering differs from numeric ordering. Partition bytes break start ties. Only bounded
+row frames are copied and decoded, including for one large persisted group; pending rank buffers
+remain in RocksDB. Metadata scales with distinct ends and owned key-group iterators, rather than
+all closed groups or rows, and is charged to the same task budget. The memory backend charges
+its sorted group ownership records without cloning partition payloads.
+
+Receiver failure fails the task and releases the output workspace. Recovery replays the previous
+checkpoint, including groups whose output had already been handed off before the failure. Legacy
+single-batch JNI collector entries remain available; production uses the bounded receiver entry.
 
 The `-Dstreamfusion.operator.windowRank.enabled` switch covers both shapes; window dedup reuses the
 window-rank operator rather than getting its own switch — see [Configuration](../configuration.md).
@@ -411,3 +438,624 @@ string-to-string MAP, on heap/RocksDB with two restores. Ordinary scalar orderin
 Sorting by a computed collection expression still preserves the existing final-projection/fused-
 consumer guard: richer collection representations cannot enter an unverified stateful boundary.
 These are callback/schema checks, not additional UDF type admission or throughput evidence.
+
+
+## First-N canonical handoffs
+
+The shared First-N path also runs on Flink 1.18.1. Focused controls cover real operator snapshots,
+native checkpoints and isolated native/stock/native process handoffs with both native stores.
+RocksDB exports pin an MVCC read view and convert in Flink's asynchronous writer; memory exports
+capture independent native state and convert asynchronously through a temporary stock backend. Concurrent-capture and cancellation controls check reader
+ownership independently of the live operator. This qualification does not extend automatically to
+all rank algorithms or cross-version upgrades.
+
+Append rank has separate actual-operator controls on both releases: AppendFast and FastTop1,
+with/without rank output and TTL. Each imports nonempty released state, pins two native RocksDB
+views around winner changes, continues live input, closes the native handle and completes the
+views in reverse order on the writer. Stock continuation checks each saved winner/list and its
+original TTL age through expiry. These eight cases qualify this capture lifecycle for the
+exercised typed contract; broader rank type/algorithm qualification remains separate.
+
+The Flink 2.2.1 first-N counter now has automatic stock canonical binding in normal SQL and stock
+compiled-plan execution. It preserves `counterState`, the stock INT/TTL serializers, actual grouping
+keys, original write ages, stock identities and resolved maximum parallelism. Export reads live
+native counters directly; import validates the whole view before inserting state. Other rank
+algorithms use separate state contracts.
+
+Qualification passes 60 complete-job cases across both stores/orders and submission forms,
+including hidden/projected ranks, keyless and empty state, no-input re-export, native checkpoint
+recovery and rescaling at 1→3→2/maxP128. External committed output matches stock and an independent
+arrival-count oracle, with custom source/sink state and both transposes retained. Twenty direct
+controls additionally cover raw TTL ages/expiry, bounded transfer, malformed input and callback
+failure; 32 planner controls verify the actual owner and stock contract. The original released
+first-N restore fixture imports two counters and consumes four new native rows.
+
+Ordinary wide decimal/nanosecond root-key layouts, other rank algorithms, backend/version matrices,
+full-job TTL expiry and broader connector/failure/delivery cases remain open. Existing native
+processing/checkpoint encodings are unchanged. See the exact
+[first-N scope](../backends/canonical-state.md#stock-compatible-first-n-counters).
+Benchmarking of canonical handoff remains deferred.
+
+
+The final whole-view import check additionally rejects nonempty native targets, preserving their
+existing counters. A late persisted target duplicate first reproduced partial insertion of 1,024
+new rows and is now rejected before any are inserted. The earlier 60-job cohort passed before
+this stricter initialization check; the final combined 129-check cohort is under qualification.
+Shared Flink 1.18 processing/checkpoint controls pass 17 cases without claiming stock canonical
+interchange on that line.
+
+
+A reused first-N result can feed both inputs of a join while retaining one stock counter owner.
+Ordinary lowering checks the captured origin, rank settings, key layout and configuration
+before consolidating clones, then rebuilds batch sharing. Different first-N limits retain
+separate state owners. All 32 cross-engine job scenarios pass across both submission forms/stores/orders, including
+no-input re-export, rescaling and different-limit controls; the combined cohort passes 124 checks. Older native graph upgrades and other shared stateful rank
+variants remain open in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+
+First-N configuration equivalence is inspected in the Flink 2.2 lowering layer; the shared
+node compares only its rank/key definition and remains compilable on Flink 1.18. The API
+placement correction passes 100 current 2.2 controls (including eight ordinary process jobs)
+and 31 shared 1.18 processing/checkpoint controls. These cohorts overlap earlier runs and
+do not establish Flink 1.18 canonical interchange.
+
+
+## Value-ordered append canonical state (partial)
+
+The resumed #569 implementation removes the initial INT/BIGINT/STRING and single-sort restriction
+from canonical rank binding. Existing scalar Arrow carriers now retain their released stock
+serializers across append, updating and retracting algorithms: narrow integers, floating values,
+BOOLEAN, CHAR/STRING, DECIMAL, DATE, TIME, timestamps, binary values and intervals. Multiple sort
+fields use the captured selectors/comparators without an artificial field-count cap. Retained
+ROW/ARRAY payloads also bind through the existing codecs. The initial partition/sort/update key
+matrix is scalar; the pending ROW partition extension is described below. Append-only rank
+additionally retains MAP/MULTISET descendants in its tagged Arrow
+representation; updating inputs with map descendants keep the existing retraction fallback.
+Algorithm, TTL, bound, async/unaligned and processing-time-indicator gates stay independent.
+
+Retracting canonical sort keys retain the existing FLOAT/DOUBLE exclusion. The released sorted
+count map uses comparator ties while the independent row-list MapState uses binary key equality;
+signed zero and NaN therefore require separate key representations. Java admission now preserves
+the native state-mode guard at planning time, instead of accepting a plan that native initialization
+would reject. Floating retained payloads and scalar partition keys remain eligible. New explicit
+both-line planner controls pin this fallback; decimal and wider non-floating sorts remain in the
+positive continuation matrix. These controls await local execution.
+
+Append-list canonical binding also excludes FLOAT/DOUBLE sort fields. Released append state
+writes the current binary sort key even when its sorted buffer ties that key with another value.
+Signed-zero keys can therefore own overlapping retained lists; the compact native ranking buffer
+does not preserve those independent map entries. Reconstructing keys from payloads is insufficient.
+Fast Top-1 has a single value state, but floating sorts also need compatible continuation:
+native encoded rank order places NaNs while the released primitive comparator treats them as
+ties. Portable canonical plans with FLOAT/DOUBLE sorts therefore retain stock owners for append,
+updating, fast Top-1 and retracting rank. An ordinary native route that remains unbound keeps its
+existing private checkpoint contract and receives no stock-interchange qualification for these
+sorts. Floating payloads and partition fields with non-floating
+sorts remain eligible. Authored heap/RocksDB stock controls
+inspect the overlapping lists, and constructor/ordinary/portable controls pin the exclusion. These
+new controls remain pending full qualification. A released fast Top-1 control also checks that a first NaN
+remains retained after a finite challenger. Updating rank has its separate unique-key tuple
+contract, whose complete projection does not resolve this comparison-policy difference.
+
+Updating-rank rescaling jobs with a preceding GROUP BY compare the complete signed final table
+and its independent rank oracle. Parallel grouped owners can interleave their updates differently
+at the rank owner; repeated released-stock runs have different intermediate changelogs. A
+deterministic heap/RocksDB stock control reproduces that ordering dependence while requiring the
+same final winner. Other scalar-rank job modes retain complete changelog comparison; raw-state
+and canonical/native-recovery controls remain independent of this external-result comparison.
+
+Separate authored append/Top-1 controls retain FLOAT/DOUBLE partition keys and payloads while
+ordering by BIGINT. Opposite signed-zero partition keys remain separate; NaN/signed-zero payload
+bits survive canonical no-input returns and continuation across both engine orders and stores.
+Both engines consume the same serialized physical input in these controls. Execution on both
+released Flink lines remains pending.
+
+The new planner and component matrices include compact/wide decimals, timestamp precision nine,
+binary/interval carriers, signed-zero/NaN sort values, three-field sorting and nested payloads.
+The pending scalar and nested-payload component cases now compare complete raw stock state after
+no-input canonical returns as well as continued output. This checks list-map keys and cached
+fields which output-only comparisons could miss; these stronger checks have not yet run.
+Nested operator controls cover all three algorithms, with append-only MAP payloads. New
+clean-worker append/retract jobs consume the entire nested value together with the computed
+rank in a normal user function, preventing projection from hiding retained-payload coverage. Isolated DOUBLE
+and DECIMAL rank jobs retain independent final-table oracles, both engine orders, ordinary SQL
+and compiled plans, no-input returns, native checkpoint recovery and rescaling. Updating jobs
+also retain their original unique-key fields through the computed sort projection. These controls
+await complete qualification; selected local results are recorded in the
+[canonical inventory](../backends/canonical-state.md#resumed-scope-local-qualification). The historical passing counts below do not qualify this added scope.
+
+Normal Flink 2.2.1 SQL and portable stock compiled plans bind the released append lists and fast
+Top-1 winners automatically. Initial admission is AppendFast input, one sort column, INT/BIGINT/
+VARCHAR retained fields and start-one constant or variable ranges. Capture the real released
+function, partition/sort selectors, key serializer, TTL, stock operator identities and resolved
+maximum parallelism. Flink can fold a projected constant Top-1 rank into a downstream expression,
+so the actual function determines the retained schema. Stock restore needs only normal Flink,
+connector and user dependencies.
+
+The direct adapter preserves `data-state-with-append` sort-key lists or `Top1-Rank-State` winners,
+including tie order, hidden overflow rows, stored row kinds and original TTL ages. Variable
+`rankEnd` values remain independent, including negative bound-only partitions. Export visits live
+memory or raw persisted partitions directly into stock descriptors and serializers, without an
+intermediate native snapshot. Raw canonical reads do not expire state during transfer.
+
+Import validates the whole view before inserting native state. Foreign descriptors, mismatched
+partition/sort keys, empty lists, invalid non-null payloads, malformed metadata and duplicate
+winners/bounds fail without consuming source state. Failed validation leaves an empty target for
+retry. Receiver errors retain the original Java exception and release moved Arrow buffers; native
+state remains exportable. Closing a failed memory-limited target releases its prior reservation.
+
+Append export stages each retained sort list once in the shared disk spool, carrying its last
+original write timestamp into the released TTL serializer. Restore reads raw canonical map/list
+values and decodes one row at a time, preserving TTL envelopes and stored row kinds. Duplicate
+partition/sort/bound inventories stay on disk. A shared sender bounds transfers by 1,024 rows
+and a four-MiB payload estimate, allowing an oversized entry. An encoded KV remains the
+working-memory floor; native checkpoint bytes and admission are unchanged.
+
+Stock-bound rank keeps per-record changes under table mini-batching, with pending transposes and
+coalescers flushed before the barrier. Append constructors and native restore honor the requested
+update-before policy: fast Top-1 emits UPDATE_BEFORE when requested, then UPDATE_AFTER, even with
+hidden rank. An upsert stream omits the before-image. First-bound and non-time ROW_NUMBER runtime
+modes are installed before restore; otherwise valid bound headers would be rejected during the
+base initializer. Unbounded OVER still has its own separate state contract.
+
+Qualification covers 160 distinct complete-job scenarios across ordinary/compiled submission,
+both native stores and switch orders. Thirteen continuation variants include hidden/projected
+rank, fast Top-1, nullable/NOT NULL/keyless keys, long TTL, mini-batching, descending order and
+variable bounds. Further controls cover empty/no-input handoffs, native checkpoint recovery and
+1→3→2 rescaling at maxP128. Custom source/sink state and both transposes remain present. Every
+stage's committed table state matches an independent oracle; final effects and exact emitted
+kind/payload/counts match uninterrupted stock. Metadata/classpath checks retain stock-only restore.
+The complete-job matrix uses BIGINT input; the original released append restore fixture additionally
+imports three INT/STRING retained rows and consumes two new native rows.
+
+The initial 160-job cohort passed 158 cases and hit two 60-second handoff deadlines while native
+RocksDB was still initializing. Both affected ordinary paths passed four unchanged concurrent
+reruns, and the corresponding compiled paths passed four concurrent controls. Initial failures
+and thread dumps remain retained; their cause is not established. These eight repeated controls
+are not additional distinct scenarios. Broader startup/failure stress remains open.
+
+A further 410 distinct direct/planner/processing controls pass across retained cohorts. These
+include 96 actual-operator cases with INT/STRING keys, INT/BIGINT/STRING order, non-null order,
+distinct ties, reserved field-name collisions and reversed non-leading composite keys. Serialized
+future rows and kinds match stock in both directions and under controlled TTL expiry. The harness
+advances stock Guava and state-TTL clocks together. Guards reject native snapshot/checkpoint calls
+during canonical export. Fifty-two planner cases include variable-bound and rejected-contract
+controls. The native suite passes 1,241 tests with two existing ignores; shared Flink 1.18 code
+passes 125 processing/checkpoint controls without claiming stock canonical interchange there.
+
+**Pending for the append contract:** OFFSET, independent floating sort-map keys, constructed partition/sort keys, qualification of the new scalar/multiple-sort/nested-payload scope,
+async/unaligned state, broader shared/upstream-native graphs, full-job TTL expiry and the complete
+backend/version/connector/delivery matrix. Existing unbound native paths keep their own recovery
+representation; older unbound native checkpoint upgrades are not qualified here. All remain in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
+
+## Updating canonical state (partial)
+
+Normal Flink 2.2.1 SQL and portable stock compiled plans bind released UpdateFast state for
+TTL-disabled, start-one constant ranges, one or two sort fields, and INT/BIGINT/VARCHAR retained
+fields. Capture the actual function, partition/unique/sort selectors, stock key serializer,
+operator identities and resolved maximum parallelism. A fast Top-1 can have its projected constant
+rank folded into a downstream expression; use the actual retained function schema and before-image
+policy. Stock-bound rank preserves per-record changes under table mini-batching.
+
+When an ordinary updating-rank graph contains native state owners without a qualified canonical
+binding, rebuild from its captured stock template. The template accelerates supported roles and
+keeps other state owners, including upstream grouped aggregation, on stock Flink. Their state and
+identities remain stock-compatible. Wider native aggregate/graph contracts remain separate work;
+this route does not qualify a native aggregate's accumulator interchange.
+
+The direct adapter writes `data-state-with-update` MAP: actual unique row key → stock
+`Tuple2<RowData, Integer>`. The integer preserves ordering within equal sort values. Fast Top-1
+uses `Top1-Rank-State` VALUE. Export visits live memory or raw RocksDB partitions through at most
+1,024-row Arrow transfers, without an intermediate native snapshot. Hidden overflow rows and
+retained row kinds survive. Restore stages typed unique rows and inner positions in the shared
+disk spool, validating duplicate keys and consecutive tie order without whole-job key sets or
+per-partition Java sort trees. The shared sender retains owned buffers and a four-MiB payload
+estimate as well as the row limit, including the existing nested map/list C Data representation.
+
+Import requires an empty native target and validates all source state before applying any transfer.
+Foreign descriptors, key/payload disagreements, duplicate unique keys or tied positions, invalid
+non-null fields and nonconsecutive tied positions are rejected with the source retained. Successful
+import consumes the projected stock state. A resource-denied target must be closed; the untouched
+source can restore into a fresh target. Receiver failures preserve the original Java exception,
+release transferred Arrow buffers and leave native state available for another export.
+
+A combined cohort passes 484 direct/planner/processing controls. These include 192 typed cases
+with one/two sort fields, nullable and reversed non-leading composite keys, reserved field-name
+collisions, fast Top-1, hidden/projected ranks, both stores and both before-image policies. Sixteen
+initialization cases exercise both switch orders against uninterrupted stock output. Thirty-two
+planner cases capture automatic binding and maximum parallelism; ten further cases keep unqualified
+TTL/OFFSET/variable/three-sort/wider-payload rank state on Flink. Error controls cover multi-chunk
+ties, all four stored kinds, late corruption/retry, foreign state, nonempty targets, invalid
+non-null primitives, receiver failure and memory denial. Two focused regressions restore a native
+memory checkpoint into memory/RocksDB, then write canonical state and continue on stock Flink.
+Snapshot guards reject an intermediate native snapshot/checkpoint during canonical export.
+
+All 120 complete-process scenarios pass on the corrected native library: both submission forms,
+stores and switch orders, hidden/projected ranks, fast Top-1, nullable/non-null/keyless keys,
+one/two sort fields, no-input/empty handoffs, native checkpoint recovery and 1→3→2 rescaling at
+maxP128. Custom source/sink state and both transposes remain present. Independent stage/final table
+checks and exact stock change-kind/payload/counts match, with stock-only restore dependencies.
+Rescale controls use one aggregate key per rank partition to avoid nondeterministic cross-channel
+aggregate arrival order; continuation cases separately exercise competing rank rows.
+
+The first 120-job cohort passed 116 and exposed four memory-checkpoint failures: raw restore
+intentionally installs a timestamp for an enable-TTL migration, but the TTL-disabled canonical
+writer forwarded it and rejected its own metadata. The writer now emits no age for that contract,
+retaining the existing raw restore/TTL-migration behavior. Focused tests reproduce the old 5,000
+versus zero mismatch in both stores, then pass on the fix. The final full 120-job cohort passes;
+the original failures remain retained.
+
+The unchanged released updating-rank fixture restores six retained native rows and processes two
+new rows, including its original two-field ordering. The eleven selected programs pass in each
+engine: nine native cases and two expected normalizer-filter fallbacks. The agent passes 109 audit
+controls and excludes validation-only visits from import counts. The native suite passes 1,247
+tests with two existing ignores. Shared Flink 1.18 foundation controls pass 125 cases; the added
+common-node API also passes its 25 processing controls. Neither establishes 1.18 canonical interchange.
+
+TTL envelopes/cache write ages, independent variable bounds, preserved numeric tie-rank gaps,
+OFFSET, qualification of the new scalar/multiple-sort scope, wider native graphs and the broader schema/version/connector/
+failure/delivery matrices remain open in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Stock TTL restoration can retain nonconsecutive inner ranks; this TTL-disabled adapter rejects them
+rather than silently renumbering them. Older unbound native checkpoint upgrades remain unqualified.
+Benchmarking remains deferred.
+
+## Retracting canonical state (partial)
+
+The direct Flink 2.2.1 adapter preserves three independent structures: `data-state` MAP sort-key
+lists of actual rows, `sorted-map` VALUE counts, and optional `rankEnd` VALUE. Presence, list order,
+retained row kinds and all three write ages survive. Empty count maps, empty data lists, orphan
+rows, count-only/bound-only keys and counters differing from list lengths are preserved. Counts
+cannot be reconstructed from rows: unmatched retractions and heap OFFSET row-kind mutations can
+leave retained rows whose sort key is absent from the count map, even without TTL.
+
+Export scans live memory or raw RocksDB state, decodes at most one persistent partition at a time,
+and sends at most 1,024 Arrow rows per callback. Sort keys have their own typed fields because a
+counter may have no corresponding data row. The writer uses released row/list/map serializers and
+the actual stock serializable comparator. It writes no intermediate native snapshot. TTL-disabled
+export emits zero ages after a native checkpoint's enable-TTL migration, without changing native
+clocks. Transient decoded state and Arrow batches reserve the task's memory budget.
+
+Import checks the full descriptor inventory, an empty target, declared non-null fields, partition
+and sort selectors, retained values and all metadata before copying state. Source owner keys are
+the union of all three descriptors, streamed repeatedly from the shared temporary disk inventory.
+The index closes and deletes on failure without adding descriptors to stock source state.
+Export stages each retained list once, including present empty headers and independent TTL
+stamps. Native counters already arrive in sort order; a read-only disk-backed sorted-map view
+validates strict comparator order while the released serializer streams entries once. Heap
+component receivers retain ordinary owned collections. Restore validates raw list/counter
+snapshot bytes and decodes individual entries, retaining original timestamps, signed counts,
+nullable-value rejection and row kinds. Duplicate inventories stay on disk, with bounded row/byte
+transfers. The largest encoded KV remains a working-memory floor.
+A full validation pass precedes insertion; native frames also
+check existing earlier chunks. Successful import consumes the projected source. A denied target
+must be closed; source state remains available for a fresh target. Receiver failure preserves the
+original Java exception and leaves native state available for another export.
+
+The explicit compatibility state mode mirrors released per-record processing, including heap
+aliases versus serialized-backend value copies. Native memory/RocksDB checkpoints preserve its
+independent maps and immutable captures freeze mutable row kinds while sharing payload bytes.
+Older flat buffers cannot prove their original independent state and are not promoted implicitly.
+Normal Flink 2.2.1 SQL and portable stock compiled plans bind the qualified contract automatically.
+The planner captures actual stock selectors, serializers, comparator, operator identities, maximum
+parallelism and before-image policy. General retracting ranks allow constant ranges including
+OFFSET and bounds above `Integer.MAX_VALUE`, or a non-null INT/BIGINT first-observed bound.
+Retained fields are INT/BIGINT/VARCHAR, with one or two sort fields, plus the retained
+processing-time indicators qualified below. Bound operators use per-record
+semantics even under table mini-batching. Graphs with an unqualified upstream state owner retain
+its stock layout; failed rank binding rebuilds the captured stock template, including direct
+changelog sources without upstream aggregation. Unsupported payloads, three sort fields, nullable
+variable bounds and unaligned exchanges retain the stock rank owner.
+
+Tests use 28 immutable traces generated by released stock Flink for OFFSET, matched/unmatched
+retractions, count-only keys, independent TTL and changing bounds, hidden/projected rank and both
+stores. All 84 direct scenarios pass: stock/native-first handoffs, no-input canonical re-export,
+exact complete-state checks and native-checkpoint-to-canonical restoration into either store,
+followed by actual stock execution and exact continued changelogs. Sixteen further controls cover
+multi-chunk ties/all four kinds, empty descriptors and owner-key union, zero/negative/maximum
+counts, late corruption/repair, foreign state, nonempty count-only targets, non-null primitive
+validation, memory denial and receiver failure. The counter serializer restores with StreamFusion
+classes denied. The complete native suite passes 1,261 tests with two existing ignores.
+
+Another 56 cases exercise actual operator initialization and two successive stock/native switches
+in both orders, retaining exact continued changes under OFFSET, TTL and variable bounds. All 484
+shared ranking regressions pass on the same library. The disk-inventory cohort additionally
+passes all 84 direct state/continuation scenarios, 56 initialization checks and 16 malformed-state
+checks on Flink 1.18. This qualifies the exercised component layouts, rather than the wider typed,
+complete-job and rescaling matrices below. The native library also checks without RocksDB.
+
+Another 576 typed direct/lifecycle scenarios pass over INT/BIGINT/VARCHAR fields, Unicode, NULLs,
+composite/non-leading partition keys, colliding and reserved field names, ascending/descending
+sorts and NULL ordering. They cover one/two sort fields, hidden/projected ranks, both before-image
+policies, fixed/OFFSET/variable bounds, independent TTL clocks, both stores and successive switches
+in both engine orders. Every switch compares the complete stock state; guards reject intermediate
+native snapshots. Another 144 planner cases and eight rejected-contract cases pass, alongside 94
+append/update planner regressions. Planner checks include ordinary/compiled submission, keyed/global
+ranks, mini-batching, generated identities, resolved maximum parallelism and the concrete native
+retracting state contract.
+
+RocksDB may reclaim fully expired values during reads or compaction: cross-engine comparisons
+exclude expired garbage, while native raw checkpoint round trips still require exact preservation
+of all stored rows/counts/kinds/ages/bounds. Heap aliases and serialized-backend copies also retain
+different row-kind side effects in released Flink, so complete-job comparisons must use the same
+selected backend in each engine.
+
+The unchanged released retracting-rank restore program imports six actual retained rows and
+processes two new rows in native Top-N. The twelve selected upstream programs pass per engine,
+with ten native paths and two expected normalizer-filter fallbacks. All 118 execution-witness
+controls and 49 summary controls pass. The retract witness excludes validation and metadata rows
+and requires both actual canonical imports and new input through the opened native family.
+
+The complete-job matrix verifies 168 scenarios across ordinary SQL and portable compiled plans,
+both engine orders and selected backends. Fourteen continued-input variants cover projected/hidden
+rank, Top-1, keyed/global and non-null keys, two sorts, OFFSET, first-observed bounds, large limits,
+TTL configuration, size-three aggregate mini-batches and actual changelog source input. Controls
+cover empty and no-input returns, native checkpoint recovery and rescaling 1→3→2 at maximum
+parallelism 128. Rescale distributes 64 partition keys with one aggregate key each; competing rows
+are exercised separately. Every advancing native leg requires actual Top-N input, both transposes
+remain in the plan, custom source offsets and sink committed effects survive, and stock processes
+exclude StreamFusion. The mini-batch grouped aggregate uses a native owner bound to the stock
+accumulator contract.
+
+The original 168-case qualification combined 160 passing cases and eight targeted reruns after
+the reference correction below. A subsequent rerun exposed two mini-batch changelog mismatches
+and required the native aggregate bundle-order correction. All eight mini-batch handoffs pass
+on the corrected library across both submission forms, engine orders and stores; the 290-case
+aggregate state and ordered-output cohort also passes. Earlier failed diagnostics remain archived.
+These targeted reruns overlap the 168-case matrix rather than adding new job coverage. The
+mini-batch fixture's stock baseline uses the same barrier cuts because barriers legitimately flush
+pending aggregate changes. Its latency exceeds the test timeout so only count and barrier drains
+contribute to this deterministic comparison. Stock-bound native aggregate bundles drain in the
+released BinaryRow HashMap order, including retained table capacity between drains; first-touch
+order can otherwise alter the downstream rank changelog even when its final table agrees. TTL job cases configure one-hour retention; controlled expiry and
+independent ages are verified in the direct/lifecycle cases. The combined distinct Flink 2.2
+operator/planner/job selection has 1,548 passing cases, including the twelve stock-only reference
+checks below. Component/smoke/upstream selections overlap and are not added to this count. All 15
+operator families and all ten issue acceptance criteria remain partial/open.
+
+The fixed hidden OFFSET job input exposes released Flink row-kind effects on both heap and
+RocksDB: its emitted table can retain rows beyond the ideal SQL result, with an extra duplicate
+on heap. Twelve stock-only process checks reproduce explicit reference tables after 5, 10 and
+20 input rows in both submission forms/stores, with StreamFusion excluded. That fixture requires
+those exact released references and exact continued stock changelogs. Other fixtures retain their
+independent SQL table oracle. Canonical handoff preserves the saved lists/counts/kinds; it does
+not repair released Flink's processing behavior or infer counters from an ideal table.
+
+Nested schemas, full qualification of the new scalar/arbitrary-sort scope, nullable variable bounds, broader native graphs and the
+full version/failure/delivery matrix remain open in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.
+
+
+## Window rank canonical interchange (partial)
+
+Window-rank canonical export borrows the encoded persisted bucket, reserves bounded decoding
+frames before construction and checks cancellation within the bucket. It does not copy the whole
+bucket into a Rust byte buffer first. Refused conversion releases its work without changing the
+live state; the native/stock encoded bucket itself remains a database working-memory floor.
+
+Existing window rank/dedup canonical bindings now retain ROW/ARRAY/MAP payloads in direct native
+RocksDB. The shared retained-row codec preserves declared nested fields, NULL/empty containers
+and map entry order; sorting still uses the existing qualified sort keys. Canonical savepoints
+pin the store and convert bounded rows asynchronously. Scalar checkpoint bytes remain compatible,
+and previous snapshot-backed checkpoints migrate one key-group blob at a time, preserving their
+processing deadline through aligned or clipped restore. This changes storage for existing
+contracts, without qualifying additional sort/key layouts.
+
+
+Normal SQL and portable stock compiled plans bind the released Flink 2.2.1 event-time
+window-rank processor for constant ROW_NUMBER ranges starting at one. TUMBLE, HOP and CUMULATE
+retain attached local start/end columns, including SQL offsets. Capture uses the actual stock key
+and sort serializers, input schema, processor time zone, original identity and resolved maximum
+parallelism. Global owners keep the stock singleton maximum; keyed owners and their columnar
+exchange share the captured maximum. Explicit UIDs are optional. Async and unaligned event-time state keep
+stock owners. The portable compiled plan remains unchanged.
+
+Canonical export visits live memory or typed RocksDB rows directly into stock `window_rank`
+MAP state, with Long window-end namespaces, full sort-key lists, released event timers and the
+`watermark` UNION state. No intermediate native snapshot is written. Import validates the complete
+row/key/namespace/timer inventory before applying row batches and clears source entries only after
+success. Calendar and tie policies are installed before import; canonical and ordinary native
+checkpoints retain the input watermark, so immediate returns and older incoming watermarks cannot
+reopen closed windows. Export stages each sort-list entry once in the shared disk spool, keyed by
+owner, window-end namespace and typed sort key; the released serializer streams each bucket once.
+Restore reads raw canonical map/list bytes and decodes one row at a time, with complete serializer,
+namespace, sort-key and payload validation before native installation. Timer and observed-window
+membership use the disk spool instead of job-sized Java sets, including window deduplication.
+A shared sender caps row count and estimates four MiB per transfer, allowing an oversized row.
+An encoded stock KV remains the working-memory floor. These mechanisms are shared by both Flink
+lines and do not expand planner admission. Native checkpoints retain their existing raw format.
+
+The 425-check rank/dedup cohort includes 252 rank cases, 152 dedup cases and 21 shared bridge/operator
+regressions. It covers both native stores, keyed/global state, three shapes, four zones including
+DST transitions, rank-number output, NULL scores/keys, arrival-order ties, a 2,500-row sort list,
+empty watermark-only snapshots, native-checkpoint continuation and malformed ownership/state.
+The separate 384-check planner cohort crosses shapes, zones, keyed/global state, first/last order,
+both submission forms and explicit/generated identities. These cohorts do not establish full
+connector, type, failure or version qualification.
+
+OFFSET/other rank kinds, broader retained-type/sort parity,
+populated-target and resource/callback failure qualification, and the complete connector/delivery/
+version matrices remain open in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking remains deferred.
+
+
+The unchanged released WindowRankRestoreTest and WindowDeduplicateEventTimeRestoreTest suites
+pass all fourteen invocations on each engine. Four rank and eight dedup invocations require both
+a nonempty successful canonical import and new native input. The two rank-after-aggregate programs
+prove native rank processing after restore but have no nonempty rank-import witness; they receive
+no rank-state import credit. Their stock upstream aggregate remains outside this native window
+aggregate qualification. Released schemas include DECIMAL and VARCHAR fields in addition to the
+BIGINT operator fixtures. The agent's 130 canonical witness controls pass, including rejection
+of import-only, input-only and unrelated-family activity. Twenty separate planner controls
+verify stock fallback for async, unaligned and OFFSET contracts.
+
+A clean Flink 1.18.1 build passes 27 shared processing, bridge and native-checkpoint checks.
+Those checks do not qualify stock canonical interchange on 1.18. Native code is unchanged from
+the previously qualified library; this milestone does not claim a new native-suite run.
+
+
+A separate 56-case complete-job matrix passes: 28 cases per family, each with eight continued-input
+switches, eight no-input round trips, four ordinary native-checkpoint recoveries and eight rescalings.
+Both submission forms, native stores and engine orders are covered; checkpoint cases start native.
+The keyed TUMBLE fixtures use BIGINT payloads, general ascending rank without rank-number output
+and first-row dedup. They retain both transposes, custom stock source/committing-sink state,
+clean stock worker classpaths and metadata, exact externally committed changes and an independent
+per-key selection oracle. Rescaling redistributes 64 actual keys through one, three and two native
+owners at maximum parallelism 128 while source/sink remain singleton. Positive native work is
+required in every native owner. Other shapes, last-row dedup and broader retained schemas have
+operator/planner or released-suite evidence, rather than this complete-job recovery/rescale matrix.
+
+The final 2,374-check regression cohort passes all twenty selected classes without failures,
+errors or skips. It combines the rank/dedup state and planner controls with existing sort, OVER,
+identity, SQL and ordinary rank regressions. These counts overlap earlier cohorts and are not
+added cumulatively. Processing-time native windows have no released stock Window TopN/Dedup
+counterpart and receive no stock canonical qualification. Benchmarking remains deferred.
+
+Six additional planner controls require actual native processing-time window owners in ordinary
+SQL for keyed/global rank and first/last dedup. They also assert that the same stock queries fail
+with the released processing-time-window rejection. Event-time canonical routing therefore leaves
+the existing native processing-time path intact; unrelated native Calc activity cannot satisfy
+these controls.
+
+
+## Retained processing-time indicators in retracting rank
+
+Released retracting rank can retain a projected PROCTIME indicator as a physical NULL even when
+its logical type is NOT NULL. That placeholder is materialized only when a downstream expression
+observes processing time. Canonical import accepts this specific placeholder while continuing to
+reject NULL in ordinary required payload fields and partition/sort keys. Original stock logical
+types, row/key serializers, IDs and state descriptors remain unchanged.
+
+Ordinary Flink 2.2.1 SQL and portable stock compiled plans bind this retracting payload case
+automatically. The additional admission is limited to retained processing-time indicators:
+ordinary timestamp payloads, indicator partition/sort keys and previously unqualified wider
+schemas receive no new native canonical qualification. Existing first-N and other time-ordered
+routes keep their own contracts.
+
+Native Calc preserves the same lazy marker: PROCTIME produces a typed physical NULL and
+PROCTIME_MATERIALIZE reads the execution clock. Materializing the marker before rank would make
+later retractions differ from the saved stock row. This corrects ordinary input processing as
+well as canonical handoffs; native checkpoints retain their existing format and export still
+visits live state directly.
+
+All 1,032 combined rank/clock checks pass on the corrected component. These include all 576 typed
+scenarios, 84 canonical/native-checkpoint traces, operator initialization, exact aggregate/rank
+binding sets, and 36 actual SQL clock observations. SQL-derived tests cover all four stock
+heap/RocksDB and native memory/RocksDB backend pairs with and without native-checkpoint recovery.
+A deliberately corrupted ordinary required payload must fail preflight without changing source
+bytes or installing target state; repair/retry succeeds. Immediate and continued state must match
+stock serialized state exactly, including the indicator placeholder.
+
+All 64 complete-job cases pass on the same production revision: 28 projected-clock cases and
+36 aggregate-plus-rank cases. Both ordinary SQL and portable compiled plans, both native stores
+and initial engine orders are covered. They comprise 16 continuation, 16 no-input, eight native
+checkpoint, 16 rescale and eight empty-prefix cases. Rescaling redistributes 64 keys through
+1→3→2/maxP128, while source and transactional sink tasks stay singleton. The multi-owner jobs
+require actual input through both native aggregate and rank. Custom source/coordinator and sink
+state, both transposes, generated UIDs, metadata and clean stock workers remain in the path.
+Committed deterministic changes and tables match stock plus an independent oracle; every observed
+processing-time value must fall within actual execution time. The valid DELETE/UPDATE_BEFORE
+inputs and oracle are unchanged from the archived failing regression.
+
+All four unchanged released rank restore programs pass per engine with 199 execution-audit
+controls. The retracting program imports six actual saved rows and processes two new native rows.
+Another 37 shared Flink 1.18.1 checks pass; they establish common compilation, processing,
+checkpoint and clock regressions, not 1.18 canonical interchange. Earlier cohorts overlap this
+proof and are not cumulative counts of state schemas. Broader qualification remains in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569); benchmarking stays deferred.
+
+Additional window-selection payload controls await qualification on Flink 1.18 and 2.2. They
+retain complete nested ROW/ARRAY/MAP values through stock import, no-input return and native
+checkpoint recovery before firing. Clean-worker jobs include continued input and rescaling,
+retain the payload with a user function, and compare committed effects against an independent
+window/payload oracle. This exercises existing execution and state codecs; no processing-time
+canonical window-selection contract or new input semantics is introduced.
+
+
+## Additional updating constant ranges awaiting qualification
+
+Canonical binding now includes constant UpdateFast OFFSET ranges on both supported Flink lines,
+with TTL disabled and a signed-32-bit rank end. The existing native ranker retains the skipped
+prefix and the stock `data-state-with-update` tuple layout already includes those rows and their
+equal-sort positions. Export and import therefore use the same direct projection as start-one
+ranges; no new persisted state or replay path is introduced. AppendFast OFFSET keeps its separate
+admission gate. The variable-bound extension is described below; updating TTL/cache ages remain
+unqualified.
+
+New controls cover exact stock changelogs with hidden/projected rank, both before-image policies,
+tied keys, nested retained rows, native checkpoint recovery, ordinary/portable SQL and complete-job
+handoff/rescaling with an independent visible-range oracle. These controls await execution in the
+local testing window. Earlier passing counts above apply to their original start-one scope.
+
+
+Updating canonical binding additionally captures the existing first-observed INT/BIGINT variable
+bound, with a required bound column and TTL disabled. The released `rankEnd` VALUE state is
+independent of `data-state-with-update`, including partitions with zero/negative bounds and no
+retained rows. A dedicated header in the transient canonical transfer carries the full signed
+64-bit bound; row tuples and their tied positions retain their existing wire records. No native
+checkpoint format or stock serializer changes. Later proposals do not replace restored bounds.
+
+New resident/raw native visitor controls include bound-only partitions and cross-chunk ties;
+actual stock controls cover both bound widths, hidden/projected ranks, changed later proposals,
+private checkpoint recovery and canonical continuation. Ordinary/portable job fixtures add
+empty returns and rescaling with an independent per-key bound oracle. These additions await
+both-release execution. Updating TTL ages/gapped ties and nullable variable-bound columns remain
+gated; earlier historical passing cohorts retain their original scope.
+
+
+First-N ROW-bearing partition keys now use the shared binary-row input boundary when binding
+the stock counter. Ordinary SQL rebuilds that representation from the portable stock template,
+so the live key and restored counter key retain the same ROW kinds and original reserved bytes.
+The counter bridge and native checkpoint format are unchanged.
+
+New controls compare raw counters, mixed generic/binary keys, nested kinds and reserved bytes,
+hidden/projected rank, original-age TTL and native recovery. Clean-worker ROW-key jobs include
+ordinary/portable submission, both engine orders, empty returns and rescaling with a separate
+arrival-count oracle. These additions await Flink 1.18 and 2.2 qualification; no performance
+result is claimed.
+
+## Value Top-N ROW partition keys awaiting qualification
+
+AppendFast, Retract and UpdateFast canonical binding now admit ROW partition columns with
+scalar/ROW descendants. Only the partition ROW columns receive original-byte metadata; scalar
+sort fields and other retained fields keep their existing Arrow encodings. Live input, direct
+stock transfer and persistent initialization use the same selective schema. The native rankers
+normalize redundant nested transport caches before encoding retained payloads, so restored and
+live generic/binary keys compare consistently while original ROW bytes, padding and nested kinds
+remain authoritative. Stock descriptors/serializers and native checkpoint record fields are
+unchanged. UpdateFast unique keys may include a ROW column already in the partition key.
+Normalization also clears Arrow-only ROW runtime-class flags, retaining their logical row-kind
+bits, so binary/nested/generic classes cannot distinguish identical stock partition bytes.
+
+New controls compare complete raw stock state after no-input returns, mixed live representations,
+TTL where already admitted, tied scalar sorts, constant/variable bounds, updating OFFSET and
+private native recovery. Native raw recovery controls use all three algorithms and 2,051 keys.
+Clean-stock full jobs cover both stores/orders, ordinary/portable submission, native checkpoints,
+empty states/returns and keyed rescaling with an independent rank oracle; updating jobs require
+native work in both the ROW-key aggregate and rank owners. These additions await Flink 1.18 and
+2.2 execution. ROW sort fields, collection-bearing keys and independent ROW unique-key columns
+remain gated, as do the existing AppendFast OFFSET and updating TTL cases. This work does not
+qualify upgrades from historical native checkpoints with a different ROW transport shape.
+
+Pending scalar-key canonical binding reconstructs ordinary rank owners from their captured stock
+template when a non-compact DECIMAL or precise TIMESTAMP partition needs that exact key layout.
+This retains the same qualified scalar codecs as portable submission; historical native
+checkpoint key-layout migration remains outside this same-build qualification.
+
+Updating Top-N rebuilds spilled projected partition keys with the released key projection
+layout, including reserved NULL slots for wide decimals and precise timestamps. Existing
+owned ROW bytes remain part of the key representation.
+
+Canonical rank capture reconciles physical Arrow collection-child labels in retained ROW
+payloads after network exchange. Append, updating and retracting schema checks use the shared
+logical collection-label normalization; logical ROW names, types and nullability remain strict.
+Retained bytes, arrival order, clocks and the checkpoint encoding remain unchanged.
+
+Retracting-rank planner controls require the captured stock owner for both retained PROCTIME
+indicators and supported ordinary timestamp payloads. They independently check the logical
+indicator flag in the bound row type, stock descriptor names and both transposes; an ordinary
+timestamp payload alone does not require fallback.
+
+Persistent window-rank firing reconciles Arrow ARRAY element and MAP entry labels against
+the active output schema. A network exchange may rename those physical children after a
+restore; values, NULLs, SQL ROW field names and logical type metadata remain unchanged.

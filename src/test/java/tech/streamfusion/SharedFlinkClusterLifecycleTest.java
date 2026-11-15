@@ -63,7 +63,38 @@ class SharedFlinkClusterLifecycleTest {
   static class CaptureCluster implements BeforeEachCallback {
     @Override
     public void beforeEach(ExtensionContext context) {
+      assertInstanceOf(
+          TestStreamEnvironment.class, StreamExecutionEnvironment.getExecutionEnvironment());
       clusters.add(SharedFlinkCluster.session(context).getMiniCluster());
+    }
+  }
+
+  @Test
+  void pureTestsKeepMemoryBudgetWithoutStartingACluster() {
+    var summary = new SummaryGeneratingListener();
+    try (var launcher = LauncherFactory.openSession()) {
+      launcher.getLauncher().execute(
+          LauncherDiscoveryRequestBuilder.request()
+              .selectors(selectClass(NoExecutionFixture.class))
+              .configurationParameter("junit.jupiter.extensions.autodetection.enabled", "true")
+              .build(), summary);
+    }
+    assertEquals(1, summary.getSummary().getTestsSucceededCount(),
+        summary.getSummary().getFailures().toString());
+  }
+
+  static class RequireUnstartedCluster implements BeforeEachCallback {
+    @Override
+    public void beforeEach(ExtensionContext context) {
+      assertNull(SharedFlinkCluster.session(context).getMiniCluster());
+    }
+  }
+
+  @ExtendWith(RequireUnstartedCluster.class)
+  static class NoExecutionFixture {
+    @Test
+    void onlyNeedsTheNativeMemoryBudget() throws Exception {
+      assertEquals(MemorySize.parse("48g").getBytes(), TaskOffHeapMemory.capacityBytes());
     }
   }
 

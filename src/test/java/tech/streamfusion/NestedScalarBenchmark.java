@@ -83,7 +83,16 @@ class NestedScalarBenchmark {
               assertTrue(
                   metrics.nativeOperators().isEmpty(),
                   "fallback control executed native operators");
-            else RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeCalc");
+            else if (!expectedNative) {
+              // The pinned previous runtime's Rust control predates the Calc display-name change.
+              assertTrue(
+                  metrics.nativeOperators().stream()
+                      .anyMatch(
+                          row ->
+                              row.get("operator").toString().startsWith("NativeCalcExecNode[")
+                                  && ((Number) row.get("recordsIn")).longValue() > 0),
+                  () -> "historical NativeCalc consumed no rows: " + metrics.nativeOperators());
+            } else RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeCalc");
           }
         }
       }

@@ -1,0 +1,779 @@
+{
+  "schema_version": 1,
+  "purpose": "Synchronous scalar JVM two-phase GROUP BY coverage; no general speedup claim",
+  "previous_revision": "76b1e46fb18f5e0fc9a07661f918bb7bdb3309fc",
+  "previous_harness_overlay": "Identical JvmAggregateBenchmark test source with two-phase phase selection; production Java/native sources unchanged",
+  "native_sha256": "f1098d58d12acd9421bec50a6cfc9e49aa29eabaf3113773e656380e9dda6a2b",
+  "environment": {
+    "os": "Darwin",
+    "os_release": "24.3.0",
+    "architecture": "arm64",
+    "java": "Temurin 17.0.17"
+  },
+  "method": {
+    "boundary": "complete job with row source, blackhole row sink, both transposes, production JNI, serialized columnar exchange and managed state",
+    "mini_batch_rows": 1024,
+    "warmups": 2,
+    "measured_runs": 5,
+    "candidate_order": "alternating stock/native per trial",
+    "previous_order": "separate JVMs, native-enabled preceding production with verified whole-island fallback",
+    "cache_entries": 0,
+    "input_and_output_type": "BIGINT JVM UDAF, INT or VARCHAR grouping keys",
+    "values": "JvmAggregateBenchmark production fixture including NULLs",
+    "limits": "Subsecond-to-second complete jobs include startup/JIT; separate-JVM control drift retained. UDF performance exception applies."
+  },
+  "records": [
+    {
+      "flink_line": "1.18",
+      "case": "int-keys4096-p1",
+      "rows": 1000000,
+      "keys": 4096,
+      "key_type": "int",
+      "parallelism": 1,
+      "stock_seconds": [
+        0.443619333,
+        0.458375709,
+        0.445886834,
+        0.449314916,
+        0.430667292
+      ],
+      "previous_seconds": [
+        0.478043583,
+        0.4505905,
+        0.442517417,
+        0.430860458,
+        0.459425792
+      ],
+      "native_seconds": [
+        0.460767417,
+        0.453051792,
+        0.456226333,
+        0.46754525,
+        0.452962416
+      ],
+      "native_execution": [
+        {
+          "phase": "local",
+          "observations": [
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmLocalGroupExecNode[24] records_in=1000000 records_out=1000000",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmLocalGroupExecNode[40] records_in=1000000 records_out=1000000",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmLocalGroupExecNode[80] records_in=1000000 records_out=1000000",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmLocalGroupExecNode[96] records_in=1000000 records_out=1000000",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmLocalGroupExecNode[136] records_in=1000000 records_out=1000000",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmLocalGroupExecNode[152] records_in=1000000 records_out=1000000",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmLocalGroupExecNode[192] records_in=1000000 records_out=1000000"
+          ]
+        },
+        {
+          "phase": "global",
+          "observations": [
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmGlobalGroupExecNode[26] records_in=1000000 records_out=875512",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmGlobalGroupExecNode[42] records_in=1000000 records_out=875512",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmGlobalGroupExecNode[82] records_in=1000000 records_out=875512",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmGlobalGroupExecNode[98] records_in=1000000 records_out=875512",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmGlobalGroupExecNode[138] records_in=1000000 records_out=875512",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmGlobalGroupExecNode[154] records_in=1000000 records_out=875512",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmGlobalGroupExecNode[194] records_in=1000000 records_out=875512"
+          ]
+        }
+      ],
+      "previous_native_operators": 0,
+      "stock_median_seconds": 0.445886834,
+      "stock_range_seconds": [
+        0.430667292,
+        0.458375709
+      ],
+      "previous_median_seconds": 0.4505905,
+      "previous_range_seconds": [
+        0.430860458,
+        0.478043583
+      ],
+      "native_median_seconds": 0.456226333,
+      "native_range_seconds": [
+        0.452962416,
+        0.46754525
+      ]
+    },
+    {
+      "flink_line": "1.18",
+      "case": "int-keys64-p1",
+      "rows": 1000000,
+      "keys": 64,
+      "key_type": "int",
+      "parallelism": 1,
+      "stock_seconds": [
+        0.24727,
+        0.258243125,
+        0.252916166,
+        0.255773666,
+        0.250573792
+      ],
+      "previous_seconds": [
+        0.260936875,
+        0.251975833,
+        0.271303333,
+        0.23975625,
+        0.248791709
+      ],
+      "native_seconds": [
+        0.244416792,
+        0.228263041,
+        0.234220542,
+        0.241026041,
+        0.245331041
+      ],
+      "native_execution": [
+        {
+          "phase": "local",
+          "observations": [
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmLocalGroupExecNode[24] records_in=1000000 records_out=62528",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmLocalGroupExecNode[40] records_in=1000000 records_out=62528",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmLocalGroupExecNode[80] records_in=1000000 records_out=62528",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmLocalGroupExecNode[96] records_in=1000000 records_out=62528",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmLocalGroupExecNode[136] records_in=1000000 records_out=62528",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmLocalGroupExecNode[152] records_in=1000000 records_out=62528",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmLocalGroupExecNode[192] records_in=1000000 records_out=62528"
+          ]
+        },
+        {
+          "phase": "global",
+          "observations": [
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmGlobalGroupExecNode[26] records_in=62528 records_out=3480",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmGlobalGroupExecNode[42] records_in=62528 records_out=3480",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmGlobalGroupExecNode[82] records_in=62528 records_out=3480",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmGlobalGroupExecNode[98] records_in=62528 records_out=3480",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmGlobalGroupExecNode[138] records_in=62528 records_out=3480",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmGlobalGroupExecNode[154] records_in=62528 records_out=3480",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmGlobalGroupExecNode[194] records_in=62528 records_out=3480"
+          ]
+        }
+      ],
+      "previous_native_operators": 0,
+      "stock_median_seconds": 0.252916166,
+      "stock_range_seconds": [
+        0.24727,
+        0.258243125
+      ],
+      "previous_median_seconds": 0.251975833,
+      "previous_range_seconds": [
+        0.23975625,
+        0.271303333
+      ],
+      "native_median_seconds": 0.241026041,
+      "native_range_seconds": [
+        0.228263041,
+        0.245331041
+      ]
+    },
+    {
+      "flink_line": "1.18",
+      "case": "string-keys4096-p3",
+      "rows": 1000000,
+      "keys": 4096,
+      "key_type": "string",
+      "parallelism": 3,
+      "stock_seconds": [
+        0.330804292,
+        0.351102167,
+        0.423906083,
+        0.325702875,
+        0.31623975
+      ],
+      "previous_seconds": [
+        0.367685875,
+        0.348089208,
+        0.300646542,
+        0.35494575,
+        0.300554125
+      ],
+      "native_seconds": [
+        0.353647125,
+        0.342646792,
+        0.362026208,
+        0.315571916,
+        0.3818325
+      ],
+      "native_execution": [
+        {
+          "phase": "local",
+          "observations": [
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmLocalGroupExecNode[24] records_in=333333 records_out=333333",
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmLocalGroupExecNode[24] records_in=333333 records_out=333333",
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmLocalGroupExecNode[24] records_in=333334 records_out=333334",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmLocalGroupExecNode[40] records_in=333333 records_out=333333",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmLocalGroupExecNode[40] records_in=333333 records_out=333333",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmLocalGroupExecNode[40] records_in=333334 records_out=333334",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmLocalGroupExecNode[80] records_in=333333 records_out=333333",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmLocalGroupExecNode[80] records_in=333333 records_out=333333",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmLocalGroupExecNode[80] records_in=333334 records_out=333334",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmLocalGroupExecNode[96] records_in=333333 records_out=333333",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmLocalGroupExecNode[96] records_in=333333 records_out=333333",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmLocalGroupExecNode[96] records_in=333334 records_out=333334",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmLocalGroupExecNode[136] records_in=333333 records_out=333333",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmLocalGroupExecNode[136] records_in=333333 records_out=333333",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmLocalGroupExecNode[136] records_in=333334 records_out=333334",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmLocalGroupExecNode[152] records_in=333333 records_out=333333",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmLocalGroupExecNode[152] records_in=333333 records_out=333333",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmLocalGroupExecNode[152] records_in=333334 records_out=333334",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmLocalGroupExecNode[192] records_in=333333 records_out=333333",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmLocalGroupExecNode[192] records_in=333333 records_out=333333",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmLocalGroupExecNode[192] records_in=333334 records_out=333334"
+          ]
+        },
+        {
+          "phase": "global",
+          "observations": [
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmGlobalGroupExecNode[26] records_in=324947 records_out=228867",
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmGlobalGroupExecNode[26] records_in=323476 records_out=241476",
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmGlobalGroupExecNode[26] records_in=351577 records_out=248521",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmGlobalGroupExecNode[42] records_in=324947 records_out=240836",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmGlobalGroupExecNode[42] records_in=323476 records_out=251786",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmGlobalGroupExecNode[42] records_in=351577 records_out=261038",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmGlobalGroupExecNode[82] records_in=324947 records_out=231825",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmGlobalGroupExecNode[82] records_in=323476 records_out=233797",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmGlobalGroupExecNode[82] records_in=351577 records_out=252649",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmGlobalGroupExecNode[98] records_in=324947 records_out=235077",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmGlobalGroupExecNode[98] records_in=323476 records_out=236217",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmGlobalGroupExecNode[98] records_in=351577 records_out=262853",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmGlobalGroupExecNode[138] records_in=324947 records_out=230316",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmGlobalGroupExecNode[138] records_in=323476 records_out=232835",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmGlobalGroupExecNode[138] records_in=351577 records_out=250373",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmGlobalGroupExecNode[154] records_in=323476 records_out=238285",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmGlobalGroupExecNode[154] records_in=324947 records_out=242700",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmGlobalGroupExecNode[154] records_in=351577 records_out=246509",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmGlobalGroupExecNode[194] records_in=324947 records_out=234773",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmGlobalGroupExecNode[194] records_in=323476 records_out=234780",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmGlobalGroupExecNode[194] records_in=351577 records_out=250676"
+          ]
+        }
+      ],
+      "previous_native_operators": 0,
+      "stock_median_seconds": 0.330804292,
+      "stock_range_seconds": [
+        0.31623975,
+        0.423906083
+      ],
+      "previous_median_seconds": 0.348089208,
+      "previous_range_seconds": [
+        0.300554125,
+        0.367685875
+      ],
+      "native_median_seconds": 0.353647125,
+      "native_range_seconds": [
+        0.315571916,
+        0.3818325
+      ]
+    },
+    {
+      "flink_line": "1.18",
+      "case": "string-keys64-p3",
+      "rows": 1000000,
+      "keys": 64,
+      "key_type": "string",
+      "parallelism": 3,
+      "stock_seconds": [
+        0.172652709,
+        0.181189584,
+        0.173795833,
+        0.168297417,
+        0.1873145
+      ],
+      "previous_seconds": [
+        0.2162965,
+        0.2122035,
+        0.202866666,
+        0.174190541,
+        0.188339625
+      ],
+      "native_seconds": [
+        0.19474525,
+        0.226709959,
+        0.21144025,
+        0.172435583,
+        0.176440167
+      ],
+      "native_execution": [
+        {
+          "phase": "local",
+          "observations": [
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmLocalGroupExecNode[24] records_in=333333 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmLocalGroupExecNode[24] records_in=333333 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmLocalGroupExecNode[24] records_in=333334 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmLocalGroupExecNode[40] records_in=333333 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmLocalGroupExecNode[40] records_in=333333 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmLocalGroupExecNode[40] records_in=333334 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmLocalGroupExecNode[80] records_in=333333 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmLocalGroupExecNode[80] records_in=333333 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmLocalGroupExecNode[80] records_in=333334 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmLocalGroupExecNode[96] records_in=333333 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmLocalGroupExecNode[96] records_in=333333 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmLocalGroupExecNode[96] records_in=333334 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmLocalGroupExecNode[136] records_in=333333 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmLocalGroupExecNode[136] records_in=333333 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmLocalGroupExecNode[136] records_in=333334 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmLocalGroupExecNode[152] records_in=333333 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmLocalGroupExecNode[152] records_in=333333 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmLocalGroupExecNode[152] records_in=333334 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmLocalGroupExecNode[192] records_in=333333 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmLocalGroupExecNode[192] records_in=333333 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmLocalGroupExecNode[192] records_in=333334 records_out=20864"
+          ]
+        },
+        {
+          "phase": "global",
+          "observations": [
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmGlobalGroupExecNode[26] records_in=19560 records_out=324",
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmGlobalGroupExecNode[26] records_in=19560 records_out=381",
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmGlobalGroupExecNode[26] records_in=23472 records_out=486",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmGlobalGroupExecNode[42] records_in=19560 records_out=324",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmGlobalGroupExecNode[42] records_in=19560 records_out=381",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmGlobalGroupExecNode[42] records_in=23472 records_out=507",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmGlobalGroupExecNode[82] records_in=19560 records_out=324",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmGlobalGroupExecNode[82] records_in=19560 records_out=381",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmGlobalGroupExecNode[82] records_in=23472 records_out=507",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmGlobalGroupExecNode[98] records_in=19560 records_out=324",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmGlobalGroupExecNode[98] records_in=19560 records_out=381",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmGlobalGroupExecNode[98] records_in=23472 records_out=507",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmGlobalGroupExecNode[138] records_in=19560 records_out=324",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmGlobalGroupExecNode[138] records_in=19560 records_out=381",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmGlobalGroupExecNode[138] records_in=23472 records_out=507",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmGlobalGroupExecNode[154] records_in=19560 records_out=324",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmGlobalGroupExecNode[154] records_in=19560 records_out=381",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmGlobalGroupExecNode[154] records_in=23472 records_out=507",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmGlobalGroupExecNode[194] records_in=19560 records_out=324",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmGlobalGroupExecNode[194] records_in=19560 records_out=381",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmGlobalGroupExecNode[194] records_in=23472 records_out=507"
+          ]
+        }
+      ],
+      "previous_native_operators": 0,
+      "stock_median_seconds": 0.173795833,
+      "stock_range_seconds": [
+        0.168297417,
+        0.1873145
+      ],
+      "previous_median_seconds": 0.202866666,
+      "previous_range_seconds": [
+        0.174190541,
+        0.2162965
+      ],
+      "native_median_seconds": 0.19474525,
+      "native_range_seconds": [
+        0.172435583,
+        0.226709959
+      ]
+    },
+    {
+      "flink_line": "2.2",
+      "case": "int-keys4096-p1",
+      "rows": 1000000,
+      "keys": 4096,
+      "key_type": "int",
+      "parallelism": 1,
+      "stock_seconds": [
+        0.467749542,
+        0.477134041,
+        0.46553225,
+        0.478577875,
+        0.487219709
+      ],
+      "previous_seconds": [
+        1.121531083,
+        1.082698833,
+        1.027444167,
+        0.960321958,
+        0.990093083
+      ],
+      "native_seconds": [
+        0.465440916,
+        0.478825333,
+        0.500910584,
+        0.4538745,
+        0.477267
+      ],
+      "native_execution": [
+        {
+          "phase": "local",
+          "observations": [
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmLocalGroupExecNode[24] records_in=1000000 records_out=1000000",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmLocalGroupExecNode[40] records_in=1000000 records_out=1000000",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmLocalGroupExecNode[80] records_in=1000000 records_out=1000000",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmLocalGroupExecNode[96] records_in=1000000 records_out=1000000",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmLocalGroupExecNode[136] records_in=1000000 records_out=1000000",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmLocalGroupExecNode[152] records_in=1000000 records_out=1000000",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmLocalGroupExecNode[192] records_in=1000000 records_out=1000000"
+          ]
+        },
+        {
+          "phase": "global",
+          "observations": [
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmGlobalGroupExecNode[26] records_in=1000000 records_out=875512",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmGlobalGroupExecNode[42] records_in=1000000 records_out=875512",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmGlobalGroupExecNode[82] records_in=1000000 records_out=875512",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmGlobalGroupExecNode[98] records_in=1000000 records_out=875512",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmGlobalGroupExecNode[138] records_in=1000000 records_out=875512",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmGlobalGroupExecNode[154] records_in=1000000 records_out=875512",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmGlobalGroupExecNode[194] records_in=1000000 records_out=875512"
+          ]
+        }
+      ],
+      "previous_native_operators": 0,
+      "stock_median_seconds": 0.477134041,
+      "stock_range_seconds": [
+        0.46553225,
+        0.487219709
+      ],
+      "previous_median_seconds": 1.027444167,
+      "previous_range_seconds": [
+        0.960321958,
+        1.121531083
+      ],
+      "native_median_seconds": 0.477267,
+      "native_range_seconds": [
+        0.4538745,
+        0.500910584
+      ]
+    },
+    {
+      "flink_line": "2.2",
+      "case": "int-keys64-p1",
+      "rows": 1000000,
+      "keys": 64,
+      "key_type": "int",
+      "parallelism": 1,
+      "stock_seconds": [
+        0.251172625,
+        0.257567708,
+        0.260622084,
+        0.274581791,
+        0.25482625
+      ],
+      "previous_seconds": [
+        0.665630167,
+        0.607071292,
+        0.5311765,
+        0.499939417,
+        0.567481958
+      ],
+      "native_seconds": [
+        0.243623041,
+        0.236567958,
+        0.247899584,
+        0.246744291,
+        0.234274
+      ],
+      "native_execution": [
+        {
+          "phase": "local",
+          "observations": [
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmLocalGroupExecNode[24] records_in=1000000 records_out=62528",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmLocalGroupExecNode[40] records_in=1000000 records_out=62528",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmLocalGroupExecNode[80] records_in=1000000 records_out=62528",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmLocalGroupExecNode[96] records_in=1000000 records_out=62528",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmLocalGroupExecNode[136] records_in=1000000 records_out=62528",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmLocalGroupExecNode[152] records_in=1000000 records_out=62528",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmLocalGroupExecNode[192] records_in=1000000 records_out=62528"
+          ]
+        },
+        {
+          "phase": "global",
+          "observations": [
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmGlobalGroupExecNode[26] records_in=62528 records_out=3480",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmGlobalGroupExecNode[42] records_in=62528 records_out=3480",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmGlobalGroupExecNode[82] records_in=62528 records_out=3480",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmGlobalGroupExecNode[98] records_in=62528 records_out=3480",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmGlobalGroupExecNode[138] records_in=62528 records_out=3480",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmGlobalGroupExecNode[154] records_in=62528 records_out=3480",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmGlobalGroupExecNode[194] records_in=62528 records_out=3480"
+          ]
+        }
+      ],
+      "previous_native_operators": 0,
+      "stock_median_seconds": 0.257567708,
+      "stock_range_seconds": [
+        0.251172625,
+        0.274581791
+      ],
+      "previous_median_seconds": 0.567481958,
+      "previous_range_seconds": [
+        0.499939417,
+        0.665630167
+      ],
+      "native_median_seconds": 0.243623041,
+      "native_range_seconds": [
+        0.234274,
+        0.247899584
+      ]
+    },
+    {
+      "flink_line": "2.2",
+      "case": "string-keys4096-p3",
+      "rows": 1000000,
+      "keys": 4096,
+      "key_type": "string",
+      "parallelism": 3,
+      "stock_seconds": [
+        0.304076625,
+        0.305796167,
+        0.337723417,
+        0.346177209,
+        0.348905417
+      ],
+      "previous_seconds": [
+        1.536029583,
+        1.362176083,
+        1.3258055,
+        1.292635291,
+        1.425278541
+      ],
+      "native_seconds": [
+        0.36744525,
+        0.379983958,
+        0.324102917,
+        0.3761615,
+        0.329599
+      ],
+      "native_execution": [
+        {
+          "phase": "local",
+          "observations": [
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmLocalGroupExecNode[24] records_in=333333 records_out=333333",
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmLocalGroupExecNode[24] records_in=333333 records_out=333333",
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmLocalGroupExecNode[24] records_in=333334 records_out=333334",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmLocalGroupExecNode[40] records_in=333333 records_out=333333",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmLocalGroupExecNode[40] records_in=333333 records_out=333333",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmLocalGroupExecNode[40] records_in=333334 records_out=333334",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmLocalGroupExecNode[80] records_in=333333 records_out=333333",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmLocalGroupExecNode[80] records_in=333333 records_out=333333",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmLocalGroupExecNode[80] records_in=333334 records_out=333334",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmLocalGroupExecNode[96] records_in=333333 records_out=333333",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmLocalGroupExecNode[96] records_in=333333 records_out=333333",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmLocalGroupExecNode[96] records_in=333334 records_out=333334",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmLocalGroupExecNode[136] records_in=333333 records_out=333333",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmLocalGroupExecNode[136] records_in=333333 records_out=333333",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmLocalGroupExecNode[136] records_in=333334 records_out=333334",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmLocalGroupExecNode[152] records_in=333333 records_out=333333",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmLocalGroupExecNode[152] records_in=333333 records_out=333333",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmLocalGroupExecNode[152] records_in=333334 records_out=333334",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmLocalGroupExecNode[192] records_in=333333 records_out=333333",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmLocalGroupExecNode[192] records_in=333333 records_out=333333",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmLocalGroupExecNode[192] records_in=333334 records_out=333334"
+          ]
+        },
+        {
+          "phase": "global",
+          "observations": [
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmGlobalGroupExecNode[26] records_in=323476 records_out=235004",
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmGlobalGroupExecNode[26] records_in=324947 records_out=229951",
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmGlobalGroupExecNode[26] records_in=351577 records_out=255412",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmGlobalGroupExecNode[42] records_in=323476 records_out=232547",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmGlobalGroupExecNode[42] records_in=324947 records_out=236193",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmGlobalGroupExecNode[42] records_in=351577 records_out=261156",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmGlobalGroupExecNode[82] records_in=323476 records_out=239031",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmGlobalGroupExecNode[82] records_in=324947 records_out=237001",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmGlobalGroupExecNode[82] records_in=351577 records_out=254307",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmGlobalGroupExecNode[98] records_in=323476 records_out=238913",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmGlobalGroupExecNode[98] records_in=324947 records_out=231402",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmGlobalGroupExecNode[98] records_in=351577 records_out=252204",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmGlobalGroupExecNode[138] records_in=323476 records_out=237195",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmGlobalGroupExecNode[138] records_in=324947 records_out=234908",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmGlobalGroupExecNode[138] records_in=351577 records_out=261165",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmGlobalGroupExecNode[154] records_in=323476 records_out=235900",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmGlobalGroupExecNode[154] records_in=324947 records_out=241809",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmGlobalGroupExecNode[154] records_in=351577 records_out=249777",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmGlobalGroupExecNode[194] records_in=323476 records_out=239226",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmGlobalGroupExecNode[194] records_in=324947 records_out=231364",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmGlobalGroupExecNode[194] records_in=351577 records_out=250088"
+          ]
+        }
+      ],
+      "previous_native_operators": 0,
+      "stock_median_seconds": 0.337723417,
+      "stock_range_seconds": [
+        0.304076625,
+        0.348905417
+      ],
+      "previous_median_seconds": 1.362176083,
+      "previous_range_seconds": [
+        1.292635291,
+        1.536029583
+      ],
+      "native_median_seconds": 0.36744525,
+      "native_range_seconds": [
+        0.324102917,
+        0.379983958
+      ]
+    },
+    {
+      "flink_line": "2.2",
+      "case": "string-keys64-p3",
+      "rows": 1000000,
+      "keys": 64,
+      "key_type": "string",
+      "parallelism": 3,
+      "stock_seconds": [
+        0.18656375,
+        0.187222,
+        0.241645333,
+        0.197558416,
+        0.199643708
+      ],
+      "previous_seconds": [
+        1.319376375,
+        0.864396084,
+        0.746052791,
+        0.724567,
+        0.804563458
+      ],
+      "native_seconds": [
+        0.200453708,
+        0.189382833,
+        0.257662125,
+        0.217589083,
+        0.165918708
+      ],
+      "native_execution": [
+        {
+          "phase": "local",
+          "observations": [
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmLocalGroupExecNode[24] records_in=333333 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmLocalGroupExecNode[24] records_in=333334 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmLocalGroupExecNode[24] records_in=333333 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmLocalGroupExecNode[40] records_in=333333 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmLocalGroupExecNode[40] records_in=333333 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmLocalGroupExecNode[40] records_in=333334 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmLocalGroupExecNode[80] records_in=333334 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmLocalGroupExecNode[80] records_in=333333 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmLocalGroupExecNode[80] records_in=333333 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmLocalGroupExecNode[96] records_in=333333 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmLocalGroupExecNode[96] records_in=333334 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmLocalGroupExecNode[96] records_in=333333 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmLocalGroupExecNode[136] records_in=333334 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmLocalGroupExecNode[136] records_in=333333 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmLocalGroupExecNode[136] records_in=333333 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmLocalGroupExecNode[152] records_in=333333 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmLocalGroupExecNode[152] records_in=333334 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmLocalGroupExecNode[152] records_in=333333 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmLocalGroupExecNode[192] records_in=333333 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmLocalGroupExecNode[192] records_in=333334 records_out=20864",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmLocalGroupExecNode[192] records_in=333333 records_out=20864"
+          ]
+        },
+        {
+          "phase": "global",
+          "observations": [
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmGlobalGroupExecNode[26] records_in=19560 records_out=324",
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmGlobalGroupExecNode[26] records_in=23472 records_out=486",
+            "[jvm-aggregate-native] shape=udaf trial=0 operator=NativeJvmGlobalGroupExecNode[26] records_in=19560 records_out=381",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmGlobalGroupExecNode[42] records_in=19560 records_out=324",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmGlobalGroupExecNode[42] records_in=23472 records_out=507",
+            "[jvm-aggregate-native] shape=udaf trial=1 operator=NativeJvmGlobalGroupExecNode[42] records_in=19560 records_out=381",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmGlobalGroupExecNode[82] records_in=19560 records_out=324",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmGlobalGroupExecNode[82] records_in=23472 records_out=507",
+            "[jvm-aggregate-native] shape=udaf trial=2 operator=NativeJvmGlobalGroupExecNode[82] records_in=19560 records_out=381",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmGlobalGroupExecNode[98] records_in=19560 records_out=324",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmGlobalGroupExecNode[98] records_in=23472 records_out=507",
+            "[jvm-aggregate-native] shape=udaf trial=3 operator=NativeJvmGlobalGroupExecNode[98] records_in=19560 records_out=381",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmGlobalGroupExecNode[138] records_in=19560 records_out=324",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmGlobalGroupExecNode[138] records_in=23472 records_out=507",
+            "[jvm-aggregate-native] shape=udaf trial=4 operator=NativeJvmGlobalGroupExecNode[138] records_in=19560 records_out=381",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmGlobalGroupExecNode[154] records_in=19560 records_out=324",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmGlobalGroupExecNode[154] records_in=23472 records_out=507",
+            "[jvm-aggregate-native] shape=udaf trial=5 operator=NativeJvmGlobalGroupExecNode[154] records_in=19560 records_out=381",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmGlobalGroupExecNode[194] records_in=19560 records_out=324",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmGlobalGroupExecNode[194] records_in=23472 records_out=507",
+            "[jvm-aggregate-native] shape=udaf trial=6 operator=NativeJvmGlobalGroupExecNode[194] records_in=19560 records_out=381"
+          ]
+        }
+      ],
+      "previous_native_operators": 0,
+      "stock_median_seconds": 0.197558416,
+      "stock_range_seconds": [
+        0.18656375,
+        0.241645333
+      ],
+      "previous_median_seconds": 0.804563458,
+      "previous_range_seconds": [
+        0.724567,
+        1.319376375
+      ],
+      "native_median_seconds": 0.200453708,
+      "native_range_seconds": [
+        0.165918708,
+        0.257662125
+      ]
+    }
+  ],
+  "validation": {
+    "1.18": {
+      "passed": true,
+      "checks": [
+        {
+          "suite": "tech.streamfusion.FlinkJvmTwoPhaseSqlHarnessTest",
+          "selection": "complete scoped suite",
+          "tests": 56,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.StatefulSqlRescaleTest",
+          "selection": "complete scoped suite",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.operator.NativeJvmMiniBatchCheckpointTest",
+          "selection": "complete scoped suite",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.FlinkJvmTwoPhaseSqlHarnessTest",
+          "selection": "three-task scalar grouping keys",
+          "tests": 19,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ],
+      "total_checks": 83
+    },
+    "2.2": {
+      "passed": true,
+      "checks": [
+        {
+          "suite": "tech.streamfusion.FlinkJvmTwoPhaseSqlHarnessTest",
+          "selection": "complete scoped suite",
+          "tests": 75,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.StatefulSqlRescaleTest",
+          "selection": "complete scoped suite",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "tech.streamfusion.operator.NativeJvmMiniBatchCheckpointTest",
+          "selection": "complete scoped suite",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ],
+      "total_checks": 83
+    },
+    "documentation": "strict MkDocs build passed",
+    "execution_contracts": "38 execution audit/route/scope unit checks passed"
+  }
+}

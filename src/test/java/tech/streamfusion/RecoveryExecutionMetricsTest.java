@@ -11,6 +11,7 @@ class RecoveryExecutionMetricsTest {
   @ParameterizedTest
   @CsvSource({
     "NativeCalc, NativeCalc(select=[id])",
+    "NativeCalc, NativeCalcExecNode[14]",
     "NativeFilter, NativeFilter(where=[true])",
     "NativeColumnarGroupAggregate, NativeColumnarGroupAggExecNode[1]"
   })
@@ -29,6 +30,11 @@ class RecoveryExecutionMetricsTest {
         () ->
             RecoveryExecutionMetrics.assertConsumed(
                 observation(planOperator + "Other", 5), planOperator));
+    assertThrows(
+        AssertionError.class,
+        () ->
+            RecoveryExecutionMetrics.assertConsumed(
+                observation("NativeCalcExecNodeOther[14]", 5), planOperator));
   }
 
   private static List<Map<String, Object>> observation(String operator, long recordsIn) {

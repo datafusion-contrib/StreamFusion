@@ -333,12 +333,13 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             );
             for row in 0..batch.num_rows() {
                 let key = ByteKey::from(encoder.encode(row));
-                added += staged_group_change_bytes(&key, &None);
+                added += staged_group_change_bytes(&key, &None, &[]);
                 self.staged_order.push(key.clone());
                 self.staged_changes.insert(
                     key,
                     StagedGroupChange {
                         old: None,
+                        string_caches: Vec::new(),
                         key_batch,
                         key_row: row,
                     },

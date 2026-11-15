@@ -50,6 +50,10 @@ fn main() {
         "FLOOR" | "CEIL" | "CEILING" | "ROUND" | "TRUNCATE"
     ));
     let function_option = format!("-Dsf.integral.rounding.function={function}");
+    let position: Option<i32> = std::env::var("SF_INTEGRAL_ROUNDING_POSITION")
+        .ok()
+        .map(|v| v.parse().unwrap());
+    let position_option = format!("-Dsf.integral.rounding.position={}", position.unwrap_or(0));
     let element = args.get(1).map_or("INT", String::as_str);
     let nullable = args.get(2).is_some_and(|s| s == "true");
     let binary = args.get(3).is_some_and(|s| s == "true");
@@ -66,16 +70,18 @@ fn main() {
         "-Djava.library.path={}",
         std::env::var("SF_NATIVE_LIB_DIR").unwrap_or_default()
     );
-    let options = jni::InitArgsBuilder::new()
+    let mut options = jni::InitArgsBuilder::new()
         .version(jni::JNIVersion::V8)
         .option(&cp)
         .option(&lib)
         .option(&function_option)
         .option("-Xmx1g")
         .option("-Dstreamfusion.native.development=true")
-        .option("--add-opens=java.base/java.nio=ALL-UNNAMED")
-        .build()
-        .unwrap();
+        .option("--add-opens=java.base/java.nio=ALL-UNNAMED");
+    if position.is_some() {
+        options = options.option(&position_option);
+    }
+    let options = options.build().unwrap();
     let vm = jni::JavaVM::new(options).unwrap();
     streamfusion_bridge::capture_jvm_raw(vm.get_java_vm_pointer());
     let mut env = vm.attach_current_thread().unwrap();
@@ -92,16 +98,6 @@ fn main() {
     )
     .i()
     .unwrap();
-    let schema = java!(
-        env,
-        env.call_static_method(class, "schema", "()Ljava/lang/String;", &[])
-    )
-    .l()
-    .unwrap();
-    let schema: String = env
-        .get_string(&jni::objects::JString::from(schema))
-        .unwrap()
-        .into();
     java!(
         env,
         env.call_static_method(
@@ -154,15 +150,50 @@ fn main() {
         vec![input],
     )
     .unwrap();
-    let mut previous = CalcProgram::new(
-        vec![38, 0],
-        vec![0, 0],
-        vec![1, 0],
-        vec![i64::from(id), 0],
-        vec![],
-        vec![Some(schema)],
-    );
-    let mut native = CalcProgram::new(vec![0], vec![0], vec![0], vec![], vec![], vec![]);
+    let mut previous = if position.is_some() {
+        let result_code = java!(env, env.call_static_method(class, "resultCode", "()I", &[]))
+            .i()
+            .unwrap();
+        CalcProgram::new(
+            vec![17, 0],
+            vec![0, 0],
+            vec![1, 0],
+            vec![i64::from(id), i64::from(result_code)],
+            vec![],
+            vec![],
+        )
+    } else {
+        let schema = java!(
+            env,
+            env.call_static_method(class, "schema", "()Ljava/lang/String;", &[])
+        )
+        .l()
+        .unwrap();
+        let schema: String = env
+            .get_string(&jni::objects::JString::from(schema))
+            .unwrap()
+            .into();
+        CalcProgram::new(
+            vec![38, 0],
+            vec![0, 0],
+            vec![1, 0],
+            vec![i64::from(id), 0],
+            vec![],
+            vec![Some(schema)],
+        )
+    };
+    let mut native = if let Some(position) = position {
+        CalcProgram::new(
+            vec![6, 0, 7],
+            vec![if function == "TRUNCATE" { 231 } else { 230 }, 0, 0],
+            vec![2, 0, 0],
+            vec![i64::from(position)],
+            vec![],
+            vec![],
+        )
+    } else {
+        CalcProgram::new(vec![0], vec![0], vec![0], vec![], vec![], vec![])
+    };
     let expected = previous.run(batch.clone());
     let actual = native.run(batch.clone());
     assert_eq!(actual.schema(), expected.schema());
@@ -207,8 +238,8 @@ fn main() {
                 (start.elapsed().as_nanos(), black_box(sum))
             };
             assert_eq!(digest, expected);
-            println!("integral_rounding,{function},{element},{nullable},{binary},{rows},{},{trial},{},{},{nanos},{digest}",
-                rows*loops,trial<warmups,engine_name);
+            println!("integral_rounding,{function},{element},{nullable},{binary},{rows},{},{trial},{},{},{nanos},{digest},{}",
+                rows*loops,trial<warmups,engine_name,position.map_or_else(|| "default".into(), |v| v.to_string()));
         }
     }
     java!(env, env.call_static_method(class, "close", "()V", &[]));

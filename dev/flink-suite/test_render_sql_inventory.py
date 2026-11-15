@@ -54,6 +54,28 @@ class RenderSqlInventoryTest(unittest.TestCase):
             self.assertNotEqual(0, result.returncode)
             self.assertIn('Incomplete inventory', result.stderr)
 
+    def test_published_snapshot_preserves_sources_and_does_not_rewrite_provenance(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path, _ = self.fixture(root)
+            output = root / 'report'
+            subprocess.run([sys.executable, str(RENDER), '--inventory', str(path), '--output', str(output)], check=True)
+            snapshot = output / 'flink-2.2.json.gz'
+            data = json.loads(gzip.decompress(snapshot.read_bytes()))
+            data['tests'][0]['source_url'] = 'https://github.com/apache/flink/blob/release-2.2.1/test.java'
+            snapshot.write_bytes(gzip.compress(json.dumps(data).encode(), mtime=0))
+            original = snapshot.read_bytes()
+            index = output / 'index.md'
+            index.write_text('Curated historical run URLs and caveats\n')
+            subprocess.run([sys.executable, str(RENDER), '--snapshot', str(snapshot), '--output', str(output)], check=True)
+            self.assertEqual(original, snapshot.read_bytes())
+            self.assertEqual('Curated historical run URLs and caveats\n', index.read_text())
+            with (output / 'flink-2.2.csv').open() as stream:
+                exported = next(csv.DictReader(stream))
+            self.assertEqual(data['tests'][0]['source_url'], exported['source_url'])
+            self.assertIn(data['tests'][0]['source_url'], (output / 'report.html').read_text())
+            self.assertIn('revision', (output / 'report.html').read_text())
+
     def test_distinct_suites_merge_without_losing_invocations(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

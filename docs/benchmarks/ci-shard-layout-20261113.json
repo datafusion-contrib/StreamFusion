@@ -1,0 +1,2217 @@
+{
+  "source_run": 43116124202,
+  "source_head": "b531553fa72b12d4da2d5e96d092c6828920dbf3",
+  "units": "seconds of JUnit class wall time; not CPU or a whole-CI speedup",
+  "inventory": [
+    "tech/streamfusion/CanonicalAppendExtremaJobTest",
+    "tech/streamfusion/CanonicalAppendStringExtremaJobTest",
+    "tech/streamfusion/CanonicalAppendTopNJobTest",
+    "tech/streamfusion/CanonicalBareUpdateDedupJobTest",
+    "tech/streamfusion/CanonicalBoundedOverJobTest",
+    "tech/streamfusion/CanonicalBufferedDedupJobTest",
+    "tech/streamfusion/CanonicalCachedGlobalManagedUdfGroupJobTest",
+    "tech/streamfusion/CanonicalCachedManagedUdfGroupJobTest",
+    "tech/streamfusion/CanonicalCachedMiniBatchManagedUdfGroupJobTest",
+    "tech/streamfusion/CanonicalDistinctWindowAggregateJobTest",
+    "tech/streamfusion/CanonicalEagerDedupJobTest",
+    "tech/streamfusion/CanonicalEventUnboundedOverJobTest",
+    "tech/streamfusion/CanonicalEventUnboundedRangeCleanupJobTest",
+    "tech/streamfusion/CanonicalEventUnboundedRangeJobTest",
+    "tech/streamfusion/CanonicalEventUnboundedRowsCleanupJobTest",
+    "tech/streamfusion/CanonicalEventUnboundedRowsJobTest",
+    "tech/streamfusion/CanonicalFirstNJobTest",
+    "tech/streamfusion/CanonicalFixedWindowAggregateJobTest",
+    "tech/streamfusion/CanonicalGeneratedIntervalJoinJobTest",
+    "tech/streamfusion/CanonicalGeneratedTemporalJoinJobTest",
+    "tech/streamfusion/CanonicalGeneratedWindowJoinJobTest",
+    "tech/streamfusion/CanonicalGlobalAppendExtremaJobTest",
+    "tech/streamfusion/CanonicalGlobalEventUnboundedRangeCleanupJobTest",
+    "tech/streamfusion/CanonicalGlobalEventUnboundedRangeJobTest",
+    "tech/streamfusion/CanonicalGlobalEventUnboundedRowsCleanupJobTest",
+    "tech/streamfusion/CanonicalGlobalEventUnboundedRowsJobTest",
+    "tech/streamfusion/CanonicalGlobalGroupArithmeticAppendJobTest",
+    "tech/streamfusion/CanonicalGlobalGroupArithmeticJobTest",
+    "tech/streamfusion/CanonicalGlobalHiddenExtremaJobTest",
+    "tech/streamfusion/CanonicalGlobalManagedUdfGroupJobTest",
+    "tech/streamfusion/CanonicalGlobalRetractingExtremaJobTest",
+    "tech/streamfusion/CanonicalGlobalUnboundedOverConstantJobTest",
+    "tech/streamfusion/CanonicalGlobalUnboundedOverJobTest",
+    "tech/streamfusion/CanonicalGroupArithmeticAppendJobTest",
+    "tech/streamfusion/CanonicalGroupArithmeticIntJobTest",
+    "tech/streamfusion/CanonicalGroupArithmeticJobTest",
+    "tech/streamfusion/CanonicalGroupBooleanExtremaJobTest",
+    "tech/streamfusion/CanonicalGroupDateExtremaJobTest",
+    "tech/streamfusion/CanonicalGroupSumDistinctJobTest",
+    "tech/streamfusion/CanonicalGroupTime0ExtremaJobTest",
+    "tech/streamfusion/CanonicalGroupTime3ExtremaJobTest",
+    "tech/streamfusion/CanonicalGroupTypedCheckpointJobTest",
+    "tech/streamfusion/CanonicalGroupTypedContinueJobTest",
+    "tech/streamfusion/CanonicalGroupTypedNoInputJobTest",
+    "tech/streamfusion/CanonicalGroupTypedRescaleJobTest",
+    "tech/streamfusion/CanonicalHiddenExtremaJobTest",
+    "tech/streamfusion/CanonicalIntervalJoinJobTest",
+    "tech/streamfusion/CanonicalKafkaPartitionDiscoveryJobTest",
+    "tech/streamfusion/CanonicalKafkaPipelineCompletionFailureJobTest",
+    "tech/streamfusion/CanonicalKafkaPipelineFailureJobTest",
+    "tech/streamfusion/CanonicalKafkaPipelineFencingJobTest",
+    "tech/streamfusion/CanonicalKafkaPipelineJobTest",
+    "tech/streamfusion/CanonicalKafkaPipelineProcessFailureJobTest",
+    "tech/streamfusion/CanonicalKafkaReaderWriterRescaleJobTest",
+    "tech/streamfusion/CanonicalKafkaSinkBarrierJobTest",
+    "tech/streamfusion/CanonicalKafkaSinkCompletionFailureJobTest",
+    "tech/streamfusion/CanonicalKafkaSinkFailureJobTest",
+    "tech/streamfusion/CanonicalKafkaSinkFencingJobTest",
+    "tech/streamfusion/CanonicalKafkaSinkJobTest",
+    "tech/streamfusion/CanonicalKafkaSinkProcessFailureJobTest",
+    "tech/streamfusion/CanonicalKafkaSourceJobTest",
+    "tech/streamfusion/CanonicalKeylessAntiJoinJobTest",
+    "tech/streamfusion/CanonicalLegacyDistinctSessionJobTest",
+    "tech/streamfusion/CanonicalLegacySessionJobTest",
+    "tech/streamfusion/CanonicalManagedUdfContainerKeyJobTest",
+    "tech/streamfusion/CanonicalManagedUdfDecimalKeyJobTest",
+    "tech/streamfusion/CanonicalManagedUdfGroupJobTest",
+    "tech/streamfusion/CanonicalManagedUdfStructuredKeyJobTest",
+    "tech/streamfusion/CanonicalManagedUdfTimestampKeyJobTest",
+    "tech/streamfusion/CanonicalManagedUdfWideKeyJobTest",
+    "tech/streamfusion/CanonicalMiniBatchManagedUdfGroupJobTest",
+    "tech/streamfusion/CanonicalMiniBatchStringJobTest",
+    "tech/streamfusion/CanonicalMiniBatchSumDistinctJobTest",
+    "tech/streamfusion/CanonicalNormalizerJobTest",
+    "tech/streamfusion/CanonicalNormalizerNestedRowKeyJobTest",
+    "tech/streamfusion/CanonicalNormalizerRowKeyJobTest",
+    "tech/streamfusion/CanonicalOrdinaryAppendTopNJobTest",
+    "tech/streamfusion/CanonicalOrdinaryBareUpdateDedupJobTest",
+    "tech/streamfusion/CanonicalOrdinaryBufferedDedupJobTest",
+    "tech/streamfusion/CanonicalOrdinaryEagerDedupJobTest",
+    "tech/streamfusion/CanonicalOrdinaryExplicitTemporalJoinJobTest",
+    "tech/streamfusion/CanonicalOrdinaryFirstNJobTest",
+    "tech/streamfusion/CanonicalOrdinaryIntervalJoinJobTest",
+    "tech/streamfusion/CanonicalOrdinaryNormalizerJobTest",
+    "tech/streamfusion/CanonicalOrdinaryNormalizerNestedRowKeyJobTest",
+    "tech/streamfusion/CanonicalOrdinaryNormalizerRowKeyJobTest",
+    "tech/streamfusion/CanonicalOrdinaryRegularJoinJobTest",
+    "tech/streamfusion/CanonicalOrdinaryRetractingAggregateGraphJobTest",
+    "tech/streamfusion/CanonicalOrdinaryRetractingTopNJobTest",
+    "tech/streamfusion/CanonicalOrdinarySharedFirstNJobTest",
+    "tech/streamfusion/CanonicalOrdinaryTemporalJoinJobTest",
+    "tech/streamfusion/CanonicalOrdinaryTemporalSortJobTest",
+    "tech/streamfusion/CanonicalOrdinaryUpdateTopNJobTest",
+    "tech/streamfusion/CanonicalOrdinaryWindowJoinJobTest",
+    "tech/streamfusion/CanonicalRegularJoinJobTest",
+    "tech/streamfusion/CanonicalRetractingAggregateGraphJobTest",
+    "tech/streamfusion/CanonicalRetractingBooleanExtremaJobTest",
+    "tech/streamfusion/CanonicalRetractingDateExtremaJobTest",
+    "tech/streamfusion/CanonicalRetractingExtremaJobTest",
+    "tech/streamfusion/CanonicalRetractingIntExtremaJobTest",
+    "tech/streamfusion/CanonicalRetractingProctimeJobTest",
+    "tech/streamfusion/CanonicalRetractingSmallIntExtremaJobTest",
+    "tech/streamfusion/CanonicalRetractingTime0ExtremaJobTest",
+    "tech/streamfusion/CanonicalRetractingTime3ExtremaJobTest",
+    "tech/streamfusion/CanonicalRetractingTinyIntExtremaJobTest",
+    "tech/streamfusion/CanonicalRetractingTopNJobTest",
+    "tech/streamfusion/CanonicalSessionWindowAggregateJobTest",
+    "tech/streamfusion/CanonicalSharedFirstNJobTest",
+    "tech/streamfusion/CanonicalTemporalJoinCommitFailureJobTest",
+    "tech/streamfusion/CanonicalTemporalJoinJobTest",
+    "tech/streamfusion/CanonicalTemporalSortJobTest",
+    "tech/streamfusion/CanonicalTwoPhaseMiniBatchStringJobTest",
+    "tech/streamfusion/CanonicalTwoPhaseSumDistinctJobTest",
+    "tech/streamfusion/CanonicalTwoPhaseWindowAggregateJobTest",
+    "tech/streamfusion/CanonicalUnboundedOverConstantJobTest",
+    "tech/streamfusion/CanonicalUnboundedOverJobTest",
+    "tech/streamfusion/CanonicalUpdateTopNJobTest",
+    "tech/streamfusion/CanonicalWindowDeduplicateJobTest",
+    "tech/streamfusion/CanonicalWindowJoinJobTest",
+    "tech/streamfusion/CanonicalWindowRankJobTest"
+  ],
+  "inventory_sha256": "aa0f72bd3192746068a76fb24ab8d0f548e964a6dcb19bd0b3feab7d1f1781ec",
+  "planner_source_commit": "c66a3de982f04633366048b8aa46eb6d43a4e945",
+  "planner_source": "bin/ci_runtime_test_shards.py",
+  "planner_sha256": "2da34dfa387ae6792884e22e4a7bd8ee65e33ac7303477c39adc161ac9a9b1e7",
+  "weights_source": "dev/ci/runtime-durations.json",
+  "weights_sha256": "577545ef962c5b22e87a0a17f807c9a435c4d9ed9a7ed2b6fb978e9287a5a821",
+  "cohorts": {
+    "flink1.18-jdk11": {
+      "shards": [
+        {
+          "index": 1,
+          "actual_job_runner_seconds": 1734.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "44": 199.935,
+            "51": 472.188,
+            "53": 180.772,
+            "82": 1528.732,
+            "83": 678.249,
+            "104": 636.47,
+            "109": 664.387
+          }
+        },
+        {
+          "index": 10,
+          "actual_job_runner_seconds": 2916.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "3": 664.726,
+            "5": 1737.152,
+            "9": 1332.717,
+            "52": 318.999,
+            "61": 233.8,
+            "68": 2594.2,
+            "74": 1197.217,
+            "101": 998.313
+          }
+        },
+        {
+          "index": 11,
+          "actual_job_runner_seconds": 2257.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "15": 860.957,
+            "37": 269.208,
+            "41": 153.408,
+            "66": 837.458,
+            "86": 2042.793,
+            "112": 1130.842,
+            "113": 848.518,
+            "118": 1024.74
+          }
+        },
+        {
+          "index": 12,
+          "actual_job_runner_seconds": 2891.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "12": 1212.023,
+            "14": 1205.262,
+            "42": 373.797,
+            "54": 495.12,
+            "84": 1097.678,
+            "92": 1417.575,
+            "116": 1985.791
+          }
+        },
+        {
+          "index": 13,
+          "actual_job_runner_seconds": 2541.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "17": 1095.741,
+            "29": 1777.139,
+            "55": 337.233,
+            "91": 462.847,
+            "96": 1115.726,
+            "100": 1177.395,
+            "115": 1964.628
+          }
+        },
+        {
+          "index": 14,
+          "actual_job_runner_seconds": 3855.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "45": 433.337,
+            "67": 2602.491,
+            "73": 1129.315,
+            "79": 1803.298,
+            "87": 862.351,
+            "111": 2085.01,
+            "117": 1315.191
+          }
+        },
+        {
+          "index": 15,
+          "actual_job_runner_seconds": 2199.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "6": 1373.717,
+            "8": 1063.153,
+            "26": 841.231,
+            "35": 875.166,
+            "46": 1971.672,
+            "59": 189.159,
+            "89": 514.39
+          }
+        },
+        {
+          "index": 16,
+          "actual_job_runner_seconds": 2166.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "27": 821.335,
+            "33": 792.08,
+            "34": 204.39,
+            "58": 483.675,
+            "64": 1132.683,
+            "65": 1537.972,
+            "103": 738.01
+          }
+        },
+        {
+          "index": 2,
+          "actual_job_runner_seconds": 2393.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "7": 970.565,
+            "18": 2123.158,
+            "22": 821.424,
+            "31": 1641.201,
+            "38": 746.612,
+            "47": 316.723,
+            "56": 298.299
+          }
+        },
+        {
+          "index": 3,
+          "actual_job_runner_seconds": 1980.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "13": 712.029,
+            "19": 672.611,
+            "28": 202.972,
+            "36": 265.808,
+            "57": 273.882,
+            "76": 1774.325,
+            "85": 801.129,
+            "114": 1396.016
+          }
+        },
+        {
+          "index": 4,
+          "actual_job_runner_seconds": 2490.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "20": 1485.624,
+            "21": 878.595,
+            "23": 530.41,
+            "43": 433.248,
+            "78": 1564.165,
+            "105": 2221.342,
+            "110": 455.471
+          }
+        },
+        {
+          "index": 5,
+          "actual_job_runner_seconds": 2927.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "2": 2084.439,
+            "11": null,
+            "24": 789.843,
+            "39": 254.035,
+            "62": 1483.272,
+            "63": 1209.086,
+            "69": null,
+            "75": 900.824,
+            "93": 1481.236,
+            "98": 991.627,
+            "107": 571.95
+          }
+        },
+        {
+          "index": 6,
+          "actual_job_runner_seconds": 3057.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "4": 2805.077,
+            "25": 792.16,
+            "70": 1860.837,
+            "81": 1146.607,
+            "90": 1021.287,
+            "99": 1082.631,
+            "108": 451.415
+          }
+        },
+        {
+          "index": 7,
+          "actual_job_runner_seconds": 2320.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "1": 866.428,
+            "10": 2074.384,
+            "30": 1003.142,
+            "40": 319.727,
+            "50": 308.605,
+            "60": 524.648,
+            "71": 1501.109,
+            "80": 769.623
+          }
+        },
+        {
+          "index": 8,
+          "actual_job_runner_seconds": 2469.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "0": 899.812,
+            "48": 235.658,
+            "72": 1517.36,
+            "94": 2201.161,
+            "95": 614.793,
+            "106": 1194.418,
+            "119": 992.777
+          }
+        },
+        {
+          "index": 9,
+          "actual_job_runner_seconds": 3034.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "16": 1127.603,
+            "32": 1490.712,
+            "49": 268.559,
+            "77": 521.027,
+            "88": 2645.908,
+            "97": 1183.843,
+            "102": 1216.244
+          }
+        }
+      ]
+    },
+    "flink1.18-jdk17": {
+      "shards": [
+        {
+          "index": 1,
+          "actual_job_runner_seconds": 1442.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "44": 163.079,
+            "51": 364.014,
+            "53": 132.203,
+            "82": 1221.59,
+            "83": 524.726,
+            "104": 522.263,
+            "109": 543.392
+          }
+        },
+        {
+          "index": 10,
+          "actual_job_runner_seconds": 1401.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "3": 284.873,
+            "5": 773.011,
+            "9": 581.148,
+            "52": 148.925,
+            "61": 109.928,
+            "68": 1161.814,
+            "74": 519.205,
+            "101": 467.384
+          }
+        },
+        {
+          "index": 11,
+          "actual_job_runner_seconds": 2381.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "15": 876.982,
+            "37": 259.276,
+            "41": 163.003,
+            "66": 872.468,
+            "86": 2108.96,
+            "112": 1181.33,
+            "113": 882.395,
+            "118": 1065.195
+          }
+        },
+        {
+          "index": 12,
+          "actual_job_runner_seconds": 1907.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "12": 696.128,
+            "14": 695.298,
+            "42": 223.558,
+            "54": 302.026,
+            "84": 635.429,
+            "92": 961.97,
+            "116": 1205.117
+          }
+        },
+        {
+          "index": 13,
+          "actual_job_runner_seconds": 1452.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "17": 587.231,
+            "29": 936.849,
+            "55": 161.801,
+            "91": 260.471,
+            "96": 581.796,
+            "100": 662.19,
+            "115": 1064.604
+          }
+        },
+        {
+          "index": 14,
+          "actual_job_runner_seconds": 2418.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "45": 246.411,
+            "67": 1491.822,
+            "73": 601.647,
+            "79": 1187.601,
+            "87": 480.294,
+            "111": 1148.028,
+            "117": 710.431
+          }
+        },
+        {
+          "index": 15,
+          "actual_job_runner_seconds": 2102.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "6": 1265.865,
+            "8": 967.335,
+            "26": 764.681,
+            "35": 801.735,
+            "46": 1818.897,
+            "59": 190.234,
+            "89": 481.705
+          }
+        },
+        {
+          "index": 16,
+          "actual_job_runner_seconds": 2108.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "27": 727.62,
+            "33": 706.193,
+            "34": 188.599,
+            "58": 401.467,
+            "64": 1114.04,
+            "65": 1406.33,
+            "103": 676.493
+          }
+        },
+        {
+          "index": 2,
+          "actual_job_runner_seconds": 1820.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "7": 705.118,
+            "18": 1582.657,
+            "22": 559.113,
+            "31": 1175.384,
+            "38": 595.073,
+            "47": 210.57,
+            "56": 180.998
+          }
+        },
+        {
+          "index": 3,
+          "actual_job_runner_seconds": 2191.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "13": 791.546,
+            "19": 751.938,
+            "28": 238.238,
+            "36": 265.642,
+            "57": 229.792,
+            "76": 1903.009,
+            "85": 819.515,
+            "114": 1445.207
+          }
+        },
+        {
+          "index": 4,
+          "actual_job_runner_seconds": 2388.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "20": 1359.865,
+            "21": 794.129,
+            "23": 502.029,
+            "43": 394.756,
+            "78": 1387.652,
+            "105": 2078.427,
+            "110": 424.891
+          }
+        },
+        {
+          "index": 5,
+          "actual_job_runner_seconds": 2864.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "2": 1979.186,
+            "11": null,
+            "24": 713.553,
+            "39": 241.524,
+            "62": 1391.28,
+            "63": 1126.374,
+            "69": null,
+            "75": 826.791,
+            "93": 1434.102,
+            "98": 909.314,
+            "107": 542.127
+          }
+        },
+        {
+          "index": 6,
+          "actual_job_runner_seconds": 1942.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "4": 1701.366,
+            "25": 459.257,
+            "70": 1042.706,
+            "81": 681.647,
+            "90": 611.529,
+            "99": 635.533,
+            "108": 256.714
+          }
+        },
+        {
+          "index": 7,
+          "actual_job_runner_seconds": 1746.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "1": 637.772,
+            "10": 1491.259,
+            "30": 713.114,
+            "40": 218.985,
+            "50": 174.954,
+            "60": 347.293,
+            "71": 1074.444,
+            "80": 601.593
+          }
+        },
+        {
+          "index": 8,
+          "actual_job_runner_seconds": 2275.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "0": 805.161,
+            "48": 208.448,
+            "72": 1336.041,
+            "94": 1973.864,
+            "95": 546.235,
+            "106": 1089.249,
+            "119": 891.786
+          }
+        },
+        {
+          "index": 9,
+          "actual_job_runner_seconds": 2371.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "16": 823.059,
+            "32": 1162.849,
+            "49": 202.261,
+            "77": 376.292,
+            "88": 1959.496,
+            "97": 862.546,
+            "102": 899.562
+          }
+        }
+      ]
+    },
+    "flink2.2-jdk11": {
+      "shards": [
+        {
+          "index": 1,
+          "actual_job_runner_seconds": 2118.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "44": 204.496,
+            "51": 1142.458,
+            "53": 300.623,
+            "82": 1867.589,
+            "83": 737.357,
+            "104": 725.827,
+            "109": 751.833
+          }
+        },
+        {
+          "index": 10,
+          "actual_job_runner_seconds": 3112.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "3": 683.211,
+            "5": 1890.46,
+            "9": 1412.692,
+            "52": 565.991,
+            "61": 256.776,
+            "68": 2778.8,
+            "74": 1282.365,
+            "101": 1075.83
+          }
+        },
+        {
+          "index": 11,
+          "actual_job_runner_seconds": 3690.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "15": 1482.105,
+            "37": 461.194,
+            "41": 246.204,
+            "66": 1436.579,
+            "86": 3357.686,
+            "112": 1802.018,
+            "113": 1422.694,
+            "118": 1610.194
+          }
+        },
+        {
+          "index": 12,
+          "actual_job_runner_seconds": 2752.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "12": 1100.289,
+            "14": 1097.375,
+            "42": 334.282,
+            "54": 842.613,
+            "84": 992.225,
+            "92": 1380.253,
+            "116": 1871.972
+          }
+        },
+        {
+          "index": 13,
+          "actual_job_runner_seconds": 2594.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "17": 1100.742,
+            "29": 1791.455,
+            "55": 491.191,
+            "91": 433.898,
+            "96": 1122.273,
+            "100": 1207.327,
+            "115": 1997.937
+          }
+        },
+        {
+          "index": 14,
+          "actual_job_runner_seconds": 3529.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "45": 395.462,
+            "67": 2371.254,
+            "73": 1039.233,
+            "79": 1653.493,
+            "87": 794.999,
+            "111": 1902.079,
+            "117": 1205.422
+          }
+        },
+        {
+          "index": 15,
+          "actual_job_runner_seconds": 3400.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "6": 2120.993,
+            "8": 1623.275,
+            "26": 1325.24,
+            "35": 1387.181,
+            "46": 3116.697,
+            "59": 513.302,
+            "89": 826.768
+          }
+        },
+        {
+          "index": 16,
+          "actual_job_runner_seconds": 3656.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "27": 1380.045,
+            "33": 1365.657,
+            "34": 348.463,
+            "58": 1549.952,
+            "64": 1823.112,
+            "65": 2652.309,
+            "103": 1125.988
+          }
+        },
+        {
+          "index": 2,
+          "actual_job_runner_seconds": 2257.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "7": 873.198,
+            "18": 2033.727,
+            "22": 710.685,
+            "31": 1466.342,
+            "38": 641.729,
+            "47": 290.034,
+            "56": 448.449
+          }
+        },
+        {
+          "index": 3,
+          "actual_job_runner_seconds": 2129.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "13": 751.261,
+            "19": 745.303,
+            "28": 236.159,
+            "36": 293.523,
+            "57": 429.887,
+            "76": 1887.808,
+            "85": 858.607,
+            "114": 1532.434
+          }
+        },
+        {
+          "index": 4,
+          "actual_job_runner_seconds": 2687.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "20": 1610.743,
+            "21": 942.773,
+            "23": 556.512,
+            "43": 463.205,
+            "78": 1688.639,
+            "105": 2388.649,
+            "110": 489.799
+          }
+        },
+        {
+          "index": 5,
+          "actual_job_runner_seconds": 3181.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "2": 2242.658,
+            "11": null,
+            "24": 856.425,
+            "39": 281.105,
+            "62": 1570.266,
+            "63": 1251.098,
+            "69": null,
+            "75": 943.991,
+            "93": 1639.459,
+            "98": 1100.88,
+            "107": 647.745
+          }
+        },
+        {
+          "index": 6,
+          "actual_job_runner_seconds": 2360.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "4": 2121.79,
+            "25": 579.426,
+            "70": 1360.265,
+            "81": 868.103,
+            "90": 787.874,
+            "99": 808.394,
+            "108": 327.437
+          }
+        },
+        {
+          "index": 7,
+          "actual_job_runner_seconds": 3131.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "1": 1188.226,
+            "10": 2837.907,
+            "30": 1394.05,
+            "40": 439.593,
+            "50": 611.837,
+            "60": 753.364,
+            "71": 2081.29,
+            "80": 961.267
+          }
+        },
+        {
+          "index": 8,
+          "actual_job_runner_seconds": 3325.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "0": 1181.263,
+            "48": 551.482,
+            "72": 2104.333,
+            "94": 2996.135,
+            "95": 855.637,
+            "106": 1203.457,
+            "119": 1429.521
+          }
+        },
+        {
+          "index": 9,
+          "actual_job_runner_seconds": 3437.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "16": 1240.339,
+            "32": 1703.763,
+            "49": 559.098,
+            "77": 649.421,
+            "88": 3011.856,
+            "97": 1368.468,
+            "102": 1422.966
+          }
+        }
+      ]
+    },
+    "flink2.2-jdk17": {
+      "shards": [
+        {
+          "index": 1,
+          "actual_job_runner_seconds": 1829.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "44": 177.462,
+            "51": 945.154,
+            "53": 259.959,
+            "82": 1560.884,
+            "83": 585.304,
+            "104": 623.387,
+            "109": 603.389
+          }
+        },
+        {
+          "index": 10,
+          "actual_job_runner_seconds": 1808.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "3": 374.003,
+            "5": 1007.98,
+            "9": 729.046,
+            "52": 322.428,
+            "61": 147.877,
+            "68": 1469.101,
+            "74": 647.953,
+            "101": 591.641
+          }
+        },
+        {
+          "index": 11,
+          "actual_job_runner_seconds": 2047.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "15": 735.4,
+            "37": 227.379,
+            "41": 132.252,
+            "66": 709.528,
+            "86": 1729.213,
+            "112": 966.341,
+            "113": 721.853,
+            "118": 888.515
+          }
+        },
+        {
+          "index": 12,
+          "actual_job_runner_seconds": 2529.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "12": 949.732,
+            "14": 947.113,
+            "42": 275.341,
+            "54": 715.389,
+            "84": 873.181,
+            "92": 1261.946,
+            "116": 1612.549
+          }
+        },
+        {
+          "index": 13,
+          "actual_job_runner_seconds": 1957.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "17": 792.575,
+            "29": 1250.563,
+            "55": 325.082,
+            "91": 314.38,
+            "96": 783.504,
+            "100": 890.24,
+            "115": 1395.755
+          }
+        },
+        {
+          "index": 14,
+          "actual_job_runner_seconds": 2995.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "45": 305.467,
+            "67": 1914.357,
+            "73": 790.755,
+            "79": 1457.979,
+            "87": 613.039,
+            "111": 1484.59,
+            "117": 942.05
+          }
+        },
+        {
+          "index": 15,
+          "actual_job_runner_seconds": 2284.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "6": 1335.109,
+            "8": 1052.443,
+            "26": 825.249,
+            "35": 853.794,
+            "46": 1997.594,
+            "59": 337.443,
+            "89": 506.914
+          }
+        },
+        {
+          "index": 16,
+          "actual_job_runner_seconds": 2225.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "27": 713.187,
+            "33": 702.388,
+            "34": 180.864,
+            "58": 861.703,
+            "64": 1063.052,
+            "65": 1412.795,
+            "103": 612.608
+          }
+        },
+        {
+          "index": 2,
+          "actual_job_runner_seconds": 1539.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "7": 570.524,
+            "18": 1319.024,
+            "22": 466.331,
+            "31": 984.201,
+            "38": 452.262,
+            "47": 191.746,
+            "56": 250.074
+          }
+        },
+        {
+          "index": 3,
+          "actual_job_runner_seconds": 2136.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "13": 745.402,
+            "19": 714.04,
+            "28": 231.556,
+            "36": 259.049,
+            "57": 351.257,
+            "76": 1844.476,
+            "85": 792.642,
+            "114": 1392.703
+          }
+        },
+        {
+          "index": 4,
+          "actual_job_runner_seconds": 1947.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "20": 1107.009,
+            "21": 664.888,
+            "23": 419.319,
+            "43": 321.403,
+            "78": 1170.504,
+            "105": 1676.565,
+            "110": 330.557
+          }
+        },
+        {
+          "index": 5,
+          "actual_job_runner_seconds": 2336.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "2": 1613.339,
+            "11": null,
+            "24": 604.579,
+            "39": 197.89,
+            "62": 1128.039,
+            "63": 922.324,
+            "69": null,
+            "75": 666.383,
+            "93": 1150.351,
+            "98": 768.349,
+            "107": 450.608
+          }
+        },
+        {
+          "index": 6,
+          "actual_job_runner_seconds": 2600.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "4": 2306.749,
+            "25": 613.772,
+            "70": 1390.037,
+            "81": 900.376,
+            "90": 833.016,
+            "99": 856.669,
+            "108": 350.484
+          }
+        },
+        {
+          "index": 7,
+          "actual_job_runner_seconds": 1774.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "1": 631.916,
+            "10": 1511.776,
+            "30": 707.004,
+            "40": 220.122,
+            "50": 316.575,
+            "60": 373.26,
+            "71": 1069.984,
+            "80": 562.19
+          }
+        },
+        {
+          "index": 8,
+          "actual_job_runner_seconds": 2354.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "0": 822.695,
+            "48": 376.876,
+            "72": 1416.237,
+            "94": 2063.654,
+            "95": 575.913,
+            "106": 832.921,
+            "119": 919.088
+          }
+        },
+        {
+          "index": 9,
+          "actual_job_runner_seconds": 2537.0,
+          "class_elapsed_seconds_by_inventory_index": {
+            "16": 866.626,
+            "32": 1266.082,
+            "49": 375.483,
+            "77": 431.934,
+            "88": 2088.878,
+            "97": 917.484,
+            "102": 948.015
+          }
+        }
+      ]
+    }
+  },
+  "model": {
+    "rows": [
+      {
+        "weight_mode": "observed",
+        "shards_per_cohort": 16,
+        "canonical_jobs": 64,
+        "exact_existing_shard_matches": null,
+        "median_job_span_sum_seconds": 154221.31050000002,
+        "median_20_slot_batch_seconds": 9515.8965,
+        "p10_20_slot_batch_seconds": 8872.149,
+        "p90_20_slot_batch_seconds": 10284.612000000001,
+        "median_longest_job_seconds": 4425.656
+      },
+      {
+        "weight_mode": "current",
+        "shards_per_cohort": 8,
+        "canonical_jobs": 32,
+        "exact_existing_shard_matches": null,
+        "median_job_span_sum_seconds": 134227.53350000002,
+        "median_20_slot_batch_seconds": 9485.047999999999,
+        "p10_20_slot_batch_seconds": 8838.171999999999,
+        "p90_20_slot_batch_seconds": 10203.588,
+        "median_longest_job_seconds": 6070.416499999999
+      },
+      {
+        "weight_mode": "current",
+        "shards_per_cohort": 10,
+        "canonical_jobs": 40,
+        "exact_existing_shard_matches": null,
+        "median_job_span_sum_seconds": 139371.1955,
+        "median_20_slot_batch_seconds": 9056.138500000001,
+        "p10_20_slot_batch_seconds": 8462.960000000001,
+        "p90_20_slot_batch_seconds": 9835.405999999999,
+        "median_longest_job_seconds": 5376.426
+      },
+      {
+        "weight_mode": "current",
+        "shards_per_cohort": 12,
+        "canonical_jobs": 48,
+        "exact_existing_shard_matches": null,
+        "median_job_span_sum_seconds": 144869.43050000002,
+        "median_20_slot_batch_seconds": 9376.466,
+        "p10_20_slot_batch_seconds": 8800.781,
+        "p90_20_slot_batch_seconds": 10120.725,
+        "median_longest_job_seconds": 4879.5705
+      },
+      {
+        "weight_mode": "current",
+        "shards_per_cohort": 16,
+        "canonical_jobs": 64,
+        "exact_existing_shard_matches": 64,
+        "median_job_span_sum_seconds": 154205.1385,
+        "median_20_slot_batch_seconds": 9499.779999999999,
+        "p10_20_slot_batch_seconds": 8974.877,
+        "p90_20_slot_batch_seconds": 10314.265,
+        "median_longest_job_seconds": 4441.937
+      },
+      {
+        "weight_mode": "measured",
+        "shards_per_cohort": 8,
+        "canonical_jobs": 32,
+        "exact_existing_shard_matches": null,
+        "median_job_span_sum_seconds": 134269.832,
+        "median_20_slot_batch_seconds": 9415.4225,
+        "p10_20_slot_batch_seconds": 8852.797999999999,
+        "p90_20_slot_batch_seconds": 10044.339,
+        "median_longest_job_seconds": 5973.291
+      },
+      {
+        "weight_mode": "measured",
+        "shards_per_cohort": 10,
+        "canonical_jobs": 40,
+        "exact_existing_shard_matches": null,
+        "median_job_span_sum_seconds": 140190.0635,
+        "median_20_slot_batch_seconds": 8915.087500000001,
+        "p10_20_slot_batch_seconds": 8387.937,
+        "p90_20_slot_batch_seconds": 9694.391,
+        "median_longest_job_seconds": 5157.884
+      },
+      {
+        "weight_mode": "measured",
+        "shards_per_cohort": 12,
+        "canonical_jobs": 48,
+        "exact_existing_shard_matches": null,
+        "median_job_span_sum_seconds": 145828.0435,
+        "median_20_slot_batch_seconds": 9394.2415,
+        "p10_20_slot_batch_seconds": 8840.037,
+        "p90_20_slot_batch_seconds": 10126.411,
+        "median_longest_job_seconds": 4709.879
+      },
+      {
+        "weight_mode": "measured",
+        "shards_per_cohort": 16,
+        "canonical_jobs": 64,
+        "exact_existing_shard_matches": 0,
+        "median_job_span_sum_seconds": 157358.42099999997,
+        "median_20_slot_batch_seconds": 9566.9885,
+        "p10_20_slot_batch_seconds": 9067.594000000001,
+        "p90_20_slot_batch_seconds": 10207.003,
+        "median_longest_job_seconds": 4072.7670000000003
+      }
+    ],
+    "limits": "Monte Carlo scheduling sensitivity only:300 seeded trials randomize class order within four-worker shards and job order across20 slots. Uses all measured baseline class durations and unchanged complete inventories. Other jobs, setup/transfer, resource interference and current candidate speed changes are omitted. Observed control uses original shard selections; current uses versioned line costs; measured uses worst actual class time across JDKs per line. No hosted speedup claim."
+  },
+  "offline_regroup_audit": {
+    "cohorts": {
+      "flink1.18-jdk11": {
+        "shards": 10,
+        "selected_classes": 120,
+        "reported_classes": 118,
+        "outcomes": {
+          "tests": 3592,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "case_identities_sha256": "629201a64b8b5317b6c9c215001370b993a0283569e24481f45b88f6e3c8dd20",
+        "inventory_sha256": [
+          "aa0f72bd3192746068a76fb24ab8d0f548e964a6dcb19bd0b3feab7d1f1781ec"
+        ]
+      },
+      "flink1.18-jdk17": {
+        "shards": 10,
+        "selected_classes": 120,
+        "reported_classes": 118,
+        "outcomes": {
+          "tests": 3592,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "case_identities_sha256": "629201a64b8b5317b6c9c215001370b993a0283569e24481f45b88f6e3c8dd20",
+        "inventory_sha256": [
+          "aa0f72bd3192746068a76fb24ab8d0f548e964a6dcb19bd0b3feab7d1f1781ec"
+        ]
+      },
+      "flink2.2-jdk11": {
+        "shards": 10,
+        "selected_classes": 120,
+        "reported_classes": 118,
+        "outcomes": {
+          "tests": 3676,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "case_identities_sha256": "746fa4abeba3c2e12ca32a9203e6ad8baf4c5b2daf2e485c8682957612efcb00",
+        "inventory_sha256": [
+          "aa0f72bd3192746068a76fb24ab8d0f548e964a6dcb19bd0b3feab7d1f1781ec"
+        ]
+      },
+      "flink2.2-jdk17": {
+        "shards": 10,
+        "selected_classes": 120,
+        "reported_classes": 118,
+        "outcomes": {
+          "tests": 3676,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "case_identities_sha256": "746fa4abeba3c2e12ca32a9203e6ad8baf4c5b2daf2e485c8682957612efcb00",
+        "inventory_sha256": [
+          "aa0f72bd3192746068a76fb24ab8d0f548e964a6dcb19bd0b3feab7d1f1781ec"
+        ]
+      }
+    },
+    "total_invocations": 14536,
+    "artifact_groups": 40,
+    "limits": "Offline partition audit using actual unchanged baseline XML outcomes and invocation identities redistributed into proposed10-shard selections. Does not establish candidate execution or performance; full current-head CI is still required."
+  },
+  "reproduction": [
+    "Verify complete baseline artifacts with bin/profile-ci.py canonical_coverage against ci-profile-20261112.json.",
+    "Inventory indices refer to the sorted canonical selected-class list. Null elapsed time denotes an abstract selected class with no report; model it as zero. Preserve all selected classes.",
+    "For each model row, use cohorts in sorted key order. Observed selections use ascending lexicographic artifact-directory order (shards1,10,...16,2,...9); current/measured partitions use numeric shard order. Classes within each shard are in sorted name order.",
+    "Use partition from the pinned planner source. Current mode retains versioned line duration estimates exactly; measured mode uses the maximum observed class duration across the two JDKs for each Flink line.",
+    "Reset Python random.Random(83) for each layout. Repeat300 times: shuffle each shard class-duration list; schedule it on four initially-zero workers by adding the next class to the earliest free heap slot; its span is the largest slot value. Shuffle the resulting job spans and schedule them on20 initially-zero heap slots the same way.",
+    "Report medians of summed shard spans and whole modeled batch spans, with sorted trial indices29/269 as p10/p90. Preserve the limits: no setup, artifact cost, other jobs, contention changes or real scheduler guarantees."
+  ],
+  "decision": "Test10shards per cohort (40 canonical jobs), retaining current weights, four fresh parent forks and every original invocation. Existing16-shard selections exactly reproduce all64 observed baseline partitions. Full integrated-head qualification must establish correctness and actual elapsed/runner cost before merging.",
+  "planner_source_repository": "jordepic/StreamFusion-contrib",
+  "matrix_creation_order": {
+    "observation_run": 43324959481,
+    "observation_head": "af5ab61cbb531f24ea3ace318de1d89ea121ded9",
+    "prechange_cohort_start_delay_medians_seconds": {
+      "flink2.2-jdk17": 2517,
+      "flink2.2-jdk11": 4889.5,
+      "flink1.18-jdk17": 6137,
+      "flink1.18-jdk11": 7483.5
+    },
+    "baseline_cohort_runner_seconds": {
+      "flink1.18-jdk11": 41229.0,
+      "flink1.18-jdk17": 32808.0,
+      "flink2.2-jdk11": 47358.0,
+      "flink2.2-jdk17": 34897.0
+    },
+    "candidate_order": [
+      "flink2.2-jdk11",
+      "flink1.18-jdk11",
+      "flink2.2-jdk17",
+      "flink1.18-jdk17"
+    ],
+    "documentation": "https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idstrategymatrix",
+    "limits": "All cohorts share the same prerequisite barrier. Start delays include prerequisites, scheduler/concurrency and runner queues; these observations do not identify a configured quota. GitHub creation order is documented; actual execution priority and improvement require measurement. No invocation/configuration changes.",
+    "qualified_control_cohort_runner_seconds": {
+      "Flink 2.2, JDK 17": 28595.0,
+      "Flink 2.2, JDK 11": 37074.0,
+      "Flink 1.18, JDK 17": 26828.0,
+      "Flink 1.18, JDK 11": 33597.0
+    }
+  },
+  "qualified_control_recheck": {
+    "source_run": 43324959481,
+    "source_head": "af5ab61cbb531f24ea3ace318de1d89ea121ded9",
+    "cohorts": {
+      "flink1.18-jdk11": {
+        "shards": [
+          {
+            "index": 1,
+            "actual_job_runner_seconds": 2258.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "44": 243.231,
+              "51": 626.693,
+              "53": 235.022,
+              "82": 2152.072,
+              "83": 927.401,
+              "104": 848.67,
+              "109": 873.702
+            }
+          },
+          {
+            "index": 10,
+            "actual_job_runner_seconds": 2098.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "3": 503.987,
+              "5": 1304.948,
+              "9": 980.066,
+              "52": 247.541,
+              "61": 182.915,
+              "68": 1985.595,
+              "74": 869.934,
+              "101": 765.119
+            }
+          },
+          {
+            "index": 11,
+            "actual_job_runner_seconds": 2491.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "15": 1030.343,
+              "37": 311.876,
+              "41": 153.232,
+              "66": 1013.438,
+              "86": 2380.637,
+              "112": 1279.986,
+              "113": 982.837,
+              "118": 1157.314
+            }
+          },
+          {
+            "index": 12,
+            "actual_job_runner_seconds": 2025.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "12": 841.29,
+              "14": 849.239,
+              "42": 279.931,
+              "54": 371.038,
+              "84": 718.273,
+              "92": 1072.618,
+              "116": 1401.195
+            }
+          },
+          {
+            "index": 13,
+            "actual_job_runner_seconds": 1815.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "17": 815.27,
+              "29": 1311.02,
+              "55": 249.398,
+              "91": 340.585,
+              "96": 827.892,
+              "100": 891.876,
+              "115": 1438.748
+            }
+          },
+          {
+            "index": 14,
+            "actual_job_runner_seconds": 2849.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "45": 313.749,
+              "67": 1957.435,
+              "73": 814.192,
+              "79": 1484.091,
+              "87": 607.251,
+              "111": 1524.98,
+              "117": 940.336
+            }
+          },
+          {
+            "index": 15,
+            "actual_job_runner_seconds": 1980.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "6": 1244.119,
+              "8": 960.443,
+              "26": 749.502,
+              "35": 847.791,
+              "46": 1868.81,
+              "59": 220.93,
+              "89": 491.446
+            }
+          },
+          {
+            "index": 16,
+            "actual_job_runner_seconds": 2266.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "27": 832.408,
+              "33": 1011.619,
+              "34": 229.698,
+              "58": 629.939,
+              "64": 2122.832,
+              "65": 2117.006,
+              "103": 1079.999
+            }
+          },
+          {
+            "index": 2,
+            "actual_job_runner_seconds": 1624.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "7": 669.324,
+              "18": 1527.075,
+              "22": 599.697,
+              "31": 1189.053,
+              "38": 534.189,
+              "47": 256.251,
+              "56": 211.717
+            }
+          },
+          {
+            "index": 3,
+            "actual_job_runner_seconds": 2303.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "13": 1031.348,
+              "19": 706.659,
+              "28": 326.381,
+              "36": 240.394,
+              "57": 317.678,
+              "76": 2182.453,
+              "85": 894.535,
+              "114": 1720.807
+            }
+          },
+          {
+            "index": 4,
+            "actual_job_runner_seconds": 1965.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "20": 1175.929,
+              "21": 560.134,
+              "23": 655.457,
+              "43": 279.032,
+              "78": 1282.571,
+              "105": 1871.837,
+              "110": 346.097
+            }
+          },
+          {
+            "index": 5,
+            "actual_job_runner_seconds": 2139.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "2": 1560.451,
+              "11": null,
+              "24": 529.646,
+              "39": 155.481,
+              "62": 991.658,
+              "63": 1031.986,
+              "69": null,
+              "75": 617.651,
+              "93": 659.411,
+              "98": 620.787,
+              "107": 352.319
+            }
+          },
+          {
+            "index": 6,
+            "actual_job_runner_seconds": 1826.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "4": 1717.9,
+              "25": 490.75,
+              "70": 1027.915,
+              "81": 628.566,
+              "90": 549.513,
+              "99": 698.312,
+              "108": 177.446
+            }
+          },
+          {
+            "index": 7,
+            "actual_job_runner_seconds": 2299.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "1": 990.232,
+              "10": 2191.263,
+              "30": 1045.298,
+              "40": 229.614,
+              "50": 249.223,
+              "60": 511.783,
+              "71": 1586.674,
+              "80": 844.403
+            }
+          },
+          {
+            "index": 8,
+            "actual_job_runner_seconds": 1966.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "0": 710.266,
+              "48": 224.502,
+              "72": 1242.451,
+              "94": 1851.303,
+              "95": 470.197,
+              "106": 998.732,
+              "119": 813.516
+            }
+          },
+          {
+            "index": 9,
+            "actual_job_runner_seconds": 1693.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "16": 651.942,
+              "32": 885.527,
+              "49": 191.389,
+              "77": 263.73,
+              "88": 1548.337,
+              "97": 639.435,
+              "102": 717.107
+            }
+          }
+        ]
+      },
+      "flink1.18-jdk17": {
+        "shards": [
+          {
+            "index": 1,
+            "actual_job_runner_seconds": 1546.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "44": 162.423,
+              "51": 396.864,
+              "53": 148.402,
+              "82": 1445.437,
+              "83": 557.497,
+              "104": 561.493,
+              "109": 576.375
+            }
+          },
+          {
+            "index": 10,
+            "actual_job_runner_seconds": 1416.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "3": 337.222,
+              "5": 905.674,
+              "9": 662.54,
+              "52": 147.61,
+              "61": 113.855,
+              "68": 1331.877,
+              "74": 582.978,
+              "101": 549.293
+            }
+          },
+          {
+            "index": 11,
+            "actual_job_runner_seconds": 1650.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "15": 665.078,
+              "37": 197.306,
+              "41": 99.33,
+              "66": 657.467,
+              "86": 1558.909,
+              "112": 897.985,
+              "113": 648.514,
+              "118": 799.014
+            }
+          },
+          {
+            "index": 12,
+            "actual_job_runner_seconds": 1632.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "12": 653.847,
+              "14": 652.828,
+              "42": 195.219,
+              "54": 262.623,
+              "84": 599.77,
+              "92": 883.007,
+              "116": 1125.515
+            }
+          },
+          {
+            "index": 13,
+            "actual_job_runner_seconds": 1429.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "17": 556.081,
+              "29": 747.223,
+              "55": 129.312,
+              "91": 269.09,
+              "96": 593.394,
+              "100": 909.952,
+              "115": 1068.066
+            }
+          },
+          {
+            "index": 14,
+            "actual_job_runner_seconds": 2343.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "45": 237.132,
+              "67": 1365.102,
+              "73": 702.472,
+              "79": 1725.098,
+              "87": 534.873,
+              "111": 1325.064,
+              "117": 876.21
+            }
+          },
+          {
+            "index": 15,
+            "actual_job_runner_seconds": 1563.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "6": 1081.827,
+              "8": 883.122,
+              "26": 646.061,
+              "35": 576.44,
+              "46": 1469.642,
+              "59": 144.754,
+              "89": 337.277
+            }
+          },
+          {
+            "index": 16,
+            "actual_job_runner_seconds": 1297.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "27": 463.856,
+              "33": 586.405,
+              "34": 122.791,
+              "58": 320.933,
+              "64": 1199.73,
+              "65": 1193.57,
+              "103": 607.507
+            }
+          },
+          {
+            "index": 2,
+            "actual_job_runner_seconds": 1271.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "7": 537.815,
+              "18": 1179.772,
+              "22": 433.183,
+              "31": 674.947,
+              "38": 507.992,
+              "47": 163.279,
+              "56": 120.206
+            }
+          },
+          {
+            "index": 3,
+            "actual_job_runner_seconds": 1619.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "13": 620.302,
+              "19": 601.54,
+              "28": 170.838,
+              "36": 197.317,
+              "57": 173.768,
+              "76": 1524.984,
+              "85": 661.636,
+              "114": 1162.177
+            }
+          },
+          {
+            "index": 4,
+            "actual_job_runner_seconds": 2176.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "20": 1362.315,
+              "21": 784.86,
+              "23": 463.784,
+              "43": 367.142,
+              "78": 1393.999,
+              "105": 2061.887,
+              "110": 406.464
+            }
+          },
+          {
+            "index": 5,
+            "actual_job_runner_seconds": 2228.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "2": 1073.607,
+              "11": null,
+              "24": 538.284,
+              "39": 172.589,
+              "62": 1083.746,
+              "63": 1051.278,
+              "69": null,
+              "75": 624.48,
+              "93": 971.164,
+              "98": 660.376,
+              "107": 306.848
+            }
+          },
+          {
+            "index": 6,
+            "actual_job_runner_seconds": 1742.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "4": 1653.717,
+              "25": 438.05,
+              "70": 1011.559,
+              "81": 635.429,
+              "90": 552.834,
+              "99": 596.529,
+              "108": 230.888
+            }
+          },
+          {
+            "index": 7,
+            "actual_job_runner_seconds": 1336.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "1": 501.354,
+              "10": 1225.771,
+              "30": 559.361,
+              "40": 170.788,
+              "50": 128.711,
+              "60": 261.003,
+              "71": 756.682,
+              "80": 565.953
+            }
+          },
+          {
+            "index": 8,
+            "actual_job_runner_seconds": 1405.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "0": 525.178,
+              "48": 133.968,
+              "72": 903.186,
+              "94": 1289.991,
+              "95": 357.226,
+              "106": 730.116,
+              "119": 590.702
+            }
+          },
+          {
+            "index": 9,
+            "actual_job_runner_seconds": 2175.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "16": 667.758,
+              "32": 1545.288,
+              "49": 171.12,
+              "77": 374.3,
+              "88": 1900.664,
+              "97": 892.506,
+              "102": 883.3
+            }
+          }
+        ]
+      },
+      "flink2.2-jdk11": {
+        "shards": [
+          {
+            "index": 1,
+            "actual_job_runner_seconds": 2461.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "44": 250.36,
+              "51": 1376.227,
+              "53": 390.832,
+              "82": 2364.945,
+              "83": 849.65,
+              "104": 1072.491,
+              "109": 735.814
+            }
+          },
+          {
+            "index": 10,
+            "actual_job_runner_seconds": 1842.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "3": 450.199,
+              "5": 1170.601,
+              "9": 834.259,
+              "52": 405.884,
+              "61": 180.411,
+              "68": 1764.512,
+              "74": 746.546,
+              "101": 695.806
+            }
+          },
+          {
+            "index": 11,
+            "actual_job_runner_seconds": 1835.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "15": 593.1,
+              "37": 242.743,
+              "41": 113.667,
+              "66": 756.043,
+              "86": 1765.741,
+              "112": 1120.25,
+              "113": 710.688,
+              "118": 1125.712
+            }
+          },
+          {
+            "index": 12,
+            "actual_job_runner_seconds": 2273.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "12": 862.005,
+              "14": 1076.912,
+              "42": 245.312,
+              "54": 947.869,
+              "84": 1062.076,
+              "92": 2074.569,
+              "116": 2011.455
+            }
+          },
+          {
+            "index": 13,
+            "actual_job_runner_seconds": 2489.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "17": 1153.374,
+              "29": 1830.4,
+              "55": 487.46,
+              "91": 437.435,
+              "96": 1142.415,
+              "100": 1248.273,
+              "115": 2060.008
+            }
+          },
+          {
+            "index": 14,
+            "actual_job_runner_seconds": 2534.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "45": 288.725,
+              "67": 1738.338,
+              "73": 727.719,
+              "79": 1349.389,
+              "87": 536.796,
+              "111": 1357.251,
+              "117": 812.787
+            }
+          },
+          {
+            "index": 15,
+            "actual_job_runner_seconds": 2581.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "6": 1820.467,
+              "8": 1340.035,
+              "26": 1087.795,
+              "35": 946.85,
+              "46": 2493.027,
+              "59": 421.951,
+              "89": 560.739
+            }
+          },
+          {
+            "index": 16,
+            "actual_job_runner_seconds": 2369.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "27": 865.287,
+              "33": 843.038,
+              "34": 192.872,
+              "58": 1062.864,
+              "64": 1220.697,
+              "65": 1676.791,
+              "103": 695.941
+            }
+          },
+          {
+            "index": 2,
+            "actual_job_runner_seconds": 2467.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "7": 1115.369,
+              "18": 2367.543,
+              "22": 873.701,
+              "31": 1354.832,
+              "38": 1007.494,
+              "47": 339.761,
+              "56": 429.492
+            }
+          },
+          {
+            "index": 3,
+            "actual_job_runner_seconds": 2480.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "13": 1118.834,
+              "19": 775.334,
+              "28": 358.243,
+              "36": 251.359,
+              "57": 478.272,
+              "76": 2393.042,
+              "85": 966.419,
+              "114": 1840.892
+            }
+          },
+          {
+            "index": 4,
+            "actual_job_runner_seconds": 2291.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "20": 1487.699,
+              "21": 595.193,
+              "23": 763.774,
+              "43": 344.194,
+              "78": 1506.99,
+              "105": 2199.388,
+              "110": 420.349
+            }
+          },
+          {
+            "index": 5,
+            "actual_job_runner_seconds": 2026.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "2": 1486.962,
+              "11": null,
+              "24": 555.897,
+              "39": 181.129,
+              "62": 1032.524,
+              "63": 840.749,
+              "69": null,
+              "75": 582.959,
+              "93": 1113.868,
+              "98": 730.941,
+              "107": 417.647
+            }
+          },
+          {
+            "index": 6,
+            "actual_job_runner_seconds": 2588.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "4": 2500.169,
+              "25": 645.096,
+              "70": 1558.278,
+              "81": 1011.269,
+              "90": 891.155,
+              "99": 900.068,
+              "108": 392.698
+            }
+          },
+          {
+            "index": 7,
+            "actual_job_runner_seconds": 1974.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "1": 774.334,
+              "10": 1892.939,
+              "30": 896.522,
+              "40": 294.088,
+              "50": 457.25,
+              "60": 511.075,
+              "71": 1348.287,
+              "80": 623.007
+            }
+          },
+          {
+            "index": 8,
+            "actual_job_runner_seconds": 2040.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "0": 728.002,
+              "48": 409.579,
+              "72": 1346.962,
+              "94": 1951.654,
+              "95": 515.262,
+              "106": 748.907,
+              "119": 899.689
+            }
+          },
+          {
+            "index": 9,
+            "actual_job_runner_seconds": 2824.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "16": 874.621,
+              "32": 2013.616,
+              "49": 443.445,
+              "77": 500.358,
+              "88": 2281.467,
+              "97": 1129.54,
+              "102": 1137.874
+            }
+          }
+        ]
+      },
+      "flink2.2-jdk17": {
+        "shards": [
+          {
+            "index": 1,
+            "actual_job_runner_seconds": 1680.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "44": 165.092,
+              "51": 940.148,
+              "53": 242.274,
+              "82": 1598.487,
+              "83": 539.783,
+              "104": 693.14,
+              "109": 501.352
+            }
+          },
+          {
+            "index": 10,
+            "actual_job_runner_seconds": 1885.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "3": 333.712,
+              "5": 1346.171,
+              "9": 872.886,
+              "52": 330.092,
+              "61": 153.463,
+              "68": 1804.381,
+              "74": 666.899,
+              "101": 874.911
+            }
+          },
+          {
+            "index": 11,
+            "actual_job_runner_seconds": 1409.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "15": 564.547,
+              "37": 155.612,
+              "41": 81.647,
+              "66": 562.266,
+              "86": 1333.824,
+              "112": 743.913,
+              "113": 553.619,
+              "118": 702.983
+            }
+          },
+          {
+            "index": 12,
+            "actual_job_runner_seconds": 1988.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "12": 806.731,
+              "14": 813.907,
+              "42": 221.86,
+              "54": 596.339,
+              "84": 735.183,
+              "92": 1098.36,
+              "116": 1389.848
+            }
+          },
+          {
+            "index": 13,
+            "actual_job_runner_seconds": 1833.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "17": 805.156,
+              "29": 1340.326,
+              "55": 302.36,
+              "91": 341.445,
+              "96": 804.805,
+              "100": 950.624,
+              "115": 1477.543
+            }
+          },
+          {
+            "index": 14,
+            "actual_job_runner_seconds": 1888.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "45": 189.704,
+              "67": 1320.061,
+              "73": 517.507,
+              "79": 991.513,
+              "87": 404.972,
+              "111": 1003.956,
+              "117": 636.984
+            }
+          },
+          {
+            "index": 15,
+            "actual_job_runner_seconds": 1595.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "6": 1050.629,
+              "8": 852.156,
+              "26": 633.172,
+              "35": 620.332,
+              "46": 1526.918,
+              "59": 249.734,
+              "89": 366.768
+            }
+          },
+          {
+            "index": 16,
+            "actual_job_runner_seconds": 2490.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "27": 891.662,
+              "33": 873.967,
+              "34": 215.092,
+              "58": 1027.435,
+              "64": 1372.139,
+              "65": 1812.323,
+              "103": 769.979
+            }
+          },
+          {
+            "index": 2,
+            "actual_job_runner_seconds": 1575.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "7": 529.215,
+              "18": 1311.342,
+              "22": 493.384,
+              "31": 913.197,
+              "38": 648.349,
+              "47": 179.402,
+              "56": 251.228
+            }
+          },
+          {
+            "index": 3,
+            "actual_job_runner_seconds": 1299.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "13": 568.251,
+              "19": 448.677,
+              "28": 165.394,
+              "36": 136.595,
+              "57": 252.659,
+              "76": 1227.858,
+              "85": 520.515,
+              "114": 980.988
+            }
+          },
+          {
+            "index": 4,
+            "actual_job_runner_seconds": 1484.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "20": 955.44,
+              "21": 551.586,
+              "23": 331.085,
+              "43": 249.902,
+              "78": 986.521,
+              "105": 1416.61,
+              "110": 266.489
+            }
+          },
+          {
+            "index": 5,
+            "actual_job_runner_seconds": 2271.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "2": 1099.034,
+              "11": null,
+              "24": 545.507,
+              "39": 163.262,
+              "62": 1106.925,
+              "63": 1085.438,
+              "69": null,
+              "75": 648.338,
+              "93": 991.184,
+              "98": 671.606,
+              "107": 306.595
+            }
+          },
+          {
+            "index": 6,
+            "actual_job_runner_seconds": 1996.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "4": 1904.749,
+              "25": 492.5,
+              "70": 1175.29,
+              "81": 748.455,
+              "90": 700.387,
+              "99": 690.291,
+              "108": 275.213
+            }
+          },
+          {
+            "index": 7,
+            "actual_job_runner_seconds": 1280.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "1": 549.145,
+              "10": 1203.75,
+              "30": 546.833,
+              "40": 140.278,
+              "50": 252.645,
+              "60": 270.362,
+              "71": 860.068,
+              "80": 518.608
+            }
+          },
+          {
+            "index": 8,
+            "actual_job_runner_seconds": 1651.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "0": 585.994,
+              "48": 296.137,
+              "72": 1041.245,
+              "94": 1565.296,
+              "95": 411.262,
+              "106": 611.825,
+              "119": 719.565
+            }
+          },
+          {
+            "index": 9,
+            "actual_job_runner_seconds": 2271.0,
+            "class_elapsed_seconds_by_inventory_index": {
+              "16": 846.666,
+              "32": 1239.02,
+              "49": 348.726,
+              "77": 406.079,
+              "88": 2080.848,
+              "97": 901.661,
+              "102": 944.303
+            }
+          }
+        ]
+      }
+    },
+    "model": {
+      "rows": [
+        {
+          "weight_mode": "observed",
+          "shards_per_cohort": 16,
+          "canonical_jobs": 64,
+          "exact_existing_shard_matches": null,
+          "median_job_span_sum_seconds": 132731.2855,
+          "median_20_slot_batch_seconds": 8085.8355,
+          "p10_20_slot_batch_seconds": 7607.991,
+          "p90_20_slot_batch_seconds": 8622.934,
+          "median_longest_job_seconds": 3419.7349999999997
+        },
+        {
+          "weight_mode": "current",
+          "shards_per_cohort": 8,
+          "canonical_jobs": 32,
+          "exact_existing_shard_matches": null,
+          "median_job_span_sum_seconds": 115113.5595,
+          "median_20_slot_batch_seconds": 8011.0575,
+          "p10_20_slot_batch_seconds": 7567.469,
+          "p90_20_slot_batch_seconds": 8573.010999999999,
+          "median_longest_job_seconds": 5013.5215
+        },
+        {
+          "weight_mode": "current",
+          "shards_per_cohort": 10,
+          "canonical_jobs": 40,
+          "exact_existing_shard_matches": null,
+          "median_job_span_sum_seconds": 119428.61850000001,
+          "median_20_slot_batch_seconds": 7677.3825,
+          "p10_20_slot_batch_seconds": 7168.348,
+          "p90_20_slot_batch_seconds": 8309.901,
+          "median_longest_job_seconds": 4462.833500000001
+        },
+        {
+          "weight_mode": "current",
+          "shards_per_cohort": 12,
+          "canonical_jobs": 48,
+          "exact_existing_shard_matches": null,
+          "median_job_span_sum_seconds": 124587.043,
+          "median_20_slot_batch_seconds": 8011.076999999999,
+          "p10_20_slot_batch_seconds": 7565.7970000000005,
+          "p90_20_slot_batch_seconds": 8535.059000000001,
+          "median_longest_job_seconds": 3821.809
+        },
+        {
+          "weight_mode": "current",
+          "shards_per_cohort": 16,
+          "canonical_jobs": 64,
+          "exact_existing_shard_matches": 64,
+          "median_job_span_sum_seconds": 132742.06650000002,
+          "median_20_slot_batch_seconds": 8093.2155,
+          "p10_20_slot_batch_seconds": 7622.889999999999,
+          "p90_20_slot_batch_seconds": 8606.679,
+          "median_longest_job_seconds": 3419.3410000000003
+        },
+        {
+          "weight_mode": "measured",
+          "shards_per_cohort": 8,
+          "canonical_jobs": 32,
+          "exact_existing_shard_matches": null,
+          "median_job_span_sum_seconds": 115351.14749999999,
+          "median_20_slot_batch_seconds": 7969.553,
+          "p10_20_slot_batch_seconds": 7590.182999999999,
+          "p90_20_slot_batch_seconds": 8463.721,
+          "median_longest_job_seconds": 4938.179
+        },
+        {
+          "weight_mode": "measured",
+          "shards_per_cohort": 10,
+          "canonical_jobs": 40,
+          "exact_existing_shard_matches": null,
+          "median_job_span_sum_seconds": 119967.5315,
+          "median_20_slot_batch_seconds": 7492.7045,
+          "p10_20_slot_batch_seconds": 7052.405,
+          "p90_20_slot_batch_seconds": 7943.197,
+          "median_longest_job_seconds": 4218.442999999999
+        },
+        {
+          "weight_mode": "measured",
+          "shards_per_cohort": 12,
+          "canonical_jobs": 48,
+          "exact_existing_shard_matches": null,
+          "median_job_span_sum_seconds": 124838.36050000001,
+          "median_20_slot_batch_seconds": 8014.25,
+          "p10_20_slot_batch_seconds": 7565.935,
+          "p90_20_slot_batch_seconds": 8503.231,
+          "median_longest_job_seconds": 3771.2795
+        },
+        {
+          "weight_mode": "measured",
+          "shards_per_cohort": 16,
+          "canonical_jobs": 64,
+          "exact_existing_shard_matches": 0,
+          "median_job_span_sum_seconds": 134636.1975,
+          "median_20_slot_batch_seconds": 8134.518,
+          "p10_20_slot_batch_seconds": 7744.909000000001,
+          "p90_20_slot_batch_seconds": 8650.163,
+          "median_longest_job_seconds": 3267.663
+        }
+      ],
+      "limits": "Monte Carlo scheduling sensitivity only:300 seeded trials randomize class order within four-worker shards and job order across20 slots. Uses all measured baseline class durations and unchanged complete inventories. Other jobs, setup/transfer, resource interference and current candidate speed changes are omitted. Observed control uses original shard selections; current uses versioned line costs; measured uses worst actual class time across JDKs per line. No hosted speedup claim."
+    },
+    "result": "The same300-trial scheduling method on all qualified control class durations still favors10shards for canonical-batch median. Current weights16-shard selections exactly match all64 observed shards. A model is not hosted execution evidence."
+  }
+}

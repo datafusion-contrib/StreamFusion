@@ -8,6 +8,7 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.images.builder.Transferable;
+import tech.streamfusion.CiFixtureTimings;
 
 /** Released broker cluster with separate internal and host-accessible listeners. */
 public final class FlussTestCluster implements AutoCloseable {
@@ -36,12 +37,20 @@ public final class FlussTestCluster implements AutoCloseable {
 
   public void start() {
     try {
+      long started = CiFixtureTimings.start();
       zookeeper.start();
+      CiFixtureTimings.record("fluss.start.zookeeper", started);
+      started = CiFixtureTimings.start();
       coordinator.start();
+      CiFixtureTimings.record("fluss.start.coordinator", started);
+      started = CiFixtureTimings.start();
       tablet.start();
+      CiFixtureTimings.record("fluss.start.tablet", started);
+      started = CiFixtureTimings.start();
       Wait.forLogMessage(".*New tablet server callback for tablet server.*\\n", 1)
           .withStartupTimeout(Duration.ofMinutes(2))
           .waitUntilReady(coordinator);
+      CiFixtureTimings.record("fluss.start.registration", started);
     } catch (RuntimeException | Error failure) {
       try {
         close();
@@ -133,9 +142,13 @@ public final class FlussTestCluster implements AutoCloseable {
 
   @Override
   public void close() {
+    long started = CiFixtureTimings.start();
     try (network;
         zookeeper;
         coordinator;
-        tablet) {}
+        tablet) {
+    } finally {
+      CiFixtureTimings.record("fluss.cluster-close", started);
+    }
   }
 }

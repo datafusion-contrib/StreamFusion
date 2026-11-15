@@ -1,0 +1,34 @@
+{
+  "base_commit": "e9d8e347977cae834d20a3599e7d1be86f610c3f",
+  "rust": "rustc 1.95.0 (59807616e 2026-04-14)",
+  "java": "openjdk version \"17.0.20.1\" 2026-08-18\nOpenJDK Runtime Environment (build 17.0.20.1+1-1-22.04-Ubuntu)\nOpenJDK 64-Bit Server VM (build 17.0.20.1+1-1-22.04-Ubuntu, mixed mode, sharing)",
+  "cpu": "12th Gen Intel(R) Core(TM) i7-12650H",
+  "logical_cpus": 16,
+  "memory_bytes": 10429026304,
+  "kernel": "6.18.54.1-microsoft-standard-WSL2",
+  "architecture": "x86_64",
+  "native_profile": "release",
+  "features": [
+    "mimalloc"
+  ],
+  "native_library_sha256": "863800070720237cf42c6403c3b9fab9ee1871c7677304ed127b01063f4b28cc",
+  "cargo_lock_sha256": "439ad8a72d32a8709dbcdeba2ef3a3f6a02a16c78204a394b61636da4579e6e4",
+  "iceberg_java": "1.12.0",
+  "iceberg_rust_tag": "v0.11.0-rc.3",
+  "iceberg_rust_commit": "20eb0feddac8f40bb9e9108a0744b7f356d69480",
+  "heap_max": "8g",
+  "task_off_heap": "256mb",
+  "input_files": 4,
+  "warmups": 1,
+  "measured_pairs": 3,
+  "sort": false,
+  "table_properties": {
+    "write.parquet.compression-codec": "zstd",
+    "write.parquet.compression-level": "3"
+  },
+  "timed_scope": "file task read/delete/write including JNI, borrowed Java views, file close and metrics; excludes planning, submission, commit, fixture and readback",
+  "validation": "declared-column count and value checksum; exact footer engine witness; zero native handles, Arrow allocations and task reservations",
+  "benchmark_source_sha256": "c046778e36630dbc20447f6b2c047a03c518c46e5feff3238f6a3483f6181441",
+  "native_io_runtime_threads": 2,
+  "data_file_concurrency": 1
+}
