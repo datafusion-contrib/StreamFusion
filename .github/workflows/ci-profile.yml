@@ -6,7 +6,7 @@ on:
       suite:
         description: 'Paired JVM comparison to run'
         type: choice
-        options: [runtime, runtime-parallel, runtime-jfr, canonical, native-only, runtime-hotspots, canonical-setup, lake-setup]
+        options: [runtime, runtime-parallel, runtime-jfr, canonical, native-only, runtime-hotspots, canonical-setup, lake-setup, native-lz4]
         default: runtime
       native_run:
         description: 'Existing native producer for focused diagnostics'
@@ -53,6 +53,47 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  native-lz4:
+    if: inputs.suite == 'native-lz4' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        flink_line: ${{ fromJSON(inputs.flink_line == 'all' && '["1.18","2.2"]' || format('["{0}"]', inputs.flink_line)) }}
+    env:
+      FLINK_PROFILES: ${{ matrix.flink_line == '1.18' && 'flink-1.18,bench' || 'bench' }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.jdk == '11' && env.CANONICAL_JAVA_11 || env.CANONICAL_JAVA_17 }}
+          cache: maven
+      - name: Check released native LZ4 and task-local decoder isolation
+        run: >-
+          mvn -B -ntp -P"$FLINK_PROFILES" -pl streamfusion-runtime -am test
+          -Dnative.build.skip=true -Dtest=NativeLz4ShuffleTest
+          -Dsurefire.failIfNoSpecifiedTests=false
+          -Djunit.jupiter.extensions.autodetection.enabled=false
+      - name: Verify the complete codec invocation inventory
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          path = Path('streamfusion-runtime/target/surefire-reports/TEST-tech.streamfusion.NativeLz4ShuffleTest.xml')
+          suite = ET.parse(path).getroot()
+          assert int(suite.attrib['tests']) == 11, suite.attrib
+          assert all(int(suite.attrib.get(key, '0')) == 0 for key in ['failures', 'errors', 'skipped']), suite.attrib
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-lz4-codec-flink${{ matrix.flink_line }}-jdk${{ inputs.jdk }}
+          path: streamfusion-runtime/target/surefire-reports/*NativeLz4ShuffleTest*
+          if-no-files-found: error
+          retention-days: 7
+
   lake-setup:
     if: inputs.suite == 'lake-setup' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main')
     runs-on: ubuntu-24.04
@@ -126,7 +167,7 @@ jobs:
       kafka_rescale_regression: ${{ inputs.kafka_rescale_regression }}
 
   native:
-    if: ${{ inputs.suite != 'runtime-hotspots' && inputs.suite != 'canonical-setup' && inputs.suite != 'lake-setup' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
+    if: ${{ inputs.suite != 'runtime-hotspots' && inputs.suite != 'canonical-setup' && inputs.suite != 'lake-setup' && inputs.suite != 'native-lz4' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -197,7 +238,7 @@ jobs:
 
   runtime:
     needs: native
-    if: inputs.suite != 'canonical' && inputs.suite != 'native-only' && inputs.suite != 'runtime-hotspots' && inputs.suite != 'canonical-setup' && inputs.suite != 'lake-setup'
+    if: inputs.suite != 'canonical' && inputs.suite != 'native-only' && inputs.suite != 'runtime-hotspots' && inputs.suite != 'canonical-setup' && inputs.suite != 'lake-setup' && inputs.suite != 'native-lz4'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:

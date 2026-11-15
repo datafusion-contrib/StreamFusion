@@ -96,6 +96,12 @@ serialized operator configuration rather than process-global state before a stab
 - **`-Dstreamfusion.exchange.zeroCopyLocal=...`** — vouch for a single-TaskManager deployment so the
   columnar exchange can hand off batches by ownership transfer instead of Arrow IPC on a same-process
   edge. See [Zero-copy local shuffle](optimizations/zero-copy-local-shuffle.md).
+
+- **`streamfusion.shuffle.nativeLz4.enabled`** (default true, TaskManager configuration)
+  — use the bounds-checked JNI LZ4 decoder on StreamFusion tasks' existing shuffle
+  input gates. A JVM `-Dstreamfusion.shuffle.nativeLz4.enabled=false` override retains
+  Flink's decoder. This setting does not alter stock tasks, compression selection,
+  block framing or shuffle IO. See [native LZ4 shuffle decoding](optimizations/native-lz4-shuffle.md).
 - **`-Dstreamfusion.exchange.coalesceRows`** (default 4096) / **`-Dstreamfusion.exchange.coalesceLatencyMs`**
   (default 50) — re-assemble processing-sized batches after the keyed exchange fragments them across
   parallel subtasks. See [Post-exchange batch coalescing](optimizations/post-exchange-coalescing.md).

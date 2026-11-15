@@ -39,6 +39,8 @@ public final class NativeAllocator {
   private NativeAllocator() {}
 
   public static void initializeFor(AbstractStreamOperator<?> operator) {
+    tech.streamfusion.shuffle.NativeShuffleDecompression.install(
+        operator.getContainingTask(), operator.getMetricGroup());
     TaskOffHeapMemory.initialize(
         operator.getRuntimeContext().getTaskManagerRuntimeInfo().getConfiguration());
     TaskOffHeapMemory.registerMetrics(operator.getMetricGroup());

@@ -53,6 +53,13 @@ class PaimonTpcdsBenchmark {
     Files.createDirectories(root);
     String mode = System.getProperty("sf.tpcds.mode", "audit");
     String computeMode = System.getProperty("sf.tpcds.compute", "native");
+    boolean comparePreviousShuffle = Boolean.getBoolean("sf.tpcds.comparePreviousShuffle");
+    assertTrue(
+        !comparePreviousShuffle || (mode.equals("compare") && computeMode.equals("native")),
+        "Previous-shuffle comparison requires compare mode and native computation");
+    String shuffleProperty = "streamfusion.shuffle.nativeLz4.enabled";
+    String originalShuffle = System.getProperty(shuffleProperty);
+    long nativeLz4Bytes = 0;
     assertTrue(List.of("native", "stock").contains(computeMode));
     assertTrue(List.of("prepare", "plan", "audit", "verify", "compare").contains(mode));
     if (mode.equals("compare"))
@@ -72,6 +79,21 @@ class PaimonTpcdsBenchmark {
     var report = new LinkedHashMap<String, Object>();
     report.put("mode", mode);
     report.put("computeMode", computeMode);
+    report.put("comparePreviousShuffle", comparePreviousShuffle);
+    report.put(
+        "engineOrder",
+        comparePreviousShuffle
+            ? "Rotate stock, streamfusion_java_lz4, streamfusion by trial"
+            : "Alternate stock and StreamFusion by trial");
+    var lz4Artifact =
+        Path.of(
+            net.jpountz.lz4.LZ4Factory.class
+                .getProtectionDomain()
+                .getCodeSource()
+                .getLocation()
+                .toURI());
+    report.put("lz4JavaArtifact", lz4Artifact.getFileName().toString());
+    if (Files.isRegularFile(lz4Artifact)) report.put("lz4JavaSha256", hashFile(lz4Artifact));
     report.put("scale", scale);
     report.put("generator", "io.trino.tpcds:tpcds:1.4");
     report.put("queryProvenance", manifest);
@@ -201,10 +223,22 @@ class PaimonTpcdsBenchmark {
             List<String> expected = null;
             String expectedTypes = null;
             for (int trial = -warmups; trial < trials; trial++) {
-              for (boolean nativeRun :
-                  trial % 2 == 0 ? new boolean[] {false, true} : new boolean[] {true, false}) {
+              int engines = comparePreviousShuffle ? 3 : 2;
+              for (int position = 0; position < engines; position++) {
+                int engine =
+                    comparePreviousShuffle
+                        ? Math.floorMod(trial + warmups + position, 3)
+                        : (trial % 2 == 0 ? position : 1 - position);
+                boolean nativeRun = engine != 0;
+                if (comparePreviousShuffle)
+                  System.setProperty(shuffleProperty, Boolean.toString(engine != 1));
                 var observed =
                     execute(nativeRun ? nativeEnv : stock, stock, sql, root, id, trial, nativeRun);
+                if (comparePreviousShuffle && engine == 1)
+                  observed.put("engine", "streamfusion_java_lz4");
+                boolean nativeLz4 =
+                    nativeRun && Boolean.parseBoolean(System.getProperty(shuffleProperty, "true"));
+                observed.put("nativeLz4Enabled", nativeLz4);
                 String job = (String) observed.get("jobId");
                 long sourceRows = metrics.counterValue(job, "nativePaimonSourceRows");
                 var work =
@@ -213,6 +247,18 @@ class PaimonTpcdsBenchmark {
                         .collect(java.util.stream.Collectors.toList());
                 observed.put("nativeWork", work);
                 observed.put("sourceRows", sourceRows);
+                for (String metric :
+                    List.of(
+                        "nativeLz4InputGates",
+                        "nativeLz4Blocks",
+                        "nativeLz4Bytes",
+                        "nativeLz4FallbackGates"))
+                  observed.put(metric, metrics.counterValue(job, metric));
+                if (nativeLz4)
+                  assertEquals(0L, observed.get("nativeLz4FallbackGates"), "Native LZ4 fallback");
+                else assertEquals(0L, observed.get("nativeLz4Blocks"), "Native LZ4 disabled");
+                if (nativeLz4)
+                  nativeLz4Bytes += ((Number) observed.get("nativeLz4Bytes")).longValue();
                 observed.put(
                     "sourceFallbackRows", metrics.counterValue(job, "paimonSourceFallbackRows"));
                 observed.put(
@@ -262,6 +308,8 @@ class PaimonTpcdsBenchmark {
                 } else {
                   assertEquals(0, sourceRows);
                   assertTrue(work.isEmpty(), "Stock must not enter native compute");
+                  assertEquals(
+                      0L, observed.get("nativeLz4Blocks"), "Stock shuffle must stay stock");
                 }
                 runs.add(observed);
                 System.out.printf(
@@ -294,9 +342,13 @@ class PaimonTpcdsBenchmark {
       }
     } finally {
       tech.streamfusion.compat.FlinkTestContexts.clearForRemoteSubmission();
+      if (originalShuffle == null) System.clearProperty(shuffleProperty);
+      else System.setProperty(shuffleProperty, originalShuffle);
     }
     assertFalse(queries.isEmpty(), "No query variants selected");
     assertTrue(failures.isEmpty(), String.join("\n", failures));
+    if (comparePreviousShuffle && shuffleCompression)
+      assertTrue(nativeLz4Bytes > 0, "The comparison must execute native LZ4 decoding");
   }
 
   private TableEnvironment environment(Configuration config, boolean nativeRun) throws Exception {

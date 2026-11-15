@@ -38,6 +38,7 @@ CI build reuse and runner scheduling are documented in the
 caching, shared build artifacts, grouped connector suites and combined coverage verification.
 Those measurements describe CI job counts and elapsed time, not SQL execution throughput.
 
+- [Native LZ4 shuffle decoding](native-lz4-shuffle.md): use the bounds-checked JNI decoder on StreamFusion task input gates while preserving Flink's block format and stock tasks.
 - [Retain final sink candidate replacements](sink-materializer-state.md): emit every change while storing only final same-key replacements per batch.
 - [Copy canonical state directly](canonical-state-installation.md): remove a full temporary payload copy while retaining managed chunk ownership.
 - [Reuse Iceberg boundary setup](iceberg-boundary-overhead.md): cached task schemas and serializers, shared Arrow leases and routing maps.

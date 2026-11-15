@@ -20,6 +20,13 @@ public final class BatchUnionSchemaOperator extends AbstractStreamOperator<Arrow
   }
 
   @Override
+  public void open() throws Exception {
+    super.open();
+    tech.streamfusion.shuffle.NativeShuffleDecompression.install(
+        getContainingTask(), getMetricGroup());
+  }
+
+  @Override
   public void processElement(StreamRecord<ArrowBatch> element) {
     ArrowBatch batch = element.getValue();
     VectorSchemaRoot root = batch.root();

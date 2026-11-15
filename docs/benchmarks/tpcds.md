@@ -56,6 +56,19 @@ require zero entry transposes and zero source fallback rows.
 blocking-shuffle compression for both engines. It defaults to true, as in the
 primary cohort. Changed-configuration diagnostics remain separate from primary results.
 
+`sf.tpcds.comparePreviousShuffle=true` adds a matched third engine in `compare`
+mode with native computation. Every trial rotates stock Flink, StreamFusion with
+its preceding Java shuffle decoder (`streamfusion_java_lz4`), and StreamFusion
+with native LZ4 (`streamfusion`). The two StreamFusion variants share the same
+physical plan, sources, sinks and resources. Only the task-local decoder setting
+changes, held constant until the job and readback finish. Stock tasks retain
+Flink's decoder. Three warmups and seven measured trials per engine produce
+3,090 jobs over the complete suite. Reports retain the resolved LZ4 artifact/hash,
+native input-gate/block/byte counters and fallback counts. Native decoder fallback
+fails the supported-host comparison; the Java control requires zero native blocks.
+The original two-engine mode remains available. [Native LZ4 shuffle decoding](../optimizations/native-lz4-shuffle.md)
+describes the implementation and TaskManager/JVM override.
+
 Timing starts before SQL submission and ends after the final Paimon commit. Input
 preparation, output DDL and stock readback are outside timing. The verifier compares
 exact typed result multisets, preserving duplicates, NULLs, decimal scales and floating
@@ -287,8 +300,9 @@ seven measured trials. Every trial passed the same result and execution checks.
 
 Disabling compression did not eliminate Q88's loss. The cohort order was fixed
 and the host shared, so these comparisons do not isolate compression's causal
-effect or identify the cause of the primary regressions. Defaults and admission
-remain unchanged. [Structured diagnostics](results/paimon-tpcds-diagnostics-20261114.json)
+effect or identify the cause of the primary regressions. These diagnostic runs left
+defaults unchanged; the subsequent native LZ4 decoder is described above. Batch
+admission remains compatibility-based. [Structured diagnostics](results/paimon-tpcds-diagnostics-20261114.json)
 retain every trial, ranges, runtime hashes, sampling counts and interpretation limits.
 
 ## Archived evidence

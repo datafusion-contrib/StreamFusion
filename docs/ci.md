@@ -1228,6 +1228,10 @@ The strict documentation build also passed. Source/configuration changes still r
 The **CI startup profile** workflow is an explicitly dispatched diagnostic, keeping profiling
 cost outside ordinary pushes and merges. Select `runtime` (the default) or `canonical`.
 Both build the exact commit's debug core library once.
+The focused `native-lz4` suite instead runs eleven released-codec checks on the selected
+Flink/JDK line without building Rust. It verifies JNI selection, Flink block compatibility,
+buffer bounds and task-local installation. Only this Java-only job disables the shared-cluster
+Rust-handle extension; SQL, recovery and merge qualification retain their normal checks.
 The native producer builds the same complete workspace as ordinary native CI before sharing
 its dependency cache, even when the selected Java probe only loads core. A core-only writer
 previously seeded a 959 MB entry under the full workspace's key. The full build restored that
