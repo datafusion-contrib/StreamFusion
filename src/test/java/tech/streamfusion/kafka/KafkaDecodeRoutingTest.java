@@ -2,15 +2,27 @@ package tech.streamfusion.kafka;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.Field;
 import java.util.Arrays;
+import java.util.List;
 import java.util.regex.PatternSyntaxException;
+import java.util.stream.Collectors;
+import org.apache.flink.api.dag.Transformation;
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.transformations.SourceTransformation;
 import org.apache.flink.table.api.EnvironmentSettings;
+import org.apache.flink.table.api.PlanReference;
+import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
+import org.apache.flink.table.api.internal.TableEnvironmentImpl;
+import org.apache.flink.table.planner.delegation.PlannerBase;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.NativePlannerTestEnvironment;
 import tech.streamfusion.planner.NativePlanner;
 
 /**
@@ -53,6 +65,38 @@ class KafkaDecodeRoutingTest {
         table("id BIGINT, name STRING, ts TIMESTAMP_LTZ(3) METADATA FROM 'timestamp'", "json"));
     String plan = NativePlanner.explain(tEnv, "SELECT id, name FROM t");
     assertTrue(plan.contains("NativeKafkaDecode"), plan);
+  }
+
+  @Test
+  void aPortableCompiledPlanCarriesConnectorMetadataToTheNativeDecode() throws Exception {
+    // Loading a stock compiled plan reapplies the source whitelist to the stored scan, so an
+    // admitted metadata table must reach the native source with its metadata columns.
+    TableEnvironment tEnv = NativePlannerTestEnvironment.create(new Configuration());
+    tEnv.executeSql(
+        table(
+            "id BIGINT, name STRING, off BIGINT METADATA FROM 'offset',"
+                + " ts TIMESTAMP_LTZ(3) METADATA FROM 'timestamp'",
+            "json"));
+    tEnv.executeSql(
+        "CREATE TABLE s (id BIGINT, name STRING, off BIGINT, ts TIMESTAMP_LTZ(3))"
+            + " WITH ('connector' = 'blackhole')");
+    String portable = tEnv.compilePlanSql("INSERT INTO s SELECT * FROM t").asJsonString();
+    PlannerBase planner = (PlannerBase) ((TableEnvironmentImpl) tEnv).getPlanner();
+
+    List<Transformation<?>> transformations =
+        planner.translatePlan(planner.loadPlan(PlanReference.fromJsonString(portable)));
+
+    List<?> sources =
+        transformations.stream()
+            .flatMap(sink -> sink.getTransitivePredecessors().stream())
+            .filter(SourceTransformation.class::isInstance)
+            .map(source -> ((SourceTransformation<?, ?, ?>) source).getSource())
+            .collect(Collectors.toList());
+    assertEquals(1, sources.size(), sources.toString());
+    NativeKafkaSource source = assertInstanceOf(NativeKafkaSource.class, sources.get(0));
+    Field metadataKeys = NativeKafkaSource.class.getDeclaredField("metadataKeys");
+    metadataKeys.setAccessible(true);
+    assertEquals(List.of("offset", "timestamp"), metadataKeys.get(source));
   }
 
   @Test
