@@ -1,0 +1,33 @@
+name: CI coverage plan
+
+on:
+  workflow_call:
+    outputs:
+      tests:
+        value: ${{ jobs.plan.outputs.tests }}
+      baseline:
+        value: ${{ jobs.plan.outputs.baseline }}
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  plan:
+    name: Check source changes and baseline coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      tests: ${{ steps.select.outputs.tests }}
+      baseline: ${{ steps.select.outputs.baseline }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /bin/ci-plan.py
+      - id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 bin/ci-plan.py >> "$GITHUB_OUTPUT"

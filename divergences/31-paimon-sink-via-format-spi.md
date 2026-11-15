@@ -19,7 +19,7 @@ StreamFusion contributes only the two pieces that touch every row:
   `StreamPartitioner` applies Paimon's `ChannelComputer.select` formula per batch.
 - **The encoding.** A `FileFormatFactory` registered under Paimon's own `parquet` identifier hands
   each bundle to the existing native Parquet encoder; the writer factory decides per file and lets
-  Paimon's stock writer handle any row-fed file (compaction rewrites, batch inserts, spill mode).
+  Paimon's stock writer handle any row-fed file (stock compaction rewrites, batch inserts, spill mode).
 
 The entry point is Paimon's public bundle write (`TableWriteImpl.writeBundle` →
 `BundleFormatWriter`), reached from a `TableWriteOperator` subclass fed with routed Arrow batches

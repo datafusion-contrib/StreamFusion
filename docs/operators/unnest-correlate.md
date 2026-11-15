@@ -22,8 +22,8 @@ The operand may be a direct column, a nested array field, or an encodable comput
 `ON TRUE` followed by a separate encodable WHERE filter also composes; the WHERE remains a filter
 after expansion.
 
-Computed MAPs outside the verified native constructor signatures, STRING/ROW/MAP-bearing ARRAYs
-and LEFT element predicates use the released Flink correlate generator inside an
+Computed MAPs outside the verified native constructor signatures, unverified ROW/MAP-bearing
+ARRAYs and LEFT element predicates use the released Flink correlate generator inside an
 Arrow-input/Arrow-output operator. This preserves the host's map
 constructor ordering, duplicate-key policy, generic/binary container behavior and LEFT padding
 after predicate evaluation. It covers verified builtin expressions; it does not expand admission
@@ -51,6 +51,14 @@ methods remain enabled in CI but are excluded from this local stateless check.
 The source transpose preserves collection representation and can prune unused input columns before
 generated expansion. Generated collection Calc results and other generated expansions are verified
 inputs; DropUpdateBefore, mini-batch assignment and watermark assignment preserve that contract.
+On Flink 2.2, verified scalar ARRAY_AGG results with NOT NULL elements also use this preserving
+consumer, from either native collection state or the explicit legacy JVM handler. A structural
+check admits verified scalar grouping fields and scalar arrays together;
+the grouping fields include the [verified nullable-element array keys](group-by.md#collection-aggregate-array-inputs).
+Character keys and scalar string arrays use the preserved native boundary below. Nested
+character arrays and MAP/MULTISET-bearing producer rows retain their guards. Nullable
+scalar arrays keep ordinary Arrow UNNEST. The [collection aggregate boundary](group-by.md#scalar-array-results-through-generated-unnest)
+describes the exact routes, unchecked-NULL behavior, recovery and released submission failures.
 Complex nested outputs require a verified preserving consumer or a final row boundary. Flink
 1.18's legacy `toAppendStream` sink is also a final row boundary; nested ROW arguments and results
 retain the same external conversion and values as the stock API. Unverified state, ordering,
@@ -148,22 +156,26 @@ The [bounded conversion investigation](../optimizations/decimal-arrow-reads.md)
 records the retained improvement and measured limits. ARRAY, MAP and ROW may recursively contain
 these admitted scalar types. Container signatures support Flink's default external Java conversions
 (boxed Java arrays, `java.util.Map`, external `Row`, and their default scalar children).
-Direct ARRAY arguments and direct result columns also support `java.util.List` with default
-scalar element conversions, and `boolean[]`, `byte[]`, `short[]`, `int[]`, `long[]`, `float[]`
+ARRAY arguments and result columns recursively support `java.util.List` with admitted
+scalar or ARRAY/MAP/ROW elements, and `boolean[]`, `byte[]`, `short[]`, `int[]`, `long[]`, `float[]`
 and `double[]` with matching non-null element types. ARRAY parents can still be NULL or empty;
-Lists can contain NULL elements. Direct result fields and atomic ARRAY results additionally
-support `java.util.ArrayList` with default scalar element conversions, including both interval
+Lists can contain NULL elements. Result fields and atomic ARRAY results additionally
+support `java.util.List` implementations recursively, including both interval
 families. This is result-only: released validation rejects concrete List subclass arguments.
 In signatures containing containers, direct non-null BOOLEAN, TINYINT, SMALLINT, INT, BIGINT,
 FLOAT and DOUBLE arguments may also use their corresponding
 Java primitive classes. Direct non-null DATE arguments, external Row result fields and atomic
-DATE results can also use Java `int` epoch days. Boxed `Integer` and nested DATE bridges retain
-fallback in container signatures. Released type inference still validates argument nullability; this
+DATE results can also use Java `int` epoch days. Direct DATE arguments and results also support
+boxed `Integer` epoch days with nullable or non-null metadata. Nested DATE bridges inside
+external containers use the recursive scalar bridge rules below. Released type inference still validates argument nullability; this
 does not coerce a nullable source argument to a non-null primitive. Direct fields of an
 external Row result may also use those seven non-null primitive scalar classes alongside
 container result fields. Atomic results using those classes are supported too; Flink wraps
-them in a single inferred result field. Alternate bridges nested inside a result field
-retain fallback.
+them in a single inferred result field. Nested external ROW/MAP result fields may use these
+primitive and temporal scalar bridges.
+ARRAY/List bridges may be nested inside those structures; see [recursive conversions](#recursive-arraylist-conversions).
+Direct temporal argument/result fields also support the released JDBC date/time classes and
+boxed TIME/LTZ conversions listed in [alternate temporal bridges](#alternate-direct-temporal-bridges-2026-11-01).
 For these conversions on Flink 1.18, LEFT queries selecting a declared non-null field from
 an external Row result retain the release's SQL-to-rel nullability assertion. Container-only
 LEFT projections and atomic-result LEFT queries are verified to execute.
@@ -171,9 +183,11 @@ Released converters own these Java values, and the existing
 typed-array adapter supplies primitive conversion after nullable Arrow copies. FLOAT/DOUBLE
 retain signed zero and NaN payloads through chained function inputs and results.
 
-Released type inference determines the conversions. Other concrete/custom List result classes,
-alternate bridges nested inside a ROW/MAP argument or nested result column, Lists with
-ARRAY/MAP/ROW elements, internal
+Released type inference determines the conversions. External `Row` and `Map` arguments and
+result columns may recursively contain the verified non-null primitive and temporal scalar
+bridges, external arrays, Lists and nested primitive arrays. Each ROW/MAP layer retains its
+default external container class. List arguments use the List interface; concrete/custom List
+classes are result-only, including nested positions. Internal
 `ArrayData`/`MapData`/`RowData`, MULTISET/STRUCTURED/RAW, specialized functions, Python/async
 functions and legacy SQL wrappers retain fallback. The ordinary `streamfusion.operator.tableFunction.enabled`
 switch can disable this operator.
@@ -218,8 +232,9 @@ table-function checks. It covers all seven primitive scalar result types with bo
 primitive ARRAY, List, MAP and ROW signatures, using both external Row fields and atomic
 collectors. Types, raw floating bits, mutable/retained values, literal NULL emissions, empty
 input, failures, changelog kinds and two forced restores with memory/native RocksDB state
-match the corresponding released Flink execution. Nested alternate result bridges retain
-explicit fallback. The unchanged upstream ROW contracts keep their native-work requirement.
+match the corresponding released Flink execution. Nested scalar bridges through ROW/MAP
+are covered below, together with recursive ARRAY/List conversions. Internal bridges retain fallback. The unchanged
+upstream ROW contracts keep their native-work requirement.
 
 Flink's generated scalar projection turns a NULL emitted under non-null primitive metadata
 into false or a typed -1. A fused projection must execute that evaluation before owned Arrow
@@ -292,7 +307,7 @@ continues to require the table-function operator and both transposes.
 
 ### Concrete ArrayList results (2026-10-24)
 
-Direct external Row result fields and atomic ARRAY results can use `ArrayList` when their
+Direct external Row result fields and atomic ARRAY results can use List implementations when their
 elements use verified default scalar conversions. List arguments still use the exact
 `java.util.List` bridge. These are separate contracts: released Flink accepts List subclasses
 for external-to-internal result conversion, but rejects their internal-to-external argument
@@ -309,11 +324,17 @@ checks on each supported Flink line. The 39 additions cover all admitted scalar 
 INNER/LEFT mutable fanout, actual ArrayList result objects, non-null parent metadata (including
 emitted NULLs), retained values across closed batches, empty inputs, failures, direct and atomic
 collectors, DATE/int argument composition, and two forced restores with memory/native RocksDB.
-Nested ArrayList result fields and Lists/ArrayLists of containers retain fallback. Scalar
+Nested ArrayList result fields and Lists/ArrayLists of containers use the [recursive extension](#recursive-arraylist-conversions). Scalar
 membership uses Flink’s predefined logical-type family, so zero-field ROW elements remain
-containers even when wrapped in an AtomicDataType. Other concrete/custom List result classes
-remain outside this exact-class whitelist. Admission reuses Flink's result converter and the
+containers even when wrapped in an AtomicDataType. Admission reuses Flink's result converter and the
 existing owned Arrow writes; no runtime or native-memory path changes.
+
+The result gate now follows released Flink's assignable-List conversion, including `LinkedList`,
+`Vector` and custom List subclasses. The class only affects the external result passed to
+Flink's existing converter. The [recursive extension](#recursive-arraylist-conversions)
+admits nested bridge positions and container elements; internal containers and concrete List arguments retain fallback. The converter invokes the result's actual
+`toArray(T[])`, preserving custom behavior and exceptions. Pending result objects and reused
+containers are copied into Arrow during collection, before later mutation or buffer closure.
 
 The [complete-job artifact](../benchmarks/results/jvm-table-function-arraylist-results-2026-10-24.json)
 records the exact final source/native hashes, all validation outcomes and 784 timing trials.
@@ -378,14 +399,182 @@ For the actual prior revision, copy the conversion, interval and benchmark test 
 and set `-Dboundary.expectNative=false`; the control still requires native work. Production
 sources must remain unchanged.
 
+### Additional List implementations (2026-11-01)
+
+The broader result gate passes 73 new checks plus 86 existing conversion/interval checks on
+each released Flink line, with no failures or skips. It covers LinkedList, Vector and a
+custom ArrayList subclass across 19 scalar element families, INNER/LEFT mutable fanout,
+atomic collectors, NULL/empty input, retained arguments across batches, chained exact
+floating bits, custom `toArray(T[])` failure and short-circuiting. Six heap/native-RocksDB
+changelog scenarios each force two restores and require consumed table-function input.
+Concrete-argument and internal-container fallback controls remain in the selection.
+Previously guarded external ARRAY/List cases use the recursive coverage below.
+
+The [complete-job record](../benchmarks/results/jvm-concrete-list-results-2026-11-01.json)
+retains paired stock/previous/native samples, warmups, ranges, commands and source/library
+fingerprints. Release/mimalloc, Temurin 17 jobs use 262,144 runtime rows selecting 64 prebuilt
+arrays, one task, a 3 GiB heap and 1,024-row transpose batches. Every case and revision runs
+in a separate JVM, serially, with two warmups and five alternating measured pairs. Timing
+runs from submission through completion after symmetric EXPLAIN, retaining both transposes,
+production JNI, callbacks, List conversion, owned Arrow writes and the blackhole sink.
+Previous production is `2a613b07`, with only the two listed test fixtures copied in and the
+same unchanged release native library. It requires zero substitutions and no native work;
+the candidate requires consumed table-function input and both transposes.
+
+All medians are seconds. Every measured case is slower than its paired stock control;
+separate-JVM stock drift remains visible. These short jobs include startup/JIT and are UDF
+coverage under the accepted performance exception, without an acceleration claim.
+
+| Flink / result | Candidate stock | Previous stock | Previous fallback | Candidate |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 / LinkedList STRING | 0.798467 | 0.606277 | 0.779458 | 1.681528 |
+| 1.18.1 / LinkedList DECIMAL(38,18) | 0.227363 | 0.221058 | 0.213436 | 0.376025 |
+| 1.18.1 / Vector TIMESTAMP(9) | 0.280691 | 0.278984 | 0.278836 | 0.355353 |
+| 1.18.1 / custom List STRING | 0.208494 | 0.201145 | 0.199109 | 0.378370 |
+| 2.2.1 / LinkedList STRING | 0.234050 | 0.210313 | 0.210874 | 0.383117 |
+| 2.2.1 / LinkedList DECIMAL(38,18) | 0.233400 | 0.221672 | 0.224614 | 0.383600 |
+| 2.2.1 / Vector TIMESTAMP(9) | 0.292426 | 0.292146 | 0.293807 | 0.389092 |
+| 2.2.1 / custom List STRING | 0.217536 | 0.216531 | 0.217363 | 0.386326 |
+
+Reproduce with `SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime
+-Dtest=ConcreteListTableFunctionBenchmark -Dboundary.rows=262144 -Dboundary.warmups=2
+-Dboundary.runs=5 -Dsf.testForks=1
+'-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false' test`.
+Use `-Pbench,flink-1.18` for that release. `boundary.concreteLists` selects the four cases
+recorded in the artifact. For previous production copy only the concrete-list harness and
+benchmark source, rebuild Java against unchanged production, and set
+`-Dboundary.expectNative=false`.
+
+### Alternate direct temporal bridges (2026-11-01)
+
+Container signatures admit these additional direct scalar argument and result conversions:
+
+| Logical type | Java bridge | Released conversion |
+| --- | --- | --- |
+| DATE | `java.sql.Date` | JDBC date |
+| TIME | `Integer`, `Long`, `java.sql.Time` | Milliseconds of day, nanoseconds of day, JDBC time |
+| TIMESTAMP | `java.sql.Timestamp` | JDBC timestamp with the released precision/zone behavior |
+| TIMESTAMP_LTZ | `Integer`, `Long`, `java.sql.Timestamp` | Epoch seconds, epoch milliseconds, JDBC timestamp |
+| INTERVAL YEAR/MONTH | `Integer` | Total months |
+| INTERVAL DAY/TIME | `Long` | Total milliseconds |
+
+The boxed interval increment adds 18 selected JUnit invocations on each supported Flink
+line, with zero failures/errors/skips. Positive/negative months and millisecond durations,
+NULLs, non-null metadata, Row/atomic results, LEFT padding, lifecycle/failures and repeated
+heap/RocksDB recovery use the same released-converter matrix. Internal containers remain
+guarded; nested scalar bridges use the recursive rules above. Direct primitive intervals use the separate verified boundary below.
+
+The same bridges work as external Row result fields and atomic results with nullable or
+non-null metadata. The existing released converters retain truncation, overflow, timestamp
+precision and zone behavior: an integer/long LTZ round trip is not a promise to preserve
+nanoseconds. JDBC values are copied into Arrow output before a callback can mutate them.
+This adds admission through the existing generated correlate, not custom temporal conversion,
+JNI or native-memory code. Nested ARRAY/List bridges use the recursive extension below;
+internal Java classes remain outside the whitelist. Direct primitive TIME/LTZ bridges use the separate
+verified boundary below.
+
+`FlinkAlternateTemporalTableFunctionSqlHarnessTest` compares released values/types,
+nullable/non-null arguments, Row/atomic results, INNER/LEFT application, mutable JDBC
+values and result Rows, retained containers, empty input, callback failures, all changelog
+kinds and two forced restores with heap/native RocksDB. ARRAY and List signatures use
+UTC, New York and Shanghai sessions for timestamp families. Inputs include negative epochs,
+SQL years 0001–9999, fractional timestamps and DST boundaries. Every successful populated
+case requires consumed native table-function input.
+Before the interval increment, the focused selection passes 147 JUnit invocations on each
+of released Flink 1.18.1 and 2.2.1 with JDK 17 and a fresh release/mimalloc native library:
+88 alternate-bridge checks,
+14 nullable boxed-DATE checks, 21 DATE argument controls and 24 DATE result controls,
+with zero failures, errors or skips. After adding the boxed intervals, the combined
+selection passes 165 invocations per line (106 alternate temporal/interval, 14 boxed DATE,
+21 DATE argument and 24 DATE result controls), again without failures/errors/skips.
+These are scoped component/SQL results, not a claim
+of complete #237 coverage or a replacement for the unchanged upstream suite.
+
+NULL values emitted under NOT NULL metadata retain the released outcomes rather than
+being normalized. A projected DATE field can expose epoch day -1; a projected TIME field
+can expose an invalid negative time and fail during collection; timestamp fields retain
+the release's sink constraint exception. The comparisons check matching root exception
+classes, expected failure messages and failure phases. Flink 1.18's external Row/LEFT non-null
+projection assertion remains a separately checked planning failure; its representable
+projection and atomic LEFT forms still execute.
+
+`AlternateTemporalTableFunctionBenchmark` retains complete production jobs with row sources,
+both perimeter transposes, callback conversion, owned output writes and a blackhole sink.
+The original matrix compares eight bridges with ARRAY containers and additional JDBC DATE/TIMESTAMP List
+cases. Use `SF_BENCHMARK=true mvn -pl streamfusion-runtime -Pbench
+-Dnative.build.skip=true -Dtest=AlternateTemporalTableFunctionBenchmark
+-Dboundary.rows=262144 -Dboundary.warmups=2 -Dboundary.runs=5 surefire:test@default-test`;
+add `,flink-1.18` for that release line. Copy only the new fixtures to the actual previous
+production revision and use `-Dboundary.expectNative=false` for its fallback control.
+Correctness-verified UDF admission retains the accepted performance exception.
+The [release cost matrix](../benchmarks/jvm-temporal-bridges.md) retains stock,
+actual previous production and native timings on both supported Flink lines, including
+larger-input runs, unfavorable results and observed stock-control drift. These standalone
+native jobs are slower; default admission is coverage under the UDF exception.
+
+### Direct primitive temporal bridges
+
+Container signatures admit direct non-null TIME and TIMESTAMP_LTZ arguments and external Row
+result fields bridged to Java `int`/`long`, YEAR/MONTH intervals bridged to `int`, and DAY/TIME
+intervals bridged to `long`. Units match the boxed forms above. Nullable sources retain released
+primitive-argument validation; the matcher does not coerce their NULLs into a default primitive.
+Bridges nested through external ROW/MAP/ARRAY/List containers use the recursive coverage below.
+
+Atomic TIME/int and primitive interval results also execute. Released Flink's atomic
+TIME/long and LTZ/int/long collectors fail generated Java compilation with an Object-to-primitive
+cast, for both generic Object and typed Integer/Long TableFunctions. These are explicit matching
+initialization failures, not positive native coverage. External Row result fields for all six
+bridges have positive native checks. NULLs emitted under NOT NULL result metadata retain the
+same defaults or failures as stock Flink.
+
+Forty-two selected controls pass on each released line with JDK 17 and the release/mimalloc
+library, covering typed results, INNER/LEFT, nullable-source rejection, retained containers,
+empty input, lifecycle/failures and changelog through two heap/RocksDB restores. All successful
+populated paths require consumed native table-function input. `PrimitiveTemporalTableFunctionBenchmark`
+keeps complete stock/previous/native jobs and both transposes under the accepted UDF performance
+exception; support does not claim acceleration. The combined temporal/primitive/inference
+selection passes 255 checks on 2.2.1 and 254 on 1.18.1, plus the existing ARRAY_SORT N/A,
+with zero failures/errors.
+
+### Boxed DATE epoch days and containers (2026-11-01)
+
+Direct DATE arguments, external Row result fields and atomic results may use Java
+`Integer` epoch days with nullable or non-null metadata alongside container signatures.
+The released identity converter owns the conversion; the existing synchronous correlate
+and eager Arrow writes retain their lifecycle and ownership contracts. No runtime,
+JNI or native-memory implementation changes. Primitive `int` still requires non-null
+metadata. Nested DATE bridges through external ROW/MAP/ARRAY/List containers use the
+recursive coverage below.
+
+`FlinkBoxedDateTableFunctionSqlHarnessTest` compares released values, resolved types,
+NULL dates and containers, emitted NULLs, INNER/LEFT padding, reused result Rows,
+retained container arguments, empty input and user failures. It exercises boxed ARRAY,
+primitive ARRAY, scalar List, MAP and ROW values. Recovery cases retain all changelog
+kinds and two forced restores on heap and native RocksDB. Every admitted populated
+case requires consumed native table-function input; primitive and nested-bridge controls
+remain in the existing DATE suites.
+
+`BoxedDateTableFunctionBenchmark` measures complete jobs against stock Flink with
+nullable epoch-day callbacks and ARRAY/List containers. It retains production callback
+conversion, owned output writes, the row source/blackhole sink and both perimeter
+transposes. Reproduce after preparing release classes with `SF_BENCHMARK=true mvn
+-pl streamfusion-runtime -Pbench -Dnative.build.skip=true
+-Dtest=BoxedDateTableFunctionBenchmark -Dboundary.rows=262144 -Dboundary.warmups=2
+-Dboundary.runs=5 surefire:test@default-test`; add `,flink-1.18` for Flink 1.18.1.
+For the actual preceding revision, copy only the new test/benchmark fixtures and
+set `-Dboundary.expectNative=false`. UDF admission retains the accepted performance
+exception; this extension alone is not a throughput improvement claim.
+The same [release cost matrix](../benchmarks/jvm-temporal-bridges.md) includes the
+boxed DATE ARRAY/List comparisons and every retained trial.
+
 ### DATE epoch-day results and containers (2026-10-24)
 
 Direct non-null DATE results bridged to Java `int` now execute alongside container arguments
 and result columns, both as external Row fields and as atomic DATE results. The released
 identity converter and existing eager result projection preserve Flink's conversion behavior;
-this adds no runtime, JNI or native-memory implementation. The primitive ARRAY element gate
-does not change. Boxed DATE/Integer and alternate DATE bridges inside ROW or ARRAY remain
-explicit fallback controls.
+that increment added no runtime, JNI or native-memory implementation. Current primitive
+ARRAY element admission follows the recursive conversion rules below. The boxed DATE increment above admits direct DATE/Integer bridges; recursive DATE
+ARRAY/List and external ROW/MAP bridges are covered by the conversion section below.
 
 Twenty-four result checks cover all five existing container shapes, epoch days spanning SQL
 years 0001–9999, INNER/LEFT application, mutable result Rows, retained arguments across closed
@@ -464,10 +653,12 @@ argument. Values span dates before and after the epoch and SQL's year 0001/9999 
 INNER/LEFT fanout, nullable containers and children, DATE literals, rejected nullable input,
 mutable results, retained arguments across closed batches, lifecycle and failure order are
 checked independently against released Flink. Updating input survives two forced restores
-with both memory and native RocksDB backends. Negative controls preserve fallback for boxed
-DATE/Integer arguments and DATE/int bridges nested inside ROW or ARRAY arguments. Direct
+with both memory and native RocksDB backends. At this increment, negative controls preserved
+fallback for boxed DATE/Integer arguments; those direct bridges are admitted by the
+boxed DATE increment above. DATE/int bridges nested inside ARRAY arguments use the recursive coverage below;
+external ROW/MAP bridges are covered below. Direct
 primitive DATE result fields and atomic results are covered by the DATE result checks on this page.
-The primitive-array element whitelist is unchanged.
+Primitive-array elements follow the recursive conversion rules below.
 
 At the DATE-argument increment, the local regression set contained 389 checks on each
 supported Flink line, including the 368 preceding table-function checks. Admission uses the released identity DATE converter
@@ -528,7 +719,8 @@ binding, nullable-input planning failures, empty-input evaluation, exception cau
 fanout, retained containers across closed batches, all changelog kinds and two forced restores
 with memory/native RocksDB state retain parity. Existing boxed arguments keep their route.
 Direct non-null DATE-as-int arguments in container signatures are now covered by the
-DATE argument and result checks on this page; other DATE bridges retain fallback. Primitive result
+DATE argument and result checks on this page, including boxed/JDBC and nested ROW/MAP
+bridges within their stated whitelists. Primitive result
 metadata is now covered by the result-conversion checks on this page.
 The 172 existing List/primitive-array/nested/typed checks remain in the regression set on each
 supported Flink line. Existing unchanged upstream ROW contracts keep their native-work
@@ -578,8 +770,9 @@ table-function regressions. They cover scalar List elements (including both inte
 all seven primitive array types, invocation of concrete Java signatures, atomic-array result collectors,
 retained arguments, mutable fanout, NULL/empty values, exact floating bits through chained calls,
 error causes, all RowKinds and two forced restores on memory and native RocksDB state.
-Unverified source filters, nested alternate bridges, internal containers and Lists of containers
-keep explicit fallback checks. Existing unchanged upstream ROW contracts still require consumed
+Unverified source filters and internal containers keep explicit fallback checks.
+External recursive ARRAY/List bridges and Lists of containers use the extension below. Existing unchanged
+upstream ROW contracts still require consumed
 native table-function input on both lines.
 
 [The complete-job artifact](../benchmarks/results/jvm-table-function-conversions-2026-10-23.json)
@@ -738,8 +931,10 @@ complete-job gains and remaining stock-Flink deficit. Larger values, temporal co
 and owned exit copies retain their existing paths; no collector or ownership contract changes.
 
 This does not complete [#237](https://github.com/datafusion-contrib/StreamFusion/issues/237): JVM
-two-phase/OVER aggregate functions, additional scalar conversion classes and specialized/async/legacy
-table-function contracts remain open. Performance evidence includes release jobs with row sources, both transposes, row
+two-phase/OVER aggregate functions, additional scalar conversion classes and specialized/legacy
+table-function contracts remain open. All async feature work, lookup-join-related extensions,
+Python functions and MATCH_RECOGNIZE are outside the current ticket scope. Performance evidence
+includes release jobs with row sources, both transposes, row
 sinks, stock Flink and the actual preceding revision; profiles include Java and symbolized Rust
 CPU stacks plus sampled Java allocations. Profiled durations are excluded from speed claims.
 
@@ -849,3 +1044,324 @@ restores and consumed-row/memory-release assertions. Container signatures with u
 conversions or representation consumers, and an explicitly disabled table-function operator,
 retain complete-query fallback with zero native substitutions. Other JVM function contracts remain
 tracked in [#237](https://github.com/datafusion-contrib/StreamFusion/issues/237).
+
+
+The structural scalar-array producer check also covers the verified TIMESTAMP/TIMESTAMP_LTZ and
+interval ARRAY_AGG families on 2.2. Nullable results keep Arrow UNNEST; NOT NULL-element results
+reuse the preserving generated consumer, including ordinality and heap/native RocksDB recovery.
+[Aggregate coverage](group-by.md#timestamp-and-interval-collection-elements) specifies the same
+source-hint, representation, state/order and writer gates. ARRAY_AGG is N/A on 1.18.
+
+### Preserved scalar-array expansion
+
+Nullable scalar arrays from verified collection-preserving Calcs and collection aggregates
+can feed Rust UNNEST while retaining their original array columns. This includes STRING/CHAR
+arrays, constructors, matching-container casts, map-value arrays and split results (SPLIT
+is absent from released Flink 1.18). The
+structural check admits scalar fields and verified scalar arrays without opening ROW/MAP/
+MULTISET-bearing producer rows or nested character arrays. The explicit JVM aggregate state
+route uses the same boundary. NOT NULL element arrays retain generated expansion and its
+released unchecked-getter behavior.
+
+A string's UTF-8/cache/copy-category carrier is a scalar despite its Arrow struct layout.
+Native fan-out takes it as one column, preserving Java UTF-16 caches, parent validity, array
+metadata, ordering and RowKinds. Native filters preserve those fields. Computed scalar Calcs
+can push unused whole columns into UNNEST's projection, avoiding repeated copies of discarded
+source arrays. Cached-string value consumers use the existing generated Calc/correlate when
+needed; direct projections and NULL checks remain native. This is not a claim that all string
+scalar expressions execute in Rust.
+
+Flink ARRAY construction serializes string elements through BinaryArrayWriter. The native
+constructor now uses the shared binary-element conversion too: caches become cold and the
+binary-array marker remains present even under NULL elements. Retaining a warm cache here
+can change comparisons between supplementary Unicode and BMP values after expansion.
+
+`FlinkStringCollectionSqlHarnessTest` checks retained arrays, aliases, character grouping keys,
+CROSS/LEFT expansion, predicates, ordinality, chained native/generated expansion, both aggregate
+state routes and repeated heap/RocksDB recovery. Runtime fixtures include NULLs, all RowKinds,
+wide payloads and malformed UTF-16. The large split case selects expanded elements without
+collecting a quadratic repeated copy of the whole source array. Existing state/order/writer
+guards and the deferred updating MAP/MULTISET extension in #437 remain unchanged.
+
+### Release comparison for preserved arrays (2026-10-28)
+
+The frozen previous revision is `37d8964f`; the candidate uses the same benchmark
+sources with a separate release/mimalloc DSO. JDK 17.0.20.1, parallelism one,
+8 GiB test heap, Intel i7-12650H and Linux x86-64 are shared. Each engine/revision
+has two warmups and three alternating measured trials. The 200 complete jobs
+include 80 warmups and 120 measured jobs. Timers retain execution-time planning,
+submission, runtime row sources, row blackhole sinks, production JNI, aggregate
+state where intrinsic and both transposes on admitted native paths. Cluster
+construction and the initial explain are outside timing. These short jobs remain
+startup-sensitive; no sustained-throughput or isolated-kernel gain is claimed.
+
+Cells show median seconds and [minimum–maximum]. Previous paired stock controls,
+every trial, sanitized Maven arguments, harness/native hashes and positive
+operator witnesses are retained in the
+[raw comparison](../benchmarks/results/preserved-scalar-array-expansion-2026-10-28.json).
+No competing Java/Rust build or test process was observed in the retained cohorts.
+
+ARRAY_AGG uses INT keys, eight logical values, a NULL every eighth input and
+STRING values with a Unicode prefix and 32 ASCII suffix bytes. The nullable
+cases require Rust UNNEST; the COALESCE/NOT NULL cases require generated UNNEST.
+Both also require consumed Rust aggregate records. Previous string queries fall
+back; the nullable BIGINT pipeline is an already-native control.
+
+| 2.2 workload | Rows / keys | Current stock, s | Previous SF, s | Current SF, s |
+| --- | --- | --- | --- | --- |
+| STRING / nullable | 5,000 / 64 | 0.429 [0.415–0.540] | 0.399 [0.393–0.429] | 0.157 [0.142–0.178] |
+| STRING / NOT NULL | 5,000 / 64 | 0.438 [0.413–0.469] | 0.423 [0.414–0.428] | 0.121 [0.120–0.128] |
+| BIGINT control | 5,000 / 64 | 0.135 [0.129–0.136] | 0.077 [0.075–0.090] | 0.078 [0.077–0.083] |
+| STRING / nullable | 50,000 / 4,096 | 0.414 [0.324–0.489] | 0.347 [0.325–0.462] | 0.219 [0.141–0.222] |
+| STRING / NOT NULL | 50,000 / 4,096 | 0.378 [0.378–0.380] | 0.347 [0.257–0.359] | 0.235 [0.194–0.362] |
+| BIGINT control | 50,000 / 4,096 | 0.166 [0.162–0.167] | 0.123 [0.111–0.128] | 0.115 [0.107–0.128] |
+
+All four STRING medians beat both stock and previous StreamFusion. Their ranges
+are below stock; three are also below previous StreamFusion, while the
+4,096-key NOT NULL case overlaps its previous range. The existing BIGINT control has overlapping
+previous/current ranges; no BIGINT improvement is attributed to this change.
+The initial 50,000-row/64-key fixture was stopped during its first stock warmup:
+a thread snapshot showed ArrayDataSerializer copying the retained full array
+for every expanded row. No timing from that oversized fixture is counted. All
+engines use 5,000 rows at 64 keys and 50,000 rows at 4,096 keys in the retained
+comparison; the production Flink path is unchanged.
+
+The Calc comparison casts runtime `ARRAY<STRING>` to `ARRAY<CHAR(8)>` and expands
+it, with 50,000 rows, widths 3/16, domain 16 and the same NULL/wide-string fixture
+on both lines. Candidate runs require consumed NativeCalc and Rust UNNEST
+records. Previous 2.2 uses its actual whole-query fallback; previous 1.18 requires
+its existing generated UNNEST and NativeCalc. Both native boundaries remain timed.
+
+| Flink / width | Current stock, s | Previous SF, s | Current SF, s |
+| --- | --- | --- | --- |
+| 2.2 / 3 | 0.179 [0.175–0.223] | 0.248 [0.218–0.250] | 0.220 [0.213–0.243] |
+| 2.2 / 16 | 0.450 [0.445–0.484] | 0.521 [0.451–0.525] | 0.404 [0.316–0.469] |
+| 1.18 / 3 | 0.155 [0.144–0.227] | 0.192 [0.168–0.238] | 0.248 [0.192–0.265] |
+| 1.18 / 16 | 0.439 [0.433–0.446] | 0.375 [0.357–0.436] | 0.322 [0.321–0.448] |
+
+The width-16 medians improve on both lines, but their ranges overlap stock and
+previous results. Width 3 remains slower than stock on both lines; its 1.18
+median also regresses against previous StreamFusion. This narrower case is
+accepted collection groundwork, not a blanket acceleration claim.
+
+The optimization timebox closes after exactly two eight-second CPU captures of
+the Calc workloads, one per width, following an unprofiled native warmup. Captures
+include all threads, JIT, repeated job setup and production processing; profiled
+jobs are excluded from the timing tables. Width 3 has 20,498 samples, including
+1,904 in NativeCalc scopes, 2,159 in row/Arrow conversion scopes, 598 in native
+UNNEST/take scopes and 13,859 in JIT scopes. Width 16 has 16,349 samples, with
+3,369 / 4,303 / 1,150 / 9,213 in those respective scopes. These inclusive counts
+overlap and do not measure copied bytes, allocations or isolated transition
+costs. Generated cast/materialization and perimeter conversion remain visible;
+the JIT-heavy captures do not establish the entire cause of the timing gap.
+Further tuning stays in [#392](https://github.com/datafusion-contrib/StreamFusion/issues/392)
+and generated-expression replacement work in
+[#505](https://github.com/datafusion-contrib/StreamFusion/issues/505).
+
+Correctness evidence includes the full 72-case 2.2 string suite before SPLIT test
+separation, four isolated SPLIT checks afterward, 719 broader 2.2 checks (including
+those four), and 24 passing / 52 explicit capability-N/A cases on 1.18. Eight
+focused Rust tests cover represented strings, constructor cache reset, NULLs,
+slices, ownership and an ordinary ROW control. The unchanged released COLLECT
+fixtures pass 7/6 cases and UNNEST passes four cases per line with positive
+native consumption contracts. Repeated heap/RocksDB checkpoint recovery remains
+part of the 2.2 string suite. SPLIT and ARRAY_AGG are explicitly N/A on 1.18.
+
+The nested table-function harness also verifies generated UNNEST, CARDINALITY and
+COUNT consumers over ARRAY/ROW and MAP/ARRAY results. The preserving transpose layout
+keeps these existing scalar consumers native with consumed table-function work and
+matching declared types; unverified retained complex-state consumers remain guarded.
+
+### Scalar bridges nested through ROW and MAP
+
+External ROW and MAP arguments and result columns admit the verified scalar primitive and
+temporal bridges described above, including MAP keys and values and mixed ROW/MAP layers.
+Container conversion classes must be exactly `org.apache.flink.types.Row` and
+`java.util.Map`. Each child must use a verified default conversion, an admitted scalar bridge,
+or another verified external container layer. Released Flink's recursive converters and correlate generator
+perform the conversions; the existing eager Arrow writes retain output ownership. This changes
+planner admission; the recursive ARRAY/List extension below also restores typed array backing where needed.
+
+The new qualification set has 411 checks on each supported Flink line. Its 375-case conversion
+matrix covers 25 leaf bridges, five shapes (ROW, MAP value, ROW/MAP, MAP/ROW and MAP key), and
+argument, result and combined positions. INNER/LEFT cases compare released values, resolved
+types, raw floating bits and nested RowKinds with nullable parents/children, empty maps,
+epoch-unit key collisions and the JDBC Gregorian cutover. Additional checks cover retained
+arguments, mutation after collection, chained calls, lifecycle and callback failures, all outer
+changelog kinds and repeated restore with heap and native RocksDB state. Admitted populated
+paths require consumed native table-function input; guards require explicit fallback and zero
+native work.
+
+NULLs emitted under non-null child metadata retain released ROW conversion behavior. The
+NULL-metadata controls admit full-ROW output; their scalar extraction and casts retain the
+generated-collection fallback, including projections that also select the full ROW. Concrete
+List arguments, internal RowData/ArrayData/MapData, STRUCTURED/RAW/MULTISET bridges and
+specialization remain excluded. Recursive ARRAY/List bridges use the extension below.
+
+
+The [release cost record](../benchmarks/results/jvm-nested-row-map-bridges-2026-11-01.json)
+retains all 224 trials, including warmups, source/library fingerprints, commands and sampled
+host observations. The candidate is `e501372c`; actual preceding production is canonical
+`a4515d7b`, with only the two new test/benchmark fixtures copied into it. Both use the identical
+release/mimalloc library, JDK 17, one task, a 3 GiB heap, 262,144 input rows selecting 64 prebuilt
+payloads and 1,024-row transpose batches. Each case/revision/line has a fresh JVM, two warmup
+pairs and five measured pairs alternating engine order. Submission-to-completion timing follows
+symmetric EXPLAIN and includes the row source, runtime leaf-class checks, released recursive
+converters, callback mutation, owned writes, production JNI, both perimeter transposes and the
+blackhole sink. Previous production requires zero substitutions/work; candidate jobs require
+both transposes and consumed table-function input.
+
+Seconds are median (minimum–maximum). Previous native-enabled execution is full stock fallback.
+
+| Flink / nested bridge | Stock in candidate JVM | Previous native enabled | Candidate native enabled |
+| --- | ---: | ---: | ---: |
+| 2.2 / ROW / FLOAT primitive | 0.086 (0.075–0.096) | 0.085 (0.078–0.089) | 0.155 (0.146–0.158) |
+| 2.2 / ROW/MAP / JDBC DATE | 0.132 (0.131–0.135) | 0.131 (0.123–0.136) | 0.290 (0.286–0.299) |
+| 2.2 / MAP/ROW / JDBC TIMESTAMP | 0.168 (0.161–0.173) | 0.160 (0.158–0.168) | 0.302 (0.298–0.303) |
+| 2.2 / MAP key / LTZ Long | 0.149 (0.142–0.150) | 0.137 (0.135–0.144) | 0.216 (0.202–0.225) |
+| 1.18 / ROW / FLOAT primitive | 0.237 (0.219–0.262) | 0.232 (0.224–0.289) | 0.509 (0.461–0.522) |
+| 1.18 / ROW/MAP / JDBC DATE | 0.430 (0.407–0.464) | 0.422 (0.399–0.427) | 1.201 (1.146–1.243) |
+| 1.18 / MAP/ROW / JDBC TIMESTAMP | 0.162 (0.158–0.218) | 0.169 (0.164–0.171) | 0.310 (0.307–0.312) |
+| 1.18 / MAP key / LTZ Long | 0.144 (0.143–0.146) | 0.144 (0.142–0.145) | 0.222 (0.218–0.223) |
+
+Every native median is slower than both its candidate stock control and preceding fallback;
+the candidate/stock ratios range from about 1.46 to 2.79. Separate-JVM stock medians drift by
+up to 9.5%; the short complete jobs retain startup/JIT variability and do not establish sustained
+throughput. Some short series have no sampled Java process; long outer launch-to-observation
+intervals are also retained separately from per-job times. Host samples cannot establish the
+cause of those delays, exclude brief interference or reserve CPUs. These
+results enable correctness-verified UDF coverage under the accepted exception, without an
+acceleration claim or performance-only opt-in.
+
+Reproduce after preparing release classes with `SF_BENCHMARK=true mvn -pl streamfusion-runtime
+-Pbench -Dnative.build.skip=true -Dtest=NestedBridgeTableFunctionBenchmark -Dsf.testForks=1
+'-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false'
+'-Dsf.extraJvmArgs=-Djava.library.path=<qualified-release-native>' -Dboundary.rows=262144
+-Dboundary.warmups=2 -Dboundary.runs=5 surefire:test@default-test`; add `,flink-1.18` for 1.18.1.
+Select one case per fresh JVM through `boundary.nestedBridges` (for example
+`-Dboundary.nestedBridges=row_map:date-sql`). The fixture defaults enumerate the four cases above.
+For preceding production, copy only `FlinkNestedBridgeTableFunctionSqlHarnessTest` and
+`NestedBridgeTableFunctionBenchmark`, preserve its production sources and use
+`-Dboundary.expectNative=false`. Pin the same release library on both revisions.
+
+
+### Recursive ARRAY/List conversions
+
+Synchronous table functions admit verified scalar bridges recursively through external
+ARRAY, List, ROW and MAP containers. This includes Lists of ARRAY/MAP/ROW, Lists nested in
+ROW/MAP/ARRAY, nested primitive arrays, and primitive/JDBC/epoch temporal leaves beneath
+ARRAY boundaries. Every ROW/MAP container still uses its default external `Row`/`Map`
+conversion. List arguments require exactly `java.util.List`; result containers may use a
+List implementation, including at nested positions. Flink still rejects concrete List
+subclasses as arguments, rather than materializing the declared subtype.
+
+The generated correlate keeps released Flink's type inference and converters. Before an
+argument converter runs, the existing typed-array backing repair now traverses containers:
+a nullable columnar copy may hold `Object[]`, while a released primitive-array converter
+expects a typed internal array such as `Float[]`. The repair leaves scalar values intact,
+retains nested RowKinds, and keeps map key/value arrays aligned until Flink performs its
+normal external-map conversion. It allocates replacements only where array backing or a
+nested child changes. Result conversion remains Flink's released converter. Collected values
+are copied into owned Arrow batches before user mutation can affect them.
+Primitive DATE/int[], TIME/int[] and interval int[]/long[] arguments execute. These result
+bridges require an enclosing external ARRAY/List or MAP conversion that serializes the
+child first. A result reached only through ROW layers retains fallback: Flink's copy
+serializer rejects primitive temporal backing in projections/state even when an unprojected
+query would execute. Reordered-projection failure controls retain the released exception.
+TIME/long[] and LTZ/int[]/long[] retain fallback in every position because their released
+primitive-array converters use incompatible internal backing. Their explicit controls retain
+the released ClassCastException.
+This adapter is shared with the [recursive scalar boundary](calc-filter.md#recursive-external-scalar-conversions).
+
+The existing preserving producer/consumer guards continue to apply. This extension does
+not admit internal `RowData`/`ArrayData`/`MapData`, MULTISET/STRUCTURED/RAW, specialized
+functions, or new stateful consumers/columnar sinks. It does not widen source-projection
+folding. Async and Python functions retain fallback.
+
+`FlinkRecursiveTableFunctionSqlHarnessTest` checks default scalar element families, alternate
+primitive and temporal leaves, mixed container nesting, result-only List implementations,
+INNER/LEFT fanout, NULL/empty parents and children, mutable outputs, resolved types, raw
+floating bits and RowKinds. Its boundary suite checks atomic wrapping, chained and retained
+arguments, lifecycle/failures and every changelog kind across two forced restores with
+heap and native RocksDB state. Successful populated cases require consumed work in the
+intended table-function operator; stock runs are independent. Existing unchanged upstream
+`CorrelateITCase.testRowType` contracts continue to require table-function consumption.
+
+
+Chaining retains an additional ownership guard. If an upstream scalar or table function can expose
+mutable Java-backed values and a later JVM function argument converter can return such
+aliases, the complete query falls back. This includes primitive/boxed arrays passed directly
+or through ROW, BINARY/VARBINARY buffers, and identity-converted binary leaves in containers.
+Stock Flink can expose upstream mutations to a downstream function retaining that argument;
+an owned Arrow copy cannot reproduce those aliases. The check is conservative across upstream
+functions rather than tracking each projected field. It also applies to previously admitted
+flat primitive/boxed-array chains. It does not inspect user code to assume a function is stateless.
+
+Released ARRAY/List and MAP converters with non-identity children serialize those children
+into owned binary containers first. Lists of ROW/MAP/ARRAY, nested arrays and array-valued
+MAP keys therefore retain their verified native chains when their returned values have no
+remaining mutable aliases. Paired retained-argument controls pin both the guarded and admitted
+routes, including binary elements, boxed arrays and primitive-array keys. Raw floating bits
+are observed inside a second JVM function, so collection comparison cannot hide a NaN payload
+change. Existing source and consumer exclusions still apply.
+
+
+### Recursive ARRAY/List release costs
+
+The [complete-job record](../benchmarks/results/jvm-recursive-table-functions-2026-11-03.json)
+retains 168 final trials plus 168 earlier-baseline diagnostic trials, including warmups,
+per-engine samples/ranges, paired preceding-JVM
+stock controls, commands and source/library fingerprints. Local regression selections pass
+1,823 tests on Flink 2.2.1 and 1,824 on 1.18.1, with no failures/skips; nine final directed
+alias controls also pass on each line (one added direct-binary case and eight repeated
+controls). The integration selection on `2bb52ca2` also passes 323 checks per line.
+They include the 683-case recursive conversion matrix, atomic/lifecycle/ownership
+checks and repeated heap/native-RocksDB recovery. The unchanged upstream ROW witness retains
+its consumed-work contract on both lines.
+
+Release/mimalloc jobs use Rust 1.95.0, Temurin 17, an Apple M4, parallelism one, a 2 GiB heap,
+1,024-row Arrow batches and disabled local zero-copy exchange. JVM timezone is UTC and the
+session timezone is America/New_York. Each job generates 262,144 fresh input payloads cycling
+through 48 logical shapes; row generation, released conversions, user callbacks, owned
+writes, both transposes and the blackhole row sink stay inside job timing. Matching
+argument/result signatures return and then mutate the argument; the result-only custom List
+case constructs the declared nested result. Each populated callback emits twice. Each
+case/revision/line gets a separate serial JVM, two warmup pairs and five measured pairs with
+alternating engine order, after symmetric EXPLAIN. Preceding production is canonical
+`2bb52ca2`, with only the new SQL fixture and benchmark class copied in. Both revisions use
+the same qualified release library. The candidate requires consumed table-function work and
+both transposes; the preceding controls require zero substitutions and no native work.
+
+All durations below are median seconds (minimum–maximum). These short complete jobs include
+startup/JIT. All candidates are slower than stock and preceding fallback; they ship as UDF
+coverage under the accepted performance exception, without an acceleration claim. No measured
+optimization pass was attempted, and the figures do not attribute overhead to a particular
+component. Intrinsic recursive conversion, allocation and Arrow ownership remain follow-up
+costs; broader producer/consumer work stays in [#237](https://github.com/datafusion-contrib/StreamFusion/issues/237).
+
+| Flink / boundary | Stock | Previous fallback | Candidate |
+| --- | ---: | ---: | ---: |
+| 1.18.1 / List of ROW / STRING | 0.486 (0.478–0.495) | 0.482 (0.478–0.493) | 0.908 (0.904–0.929) |
+| 1.18.1 / ROW of primitive ARRAY / DOUBLE | 0.490 (0.485–0.495) | 0.484 (0.483–0.522) | 0.727 (0.726–0.735) |
+| 1.18.1 / ROW of custom List of MAP / DECIMAL(38,18) | 0.853 (0.843–0.861) | 0.846 (0.842–0.852) | 1.727 (1.720–1.734) |
+| 2.2.1 / List of ROW / STRING | 0.488 (0.482–0.489) | 0.474 (0.470–0.480) | 0.903 (0.897–0.911) |
+| 2.2.1 / ROW of primitive ARRAY / DOUBLE | 0.488 (0.485–0.492) | 0.490 (0.487–0.499) | 0.732 (0.721–0.765) |
+| 2.2.1 / ROW of custom List of MAP / DECIMAL(38,18) | 0.858 (0.853–0.862) | 0.853 (0.846–0.855) | 1.733 (1.728–1.742) |
+
+After preparing release classes, reproduce each case in a fresh JVM:
+
+```sh
+SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime \
+  -Dtest=RecursiveTableFunctionBenchmark -Dnative.build.skip=true -Dsf.testForks=1 \
+  '-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC' \
+  -Dboundary.rows=262144 -Dboundary.warmups=2 -Dboundary.runs=5 \
+  '-Drecursive.bench.signatures=list/row:default-STRING:both' \
+  surefire:test@default-test
+```
+
+Use `-Pbench,flink-1.18` for that line. Other signatures are
+`row/primitive:primitive-DOUBLE:both` and
+`row/custom/map:default-DECIMAL(38,18):result`. The default runs all three, so select one per
+fresh JVM for the recorded method. Preceding controls copy only
+`FlinkRecursiveTableFunctionSqlHarnessTest` and `RecursiveTableFunctionBenchmark`, retain
+production sources and the same release library, and set `-Dboundary.expectNative=false`.

@@ -12,6 +12,13 @@ crate-type = ["cdylib", "rlib"]
 streamfusion-bridge = { path = "../bridge" }
 arrow.workspace = true
 jni.workspace = true
+paimon = { version = "=0.4.0", default-features = false }
+opendal = { version = "0.58.0", default-features = false }
+async-trait = "0.1"
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
 
 [dependencies.libmimalloc-sys]
 workspace = true
@@ -23,11 +30,3 @@ streamfusion-native-build = { path = "../native-build" }
 [features]
 default = []
 mimalloc = ["dep:libmimalloc-sys", "libmimalloc-sys/v2"]
-
-[dev-dependencies]
-criterion.workspace = true
-streamfusion-benchmark-support.workspace = true
-
-[[bench]]
-name = "snapshot_merge"
-harness = false

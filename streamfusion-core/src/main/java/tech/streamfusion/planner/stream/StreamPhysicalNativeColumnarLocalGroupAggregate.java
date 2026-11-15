@@ -1,0 +1,134 @@
+package tech.streamfusion.planner.stream;
+
+import java.util.List;
+import org.apache.calcite.plan.RelOptCluster;
+import org.apache.calcite.plan.RelTraitSet;
+import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.type.RelDataType;
+import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
+import org.apache.flink.table.planner.plan.nodes.exec.ExecNode;
+import org.apache.flink.table.planner.plan.nodes.exec.InputProperty;
+import org.apache.flink.table.planner.utils.ShortcutUtils;
+import tech.streamfusion.planner.ColumnarInput;
+import tech.streamfusion.planner.ColumnarOutput;
+import tech.streamfusion.planner.FlinkKeyGroupUtils;
+
+/**
+ * Columnar form of the local half of a two-phase non-windowed {@code GROUP BY}: Arrow batches in
+ * and out ({@link ColumnarInput} and {@link ColumnarOutput}), so the pre-aggregate, the keyed
+ * shuffle, and the global merge flow Arrow with no transpose between them. Insert-only (it emits
+ * append-only partials), so it requires no {@code $row_kind$} column on its output.
+ */
+public class StreamPhysicalNativeColumnarLocalGroupAggregate extends StreamPhysicalNativeSingleRel
+    implements ColumnarInput, ColumnarOutput {
+
+  private final int[] aggregateKinds;
+  private final int[] valueTypes;
+  private final int[] valueColumns;
+  private final int[] filterColumns;
+  private final int[] auxiliaryColumns;
+  private final int[] keyColumns;
+  private final int[] distinctViewSources;
+
+  public StreamPhysicalNativeColumnarLocalGroupAggregate(
+      RelOptCluster cluster,
+      RelTraitSet traitSet,
+      RelNode input,
+      RelDataType outputRowType,
+      int[] aggregateKinds,
+      int[] valueTypes,
+      int[] valueColumns,
+      int[] filterColumns,
+      int[] keyColumns,
+      int[] distinctViewSources) {
+    this(
+        cluster,
+        traitSet,
+        input,
+        outputRowType,
+        aggregateKinds,
+        valueTypes,
+        valueColumns,
+        filterColumns,
+        keyColumns,
+        distinctViewSources,
+        new int[0]);
+  }
+
+  public StreamPhysicalNativeColumnarLocalGroupAggregate(
+      RelOptCluster cluster,
+      RelTraitSet traitSet,
+      RelNode input,
+      RelDataType outputRowType,
+      int[] aggregateKinds,
+      int[] valueTypes,
+      int[] valueColumns,
+      int[] filterColumns,
+      int[] keyColumns,
+      int[] distinctViewSources,
+      int[] auxiliaryColumns) {
+    super(cluster, traitSet, input, outputRowType);
+    this.aggregateKinds = aggregateKinds;
+    this.valueTypes = valueTypes;
+    this.valueColumns = valueColumns;
+    this.filterColumns = filterColumns;
+    this.auxiliaryColumns = auxiliaryColumns;
+    this.keyColumns = keyColumns;
+    this.distinctViewSources = distinctViewSources;
+  }
+
+  boolean preservesCollections() {
+    for (int i = 0; i < aggregateKinds.length; i++)
+      if (aggregateKinds[i] == 7 && valueTypes[i] == 100) return true;
+    return false;
+  }
+
+  @Override
+  public boolean acceptsCollectionRepresentation() {
+    return preservesCollections()
+        || CollectionValueIdentity.scalarAggregateInputs(
+            getInput(),
+            keyColumns,
+            valueColumns,
+            aggregateKinds,
+            kind -> kind == WindowAggregateMatcher.KIND_COUNT);
+  }
+
+  @Override
+  public boolean requireWatermark() {
+    return false;
+  }
+
+  @Override
+  public RelNode copy(RelTraitSet traitSet, List<RelNode> inputs) {
+    return new StreamPhysicalNativeColumnarLocalGroupAggregate(
+        getCluster(),
+        traitSet,
+        inputs.get(0),
+        outputRowType,
+        aggregateKinds,
+        valueTypes,
+        valueColumns,
+        filterColumns,
+        keyColumns,
+        distinctViewSources,
+        auxiliaryColumns);
+  }
+
+  @Override
+  public ExecNode<?> translateToExecNode() {
+    return new NativeColumnarLocalGroupAggExecNode(
+        ShortcutUtils.unwrapTableConfig(this),
+        InputProperty.DEFAULT,
+        FlinkTypeFactory$.MODULE$.toLogicalRowType(getRowType()),
+        getRelDetailedDescription(),
+        aggregateKinds,
+        valueTypes,
+        valueColumns,
+        filterColumns,
+        keyColumns,
+        distinctViewSources,
+        FlinkKeyGroupUtils.timestampPrecisions(getInput().getRowType(), keyColumns),
+        auxiliaryColumns);
+  }
+}

@@ -20,19 +20,64 @@
         <sf.runtime.tests.skip>${skipTests}</sf.runtime.tests.skip>
     </properties>
 
-    <!-- Keep the repository layout stable while exposing a conventional runtime Maven module. -->
+    <dependencies>
+        <dependency>
+            <groupId>tech.streamfusion</groupId><artifactId>streamfusion-core${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>tech.streamfusion</groupId><artifactId>streamfusion-kafka${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>tech.streamfusion</groupId><artifactId>streamfusion-json${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>tech.streamfusion</groupId><artifactId>streamfusion-csv${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>tech.streamfusion</groupId><artifactId>streamfusion-raw${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>tech.streamfusion</groupId><artifactId>streamfusion-avro${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>tech.streamfusion</groupId><artifactId>streamfusion-avro-confluent-registry${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>tech.streamfusion</groupId><artifactId>streamfusion-protobuf${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>tech.streamfusion</groupId><artifactId>streamfusion-parquet${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>tech.streamfusion</groupId><artifactId>streamfusion-orc${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-table-runtime</artifactId>
+            <version>${flink.version}</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <!-- Integration tests consume the deployable modules without duplicating their production classes. -->
     <build>
-        <sourceDirectory>${project.basedir}/../src/main/java</sourceDirectory>
         <testSourceDirectory>${project.basedir}/../src/test/java</testSourceDirectory>
         <resources combine.self="override">
             <!-- The all-in-one development/test assembly exposes every optional planner provider.
                  Deployable artifacts carry only their own provider file. -->
             <resource>
                 <directory>${project.basedir}/src/main/resources</directory>
-            </resource>
-            <resource>
-                <directory>${project.basedir}/../src/main/resources-filtered</directory>
-                <filtering>true</filtering>
             </resource>
             <resource>
                 <directory>${native.resource.directory}</directory>
@@ -46,6 +91,10 @@
         <testResources>
             <testResource>
                 <directory>${project.basedir}/../src/test/resources</directory>
+            </testResource>
+            <testResource>
+                <directory>${project.basedir}/../native/engine/tests/fixtures</directory>
+                <includes><include>retracting-rank/*.json</include></includes>
             </testResource>
         </testResources>
         <plugins>
@@ -72,27 +121,9 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
-                <configuration>
-                    <excludes>
-                        <exclude>tech/streamfusion/fluss/**</exclude>
-                        <exclude>tech/streamfusion/planner/*Fluss*.java</exclude>
-                        <!-- Delta is an opt-in module with its own connector dependencies. -->
-                        <exclude>tech/streamfusion/delta/**</exclude>
-                        <exclude>tech/streamfusion/planner/DeltaPlannerExtension.java</exclude>
-                        <exclude>tech/streamfusion/planner/DeltaSinkMatcher.java</exclude>
-                        <exclude>tech/streamfusion/planner/NativeDeltaSinkExecNode.java</exclude>
-                        <exclude>tech/streamfusion/planner/StreamPhysicalNativeDeltaSink.java</exclude>
-                        <!-- Paimon likewise ships as its own module against the Paimon connector. -->
-                        <exclude>tech/streamfusion/paimon/**</exclude>
-                        <exclude>tech/streamfusion/planner/Paimon*.java</exclude>
-                        <exclude>tech/streamfusion/planner/NativePaimon*.java</exclude>
-                        <exclude>tech/streamfusion/planner/StreamPhysicalNativePaimon*.java</exclude>
-                    </excludes>
-                </configuration>
             </plugin>
-            <!-- The connector-free payload is embedded by the planner loader during the test phase.
-                 Publish this thin reactor artifact after main compilation so the core shading module
-                 can assemble it before downstream tests, not only at package time. -->
+            <!-- Publish the resource-only development assembly early, then its shared test harness,
+                 so downstream optional connector tests can consume both inside the reactor. -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
@@ -100,9 +131,7 @@
                 <executions>
                     <execution>
                         <id>default-jar</id>
-                        <!-- Move Maven's normal main artifact earlier in the lifecycle so the
-                             core payload can shade it before downstream tests. Reusing the
-                             default execution avoids a second package-phase JAR. -->
+                        <!-- Reusing the default execution avoids a second package-phase JAR. -->
                         <phase>process-classes</phase>
                         <goals><goal>jar</goal></goals>
                     </execution>
@@ -171,6 +200,88 @@
     </build>
 
     <profiles>
+        <profile>
+            <id>flink-1.18</id>
+            <dependencies>
+                <dependency>
+                    <groupId>org.apache.flink</groupId>
+                    <artifactId>flink-table-api-scala-bridge_${scala.binary.version}</artifactId>
+                    <version>${flink.version}</version>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>tpch</id>
+            <dependencies>
+                <dependency>
+                    <groupId>io.airlift.tpch</groupId><artifactId>tpch</artifactId>
+                    <version>0.10</version><scope>test</scope>
+                </dependency>
+            </dependencies>
+            <build><plugins><plugin>
+                <groupId>org.codehaus.mojo</groupId><artifactId>build-helper-maven-plugin</artifactId>
+                <executions><execution><id>tpch-test-source</id><phase>generate-test-sources</phase>
+                    <goals><goal>add-test-source</goal></goals><configuration><sources>
+                        <source>${project.basedir}/src/tpch/java</source>
+                    </sources></configuration>
+                </execution></executions>
+            </plugin></plugins></build>
+        </profile>
+        <profile>
+            <id>batch-upstream</id>
+            <dependencies>
+                <dependency>
+                    <groupId>org.apache.flink</groupId>
+                    <artifactId>flink-table-common</artifactId>
+                    <version>${flink.version}</version>
+                    <type>test-jar</type>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.flink</groupId>
+                    <artifactId>flink-table-planner_${scala.binary.version}</artifactId>
+                    <version>${flink.version}</version>
+                    <type>test-jar</type>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.junit.vintage</groupId>
+                    <artifactId>junit-vintage-engine</artifactId>
+                    <version>${junit.version}</version>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+            <build><plugins><plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration><dependenciesToScan>
+                    <dependency>org.apache.flink:flink-table-planner_${scala.binary.version}</dependency>
+                </dependenciesToScan></configuration>
+            </plugin></plugins></build>
+        </profile>
+        <profile>
+            <id>canonical-kafka</id>
+            <dependencies>
+                <dependency>
+                    <groupId>tech.streamfusion</groupId>
+                    <artifactId>streamfusion-json${streamfusion.artifact.suffix}</artifactId>
+                    <version>${project.version}</version>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>partition-runtime-tests</id>
+            <activation><property><name>sf.runtime.testIncludesFile</name></property></activation>
+            <build><plugins><plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <includesFile>${sf.runtime.testIncludesFile}</includesFile>
+                </configuration>
+            </plugin></plugins></build>
+        </profile>
         <profile>
             <id>filter-orc-test-groups</id>
             <activation><property><name>groups</name></property></activation>

@@ -1,13 +1,6 @@
-// Checked deallocation shims for the library-scoped mimalloc rebinding (see build.rs and
-// divergences/19). Aliasing `free` straight to `mi_free` breaks any libc API that returns memory
-// it allocated internally with the SYSTEM allocator — `realpath(3)` with a NULL buffer is the one
-// this library actually hits (`std::fs::canonicalize` inside the object-store layer's builder).
-// Whether that foreign free crashes depends on where the system allocation lands relative to
-// mimalloc's segment map, which is why it surfaced only under particular host classpaths (the
-// address-space layout shifts with what the JVM has loaded). `free` and `realloc` therefore land
-// here instead of on mi_* directly: mimalloc-owned pointers take the fast path
-// (mi_is_in_heap_region consults only the global segment map — it never dereferences near the
-// pointer), and anything else is returned to the allocator that owns it.
+// Library-scoped mimalloc aliases must also accept buffers allocated inside host APIs. Checked
+// free/realloc preserve libc or macOS zone ownership; Linux realpath additionally resolves into
+// caller-owned storage so a third allocator in the host cannot supply its returned buffer.
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -45,8 +38,25 @@ void* sf_realloc(void* p, size_t newsize) {
 }
 
 #elif defined(__linux__)
+#include <limits.h>
+
 extern void __libc_free(void* p);
 extern void* __libc_realloc(void* p, size_t newsize);
+extern char* __realpath_chk(const char* path, char* resolved, size_t resolved_size);
+extern char* mi_strdup(const char* s);
+
+// A host library may supply realpath's allocated result from a third allocator. Resolve into a
+// caller-owned buffer, then return a copy owned by this DSO. __realpath_chk avoids our local alias.
+char* sf_realpath(const char* path, char* resolved) {
+  if (resolved != NULL) {
+    return __realpath_chk(path, resolved, (size_t)-1);
+  }
+  char buffer[PATH_MAX];
+  if (__realpath_chk(path, buffer, sizeof(buffer)) == NULL) {
+    return NULL;
+  }
+  return mi_strdup(buffer);
+}
 
 void sf_free(void* p) {
   if (p == NULL) {

@@ -22,9 +22,14 @@ clearest case where Arroyo's choice and Flink's behavior simply disagree and we
 must follow Flink.
 
 ## Scope / consequences
-- Only the bigint case diverges from Arroyo. A future float-input `AVG` would use
-  DataFusion's `avg` directly and agree with both engines.
-- Because the partial state is `(sum, count)` — two fields — integer `AVG` is
-  currently supported only as a lone aggregate and only single-phase; see
-  [02](02-two-phase-local-global-aggregation.md) for the multi-field-partial
-  limitation.
+
+Integer AVG covers TINYINT, SMALLINT, INT and BIGINT. Its widened BIGINT sum and signed count
+retain Flink's wrapping arithmetic, NULL for a zero count, truncation toward zero and narrowing
+back to the declared input type. Java's MIN_VALUE / -1 division result is preserved.
+
+Window accumulators and the compact running state used by GROUP BY and OVER share this
+finalization kernel. Their accumulation loops, state layouts and two-phase adapters remain
+specialized. Contract tests exercise NULLs, positive and negative changelog transitions,
+zero/negative counts, merge/restore and division overflow across both representations.
+Supported two-phase and multi-aggregate coverage lives on the operator pages; this semantic
+note does not impose a lone-aggregate or single-phase restriction.

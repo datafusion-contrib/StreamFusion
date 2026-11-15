@@ -6,6 +6,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+chrono.workspace = true
 streamfusion-bridge = { path = "../bridge" }
 arrow.workspace = true
 jni.workspace = true

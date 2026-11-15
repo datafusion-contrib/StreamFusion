@@ -97,14 +97,41 @@ public final class NativePaimonWriteOperator extends TableWriteOperator<Bucketed
   static void writeAppendBundle(
       StoreSinkWrite write, BinaryRow partition, BucketedArrowBatch batch, RowType rowType)
       throws Exception {
+    VectorSchemaRoot payload = appendPayload(batch.root());
     if (write instanceof NativeAppendSinkWrite) {
-      ((NativeAppendSinkWrite) write).writeBundle(partition, batch.bucket(), batch.root());
+      ((NativeAppendSinkWrite) write).writeBundle(partition, batch.bucket(), payload);
       return;
     }
-    try (VectorSchemaRoot root = batch.root()) {
+    try (VectorSchemaRoot root = payload) {
       ((StoreSinkWriteImpl) write)
           .getWrite()
           .writeBundle(partition, batch.bucket(), new ArrowBatchBundle(root, rowType));
+    }
+  }
+
+  private static VectorSchemaRoot appendPayload(VectorSchemaRoot root) {
+    var kinds =
+        (org.apache.arrow.vector.TinyIntVector)
+            root.getVector(tech.streamfusion.operator.RowDataArrowConverter.ROW_KIND_COLUMN);
+    if (kinds == null) return root;
+    try {
+      for (int row = 0; row < root.getRowCount(); row++) {
+        if (kinds.get(row) != org.apache.flink.types.RowKind.INSERT.toByteValue()) {
+          throw new IllegalStateException(
+              "Append only writer can not accept row with RowKind "
+                  + org.apache.flink.types.RowKind.fromByteValue(kinds.get(row)));
+        }
+      }
+      var payload = root.removeVector(root.getFieldVectors().indexOf(kinds));
+      kinds.close();
+      return payload;
+    } catch (RuntimeException | Error failure) {
+      try {
+        root.close();
+      } catch (RuntimeException | Error closing) {
+        failure.addSuppressed(closing);
+      }
+      throw failure;
     }
   }
 

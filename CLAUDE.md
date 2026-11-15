@@ -1,15 +1,77 @@
 This project attempts to run Apache Flink using Apache DataFusion + rust operators via JNI to accelerate stream
 processing throughput. It is a very similar project to DataFusion comet in spirit, but with stream processing.
 
-The canonical home of this repo is https://github.com/datafusion-contrib/StreamFusion (the `upstream` remote,
-branch `main`) — push every commit there.
+The canonical home is https://github.com/datafusion-contrib/StreamFusion (`upstream`, branch `main`).
+For ordinary development, create or use the authenticated contributor's personal GitHub fork, enable
+Actions there, and push feature branches to that fork. Open PRs from the personal fork into canonical
+`main`; do not push development branches to `datafusion-contrib/StreamFusion`. Fork push workflows
+run on the fork owner's Actions quota, avoiding the shared organization's runner backlog. Sync or
+rebase on current upstream `main` before pushing so the branch has the fork CI workflows. Verify
+both aggregate checks for the exact PR head before merging; see [docs/ci.md](docs/ci.md) for setup,
+result mirroring, and existing-PR migration. Direct changes to canonical `main` require explicit
+maintainer authorization.
 
-Do not create, use, or push to repository forks. Do not add fork remotes or depend on fork-hosted, locally
-published, snapshot, Git, or filesystem builds of third-party code; use released artifacts from the project's
-canonical registry. A pre-existing fork remote is not authorization to use it. Do not modify a sibling or other
-external repository while working on StreamFusion unless the user explicitly authorizes changes to that exact
-repository. If a fix requires an upstream change that is not yet released, keep StreamFusion on the released API,
-document the limitation, and ask before expanding scope.
+Conserve runner capacity by testing changed functionality locally and reusing compatible build
+caches while iterating.
+Keep concurrent tasks on distinct branches and worktrees when a shared checkout is active.
+Preserve other work when isolating changes; shared-branch commits can invalidate another
+task's candidate checks and force unnecessary restarts.
+
+Use short feedback loops before broad qualification. Reproduce a measured bottleneck with the
+smallest unchanged test selection that exercises it, profile the actual worker processes, and
+compare repeated alternating trials with identical invocation identities and outcomes. Prefer
+local loops lasting seconds or a few minutes; use a focused hosted diagnostic when the local
+platform cannot exercise the relevant JVM, native library or service. Batch independent fixes
+before the full matrices. Report component gains separately from whole-workflow improvements.
+For pinned runtimes and toolchains, verify the canonical vendor release and exercise remote
+resolution in the focused setup diagnostic; a version present in one runner cache can be
+unavailable on another image.
+
+Before dispatching hosted work, inspect queued and running workflows across the personal fork,
+including other branches. If an existing qualification campaign already fills the observed runner
+capacity, finish local preparation and wait for capacity before dispatching another broad matrix.
+This applies across concurrent tasks, not only within one task. Keep one full qualification campaign
+for the candidate; run optional
+profiling campaigns separately so they do not compete with its merge gates or contaminate timing.
+Use the smallest diagnostic matrix needed for the question. Reuse existing successful native
+artifacts after verifying their source and producer. Cancel only this task's superseded work;
+leave other contributors' or sessions' runs alone. If a shared setup failure guarantees that this
+task's full campaign cannot pass, retain its failure evidence and stop its remaining work while
+fixing the setup in a short loop.
+
+Include other active repositories owned by the same account when investigating capacity:
+standard hosted concurrency is shared by the owner, not reserved for this fork. A repository's
+observed peak is not proof of its configured account limit. Keep the inner loop independent of
+bulk qualification: use local Java-only codec/setup regressions first, then a source-verified
+focused hosted check for Linux/native behavior, then one complete candidate campaign.
+
+Treat runner queueing as a scheduling problem. Measure dependency completion, actual job starts,
+active-run overlap and peak concurrent execution before adding shards. Report eligibility-to-start
+delay separately from build prerequisites. More jobs do not create more runner capacity. Group
+compatible checks to reuse checkout, dependencies, compilation and artifact downloads while
+retaining every original configuration, test invocation and failure signal. Balance actual work
+and avoid unnecessary dependency barriers; keep artifacts scoped to what their consumers need.
+See docs/ci.md#runner-queue-discipline for the measured queue baseline and iteration workflow.
+
+Use hosted CI for the final merge candidate. Batch changes locally and push when the commit is
+ready for the required checks. Before dispatching or retrying a workflow, verify its commit is
+still the current PR head or, before a PR exists, the current branch tip. Reuse queued, running,
+and successful checks for that commit. When a push supersedes it, cancel queued and running CI
+for the older commits on that PR. Retry only the failed jobs needed for the current head and
+merge after its required checks pass.
+
+Feature-branch pushes do not automatically run the test matrices or release diagnostics.
+When the combined change is ready, explicitly dispatch CI and the full upstream Flink suite
+on its fork branch, plus applicable docs/compatibility checks. Intermediate local commits
+and pushes do not need their own CI. Main retains automatic checks; deliberately
+named `ci/**` submission branches run the two merge-gate suites and docs. Optional
+compatibility and release diagnostics on feature/submission branches require dispatch.
+
+This personal-fork workflow applies only to StreamFusion contributions. Do not depend on fork-hosted,
+locally published, snapshot, Git, or filesystem builds of third-party code; use released artifacts from
+its canonical registry. Do not modify a sibling or other external repository unless the user explicitly
+authorizes changes to that exact repository. If a fix requires an upstream change that is not yet
+released, keep StreamFusion on the released API, document the limitation, and ask before expanding scope.
 
 We are aiming for IDENTICAL results in stream processing jobs to flink. To start, we'll focus on Flink SQL. As column
 oriented streaming sources pop up more and more (see Fluss, for example, or open table CDC), being able to run jobs
@@ -80,6 +142,15 @@ Keep the repository documentation current with the code. Every change to behavio
 configuration, architecture, deployment, or benchmark methodology/results must update the corresponding `docs/`
 page in the same commit. Documentation that describes removed or changed behavior must be corrected or removed;
 never knowingly leave stale documentation for a later cleanup.
+
+Version maintained project inputs, not historical run outputs. Keep source, tests and
+fixed compatibility fixtures, current documentation, design decisions, benchmark harnesses
+and structured measured observations in Git. Generate SQL inventory HTML/CSV from the
+compressed snapshots when publishing docs. Store historical logs, profiler dumps and
+plan/report archives in durable versioned public artifacts with checksums and retrieval
+instructions; see `docs/benchmarks/evidence.md`. Publish and verify the archive before
+removing repository copies. Do not delete research or rejected decisions merely because
+they are old, and do not rewrite Git history as part of ordinary repository cleanup.
 
 When reviewing code, make sure that it follows the existing principles of codebases which we will take influence from:
 - Flink (see ~/data/flink for code)
@@ -168,6 +239,13 @@ or dismiss a regression as coverage work. If a slower implementation is necessar
 optimization, obtain explicit maintainer agreement on the tradeoff, document its measured limits and follow-up
 issue, and keep stock Flink as the default for the affected cases until the tradeoff is accepted or performance
 is demonstrated.
+
+**Batch SQL admission follows compatibility, not performance heuristics.** The maintainer has
+explicitly removed the batch operator/expression performance whitelist. Admit compatible fully
+columnar batch computation, including standalone scalar jobs, global reductions and sorted limits,
+without requiring a qualifying expression, operator or source. Keep semantic/type/runtime checks
+and explicit disable switches. Retain and report unfavorable measurements; do not reintroduce
+performance-only planner gates to suppress those workloads.
 
 **Aggregate/window coverage completion is time-boxed.** For the maintainer's original eleven
 aggregate/window context items, profile a slow case and allow at most two measured optimization

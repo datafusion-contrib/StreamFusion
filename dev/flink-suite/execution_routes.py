@@ -64,16 +64,25 @@ SINK_OPERATORS = {
 }
 NATIVE_OPERATORS = {
     'tech.streamfusion.operator.' + name for name in (
+        'NativeBatchSortOperator', 'NativeBatchAggregateOperator', 'NativeBatchJoinOperator',
         'NativeCalcOperator', 'NativeLookupJoinOperator', 'NativeAsyncLookupJoinOperator',
         'NativeFilterOperator', 'NativeColumnarGroupAggregateOperator',
         'NativeColumnarLocalGroupAggregateOperator',
-        'NativeColumnarJvmGroupOperator', 'NativeColumnarTableFunctionOperator',
+        'NativeColumnarJvmGroupOperator', 'NativeColumnarJvmLocalGroupOperator',
+        'NativeColumnarJvmGlobalGroupOperator', 'NativeColumnarJvmOverOperator',
+        'NativeColumnarTableFunctionOperator',
         'NativeColumnarUpdatingJoinOperator', 'NativeColumnarTopNOperator',
         'NativeColumnarGlobalWindowAggregateOperator')
+}
+BATCH_NATIVE_OPERATORS = {
+    'tech.streamfusion.operator.' + name for name in (
+        'NativeCalcOperator', 'NativeFilterOperator', 'NativeBatchSortOperator',
+        'NativeBatchAggregateOperator', 'NativeBatchJoinOperator')
 }
 BOUNDARY_OPERATORS = SOURCE_OPERATORS | SINK_OPERATORS | {
     'tech.streamfusion.operator.RowDataToArrowOperator',
     'tech.streamfusion.operator.ArrowToRowDataOperator',
+    'tech.streamfusion.operator.BatchUnionSchemaOperator',
     'tech.streamfusion.operator.SplitByKeyGroupOperator',
     'tech.streamfusion.operator.OrderedKeyGroupReassembler',
     'tech.streamfusion.operator.NativeColumnarMiniBatchAssignerOperator',
@@ -216,15 +225,19 @@ def job_route(result, row=None):
     if not host <= host_classes:
         return 'unclassified'
     work = result.get('native_work', {})
+    expected = {name.rsplit('.', 1)[1] for name in native}
+    if confirmed_failure:
+        if (not set(work) <= expected
+                or graph['job_type'] == 'BATCH' and not native <= BATCH_NATIVE_OPERATORS):
+            return 'unclassified'
+        return 'job_failure' if native else 'host_failure'
     if work:
-        expected = {name.rsplit('.', 1)[1] for name in native}
-        if confirmed_failure or graph['job_type'] != 'STREAMING' or set(work) != expected:
+        if (set(work) != expected
+                or graph['job_type'] == 'BATCH' and not native <= BATCH_NATIVE_OPERATORS):
             return 'unclassified'
         return 'mixed' if host else 'native'
     if native or not classes <= host_classes:
         return 'unclassified'
-    if confirmed_failure:
-        return 'host_failure'
     if graph['job_type'] == 'BATCH':
         return 'batch_host_only'
     translations = linked_translations(row, result) if row is not None else []
@@ -251,6 +264,8 @@ def classify(row, partition_valid):
     routes = {job_route(result, row) for result in jobs.values()}
     if 'unclassified' in routes:
         return 'unclassified'
+    if 'job_failure' in routes:
+        return 'job_failure'
     if routes == {'host_only'}:
         return 'unclassified'
     if len(routes) == 1:

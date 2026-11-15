@@ -1,0 +1,810 @@
+{
+  "mode": "compare",
+  "profile": false,
+  "scale": 1.0,
+  "javaVersion": "17.0.17",
+  "javaVm": "OpenJDK 64-Bit Server VM",
+  "os": "Mac OS X aarch64",
+  "maxHeapBytes": 8589934592,
+  "generator": "io.airlift.tpch:tpch:0.10",
+  "schema": "TPC-H identifiers BIGINT, integer INT, numeric DECIMAL(15,2), date DATE, text STRING",
+  "parallelism": 2,
+  "nativeBytes": 536870912,
+  "warmups": 3,
+  "trials": 7,
+  "tables": {
+    "customer": {
+      "bytes": 24196144,
+      "sha256": "a035a33a703d3a043ecf97746b4e3a7988316c1c04923fda63231a59d5e46092",
+      "rows": 150000
+    },
+    "orders": {
+      "bytes": 170452161,
+      "sha256": "3f111871419ea6f319fcc51c235d199b3edf16754c5e100be92927527e5f6c97",
+      "rows": 1500000
+    },
+    "lineitem": {
+      "bytes": 753862072,
+      "sha256": "4feb529dfa255799bbf0243d2f2c5028375dfb684e592eb94775345602aa2728",
+      "rows": 6001215
+    },
+    "part": {
+      "bytes": 23935125,
+      "sha256": "cecd01146ae002aebe47e6b58bd81644df1d51d9c14da3425aea2b4976e02d60",
+      "rows": 200000
+    },
+    "partsupp": {
+      "bytes": 118184616,
+      "sha256": "3a68b7b7757cd3aacccb39c4bc092dc3edf3b7e0e7609a259c39238cae0be41e",
+      "rows": 800000
+    },
+    "supplier": {
+      "bytes": 1399184,
+      "sha256": "f5699b5df22724f41bee9b8521798d8fc0cecd5beb0bd3bca96547ac58095547",
+      "rows": 10000
+    },
+    "nation": {
+      "bytes": 2199,
+      "sha256": "7d47bc9397da331054fa92b8fb92e4c074004bad72dcbb893012093218dccf6c",
+      "rows": 25
+    },
+    "region": {
+      "bytes": 384,
+      "sha256": "5a7c2fe9718db00ff5e5bc82a9ebfa8abc492cc75260d3c0ffb411974f235ab0",
+      "rows": 5
+    }
+  },
+  "queries": [
+    {
+      "query": 1,
+      "sqlSha256": "864a088f29bb394a6397b71c28a5bdb1dbd74e667f690917feff0d9e293df4e6",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "streamfusion",
+          "trial": -3,
+          "jobId": "ae8749b64431e120e0ac718c3fc81ad9",
+          "nativeWork": [
+            {
+              "attempt": "0",
+              "jobId": "ae8749b64431e120e0ac718c3fc81ad9",
+              "recordsIn": 0,
+              "operator": "NativeAggregate(groupBy=[l_returnflag, l_linestatus], select=[l_returnflag, l_li",
+              "recordsOut": 0,
+              "subtask": "1"
+            },
+            {
+              "attempt": "0",
+              "jobId": "ae8749b64431e120e0ac718c3fc81ad9",
+              "recordsIn": 0,
+              "operator": "NativeCalc(select=[l_returnflag, l_linestatus, l_quantity, l_extendedprice, *(l_",
+              "recordsOut": 0,
+              "subtask": "1"
+            },
+            {
+              "attempt": "0",
+              "jobId": "ae8749b64431e120e0ac718c3fc81ad9",
+              "recordsIn": 2,
+              "operator": "NativeAggregate(isMerge=[true], groupBy=[l_returnflag, l_linestatus], select=[l_",
+              "recordsOut": 2,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "ae8749b64431e120e0ac718c3fc81ad9",
+              "recordsIn": 2,
+              "operator": "NativeAggregate(isMerge=[true], groupBy=[l_returnflag, l_linestatus], select=[l_",
+              "recordsOut": 2,
+              "subtask": "1"
+            },
+            {
+              "attempt": "0",
+              "jobId": "ae8749b64431e120e0ac718c3fc81ad9",
+              "recordsIn": 4,
+              "operator": "NativeSort(orderBy=[l_returnflag ASC, l_linestatus ASC])[37]",
+              "recordsOut": 4,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "ae8749b64431e120e0ac718c3fc81ad9",
+              "recordsIn": 5916591,
+              "operator": "NativeAggregate(groupBy=[l_returnflag, l_linestatus], select=[l_returnflag, l_li",
+              "recordsOut": 4,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "ae8749b64431e120e0ac718c3fc81ad9",
+              "recordsIn": 6001215,
+              "operator": "NativeCalc(select=[l_returnflag, l_linestatus, l_quantity, l_extendedprice, *(l_",
+              "recordsOut": 5916591,
+              "subtask": "0"
+            }
+          ]
+        },
+        {
+          "engine": "stock",
+          "trial": -3,
+          "jobId": "a0fdc913c363a84a136ae3c289483ebd",
+          "nativeWork": []
+        },
+        {
+          "engine": "stock",
+          "trial": -2,
+          "jobId": "78760c092798382e5184af586834fd3a",
+          "nativeWork": []
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -2,
+          "jobId": "0a3f4d889b9e810cad1f4b4ec11e829a",
+          "nativeWork": [
+            {
+              "attempt": "0",
+              "jobId": "0a3f4d889b9e810cad1f4b4ec11e829a",
+              "recordsIn": 0,
+              "operator": "NativeAggregate(groupBy=[l_returnflag, l_linestatus], select=[l_returnflag, l_li",
+              "recordsOut": 0,
+              "subtask": "1"
+            },
+            {
+              "attempt": "0",
+              "jobId": "0a3f4d889b9e810cad1f4b4ec11e829a",
+              "recordsIn": 0,
+              "operator": "NativeCalc(select=[l_returnflag, l_linestatus, l_quantity, l_extendedprice, *(l_",
+              "recordsOut": 0,
+              "subtask": "1"
+            },
+            {
+              "attempt": "0",
+              "jobId": "0a3f4d889b9e810cad1f4b4ec11e829a",
+              "recordsIn": 2,
+              "operator": "NativeAggregate(isMerge=[true], groupBy=[l_returnflag, l_linestatus], select=[l_",
+              "recordsOut": 2,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "0a3f4d889b9e810cad1f4b4ec11e829a",
+              "recordsIn": 2,
+              "operator": "NativeAggregate(isMerge=[true], groupBy=[l_returnflag, l_linestatus], select=[l_",
+              "recordsOut": 2,
+              "subtask": "1"
+            },
+            {
+              "attempt": "0",
+              "jobId": "0a3f4d889b9e810cad1f4b4ec11e829a",
+              "recordsIn": 4,
+              "operator": "NativeSort(orderBy=[l_returnflag ASC, l_linestatus ASC])[66]",
+              "recordsOut": 4,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "0a3f4d889b9e810cad1f4b4ec11e829a",
+              "recordsIn": 5916591,
+              "operator": "NativeAggregate(groupBy=[l_returnflag, l_linestatus], select=[l_returnflag, l_li",
+              "recordsOut": 4,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "0a3f4d889b9e810cad1f4b4ec11e829a",
+              "recordsIn": 6001215,
+              "operator": "NativeCalc(select=[l_returnflag, l_linestatus, l_quantity, l_extendedprice, *(l_",
+              "recordsOut": 5916591,
+              "subtask": "0"
+            }
+          ]
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -1,
+          "jobId": "2161a7a41e90b0736f55b6a6d06c322a",
+          "nativeWork": [
+            {
+              "attempt": "0",
+              "jobId": "2161a7a41e90b0736f55b6a6d06c322a",
+              "recordsIn": 0,
+              "operator": "NativeAggregate(groupBy=[l_returnflag, l_linestatus], select=[l_returnflag, l_li",
+              "recordsOut": 0,
+              "subtask": "1"
+            },
+            {
+              "attempt": "0",
+              "jobId": "2161a7a41e90b0736f55b6a6d06c322a",
+              "recordsIn": 0,
+              "operator": "NativeCalc(select=[l_returnflag, l_linestatus, l_quantity, l_extendedprice, *(l_",
+              "recordsOut": 0,
+              "subtask": "1"
+            },
+            {
+              "attempt": "0",
+              "jobId": "2161a7a41e90b0736f55b6a6d06c322a",
+              "recordsIn": 2,
+              "operator": "NativeAggregate(isMerge=[true], groupBy=[l_returnflag, l_linestatus], select=[l_",
+              "recordsOut": 2,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "2161a7a41e90b0736f55b6a6d06c322a",
+              "recordsIn": 2,
+              "operator": "NativeAggregate(isMerge=[true], groupBy=[l_returnflag, l_linestatus], select=[l_",
+              "recordsOut": 2,
+              "subtask": "1"
+            },
+            {
+              "attempt": "0",
+              "jobId": "2161a7a41e90b0736f55b6a6d06c322a",
+              "recordsIn": 4,
+              "operator": "NativeSort(orderBy=[l_returnflag ASC, l_linestatus ASC])[79]",
+              "recordsOut": 4,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "2161a7a41e90b0736f55b6a6d06c322a",
+              "recordsIn": 5916591,
+              "operator": "NativeAggregate(groupBy=[l_returnflag, l_linestatus], select=[l_returnflag, l_li",
+              "recordsOut": 4,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "2161a7a41e90b0736f55b6a6d06c322a",
+              "recordsIn": 6001215,
+              "operator": "NativeCalc(select=[l_returnflag, l_linestatus, l_quantity, l_extendedprice, *(l_",
+              "recordsOut": 5916591,
+              "subtask": "0"
+            }
+          ]
+        },
+        {
+          "engine": "stock",
+          "trial": -1,
+          "jobId": "78ebce372f8fe2347a8c52131c158218",
+          "nativeWork": []
+        },
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "ccd80fa06e873f11f70477b6cac64325",
+          "nativeWork": []
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "ecd3d268b64ae94ff21e4dc37201ba8e",
+          "nativeWork": [
+            {
+              "attempt": "0",
+              "jobId": "ecd3d268b64ae94ff21e4dc37201ba8e",
+              "recordsIn": 0,
+              "operator": "NativeAggregate(groupBy=[l_returnflag, l_linestatus], select=[l_returnflag, l_li",
+              "recordsOut": 0,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "ecd3d268b64ae94ff21e4dc37201ba8e",
+              "recordsIn": 0,
+              "operator": "NativeCalc(select=[l_returnflag, l_linestatus, l_quantity, l_extendedprice, *(l_",
+              "recordsOut": 0,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "ecd3d268b64ae94ff21e4dc37201ba8e",
+              "recordsIn": 2,
+              "operator": "NativeAggregate(isMerge=[true], groupBy=[l_returnflag, l_linestatus], select=[l_",
+              "recordsOut": 2,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "ecd3d268b64ae94ff21e4dc37201ba8e",
+              "recordsIn": 2,
+              "operator": "NativeAggregate(isMerge=[true], groupBy=[l_returnflag, l_linestatus], select=[l_",
+              "recordsOut": 2,
+              "subtask": "1"
+            },
+            {
+              "attempt": "0",
+              "jobId": "ecd3d268b64ae94ff21e4dc37201ba8e",
+              "recordsIn": 4,
+              "operator": "NativeSort(orderBy=[l_returnflag ASC, l_linestatus ASC])[108]",
+              "recordsOut": 4,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "ecd3d268b64ae94ff21e4dc37201ba8e",
+              "recordsIn": 5916591,
+              "operator": "NativeAggregate(groupBy=[l_returnflag, l_linestatus], select=[l_returnflag, l_li",
+              "recordsOut": 4,
+              "subtask": "1"
+            },
+            {
+              "attempt": "0",
+              "jobId": "ecd3d268b64ae94ff21e4dc37201ba8e",
+              "recordsIn": 6001215,
+              "operator": "NativeCalc(select=[l_returnflag, l_linestatus, l_quantity, l_extendedprice, *(l_",
+              "recordsOut": 5916591,
+              "subtask": "1"
+            }
+          ]
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 1,
+          "jobId": "a6c959b3995dfb95a2462218a9902172",
+          "nativeWork": [
+            {
+              "attempt": "0",
+              "jobId": "a6c959b3995dfb95a2462218a9902172",
+              "recordsIn": 0,
+              "operator": "NativeAggregate(groupBy=[l_returnflag, l_linestatus], select=[l_returnflag, l_li",
+              "recordsOut": 0,
+              "subtask": "1"
+            },
+            {
+              "attempt": "0",
+              "jobId": "a6c959b3995dfb95a2462218a9902172",
+              "recordsIn": 0,
+              "operator": "NativeCalc(select=[l_returnflag, l_linestatus, l_quantity, l_extendedprice, *(l_",
+              "recordsOut": 0,
+              "subtask": "1"
+            },
+            {
+              "attempt": "0",
+              "jobId": "a6c959b3995dfb95a2462218a9902172",
+              "recordsIn": 2,
+              "operator": "NativeAggregate(isMerge=[true], groupBy=[l_returnflag, l_linestatus], select=[l_",
+              "recordsOut": 2,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "a6c959b3995dfb95a2462218a9902172",
+              "recordsIn": 2,
+              "operator": "NativeAggregate(isMerge=[true], groupBy=[l_returnflag, l_linestatus], select=[l_",
+              "recordsOut": 2,
+              "subtask": "1"
+            },
+            {
+              "attempt": "0",
+              "jobId": "a6c959b3995dfb95a2462218a9902172",
+              "recordsIn": 4,
+              "operator": "NativeSort(orderBy=[l_returnflag ASC, l_linestatus ASC])[121]",
+              "recordsOut": 4,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "a6c959b3995dfb95a2462218a9902172",
+              "recordsIn": 5916591,
+              "operator": "NativeAggregate(groupBy=[l_returnflag, l_linestatus], select=[l_returnflag, l_li",
+              "recordsOut": 4,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "a6c959b3995dfb95a2462218a9902172",
+              "recordsIn": 6001215,
+              "operator": "NativeCalc(select=[l_returnflag, l_linestatus, l_quantity, l_extendedprice, *(l_",
+              "recordsOut": 5916591,
+              "subtask": "0"
+            }
+          ]
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "jobId": "1613c481f7045338edbd533dead02085",
+          "nativeWork": []
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "jobId": "182189cbf916008af6698746992d5b6c",
+          "nativeWork": []
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 2,
+          "jobId": "c1233c6daf918ab7798413663c5ddce5",
+          "nativeWork": [
+            {
+              "attempt": "0",
+              "jobId": "c1233c6daf918ab7798413663c5ddce5",
+              "recordsIn": 0,
+              "operator": "NativeAggregate(groupBy=[l_returnflag, l_linestatus], select=[l_returnflag, l_li",
+              "recordsOut": 0,
+              "subtask": "1"
+            },
+            {
+              "attempt": "0",
+              "jobId": "c1233c6daf918ab7798413663c5ddce5",
+              "recordsIn": 0,
+              "operator": "NativeCalc(select=[l_returnflag, l_linestatus, l_quantity, l_extendedprice, *(l_",
+              "recordsOut": 0,
+              "subtask": "1"
+            },
+            {
+              "attempt": "0",
+              "jobId": "c1233c6daf918ab7798413663c5ddce5",
+              "recordsIn": 2,
+              "operator": "NativeAggregate(isMerge=[true], groupBy=[l_returnflag, l_linestatus], select=[l_",
+              "recordsOut": 2,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "c1233c6daf918ab7798413663c5ddce5",
+              "recordsIn": 2,
+              "operator": "NativeAggregate(isMerge=[true], groupBy=[l_returnflag, l_linestatus], select=[l_",
+              "recordsOut": 2,
+              "subtask": "1"
+            },
+            {
+              "attempt": "0",
+              "jobId": "c1233c6daf918ab7798413663c5ddce5",
+              "recordsIn": 4,
+              "operator": "NativeSort(orderBy=[l_returnflag ASC, l_linestatus ASC])[150]",
+              "recordsOut": 4,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "c1233c6daf918ab7798413663c5ddce5",
+              "recordsIn": 5916591,
+              "operator": "NativeAggregate(groupBy=[l_returnflag, l_linestatus], select=[l_returnflag, l_li",
+              "recordsOut": 4,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "c1233c6daf918ab7798413663c5ddce5",
+              "recordsIn": 6001215,
+              "operator": "NativeCalc(select=[l_returnflag, l_linestatus, l_quantity, l_extendedprice, *(l_",
+              "recordsOut": 5916591,
+              "subtask": "0"
+            }
+          ]
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 3,
+          "jobId": "cfbc835280da816285ced0359ebf3364",
+          "nativeWork": [
+            {
+              "attempt": "0",
+              "jobId": "cfbc835280da816285ced0359ebf3364",
+              "recordsIn": 0,
+              "operator": "NativeAggregate(groupBy=[l_returnflag, l_linestatus], select=[l_returnflag, l_li",
+              "recordsOut": 0,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "cfbc835280da816285ced0359ebf3364",
+              "recordsIn": 0,
+              "operator": "NativeCalc(select=[l_returnflag, l_linestatus, l_quantity, l_extendedprice, *(l_",
+              "recordsOut": 0,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "cfbc835280da816285ced0359ebf3364",
+              "recordsIn": 2,
+              "operator": "NativeAggregate(isMerge=[true], groupBy=[l_returnflag, l_linestatus], select=[l_",
+              "recordsOut": 2,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "cfbc835280da816285ced0359ebf3364",
+              "recordsIn": 2,
+              "operator": "NativeAggregate(isMerge=[true], groupBy=[l_returnflag, l_linestatus], select=[l_",
+              "recordsOut": 2,
+              "subtask": "1"
+            },
+            {
+              "attempt": "0",
+              "jobId": "cfbc835280da816285ced0359ebf3364",
+              "recordsIn": 4,
+              "operator": "NativeSort(orderBy=[l_returnflag ASC, l_linestatus ASC])[163]",
+              "recordsOut": 4,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "cfbc835280da816285ced0359ebf3364",
+              "recordsIn": 5916591,
+              "operator": "NativeAggregate(groupBy=[l_returnflag, l_linestatus], select=[l_returnflag, l_li",
+              "recordsOut": 4,
+              "subtask": "1"
+            },
+            {
+              "attempt": "0",
+              "jobId": "cfbc835280da816285ced0359ebf3364",
+              "recordsIn": 6001215,
+              "operator": "NativeCalc(select=[l_returnflag, l_linestatus, l_quantity, l_extendedprice, *(l_",
+              "recordsOut": 5916591,
+              "subtask": "1"
+            }
+          ]
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "jobId": "a3ef53658b9859309532a02c6a6784fc",
+          "nativeWork": []
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "jobId": "29d1c69bd5490829f49d63bedf62d72f",
+          "nativeWork": []
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 4,
+          "jobId": "b019e6a8f461c32af77723ec23333587",
+          "nativeWork": [
+            {
+              "attempt": "0",
+              "jobId": "b019e6a8f461c32af77723ec23333587",
+              "recordsIn": 0,
+              "operator": "NativeAggregate(groupBy=[l_returnflag, l_linestatus], select=[l_returnflag, l_li",
+              "recordsOut": 0,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "b019e6a8f461c32af77723ec23333587",
+              "recordsIn": 0,
+              "operator": "NativeCalc(select=[l_returnflag, l_linestatus, l_quantity, l_extendedprice, *(l_",
+              "recordsOut": 0,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "b019e6a8f461c32af77723ec23333587",
+              "recordsIn": 2,
+              "operator": "NativeAggregate(isMerge=[true], groupBy=[l_returnflag, l_linestatus], select=[l_",
+              "recordsOut": 2,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "b019e6a8f461c32af77723ec23333587",
+              "recordsIn": 2,
+              "operator": "NativeAggregate(isMerge=[true], groupBy=[l_returnflag, l_linestatus], select=[l_",
+              "recordsOut": 2,
+              "subtask": "1"
+            },
+            {
+              "attempt": "0",
+              "jobId": "b019e6a8f461c32af77723ec23333587",
+              "recordsIn": 4,
+              "operator": "NativeSort(orderBy=[l_returnflag ASC, l_linestatus ASC])[192]",
+              "recordsOut": 4,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "b019e6a8f461c32af77723ec23333587",
+              "recordsIn": 5916591,
+              "operator": "NativeAggregate(groupBy=[l_returnflag, l_linestatus], select=[l_returnflag, l_li",
+              "recordsOut": 4,
+              "subtask": "1"
+            },
+            {
+              "attempt": "0",
+              "jobId": "b019e6a8f461c32af77723ec23333587",
+              "recordsIn": 6001215,
+              "operator": "NativeCalc(select=[l_returnflag, l_linestatus, l_quantity, l_extendedprice, *(l_",
+              "recordsOut": 5916591,
+              "subtask": "1"
+            }
+          ]
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 5,
+          "jobId": "77ffb7c0d2b60ceb621dc20a2034fe1b",
+          "nativeWork": [
+            {
+              "attempt": "0",
+              "jobId": "77ffb7c0d2b60ceb621dc20a2034fe1b",
+              "recordsIn": 0,
+              "operator": "NativeAggregate(groupBy=[l_returnflag, l_linestatus], select=[l_returnflag, l_li",
+              "recordsOut": 0,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "77ffb7c0d2b60ceb621dc20a2034fe1b",
+              "recordsIn": 0,
+              "operator": "NativeCalc(select=[l_returnflag, l_linestatus, l_quantity, l_extendedprice, *(l_",
+              "recordsOut": 0,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "77ffb7c0d2b60ceb621dc20a2034fe1b",
+              "recordsIn": 2,
+              "operator": "NativeAggregate(isMerge=[true], groupBy=[l_returnflag, l_linestatus], select=[l_",
+              "recordsOut": 2,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "77ffb7c0d2b60ceb621dc20a2034fe1b",
+              "recordsIn": 2,
+              "operator": "NativeAggregate(isMerge=[true], groupBy=[l_returnflag, l_linestatus], select=[l_",
+              "recordsOut": 2,
+              "subtask": "1"
+            },
+            {
+              "attempt": "0",
+              "jobId": "77ffb7c0d2b60ceb621dc20a2034fe1b",
+              "recordsIn": 4,
+              "operator": "NativeSort(orderBy=[l_returnflag ASC, l_linestatus ASC])[205]",
+              "recordsOut": 4,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "77ffb7c0d2b60ceb621dc20a2034fe1b",
+              "recordsIn": 5916591,
+              "operator": "NativeAggregate(groupBy=[l_returnflag, l_linestatus], select=[l_returnflag, l_li",
+              "recordsOut": 4,
+              "subtask": "1"
+            },
+            {
+              "attempt": "0",
+              "jobId": "77ffb7c0d2b60ceb621dc20a2034fe1b",
+              "recordsIn": 6001215,
+              "operator": "NativeCalc(select=[l_returnflag, l_linestatus, l_quantity, l_extendedprice, *(l_",
+              "recordsOut": 5916591,
+              "subtask": "1"
+            }
+          ]
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "jobId": "d897d86f10b0372b081a61fe6b40d72f",
+          "nativeWork": []
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "jobId": "29df2bdf0eab64cfc5cb6dba5bb504a5",
+          "nativeWork": []
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 6,
+          "jobId": "ef40ccabf5967710dd187608fa9d5fef",
+          "nativeWork": [
+            {
+              "attempt": "0",
+              "jobId": "ef40ccabf5967710dd187608fa9d5fef",
+              "recordsIn": 0,
+              "operator": "NativeAggregate(groupBy=[l_returnflag, l_linestatus], select=[l_returnflag, l_li",
+              "recordsOut": 0,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "ef40ccabf5967710dd187608fa9d5fef",
+              "recordsIn": 0,
+              "operator": "NativeCalc(select=[l_returnflag, l_linestatus, l_quantity, l_extendedprice, *(l_",
+              "recordsOut": 0,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "ef40ccabf5967710dd187608fa9d5fef",
+              "recordsIn": 2,
+              "operator": "NativeAggregate(isMerge=[true], groupBy=[l_returnflag, l_linestatus], select=[l_",
+              "recordsOut": 2,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "ef40ccabf5967710dd187608fa9d5fef",
+              "recordsIn": 2,
+              "operator": "NativeAggregate(isMerge=[true], groupBy=[l_returnflag, l_linestatus], select=[l_",
+              "recordsOut": 2,
+              "subtask": "1"
+            },
+            {
+              "attempt": "0",
+              "jobId": "ef40ccabf5967710dd187608fa9d5fef",
+              "recordsIn": 4,
+              "operator": "NativeSort(orderBy=[l_returnflag ASC, l_linestatus ASC])[234]",
+              "recordsOut": 4,
+              "subtask": "0"
+            },
+            {
+              "attempt": "0",
+              "jobId": "ef40ccabf5967710dd187608fa9d5fef",
+              "recordsIn": 5916591,
+              "operator": "NativeAggregate(groupBy=[l_returnflag, l_linestatus], select=[l_returnflag, l_li",
+              "recordsOut": 4,
+              "subtask": "1"
+            },
+            {
+              "attempt": "0",
+              "jobId": "ef40ccabf5967710dd187608fa9d5fef",
+              "recordsIn": 6001215,
+              "operator": "NativeCalc(select=[l_returnflag, l_linestatus, l_quantity, l_extendedprice, *(l_",
+              "recordsOut": 5916591,
+              "subtask": "1"
+            }
+          ]
+        }
+      ],
+      "resultType": "ROW<`l_returnflag` STRING, `l_linestatus` STRING, `sum_qty` DECIMAL(38, 2), `sum_base_price` DECIMAL(38, 2), `sum_disc_price` DECIMAL(38, 4), `sum_charge` DECIMAL(38, 6), `avg_qty` DECIMAL(38, 6), `avg_price` DECIMAL(38, 6), `avg_disc` DECIMAL(38, 6), `count_order` BIGINT NOT NULL> NOT NULL",
+      "rows": 4,
+      "resultSha256": "25510cc27944ade10f79659078255e62b67a443db84d89357894740eb0b9c28a",
+      "stockNanos": [
+        5103564833,
+        5088766416,
+        5114657833,
+        5086981500,
+        5090750167,
+        5089586125,
+        5076787500
+      ],
+      "nativeNanos": [
+        4849676333,
+        4814016916,
+        4812749041,
+        4819413417,
+        4835558542,
+        4725645917,
+        4819068792
+      ],
+      "stockRuntimeMs": [
+        4931,
+        4928,
+        4941,
+        4911,
+        4932,
+        4947,
+        4969
+      ],
+      "nativeRuntimeMs": [
+        4785,
+        4714,
+        4762,
+        4717,
+        4770,
+        4690,
+        4762
+      ],
+      "status": "passed"
+    }
+  ],
+  "completeWorkload": false,
+  "nativeProfile": "release",
+  "librarySha256": "f28c65d6dc14f6f678dc871121d918150708b202f07b8a9864220047fcacb86d",
+  "flink": "2.2.1",
+  "nativeSourceSha256": {
+    "native/engine/src/bounded_aggregate.rs": "0dda761b1899550cb4935273f1bac7f6ccf9670ae0111b39bf9102908b85e758",
+    "native/engine/src/bounded_sort.rs": "a3512183b0aa8337c911b4674749278d683a6da68e7f4d0625846a736556198e",
+    "native/engine/src/bounded_task.rs": "41b5c59acf4689183ff0e08c0123cbb0c8510641566cb09506ffd3d514066b60"
+  },
+  "medianSpeedup": 1.0561347730601145,
+  "stockMedianMs": 5089.586125,
+  "nativeMedianMs": 4819.068792,
+  "status": "Q1_exact_results_and_positive_native_work_with_complete_job_gain; complete_22_query_goal_incomplete",
+  "timingBoundary": "executeSql through all result rows and completed JobExecutionResult; identical filesystem CSV, full perimeter transposes, blocking Arrow IPC, native operations and stock collecting sink"
+}

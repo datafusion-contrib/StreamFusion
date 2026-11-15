@@ -39,7 +39,13 @@ pub(super) fn decode(
             Charset::Utf16 | Charset::Utf16Be | Charset::Utf16Le => {
                 append_utf16(input.value(row), charset, replace_reversed_bom, &mut text);
             }
-            Charset::Utf8 => super::scalar::append_java_utf8(input.value(row), &mut text),
+            Charset::Utf8 => {
+                super::scalar::write_java_utf8(input.value(row), &mut output)
+                    .expect("writing to a StringBuilder cannot fail");
+                super::check_string_capacity(0, output.values_slice().len())?;
+                output.append_value("");
+                continue;
+            }
             Charset::Latin1 => text.extend(input.value(row).iter().map(|&byte| char::from(byte))),
             Charset::Ascii => text.extend(input.value(row).iter().map(|&byte| {
                 if byte < 128 {

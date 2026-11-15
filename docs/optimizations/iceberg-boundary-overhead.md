@@ -119,3 +119,34 @@ adapter. Evicting the bounded persistent target cache does not clear those encod
 mid-batch: cycling through more destinations than the target cache can hold must not
 serialize the same schema/spec or rebuild its row type on every miss. The encodings clear at batch boundaries;
 only the bounded resolved targets survive between batches.
+
+
+## Columnar equality sets for maintenance
+
+Maintenance reads equality files with Iceberg's existing Parquet decoder, then builds
+DataFusion's static membership filter for integer/long/string keys. Composite keys
+wrap their Arrow columns in a non-null struct view; DataFusion hashes and compares
+the tuples, including inner nulls. Nested struct leaves use get-field expressions
+after parent validity has been overlaid on children. Payload columns stay Arrow
+through filtering, sorting and encoding. There is no independent hash-table or
+Parquet implementation in this adapter.
+
+The previous RC3 delete implementation expands composite delete values into a
+predicate tree evaluated against each batch. Static membership avoids repeatedly
+walking that tree. Flat streaming sources keep their existing path; nested-schema
+sources and maintenance use the verified membership route. Unsupported nested key
+types retain the stock worker/reader. Retained filter arrays and per-key objects have
+an estimated off-heap charge; transient allocations and decoder retention remain opaque.
+
+The [sorted/equality maintenance measurements](../benchmarks/iceberg-nested-20261029/README.md)
+retain previous-native comparisons separately from stock Flink and distinguish file
+worker timings from commit latency in running streaming graphs.
+
+
+At 2M rows, composite-key file-worker medians fall from 0.910 to 0.266 s for v2
+(3.42× previous/current) and from 0.984 to 0.365 s for v3 (2.70×). Stock medians
+are 1.023 and 1.203 s. These are separate cohorts with repeated ranges retained;
+flat single-key timings remain near the previous version. Continuous composite-v3
+commit medians are 1.766 s stock and 0.624 s native (2.83×). The full 2M standalone
+forced-spill cohort is slower than stock and highly variable; isolated repeats and
+running-job results are reported separately, without replacing the slower observations.

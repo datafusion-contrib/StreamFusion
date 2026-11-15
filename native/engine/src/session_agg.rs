@@ -1,6 +1,10 @@
 use crate::window_calendar::WindowCalendar;
 use crate::*;
 
+mod admission;
+mod canonical;
+mod output;
+
 /// One open session for a key: its end (the latest element's timestamp plus the gap) and the
 /// incremental accumulators folding in its rows. The start is the map key that holds it.
 pub(crate) struct Session {
@@ -16,22 +20,27 @@ fn merge_into(
 ) {
     for ((target, source), aggregate) in into.iter_mut().zip(from.iter_mut()).zip(aggregates) {
         if matches!(aggregate, WindowAggregate::ScalarExtreme { .. }) {
-            let value = (source.as_ref() as &dyn std::any::Any)
+            let value = (crate::aggregates::raw_accumulator(source.as_mut())
+                .expect("captured accumulator") as &mut dyn std::any::Any)
                 .downcast_ref::<crate::aggregates::ScalarExtremeAccumulator>()
                 .expect("scalar extrema factory")
                 .value();
-            (target.as_mut() as &mut dyn std::any::Any)
+            (crate::aggregates::raw_accumulator(target.as_mut()).expect("captured accumulator")
+                as &mut dyn std::any::Any)
                 .downcast_mut::<crate::aggregates::ScalarExtremeAccumulator>()
                 .expect("scalar extrema factory")
                 .merge_value(value);
             continue;
         }
         if matches!(aggregate, WindowAggregate::TimestampExtreme { .. }) {
-            let timestamp = (target.as_mut() as &mut dyn std::any::Any)
+            let timestamp = (crate::aggregates::raw_accumulator(target.as_mut())
+                .expect("captured accumulator")
+                as &mut dyn std::any::Any)
                 .downcast_mut::<crate::aggregates::TimestampExtremeAccumulator>()
                 .expect("timestamp extrema factory");
             timestamp.merge_value(
-                (source.as_ref() as &dyn std::any::Any)
+                (crate::aggregates::raw_accumulator(source.as_mut()).expect("captured accumulator")
+                    as &mut dyn std::any::Any)
                     .downcast_ref::<crate::aggregates::TimestampExtremeAccumulator>()
                     .expect("timestamp extrema factory")
                     .value(),
@@ -57,6 +66,7 @@ pub(crate) struct SessionAggregator {
     gap_millis: i64,
     calendar: Option<WindowCalendar>,
     next_timer_deadline: i64,
+    admission: Option<admission::SessionAdmission>,
     aggregates: Vec<WindowAggregate>,
     // Keyed by the arrow-row memcomparable key encoding, like the other aggregators (see
     // `TumblingAggregator::key_converter`).
@@ -67,6 +77,8 @@ pub(crate) struct SessionAggregator {
     pub(crate) late_drops: u64,
     pub(crate) memory: OperatorMemory,
     key_timestamp_precisions: Vec<i32>,
+    canonical_distinct: std::collections::HashSet<usize>,
+    canonical_distinct_counts: HashMap<(i64, OwnedRow, usize), i64>,
     /// Persistent-state mode: committed sessions live in the persistent store; the `sessions` map
     /// holds only the current bundle's touched keys (each hydrated wholesale on first touch —
     /// merging needs the key's neighboring sessions — written through at the bundle boundary, then
@@ -95,11 +107,21 @@ pub(crate) fn session_bytes(session: &Session) -> usize {
 }
 
 impl SessionAggregator {
+    fn require_complete_canonical_import(&self) -> Result<(), DataFusionError> {
+        #[cfg(feature = "rocksdb-state")]
+        if let Some(store) = &self.store {
+            use crate::state::rocks_store::window_memberships::WindowMembershipState;
+            store.require_complete_membership_import()?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn new(gap_millis: i64, value_types: Vec<i64>, kinds: Vec<i64>) -> Self {
         SessionAggregator {
             gap_millis,
             calendar: None,
             next_timer_deadline: i64::MIN,
+            admission: None,
             aggregates: build_aggregates(&kinds, &value_types),
             sessions: HashMap::default(),
             key_converter: None,
@@ -108,6 +130,8 @@ impl SessionAggregator {
             late_drops: 0,
             memory: OperatorMemory::unaccounted(),
             key_timestamp_precisions: Vec::new(),
+            canonical_distinct: std::collections::HashSet::new(),
+            canonical_distinct_counts: HashMap::default(),
             #[cfg(feature = "rocksdb-state")]
             store: None,
             #[cfg(feature = "rocksdb-state")]
@@ -175,6 +199,7 @@ impl SessionAggregator {
         timer_deadline: i64,
         snapshot_dir: &str,
     ) -> Result<crate::state::RocksCheckpointManifest, DataFusionError> {
+        self.require_complete_canonical_import()?;
         let watermark = self.current_watermark;
         self.store
             .as_mut()
@@ -193,17 +218,31 @@ impl SessionAggregator {
     /// Bounds this aggregator's state by the operator's task off-heap budget (negative =
     /// unaccounted), accounting any restored sessions immediately.
     pub(crate) fn with_memory_budget(mut self, budget_bytes: i64) -> Result<Self, DataFusionError> {
-        let state: usize = self
-            .sessions
-            .iter()
-            .map(|(key, map)| owned_row_bytes(key) + map.values().map(session_bytes).sum::<usize>())
-            .sum();
+        let state = self.computed_state_bytes();
         self.memory
             .attach("session-aggregate", budget_bytes, state)?;
         Ok(self)
     }
 
+    pub(crate) fn computed_state_bytes(&self) -> usize {
+        self.sessions
+            .iter()
+            .map(|(key, sessions)| {
+                owned_row_bytes(key) + sessions.values().map(session_bytes).sum::<usize>()
+            })
+            .sum::<usize>()
+            .saturating_add(
+                self.canonical_distinct_counts
+                    .keys()
+                    .map(|(_, key, _)| {
+                        owned_row_bytes(key) + std::mem::size_of::<((i64, OwnedRow, usize), i64)>()
+                    })
+                    .sum::<usize>(),
+            )
+    }
+
     pub(crate) fn update(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
+        self.require_complete_canonical_import()?;
         let ts = column_i64(batch, "ts");
         // One value column per aggregate (value0, value1, …); each accumulator reads its own.
         let values: Vec<&ArrayRef> = (0..self.aggregates.len())
@@ -299,9 +338,17 @@ impl SessionAggregator {
                     end = end.max(overlap_end);
                 }
                 let deadline = deadlines.as_ref().map_or(end, |ends| ends[&end]);
-                if deadline <= self.current_watermark {
+                let expired = self
+                    .admission
+                    .as_ref()
+                    .map_or(deadline <= self.current_watermark, |admission| {
+                        deadline.saturating_sub(1) <= admission.watermark
+                    });
+                if expired {
                     if merging {
-                        if let Some(calendar) = &self.calendar {
+                        if let Some(admission) = &self.admission {
+                            admission.reject_merge(start, end);
+                        } else if let Some(calendar) = &self.calendar {
                             calendar.reject_expired_merge(
                                 start,
                                 end,
@@ -381,14 +428,18 @@ impl SessionAggregator {
                 }
                 for (i, accumulator) in accumulators.iter_mut().enumerate() {
                     if let Some(column) = &scalar_columns[i] {
-                        (accumulator.as_mut() as &mut dyn std::any::Any)
+                        (crate::aggregates::raw_accumulator(accumulator.as_mut())
+                            .expect("captured accumulator")
+                            as &mut dyn std::any::Any)
                             .downcast_mut::<crate::aggregates::ScalarExtremeAccumulator>()
                             .expect("scalar extrema factory")
                             .update_rows(column, indices.values());
                         continue;
                     }
                     if let Some(column) = &timestamps[i] {
-                        (accumulator.as_mut() as &mut dyn std::any::Any)
+                        (crate::aggregates::raw_accumulator(accumulator.as_mut())
+                            .expect("captured accumulator")
+                            as &mut dyn std::any::Any)
                             .downcast_mut::<crate::aggregates::TimestampExtremeAccumulator>()
                             .expect("timestamp extrema factory")
                             .update_rows(column, indices.values())?;
@@ -417,113 +468,21 @@ impl SessionAggregator {
         Ok(())
     }
 
-    /// Finalizes and removes sessions the watermark has closed, emitting
-    /// `[key, window_start, window_end, result0..resultN-1]`. The end is the session's own bound,
-    /// not a fixed offset, so it travels as its own column.
+    /// Compatibility helper; production drains bounded batches through `flush_to`.
     pub(crate) fn flush(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
-        self.current_watermark = self.current_watermark.max(watermark);
-        #[cfg(feature = "rocksdb-state")]
-        if self.store.is_some() {
-            return self.flush_store(watermark);
+        let mut batches = Vec::new();
+        self.flush_to(watermark, &mut |batch| {
+            batches.push(batch);
+            Ok(())
+        })?;
+        if let Some(first) = batches.first() {
+            Ok(arrow::compute::concat_batches(
+                &first.schema(),
+                batches.iter(),
+            )?)
+        } else {
+            Ok(self.emitted_batch(Vec::new()))
         }
-        let deadlines = self.calendar.as_ref().map(|calendar| {
-            let ends = self
-                .sessions
-                .values()
-                .flat_map(|sessions| sessions.values().map(|session| session.end))
-                .collect::<Vec<_>>();
-            ends.iter()
-                .copied()
-                .zip(calendar.exclusive_ends(&ends))
-                .collect::<BTreeMap<_, _>>()
-        });
-        let mut rows: Vec<(OwnedRow, i64, i64, Vec<ScalarValue>)> = Vec::new();
-        let track = self.memory.tracking();
-        let mut freed = 0usize;
-        let mut next_end: Option<i64> = None;
-        for (key, map) in self.sessions.iter_mut() {
-            let closed: Vec<i64> = map
-                .iter()
-                .filter(|(_, s)| {
-                    let deadline = deadlines.as_ref().map_or(s.end, |ends| ends[&s.end]);
-                    if deadline > watermark {
-                        next_end =
-                            Some(next_end.map_or(deadline, |previous| previous.min(deadline)));
-                        false
-                    } else {
-                        true
-                    }
-                })
-                .map(|(start, _)| *start)
-                .collect();
-            for start in closed {
-                let mut session = map.remove(&start).expect("session present");
-                if track {
-                    freed += session_bytes(&session);
-                }
-                let results = session
-                    .accumulators
-                    .iter_mut()
-                    .map(|a| a.evaluate().expect("failed to finalize"))
-                    .collect();
-                rows.push((key.clone(), start, session.end, results));
-            }
-        }
-        self.sessions.retain(|key, map| {
-            if map.is_empty() {
-                if track {
-                    freed += owned_row_bytes(key);
-                }
-                return false;
-            }
-            true
-        });
-        if track {
-            self.memory.forget(freed);
-            self.memory.account_shrink();
-        }
-        self.next_timer_deadline = next_end.map_or(i64::MIN, |end| end.saturating_sub(1));
-        rows.sort_by(|a, b| (&a.0, a.1).cmp(&(&b.0, b.1)));
-        Ok(self.emitted_batch(rows))
-    }
-
-    /// Persistent-state firing: the store removes and returns every closed session in the memory
-    /// path's (key, start) emission order — every fired session leaves the store, so a closed
-    /// session can never re-fire after a restore. Runs on an empty resident map (every bundle
-    /// wrote through), so the committed table is the whole state.
-    #[cfg(feature = "rocksdb-state")]
-    fn flush_store(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
-        let fired = self
-            .store
-            .as_mut()
-            .expect("session-aggregate rocksdb store")
-            .take_closed_with_calendar(watermark, self.calendar.as_ref())?;
-        self.next_timer_deadline = self
-            .store
-            .as_ref()
-            .unwrap()
-            .next_exclusive_end()
-            .map_or(i64::MIN, |end| end.saturating_sub(1));
-        let converter = self
-            .key_converter
-            .as_ref()
-            .expect("session store key converter");
-        let parser = converter.parser();
-        let mut rows: Vec<(OwnedRow, i64, i64, Vec<ScalarValue>)> = Vec::with_capacity(fired.len());
-        for session in &fired {
-            let mut accumulators = self.accumulators_from_scalars(&session.state);
-            let results = accumulators
-                .iter_mut()
-                .map(|a| a.evaluate().expect("failed to finalize"))
-                .collect();
-            rows.push((
-                parser.parse(&session.key).owned(),
-                session.start,
-                session.end,
-                results,
-            ));
-        }
-        Ok(self.emitted_batch(rows))
     }
 
     /// The fired-session output batch `[key.., window_start, window_end, result0..]`.
@@ -695,8 +654,7 @@ impl SessionAggregator {
                     .iter()
                     .map(|scalar| scalar.to_array().expect("state array"))
                     .collect();
-                accumulator
-                    .merge_batch(&state)
+                restore_accumulator_state(&mut accumulator, &state)
                     .expect("failed to restore session");
                 column += count;
                 accumulator
@@ -751,6 +709,15 @@ impl SessionAggregator {
     /// a canonical or raw restore continues on the direct persistent path. The blob carries no
     /// watermark (matching the memory restore); the processing-time deadline arrives from the
     /// host's restored timer frame.
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn migrate_legacy_snapshot_store(&mut self) -> Result<(), DataFusionError> {
+        use crate::state::rocks_store::window_memberships::WindowMembershipState;
+        if let Some(reader) = self.store.as_ref().unwrap().legacy_snapshot_reader()? {
+            reader.migrate(|partitions, timer| self.import_partitions(partitions, timer))?;
+        }
+        Ok(())
+    }
+
     #[cfg(feature = "rocksdb-state")]
     pub(crate) fn import_partitions(
         &mut self,
@@ -1198,5 +1165,23 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreSessionAggregatorPar
             SessionAggregator::restore_partitions(gap_millis, value_types, kinds, &restored)
                 .with_memory_budget(memory_budget_bytes);
         boxed_or_throw(&mut env, aggregator)
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_flushSessionAggregatorBatches<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    watermark: jlong,
+    receiver: jni::objects::JObject<'local>,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let aggregator = unsafe { &mut *(handle as *mut SessionAggregator) };
+        if let Err(error) = aggregator.flush_to(watermark, &mut |batch| {
+            emit_record_batch(&mut env, &receiver, batch)
+        }) {
+            throw_memory_limit(&mut env, &error.to_string());
+        }
     })
 }

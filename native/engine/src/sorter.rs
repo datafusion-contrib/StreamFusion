@@ -1,5 +1,7 @@
 use crate::*;
 
+mod canonical;
+
 const SNAPSHOT_PREFIX: &[u8] = b"SFTSORT1";
 
 fn snapshot_with_last_emitted(buffer: Vec<u8>, last_emitted: Option<i64>) -> Vec<u8> {
@@ -66,6 +68,15 @@ impl TemporalSorter {
         self.store.as_mut().expect("temporal-sort rocksdb store")
     }
 
+    #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn migrate_legacy_snapshot_store(&mut self) -> Result<(), DataFusionError> {
+        let reader = self.store.as_ref().unwrap().legacy_snapshot_reader()?;
+        if let Some(reader) = reader {
+            reader.migrate(|partitions, _timer| self.import_snapshots(partitions))?;
+        }
+        Ok(())
+    }
+
     /// Writes restored blob snapshots through the persistent buffer once at open, so a canonical
     /// or raw restore continues on the direct persistent path. Restores the late-row cutoff and
     /// appends pending rows under fresh sequences to keep arrival order.
@@ -114,7 +125,11 @@ impl TemporalSorter {
     }
 
     pub(crate) fn push(&mut self, mut batch: RecordBatch) -> Result<(), DataFusionError> {
-        self.input_schema = Some(batch.schema());
+        if let Some(schema) = &self.input_schema {
+            batch = crate::owned::align_batch_prefix(&batch, schema.fields())?;
+        } else {
+            self.input_schema = Some(batch.schema());
+        }
         if let Some(last_emitted) = self.last_emitted {
             let rowtimes = rt_to_millis(batch.column(self.rt_column));
             let admitted: BooleanArray = rowtimes

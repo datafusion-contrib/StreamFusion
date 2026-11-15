@@ -22,6 +22,7 @@ struct Bucket {
     tree: bool,
 }
 
+#[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct JavaMapOrder<K> {
     buckets: Vec<Bucket>,
@@ -29,13 +30,17 @@ pub struct JavaMapOrder<K> {
     size: usize,
 }
 
-impl<K: Copy + Ord> JavaMapOrder<K> {
+impl<K: Clone + Ord> JavaMapOrder<K> {
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             buckets: vec![Bucket::default(); capacity],
             nodes: Vec::new(),
             size: 0,
         }
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.buckets.len()
     }
 
     pub fn clear(&mut self) {
@@ -69,7 +74,7 @@ impl<K: Copy + Ord> JavaMapOrder<K> {
             parent = Some(index);
             length += 1;
             if tree {
-                direction = usize::from((hash, key) > (node.hash, node.key));
+                direction = usize::from((hash, &key) > (node.hash, &node.key));
                 current = node.children[direction];
             } else {
                 current = node.next;
@@ -121,7 +126,7 @@ impl<K: Copy + Ord> JavaMapOrder<K> {
     pub fn iter(&self) -> impl Iterator<Item = K> + '_ {
         self.buckets.iter().flat_map(|bucket| {
             std::iter::successors(bucket.first, |&index| self.nodes[index].next)
-                .map(|index| self.nodes[index].key)
+                .map(|index| self.nodes[index].key.clone())
         })
     }
 
@@ -142,6 +147,10 @@ impl<K: Copy + Ord> JavaMapOrder<K> {
 
     pub fn is_empty(&self) -> bool {
         self.size == 0
+    }
+
+    pub fn retained_keys(&self) -> impl Iterator<Item = &K> {
+        self.nodes.iter().map(|node| &node.key)
     }
 
     pub fn bytes(&self) -> usize {
@@ -425,8 +434,8 @@ impl<K: Copy + Ord> JavaMapOrder<K> {
             if let Some(mut parent) = root {
                 loop {
                     let direction = usize::from(
-                        (self.nodes[index].hash, self.nodes[index].key)
-                            > (self.nodes[parent].hash, self.nodes[parent].key),
+                        (self.nodes[index].hash, &self.nodes[index].key)
+                            > (self.nodes[parent].hash, &self.nodes[parent].key),
                     );
                     if let Some(child) = self.nodes[parent].children[direction] {
                         parent = child;
@@ -638,13 +647,13 @@ fn untreeified_capacity(hashes: &[i32]) -> Option<usize> {
     Some(capacity)
 }
 
-impl<K: Copy + Ord> JavaMapOrder<K> {
+impl<K: Clone + Ord> JavaMapOrder<K> {
     /// Test support: panics unless the chains and tree bins satisfy the JDK's structural
     /// invariants.
     #[doc(hidden)]
     pub fn assert_structure(&self) {
         let map = self;
-        fn tree<K: Copy + Ord>(
+        fn tree<K: Clone + Ord>(
             map: &JavaMapOrder<K>,
             index: usize,
             parent: Option<usize>,
@@ -657,7 +666,7 @@ impl<K: Copy + Ord> JavaMapOrder<K> {
             for (side, child) in node.children.iter().enumerate() {
                 if let Some(child) = child {
                     let other = &map.nodes[*child];
-                    assert_eq!((other.hash, other.key) > (node.hash, node.key), side == 1);
+                    assert_eq!((other.hash, &other.key) > (node.hash, &node.key), side == 1);
                     assert!(!node.red || !other.red);
                     heights[side] = tree(map, *child, Some(index), seen);
                 }

@@ -10,9 +10,11 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 base64.workspace = true
+base64-simd.workspace = true
 streamfusion-bridge = { path = "../bridge", features = ["serde"] }
 arrow = { workspace = true, features = ["json"] }
 arrow-ord.workspace = true
+itoa = "1"
 jni.workspace = true
 datafusion.workspace = true
 chrono.workspace = true
@@ -28,7 +30,7 @@ tokio.workspace = true
 futures.workspace = true
 ahash.workspace = true
 memchr.workspace = true
-serde.workspace = true
+serde = { workspace = true, features = ["rc"] }
 serde_json.workspace = true
 simd-json.workspace = true
 stacker = "0.1.24"

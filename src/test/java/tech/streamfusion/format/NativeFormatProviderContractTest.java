@@ -25,7 +25,7 @@ import tech.streamfusion.compat.ListCollectors;
  * provider only invokes at runtime (see {@code AvroEncodeGate.derivedSchema}).
  *
  * <p>The linking test below reproduces the probe's world exactly — it loads each registered
- * provider from {@code target/classes} through a classloader that refuses everything outside the
+ * provider from its owning artifact through a classloader that refuses everything outside the
  * JDK and this project, then asks for its constructor, which links the class.
  */
 class NativeFormatProviderContractTest {
@@ -50,8 +50,12 @@ class NativeFormatProviderContractTest {
 
   @Test
   void providersLinkWithoutFlinkOnTheClasspath() throws Exception {
-    Path classes = Path.of("target", "classes").toAbsolutePath();
-    assertTrue(Files.isDirectory(classes), "compiled classes expected at " + classes);
+    java.util.Set<java.net.URL> classes = new java.util.LinkedHashSet<>();
+    classes.add(NativeFormatProvider.class.getProtectionDomain().getCodeSource().getLocation());
+    for (String provider : registeredProviders()) {
+      classes.add(Class.forName(provider, false, getClass().getClassLoader())
+          .getProtectionDomain().getCodeSource().getLocation());
+    }
     for (String provider : registeredProviders()) {
       try (FlinkLessClassLoader loader = new FlinkLessClassLoader(classes)) {
         Class.forName(provider, false, loader).getConstructor();
@@ -105,32 +109,18 @@ class NativeFormatProviderContractTest {
   }
 
   /**
-   * The probe's classloader shape: project classes resolve from {@code target/classes}, the JDK
+   * The probe's classloader shape: project classes resolve from their owning module artifacts, the JDK
    * from the platform loader, and everything else — Flink above all — does not exist.
    */
-  private static final class FlinkLessClassLoader extends ClassLoader implements AutoCloseable {
-    private final Path classes;
-
-    private FlinkLessClassLoader(Path classes) {
-      super(ClassLoader.getPlatformClassLoader());
-      this.classes = classes;
+  private static final class FlinkLessClassLoader extends java.net.URLClassLoader {
+    private FlinkLessClassLoader(java.util.Set<java.net.URL> classes) {
+      super(classes.toArray(java.net.URL[]::new), ClassLoader.getPlatformClassLoader());
     }
 
     @Override
     protected Class<?> findClass(String name) throws ClassNotFoundException {
-      if (!name.startsWith("tech.streamfusion.")) {
-        throw new ClassNotFoundException(name);
-      }
-      Path file = classes.resolve(name.replace('.', '/') + ".class");
-      try {
-        byte[] bytes = Files.readAllBytes(file);
-        return defineClass(name, bytes, 0, bytes.length);
-      } catch (IOException e) {
-        throw new ClassNotFoundException(name, e);
-      }
+      if (!name.startsWith("tech.streamfusion.")) throw new ClassNotFoundException(name);
+      return super.findClass(name);
     }
-
-    @Override
-    public void close() {}
   }
 }

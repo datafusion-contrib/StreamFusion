@@ -1,0 +1,60 @@
+{
+  "base_commit": "2441db7927c6e7bf47ae66223fefef1ebdc8dab5",
+  "previous_source_commit": "984f0451121d758c7c89571aafaa09629a888a09",
+  "previous_matches_base_iceberg_sources": true,
+  "platform": "Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+  "cpu": "12th Gen Intel(R) Core(TM) i7-12650H",
+  "java": "openjdk version \"17.0.20.1\" 2026-08-18\nOpenJDK Runtime Environment (build 17.0.20.1+1-1-22.04-Ubuntu)\nOpenJDK 64-Bit Server VM (build 17.0.20.1+1-1-22.04-Ubuntu, mixed mode, sharing)\n",
+  "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
+  "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+  "libraries_sha256": {
+    "current_release": "6095ec713e10d859cb31b94dc3b4e9f840245964349eb566caabbb669a5d5d26",
+    "previous_release": "863800070720237cf42c6403c3b9fab9ee1871c7677304ed127b01063f4b28cc",
+    "previous_java_jar": "49e7012f52a19ce75ab8e86ede42a4d2ca8560fa309ed9ea3fd78ecc2b75ba33"
+  },
+  "source_sha256": {
+    "native/Cargo.lock": "fd835da6a9b32f41a15eae116d001823a7b0a336a2f8f928ab9fb52d99a0b612",
+    "native/iceberg/Cargo.toml": "81515cbfd24ae7ad6bdba02ff72537d7b5b6de7015b8713d7b2deab7dce69818",
+    "native/iceberg/src/equality.rs": "2a8f38facccfa7eee494cc9136a96edc7cdb9ff78261e195a78a5236bade87da",
+    "native/iceberg/src/lib.rs": "25c7d23ee90ca0a9a1425c6fa8e3c39c161dc980062f2098b226356754f5eab3",
+    "native/iceberg/src/reader.rs": "f880040011956058c34ad2b141c3e70e826d42ca0607217a596d974891f442cd",
+    "native/iceberg/src/scan_range.rs": "e74b641a5437445e10648f2af077906a4587c5aa66ff0c441d2e62a136fe0043",
+    "native/iceberg/src/sort.rs": "4f61beb2066eb06f9db0b7d77428c86d5a47557ec4dc14efc4d2cd242f42d345",
+    "native/iceberg/src/writer.rs": "b166fc5620cb1a6a3c662c16ff4c7784262c065c55e8af4a24af5bfc4389afa2",
+    "streamfusion-iceberg/src/main/java/tech/streamfusion/iceberg/IcebergArrowReaderFunction.java": "266b29e2f2f84572740f0cd69d11476322d8fba96aa8b4d094b113b73685a51c",
+    "streamfusion-iceberg/src/main/java/tech/streamfusion/iceberg/IcebergNativeTaskReader.java": "f2251e6882077cb3915629cf3383e476d9839dd0fbd780cfc9711f6c38f4ee40",
+    "streamfusion-iceberg/src/main/java/tech/streamfusion/iceberg/IcebergRewriteFiles.java": "0ce47412850760443c79281252fd795f676bdad0b415e2482bfd6b560668978d",
+    "streamfusion-iceberg/src/main/java/tech/streamfusion/iceberg/IcebergRewriteSort.java": "ef0b3eaa541e551c9665e6279e851cf3714be227f432ef713ec2b6dee017a44a",
+    "streamfusion-iceberg/src/main/java/tech/streamfusion/iceberg/IcebergSourcePlan.java": "b2f2f1807fac8bc57c96bb7ae8f424864433ad89524f5687f5d2917b610784b8",
+    "streamfusion-iceberg/src/main/java/tech/streamfusion/iceberg/IcebergTaskMetadata.java": "b3273f0540466b54e76469e3dd0ab3522433c3f5cd7f57d4ddfa7883c677752e",
+    "streamfusion-iceberg/src/main/java/tech/streamfusion/iceberg/NativeIceberg.java": "146c8f98035f7b24a030747198545648095125af16954b3622698e0ce3b69f32",
+    "streamfusion-iceberg/src/main/java/tech/streamfusion/iceberg/NativeIcebergMaintenance.java": "a6ea0397d15160fda81815cca0c461793b502d1bf5d5802a97150b4760ede48b",
+    "streamfusion-iceberg/src/main/java/tech/streamfusion/iceberg/NativeIcebergSink.java": "0f448323651a3e1242e5cfed6d095c08bd12fba364fabdc9e5fe74da8f1431f0",
+    "streamfusion-iceberg/src/main/java/tech/streamfusion/iceberg/NativeIcebergSource.java": "370d7da801d8ce12c7fd2493e65ef59364a1dbf626ef98cb3252f9bc9a08622a",
+    "streamfusion-iceberg/src/test/java/tech/streamfusion/iceberg/NativeIcebergSourceRecoveryTest.java": "19d9ba19aed0e0e9595a5d141b190d737e8559e6c5504129ec4889eb347fb3a4",
+    "native/iceberg/src/nan_counts.rs": "fd4f1f7d58e0be6134c265fffd333a946f29a182cbcd148565f63eb0f9eecb03",
+    "native/iceberg/src/schema.rs": "df858c4846a45ebff51c8943df90433e3030f38986476feecf19cec59b3abd33",
+    "streamfusion-iceberg/src/test/java/tech/streamfusion/iceberg/IcebergMaintenanceBenchmark.java": "4e756a8792de60a58066fecebedb84b85e7cd7160a75e376bfa8523a9059f020",
+    "streamfusion-iceberg/src/test/java/tech/streamfusion/iceberg/IcebergNativeMetrics.java": "a3597c077b7785ea59f887fab8bdeaf70011894536813dbf4afeab917d3bd5e7",
+    "streamfusion-iceberg/src/test/java/tech/streamfusion/iceberg/IcebergStockRewrite.java": "4431e773d3643355633f4927d6d830aca6cef3e9e4d65f40fa711101db4adac1",
+    "streamfusion-iceberg/src/test/java/tech/streamfusion/iceberg/IcebergStreamingMaintenanceBenchmark.java": "ee1b82e15df41558c2a384b3bfb0999e8c38ecb35fa0bc79a8855fd9ddba0f95",
+    "streamfusion-iceberg/src/test/java/tech/streamfusion/iceberg/NativeIcebergNestedSqlTest.java": "02f4bb9341ef073d8975438576a2acbe1a3f78c8e08302b0602d0e02cdd1f8a4",
+    "streamfusion-iceberg/src/test/java/tech/streamfusion/iceberg/NativeIcebergNestedTest.java": "5f7a86c6057b3f89bd8e09c72646dfe5fb713e0b757ab907ee2300eccb38d4d8"
+  },
+  "build": "cargo build --locked --release -p streamfusion-iceberg --features mimalloc",
+  "jvm_heap": "8g",
+  "task_off_heap_bytes": 1073741824,
+  "warmup": 1,
+  "measured_pairs": 3,
+  "file_cli_extra_jvm_flags": [
+    "-XX:-OmitStackTraceInFastThrow"
+  ],
+  "stream_jvm_profile": "Maven bench",
+  "note": "Previous and current artifacts were built before timing. Streaming and file cohorts run sequentially. A perf diagnostic affected the initial 400k previous cohort; it is retained separately from an unprofiled repeat.",
+  "host_interference": {
+    "2m-final-file": "A read-only repository text search overlapped the full 2M file cohort. Spill outliers are retained; no causal attribution is established.",
+    "streaming_cohorts": "Completed before the overlapping repository search.",
+    "isolated_spill_repeats": "No concurrent builds or broad repository searches; both engines add GC/safepoint logging."
+  },
+  "post_benchmark_changes": "Added upstream rewrite test ports and aligned their JUnit profile. Hardened static predicate admission to reject container IS NULL pushdown; benchmark filters are empty, so the added guard is not executed in these workloads. Timed-source hashes above are retained unchanged."
+}

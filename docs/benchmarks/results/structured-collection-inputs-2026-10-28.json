@@ -1,0 +1,634 @@
+{
+  "date": "2026-10-28T15:38:28.348885+00:00",
+  "baseline_commit": "86c9d24405cd5c1cdd5b4624995b46c2a3613b4a",
+  "benchmark_source_sha256": "edf5a7ae944c9537da24151a967ccadb284409f5ab3b68fd46d288c78578608c",
+  "release_sha256": "4966ad1034f34fc34bebd06982fc0166ce082050faa9eeffa5b688d8b8201f7c",
+  "platform": "Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+  "java": "OpenJDK 17.0.20.1",
+  "warmups": 2,
+  "trials": 3,
+  "parallelism": 1,
+  "heap_gib": 8,
+  "rows": 50000,
+  "widths": [
+    3,
+    16
+  ],
+  "string_suffix_bytes_setting": 32,
+  "domain": 16,
+  "null_container_every": 8,
+  "null_element_every": 7,
+  "null_a_field_row_every": 11,
+  "null_b_field_row_every": 13,
+  "expression": "ROW(CAST(arr AS ARRAY<ROW<a BIGINT,b STRING>>),CAST(arr AS STRING))",
+  "source_type": "ARRAY<STRUCTURED<StructuredItem,a INT,b STRING>>",
+  "timing": "Complete jobs including planning/submission, rowwise source/blackhole, state if intrinsic, JNI and both perimeter transposes; excludes environment setup.",
+  "implementation": "Existing generated evaluator in NativeCalc; not a Rust cast kernel. Same frozen release/mimalloc native DSO for both revisions.",
+  "cohorts": [
+    {
+      "flink_line": "2.2",
+      "width": 3,
+      "revision": "previous",
+      "returncode": 0,
+      "wall_seconds": 10.030916213989258,
+      "interference": [],
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "surefire:test@default-test",
+        "-Pbench",
+        "-Dtest=DynamicCollectionBenchmark#compareExpressions",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=<release-dso>",
+        "-Dsf.testForks=1",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<release-dso>",
+        "-Dcollection.expression=ROW(CAST(arr AS ARRAY<ROW<a BIGINT,b STRING>>),CAST(arr AS STRING))",
+        "-Dcollection.map=false",
+        "-Dcollection.type=STRUCTURED",
+        "-Dcollection.width=3",
+        "-Dcollection.rows=50000",
+        "-Dcollection.bytes=32",
+        "-Dcollection.domain=16",
+        "-Dcollection.warmup=2",
+        "-Dcollection.runs=3",
+        "-Dcollection.native=false"
+      ],
+      "log": "2.2-width3-previous.log",
+      "stock_seconds": [
+        0.262269771,
+        0.170898155,
+        0.194330474
+      ],
+      "native_seconds": [
+        0.222784312,
+        0.175968426,
+        0.191025212
+      ],
+      "stock_median": 0.194330474,
+      "native_median": 0.191025212,
+      "trials": [
+        "[collection-trial] engine=flink trial=0 warmup=true rows=50000 seconds=0.789758844",
+        "[collection-trial] engine=native trial=0 warmup=true rows=50000 seconds=0.326222016",
+        "[collection-trial] engine=native trial=1 warmup=true rows=50000 seconds=0.321182797",
+        "[collection-trial] engine=flink trial=1 warmup=true rows=50000 seconds=0.292176724",
+        "[collection-trial] engine=flink trial=2 warmup=false rows=50000 seconds=0.262269771",
+        "[collection-trial] engine=native trial=2 warmup=false rows=50000 seconds=0.222784312",
+        "[collection-trial] engine=native trial=3 warmup=false rows=50000 seconds=0.175968426",
+        "[collection-trial] engine=flink trial=3 warmup=false rows=50000 seconds=0.170898155",
+        "[collection-trial] engine=flink trial=4 warmup=false rows=50000 seconds=0.194330474",
+        "[collection-trial] engine=native trial=4 warmup=false rows=50000 seconds=0.191025212"
+      ],
+      "native_evidence": [],
+      "functions": [
+        "[collection-engine] []"
+      ]
+    },
+    {
+      "flink_line": "2.2",
+      "width": 3,
+      "revision": "candidate",
+      "returncode": 0,
+      "wall_seconds": 11.033251523971558,
+      "interference": [],
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "surefire:test@default-test",
+        "-Pbench",
+        "-Dtest=DynamicCollectionBenchmark#compareExpressions",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=<release-dso>",
+        "-Dsf.testForks=1",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<release-dso>",
+        "-Dcollection.expression=ROW(CAST(arr AS ARRAY<ROW<a BIGINT,b STRING>>),CAST(arr AS STRING))",
+        "-Dcollection.map=false",
+        "-Dcollection.type=STRUCTURED",
+        "-Dcollection.width=3",
+        "-Dcollection.rows=50000",
+        "-Dcollection.bytes=32",
+        "-Dcollection.domain=16",
+        "-Dcollection.warmup=2",
+        "-Dcollection.runs=3",
+        "-Dcollection.native=true"
+      ],
+      "log": "2.2-width3-candidate.log",
+      "stock_seconds": [
+        0.177382378,
+        0.182357977,
+        0.175108253
+      ],
+      "native_seconds": [
+        0.365160055,
+        0.41242809,
+        0.384402444
+      ],
+      "stock_median": 0.177382378,
+      "native_median": 0.384402444,
+      "trials": [
+        "[collection-trial] engine=flink trial=0 warmup=true rows=50000 seconds=0.753436624",
+        "[collection-trial] engine=native trial=0 warmup=true rows=50000 seconds=0.724371718",
+        "[collection-trial] engine=native trial=1 warmup=true rows=50000 seconds=0.432114045",
+        "[collection-trial] engine=flink trial=1 warmup=true rows=50000 seconds=0.289668061",
+        "[collection-trial] engine=flink trial=2 warmup=false rows=50000 seconds=0.177382378",
+        "[collection-trial] engine=native trial=2 warmup=false rows=50000 seconds=0.365160055",
+        "[collection-trial] engine=native trial=3 warmup=false rows=50000 seconds=0.412428090",
+        "[collection-trial] engine=flink trial=3 warmup=false rows=50000 seconds=0.182357977",
+        "[collection-trial] engine=flink trial=4 warmup=false rows=50000 seconds=0.175108253",
+        "[collection-trial] engine=native trial=4 warmup=false rows=50000 seconds=0.384402444"
+      ],
+      "native_evidence": [
+        "[collection-route] [{recordsOut=50000, subtask=0, attempt=0, jobId=5e2b1763d11eb4e8bca9705dde0f781b, recordsIn=50000, operator=NativeCalc(select=[ROW(CAST(arr AS RecordType:peek_no_expand(BIGINT a, VARCHAR(2}]",
+        "[collection-route] [{recordsOut=50000, subtask=0, attempt=0, jobId=c9b31e702c213cdc1a9f724b5a7ca3c8, recordsIn=50000, operator=NativeCalc(select=[ROW(CAST(arr AS RecordType:peek_no_expand(BIGINT a, VARCHAR(2}]",
+        "[collection-route] [{recordsOut=50000, subtask=0, attempt=0, jobId=32321c331768fe474ac60ea5a00b8f4f, recordsIn=50000, operator=NativeCalc(select=[ROW(CAST(arr AS RecordType:peek_no_expand(BIGINT a, VARCHAR(2}]",
+        "[collection-route] [{recordsOut=50000, subtask=0, attempt=0, jobId=9779f21b3a6ef58f00a16396c644b57a, recordsIn=50000, operator=NativeCalc(select=[ROW(CAST(arr AS RecordType:peek_no_expand(BIGINT a, VARCHAR(2}]",
+        "[collection-route] [{recordsOut=50000, subtask=0, attempt=0, jobId=5135cc10b037c6bd810b52b15be82665, recordsIn=50000, operator=NativeCalc(select=[ROW(CAST(arr AS RecordType:peek_no_expand(BIGINT a, VARCHAR(2}]"
+      ],
+      "functions": [
+        "[collection-engine] [NativeCalc functions: native=[], jvm=[ROW, CAST], reason=ROW metadata requires Flink's whole-Calc evaluation]"
+      ]
+    },
+    {
+      "flink_line": "2.2",
+      "width": 16,
+      "revision": "previous",
+      "returncode": 0,
+      "wall_seconds": 12.037346839904785,
+      "interference": [],
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "surefire:test@default-test",
+        "-Pbench",
+        "-Dtest=DynamicCollectionBenchmark#compareExpressions",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=<release-dso>",
+        "-Dsf.testForks=1",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<release-dso>",
+        "-Dcollection.expression=ROW(CAST(arr AS ARRAY<ROW<a BIGINT,b STRING>>),CAST(arr AS STRING))",
+        "-Dcollection.map=false",
+        "-Dcollection.type=STRUCTURED",
+        "-Dcollection.width=16",
+        "-Dcollection.rows=50000",
+        "-Dcollection.bytes=32",
+        "-Dcollection.domain=16",
+        "-Dcollection.warmup=2",
+        "-Dcollection.runs=3",
+        "-Dcollection.native=false"
+      ],
+      "log": "2.2-width16-previous.log",
+      "stock_seconds": [
+        0.390086029,
+        0.370866618,
+        0.35647609
+      ],
+      "native_seconds": [
+        0.365365307,
+        0.372421459,
+        0.372573299
+      ],
+      "stock_median": 0.370866618,
+      "native_median": 0.372421459,
+      "trials": [
+        "[collection-trial] engine=flink trial=0 warmup=true rows=50000 seconds=1.055569800",
+        "[collection-trial] engine=native trial=0 warmup=true rows=50000 seconds=0.593493940",
+        "[collection-trial] engine=native trial=1 warmup=true rows=50000 seconds=0.450606275",
+        "[collection-trial] engine=flink trial=1 warmup=true rows=50000 seconds=0.477248311",
+        "[collection-trial] engine=flink trial=2 warmup=false rows=50000 seconds=0.390086029",
+        "[collection-trial] engine=native trial=2 warmup=false rows=50000 seconds=0.365365307",
+        "[collection-trial] engine=native trial=3 warmup=false rows=50000 seconds=0.372421459",
+        "[collection-trial] engine=flink trial=3 warmup=false rows=50000 seconds=0.370866618",
+        "[collection-trial] engine=flink trial=4 warmup=false rows=50000 seconds=0.356476090",
+        "[collection-trial] engine=native trial=4 warmup=false rows=50000 seconds=0.372573299"
+      ],
+      "native_evidence": [],
+      "functions": [
+        "[collection-engine] []"
+      ]
+    },
+    {
+      "flink_line": "2.2",
+      "width": 16,
+      "revision": "candidate",
+      "returncode": 0,
+      "wall_seconds": 14.03679347038269,
+      "interference": [],
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "surefire:test@default-test",
+        "-Pbench",
+        "-Dtest=DynamicCollectionBenchmark#compareExpressions",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=<release-dso>",
+        "-Dsf.testForks=1",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<release-dso>",
+        "-Dcollection.expression=ROW(CAST(arr AS ARRAY<ROW<a BIGINT,b STRING>>),CAST(arr AS STRING))",
+        "-Dcollection.map=false",
+        "-Dcollection.type=STRUCTURED",
+        "-Dcollection.width=16",
+        "-Dcollection.rows=50000",
+        "-Dcollection.bytes=32",
+        "-Dcollection.domain=16",
+        "-Dcollection.warmup=2",
+        "-Dcollection.runs=3",
+        "-Dcollection.native=true"
+      ],
+      "log": "2.2-width16-candidate.log",
+      "stock_seconds": [
+        0.380443022,
+        0.386313241,
+        0.383198354
+      ],
+      "native_seconds": [
+        0.855846008,
+        0.735324936,
+        0.727279677
+      ],
+      "stock_median": 0.383198354,
+      "native_median": 0.735324936,
+      "trials": [
+        "[collection-trial] engine=flink trial=0 warmup=true rows=50000 seconds=1.126469237",
+        "[collection-trial] engine=native trial=0 warmup=true rows=50000 seconds=1.223305791",
+        "[collection-trial] engine=native trial=1 warmup=true rows=50000 seconds=0.868739922",
+        "[collection-trial] engine=flink trial=1 warmup=true rows=50000 seconds=0.391023616",
+        "[collection-trial] engine=flink trial=2 warmup=false rows=50000 seconds=0.380443022",
+        "[collection-trial] engine=native trial=2 warmup=false rows=50000 seconds=0.855846008",
+        "[collection-trial] engine=native trial=3 warmup=false rows=50000 seconds=0.735324936",
+        "[collection-trial] engine=flink trial=3 warmup=false rows=50000 seconds=0.386313241",
+        "[collection-trial] engine=flink trial=4 warmup=false rows=50000 seconds=0.383198354",
+        "[collection-trial] engine=native trial=4 warmup=false rows=50000 seconds=0.727279677"
+      ],
+      "native_evidence": [
+        "[collection-route] [{attempt=0, jobId=9f4ea476018f1993baa1f2e218df8004, recordsIn=50000, operator=NativeCalc(select=[ROW(CAST(arr AS RecordType:peek_no_expand(BIGINT a, VARCHAR(2, recordsOut=50000, subtask=0}]",
+        "[collection-route] [{attempt=0, jobId=be315285764fe0f8b733813f63d8fe94, recordsIn=50000, operator=NativeCalc(select=[ROW(CAST(arr AS RecordType:peek_no_expand(BIGINT a, VARCHAR(2, recordsOut=50000, subtask=0}]",
+        "[collection-route] [{attempt=0, jobId=faa5b7451e54815dc958df6a8d904ecf, recordsIn=50000, operator=NativeCalc(select=[ROW(CAST(arr AS RecordType:peek_no_expand(BIGINT a, VARCHAR(2, recordsOut=50000, subtask=0}]",
+        "[collection-route] [{attempt=0, jobId=6ef04383161c07625ec3c36ca659603f, recordsIn=50000, operator=NativeCalc(select=[ROW(CAST(arr AS RecordType:peek_no_expand(BIGINT a, VARCHAR(2, recordsOut=50000, subtask=0}]",
+        "[collection-route] [{attempt=0, jobId=d667e0118b3481ca3585d8e376bc72e8, recordsIn=50000, operator=NativeCalc(select=[ROW(CAST(arr AS RecordType:peek_no_expand(BIGINT a, VARCHAR(2, recordsOut=50000, subtask=0}]"
+      ],
+      "functions": [
+        "[collection-engine] [NativeCalc functions: native=[], jvm=[ROW, CAST], reason=ROW metadata requires Flink's whole-Calc evaluation]"
+      ]
+    },
+    {
+      "flink_line": "1.18",
+      "width": 3,
+      "revision": "previous",
+      "returncode": 0,
+      "wall_seconds": 9.031874179840088,
+      "interference": [],
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "surefire:test@default-test",
+        "-Pbench,flink-1.18",
+        "-Dtest=DynamicCollectionBenchmark#compareExpressions",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=<release-dso>",
+        "-Dsf.testForks=1",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<release-dso>",
+        "-Dcollection.expression=ROW(CAST(arr AS ARRAY<ROW<a BIGINT,b STRING>>),CAST(arr AS STRING))",
+        "-Dcollection.map=false",
+        "-Dcollection.type=STRUCTURED",
+        "-Dcollection.width=3",
+        "-Dcollection.rows=50000",
+        "-Dcollection.bytes=32",
+        "-Dcollection.domain=16",
+        "-Dcollection.warmup=2",
+        "-Dcollection.runs=3",
+        "-Dcollection.native=false"
+      ],
+      "log": "1.18-width3-previous.log",
+      "stock_seconds": [
+        0.197603153,
+        0.174777834,
+        0.17825671
+      ],
+      "native_seconds": [
+        0.18241099,
+        0.217054807,
+        0.183170224
+      ],
+      "stock_median": 0.17825671,
+      "native_median": 0.183170224,
+      "trials": [
+        "[collection-trial] engine=flink trial=0 warmup=true rows=50000 seconds=0.713426019",
+        "[collection-trial] engine=native trial=0 warmup=true rows=50000 seconds=0.312424482",
+        "[collection-trial] engine=native trial=1 warmup=true rows=50000 seconds=0.263333123",
+        "[collection-trial] engine=flink trial=1 warmup=true rows=50000 seconds=0.226431950",
+        "[collection-trial] engine=flink trial=2 warmup=false rows=50000 seconds=0.197603153",
+        "[collection-trial] engine=native trial=2 warmup=false rows=50000 seconds=0.182410990",
+        "[collection-trial] engine=native trial=3 warmup=false rows=50000 seconds=0.217054807",
+        "[collection-trial] engine=flink trial=3 warmup=false rows=50000 seconds=0.174777834",
+        "[collection-trial] engine=flink trial=4 warmup=false rows=50000 seconds=0.178256710",
+        "[collection-trial] engine=native trial=4 warmup=false rows=50000 seconds=0.183170224"
+      ],
+      "native_evidence": [],
+      "functions": [
+        "[collection-engine] []"
+      ]
+    },
+    {
+      "flink_line": "1.18",
+      "width": 3,
+      "revision": "candidate",
+      "returncode": 0,
+      "wall_seconds": 11.031842708587646,
+      "interference": [],
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "surefire:test@default-test",
+        "-Pbench,flink-1.18",
+        "-Dtest=DynamicCollectionBenchmark#compareExpressions",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=<release-dso>",
+        "-Dsf.testForks=1",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<release-dso>",
+        "-Dcollection.expression=ROW(CAST(arr AS ARRAY<ROW<a BIGINT,b STRING>>),CAST(arr AS STRING))",
+        "-Dcollection.map=false",
+        "-Dcollection.type=STRUCTURED",
+        "-Dcollection.width=3",
+        "-Dcollection.rows=50000",
+        "-Dcollection.bytes=32",
+        "-Dcollection.domain=16",
+        "-Dcollection.warmup=2",
+        "-Dcollection.runs=3",
+        "-Dcollection.native=true"
+      ],
+      "log": "1.18-width3-candidate.log",
+      "stock_seconds": [
+        0.220786446,
+        0.184813497,
+        0.178813839
+      ],
+      "native_seconds": [
+        0.382042952,
+        0.391352439,
+        0.360289187
+      ],
+      "stock_median": 0.184813497,
+      "native_median": 0.382042952,
+      "trials": [
+        "[collection-trial] engine=flink trial=0 warmup=true rows=50000 seconds=0.751298280",
+        "[collection-trial] engine=native trial=0 warmup=true rows=50000 seconds=0.662171635",
+        "[collection-trial] engine=native trial=1 warmup=true rows=50000 seconds=0.497396992",
+        "[collection-trial] engine=flink trial=1 warmup=true rows=50000 seconds=0.174847315",
+        "[collection-trial] engine=flink trial=2 warmup=false rows=50000 seconds=0.220786446",
+        "[collection-trial] engine=native trial=2 warmup=false rows=50000 seconds=0.382042952",
+        "[collection-trial] engine=native trial=3 warmup=false rows=50000 seconds=0.391352439",
+        "[collection-trial] engine=flink trial=3 warmup=false rows=50000 seconds=0.184813497",
+        "[collection-trial] engine=flink trial=4 warmup=false rows=50000 seconds=0.178813839",
+        "[collection-trial] engine=native trial=4 warmup=false rows=50000 seconds=0.360289187"
+      ],
+      "native_evidence": [
+        "[collection-route] [{subtask=0, attempt=0, jobId=db46129e581796f9195262a8787679ef, recordsIn=50000, operator=NativeCalc(select=[ROW(CAST(arr AS RecordType(BIGINT a, VARCHAR(2147483647) b) A, recordsOut=50000}]",
+        "[collection-route] [{subtask=0, attempt=0, jobId=557bd6b24f54905feb95c2c8aef40965, recordsIn=50000, operator=NativeCalc(select=[ROW(CAST(arr AS RecordType(BIGINT a, VARCHAR(2147483647) b) A, recordsOut=50000}]",
+        "[collection-route] [{subtask=0, attempt=0, jobId=902db4c5b283cbba0a7564b042c31ff3, recordsIn=50000, operator=NativeCalc(select=[ROW(CAST(arr AS RecordType(BIGINT a, VARCHAR(2147483647) b) A, recordsOut=50000}]",
+        "[collection-route] [{subtask=0, attempt=0, jobId=2c25bbf64e101b9f003cd9b38fcda4dd, recordsIn=50000, operator=NativeCalc(select=[ROW(CAST(arr AS RecordType(BIGINT a, VARCHAR(2147483647) b) A, recordsOut=50000}]",
+        "[collection-route] [{subtask=0, attempt=0, jobId=61d6c78da0b9d6309553d12f00577fda, recordsIn=50000, operator=NativeCalc(select=[ROW(CAST(arr AS RecordType(BIGINT a, VARCHAR(2147483647) b) A, recordsOut=50000}]"
+      ],
+      "functions": [
+        "[collection-engine] [NativeCalc functions: native=[], jvm=[ROW, CAST], reason=ROW metadata requires Flink's whole-Calc evaluation]"
+      ]
+    },
+    {
+      "flink_line": "1.18",
+      "width": 16,
+      "revision": "previous",
+      "returncode": 0,
+      "wall_seconds": 13.040619134902954,
+      "interference": [],
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "surefire:test@default-test",
+        "-Pbench,flink-1.18",
+        "-Dtest=DynamicCollectionBenchmark#compareExpressions",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=<release-dso>",
+        "-Dsf.testForks=1",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<release-dso>",
+        "-Dcollection.expression=ROW(CAST(arr AS ARRAY<ROW<a BIGINT,b STRING>>),CAST(arr AS STRING))",
+        "-Dcollection.map=false",
+        "-Dcollection.type=STRUCTURED",
+        "-Dcollection.width=16",
+        "-Dcollection.rows=50000",
+        "-Dcollection.bytes=32",
+        "-Dcollection.domain=16",
+        "-Dcollection.warmup=2",
+        "-Dcollection.runs=3",
+        "-Dcollection.native=false"
+      ],
+      "log": "1.18-width16-previous.log",
+      "stock_seconds": [
+        0.375508755,
+        0.362542404,
+        0.478923291
+      ],
+      "native_seconds": [
+        0.418500456,
+        0.37821647,
+        0.367642002
+      ],
+      "stock_median": 0.375508755,
+      "native_median": 0.37821647,
+      "trials": [
+        "[collection-trial] engine=flink trial=0 warmup=true rows=50000 seconds=2.144752578",
+        "[collection-trial] engine=native trial=0 warmup=true rows=50000 seconds=0.623783439",
+        "[collection-trial] engine=native trial=1 warmup=true rows=50000 seconds=0.474498739",
+        "[collection-trial] engine=flink trial=1 warmup=true rows=50000 seconds=0.372222145",
+        "[collection-trial] engine=flink trial=2 warmup=false rows=50000 seconds=0.375508755",
+        "[collection-trial] engine=native trial=2 warmup=false rows=50000 seconds=0.418500456",
+        "[collection-trial] engine=native trial=3 warmup=false rows=50000 seconds=0.378216470",
+        "[collection-trial] engine=flink trial=3 warmup=false rows=50000 seconds=0.362542404",
+        "[collection-trial] engine=flink trial=4 warmup=false rows=50000 seconds=0.478923291",
+        "[collection-trial] engine=native trial=4 warmup=false rows=50000 seconds=0.367642002"
+      ],
+      "native_evidence": [],
+      "functions": [
+        "[collection-engine] []"
+      ]
+    },
+    {
+      "flink_line": "1.18",
+      "width": 16,
+      "revision": "candidate",
+      "returncode": 0,
+      "wall_seconds": 14.03903841972351,
+      "interference": [],
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "surefire:test@default-test",
+        "-Pbench,flink-1.18",
+        "-Dtest=DynamicCollectionBenchmark#compareExpressions",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=<release-dso>",
+        "-Dsf.testForks=1",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<release-dso>",
+        "-Dcollection.expression=ROW(CAST(arr AS ARRAY<ROW<a BIGINT,b STRING>>),CAST(arr AS STRING))",
+        "-Dcollection.map=false",
+        "-Dcollection.type=STRUCTURED",
+        "-Dcollection.width=16",
+        "-Dcollection.rows=50000",
+        "-Dcollection.bytes=32",
+        "-Dcollection.domain=16",
+        "-Dcollection.warmup=2",
+        "-Dcollection.runs=3",
+        "-Dcollection.native=true"
+      ],
+      "log": "1.18-width16-candidate.log",
+      "stock_seconds": [
+        0.396059966,
+        0.383667156,
+        0.37444031
+      ],
+      "native_seconds": [
+        0.798988244,
+        0.70935026,
+        0.779504236
+      ],
+      "stock_median": 0.383667156,
+      "native_median": 0.779504236,
+      "trials": [
+        "[collection-trial] engine=flink trial=0 warmup=true rows=50000 seconds=0.974656207",
+        "[collection-trial] engine=native trial=0 warmup=true rows=50000 seconds=1.335691362",
+        "[collection-trial] engine=native trial=1 warmup=true rows=50000 seconds=0.860969793",
+        "[collection-trial] engine=flink trial=1 warmup=true rows=50000 seconds=0.437891849",
+        "[collection-trial] engine=flink trial=2 warmup=false rows=50000 seconds=0.396059966",
+        "[collection-trial] engine=native trial=2 warmup=false rows=50000 seconds=0.798988244",
+        "[collection-trial] engine=native trial=3 warmup=false rows=50000 seconds=0.709350260",
+        "[collection-trial] engine=flink trial=3 warmup=false rows=50000 seconds=0.383667156",
+        "[collection-trial] engine=flink trial=4 warmup=false rows=50000 seconds=0.374440310",
+        "[collection-trial] engine=native trial=4 warmup=false rows=50000 seconds=0.779504236"
+      ],
+      "native_evidence": [
+        "[collection-route] [{operator=NativeCalc(select=[ROW(CAST(arr AS RecordType(BIGINT a, VARCHAR(2147483647) b) A, recordsIn=50000, jobId=6307a01ce81f75157b841f0922ea46c9, attempt=0, subtask=0, recordsOut=50000}]",
+        "[collection-route] [{operator=NativeCalc(select=[ROW(CAST(arr AS RecordType(BIGINT a, VARCHAR(2147483647) b) A, recordsIn=50000, jobId=a685a71340ea95354f4da2106f395de0, attempt=0, subtask=0, recordsOut=50000}]",
+        "[collection-route] [{operator=NativeCalc(select=[ROW(CAST(arr AS RecordType(BIGINT a, VARCHAR(2147483647) b) A, recordsIn=50000, jobId=52d74b8a2ef6e29c050f1e94479274c7, attempt=0, subtask=0, recordsOut=50000}]",
+        "[collection-route] [{operator=NativeCalc(select=[ROW(CAST(arr AS RecordType(BIGINT a, VARCHAR(2147483647) b) A, recordsIn=50000, jobId=28378e1ba8679af2c35ea831fed0962d, attempt=0, subtask=0, recordsOut=50000}]",
+        "[collection-route] [{operator=NativeCalc(select=[ROW(CAST(arr AS RecordType(BIGINT a, VARCHAR(2147483647) b) A, recordsIn=50000, jobId=55aafc78f20c961280356d482166a872, attempt=0, subtask=0, recordsOut=50000}]"
+      ],
+      "functions": [
+        "[collection-engine] [NativeCalc functions: native=[], jvm=[ROW, CAST], reason=ROW metadata requires Flink's whole-Calc evaluation]"
+      ]
+    }
+  ],
+  "complete_jobs": 80,
+  "positive_native_calc_witnesses": 20,
+  "profiles": {
+    "capture_seconds": 8,
+    "warmup": "One unprofiled native-only complete job before each capture",
+    "flink_line": "2.2.1",
+    "implementation": "Existing generated NativeCalc, same release/mimalloc DSO",
+    "includes": "All JVM/native threads, JIT, repeated complete-job setup and native processing; no stock jobs in captured process. No allocation/copy byte or isolated-kernel timing claim.",
+    "captures": [
+      {
+        "width": 3,
+        "target_pid": 1609473,
+        "returncode": 0,
+        "profiler_returncode": 0,
+        "wall_seconds": 19.045976638793945,
+        "jfr": "width3.jfr",
+        "log": "width3.log",
+        "profiler_stdout": "",
+        "profiler_stderr": "Profiling for 8 seconds\nDone\n",
+        "native_witness_count": 34,
+        "cpu_samples": 20683,
+        "inclusive_sample_counts": {
+          "row_serialization": 349,
+          "arrow_field_writing": 476,
+          "row_writing": 360,
+          "nested_string_writing": 200,
+          "generated_evaluation": 385,
+          "jvm_batch_callback": 309,
+          "native_calc_entry": 175,
+          "row_copy": 98
+        },
+        "jfr_sha256": "3d21f776e6d1e9e33b0dde3843406acb7e088d3fe54e457c12e4e373b577bce1"
+      },
+      {
+        "width": 16,
+        "target_pid": 1613061,
+        "returncode": 0,
+        "profiler_returncode": 0,
+        "wall_seconds": 19.77332043647766,
+        "jfr": "width16.jfr",
+        "log": "width16.log",
+        "profiler_stdout": "",
+        "profiler_stderr": "Profiling for 8 seconds\nDone\n",
+        "native_witness_count": 15,
+        "cpu_samples": 15380,
+        "inclusive_sample_counts": {
+          "row_serialization": 800,
+          "arrow_field_writing": 789,
+          "row_writing": 708,
+          "nested_string_writing": 417,
+          "generated_evaluation": 513,
+          "jvm_batch_callback": 374,
+          "native_calc_entry": 209,
+          "row_copy": 59
+        },
+        "jfr_sha256": "9d51ed2662323d1ce7e464b3985420740957c7bbf21921fbeab8280980213f06"
+      }
+    ],
+    "status": "closed after exactly two CPU captures; no additional native/kernel optimization",
+    "remaining_cost": "Row serialization, nested Arrow writers, generated evaluation and the existing batch callback; no allocation, copy-byte or isolated-kernel timing claim. Follow-up #392."
+  },
+  "correctness": {
+    "flink_2.2.1": {
+      "structured_checks_pass": 53,
+      "existing_object_checks_pass": 6
+    },
+    "flink_1.18.1": {
+      "structured_checks_pass": 51,
+      "structured_absent_object_function_skips": 2,
+      "existing_object_function_skips": 6
+    },
+    "upstream_miscellaneous_casts": {
+      "flink_2.2.1_pass": 58,
+      "flink_1.18.1_pass": 41,
+      "scope": "Unchanged released result regressions; not counted as positive native work for the new source boundary."
+    },
+    "source_hint_checks": {
+      "per_line_pass": 12,
+      "hints": [
+        "parent",
+        "fields",
+        "arrays",
+        "keys",
+        "values",
+        "multiset"
+      ],
+      "casts": [
+        "CAST",
+        "TRY_CAST"
+      ],
+      "scope": "Actual NULLs despite NOT NULL hints; preserve released success or getter/conversion failure and resolved types; positive NativeCalc work required for successful populated cases."
+    }
+  }
+}

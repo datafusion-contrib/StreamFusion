@@ -78,7 +78,7 @@ class FlinkIntegralNegateSqlHarnessTest {
 
   @Test
   void unverifiedProducersKeepTheGeneratedProgram() {
-    for (String expression : List.of("-(v+1)", "-CAST(v AS SMALLINT)", "-ABS(v)", "-(1/(id-id))")) {
+    for (String expression : List.of("-(v+MOD(v,2))", "-CAST(v AS SMALLINT)", "-ABS(v)", "-(1/(id-id))")) {
       var table = environment("INT");
       var scan = NativePlanner.install(table);
       table.explainSql("SELECT " + expression + " FROM src");

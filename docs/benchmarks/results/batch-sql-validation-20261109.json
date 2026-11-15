@@ -1,0 +1,118 @@
+{
+  "date": "2026-11-09",
+  "scope": "Stateless batch checkpoint. Broad candidate parity precedes narrower default performance/representation admission.",
+  "lines": {
+    "2.2": [
+      {
+        "test": "testUserDefinedScalarFunction()",
+        "junit_status": "SUCCESSFUL",
+        "native_work": {
+          "NativeCalcOperator": 3
+        },
+        "fallback_reasons": [],
+        "jobs": [
+          {
+            "route": "unclassified",
+            "job_type": "BATCH",
+            "job_status": "FINISHED",
+            "application_statuses": [
+              "SUCCEEDED"
+            ]
+          }
+        ]
+      },
+      {
+        "test": "testFilterOnInteger()",
+        "junit_status": "SUCCESSFUL",
+        "native_work": {},
+        "fallback_reasons": [
+          "batch Calc: standalone scalar pipeline has no verified speedup"
+        ],
+        "jobs": [
+          {
+            "route": "batch_host_only",
+            "job_type": "BATCH",
+            "job_status": "FINISHED",
+            "application_statuses": [
+              "SUCCEEDED"
+            ]
+          }
+        ]
+      },
+      {
+        "test": "testManySelectWithFilter()",
+        "junit_status": "SUCCESSFUL",
+        "native_work": {},
+        "fallback_reasons": [
+          "batch Calc: standalone scalar pipeline has no verified speedup"
+        ],
+        "jobs": [
+          {
+            "route": "batch_host_only",
+            "job_type": "BATCH",
+            "job_status": "FINISHED",
+            "application_statuses": [
+              "SUCCEEDED"
+            ]
+          }
+        ]
+      }
+    ],
+    "1.18": [
+      {
+        "test": "testFilterOnInteger()",
+        "junit_status": "SUCCESSFUL",
+        "native_work": {},
+        "fallback_reasons": [
+          "batch Calc: standalone scalar pipeline has no verified speedup"
+        ],
+        "jobs": [
+          {
+            "route": "batch_host_only",
+            "job_type": "BATCH",
+            "job_status": null,
+            "application_statuses": [
+              "SUCCEEDED"
+            ]
+          }
+        ]
+      },
+      {
+        "test": "testManySelectWithFilter()",
+        "junit_status": "SUCCESSFUL",
+        "native_work": {},
+        "fallback_reasons": [
+          "batch Calc: standalone scalar pipeline has no verified speedup"
+        ],
+        "jobs": [
+          {
+            "route": "batch_host_only",
+            "job_type": "BATCH",
+            "job_status": null,
+            "application_statuses": [
+              "SUCCEEDED"
+            ]
+          }
+        ]
+      },
+      {
+        "test": "testUserDefinedScalarFunction()",
+        "junit_status": "SUCCESSFUL",
+        "native_work": {
+          "NativeCalcOperator": 3
+        },
+        "fallback_reasons": [],
+        "jobs": [
+          {
+            "route": "unclassified",
+            "job_type": "BATCH",
+            "job_status": null,
+            "application_statuses": [
+              "SUCCEEDED"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

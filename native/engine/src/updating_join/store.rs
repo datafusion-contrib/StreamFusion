@@ -41,6 +41,18 @@ impl<'a> Iterator for JoinProbe<'a> {
 /// INNER input writes need one record's count, while probes need the opposite multiset.
 /// Keep this distinction explicit: an empty partial view is not an empty logical key.
 pub(crate) trait JoinStateStore: KeyedStateStore<JoinBucket> {
+    fn visit_canonical_rows(
+        &mut self,
+        consume: &mut dyn FnMut(&[u8], &[u8], RowMeta) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError>;
+
+    fn import_canonical_row(
+        &mut self,
+        key: &[u8],
+        payload: &[u8],
+        meta: RowMeta,
+    ) -> Result<isize, DataFusionError>;
+
     fn attach_read_memory(&mut self, _reservation: Option<MemoryReservation>) {}
 
     fn prepare_inner_input(
@@ -81,4 +93,51 @@ pub(crate) trait JoinStateStore: KeyedStateStore<JoinBucket> {
     }
 }
 
-impl JoinStateStore for MemoryJoinStore {}
+impl JoinStateStore for MemoryJoinStore {
+    fn visit_canonical_rows(
+        &mut self,
+        consume: &mut dyn FnMut(&[u8], &[u8], RowMeta) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        for (key, bucket) in self.iter() {
+            for (payload, meta) in bucket {
+                consume(&key.0, &payload.0, *meta)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn import_canonical_row(
+        &mut self,
+        key: &[u8],
+        payload: &[u8],
+        meta: RowMeta,
+    ) -> Result<isize, DataFusionError> {
+        import_bucket_row(self, key, payload, meta)
+    }
+}
+
+pub(crate) fn import_bucket_row(
+    state: &mut impl KeyedStateStore<JoinBucket>,
+    key: &[u8],
+    payload: &[u8],
+    meta: RowMeta,
+) -> Result<isize, DataFusionError> {
+    let fresh = !state.contains(key);
+    let bucket = if fresh {
+        state.insert(ByteKey::from(key), JoinBucket::default())
+    } else {
+        state.get_mut(key).unwrap()
+    };
+    if bucket.contains_key(payload) {
+        return Err(DataFusionError::Execution(
+            "duplicate canonical join row".into(),
+        ));
+    }
+    bucket.insert(ByteKey::from(payload), meta);
+    Ok((super::join_row_entry_bytes(payload)
+        + if fresh {
+            super::join_key_entry_bytes(key)
+        } else {
+            0
+        }) as isize)
+}

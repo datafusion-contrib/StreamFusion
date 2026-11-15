@@ -75,3 +75,11 @@ row representation for efficient handover; ours retains the Arrow columns for co
 and IPC. An immediate row exit uses the cache only after checking the whole batch; generic rows
 and missing caches keep their existing representation-preserving readers. No borrowed native
 pointer escapes the input batch.
+
+Preserved scalar arrays now reuse the same native take kernel across verified collection Calcs
+and collection aggregate outputs. A represented string struct remains one scalar, with its
+UTF-16 cache and copy metadata; it is never a logical ROW expansion. NOT NULL-element getters
+and cached-string value consumers retain the existing generated boundary where necessary.
+Computed projections prune unused input columns before fan-out. Native string ARRAY construction
+uses the existing binary-element snapshot contract, matching Flink's BinaryArrayWriter rather
+than retaining source Java caches. Comet's import/release pattern remains unchanged.

@@ -1,0 +1,58 @@
+{
+  "source_commit": "08df65ababbab04ca8276a65e7a746b4591eab38",
+  "element": "BIGINT",
+  "state_version": 1,
+  "kinds": [
+    48,
+    49,
+    50,
+    51,
+    52,
+    53
+  ],
+  "ttl_millis": 60000,
+  "processing_time": 1000,
+  "operations": [
+    {
+      "value": 7,
+      "retract": false
+    },
+    {
+      "value": null,
+      "retract": false
+    },
+    {
+      "value": 7,
+      "retract": false
+    },
+    {
+      "value": -3,
+      "retract": false
+    },
+    {
+      "value": 99,
+      "retract": true
+    },
+    {
+      "value": 11,
+      "retract": true
+    },
+    {
+      "value": 11,
+      "retract": false
+    },
+    {
+      "value": 7,
+      "retract": true
+    }
+  ],
+  "source": "Snapshots emitted by the previous canonical implementation using its native CollectionState; only a temporary export test was added, then removed.",
+  "sha256": {
+    "kind-50.json": "0d6144391f3a735abfe0caa4e19d812b64b05ef564af2d6cabd0fc11b8070921",
+    "kind-52.json": "9c03ee9d4bc2f863f2a7ff38cea146b5f97910ee2e75b2824ccad80d81f85a03",
+    "kind-53.json": "e4d119fec9acd2925af5351a2468c263baa2b17b9525b75ba945573d15cf2874",
+    "kind-51.json": "864d35c77b93981095f2407ab56e39ea8140af60d7c21646186c595de971aba6",
+    "kind-48.json": "3afb28309cc663d2cf0976b86afe736be18f0d7bd8fccafba8bb05f4d19715ba",
+    "kind-49.json": "629fb33962c5c42652c6362856e02c90558a670a37ec3c718cceb0e9158875c6"
+  }
+}

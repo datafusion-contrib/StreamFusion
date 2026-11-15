@@ -26,7 +26,7 @@ two million rows in the fixed-offset daily case). The revised fixed-offset daily
 1.64–2.45× and the previous fallback by 1.67–2.43×. The two-million-row, 4,096-key, 256-byte-key regional HOP profiles average 14.264s native
 versus 24.685s stock for rank (1.73×), and 9.479s native versus 19.101s stock for dedup
 (2.01×). The remaining production matrix is still being collected. See the
-[calendar trial artifact](../benchmarks/results/calendar-windows-2026-10-14.json).
+[calendar trial artifact](https://streamfusion.tech/benchmarks/results/calendar-windows-2026-10-14.json).
 
 The first regional RocksDB TUMBLE dedup comparison remained slower: 1.710s native versus
 0.884s stock for one million rows and 64 keys. Its CPU capture attributes 117 of 328 native

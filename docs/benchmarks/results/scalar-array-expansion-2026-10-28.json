@@ -1,0 +1,801 @@
+{
+  "date": "2026-10-28T12:15:08.785923+00:00",
+  "baseline_commit": "4df58b80",
+  "benchmark_source_sha256": "234cf6ad838ed167689d76010c9076adc2628ef3172a221e52803404a8f79eff",
+  "native_sha256": "3763aa23b363bd5642fc2b6a07eea802e0c01e0f71d748fbe15e452d7eff6919",
+  "warmups": 2,
+  "trials": 3,
+  "rows": 32768,
+  "parallelism": 1,
+  "values": 8,
+  "cohorts": [
+    {
+      "revision": "candidate",
+      "keys": 64,
+      "returncode": 0,
+      "wall_seconds": 171.45176458358765,
+      "interference": [],
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "surefire:test@default-test",
+        "-Pbench",
+        "-Dtest=JvmAggregateBenchmark#completeJobsRetainKeyedStateAndBothTransposes",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=/tmp/issue234-general-release-dso",
+        "-Dsf.testForks=1",
+        "-Dsf.extraJvmArgs=-Djava.library.path=/tmp/issue234-general-release-dso",
+        "-Djvmagg.cases=expanded_array_agg,expanded_array_agg_double,expanded_array_agg_decimal38",
+        "-Djvmagg.rows=32768",
+        "-Djvmagg.keys=64",
+        "-Djvmagg.values=8",
+        "-Djvmagg.warmup=2",
+        "-Djvmagg.runs=3",
+        "-Djvmagg.expectCache=false",
+        "-Djvmagg.expectNative=true"
+      ],
+      "log": "64-candidate.log",
+      "summaries": [
+        {
+          "shape": "expanded_array_agg",
+          "key_type": "int",
+          "key_prefix_chars": 16,
+          "rows": 32768,
+          "keys": 64,
+          "values": 8,
+          "stock_seconds": [
+            5.763611571,
+            5.773431173,
+            5.826560507
+          ],
+          "native_seconds": [
+            1.027503942,
+            1.002027135,
+            0.93927321
+          ],
+          "stock_median_seconds": 5.773431173,
+          "native_median_seconds": 1.002027135,
+          "stock_range_seconds": [
+            5.763611571,
+            5.826560507
+          ],
+          "native_range_seconds": [
+            0.93927321,
+            1.027503942
+          ],
+          "stock_over_native": 5.761751325227334
+        },
+        {
+          "shape": "expanded_array_agg_double",
+          "key_type": "int",
+          "key_prefix_chars": 16,
+          "rows": 32768,
+          "keys": 64,
+          "values": 8,
+          "stock_seconds": [
+            7.188568651,
+            7.178278353,
+            7.159384852
+          ],
+          "native_seconds": [
+            1.010254294,
+            0.992064201,
+            0.998907221
+          ],
+          "stock_median_seconds": 7.178278353,
+          "native_median_seconds": 0.998907221,
+          "stock_range_seconds": [
+            7.159384852,
+            7.188568651
+          ],
+          "native_range_seconds": [
+            0.992064201,
+            1.010254294
+          ],
+          "stock_over_native": 7.18613120627346
+        },
+        {
+          "shape": "expanded_array_agg_decimal38",
+          "key_type": "int",
+          "key_prefix_chars": 16,
+          "rows": 32768,
+          "keys": 64,
+          "values": 8,
+          "stock_seconds": [
+            14.770691401,
+            14.797693435,
+            14.79752692
+          ],
+          "native_seconds": [
+            2.605548796,
+            2.022989871,
+            2.047730771
+          ],
+          "stock_median_seconds": 14.79752692,
+          "native_median_seconds": 2.047730771,
+          "stock_range_seconds": [
+            14.770691401,
+            14.797693435
+          ],
+          "native_range_seconds": [
+            2.022989871,
+            2.605548796
+          ],
+          "stock_over_native": 7.226304907638662
+        }
+      ],
+      "trials": [
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=Flink trial=0 warmup=true rows=32768 keys=64 not_null=false start_ms=1793189714596 seconds=6.478140",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=StreamFusion trial=0 warmup=true rows=32768 keys=64 not_null=false start_ms=1793189721468 seconds=1.273788",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=StreamFusion trial=1 warmup=true rows=32768 keys=64 not_null=false start_ms=1793189722892 seconds=1.120032",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=Flink trial=1 warmup=true rows=32768 keys=64 not_null=false start_ms=1793189724170 seconds=5.938310",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=Flink trial=2 warmup=false rows=32768 keys=64 not_null=false start_ms=1793189730233 seconds=5.763612",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=StreamFusion trial=2 warmup=false rows=32768 keys=64 not_null=false start_ms=1793189736116 seconds=1.027504",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=StreamFusion trial=3 warmup=false rows=32768 keys=64 not_null=false start_ms=1793189737286 seconds=1.002027",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=Flink trial=3 warmup=false rows=32768 keys=64 not_null=false start_ms=1793189738413 seconds=5.773431",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=Flink trial=4 warmup=false rows=32768 keys=64 not_null=false start_ms=1793189744304 seconds=5.826561",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=StreamFusion trial=4 warmup=false rows=32768 keys=64 not_null=false start_ms=1793189750252 seconds=0.939273",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=Flink trial=0 warmup=true rows=32768 keys=64 not_null=false start_ms=1793189751318 seconds=7.282498",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=StreamFusion trial=0 warmup=true rows=32768 keys=64 not_null=false start_ms=1793189758698 seconds=1.092639",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=StreamFusion trial=1 warmup=true rows=32768 keys=64 not_null=false start_ms=1793189759901 seconds=1.174351",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=Flink trial=1 warmup=true rows=32768 keys=64 not_null=false start_ms=1793189761168 seconds=7.214681",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=Flink trial=2 warmup=false rows=32768 keys=64 not_null=false start_ms=1793189768478 seconds=7.188569",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=StreamFusion trial=2 warmup=false rows=32768 keys=64 not_null=false start_ms=1793189775773 seconds=1.010254",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=StreamFusion trial=3 warmup=false rows=32768 keys=64 not_null=false start_ms=1793189776881 seconds=0.992064",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=Flink trial=3 warmup=false rows=32768 keys=64 not_null=false start_ms=1793189777994 seconds=7.178278",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=Flink trial=4 warmup=false rows=32768 keys=64 not_null=false start_ms=1793189785269 seconds=7.159385",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=StreamFusion trial=4 warmup=false rows=32768 keys=64 not_null=false start_ms=1793189792538 seconds=0.998907",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=Flink trial=0 warmup=true rows=32768 keys=64 not_null=false start_ms=1793189793647 seconds=14.922462",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=StreamFusion trial=0 warmup=true rows=32768 keys=64 not_null=false start_ms=1793189808662 seconds=2.132202",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=StreamFusion trial=1 warmup=true rows=32768 keys=64 not_null=false start_ms=1793189810900 seconds=2.020899",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=Flink trial=1 warmup=true rows=32768 keys=64 not_null=false start_ms=1793189812999 seconds=14.988543",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=Flink trial=2 warmup=false rows=32768 keys=64 not_null=false start_ms=1793189828083 seconds=14.770691",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=StreamFusion trial=2 warmup=false rows=32768 keys=64 not_null=false start_ms=1793189842951 seconds=2.605549",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=StreamFusion trial=3 warmup=false rows=32768 keys=64 not_null=false start_ms=1793189845665 seconds=2.022990",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=Flink trial=3 warmup=false rows=32768 keys=64 not_null=false start_ms=1793189847758 seconds=14.797693",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=Flink trial=4 warmup=false rows=32768 keys=64 not_null=false start_ms=1793189862655 seconds=14.797527",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=StreamFusion trial=4 warmup=false rows=32768 keys=64 not_null=false start_ms=1793189877545 seconds=2.047731"
+      ],
+      "native_evidence": [
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=0 operator=NativeCalc(select=[k, COALESCE(v, 0) AS $f1], nativeFunctions=[COALESCE], jvmFun records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=0 operator=NativeColumnarExchangeExecNode[26] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=0 operator=NativeColumnarGroupAggExecNode[27] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=0 operator=NativeGeneratedUnnestExecNode[28] records_in=32768 records_out=8404992",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=1 operator=NativeCalc(select=[k, COALESCE(v, 0) AS $f1], nativeFunctions=[COALESCE], jvmFun records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=1 operator=NativeColumnarExchangeExecNode[42] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=1 operator=NativeColumnarGroupAggExecNode[43] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=1 operator=NativeGeneratedUnnestExecNode[44] records_in=32768 records_out=8404992",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=2 operator=NativeCalc(select=[k, COALESCE(v, 0) AS $f1], nativeFunctions=[COALESCE], jvmFun records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=2 operator=NativeColumnarExchangeExecNode[86] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=2 operator=NativeColumnarGroupAggExecNode[87] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=2 operator=NativeGeneratedUnnestExecNode[88] records_in=32768 records_out=8404992",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=3 operator=NativeCalc(select=[k, COALESCE(v, 0) AS $f1], nativeFunctions=[COALESCE], jvmFun records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=3 operator=NativeColumnarExchangeExecNode[102] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=3 operator=NativeColumnarGroupAggExecNode[103] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=3 operator=NativeGeneratedUnnestExecNode[104] records_in=32768 records_out=8404992",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=4 operator=NativeCalc(select=[k, COALESCE(v, 0) AS $f1], nativeFunctions=[COALESCE], jvmFun records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=4 operator=NativeColumnarExchangeExecNode[146] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=4 operator=NativeColumnarGroupAggExecNode[147] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=4 operator=NativeGeneratedUnnestExecNode[148] records_in=32768 records_out=8404992",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=0 operator=NativeCalc(select=[k, COALESCE(v, 0) AS $f1], nativeFunctions=[COALESCE], jvmFun records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=0 operator=NativeColumnarExchangeExecNode[176] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=0 operator=NativeColumnarGroupAggExecNode[177] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=0 operator=NativeGeneratedUnnestExecNode[178] records_in=32768 records_out=8404992",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=1 operator=NativeCalc(select=[k, COALESCE(v, 0) AS $f1], nativeFunctions=[COALESCE], jvmFun records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=1 operator=NativeColumnarExchangeExecNode[192] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=1 operator=NativeColumnarGroupAggExecNode[193] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=1 operator=NativeGeneratedUnnestExecNode[194] records_in=32768 records_out=8404992",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=2 operator=NativeCalc(select=[k, COALESCE(v, 0) AS $f1], nativeFunctions=[COALESCE], jvmFun records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=2 operator=NativeColumnarExchangeExecNode[236] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=2 operator=NativeColumnarGroupAggExecNode[237] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=2 operator=NativeGeneratedUnnestExecNode[238] records_in=32768 records_out=8404992",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=3 operator=NativeCalc(select=[k, COALESCE(v, 0) AS $f1], nativeFunctions=[COALESCE], jvmFun records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=3 operator=NativeColumnarExchangeExecNode[252] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=3 operator=NativeColumnarGroupAggExecNode[253] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=3 operator=NativeGeneratedUnnestExecNode[254] records_in=32768 records_out=8404992",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=4 operator=NativeCalc(select=[k, COALESCE(v, 0) AS $f1], nativeFunctions=[COALESCE], jvmFun records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=4 operator=NativeColumnarExchangeExecNode[296] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=4 operator=NativeColumnarGroupAggExecNode[297] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=4 operator=NativeGeneratedUnnestExecNode[298] records_in=32768 records_out=8404992",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=0 operator=NativeCalc(select=[k, COALESCE(v, 0) AS $f1], nativeFunctions=[COALESCE], jvmFun records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=0 operator=NativeColumnarExchangeExecNode[326] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=0 operator=NativeColumnarGroupAggExecNode[327] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=0 operator=NativeGeneratedUnnestExecNode[328] records_in=32768 records_out=8404992",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=1 operator=NativeCalc(select=[k, COALESCE(v, 0) AS $f1], nativeFunctions=[COALESCE], jvmFun records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=1 operator=NativeColumnarExchangeExecNode[342] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=1 operator=NativeColumnarGroupAggExecNode[343] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=1 operator=NativeGeneratedUnnestExecNode[344] records_in=32768 records_out=8404992",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=2 operator=NativeCalc(select=[k, COALESCE(v, 0) AS $f1], nativeFunctions=[COALESCE], jvmFun records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=2 operator=NativeColumnarExchangeExecNode[386] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=2 operator=NativeColumnarGroupAggExecNode[387] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=2 operator=NativeGeneratedUnnestExecNode[388] records_in=32768 records_out=8404992",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=3 operator=NativeCalc(select=[k, COALESCE(v, 0) AS $f1], nativeFunctions=[COALESCE], jvmFun records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=3 operator=NativeColumnarExchangeExecNode[402] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=3 operator=NativeColumnarGroupAggExecNode[403] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=3 operator=NativeGeneratedUnnestExecNode[404] records_in=32768 records_out=8404992",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=4 operator=NativeCalc(select=[k, COALESCE(v, 0) AS $f1], nativeFunctions=[COALESCE], jvmFun records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=4 operator=NativeColumnarExchangeExecNode[446] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=4 operator=NativeColumnarGroupAggExecNode[447] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=4 operator=NativeGeneratedUnnestExecNode[448] records_in=32768 records_out=8404992"
+      ]
+    },
+    {
+      "revision": "previous",
+      "keys": 64,
+      "returncode": 0,
+      "wall_seconds": 281.72899079322815,
+      "interference": [],
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "surefire:test@default-test",
+        "-Pbench",
+        "-Dtest=JvmAggregateBenchmark#completeJobsRetainKeyedStateAndBothTransposes",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=/tmp/issue234-general-release-dso",
+        "-Dsf.testForks=1",
+        "-Dsf.extraJvmArgs=-Djava.library.path=/tmp/issue234-general-release-dso",
+        "-Djvmagg.cases=expanded_array_agg,expanded_array_agg_double,expanded_array_agg_decimal38",
+        "-Djvmagg.rows=32768",
+        "-Djvmagg.keys=64",
+        "-Djvmagg.values=8",
+        "-Djvmagg.warmup=2",
+        "-Djvmagg.runs=3",
+        "-Djvmagg.expectCache=false",
+        "-Djvmagg.expectNative=false"
+      ],
+      "log": "64-previous.log",
+      "summaries": [
+        {
+          "shape": "expanded_array_agg",
+          "key_type": "int",
+          "key_prefix_chars": 16,
+          "rows": 32768,
+          "keys": 64,
+          "values": 8,
+          "stock_seconds": [
+            5.676323056,
+            5.662140834,
+            5.651473729
+          ],
+          "native_seconds": [
+            5.72130587,
+            5.754609274,
+            5.647072391
+          ],
+          "stock_median_seconds": 5.662140834,
+          "native_median_seconds": 5.72130587,
+          "stock_range_seconds": [
+            5.651473729,
+            5.676323056
+          ],
+          "native_range_seconds": [
+            5.647072391,
+            5.754609274
+          ],
+          "stock_over_native": 0.989658823117597
+        },
+        {
+          "shape": "expanded_array_agg_double",
+          "key_type": "int",
+          "key_prefix_chars": 16,
+          "rows": 32768,
+          "keys": 64,
+          "values": 8,
+          "stock_seconds": [
+            6.829269412,
+            6.689320428,
+            6.733294716
+          ],
+          "native_seconds": [
+            6.749798609,
+            6.790682911,
+            6.689754476
+          ],
+          "stock_median_seconds": 6.733294716,
+          "native_median_seconds": 6.749798609,
+          "stock_range_seconds": [
+            6.689320428,
+            6.829269412
+          ],
+          "native_range_seconds": [
+            6.689754476,
+            6.790682911
+          ],
+          "stock_over_native": 0.9975549058637105
+        },
+        {
+          "shape": "expanded_array_agg_decimal38",
+          "key_type": "int",
+          "key_prefix_chars": 16,
+          "rows": 32768,
+          "keys": 64,
+          "values": 8,
+          "stock_seconds": [
+            14.444427939,
+            14.479792172,
+            14.432225476
+          ],
+          "native_seconds": [
+            14.53549526,
+            14.366825206,
+            14.440044454
+          ],
+          "stock_median_seconds": 14.444427939,
+          "native_median_seconds": 14.440044454,
+          "stock_range_seconds": [
+            14.432225476,
+            14.479792172
+          ],
+          "native_range_seconds": [
+            14.366825206,
+            14.53549526
+          ],
+          "stock_over_native": 1.0003035645086802
+        }
+      ],
+      "trials": [
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=Flink trial=0 warmup=true rows=32768 keys=64 not_null=false start_ms=1793189886203 seconds=6.705817",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=StreamFusion trial=0 warmup=true rows=32768 keys=64 not_null=false start_ms=1793189893309 seconds=5.978893",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=StreamFusion trial=1 warmup=true rows=32768 keys=64 not_null=false start_ms=1793189899455 seconds=5.776719",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=Flink trial=1 warmup=true rows=32768 keys=64 not_null=false start_ms=1793189905392 seconds=5.736961",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=Flink trial=2 warmup=false rows=32768 keys=64 not_null=false start_ms=1793189911273 seconds=5.676323",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=StreamFusion trial=2 warmup=false rows=32768 keys=64 not_null=false start_ms=1793189917089 seconds=5.721306",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=StreamFusion trial=3 warmup=false rows=32768 keys=64 not_null=false start_ms=1793189922956 seconds=5.754609",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=Flink trial=3 warmup=false rows=32768 keys=64 not_null=false start_ms=1793189928832 seconds=5.662141",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=Flink trial=4 warmup=false rows=32768 keys=64 not_null=false start_ms=1793189934603 seconds=5.651474",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=StreamFusion trial=4 warmup=false rows=32768 keys=64 not_null=false start_ms=1793189940382 seconds=5.647072",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=Flink trial=0 warmup=true rows=32768 keys=64 not_null=false start_ms=1793189946153 seconds=6.877077",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=StreamFusion trial=0 warmup=true rows=32768 keys=64 not_null=false start_ms=1793189953144 seconds=6.786508",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=StreamFusion trial=1 warmup=true rows=32768 keys=64 not_null=false start_ms=1793189960055 seconds=6.755835",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=Flink trial=1 warmup=true rows=32768 keys=64 not_null=false start_ms=1793189966916 seconds=6.697804",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=Flink trial=2 warmup=false rows=32768 keys=64 not_null=false start_ms=1793189973730 seconds=6.829269",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=StreamFusion trial=2 warmup=false rows=32768 keys=64 not_null=false start_ms=1793189980668 seconds=6.749799",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=StreamFusion trial=3 warmup=false rows=32768 keys=64 not_null=false start_ms=1793189987528 seconds=6.790683",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=Flink trial=3 warmup=false rows=32768 keys=64 not_null=false start_ms=1793189994435 seconds=6.689320",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=Flink trial=4 warmup=false rows=32768 keys=64 not_null=false start_ms=1793190001239 seconds=6.733295",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=StreamFusion trial=4 warmup=false rows=32768 keys=64 not_null=false start_ms=1793190008078 seconds=6.689754",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=Flink trial=0 warmup=true rows=32768 keys=64 not_null=false start_ms=1793190014879 seconds=15.034295",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=StreamFusion trial=0 warmup=true rows=32768 keys=64 not_null=false start_ms=1793190030044 seconds=14.503342",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=StreamFusion trial=1 warmup=true rows=32768 keys=64 not_null=false start_ms=1793190044652 seconds=14.365577",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=Flink trial=1 warmup=true rows=32768 keys=64 not_null=false start_ms=1793190059118 seconds=14.510434",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=Flink trial=2 warmup=false rows=32768 keys=64 not_null=false start_ms=1793190073733 seconds=14.444428",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=StreamFusion trial=2 warmup=false rows=32768 keys=64 not_null=false start_ms=1793190088293 seconds=14.535495",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=StreamFusion trial=3 warmup=false rows=32768 keys=64 not_null=false start_ms=1793190102937 seconds=14.366825",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=Flink trial=3 warmup=false rows=32768 keys=64 not_null=false start_ms=1793190117413 seconds=14.479792",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=Flink trial=4 warmup=false rows=32768 keys=64 not_null=false start_ms=1793190131993 seconds=14.432225",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=StreamFusion trial=4 warmup=false rows=32768 keys=64 not_null=false start_ms=1793190146530 seconds=14.440044"
+      ],
+      "native_evidence": []
+    },
+    {
+      "revision": "previous",
+      "keys": 4096,
+      "returncode": 0,
+      "wall_seconds": 18.05389952659607,
+      "interference": [],
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "surefire:test@default-test",
+        "-Pbench",
+        "-Dtest=JvmAggregateBenchmark#completeJobsRetainKeyedStateAndBothTransposes",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=/tmp/issue234-general-release-dso",
+        "-Dsf.testForks=1",
+        "-Dsf.extraJvmArgs=-Djava.library.path=/tmp/issue234-general-release-dso",
+        "-Djvmagg.cases=expanded_array_agg,expanded_array_agg_double,expanded_array_agg_decimal38",
+        "-Djvmagg.rows=32768",
+        "-Djvmagg.keys=4096",
+        "-Djvmagg.values=8",
+        "-Djvmagg.warmup=2",
+        "-Djvmagg.runs=3",
+        "-Djvmagg.expectCache=false",
+        "-Djvmagg.expectNative=false"
+      ],
+      "log": "4096-previous.log",
+      "summaries": [
+        {
+          "shape": "expanded_array_agg",
+          "key_type": "int",
+          "key_prefix_chars": 16,
+          "rows": 32768,
+          "keys": 4096,
+          "values": 8,
+          "stock_seconds": [
+            0.494671894,
+            0.234360168,
+            0.24037462
+          ],
+          "native_seconds": [
+            0.23828064,
+            0.232991141,
+            0.209534796
+          ],
+          "stock_median_seconds": 0.24037462,
+          "native_median_seconds": 0.232991141,
+          "stock_range_seconds": [
+            0.234360168,
+            0.494671894
+          ],
+          "native_range_seconds": [
+            0.209534796,
+            0.23828064
+          ],
+          "stock_over_native": 1.0316899559713302
+        },
+        {
+          "shape": "expanded_array_agg_double",
+          "key_type": "int",
+          "key_prefix_chars": 16,
+          "rows": 32768,
+          "keys": 4096,
+          "values": 8,
+          "stock_seconds": [
+            0.214827284,
+            0.183476219,
+            0.187324549
+          ],
+          "native_seconds": [
+            0.197555032,
+            0.253217552,
+            0.211190519
+          ],
+          "stock_median_seconds": 0.187324549,
+          "native_median_seconds": 0.211190519,
+          "stock_range_seconds": [
+            0.183476219,
+            0.214827284
+          ],
+          "native_range_seconds": [
+            0.197555032,
+            0.253217552
+          ],
+          "stock_over_native": 0.8869931751055549
+        },
+        {
+          "shape": "expanded_array_agg_decimal38",
+          "key_type": "int",
+          "key_prefix_chars": 16,
+          "rows": 32768,
+          "keys": 4096,
+          "values": 8,
+          "stock_seconds": [
+            0.192299674,
+            0.147592588,
+            0.126463362
+          ],
+          "native_seconds": [
+            0.22356223,
+            0.132386516,
+            0.153692346
+          ],
+          "stock_median_seconds": 0.147592588,
+          "native_median_seconds": 0.153692346,
+          "stock_range_seconds": [
+            0.126463362,
+            0.192299674
+          ],
+          "native_range_seconds": [
+            0.132386516,
+            0.22356223
+          ],
+          "stock_over_native": 0.9603118947771152
+        }
+      ],
+      "trials": [
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=Flink trial=0 warmup=true rows=32768 keys=4096 not_null=false start_ms=1793190168219 seconds=0.863438",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=StreamFusion trial=0 warmup=true rows=32768 keys=4096 not_null=false start_ms=1793190169551 seconds=0.455536",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=StreamFusion trial=1 warmup=true rows=32768 keys=4096 not_null=false start_ms=1793190170232 seconds=0.319454",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=Flink trial=1 warmup=true rows=32768 keys=4096 not_null=false start_ms=1793190170735 seconds=0.292998",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=Flink trial=2 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190171161 seconds=0.494672",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=StreamFusion trial=2 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190171807 seconds=0.238281",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=StreamFusion trial=3 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190172180 seconds=0.232991",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=Flink trial=3 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190172532 seconds=0.234360",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=Flink trial=4 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190172874 seconds=0.240375",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=StreamFusion trial=4 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190173244 seconds=0.209535",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=Flink trial=0 warmup=true rows=32768 keys=4096 not_null=false start_ms=1793190173609 seconds=0.239076",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=StreamFusion trial=0 warmup=true rows=32768 keys=4096 not_null=false start_ms=1793190173959 seconds=0.214244",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=StreamFusion trial=1 warmup=true rows=32768 keys=4096 not_null=false start_ms=1793190174288 seconds=0.217186",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=Flink trial=1 warmup=true rows=32768 keys=4096 not_null=false start_ms=1793190174590 seconds=0.223986",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=Flink trial=2 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190174910 seconds=0.214827",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=StreamFusion trial=2 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190175213 seconds=0.197555",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=StreamFusion trial=3 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190175511 seconds=0.253218",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=Flink trial=3 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190175860 seconds=0.183476",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=Flink trial=4 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190176132 seconds=0.187325",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=StreamFusion trial=4 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190176412 seconds=0.211191",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=Flink trial=0 warmup=true rows=32768 keys=4096 not_null=false start_ms=1793190176711 seconds=0.242469",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=StreamFusion trial=0 warmup=true rows=32768 keys=4096 not_null=false start_ms=1793190177055 seconds=0.210068",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=StreamFusion trial=1 warmup=true rows=32768 keys=4096 not_null=false start_ms=1793190177345 seconds=0.202096",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=Flink trial=1 warmup=true rows=32768 keys=4096 not_null=false start_ms=1793190177640 seconds=0.139386",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=Flink trial=2 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190177857 seconds=0.192300",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=StreamFusion trial=2 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190178124 seconds=0.223562",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=StreamFusion trial=3 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190178453 seconds=0.132387",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=Flink trial=3 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190178660 seconds=0.147593",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=Flink trial=4 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190178892 seconds=0.126463",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=StreamFusion trial=4 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190179110 seconds=0.153692"
+      ],
+      "native_evidence": []
+    },
+    {
+      "revision": "candidate",
+      "keys": 4096,
+      "returncode": 0,
+      "wall_seconds": 17.048630237579346,
+      "interference": [],
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "surefire:test@default-test",
+        "-Pbench",
+        "-Dtest=JvmAggregateBenchmark#completeJobsRetainKeyedStateAndBothTransposes",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=/tmp/issue234-general-release-dso",
+        "-Dsf.testForks=1",
+        "-Dsf.extraJvmArgs=-Djava.library.path=/tmp/issue234-general-release-dso",
+        "-Djvmagg.cases=expanded_array_agg,expanded_array_agg_double,expanded_array_agg_decimal38",
+        "-Djvmagg.rows=32768",
+        "-Djvmagg.keys=4096",
+        "-Djvmagg.values=8",
+        "-Djvmagg.warmup=2",
+        "-Djvmagg.runs=3",
+        "-Djvmagg.expectCache=false",
+        "-Djvmagg.expectNative=true"
+      ],
+      "log": "4096-candidate.log",
+      "summaries": [
+        {
+          "shape": "expanded_array_agg",
+          "key_type": "int",
+          "key_prefix_chars": 16,
+          "rows": 32768,
+          "keys": 4096,
+          "values": 8,
+          "stock_seconds": [
+            0.319979707,
+            0.261171512,
+            0.233455223
+          ],
+          "native_seconds": [
+            0.277335457,
+            0.204003742,
+            0.192032153
+          ],
+          "stock_median_seconds": 0.261171512,
+          "native_median_seconds": 0.204003742,
+          "stock_range_seconds": [
+            0.233455223,
+            0.319979707
+          ],
+          "native_range_seconds": [
+            0.192032153,
+            0.277335457
+          ],
+          "stock_over_native": 1.280229026387173
+        },
+        {
+          "shape": "expanded_array_agg_double",
+          "key_type": "int",
+          "key_prefix_chars": 16,
+          "rows": 32768,
+          "keys": 4096,
+          "values": 8,
+          "stock_seconds": [
+            0.220469035,
+            0.225747338,
+            0.188099143
+          ],
+          "native_seconds": [
+            0.191357267,
+            0.102449654,
+            0.147155253
+          ],
+          "stock_median_seconds": 0.220469035,
+          "native_median_seconds": 0.147155253,
+          "stock_range_seconds": [
+            0.188099143,
+            0.225747338
+          ],
+          "native_range_seconds": [
+            0.102449654,
+            0.191357267
+          ],
+          "stock_over_native": 1.4982070330849826
+        },
+        {
+          "shape": "expanded_array_agg_decimal38",
+          "key_type": "int",
+          "key_prefix_chars": 16,
+          "rows": 32768,
+          "keys": 4096,
+          "values": 8,
+          "stock_seconds": [
+            0.133967133,
+            0.151379745,
+            0.14043197
+          ],
+          "native_seconds": [
+            0.120238795,
+            0.111240545,
+            0.229741218
+          ],
+          "stock_median_seconds": 0.14043197,
+          "native_median_seconds": 0.120238795,
+          "stock_range_seconds": [
+            0.133967133,
+            0.151379745
+          ],
+          "native_range_seconds": [
+            0.111240545,
+            0.229741218
+          ],
+          "stock_over_native": 1.1679422602330636
+        }
+      ],
+      "trials": [
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=Flink trial=0 warmup=true rows=32768 keys=4096 not_null=false start_ms=1793190186138 seconds=0.886310",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=StreamFusion trial=0 warmup=true rows=32768 keys=4096 not_null=false start_ms=1793190187447 seconds=0.371630",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=StreamFusion trial=1 warmup=true rows=32768 keys=4096 not_null=false start_ms=1793190188006 seconds=0.252281",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=Flink trial=1 warmup=true rows=32768 keys=4096 not_null=false start_ms=1793190188421 seconds=0.347407",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=Flink trial=2 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190188927 seconds=0.319980",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=StreamFusion trial=2 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190189401 seconds=0.277335",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=StreamFusion trial=3 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190189814 seconds=0.204004",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=Flink trial=3 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190190147 seconds=0.261172",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=Flink trial=4 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190190531 seconds=0.233455",
+        "[jvm-aggregate-trial] shape=expanded_array_agg key_type=int engine=StreamFusion trial=4 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190190874 seconds=0.192032",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=Flink trial=0 warmup=true rows=32768 keys=4096 not_null=false start_ms=1793190191184 seconds=0.241638",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=StreamFusion trial=0 warmup=true rows=32768 keys=4096 not_null=false start_ms=1793190191521 seconds=0.199517",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=StreamFusion trial=1 warmup=true rows=32768 keys=4096 not_null=false start_ms=1793190191824 seconds=0.185134",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=Flink trial=1 warmup=true rows=32768 keys=4096 not_null=false start_ms=1793190192099 seconds=0.211006",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=Flink trial=2 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190192399 seconds=0.220469",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=StreamFusion trial=2 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190192707 seconds=0.191357",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=StreamFusion trial=3 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190192980 seconds=0.102450",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=Flink trial=3 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190193172 seconds=0.225747",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=Flink trial=4 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190193491 seconds=0.188099",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_double key_type=int engine=StreamFusion trial=4 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190193751 seconds=0.147155",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=Flink trial=0 warmup=true rows=32768 keys=4096 not_null=false start_ms=1793190194002 seconds=0.234946",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=StreamFusion trial=0 warmup=true rows=32768 keys=4096 not_null=false start_ms=1793190194333 seconds=0.221583",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=StreamFusion trial=1 warmup=true rows=32768 keys=4096 not_null=false start_ms=1793190194628 seconds=0.118612",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=Flink trial=1 warmup=true rows=32768 keys=4096 not_null=false start_ms=1793190194825 seconds=0.239083",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=Flink trial=2 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190195138 seconds=0.133967",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=StreamFusion trial=2 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190195343 seconds=0.120239",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=StreamFusion trial=3 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190195538 seconds=0.111241",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=Flink trial=3 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190195730 seconds=0.151380",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=Flink trial=4 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190195963 seconds=0.140432",
+        "[jvm-aggregate-trial] shape=expanded_array_agg_decimal38 key_type=int engine=StreamFusion trial=4 warmup=false rows=32768 keys=4096 not_null=false start_ms=1793190196173 seconds=0.229741"
+      ],
+      "native_evidence": [
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=0 operator=NativeGeneratedUnnestExecNode[28] records_in=32768 records_out=147456",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=0 operator=NativeCalc(select=[k, COALESCE(v, 0) AS $f1], nativeFunctions=[COALESCE], jvmFun records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=0 operator=NativeColumnarExchangeExecNode[26] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=0 operator=NativeColumnarGroupAggExecNode[27] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=1 operator=NativeGeneratedUnnestExecNode[44] records_in=32768 records_out=147456",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=1 operator=NativeCalc(select=[k, COALESCE(v, 0) AS $f1], nativeFunctions=[COALESCE], jvmFun records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=1 operator=NativeColumnarExchangeExecNode[42] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=1 operator=NativeColumnarGroupAggExecNode[43] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=2 operator=NativeGeneratedUnnestExecNode[88] records_in=32768 records_out=147456",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=2 operator=NativeCalc(select=[k, COALESCE(v, 0) AS $f1], nativeFunctions=[COALESCE], jvmFun records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=2 operator=NativeColumnarExchangeExecNode[86] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=2 operator=NativeColumnarGroupAggExecNode[87] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=3 operator=NativeGeneratedUnnestExecNode[104] records_in=32768 records_out=147456",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=3 operator=NativeCalc(select=[k, COALESCE(v, 0) AS $f1], nativeFunctions=[COALESCE], jvmFun records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=3 operator=NativeColumnarExchangeExecNode[102] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=3 operator=NativeColumnarGroupAggExecNode[103] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=4 operator=NativeGeneratedUnnestExecNode[148] records_in=32768 records_out=147456",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=4 operator=NativeCalc(select=[k, COALESCE(v, 0) AS $f1], nativeFunctions=[COALESCE], jvmFun records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=4 operator=NativeColumnarExchangeExecNode[146] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg trial=4 operator=NativeColumnarGroupAggExecNode[147] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=0 operator=NativeGeneratedUnnestExecNode[178] records_in=32768 records_out=147456",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=0 operator=NativeCalc(select=[k, COALESCE(v, 0) AS $f1], nativeFunctions=[COALESCE], jvmFun records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=0 operator=NativeColumnarExchangeExecNode[176] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=0 operator=NativeColumnarGroupAggExecNode[177] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=1 operator=NativeGeneratedUnnestExecNode[194] records_in=32768 records_out=147456",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=1 operator=NativeCalc(select=[k, COALESCE(v, 0) AS $f1], nativeFunctions=[COALESCE], jvmFun records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=1 operator=NativeColumnarExchangeExecNode[192] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=1 operator=NativeColumnarGroupAggExecNode[193] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=2 operator=NativeGeneratedUnnestExecNode[238] records_in=32768 records_out=147456",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=2 operator=NativeCalc(select=[k, COALESCE(v, 0) AS $f1], nativeFunctions=[COALESCE], jvmFun records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=2 operator=NativeColumnarExchangeExecNode[236] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=2 operator=NativeColumnarGroupAggExecNode[237] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=3 operator=NativeGeneratedUnnestExecNode[254] records_in=32768 records_out=147456",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=3 operator=NativeCalc(select=[k, COALESCE(v, 0) AS $f1], nativeFunctions=[COALESCE], jvmFun records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=3 operator=NativeColumnarExchangeExecNode[252] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=3 operator=NativeColumnarGroupAggExecNode[253] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=4 operator=NativeGeneratedUnnestExecNode[298] records_in=32768 records_out=147456",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=4 operator=NativeCalc(select=[k, COALESCE(v, 0) AS $f1], nativeFunctions=[COALESCE], jvmFun records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=4 operator=NativeColumnarExchangeExecNode[296] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_double trial=4 operator=NativeColumnarGroupAggExecNode[297] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=0 operator=NativeGeneratedUnnestExecNode[328] records_in=32768 records_out=147456",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=0 operator=NativeCalc(select=[k, COALESCE(v, 0) AS $f1], nativeFunctions=[COALESCE], jvmFun records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=0 operator=NativeColumnarExchangeExecNode[326] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=0 operator=NativeColumnarGroupAggExecNode[327] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=1 operator=NativeGeneratedUnnestExecNode[344] records_in=32768 records_out=147456",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=1 operator=NativeCalc(select=[k, COALESCE(v, 0) AS $f1], nativeFunctions=[COALESCE], jvmFun records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=1 operator=NativeColumnarExchangeExecNode[342] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=1 operator=NativeColumnarGroupAggExecNode[343] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=2 operator=NativeGeneratedUnnestExecNode[388] records_in=32768 records_out=147456",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=2 operator=NativeCalc(select=[k, COALESCE(v, 0) AS $f1], nativeFunctions=[COALESCE], jvmFun records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=2 operator=NativeColumnarExchangeExecNode[386] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=2 operator=NativeColumnarGroupAggExecNode[387] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=3 operator=NativeGeneratedUnnestExecNode[404] records_in=32768 records_out=147456",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=3 operator=NativeCalc(select=[k, COALESCE(v, 0) AS $f1], nativeFunctions=[COALESCE], jvmFun records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=3 operator=NativeColumnarExchangeExecNode[402] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=3 operator=NativeColumnarGroupAggExecNode[403] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=4 operator=NativeGeneratedUnnestExecNode[448] records_in=32768 records_out=147456",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=4 operator=NativeCalc(select=[k, COALESCE(v, 0) AS $f1], nativeFunctions=[COALESCE], jvmFun records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=4 operator=NativeColumnarExchangeExecNode[446] records_in=32768 records_out=32768",
+        "[jvm-aggregate-native] shape=expanded_array_agg_decimal38 trial=4 operator=NativeColumnarGroupAggExecNode[447] records_in=32768 records_out=32768"
+      ]
+    }
+  ],
+  "source_sha256": {
+    "src/main/java/tech/streamfusion/planner/CollectionValueIdentity.java": "d700a63dee1ce007a7db2fca83306666ab79c6d5e4da1bb5694541889dbf6a6b",
+    "src/main/java/tech/streamfusion/planner/GeneratedUnnestMatcher.java": "ee9269f62d789cce283e54d7dd7e23b8e8e7d0573b17d870edef14e314ab4f73"
+  },
+  "configuration": {
+    "flink": "2.2.1",
+    "jdk": "OpenJDK17.0.20.1",
+    "native": "frozen release+mimalloc shared-state DSO; identical native collection sources in both revisions; no native changes in this increment",
+    "heap": "8 GiB",
+    "source": "append-only runtime RowData values; grouped arrays emit intermediate updates; NULL every eighth source row becomes a typed zero through COALESCE",
+    "types": [
+      "BIGINT",
+      "DOUBLE",
+      "DECIMAL(38,18)"
+    ],
+    "sink": "rowwise blackhole",
+    "local_exchange": "Arrow IPC, zeroCopyLocal=false",
+    "batch_rows": 1024,
+    "accumulator_cache_entries": 0,
+    "timing": "complete job including submission/planning, JNI, keyed collection state, generated Java correlate expansion, both row/Arrow transposes and row sink; initial explain and cluster setup outside timer",
+    "engine_order": "alternating each pair; candidate first for 64 keys, previous first for 4096",
+    "rows_expanded_per_native_trial": {
+      "64": 8404992,
+      "4096": 147456
+    }
+  },
+  "interpretation": {
+    "previous": "actual previous Java production code 4df58b80; identical benchmark-only fixture copied; all new expanded cases require whole-query fallback",
+    "native_work": "30 native groups consume configured 32768 input rows and 30 generated expansions consume positive work; counts include warmups",
+    "limits": "64-key jobs retain substantial intermediate array expansion work. Short high-cardinality jobs include startup, and their ranges may overlap. Generated expansion remains JVM work inside a columnar operator; no Rust-kernel claim. All six medians beat paired stock, so no further profiling or optimization pass is opened; the earlier shared-state two-capture timebox stays closed."
+  },
+  "validation": {
+    "flink22": {
+      "total": 180,
+      "passed": 180,
+      "skipped": 0,
+      "failures": 0,
+      "errors": 0
+    },
+    "flink118": {
+      "total": 398,
+      "passed": 174,
+      "skipped": 224,
+      "failures": 0,
+      "errors": 0
+    },
+    "unchanged_released_UNNEST": {
+      "2.2.1": 4,
+      "1.18.1": 4,
+      "methods": [
+        "testUnnestPrimitiveArrayFromTable",
+        "testUnnestObjectArrayFromTableWithFilter"
+      ],
+      "scope": "unchanged released upstream result regression; positive route evidence comes from the SQL matrix and benchmark counters"
+    },
+    "recovery": "two nonempty restores for all twelve element profiles on both heap and native RocksDB",
+    "guarded": "nullable primitive arrays retain Arrow take; updating MAP/MULTISET retained payload remains fallback; temporal LEFT ordering failure is checked at execute submission, not EXPLAIN"
+  }
+}

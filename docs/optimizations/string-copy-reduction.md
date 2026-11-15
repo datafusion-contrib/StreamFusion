@@ -1,7 +1,7 @@
 # String copies and intermediate buffers
 
 **Applies to:** the RowData→Arrow entry transpose, the synchronous lookup join, string expressions
-in [Calc / Filter](../operators/calc-filter.md), and aligned window aggregation.
+in [Calc / Filter](../operators/calc-filter.md), Paimon batch row encoding, and aligned window aggregation.
 
 ## Entry transpose: one copy instead of two
 
@@ -19,6 +19,26 @@ near-memcpy speed for ASCII. A 2026-07-12 profile had this char loop at ~9% of q
 
 **Measured:** with the batched BinaryRow keys above, the string-heavy stateless q22 gained +25%
 native throughput (1.23x → 1.53x) on the 2M-event generator rung.
+
+## Paimon Java rows: copy their existing UTF-8 segment
+
+Paimon's Java overwrite, mutation and clustering writers can feed the native Parquet encoder
+through a bounded Arrow row batch. Top-level strings copy a single heap `BinaryString` segment
+directly into the Arrow vector, including its byte offset. This avoids creating a Flink string
+wrapper and then copying its UTF-8 bytes into an intermediate array. Multi-segment and off-heap
+strings retain Paimon's byte conversion; nested fields retain the existing Flink converter.
+The batch owns the copied values before Paimon reuses the row or its backing memory.
+
+Java file-size checks retain the pending rows while the encoded file plus allocated Arrow memory
+is well below the target. This lets the 4,096-row buffer fill instead of flushing at each
+1,000-record SDK size check. Checks near the roll target and writer close flush the pending rows.
+The allocation threshold is 8 MiB, checked after each row; a single vector growth can exceed it.
+
+The [batch-operation measurements](../benchmarks/results/paimon-batch-operations-20261114.json)
+retain every initial and repeated cohort, including regressions. In the optimized 250k-row
+Flink 2.2 cohort, the five complete jobs run 1.08–1.22× stock and 1.07–1.19× the native
+source/compute path using Java Parquet encoding. Those are complete-job measurements with
+commits and conversions, not isolated string-copy timings.
 
 ## Repeated lazy-string encodings
 
@@ -197,3 +217,36 @@ keep their original slice path. Accumulator ownership, ordering and persisted st
 Criterion fixture halves time and reduces allocation request bytes by 84%; these are allocation
 requests, not copied bytes or RSS. It retains all trial data, CPU profiles and low/unique-key
 controls. The gain does not imply that a complete row-source job avoids its perimeter costs.
+
+## Carry byte-only CONCAT as Binary
+
+Verified final CONCAT projections carry Flink string bytes through Arrow Binary and append them
+directly to the final offsets/data/null buffers. This removes the requirement to decode or validate
+arbitrary bytes as UTF-8. A synchronous row exit can borrow the resulting Binary buffer using the
+existing string ownership discipline. Input segment copying and cached Java-string encoding are
+shared with the existing transpose writer; selecting this representation adds no payload copy.
+
+The [release measurements](../benchmarks/scalar-functions.md#byte-preserving-concat) show a 16-byte
+ASCII prepared Calc at 6.549 ms versus 8.972 ms for the existing Utf8 path and 33.640 ms for Flink.
+Nullable input is effectively tied with the existing native path. Complete row-source jobs are
+also effectively tied with the prior boundary control (0.279 versus 0.283 seconds); the prepared
+gain must not be presented as an equivalent whole-job improvement.
+
+CONCAT_WS uses the same physical contract, writing its byte separators and non-NULL values into
+one final Binary buffer. Non-null inputs preallocate the exact output size; nullable inputs avoid
+reserving space for potentially masked payloads. The existing Utf8 kernel remains unchanged.
+
+Admission is limited to [verified final byte consumers](../operators/calc-filter.md#byte-preserving-string-input).
+Text functions, key/state consumers and native sinks require their own representation contracts.
+
+The admitted digest functions consume the same Binary storage. They hash the existing byte slices and write ASCII hex
+directly into the final Utf8 buffer, without converting input bytes to text. The planner distinguishes
+raw-string producers from byte-consuming functions with a valid-text result, so hash output can feed
+other expressions without allowing a text kernel to consume arbitrary concatenation bytes.
+
+TO_BASE64 reuses the existing binary encoding kernel when a logical STRING arrives as Binary.
+Its SIMD encoder writes directly to the final Utf8 buffer because Base64 output is ASCII. The
+representation change adds neither an input payload copy nor a decode/re-encode round trip.
+
+ASCII reads the first byte directly from Binary offsets and values and produces an Int32 array
+sharing the input validity mask. It does not need to decode or scan the remaining bytes.

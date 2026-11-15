@@ -1,6 +1,11 @@
 # Flink release-1.18.1 methods and fixture parameters, read from unchanged source.
 # Retracting window TVF and Delta SQL cases are absent on this host line.
 # Unchanged upstream method<TAB>fixture selector<TAB>expected route.
+org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testSelectStar	*	NativeCalcOperator
+org.apache.flink.table.planner.runtime.batch.sql.TableSinkITCase#testCollectSinkConfiguration	*	NativeCalcOperator
+org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testManySelectWithFilter	*	NativeCalcOperator
+org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testFilterOnInteger	*	NativeCalcOperator
+org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testUserDefinedScalarFunction	*	NativeCalcOperator
 # * matches every invocation; field=true/false selects a pinned fixture parameter.
 org.apache.flink.table.planner.runtime.stream.sql.CalcITCase#testNonPrimitiveMapType	*	!collection value representation requires a final projection or fused consumer
 # + requires every operator; | separates alternatives; ! requires full fallback and its reason.
@@ -103,5 +108,86 @@ org.apache.flink.table.planner.runtime.stream.table.CorrelateITCase#testRowType	
 
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testUnboundedGroupByCollect	miniBatch=false&changelog=false	NativeColumnarGroupAggregateOperator
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testUnboundedGroupByCollect	miniBatch=false&changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
-org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testUnboundedGroupByCollect	miniBatch=true&aggMode=OFF	!GROUP BY: JVM aggregates require verified scalar fields or verified COLLECT/ARRAY_AGG with non-character aggregate results and synchronous single-phase execution without mini-batching, specialization, approximate or ordered calls
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testUnboundedGroupByCollect	miniBatch=true&aggMode=OFF	!GROUP BY: JVM aggregates require verified scalar fields or verified COLLECT/ARRAY_AGG with verified collection elements, non-character scalar coresults and synchronous scalar single-phase mini-batching or ordinary execution without specialization, approximate or ordered calls
 org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testUnboundedGroupByCollect	miniBatch=true&aggMode=ON	!local group aggregate: needs SUM/MIN/MAX/COUNT over integer/float/double/decimal values with no widening of the partial, MIN/MAX over string/date/time/boolean/timestamp, AVG over any AvgAggFunction numeric, or SINGLE_VALUE over supported scalar values, and bigint/int/string/boolean/date/timestamp/decimal grouping keys
+org.apache.flink.table.planner.runtime.stream.sql.UnnestITCase#testUnnestPrimitiveArrayFromTable	*	NativeColumnarUnnestOperator
+org.apache.flink.table.planner.runtime.stream.sql.UnnestITCase#testUnnestObjectArrayFromTableWithFilter	*	NativeColumnarUnnestOperator
+
+# OverloadedMax has no merge method; synchronous configurations retain one physical phase.
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testOverloadedAccumulator	changelog=false	NativeColumnarJvmGroupOperator
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testOverloadedAccumulator	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
+
+# Merge-capable scalar JVM aggregates require consumed work in both local/global phases.
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsNoGroupBy	aggMode=OFF&changelog=false	NativeColumnarJvmGroupOperator
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsNoGroupBy	aggMode=ON&changelog=false	NativeColumnarJvmLocalGroupOperator+NativeColumnarJvmGlobalGroupOperator
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsNoGroupBy	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsWithGroupBy	aggMode=OFF&changelog=false	NativeColumnarJvmGroupOperator
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsWithGroupBy	aggMode=ON&changelog=false	NativeColumnarJvmLocalGroupOperator+NativeColumnarJvmGlobalGroupOperator
+org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testVarArgsWithGroupBy	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
+
+# Released scalar JVM OVER frames, constants, DISTINCT, managed DataViews and recovery.
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testProcTimeUnBoundedPartitionedRowOver	changelog=false	NativeColumnarJvmOverOperator
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testProcTimeUnBoundedPartitionedRowOver	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testOverWindowWithConstant	changelog=false	NativeColumnarJvmOverOperator
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testOverWindowWithConstant	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver	*	!collection value representation requires a final projection or fused consumer
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedDistinctPartitionedRangeOver	*	!OVER: expected COUNT(*) or one supported argument per aggregate; direct AVG requires DECIMAL
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedDistinctPartitionedRangeOver	*	!OVER: expected COUNT(*) or one supported argument per aggregate; direct AVG requires DECIMAL
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedDistinctPartitionedRowsOver	*	!OVER: expected COUNT(*) or one supported argument per aggregate; direct AVG requires DECIMAL
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeUnBoundedDistinctPartitionedRowsOver	*	!OVER: expected COUNT(*) or one supported argument per aggregate; direct AVG requires DECIMAL
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testProcTimeBoundedPartitionedRowsOver	changelog=false	NativeColumnarJvmOverOperator
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testProcTimeBoundedPartitionedRowsOver	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testProcTimeBoundedPartitionedRowsOverWithJavaAPI	changelog=false	NativeColumnarJvmOverOperator
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testProcTimeBoundedPartitionedRowsOverWithJavaAPI	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedPartitionedRowOver	changelog=false	NativeColumnarJvmOverOperator
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedPartitionedRowOver	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedPartitionedRangeOver	changelog=false	NativeColumnarJvmOverOperator
+org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testRowTimeBoundedPartitionedRangeOver	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
+
+# Scalar-only SQL UDAF witnesses retain unbounded event-time coverage without the Table API ARRAY result.
+org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver	changelog=false	NativeColumnarJvmOverOperator
+org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
+org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRowsOver	changelog=false	NativeColumnarJvmOverOperator
+org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRowsOver	changelog=true	!state backend: Flink 1.18 changelog state is not verified for native keyed state
+
+# Bounded scalar sort requires positive native work; unsupported key types stay stock.
+org.apache.flink.table.planner.runtime.batch.sql.MiscITCase#testNullOrdering	*	NativeBatchSortOperator
+org.apache.flink.table.planner.runtime.batch.sql.MiscITCase#testGlobalSorting	*	NativeBatchSortOperator
+org.apache.flink.table.planner.runtime.batch.sql.MiscITCase#testNullOrderingOnMultiColumn	*	NativeBatchSortOperator
+
+# Standalone sorted limits require positive native sort work.
+org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByWithOffsetAndFetch	*	NativeBatchSortOperator
+org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByLimit	*	NativeBatchSortOperator
+org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByLessThanOffset	*	NativeBatchSortOperator
+org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByRepeatedFields	*	NativeBatchSortOperator
+org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderByLimitBehindField	*	NativeBatchSortOperator
+org.apache.flink.table.planner.runtime.batch.sql.SortLimitITCase#testOrderBehindField	*	NativeBatchSortOperator
+
+# Standalone global batch aggregates require positive native aggregate work.
+org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testAggWithoutGroups	*	NativeBatchAggregateOperator
+org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testAggregationWithoutGroupby	*	NativeBatchAggregateOperator
+org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testCountStar	*	NativeBatchAggregateOperator
+org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testAggWithoutGroups	*	NativeBatchAggregateOperator
+org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testAggregationWithoutGroupby	*	NativeBatchAggregateOperator
+org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testCountStar	*	NativeBatchAggregateOperator
+
+# Released Table API aggregate types distinguish native fixed-width work from unsupported floating work.
+org.apache.flink.table.planner.runtime.batch.table.AggregationITCase#testAggregationTypes	*	NativeBatchAggregateOperator
+org.apache.flink.table.planner.runtime.batch.table.AggregationITCase#testWorkingAggregationDataTypes	*	!batch aggregate: SUM/SUM0/AVG require signed integers or DECIMAL; MIN/MAX require signed integers, BOOLEAN, DECIMAL, DATE or TIME
+
+# Bounded grouped hash reduction and DISTINCT; SortAgg preserves ordered group output.
+org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testTwoPhasesAggregation	*	NativeBatchAggregateOperator
+org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testNullGroupKeyAggregation	*	NativeBatchAggregateOperator
+org.apache.flink.table.planner.runtime.batch.sql.agg.HashAggITCase#testGroupByOnly	*	NativeBatchAggregateOperator
+org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testTwoPhasesAggregation	*	NativeBatchAggregateOperator
+org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testNullGroupKeyAggregation	*	NativeBatchAggregateOperator
+org.apache.flink.table.planner.runtime.batch.sql.agg.SortAggITCase#testGroupByOnly	*	NativeBatchAggregateOperator
+
+# Released outer-join/grouping fixtures cover forced hash, broadcast, merge and nested-loop plans.
+org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg	*	NativeBatchJoinOperator
+org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateCompareWithDateString	*	NativeCalcOperator
+org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateEqualsWithDateString	*	NativeCalcOperator
+org.apache.flink.table.planner.runtime.batch.sql.CodeSplitITCase#testManyIns	*	NativeCalcOperator
+org.apache.flink.table.planner.runtime.batch.sql.CodeSplitITCase#testManyOrsInCondition	*	NativeCalcOperator
+org.apache.flink.table.planner.runtime.batch.sql.CodeSplitITCase#testManyAggregationsWithGroupBy	*	NativeBatchAggregateOperator
+org.apache.flink.table.planner.runtime.batch.table.SetOperatorsITCase#testUnion	*	NativeBatchAggregateOperator

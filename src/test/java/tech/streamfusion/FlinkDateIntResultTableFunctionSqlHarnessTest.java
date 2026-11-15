@@ -149,8 +149,8 @@ class FlinkDateIntResultTableFunctionSqlHarnessTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"boxed", "array", "row"})
-  void boxedAndNestedEpochDayResultsRetainFallback(String shape) {
+  @ValueSource(strings = {"array", "row"})
+  void nestedEpochDayResultsKeepVerifiedRoutes(String shape) {
     try (var metrics = new RecoveryExecutionMetrics()) {
       var runs =
           NativeFailureParity.run(
@@ -160,12 +160,34 @@ class FlinkDateIntResultTableFunctionSqlHarnessTest {
                 return table;
               },
               "SELECT s.x,s.p,t.v,t.epoch_day,t.pos FROM src s" + join(false, false));
-      runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
-      assertTrue(
-          runs.nativeRun().fallbackReasons().stream()
-              .anyMatch(reason -> reason.contains("verified external Java conversions")),
-          runs::toString);
-      assertTrue(metrics.nativeOperators().isEmpty());
+      if (shape.equals("row")) {
+        runs.assertSuccess(NativeFailureParity.Route.NATIVE);
+        assertEquals(runs.host().resultTypes(), runs.nativeRun().resultTypes());
+        RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeTableFunction");
+      } else {
+        runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
+        assertTrue(
+            runs.nativeRun().fallbackReasons().stream()
+                .anyMatch(reason -> reason.contains("verified external Java conversions")),
+            runs::toString);
+        assertTrue(metrics.nativeOperators().isEmpty());
+      }
+    }
+  }
+
+  @Test
+  void boxedNonNullEpochDayResultsRetainValues() {
+    try (var metrics = new RecoveryExecutionMetrics()) {
+      var runs =
+          NativeFailureParity.run(
+              () -> {
+                var table = source("array", 32, metrics);
+                table.createTemporarySystemFunction("result_rows", new OtherDateRows("boxed"));
+                return table;
+              },
+              "SELECT s.x,s.p,t.v,t.epoch_day,t.pos FROM src s" + join(false, false));
+      assertValues(runs, metrics);
+      assertDays(runs.host().rows(), false);
     }
   }
 

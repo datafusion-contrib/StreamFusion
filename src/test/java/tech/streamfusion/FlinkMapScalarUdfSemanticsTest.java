@@ -117,7 +117,7 @@ public class FlinkMapScalarUdfSemanticsTest {
 
   @ParameterizedTest
   @ValueSource(strings = {"custom", "internal"})
-  void unverifiedConversionsKeepStockExecution(String shape) {
+  void customInferenceUsesDefaultsAndInternalConversionsKeepStockExecution(String shape) {
     try (var metrics = new RecoveryExecutionMetrics()) {
       var runs =
           NativeFailureParity.run(
@@ -128,7 +128,12 @@ public class FlinkMapScalarUdfSemanticsTest {
                 return table;
               },
               "SELECT unverified(p) FROM src");
-      runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
+      boolean defaults = shape.equals("custom");
+      runs.assertSuccess(
+          defaults ? NativeFailureParity.Route.NATIVE : NativeFailureParity.Route.FALLBACK);
+      assertEquals(runs.host().resultTypes(), runs.nativeRun().resultTypes());
+      if (defaults) RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeCalc");
+      else assertTrue(metrics.nativeOperators().isEmpty());
     }
   }
 

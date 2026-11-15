@@ -87,6 +87,13 @@
                 </exclusion>
             </exclusions>
         </dependency>
+
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-orc</artifactId>
+            <version>${flink.version}</version>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
     <build>
         <testSourceDirectory>${project.build.directory}/generated-test-sources/paimon</testSourceDirectory>
@@ -144,14 +151,18 @@
                             <outputDirectory>${project.build.directory}/generated-sources/paimon</outputDirectory>
                             <resources>
                                 <resource>
-                                    <directory>${project.basedir}/../src/main/java</directory>
+                                    <directory>${project.basedir}/../streamfusion-paimon/src/main/java</directory>
                                     <filtering>false</filtering>
                                     <includes>
                                         <include>tech/streamfusion/paimon/**/*.java</include>
-                                        <include>tech/streamfusion/planner/*Paimon*.java</include>
+                                        <include>tech/streamfusion/planner/**/*Paimon*.java</include>
                                     </includes>
                                     <excludes>
                                         <exclude>tech/streamfusion/paimon/PaimonVersion.java</exclude>
+                                        <exclude>tech/streamfusion/paimon/PaimonAppendCompactWrite.java</exclude>
+                                        <exclude>tech/streamfusion/paimon/PaimonAppendTask.java</exclude>
+                                        <exclude>tech/streamfusion/paimon/PaimonAppendWorkerCompat.java</exclude>
+                                        <exclude>tech/streamfusion/paimon/PaimonSingleFileWriter.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativeAppendSinkWrite.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativeKeyValueSinkWrite.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonAppendSink.java</exclude>
@@ -159,27 +170,28 @@
                                         <exclude>tech/streamfusion/paimon/NativePaimonBucketSink.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonCoordinatorCommitOperator.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonDynamicPartitionOperator.java</exclude>
-                                        <exclude>tech/streamfusion/paimon/NativePaimonKeyValueFileWriter.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonLocalMergeOperator.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonOrcFormat.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonParquetFormat.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonPostponeSink.java</exclude>
+                                        <exclude>tech/streamfusion/paimon/NativePaimonPostponeFixedBucketSink.java</exclude>
+                                        <exclude>tech/streamfusion/paimon/NativePaimonPostponeFixedRouter.java</exclude>
                                         <exclude>tech/streamfusion/paimon/NativePaimonWriteOperator.java</exclude>
                                         <exclude>tech/streamfusion/paimon/PaimonDynamicBucketIndex.java</exclude>
-                                        <exclude>tech/streamfusion/paimon/PaimonKeyValueLayout.java</exclude>
                                         <exclude>tech/streamfusion/paimon/PaimonMergeOptions.java</exclude>
                                         <exclude>tech/streamfusion/paimon/PaimonParquetFloatingStats.java</exclude>
                                         <exclude>tech/streamfusion/paimon/PaimonPostponeFileOrder.java</exclude>
-                                        <exclude>tech/streamfusion/planner/NativePaimonSinkExecNode.java</exclude>
-                                        <exclude>tech/streamfusion/planner/PaimonSinkMatcher.java</exclude>
-                                        <exclude>tech/streamfusion/planner/PaimonSourceMatcher.java</exclude>
+                                        <exclude>tech/streamfusion/planner/**/NativePaimonSinkExecNode.java</exclude>
+                                        <exclude>tech/streamfusion/planner/**/PaimonSinkMatcher.java</exclude>
+                                        <exclude>tech/streamfusion/planner/**/PaimonSourceMatcher.java</exclude>
+                                        <exclude>tech/streamfusion/planner/**/PaimonSourceAdmission.java</exclude>
                                     </excludes>
                                 </resource>
                                 <resource>
-                                    <directory>${project.basedir}/../src/main/java-flink1.18</directory>
+                                    <directory>${project.basedir}/../streamfusion-paimon/src/main/java-flink1.18</directory>
                                     <filtering>false</filtering>
                                     <includes>
-                                        <include>tech/streamfusion/paimon/**/*.java</include>
+                                        <include>tech/streamfusion/paimon/PaimonSourceReaderCompat.java</include>
                                     </includes>
                                 </resource>
                                 <resource>
@@ -203,9 +215,20 @@
                                     <filtering>false</filtering>
                                     <includes>
                                         <include>**/PaimonSourceSqlTest.java</include>
+                                        <include>**/PaimonBatchSqlTest.java</include>
+                                        <include>**/PaimonBatchEncodingTest.java</include>
+                                        <include>**/PaimonBatchOperationsBenchmark.java</include>
                                         <include>**/PaimonOperatorDescriptionTest.java</include>
                                         <include>**/PaimonSplitWatermarksTest.java</include>
                                         <include>**/PaimonFetcherLifecycleTest.java</include>
+                                        <include>**/PaimonCompactionCompatibilityTest.java</include>
+                                        <include>**/PaimonCompactionNativeAppendTest.java</include>
+                                        <include>**/PaimonCompactionMemoryTest.java</include>
+                                        <include>**/PaimonCompactionMergeEngineTest.java</include>
+                                        <include>**/PaimonMaintenanceTest.java</include>
+                                        <include>**/PaimonCompactionFailureTest.java</include>
+                                        <include>**/PaimonCompactionBenchmark.java</include>
+                                        <include>**/PaimonCompactionTestAdapter.java</include>
                                         <include>**/PaimonTimestampSqlTest.java</include>
                                     </includes>
                                 </resource>
@@ -264,18 +287,56 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
-                <configuration>
-                    <includes>
-                        <include>tech/streamfusion/paimon/**/*.java</include>
-                        <include>tech/streamfusion/planner/Paimon*.java</include>
-                        <include>tech/streamfusion/planner/NativePaimon*.java</include>
-                        <include>tech/streamfusion/planner/StreamPhysicalNativePaimon*.java</include>
-                    </includes>
-                </configuration>
             </plugin>
         </plugins>
     </build>
     <profiles>
+        <profile>
+            <id>tpcds</id>
+            <dependencies><dependency>
+                <groupId>io.trino.tpcds</groupId><artifactId>tpcds</artifactId>
+                <version>1.4</version><scope>test</scope>
+            </dependency></dependencies>
+            <build><plugins><plugin>
+                <groupId>org.codehaus.mojo</groupId><artifactId>build-helper-maven-plugin</artifactId>
+                <executions>
+                    <execution><id>paimon-tpcds-tests</id><phase>generate-test-sources</phase>
+                        <goals><goal>add-test-source</goal></goals>
+                        <configuration><sources><source>${project.basedir}/../streamfusion-paimon/src/tpcds/java</source></sources></configuration>
+                    </execution>
+                    <execution><id>paimon-tpcds-queries</id><phase>generate-test-resources</phase>
+                        <goals><goal>add-test-resource</goal></goals>
+                        <configuration><resources><resource><directory>${project.basedir}/../streamfusion-paimon/src/tpcds/resources</directory></resource></resources></configuration>
+                    </execution>
+                </executions>
+            </plugin><plugin>
+                <groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId>
+                <configuration><enableAssertions>false</enableAssertions></configuration>
+            </plugin></plugins></build>
+        </profile>
+        <profile>
+            <id>tpch</id>
+            <dependencies>
+                <dependency>
+                    <groupId>io.airlift.tpch</groupId>
+                    <artifactId>tpch</artifactId>
+                    <version>0.10</version>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+            <build><plugins><plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <executions><execution>
+                    <id>paimon-tpch-test-source</id>
+                    <phase>generate-test-sources</phase>
+                    <goals><goal>add-test-source</goal></goals>
+                    <configuration><sources>
+                        <source>${project.basedir}/../streamfusion-paimon/src/tpch/java</source>
+                    </sources></configuration>
+                </execution></executions>
+            </plugin></plugins></build>
+        </profile>
         <profile>
             <id>upstream-paimon1</id>
             <properties>
@@ -418,6 +479,7 @@
                             </excludes>
                             <dependenciesToScan>
                                 <dependency>org.apache.paimon:paimon-flink-common</dependency>
+                                <dependency>org.apache.paimon:paimon-core:test-jar:tests</dependency>
                             </dependenciesToScan>
                             <systemPropertyVariables>
                                 <junit.jupiter.extensions.autodetection.enabled>true</junit.jupiter.extensions.autodetection.enabled>

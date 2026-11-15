@@ -3,6 +3,10 @@ use crate::*;
 use arrow::array::UInt8Array;
 use streamfusion_bridge::timestamp::{timestamp_array, TimestampColumn, TimestampValue};
 
+mod canonical;
+mod output;
+mod partial_buffer;
+mod partial_output;
 mod shared;
 #[cfg(test)]
 pub(crate) mod tests;
@@ -33,6 +37,7 @@ impl WindowResultColumn {
     }
 
     fn push(&mut self, accumulator: &mut dyn Accumulator) -> Result<(), DataFusionError> {
+        let accumulator = crate::aggregates::raw_accumulator(accumulator)?;
         match self {
             Self::Scalars(values) => values.push(accumulator.evaluate()?),
             Self::Timestamps(values) => values.push(
@@ -321,13 +326,20 @@ pub(crate) struct TumblingAggregator {
     slide_millis: i64,
     cumulative: bool,
     assignment_offset_millis: i64,
+    window_offset_millis: i64,
+    final_windows: bool,
+    stock_partial_buffer: Option<partial_buffer::PartialBuffer>,
     calendar: Option<WindowCalendar>,
     next_timer_deadline: i64,
     shared_slices: bool,
+    legacy_slices: bool,
+    timer_watermark_uninitialized: bool,
     slice_timers: BTreeMap<i64, BTreeMap<OwnedRow, i32>>,
     aggregates: Vec<WindowAggregate>,
     exact_panes: bool,
     live_count: Option<usize>,
+    canonical_distinct: std::collections::BTreeSet<usize>,
+    canonical_distinct_counts: HashMap<(i64, OwnedRow, usize), i64>,
     windows: BTreeMap<i64, AlignedWindow>,
     // Groups are keyed by the arrow-row memcomparable encoding of the key columns, not a
     // `Vec<ScalarValue>` — the same trade the non-windowed GROUP BY made: the scalar key's per-row
@@ -360,6 +372,15 @@ pub(crate) struct TumblingAggregator {
 }
 
 impl TumblingAggregator {
+    fn require_complete_canonical_import(&self) -> Result<(), DataFusionError> {
+        #[cfg(feature = "rocksdb-state")]
+        if let Some(store) = &self.store {
+            use crate::state::rocks_store::window_memberships::WindowMembershipState;
+            store.require_complete_membership_import()?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn new(
         window_millis: i64,
         slide_millis: i64,
@@ -392,13 +413,20 @@ impl TumblingAggregator {
             aggregates,
             exact_panes,
             assignment_offset_millis: 0,
+            window_offset_millis: 0,
+            final_windows: false,
+            stock_partial_buffer: None,
             calendar: None,
             next_timer_deadline: i64::MIN,
             shared_slices: false,
+            legacy_slices: false,
+            timer_watermark_uninitialized: false,
             slice_timers: BTreeMap::new(),
             live_count: kinds
                 .iter()
                 .position(|kind| matches!(*kind, LIVE_COUNT | HIDDEN_LIVE_COUNT)),
+            canonical_distinct: Default::default(),
+            canonical_distinct_counts: HashMap::default(),
             windows: BTreeMap::new(),
             key_converter: None,
             key_types: Vec::new(),
@@ -419,11 +447,14 @@ impl TumblingAggregator {
     }
 
     pub(crate) fn set_calendar(&mut self, callback: jni::objects::GlobalRef) {
+        self.require_flushed_partial_buffer()
+            .expect("window calendar binding");
         assert_eq!(
             self.assignment_offset_millis, 0,
             "regional window assignment is local"
         );
-        self.shared_slices = self.cumulative || self.window_millis != self.slide_millis;
+        self.shared_slices =
+            !self.final_windows && (self.cumulative || self.window_millis != self.slide_millis);
         #[cfg(feature = "rocksdb-state")]
         if let Some(store) = &mut self.store {
             store.set_shared_slices(self.shared_slices);
@@ -439,11 +470,64 @@ impl TumblingAggregator {
         };
         let offset = offset.rem_euclid(grid);
         assert!(
-            self.windows.is_empty() || offset == self.assignment_offset_millis,
+            (self.windows.is_empty()
+                && self.slice_timers.is_empty()
+                && self.require_flushed_partial_buffer().is_ok())
+                || offset == self.assignment_offset_millis,
             "cannot change the assignment grid of retained window state"
         );
         self.assignment_offset_millis = offset;
         self.snapshot_cache = None;
+    }
+
+    pub(crate) fn set_window_offset(&mut self, offset: i64) {
+        let grid = if self.cumulative {
+            self.window_millis
+        } else {
+            self.slide_millis
+        };
+        let offset = offset.rem_euclid(grid);
+        assert!(
+            (self.windows.is_empty()
+                && self.slice_timers.is_empty()
+                && self.require_flushed_partial_buffer().is_ok())
+                || offset == self.window_offset_millis,
+            "cannot change the SQL offset of retained window state"
+        );
+        self.window_offset_millis = offset;
+        self.snapshot_cache = None;
+    }
+
+    pub(crate) fn set_final_windows(&mut self, enabled: bool) {
+        assert!(
+            (self.windows.is_empty()
+                && self.slice_timers.is_empty()
+                && self.require_flushed_partial_buffer().is_ok())
+                || enabled == self.final_windows,
+            "cannot change the meaning of retained window namespaces"
+        );
+        if enabled {
+            assert!(
+                !self.shared_slices,
+                "shared slices cannot be reinterpreted as final windows"
+            );
+            self.exact_panes = false;
+        }
+        self.final_windows = enabled;
+        self.snapshot_cache = None;
+    }
+
+    fn final_window_start(&self, end: i64) -> Option<i64> {
+        if !self.cumulative {
+            return end.checked_sub(self.window_millis);
+        }
+        let shift = i128::from(self.effective_assignment_offset());
+        let size = i128::from(self.window_millis);
+        i64::try_from((i128::from(end) + shift - 1).div_euclid(size) * size - shift).ok()
+    }
+
+    fn effective_assignment_offset(&self) -> i64 {
+        self.assignment_offset_millis - self.window_offset_millis
     }
 
     pub(crate) fn with_key_timestamp_precisions(
@@ -499,6 +583,8 @@ impl TumblingAggregator {
         timer_deadline: i64,
         snapshot_dir: &str,
     ) -> Result<crate::state::RocksCheckpointManifest, DataFusionError> {
+        self.require_complete_canonical_import()?;
+        self.require_flushed_partial_buffer()?;
         self.write_through_store()?;
         let watermark = self.current_watermark;
         self.store
@@ -544,23 +630,32 @@ impl TumblingAggregator {
     /// assert the incremental tracking does not drift).
     pub(crate) fn computed_state_bytes(&self) -> usize {
         let bytes = self
-            .windows
-            .values()
-            .map(|window| {
-                window
-                    .keys
-                    .iter()
-                    .map(|(key, accumulators)| {
-                        owned_row_bytes(key) + accumulators_bytes(accumulators)
-                    })
-                    .sum::<usize>()
-            })
-            .sum::<usize>()
+            .stock_partial_buffer
+            .as_ref()
+            .map_or(0, |buffer| buffer.bytes)
+            + self
+                .windows
+                .values()
+                .map(|window| {
+                    window
+                        .keys
+                        .iter()
+                        .map(|(key, accumulators)| {
+                            owned_row_bytes(key) + accumulators_bytes(accumulators)
+                        })
+                        .sum::<usize>()
+                })
+                .sum::<usize>()
             + self
                 .slice_timers
                 .values()
                 .flat_map(|keys| keys.keys())
                 .map(|key| owned_row_bytes(key) + std::mem::size_of::<(i64, i32)>())
+                .sum::<usize>()
+            + self
+                .canonical_distinct_counts
+                .keys()
+                .map(|(_, key, _)| owned_row_bytes(key) + std::mem::size_of::<(i64, usize, i64)>())
                 .sum::<usize>();
         #[cfg(feature = "rocksdb-state")]
         let bytes = bytes
@@ -588,20 +683,20 @@ impl TumblingAggregator {
     fn windows_for(&self, timestamp: i64, windows: &mut Vec<(i64, i64)>) {
         windows_for(
             timestamp
-                .checked_add(self.assignment_offset_millis)
+                .checked_add(self.effective_assignment_offset())
                 .expect("shifted window timestamp"),
             self.window_millis,
             self.slide_millis,
             self.cumulative,
             windows,
         );
-        if self.assignment_offset_millis != 0 {
+        if self.effective_assignment_offset() != 0 {
             for (start, end) in windows {
                 *start = start
-                    .checked_sub(self.assignment_offset_millis)
+                    .checked_sub(self.effective_assignment_offset())
                     .expect("window start");
                 *end = end
-                    .checked_sub(self.assignment_offset_millis)
+                    .checked_sub(self.effective_assignment_offset())
                     .expect("window end");
             }
         }
@@ -663,6 +758,14 @@ impl TumblingAggregator {
             closed.sort_by_key(|end| (deadlines[end], *end));
             return closed;
         }
+        self.next_timer_deadline = self
+            .windows
+            .range((
+                std::ops::Bound::Excluded(watermark),
+                std::ops::Bound::Unbounded,
+            ))
+            .next()
+            .map_or(i64::MIN, |(&end, _)| end.saturating_sub(1));
         self.windows
             .keys()
             .copied()
@@ -694,6 +797,7 @@ impl TumblingAggregator {
         batch: &RecordBatch,
         discard_closed_windows: bool,
     ) -> Result<(), DataFusionError> {
+        self.require_complete_canonical_import()?;
         self.snapshot_cache = None;
         if self.shared_slices {
             return self.update_shared(batch, discard_closed_windows);
@@ -788,13 +892,13 @@ impl TumblingAggregator {
         for row in 0..batch.num_rows() {
             let shifted = times
                 .value(row)
-                .checked_add(self.assignment_offset_millis)
+                .checked_add(self.effective_assignment_offset())
                 .expect("shifted timestamp pane");
             let slice_end = (shifted.div_euclid(self.slide_millis) + 1) * self.slide_millis
-                - self.assignment_offset_millis;
+                - self.effective_assignment_offset();
             let last_end = if self.cumulative {
                 shifted - shifted.rem_euclid(self.window_millis) + self.window_millis
-                    - self.assignment_offset_millis
+                    - self.effective_assignment_offset()
             } else {
                 slice_end + self.window_millis - self.slide_millis
             };
@@ -906,19 +1010,25 @@ impl TumblingAggregator {
                 for (accumulator, value) in accumulators.iter_mut().zip(pane) {
                     match value {
                         ExactPaneValue::Extreme { value, .. } => {
-                            (accumulator.as_mut() as &mut dyn std::any::Any)
+                            (crate::aggregates::raw_accumulator(accumulator.as_mut())
+                                .expect("captured accumulator")
+                                as &mut dyn std::any::Any)
                                 .downcast_mut::<crate::aggregates::TimestampExtremeAccumulator>()
                                 .expect("timestamp extrema factory")
                                 .merge_value(*value);
                         }
                         ExactPaneValue::ScalarExtreme { value, .. } => {
-                            (accumulator.as_mut() as &mut dyn std::any::Any)
+                            (crate::aggregates::raw_accumulator(accumulator.as_mut())
+                                .expect("captured accumulator")
+                                as &mut dyn std::any::Any)
                                 .downcast_mut::<crate::aggregates::ScalarExtremeAccumulator>()
                                 .expect("scalar pane factory")
                                 .merge_value(*value);
                         }
                         ExactPaneValue::Count(count) => {
-                            (accumulator.as_mut() as &mut dyn std::any::Any)
+                            (crate::aggregates::raw_accumulator(accumulator.as_mut())
+                                .expect("captured accumulator")
+                                as &mut dyn std::any::Any)
                                 .downcast_mut::<crate::aggregates::WindowCountAccumulator>()
                                 .expect("timestamp pane COUNT factory")
                                 .merge_count(*count);
@@ -956,6 +1066,7 @@ impl TumblingAggregator {
         batch: &RecordBatch,
         discard_closed: bool,
     ) -> Result<(), DataFusionError> {
+        self.require_complete_canonical_import()?;
         self.snapshot_cache = None;
         let starts = column_i64(batch, "window_start");
         let ends = column_i64(batch, "window_end");
@@ -1163,21 +1274,27 @@ impl TumblingAggregator {
                                 .is_none_or(|nulls| nulls.is_valid(row as usize))
                         })
                         .count() as i64;
-                    (accumulator.as_mut() as &mut dyn std::any::Any)
+                    (crate::aggregates::raw_accumulator(accumulator.as_mut())
+                        .expect("captured accumulator")
+                        as &mut dyn std::any::Any)
                         .downcast_mut::<crate::aggregates::WindowCountAccumulator>()
                         .expect("window count factory")
                         .merge_count(count);
                     continue;
                 }
                 if let Some(column) = &scalar_columns[i] {
-                    (accumulator.as_mut() as &mut dyn std::any::Any)
+                    (crate::aggregates::raw_accumulator(accumulator.as_mut())
+                        .expect("captured accumulator")
+                        as &mut dyn std::any::Any)
                         .downcast_mut::<crate::aggregates::ScalarExtremeAccumulator>()
                         .expect("scalar extrema factory")
                         .update_rows(column, selected_rows);
                     continue;
                 }
                 if let Some(column) = &timestamps[i] {
-                    (accumulator.as_mut() as &mut dyn std::any::Any)
+                    (crate::aggregates::raw_accumulator(accumulator.as_mut())
+                        .expect("captured accumulator")
+                        as &mut dyn std::any::Any)
                         .downcast_mut::<crate::aggregates::TimestampExtremeAccumulator>()
                         .expect("timestamp extrema factory")
                         .update_rows(column, selected_rows)?;
@@ -1201,100 +1318,120 @@ impl TumblingAggregator {
         }
     }
 
-    /// Finalizes and removes closed windows, emitting
-    /// `[key, window_start, window_end, result0..resultN-1]`. The end is carried explicitly since
-    /// cumulative windows sharing a start differ by it; each result column takes the aggregate's
-    /// own output type.
+    /// Compatibility helper for callers that require a single batch. Production emits bounded
+    /// batches directly to the synchronous host receiver through `flush_to`.
     pub(crate) fn flush(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
+        let mut batches = Vec::new();
+        self.flush_to(watermark, &mut |batch| {
+            batches.push(batch);
+            Ok(())
+        })?;
+        if let Some(first) = batches.first() {
+            Ok(arrow::compute::concat_batches(
+                &first.schema(),
+                batches.iter(),
+            )?)
+        } else {
+            Ok(self.final_batch(
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                self.aggregates
+                    .iter()
+                    .map(WindowResultColumn::new)
+                    .collect(),
+            ))
+        }
+    }
+
+    pub(crate) fn flush_to(
+        &mut self,
+        watermark: i64,
+        consume: &mut dyn FnMut(RecordBatch) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        self.require_complete_canonical_import()?;
         self.snapshot_cache = None;
         self.current_watermark = self.current_watermark.max(watermark);
+        self.timer_watermark_uninitialized = false;
         if self.shared_slices {
-            return self.flush_shared(watermark);
+            return self.flush_shared_to(watermark, consume);
         }
         #[cfg(feature = "rocksdb-state")]
         if self.store.is_some() {
-            return self.flush_store(watermark);
+            return self.flush_store_to(watermark, consume);
         }
-        let mut keys: Vec<OwnedRow> = Vec::new();
-        let mut starts = Vec::new();
-        let mut ends = Vec::new();
-        let mut results: Vec<_> = self
-            .aggregates
-            .iter()
-            .map(WindowResultColumn::new)
-            .collect();
+        let mut output = output::WindowOutput::new(self);
         for end in self.closed_windows(watermark) {
             let window = self.windows.remove(&end).expect("window present");
-            let start = window.start;
-            let mut group: Vec<(OwnedRow, Vec<Box<dyn Accumulator>>)> =
-                window.keys.into_iter().collect();
-            group.sort_by(|(a, _), (b, _)| a.cmp(b));
-            for (key, mut accumulators) in group {
+            let mut groups = window.keys.into_iter().collect::<Vec<_>>();
+            groups.sort_by(|(left, _), (right, _)| left.cmp(right));
+            for (key, mut accumulators) in groups {
                 self.forget_group_bytes(&key, &accumulators);
-                if !Self::group_is_live(self.live_count, &mut accumulators)? {
-                    continue;
-                }
-                keys.push(key);
-                starts.push(start);
-                ends.push(end);
-                for (i, accumulator) in accumulators.iter_mut().enumerate() {
-                    results[i].push(accumulator.as_mut())?;
+                self.memory.account_shrink();
+                if Self::group_is_live(self.live_count, &mut accumulators)? {
+                    output.push(self, key, window.start, end, &mut accumulators, consume)?;
                 }
             }
         }
-        self.memory.account_shrink();
-        Ok(self.final_batch(keys, starts, ends, results))
+        output.emit(self, consume)
     }
 
-    /// Persistent-state firing: the store removes and returns every closed (window, key) group in
-    /// window-end order, then the memory path's key order — every fired group leaves the store, so
-    /// a closed window can never re-fire after a restore.
     #[cfg(feature = "rocksdb-state")]
-    fn flush_store(&mut self, watermark: i64) -> Result<RecordBatch, DataFusionError> {
+    fn flush_store_to(
+        &mut self,
+        watermark: i64,
+        consume: &mut dyn FnMut(RecordBatch) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
         if self.buffers_store_updates() {
             self.write_store_groups(false, Some(watermark))?;
         } else {
             self.write_through_store()?;
         }
-        let fired = self
-            .store
-            .as_mut()
-            .expect("window-aggregate rocksdb store")
-            .take_closed_with_calendar(watermark, self.calendar.as_ref())?;
-        if self.calendar.is_some() {
-            self.next_timer_deadline = self
-                .store
-                .as_ref()
-                .unwrap()
-                .next_exclusive_end()
-                .map_or(i64::MIN, |end| end.saturating_sub(1));
-        }
-        let mut keys: Vec<OwnedRow> = Vec::with_capacity(fired.len());
-        let mut starts = Vec::with_capacity(fired.len());
-        let mut ends = Vec::with_capacity(fired.len());
-        let mut results: Vec<_> = self
-            .aggregates
-            .iter()
-            .map(WindowResultColumn::new)
-            .collect();
-        let converter = self
-            .key_converter
-            .as_ref()
-            .expect("window store key converter");
-        let parser = converter.parser();
-        for group in &fired {
-            let mut accumulators = self.accumulators_from_scalars(&group.state);
-            if !Self::group_is_live(self.live_count, &mut accumulators)? {
-                continue;
-            }
-            keys.push(parser.parse(&group.key).owned());
-            starts.push(group.start);
-            ends.push(group.end);
-            for (i, accumulator) in accumulators.iter_mut().enumerate() {
-                results[i].push(accumulator.as_mut())?;
-            }
-        }
-        Ok(self.final_batch(keys, starts, ends, results))
+        let mut store = self.store.take().expect("window-aggregate rocksdb store");
+        let mut output = output::WindowOutput::new(self);
+        let result = store.visit_closed_batches(
+            watermark,
+            self.calendar.as_ref(),
+            self.memory.temporary_reservation(),
+            output::OUTPUT_ROWS,
+            output::OUTPUT_BYTES,
+            &mut |groups| {
+                if groups.is_empty() {
+                    return output.emit(self, consume);
+                }
+                for group in groups {
+                    let mut accumulators = self.accumulators_from_scalars(&group.state);
+                    if !Self::group_is_live(self.live_count, &mut accumulators)? {
+                        continue;
+                    }
+                    let key = self
+                        .key_converter
+                        .as_ref()
+                        .expect("window store key converter")
+                        .parser()
+                        .parse(&group.key)
+                        .owned();
+                    output.push(
+                        self,
+                        key,
+                        group.start,
+                        group.end,
+                        &mut accumulators,
+                        consume,
+                    )?;
+                }
+                Ok(())
+            },
+        );
+        self.next_timer_deadline = store
+            .next_exclusive_end()
+            .into_iter()
+            .chain(self.windows.keys().next().copied())
+            .min()
+            .map_or(i64::MIN, |end| end.saturating_sub(1));
+        self.store = Some(store);
+        result?;
+        output.emit(self, consume)
     }
 
     fn group_is_live(
@@ -1354,57 +1491,44 @@ impl TumblingAggregator {
     }
 
     fn emit_partials(&mut self, ends: Vec<i64>) -> RecordBatch {
-        self.snapshot_cache = None;
-        let state_fields: Vec<Field> = self
-            .aggregates
-            .iter()
-            .flat_map(WindowAggregate::state_fields)
-            .collect();
-        let mut keys: Vec<OwnedRow> = Vec::new();
-        let mut slice_ends = Vec::new();
-        let mut partials: Vec<Vec<ScalarValue>> = vec![Vec::new(); state_fields.len()];
-        for end in ends {
-            let window = self.windows.remove(&end).expect("window present");
-            let mut group: Vec<(OwnedRow, Vec<Box<dyn Accumulator>>)> =
-                window.keys.into_iter().collect();
-            group.sort_by(|(a, _), (b, _)| a.cmp(b));
-            for (key, mut accumulators) in group {
-                self.forget_group_bytes(&key, &accumulators);
-                keys.push(key);
-                slice_ends.push(end);
-                let mut field = 0;
-                for accumulator in &mut accumulators {
-                    for value in accumulator.state().expect("state") {
-                        partials[field].push(value);
-                        field += 1;
-                    }
-                }
-            }
+        let mut batches = Vec::new();
+        self.emit_partials_to(ends, &mut |batch| {
+            batches.push(batch);
+            Ok(())
+        })
+        .expect("partial output");
+        if batches.is_empty() {
+            self.partial_batch(
+                Vec::new(),
+                Vec::new(),
+                vec![Vec::new(); self.partial_fields().len()],
+            )
+        } else if batches.len() == 1 {
+            batches.pop().unwrap()
+        } else {
+            arrow::compute::concat_batches(&batches[0].schema(), &batches).expect("partial output")
         }
-        self.memory.account_shrink();
+    }
 
-        let mut fields = key_fields(&self.key_types);
-        let mut columns = decode_keys(self.key_converter.as_ref(), &keys, &self.key_types);
-        for (i, scalars) in partials.into_iter().enumerate() {
-            // Nullable: a SUM partial is Flink's nullable-sum buffer — NULL for an all-NULL bundle
-            // or an overflowed decimal bundle (the global's merge skips it, as the host's does).
-            let partial_type = state_fields[i].data_type().clone();
-            fields.push(Field::new(
-                format!("partial{i}"),
-                partial_type.clone(),
-                true,
-            ));
-            columns.push(scalars_to_array(scalars, &partial_type));
-        }
-        fields.push(Field::new("slice_end", DataType::Int64, false));
-        columns.push(Arc::new(Int64Array::from(slice_ends)));
-        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
-            .expect("failed to build partial batch")
+    pub(crate) fn drain_partial_to(
+        &mut self,
+        consume: &mut dyn FnMut(RecordBatch) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        let ends = self.windows.keys().copied().collect();
+        self.emit_partials_to(ends, consume)
     }
 
     /// Global half of two-phase aggregation: merges incoming partials
     /// `[key, partial0..partialN-1, slice_end]` into the window each slice belongs to.
     pub(crate) fn update_partial(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
+        self.require_complete_canonical_import()?;
+        if self.stock_partial_buffer.is_some() {
+            return self.buffer_stock_partial(batch);
+        }
+        self.merge_partial(batch)
+    }
+
+    fn merge_partial(&mut self, batch: &RecordBatch) -> Result<(), DataFusionError> {
         self.snapshot_cache = None;
         if self.shared_slices {
             return self.update_shared_partial(batch);
@@ -1495,14 +1619,18 @@ impl TumblingAggregator {
                 let accumulators = self.accumulators(start, end, key.clone());
                 for (i, accumulator) in accumulators.iter_mut().enumerate() {
                     if let Some(column) = &scalar_columns[i] {
-                        (accumulator.as_mut() as &mut dyn std::any::Any)
+                        (crate::aggregates::raw_accumulator(accumulator.as_mut())
+                            .expect("captured accumulator")
+                            as &mut dyn std::any::Any)
                             .downcast_mut::<crate::aggregates::ScalarExtremeAccumulator>()
                             .expect("scalar extrema factory")
                             .merge_value(column.value(row));
                         continue;
                     }
                     if let Some(column) = &timestamps[i] {
-                        (accumulator.as_mut() as &mut dyn std::any::Any)
+                        (crate::aggregates::raw_accumulator(accumulator.as_mut())
+                            .expect("captured accumulator")
+                            as &mut dyn std::any::Any)
                             .downcast_mut::<crate::aggregates::TimestampExtremeAccumulator>()
                             .expect("timestamp extrema factory")
                             .update_row(column, row)?;
@@ -1533,12 +1661,23 @@ impl TumblingAggregator {
     /// start — the slice (rows in `(slice_end - step, slice_end]`) contributes to every cumulative
     /// window that ends at or after it.
     fn partial_windows(&self, slice_end: i64) -> Vec<(i64, i64)> {
+        if self.final_windows {
+            return if self.calendar.is_some() || slice_end > self.current_watermark {
+                vec![(
+                    self.final_window_start(slice_end)
+                        .expect("final window start"),
+                    slice_end,
+                )]
+            } else {
+                Vec::new()
+            };
+        }
         if self.cumulative {
             let local_end = slice_end
-                .checked_add(self.assignment_offset_millis)
+                .checked_add(self.effective_assignment_offset())
                 .expect("partial slice end");
             let base = (local_end - 1).div_euclid(self.window_millis) * self.window_millis
-                - self.assignment_offset_millis;
+                - self.effective_assignment_offset();
             let mut windows = Vec::new();
             let mut end = slice_end;
             while end <= base + self.window_millis {
@@ -1701,6 +1840,7 @@ impl TumblingAggregator {
             let window = self.windows.get_mut(&end).expect("touched window resident");
             let start = window.start;
             let mut accumulators = window.keys.remove(&key).expect("touched group resident");
+            let released = track.then(|| owned_row_bytes(&key) + accumulators_bytes(&accumulators));
             let mut column = 0;
             for accumulator in accumulators.iter_mut() {
                 for scalar in accumulator.state().expect("state") {
@@ -1715,9 +1855,8 @@ impl TumblingAggregator {
                     .db_key(key_group, end, key.row().data()),
                 start,
             ));
-            if track {
-                self.memory
-                    .forget(owned_row_bytes(&key) + accumulators_bytes(&accumulators));
+            if let Some(released) = released {
+                self.memory.forget(released);
             }
         }
         self.windows.retain(|_, window| !window.keys.is_empty());
@@ -1758,7 +1897,9 @@ impl TumblingAggregator {
                     let ScalarValue::Int64(count) = scalars[column] else {
                         panic!("COUNT partial state");
                     };
-                    (accumulator.as_mut() as &mut dyn std::any::Any)
+                    (crate::aggregates::raw_accumulator(accumulator.as_mut())
+                        .expect("captured accumulator")
+                        as &mut dyn std::any::Any)
                         .downcast_mut::<crate::aggregates::WindowCountAccumulator>()
                         .expect("window count factory")
                         .merge_count(count.unwrap_or(0));
@@ -1769,8 +1910,7 @@ impl TumblingAggregator {
                     .iter()
                     .map(|scalar| scalar.to_array().expect("state array"))
                     .collect();
-                accumulator
-                    .merge_batch(&state)
+                restore_accumulator_state(&mut accumulator, &state)
                     .expect("failed to restore window group");
                 column += count;
                 accumulator
@@ -1834,6 +1974,15 @@ impl TumblingAggregator {
     /// late-data watermark in schema metadata; the processing-time deadline arrives from the
     /// host's restored timer frame.
     #[cfg(feature = "rocksdb-state")]
+    pub(crate) fn migrate_legacy_snapshot_store(&mut self) -> Result<(), DataFusionError> {
+        use crate::state::rocks_store::window_memberships::WindowMembershipState;
+        if let Some(reader) = self.store.as_ref().unwrap().legacy_snapshot_reader()? {
+            reader.migrate(|partitions, timer| self.import_partitions(partitions, timer))?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "rocksdb-state")]
     pub(crate) fn import_partitions(
         &mut self,
         snapshots: &[Vec<u8>],
@@ -1896,6 +2045,8 @@ impl TumblingAggregator {
     }
 
     fn snapshot_batch(&mut self) -> RecordBatch {
+        self.require_flushed_partial_buffer()
+            .expect("window snapshot barrier");
         let state_fields: Vec<Field> = self
             .aggregates
             .iter()
@@ -1985,6 +2136,15 @@ impl TumblingAggregator {
             metadata.insert(
                 "assignment_offset_millis".into(),
                 self.assignment_offset_millis.to_string(),
+            );
+        }
+        if self.final_windows {
+            metadata.insert("final_windows".into(), "true".into());
+        }
+        if self.window_offset_millis != 0 {
+            metadata.insert(
+                "window_offset_millis".into(),
+                self.window_offset_millis.to_string(),
             );
         }
         RecordBatch::try_new(
@@ -2079,6 +2239,21 @@ impl TumblingAggregator {
             if let Some(offset) = batch.schema().metadata().get("assignment_offset_millis") {
                 aggregator.set_assignment_offset(offset.parse().expect("window assignment offset"));
             }
+            aggregator.set_window_offset(
+                batch
+                    .schema()
+                    .metadata()
+                    .get("window_offset_millis")
+                    .map(|offset| offset.parse().expect("SQL window offset"))
+                    .unwrap_or(0),
+            );
+            aggregator.set_final_windows(
+                batch
+                    .schema()
+                    .metadata()
+                    .get("final_windows")
+                    .is_some_and(|value| value == "true"),
+            );
             // Columns are [window_end, window_start, key0..key{arity-1}, state fields...].
             let record_kinds = batch.column_by_name("window_record_kind").map(|column| {
                 column
@@ -2123,8 +2298,7 @@ impl TumblingAggregator {
                     let state: Vec<ArrayRef> = (column..column + count)
                         .map(|c| batch.column(c).slice(row, 1))
                         .collect();
-                    accumulator
-                        .merge_batch(&state)
+                    restore_accumulator_state(accumulator, &state)
                         .expect("failed to restore window");
                     column += count;
                 }
@@ -2162,10 +2336,14 @@ impl TumblingAggregator {
         }
         let schema = batches[0].schema();
         let offset = schema.metadata().get("assignment_offset_millis");
+        let window_offset = schema.metadata().get("window_offset_millis");
+        let final_windows = schema.metadata().get("final_windows");
         assert!(
-            batches
-                .iter()
-                .all(|batch| batch.schema().metadata().get("assignment_offset_millis") == offset),
+            batches.iter().all(
+                |batch| batch.schema().metadata().get("assignment_offset_millis") == offset
+                    && batch.schema().metadata().get("window_offset_millis") == window_offset
+                    && batch.schema().metadata().get("final_windows") == final_windows
+            ),
             "window snapshot assignment grids differ"
         );
         let combined =
@@ -2769,5 +2947,68 @@ pub extern "system" fn Java_tech_streamfusion_Native_setFixedWindowAssignmentOff
     crate::bridge::jni_guard(env, move |_env| {
         let aggregator = unsafe { &mut *(handle as *mut TumblingAggregator) };
         aggregator.set_assignment_offset(offset_millis);
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_setFixedWindowOffset<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    offset_millis: jlong,
+) {
+    crate::bridge::jni_guard(env, move |_env| {
+        let aggregator = unsafe { &mut *(handle as *mut TumblingAggregator) };
+        aggregator.set_window_offset(offset_millis);
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_setFixedWindowFinalWindows<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    enabled: jboolean,
+) {
+    crate::bridge::jni_guard(env, move |_env| {
+        let aggregator = unsafe { &mut *(handle as *mut TumblingAggregator) };
+        aggregator.set_final_windows(enabled != 0);
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_flushTumblingAggregatorBatches<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    watermark: jlong,
+    receiver: jni::objects::JObject<'local>,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let aggregator = unsafe { &mut *(handle as *mut TumblingAggregator) };
+        if let Err(error) = aggregator.flush_to(watermark, &mut |batch| {
+            emit_record_batch(&mut env, &receiver, batch)
+        }) {
+            throw_memory_limit(&mut env, &error.to_string());
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_drainPartialTumblingAggregatorBatches<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    receiver: jni::objects::JObject<'local>,
+) {
+    crate::bridge::jni_guard(env, move |mut env| {
+        let aggregator = unsafe { &mut *(handle as *mut TumblingAggregator) };
+        if let Err(error) =
+            aggregator.drain_partial_to(&mut |batch| emit_record_batch(&mut env, &receiver, batch))
+        {
+            throw_memory_limit(&mut env, &error.to_string());
+        }
     })
 }

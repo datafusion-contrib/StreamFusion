@@ -113,11 +113,11 @@ if [[ "$mode" != incremental ]]; then
     -Dsf.testForks=1 -Dnative.build.skip="${SF_DORIS_NATIVE_BUILD_SKIP:-false}" \
     -Dsurefire.failIfNoSpecifiedTests=false -Dmaven.test.failure.ignore=true \
     -Ddoris.upstream.reports="$upstream_run/stock-baseline" \
-    -Dtest='DorisSourceITCase#testTableSourceTimestampFilterAndProjectionPushDown' \
+    -Dtest='DorisSourceITCase#testTableSourceTimestampFilterAndProjectionPushDown,DorisSinkITCase#testTableOverwrite' \
     '-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC' \
     -Dcustomer_env=true -Ddoris_host=127.0.0.1 -Ddoris_query_port=9030 \
     -Ddoris_http_port=8030 -Ddoris_user=root -Ddoris_passwd= \
-    2>&1 | tee "$reports/stock-timestamp-baseline.log"
+    2>&1 | tee "$reports/stock-baseline.log"
 fi
 readonly agent_args="-Xmx2g -javaagent:$agent -Dstreamfusion.flink-suite.native-reports=$upstream_run/native-reports -Dstreamfusion.flink-suite.sql-inventory=$upstream_run/sql-inventory -Duser.timezone=UTC"
 mvn -B -ntp -P"$upstream_profiles" -pl streamfusion-doris -am test \

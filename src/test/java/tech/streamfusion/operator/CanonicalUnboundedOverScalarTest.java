@@ -1,0 +1,777 @@
+package tech.streamfusion.operator;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Base64;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.stream.Stream;
+import org.apache.flink.api.common.typeinfo.Types;
+import org.apache.flink.configuration.Configuration;
+import org.apache.flink.configuration.StateBackendOptions;
+import org.apache.flink.runtime.checkpoint.OperatorSubtaskState;
+import org.apache.flink.runtime.state.CheckpointableKeyedStateBackend;
+import org.apache.flink.runtime.state.StateBackendLoader;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.operators.KeyedProcessOperator;
+import org.apache.flink.streaming.api.operators.SimpleOperatorFactory;
+import org.apache.flink.streaming.api.transformations.OneInputTransformation;
+import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
+import org.apache.flink.streaming.util.AbstractStreamOperatorTestHarness;
+import org.apache.flink.streaming.util.KeyedOneInputStreamOperatorTestHarness;
+import org.apache.flink.streaming.util.OneInputStreamOperatorTestHarness;
+import org.apache.flink.table.api.internal.TableEnvironmentImpl;
+import org.apache.flink.table.data.GenericRowData;
+import org.apache.flink.table.data.RowData;
+import org.apache.flink.table.planner.delegation.PlannerBase;
+import org.apache.flink.table.planner.plan.nodes.exec.ExecNode;
+import org.apache.flink.table.planner.plan.nodes.exec.ExecNodeGraph;
+import org.apache.flink.table.planner.plan.nodes.exec.spec.OverSpec;
+import org.apache.flink.table.planner.plan.utils.AggregateUtil;
+import org.apache.flink.table.planner.utils.JavaScalaConversionUtil;
+import org.apache.flink.table.runtime.keyselector.RowDataKeySelector;
+import org.apache.flink.table.runtime.operators.over.ProcTimeUnboundedPrecedingFunction;
+import org.apache.flink.table.runtime.typeutils.RowDataSerializer;
+import org.apache.flink.table.types.logical.LogicalType;
+import org.apache.flink.table.types.logical.RowType;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import tech.streamfusion.NativePlannerTestEnvironment;
+import tech.streamfusion.arrow.ArrowConversion;
+import tech.streamfusion.compat.FlinkPlanCompat;
+import tech.streamfusion.state.CanonicalStateBackend;
+import tech.streamfusion.state.CanonicalStateBackendFactory;
+import tech.streamfusion.state.RocksDBNativeStateBackendFactory;
+import tech.streamfusion.state.StockOverFoldStateContract;
+
+class CanonicalUnboundedOverScalarTest {
+  static Stream<Arguments> cases() {
+    return tech.streamfusion.CanonicalTestMatrix.select(allCases());
+  }
+
+  private static Stream<Arguments> allCases() {
+    return Stream.of(
+            "TINYINT",
+            "SMALLINT",
+            "INT",
+            "BIGINT",
+            "FLOAT",
+            "DOUBLE",
+            "DECIMAL(18,2)",
+            "DECIMAL(38,2)",
+            "DECIMAL(38,20)")
+        .flatMap(
+            type ->
+                Stream.of(false, true)
+                    .flatMap(
+                        rows ->
+                            Stream.of(false, true)
+                                .flatMap(
+                                    global ->
+                                        Stream.of(0L, 1000L)
+                                            .flatMap(
+                                                ttl ->
+                                                    Stream.of(false, true)
+                                                        .flatMap(
+                                                            stock ->
+                                                                Stream.of(false, true)
+                                                                    .map(
+                                                                        nativeStore ->
+                                                                            Arguments.of(
+                                                                                type,
+                                                                                rows,
+                                                                                global,
+                                                                                ttl,
+                                                                                stock,
+                                                                                nativeStore)))))));
+  }
+
+  @ParameterizedTest
+  @MethodSource("cases")
+  void rawAccumulatorsAndAgesSurviveBothOrdersAndNoInputReturns(
+      String type, boolean rows, boolean global, long ttl, boolean stockStore, boolean nativeStore)
+      throws Exception {
+    var plan = new Plan(type, rows, global, ttl);
+    verifyInterchange(plan, stockStore, nativeStore);
+  }
+
+  static Stream<Arguments> extremaCases() {
+    return tech.streamfusion.CanonicalTestMatrix.select(
+        Stream.of(
+                "TINYINT",
+                "INT",
+                "BIGINT",
+                "FLOAT",
+                "DOUBLE",
+                "DECIMAL(18,2)",
+                "DECIMAL(38,20)",
+                "BOOLEAN",
+                "DATE",
+                "TIME(3)",
+                "TIMESTAMP(9)",
+                "TIMESTAMP_LTZ(3)",
+                "STRING",
+                "CHAR(32)")
+            .filter(
+                type ->
+                    !type.startsWith("CHAR")
+                        || tech.streamfusion.compat.CanonicalTestCompat.flink22())
+            .flatMap(
+                type ->
+                    Stream.of(false, true)
+                        .flatMap(
+                            rows ->
+                                Stream.of(false, true)
+                                    .flatMap(
+                                        global ->
+                                            Stream.of(0L, 1000L)
+                                                .flatMap(
+                                                    ttl ->
+                                                        Stream.of(false, true)
+                                                            .map(
+                                                                rocks ->
+                                                                    Arguments.of(
+                                                                        type, rows, global, ttl,
+                                                                        rocks)))))));
+  }
+
+  @ParameterizedTest
+  @MethodSource("extremaCases")
+  void unboundedScalarExtremaRetainNullableValuesAndTtlAges(
+      String type, boolean rows, boolean global, long ttl, boolean rocks) throws Exception {
+    verifyInterchange(new Plan(type, rows, global, ttl, "BIGINT", false, true), !rocks, rocks);
+  }
+
+  static Stream<Arguments> typedKeys() {
+    return CanonicalOverKeyFixture.stores();
+  }
+
+  @ParameterizedTest
+  @MethodSource("typedKeys")
+  void scalarAndCompositeKeysRetainAccumulatorsAndOriginalTtlAges(
+      String keyType, boolean composite, boolean rocks) throws Exception {
+    verifyInterchange(new Plan("BIGINT", true, false, 1000, keyType, composite), rocks, rocks);
+  }
+
+  static Stream<Arguments> countPayloadCases() {
+    return tech.streamfusion.CanonicalTestMatrix.select(
+        CanonicalOverValueFixture.countTypes()
+            .flatMap(
+                type ->
+                    Stream.of(false, true)
+                        .flatMap(
+                            rows ->
+                                Stream.of(false, true)
+                                    .flatMap(
+                                        global ->
+                                            Stream.of(0L, 1000L)
+                                                .flatMap(
+                                                    ttl ->
+                                                        Stream.of(false, true)
+                                                            .map(
+                                                                rocks ->
+                                                                    Arguments.of(
+                                                                        type, rows, global, ttl,
+                                                                        rocks)))))));
+  }
+
+  @ParameterizedTest
+  @MethodSource("countPayloadCases")
+  void countArgumentsRetainTheirValidityAcrossCanonicalAndTtlTransitions(
+      String type, boolean rows, boolean global, long ttl, boolean rocks) throws Exception {
+    verifyInterchange(
+        new Plan(type, rows, global, ttl, "BIGINT", false, false, true), !rocks, rocks);
+  }
+
+  private void verifyInterchange(Plan plan, boolean stockStore, boolean nativeStore)
+      throws Exception {
+    var prefix =
+        new ArrayList<RowData>(
+            List.of(
+                plan.row(Long.MIN_VALUE, 10000000000000000L),
+                plan.row(Long.MIN_VALUE, 1L),
+                plan.row(Long.MIN_VALUE, -10000000000000000L),
+                plan.row(null, 3L),
+                plan.row(Long.MAX_VALUE, null),
+                plan.row(null, null)));
+    if (plan.extrema)
+      prefix.addAll(
+          List.of(
+              plan.row(8L, 9L),
+              plan.row(8L, 10L),
+              plan.row(8L, -5L),
+              plan.row(9L, 7L),
+              plan.row(9L, 8L),
+              plan.row(9L, 9L),
+              plan.row(10L, 8L),
+              plan.row(10L, 7L),
+              plan.row(10L, 9L)));
+    var suffix =
+        List.of(plan.row(Long.MIN_VALUE, 2L), plan.row(null, 5L), plan.row(Long.MAX_VALUE, 7L));
+    long allocated = NativeAllocator.SHARED.getAllocatedMemory();
+    OperatorSubtaskState source;
+    Map<String, String> original;
+    List<String> expectedPrefix, expectedLive, expectedExpired;
+    try (var stock = plan.stock(stockStore)) {
+      stock.open();
+      time(stock, 100);
+      expectedPrefix = plan.stockInput(stock, prefix);
+      original = raw(stock);
+      source = snapshot(stock);
+      time(stock, 500);
+      expectedLive = plan.stockInput(stock, suffix);
+      time(stock, 1500);
+      expectedExpired = plan.stockInput(stock, suffix);
+    }
+    OperatorSubtaskState returned;
+    try (var target = plan.nativeHarness(nativeStore)) {
+      target.initializeState(source);
+      target.open();
+      time(target, 200);
+      returned = snapshot(target);
+      time(target, 500);
+      assertEquals(expectedLive, plan.nativeInput(target, suffix));
+      time(target, 1500);
+      assertEquals(expectedExpired, plan.nativeInput(target, suffix));
+    }
+    try (var stock = plan.stock(stockStore)) {
+      stock.initializeState(returned);
+      stock.open();
+      assertEquals(original, raw(stock), "untouched canonical headers and original TTL ages");
+      time(stock, 500);
+      assertEquals(expectedLive, plan.stockInput(stock, suffix));
+      time(stock, 1500);
+      assertEquals(expectedExpired, plan.stockInput(stock, suffix));
+    }
+    try (var nativeOp = plan.nativeHarness(nativeStore)) {
+      nativeOp.open();
+      time(nativeOp, 100);
+      assertEquals(expectedPrefix, plan.nativeInput(nativeOp, prefix));
+      source = snapshot(nativeOp);
+    }
+    try (var stock = plan.stock(stockStore)) {
+      stock.initializeState(source);
+      stock.open();
+      assertEquals(original, raw(stock), "native-first complete stock state");
+      time(stock, 500);
+      assertEquals(expectedLive, plan.stockInput(stock, suffix));
+      source = snapshot(stock);
+      original = raw(stock);
+    }
+    try (var nativeOp = plan.nativeHarness(nativeStore)) {
+      nativeOp.initializeState(source);
+      nativeOp.open();
+      returned = snapshot(nativeOp);
+      time(nativeOp, 1500);
+      assertEquals(expectedExpired, plan.nativeInput(nativeOp, suffix));
+    }
+    try (var stock = plan.stock(stockStore)) {
+      stock.initializeState(returned);
+      stock.open();
+      assertEquals(original, raw(stock));
+    }
+    assertEquals(allocated, NativeAllocator.SHARED.getAllocatedMemory());
+  }
+
+  static Stream<Arguments> integralBoundaries() {
+    return Stream.of(
+            Arguments.of("TINYINT", 127L),
+            Arguments.of("SMALLINT", 32767L),
+            Arguments.of("INT", 2147483647L))
+        .flatMap(
+            args ->
+                Stream.of(false, true)
+                    .map(rocks -> Arguments.of(args.get()[0], args.get()[1], rocks)));
+  }
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+  void decimalNullableSumRestartsWhileOverflowedAverageRemainsNullAcrossHandoffs(boolean rocks)
+      throws Exception {
+    var plan = new Plan("DECIMAL(38,2)", true, false, 0);
+    var maximum = (GenericRowData) plan.row(1L, null);
+    maximum.setField(
+        1,
+        org.apache.flink.table.data.DecimalData.fromBigDecimal(
+            new java.math.BigDecimal("999999999999999999999999999999999999.99"), 38, 2));
+    var extra = (GenericRowData) plan.row(1L, null);
+    extra.setField(
+        1,
+        org.apache.flink.table.data.DecimalData.fromBigDecimal(
+            new java.math.BigDecimal("0.01"), 38, 2));
+    List<RowData> prefix = List.of(plan.row(null, null), maximum, extra);
+    var suffix =
+        List.of(plan.row(1L, null), plan.row(1L, 7L), plan.row(1L, -2L), plan.row(null, 3L));
+    long allocated = NativeAllocator.SHARED.getAllocatedMemory();
+    try (var stock = plan.stock(rocks);
+        var source = plan.nativeHarness(rocks)) {
+      stock.open();
+      source.open();
+      assertEquals(plan.stockInput(stock, prefix), plan.nativeInput(source, prefix));
+      var nativeState = snapshot(source);
+      var stockState = snapshot(stock);
+      try (var returned = plan.stock(rocks);
+          var imported = plan.nativeHarness(rocks)) {
+        returned.initializeState(nativeState);
+        imported.initializeState(stockState);
+        returned.open();
+        imported.open();
+        assertEquals(
+            raw(stock), raw(returned), "Nullable decimal sum and raw AVG overflow are stock state");
+        var expected = plan.stockInput(stock, suffix);
+        assertEquals(expected, plan.stockInput(returned, suffix));
+        assertEquals(expected, plan.nativeInput(imported, suffix));
+        assertEquals(expected, plan.nativeInput(source, suffix));
+      } finally {
+        nativeState.discardState();
+        stockState.discardState();
+      }
+    }
+    assertEquals(allocated, NativeAllocator.SHARED.getAllocatedMemory());
+  }
+
+  @ParameterizedTest
+  @MethodSource("integralBoundaries")
+  void overflowedNarrowSumAndWidenedAverageRemainIndependentAcrossHandoffs(
+      String type, long maximum, boolean rocks) throws Exception {
+    var plan = new Plan(type, true, false, 0);
+    var prefix = List.of(plan.row(1L, maximum), plan.row(1L, 1L));
+    var suffix = List.of(plan.row(1L, -1L), plan.row(1L, null), plan.row(1L, 2L));
+    long allocated = NativeAllocator.SHARED.getAllocatedMemory();
+    try (var stock = plan.stock(rocks);
+        var source = plan.nativeHarness(rocks)) {
+      stock.open();
+      source.open();
+      time(stock, 100);
+      time(source, 100);
+      assertEquals(plan.stockInput(stock, prefix), plan.nativeInput(source, prefix));
+      var state = snapshot(source);
+      var original = snapshot(stock);
+      try (var returned = plan.stock(rocks);
+          var nativeAgain = plan.nativeHarness(rocks)) {
+        returned.initializeState(state);
+        nativeAgain.initializeState(original);
+        returned.open();
+        nativeAgain.open();
+        assertEquals(raw(stock), raw(returned), "sum width and AVG sum/count are stock bytes");
+        var expected = plan.stockInput(stock, suffix);
+        assertFalse(expected.isEmpty());
+        assertEquals(expected, plan.stockInput(returned, suffix));
+        assertEquals(expected, plan.nativeInput(nativeAgain, suffix));
+        assertEquals(expected, plan.nativeInput(source, suffix));
+      } finally {
+        state.discardState();
+        original.discardState();
+      }
+    }
+    assertEquals(allocated, NativeAllocator.SHARED.getAllocatedMemory());
+  }
+
+  static void time(OneInputStreamOperatorTestHarness<?, ?> harness, long now) throws Exception {
+    harness.setProcessingTime(now);
+    harness.setStateTtlProcessingTime(now);
+  }
+
+  static OperatorSubtaskState snapshot(AbstractStreamOperatorTestHarness<?> harness)
+      throws Exception {
+    return CanonicalOverSnapshotTestSupport.snapshot(harness, 1, 100);
+  }
+
+  static Map<String, String> raw(
+      org.apache.flink.streaming.util.AbstractStreamOperatorTestHarness<?> harness)
+      throws Exception {
+    var backend = (CheckpointableKeyedStateBackend<?>) harness.getOperator().getKeyedStateBackend();
+    var resources = backend.savepoint().getSnapshotResources();
+    try (AutoCloseable release = resources::release) {
+      var result = new TreeMap<String, String>();
+      var meta = resources.getMetaInfoSnapshots();
+      try (var iterator = resources.createKVStateIterator()) {
+        while (iterator.isValid()) {
+          result.put(
+              meta.get(iterator.kvStateId()).getName()
+                  + ":"
+                  + Base64.getEncoder().encodeToString(iterator.key()),
+              Base64.getEncoder().encodeToString(iterator.value()));
+          iterator.next();
+        }
+      }
+      return result;
+    }
+  }
+
+  static final class Plan {
+    final PlannerBase planner;
+    final String json;
+    final RowType input, output, accumulator;
+    final RowDataKeySelector selector;
+    final StockOverFoldStateContract contract;
+    final int[] kinds, columns, codes, partitions;
+    final int timeColumn;
+    final boolean rows;
+    final long ttl;
+    final boolean countOnly, extrema;
+    final boolean distinct;
+    final boolean binaryRowKeys;
+
+    Plan(String type, boolean rows, boolean global, long ttl) throws Exception {
+      this(type, rows, global, ttl, "BIGINT", false);
+    }
+
+    Plan(String type, boolean rows, boolean global, long ttl, String keyType, boolean composite)
+        throws Exception {
+      this(type, rows, global, ttl, keyType, composite, false);
+    }
+
+    Plan(
+        String type,
+        boolean rows,
+        boolean global,
+        long ttl,
+        String keyType,
+        boolean composite,
+        boolean extrema)
+        throws Exception {
+      this(type, rows, global, ttl, keyType, composite, extrema, false);
+    }
+
+    Plan(
+        String type,
+        boolean rows,
+        boolean global,
+        long ttl,
+        String keyType,
+        boolean composite,
+        boolean extrema,
+        boolean countOnly)
+        throws Exception {
+      this(type, rows, global, ttl, keyType, composite, extrema, countOnly, false);
+    }
+
+    Plan(
+        String type,
+        boolean rows,
+        boolean global,
+        long ttl,
+        String keyType,
+        boolean composite,
+        boolean extrema,
+        boolean countOnly,
+        boolean distinct)
+        throws Exception {
+      this.rows = rows;
+      this.ttl = ttl;
+      this.countOnly = countOnly;
+      this.extrema = extrema;
+      this.distinct = distinct;
+      var config = new Configuration();
+      config.setString("streamfusion.native.enabled", "false");
+      config.setString("table.exec.state.ttl", ttl + " ms");
+      boolean customSource = countOnly || keyType.startsWith("ROW");
+      var table =
+          customSource
+              ? NativePlannerTestEnvironment.create(
+                  config, org.example.canonical.CanonicalFixtureFactory.class)
+              : NativePlannerTestEnvironment.create(config);
+      var inputSchema = tech.streamfusion.CanonicalTestSchemas.columns("k", keyType, "v", type);
+      if (composite)
+        inputSchema.column(
+            "k2",
+            keyType.startsWith("ROW")
+                ? org.apache.flink.table.api.DataTypes.STRING()
+                : org.apache.flink.table.api.DataTypes.BIGINT());
+      inputSchema.columnByExpression("pt", "PROCTIME()");
+      var inputTable =
+          org.apache.flink.table.api.TableDescriptor.forConnector(
+                  customSource ? "canonical-fixture" : "datagen")
+              .schema(inputSchema.build());
+      if (customSource) inputTable.option("input", "unused.csv").option("insert-only", "true");
+      table.createTable("scalar_input", inputTable.build());
+      var outputSchema = tech.streamfusion.CanonicalTestSchemas.columns("k", keyType, "v", type);
+      if (countOnly) outputSchema.column("n", org.apache.flink.table.api.DataTypes.BIGINT());
+      else if (extrema) {
+        var valueType =
+            org.apache.flink.table.types.utils.TypeConversions.fromLogicalToDataType(
+                org.apache.flink.table.types.logical.utils.LogicalTypeParser.parse(
+                    type, getClass().getClassLoader()));
+        outputSchema
+            .column("lo", valueType)
+            .column("hi", valueType)
+            .column("n", org.apache.flink.table.api.DataTypes.BIGINT());
+      } else {
+        var valueType =
+            org.apache.flink.table.types.utils.TypeConversions.fromLogicalToDataType(
+                org.apache.flink.table.types.logical.utils.LogicalTypeParser.parse(
+                    type, getClass().getClassLoader()));
+        outputSchema
+            .column("s", valueType)
+            .column("c", org.apache.flink.table.api.DataTypes.BIGINT())
+            .column("a", valueType);
+      }
+      table.createTable(
+          "scalar_output",
+          org.apache.flink.table.api.TableDescriptor.forConnector("blackhole")
+              .schema(outputSchema.build())
+              .build());
+      json =
+          table
+              .compilePlanSql(
+                  "INSERT INTO scalar_output SELECT k,v,"
+                      + (countOnly
+                          ? "COUNT(" + (distinct ? "DISTINCT " : "") + "v) OVER w"
+                          : extrema
+                              ? "MIN(v) OVER w,MAX(v) OVER w,COUNT(v) OVER w"
+                              : distinct
+                                  ? "SUM(DISTINCT v) OVER w,COUNT(DISTINCT v) OVER w,"
+                                      + "AVG(DISTINCT v) OVER w"
+                                  : "SUM(v) OVER w,COUNT(v) OVER w,AVG(v) OVER w")
+                      + " FROM scalar_input WINDOW w AS ("
+                      + (global ? "" : "PARTITION BY k" + (composite ? ",k2" : "") + " ")
+                      + "ORDER BY pt "
+                      + (rows ? "ROWS" : "RANGE")
+                      + " BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)")
+              .asJsonString();
+      planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
+      var node = node();
+      input = (RowType) node.getInputEdges().get(0).getOutputType();
+      output = (RowType) node.getOutputType();
+      var transform = (OneInputTransformation<?, ?>) node.translateToPlan(planner);
+      var operator =
+          (KeyedProcessOperator<?, ?, ?>)
+              ((SimpleOperatorFactory<?>) transform.getOperatorFactory()).getOperator();
+      var function = operator.getUserFunction();
+      assertEquals(ProcTimeUnboundedPrecedingFunction.class, function.getClass());
+      Field field = function.getClass().getDeclaredField("accTypes");
+      field.setAccessible(true);
+      accumulator = RowType.of((LogicalType[]) field.get(function));
+      selector = (RowDataKeySelector) transform.getStateKeySelector();
+      var reader = FlinkPlanCompat.createJsonObjectReader(planner.createSerdeContext());
+      org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.JsonNode definition = null;
+      for (var candidate : reader.readTree(json).path("nodes"))
+        if (candidate.path("id").asInt() == node.getId()) definition = candidate;
+      var spec = reader.forType(OverSpec.class).<OverSpec>readValue(definition.path("overSpec"));
+      partitions = spec.getPartition().getFieldIndices();
+      binaryRowKeys =
+          Arrays.stream(partitions)
+              .anyMatch(
+                  column ->
+                      input
+                          .getTypeAt(column)
+                          .is(org.apache.flink.table.types.logical.LogicalTypeRoot.ROW));
+      var group = spec.getGroups().get(0);
+      timeColumn = group.getSort().getFieldIndices()[0];
+      var calls = group.getAggCalls();
+      var infos =
+          AggregateUtil.transformToStreamAggregateInfoList(
+              planner.getTypeFactory(),
+              input,
+              JavaScalaConversionUtil.toScala(calls),
+              new boolean[calls.size()],
+              false,
+              true,
+              true);
+      assertEquals(distinct ? 1 : 0, infos.distinctInfos().length);
+      assertFalse(infos.countStarInserted());
+      int[] widths =
+          Arrays.stream(infos.getActualAggregateInfos())
+              .mapToInt(info -> info.externalAccTypes().length)
+              .toArray();
+      kinds =
+          calls.stream()
+              .mapToInt(
+                  call -> {
+                    switch (call.getAggregation().getKind()) {
+                      case SUM:
+                        return call.isDistinct() ? 100 : 0;
+                      case MIN:
+                        return 1;
+                      case MAX:
+                        return 2;
+                      case COUNT:
+                        return call.isDistinct() ? 103 : 3;
+                      case AVG:
+                        return call.isDistinct() ? 104 : 4;
+                      case SUM0:
+                        return call.isDistinct() ? 122 : 22;
+                      default:
+                        throw new AssertionError(call);
+                    }
+                  })
+              .toArray();
+      columns = calls.stream().mapToInt(call -> call.getArgList().get(0)).toArray();
+      codes =
+          Arrays.stream(columns)
+              .map(
+                  column -> {
+                    var logical = input.getTypeAt(column);
+                    return CanonicalOverValueFixture.nativeCode(logical);
+                  })
+              .toArray();
+      assertArrayEquals(
+          Arrays.stream(infos.getAccTypes())
+              .map(org.apache.flink.table.types.DataType::getLogicalType)
+              .toArray(LogicalType[]::new),
+          accumulator.getChildren().toArray(LogicalType[]::new));
+      var views = new ArrayList<tech.streamfusion.state.StockOverDistinctView>();
+      for (var membership : infos.distinctInfos()) {
+        var view = membership.dataViewSpec().get();
+        int[] slots = new int[membership.aggIndexes().size()];
+        for (int index = 0; index < slots.length; index++)
+          slots[index] = (Integer) membership.aggIndexes().apply(index);
+        views.add(
+            new tech.streamfusion.state.StockOverDistinctView(
+                view.getStateId(),
+                selector.getProducedType().toRowType(),
+                membership.keyType().getLogicalType(),
+                org.apache.flink.table.runtime.typeutils.ExternalSerializer.of(
+                    view.getKeyDataType()),
+                org.apache.flink.table.runtime.typeutils.ExternalSerializer.of(
+                    view.getValueDataType()),
+                slots));
+      }
+      contract =
+          new StockOverFoldStateContract(
+              selector.getProducedType().toSerializer(),
+              selector.getProducedType().toRowType(),
+              accumulator,
+              kinds,
+              widths,
+              ttl > 0,
+              views,
+              true);
+    }
+
+    ExecNode<?> node() throws Exception {
+      var graph =
+          FlinkPlanCompat.createJsonObjectReader(planner.createSerdeContext())
+              .forType(ExecNodeGraph.class)
+              .<ExecNodeGraph>readValue(json);
+      return CanonicalBoundedRangeInteropTest.Plan.find(graph.getRootNodes().get(0));
+    }
+
+    @SuppressWarnings("unchecked")
+    KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> stock(boolean rocks)
+        throws Exception {
+      var transform = (OneInputTransformation<?, ?>) node().translateToPlan(planner);
+      var operator =
+          (KeyedProcessOperator<RowData, RowData, RowData>)
+              ((SimpleOperatorFactory<?>) transform.getOperatorFactory()).getOperator();
+      var harness =
+          new KeyedOneInputStreamOperatorTestHarness<>(
+              operator, selector, selector.getProducedType(), 128, 1, 0);
+      var config = new Configuration();
+      config.set(StateBackendOptions.STATE_BACKEND, rocks ? "rocksdb" : "hashmap");
+      harness.setStateBackend(
+          StateBackendLoader.loadStateBackendFromConfig(config, getClass().getClassLoader(), null));
+      harness.setup(new RowDataSerializer(output));
+      return harness;
+    }
+
+    KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> nativeHarness(
+        boolean rocks) throws Exception {
+      var operator =
+          new CanonicalOverSnapshotTestSupport.DirectOver(
+              timeColumn,
+              columns,
+              partitions,
+              codes,
+              kinds,
+              rows ? 3 : 0,
+              0,
+              true,
+              tech.streamfusion.planner.FlinkKeyGroupUtils.stockKeyDescriptor(input, partitions),
+              ttl,
+              input,
+              128);
+      operator.setStockStateContract(contract);
+      var harness =
+          new KeyedOneInputStreamOperatorTestHarness<>(
+              operator, ignored -> 0, Types.INT, 128, 1, 0);
+      var config = new Configuration();
+      if (rocks)
+        config.setString(
+            org.apache.flink.configuration.StateBackendOptions.STATE_BACKEND.key(),
+            RocksDBNativeStateBackendFactory.class.getName());
+      CanonicalStateBackend.install(
+          StreamExecutionEnvironment.getExecutionEnvironment(),
+          config,
+          harness.getStreamConfig().getOperatorID().toHexString(),
+          operator.getClass().getSimpleName(),
+          contract,
+          getClass().getClassLoader());
+      harness.setStateBackend(
+          new CanonicalStateBackendFactory().createFromConfig(config, getClass().getClassLoader()));
+      harness.setup(new ArrowBatchSerializer());
+      return harness;
+    }
+
+    RowData row(Long key, Long value) {
+      var row = new GenericRowData(input.getFieldCount());
+      CanonicalOverKeyFixture.set(row, input, key);
+      row.setField(
+          1,
+          distinct || extrema
+              ? CanonicalOverDistinctValueFixture.number(input.getTypeAt(1), value)
+              : CanonicalOverValueFixture.number(input.getTypeAt(1), value));
+      return row;
+    }
+
+    List<String> stockInput(
+        KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> harness,
+        List<RowData> rows)
+        throws Exception {
+      harness.getOutput().clear();
+      for (var row : rows)
+        harness.processElement(
+            new StreamRecord<>(new RowDataSerializer(input).toBinaryRow(row).copy()));
+      return harness.extractOutputValues().stream()
+          .map(this::value)
+          .collect(java.util.stream.Collectors.toList());
+    }
+
+    List<String> nativeInput(
+        KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness,
+        List<RowData> rows)
+        throws Exception {
+      harness.processElement(
+          new StreamRecord<>(
+              new ArrowBatch(
+                  binaryRowKeys
+                      ? CanonicalRowKeyFixture.arrow(
+                          CanonicalOverValueFixture.physicalRows(rows, input), input, partitions)
+                      : RowDataArrowConverter.write(
+                          CanonicalOverValueFixture.physicalRows(rows, input),
+                          input,
+                          NativeAllocator.SHARED,
+                          true))));
+      var out = new ArrayList<String>();
+      for (var batch : harness.extractOutputValues())
+        try (var root = batch.root()) {
+          var reader = ArrowConversion.createArrowReader(root, output);
+          for (int i = 0; i < root.getRowCount(); i++) out.add(value(reader.read(i)));
+        }
+      harness.getOutput().clear();
+      return out;
+    }
+
+    private String value(RowData row) {
+      if (countOnly || binaryRowKeys || distinct)
+        return CanonicalOverValueFixture.serialized(row, output);
+      var values = new ArrayList<String>();
+      for (int i = 0; i < output.getFieldCount(); i++) {
+        if (i == timeColumn)
+          continue; // The SQL projection drops the internal PROCTIME placeholder.
+        Object value =
+            row.isNullAt(i)
+                ? null
+                : RowData.createFieldGetter(output.getTypeAt(i).copy(true), i).getFieldOrNull(row);
+        values.add(String.valueOf(value));
+      }
+      return String.join("|", values);
+    }
+  }
+}

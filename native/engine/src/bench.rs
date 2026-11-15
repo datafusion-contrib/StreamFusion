@@ -2257,7 +2257,9 @@ impl WindowRankState {
 pub struct CalcProgram(crate::calc::CalcExpression);
 impl CalcProgram {
     pub fn with_projections(mut self, roots: Vec<usize>, names: Vec<String>) -> Self {
-        assert_eq!(roots.len(), names.len());
+        if roots.len() != 1 || self.0.kinds[roots[0]] != 38 {
+            assert_eq!(roots.len(), names.len());
+        }
         self.0.projection_roots = roots;
         self.0.output_names = names;
         self

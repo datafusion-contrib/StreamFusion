@@ -1,5 +1,7 @@
 use crate::*;
 
+mod canonical;
+
 /// Changelog normalization (Flink's `ChangelogNormalize` / `ProcTimeDeduplicateKeepLastRowFunction`,
 /// keep-last on a changelog): turns an upsert or duplicate-bearing changelog into a regular
 /// INSERT/UPDATE_BEFORE/UPDATE_AFTER/DELETE changelog with no duplication, keyed by the unique key.
@@ -13,6 +15,7 @@ pub(crate) struct ChangelogNormalizer<S: KeyedStateStore<NormalizedRow> = Memory
     key_columns: Vec<usize>,
     key_timestamp_precisions: Vec<i32>,
     generate_update_before: bool,
+    compare_row_kind: bool,
     // Idle-state retention millis (0 = off — Flink's default). With TTL on, a key expires `ttl_ms`
     // after its last write, and the unchanged-row suppression is disabled: Flink always emits
     // -U/+U under TTL to keep refreshing downstream state.
@@ -33,9 +36,11 @@ pub(crate) struct ChangelogNormalizer<S: KeyedStateStore<NormalizedRow> = Memory
 /// The resident default backend for the normalizer store (see `state/` for the seam).
 pub(crate) type MemoryNormalizerStore = MemoryStateStore<NormalizedRow>;
 
+#[derive(Clone)]
 pub(crate) struct NormalizedRow {
     payload: Arc<[u8]>,
     staged: bool,
+    staged_update_after: bool,
     /// Wall-clock millis of the key's last write (Flink state TTL, `OnCreateAndWrite`); stays 0
     /// while TTL is off.
     last_write_ms: i64,
@@ -62,6 +67,7 @@ pub(crate) type RocksNormalizerStore = crate::state::RocksStore<NormalizerStateC
 /// the two persistence paths cannot drift). Every payload shape round-trips as opaque bytes, so
 /// every normalizer state shape is persistable.
 #[cfg(feature = "rocksdb-state")]
+#[derive(Clone)]
 pub(crate) struct NormalizerStateCodec;
 
 #[cfg(feature = "rocksdb-state")]
@@ -92,6 +98,7 @@ impl crate::state::RocksStateCodec for NormalizerStateCodec {
         NormalizedRow {
             payload: bytes.into(),
             staged: false,
+            staged_update_after: false,
             last_write_ms: 0,
         }
     }
@@ -104,6 +111,7 @@ impl ChangelogNormalizer {
             key_columns,
             key_timestamp_precisions: vec![-1; key_arity],
             generate_update_before,
+            compare_row_kind: false,
             ttl_ms: 0,
             last_sweep_ms: 0,
             schema: None,
@@ -143,6 +151,7 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
             key_columns: self.key_columns,
             key_timestamp_precisions: self.key_timestamp_precisions,
             generate_update_before: self.generate_update_before,
+            compare_row_kind: self.compare_row_kind,
             ttl_ms: self.ttl_ms,
             last_sweep_ms: self.last_sweep_ms,
             schema: self.schema,
@@ -163,6 +172,7 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
         budget_bytes: i64,
     ) -> Result<Self, DataFusionError> {
         self.memory.attach("changelog-normalize", budget_bytes, 0)?;
+        self.rows.attach_memory(self.memory.state_memory());
         Ok(self)
     }
 
@@ -267,6 +277,8 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
         // and a key is copied into an owned `ByteKey` only when it first enters the map.
         let mut key_encoder =
             BinaryRowBatchEncoder::new(batch, &self.key_columns, &self.key_timestamp_precisions);
+        let converter = self.payload_converter.as_ref().unwrap();
+        let fields = self.schema.as_ref().unwrap().fields();
         for row in 0..batch.num_rows() {
             let kind = row_kinds.map(|k| k.value(row)).unwrap_or(0);
             let key = key_encoder.encode(row);
@@ -308,13 +320,24 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
                             NormalizedRow {
                                 payload: current,
                                 staged,
+                                staged_update_after: kind == 2,
                                 last_write_ms,
                             },
                         );
                     }
                     // With TTL on the unchanged-row suppression is disabled: Flink always emits
                     // -U/+U so downstream state keeps refreshing instead of expiring too early.
-                    Some(prev) if prev.payload.as_ref() == current && !ttl.enabled() => {
+                    Some(prev)
+                        if !ttl.enabled()
+                            && (!self.compare_row_kind || kind == 0)
+                            && crate::flink_row_equal::encoded_rows(
+                                converter,
+                                fields,
+                                &prev.payload,
+                                current,
+                            )? =>
+                    {
+                        prev.staged_update_after = false;
                         continue; // unchanged — emit nothing (no state TTL)
                     }
                     Some(prev) => {
@@ -337,6 +360,7 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
                             out_rows.push(current.clone());
                             out_kinds.push(2); // +U the new row
                         }
+                        prev.staged_update_after = kind == 2;
                         prev.payload = current;
                         if ttl.enabled() {
                             // Every put is a state write, so it refreshes the key's TTL.
@@ -382,6 +406,10 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
             self.rows.end_bundle()?;
         }
         self.memory.record(delta + self.rows.footprint_delta());
+        if self.rows.owns_memory() {
+            self.rows.account_memory()?;
+            self.memory.set(self.staged_bytes);
+        }
         self.memory.account()?;
         Ok(self.emit(out_rows, out_kinds))
     }
@@ -393,15 +421,35 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
         // The same TTL rule as immediate mode: a bundle whose net transition leaves the row
         // unchanged is suppressed only with retention off (staged keys were all written this
         // bundle, so none can be expired here).
-        let changes = self.staged.drain_final(self.ttl_ms == 0, |key| {
-            self.rows.get_mut(&key.0).map(|row| {
-                row.staged = false;
-                row.payload.clone()
-            })
-        });
+        let changes = self
+            .staged
+            .drain_final(self.ttl_ms == 0 && !self.compare_row_kind, |key| {
+                self.rows.get_mut(&key.0).map(|row| {
+                    row.staged = false;
+                    row.payload.clone()
+                })
+            });
         let mut out_rows = Vec::with_capacity(changes.len() * 2);
         let mut out_kinds = Vec::with_capacity(changes.len() * 2);
-        for (_, change) in changes {
+        for (key, change) in changes {
+            if self.compare_row_kind && self.ttl_ms == 0 {
+                if let MiniBatchChange::Update { before, after } = &change {
+                    let update_after = self
+                        .rows
+                        .get(&key.0)
+                        .is_some_and(|row| row.staged_update_after);
+                    if !update_after
+                        && crate::flink_row_equal::encoded_rows(
+                            self.payload_converter.as_ref().unwrap(),
+                            self.schema.as_ref().unwrap().fields(),
+                            before,
+                            after,
+                        )?
+                    {
+                        continue;
+                    }
+                }
+            }
             match change {
                 MiniBatchChange::Insert(after) => {
                     out_rows.push(after);
@@ -425,6 +473,9 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
         self.memory
             .record(self.rows.footprint_delta() - self.staged_bytes as isize);
         self.staged_bytes = 0;
+        if self.rows.owns_memory() {
+            self.memory.set(0);
+        }
         self.memory.account()?;
         Ok(self.emit(out_rows, out_kinds))
     }
@@ -453,7 +504,14 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
         let parser = converter.parser();
         let mut columns = converter
             .convert_rows(out_rows.iter().map(|row| parser.parse(row)))
-            .expect("decode normalizer payloads");
+            .expect("decode normalizer payloads")
+            .iter()
+            .zip(schema.fields())
+            .map(|(array, field)| {
+                streamfusion_bridge::timestamp::cast_array(array, field.data_type())
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .expect("restore normalizer payload fields");
         fields.push(Field::new(ROW_KIND_COLUMN, DataType::Int8, false));
         columns.push(Arc::new(Int8Array::from(out_kinds)));
         RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
@@ -558,6 +616,7 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
                 NormalizedRow {
                     payload: Arc::from(payloads.value(row)),
                     staged: false,
+                    staged_update_after: false,
                     last_write_ms: write_timestamps
                         .as_ref()
                         .map_or(restored_at_ms, |ts| ts.value(row)),
@@ -603,6 +662,7 @@ impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {
                 NormalizedRow {
                     payload: Arc::from(payloads.row(row).data()),
                     staged: false,
+                    staged_update_after: false,
                     last_write_ms: restored_at_ms,
                 },
             );

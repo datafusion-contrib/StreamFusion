@@ -1,0 +1,141 @@
+{
+  "date": "2026-11-09",
+  "scope": "Qualified keyless Boolean/Decimal128/Date32/Time32 extrema pipelines, with existing standalone performance gate unchanged.",
+  "baseline": "Stock Flink is also previous StreamFusion whole-query fallback for these types.",
+  "runtime": {
+    "flink": "2.2.1",
+    "datafusion": "54",
+    "arrowRust": "58.4.1",
+    "arrowJava": "18.3.0",
+    "jdk": "Temurin17",
+    "allocator": "mimalloc",
+    "optionalRocksdb": false,
+    "heapGiB": 8,
+    "taskManagers": 1,
+    "slots": 8,
+    "managedMemoryGiB": 1,
+    "finalParallelism": 1
+  },
+  "method": {
+    "timer": "Before executeSql through await and completed JobExecutionResult future.",
+    "retainedCosts": [
+      "Flink bounded sequence source and deterministic row map",
+      "SHA2",
+      "planning and submission",
+      "RowData to Arrow and Arrow to RowData",
+      "JNI",
+      "local and final aggregate",
+      "blocking Arrow IPC singleton shuffle",
+      "blackhole sink and completed job result"
+    ],
+    "work": "Every native trial asserts rows+2 aggregate input rows; stock asserts zero; both transposes and aggregate/exchange required in plan.",
+    "order": "Three warmups and seven retained trials, alternating engine order.",
+    "source": "Identical test-only bounded rowwise source on both engines. id%17==0 emits NULL in all four values. value=floorMod(id*48271,cardinality); Boolean=id even; decimal=(10^38-1-value), negative on even ids, scale18; date=value%3652059-719162; time=value%86400000 milliseconds.",
+    "query": "SELECT MIN(b),MAX(b),MIN(d),MAX(d),MIN(dt),MAX(dt),MIN(tm),MAX(tm),COUNT(*) FROM extrema WHERE SHA2(CAST(id AS STRING),256) <> ''",
+    "limits": "Complete pipeline gains; no isolated aggregate-kernel, remote-network throughput or cheap standalone acceleration claim."
+  },
+  "cohorts": [
+    {
+      "rows": 1000000,
+      "cardinality": 2147483647,
+      "batchRows": 1024,
+      "parallelism": 2,
+      "capBytes": 134217728,
+      "warmups": 3,
+      "trials": 7,
+      "stockNanos": [
+        301201542,
+        308163125,
+        324850000,
+        307991875,
+        305662709,
+        291205792,
+        286486375
+      ],
+      "nativeNanos": [
+        187110458,
+        193420667,
+        183507041,
+        218023417,
+        184188917,
+        193184125,
+        188721750
+      ],
+      "stockRuntimeMs": [
+        260,
+        267,
+        283,
+        271,
+        269,
+        260,
+        255
+      ],
+      "nativeRuntimeMs": [
+        169,
+        178,
+        168,
+        202,
+        170,
+        179,
+        177
+      ],
+      "stockMedianMs": 305.662709,
+      "nativeMedianMs": 188.72175,
+      "stockOverNative": 1.6196474916113275
+    },
+    {
+      "rows": 2000000,
+      "cardinality": 64,
+      "batchRows": 1024,
+      "parallelism": 2,
+      "capBytes": 134217728,
+      "warmups": 3,
+      "trials": 7,
+      "stockNanos": [
+        461665666,
+        448270166,
+        470560292,
+        451205042,
+        448008125,
+        445283875,
+        454459625
+      ],
+      "nativeNanos": [
+        288074291,
+        287068792,
+        280414167,
+        282229083,
+        280148917,
+        277574000,
+        278865875
+      ],
+      "stockRuntimeMs": [
+        422,
+        412,
+        435,
+        417,
+        414,
+        414,
+        424
+      ],
+      "nativeRuntimeMs": [
+        270,
+        269,
+        266,
+        269,
+        267,
+        265,
+        267
+      ],
+      "stockMedianMs": 451.205042,
+      "nativeMedianMs": 280.414167,
+      "stockOverNative": 1.609066499125916
+    }
+  ],
+  "releaseLibrarySha256": "e14a0a9b48da975ea1961949e6aee91ef3f2e433e47af5c1f3a4ce68d4a04c9f",
+  "sourceSha256": {
+    "native/engine/src/bounded_aggregate.rs": "2eea93e8a2d3673a8783adbba0e1d4b2d10c832db4f4f233e3640faecb541785",
+    "src/test/java/tech/streamfusion/BatchAggregateJobBenchmark.java": "8ac39c5b9ae974d71181f09e2c4a0ccae798b0a8a0052ef31cd7f31fe674c777",
+    "src/test/java/tech/streamfusion/BatchExtremaSourceFactory.java": "ae10a546f4f40bffef384de3e4f29bba0fe974de94f7fe044902f5437042c81c"
+  }
+}

@@ -2,7 +2,7 @@ use super::*;
 
 /// Record-level tables with the shared Flink RocksDB options, pool and checkpoint lifecycle.
 pub(crate) struct RocksRawStore {
-    pub(crate) db: Arc<DB>,
+    pub(crate) db: StateDb,
     _cache: Option<Cache>,
     generation: i64,
     write_batch_size: usize,

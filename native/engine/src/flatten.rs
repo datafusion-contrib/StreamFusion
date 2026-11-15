@@ -157,7 +157,7 @@ pub(crate) fn unnest_projected(
                 DataType::Struct(sfields)
                     if !streamfusion_bridge::timestamp::is_component_timestamp(
                         values.data_type(),
-                    ) =>
+                    ) && !crate::flink_key::represented_string(values.data_type()) =>
                 {
                     let sa = values
                         .as_any()

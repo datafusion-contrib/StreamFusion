@@ -1,0 +1,258 @@
+package tech.streamfusion.compat;
+
+import java.util.Collection;
+import org.apache.flink.api.common.JobID;
+import org.apache.flink.api.common.typeutils.TypeSerializer;
+import org.apache.flink.configuration.ReadableConfig;
+import org.apache.flink.contrib.streaming.state.EmbeddedRocksDBStateBackend;
+import org.apache.flink.core.fs.CloseableRegistry;
+import org.apache.flink.metrics.MetricGroup;
+import org.apache.flink.runtime.execution.Environment;
+import org.apache.flink.runtime.query.TaskKvStateRegistry;
+import org.apache.flink.runtime.state.*;
+import org.apache.flink.runtime.state.ttl.TtlTimeProvider;
+
+/** Adapts the host backend factory signature without owning native state or snapshot bytes. */
+public abstract class FlinkStateBackendCompat implements StateBackend {
+  public static StateBackend explicitStateBackend(
+      org.apache.flink.streaming.api.environment.StreamExecutionEnvironment environment) {
+    return environment.getStateBackend();
+  }
+
+  public static void explicitStateBackend(
+      org.apache.flink.streaming.api.environment.StreamExecutionEnvironment environment,
+      StateBackend backend) {
+    environment.setStateBackend(backend);
+  }
+
+  public static boolean serializesKeyedValues(CheckpointableKeyedStateBackend<?> backend) {
+    return backend instanceof org.apache.flink.contrib.streaming.state.RocksDBKeyedStateBackend;
+  }
+
+  public static int keyGroupPrefixBytes(CheckpointableKeyedStateBackend<?> backend) {
+    return org.apache.flink.runtime.state.CompositeKeySerializationUtils
+        .computeRequiredBytesInKeyGroupPrefix(
+            ((org.apache.flink.runtime.state.heap.InternalKeyContext<?>) backend)
+                .getNumberOfKeyGroups());
+  }
+
+  protected final StateBackend delegate;
+
+  public static org.apache.flink.configuration.Configuration configuration(ReadableConfig config) {
+    if (config instanceof org.apache.flink.table.api.TableConfig) {
+      var table = (org.apache.flink.table.api.TableConfig) config;
+      var merged = configuration(table.getRootConfiguration());
+      merged.addAll(table.getConfiguration());
+      return merged;
+    }
+    return new org.apache.flink.configuration.Configuration(
+        (org.apache.flink.configuration.Configuration) config);
+  }
+
+  public static String prepareNativeStateBackend(
+      org.apache.flink.streaming.api.environment.StreamExecutionEnvironment environment,
+      ReadableConfig tableConfig) {
+    boolean configuredChangelog =
+        tableConfig
+            .getOptional(
+                org.apache.flink.configuration.StateChangelogOptions.ENABLE_STATE_CHANGE_LOG)
+            .orElse(false);
+    boolean changelog =
+        configuredChangelog
+            || (environment != null
+                && environment.isChangelogStateBackendEnabled().getOrDefault(false));
+    if (environment != null && environment.getStateBackend() != null) {
+      changelog |=
+          environment
+              .getStateBackend()
+              .getClass()
+              .getName()
+              .equals("org.apache.flink.state.changelog.ChangelogStateBackend");
+    }
+    if (changelog) {
+      return "state backend: Flink 1.18 changelog state is not verified for native keyed state";
+    }
+    String replacementFailure = RocksDBBackendSelection.install(environment, tableConfig);
+    if (replacementFailure != null) return replacementFailure;
+    StateBackend backend =
+        environment == null
+            ? null
+            : tech.streamfusion.state.CanonicalStateBackend.unwrap(environment.getStateBackend());
+    if (backend instanceof org.apache.flink.runtime.state.hashmap.HashMapStateBackend
+        || backend instanceof org.apache.flink.runtime.state.memory.MemoryStateBackend
+        || backend instanceof org.apache.flink.runtime.state.filesystem.FsStateBackend
+        // The deployed planner and host load the same final backend in separate classloaders.
+        || (backend != null
+            && backend
+                .getClass()
+                .getName()
+                .equals(tech.streamfusion.state.RocksDBNativeStateBackend.class.getName()))) {
+      return null;
+    }
+    var option = org.apache.flink.configuration.StateBackendOptions.STATE_BACKEND;
+    String configured =
+        environment == null
+            ? tableConfig.getOptional(option).orElse("hashmap")
+            : environment
+                .getConfiguration()
+                .getOptional(option)
+                .orElse(tableConfig.getOptional(option).orElse("hashmap"));
+    if (backend == null
+        && java.util.Set.of(
+                "hashmap",
+                "jobmanager",
+                "filesystem",
+                "memory",
+                "tech.streamfusion.state.CanonicalStateBackendFactory",
+                "tech.streamfusion.state.RocksDBNativeStateBackendFactory")
+            .contains(configured)) {
+      return null;
+    }
+    return "state backend: Flink 1.18 native keyed state requires heap state or the StreamFusion"
+        + " RocksDB backend";
+  }
+
+  protected static StateBackend configuredDelegate(ReadableConfig config, ClassLoader classLoader) {
+    return new EmbeddedRocksDBStateBackend().configure(config, classLoader);
+  }
+
+  protected FlinkStateBackendCompat(StateBackend delegate) {
+    this.delegate = delegate;
+  }
+
+  protected abstract <K> CheckpointableKeyedStateBackend<K> createNativeKeyedBackend(
+      KeyedBackendContext<K> context) throws Exception;
+
+  @Override
+  public boolean useManagedMemory() {
+    return delegate.useManagedMemory();
+  }
+
+  @Override
+  public final <K> CheckpointableKeyedStateBackend<K> createKeyedStateBackend(
+      Environment env,
+      JobID jobId,
+      String operatorIdentifier,
+      TypeSerializer<K> keySerializer,
+      int numberOfKeyGroups,
+      KeyGroupRange keyGroupRange,
+      TaskKvStateRegistry kvStateRegistry,
+      TtlTimeProvider ttlTimeProvider,
+      MetricGroup metricGroup,
+      Collection<KeyedStateHandle> stateHandles,
+      CloseableRegistry cancelStreamRegistry)
+      throws Exception {
+    return createKeyedStateBackend(
+        env,
+        jobId,
+        operatorIdentifier,
+        keySerializer,
+        numberOfKeyGroups,
+        keyGroupRange,
+        kvStateRegistry,
+        ttlTimeProvider,
+        metricGroup,
+        stateHandles,
+        cancelStreamRegistry,
+        0.0);
+  }
+
+  @Override
+  public final <K> CheckpointableKeyedStateBackend<K> createKeyedStateBackend(
+      Environment env,
+      JobID jobId,
+      String operatorIdentifier,
+      TypeSerializer<K> keySerializer,
+      int numberOfKeyGroups,
+      KeyGroupRange keyGroupRange,
+      TaskKvStateRegistry kvStateRegistry,
+      TtlTimeProvider ttlTimeProvider,
+      MetricGroup metricGroup,
+      Collection<KeyedStateHandle> stateHandles,
+      CloseableRegistry cancelStreamRegistry,
+      double managedMemoryFraction)
+      throws Exception {
+    return createNativeKeyedBackend(
+        new KeyedBackendContext<>(
+                env,
+                jobId,
+                operatorIdentifier,
+                keySerializer,
+                numberOfKeyGroups,
+                keyGroupRange,
+                stateHandles,
+                managedMemoryFraction,
+                handles ->
+                    delegate.createKeyedStateBackend(
+                        env,
+                        jobId,
+                        operatorIdentifier,
+                        keySerializer,
+                        numberOfKeyGroups,
+                        keyGroupRange,
+                        kvStateRegistry,
+                        ttlTimeProvider,
+                        metricGroup,
+                        handles,
+                        cancelStreamRegistry,
+                        managedMemoryFraction),
+                handles ->
+                    new org.apache.flink.runtime.state.hashmap.HashMapStateBackend()
+                        .createKeyedStateBackend(
+                            env,
+                            jobId,
+                            operatorIdentifier,
+                            keySerializer,
+                            numberOfKeyGroups,
+                            keyGroupRange,
+                            kvStateRegistry,
+                            ttlTimeProvider,
+                            metricGroup,
+                            handles,
+                            cancelStreamRegistry))
+            .withStockBackendFactory(
+                (serializer, handles) ->
+                    stockProjectionBackend(env)
+                        .createKeyedStateBackend(
+                            env,
+                            jobId,
+                            operatorIdentifier,
+                            serializer,
+                            numberOfKeyGroups,
+                            keyGroupRange,
+                            kvStateRegistry,
+                            ttlTimeProvider,
+                            metricGroup,
+                            handles,
+                            cancelStreamRegistry,
+                            managedMemoryFraction)));
+  }
+
+  private static EmbeddedRocksDBStateBackend stockProjectionBackend(Environment environment) {
+    var backend =
+        new EmbeddedRocksDBStateBackend()
+            .configure(
+                environment.getTaskManagerInfo().getConfiguration(),
+                environment.getUserCodeClassLoader().asClassLoader());
+    backend.setPriorityQueueStateType(EmbeddedRocksDBStateBackend.PriorityQueueStateType.ROCKSDB);
+    return backend;
+  }
+
+  protected OperatorStateBackend wrapOperatorStateBackend(
+      OperatorStateBackend backend, String operatorIdentifier) throws Exception {
+    return backend;
+  }
+
+  @Override
+  public final OperatorStateBackend createOperatorStateBackend(
+      Environment env,
+      String operatorIdentifier,
+      Collection<OperatorStateHandle> stateHandles,
+      CloseableRegistry cancelStreamRegistry)
+      throws Exception {
+    return wrapOperatorStateBackend(
+        delegate.createOperatorStateBackend(
+            env, operatorIdentifier, stateHandles, cancelStreamRegistry),
+        operatorIdentifier);
+  }
+}

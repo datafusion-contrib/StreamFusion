@@ -54,11 +54,27 @@ class FlinkCollectSqlHarnessTest {
   }
 
   @org.junit.jupiter.api.Test
-  void unsupportedTypesAndDisabledGroupRuntimeRetainFallback() {
-    NativeFailureParity.run(
+  void characterElementsUseTheVerifiedCollectionRoute() {
+    var previous =
+        METRICS.nativeOperators().stream()
+            .map(row -> row.get("jobId"))
+            .collect(java.util.stream.Collectors.toSet());
+    var runs =
+        NativeFailureParity.run(
             FlinkCollectSqlHarnessTest::environment,
-            "SELECT k,COLLECT(CAST(v AS STRING)) FROM src GROUP BY k")
-        .assertSuccess(NativeFailureParity.Route.FALLBACK);
+            "SELECT k,COLLECT(CAST(v AS STRING)) FROM src GROUP BY k");
+    runs.assertSuccess(NativeFailureParity.Route.NATIVE);
+    assertEquals(runs.host().resultTypes(), runs.nativeRun().resultTypes());
+    assertEquals(perKey(runs.host().rows()), perKey(runs.nativeRun().rows()));
+    RecoveryExecutionMetrics.assertConsumed(
+        METRICS.nativeOperators().stream()
+            .filter(row -> !previous.contains(row.get("jobId")))
+            .collect(java.util.stream.Collectors.toList()),
+        "NativeJvmGroup");
+  }
+
+  @org.junit.jupiter.api.Test
+  void unsupportedTypesAndDisabledGroupRuntimeRetainFallback() {
     NativeFailureParity.run(
             FlinkCollectSqlHarnessTest::environment,
             "SELECT k,m FROM (SELECT k,m,ROW_NUMBER() OVER (ORDER BY k) AS rn FROM "
@@ -147,21 +163,54 @@ class FlinkCollectSqlHarnessTest {
   }
 
   @org.junit.jupiter.api.Test
-  void sharedAverageProjectionRetainsTheExistingCollectionConsumerGuard() {
+  void retainedDistinctCollectionsKeepTheirRepresentedOutput() {
+    var earlier =
+        METRICS.nativeOperators().stream()
+            .map(row -> row.get("jobId"))
+            .collect(java.util.stream.Collectors.toSet());
+    var runs =
+        NativeFailureParity.run(
+            () -> {
+              var table = environment();
+              table.getConfig().set("table.exec.state.ttl", "1 h");
+              return table;
+            },
+            "SELECT k,COLLECT(DISTINCT v),COUNT(*) FROM src GROUP BY k");
+    runs.assertSuccess(NativeFailureParity.Route.NATIVE);
+    assertEquals(runs.host().resultTypes(), runs.nativeRun().resultTypes());
+    assertEquals(perKey(runs.host().rows()), perKey(runs.nativeRun().rows()));
+    RecoveryExecutionMetrics.assertConsumed(
+        METRICS.nativeOperators().stream()
+            .filter(row -> !earlier.contains(row.get("jobId")))
+            .collect(java.util.stream.Collectors.toList()),
+        "NativeColumnarGroupAggregate");
+  }
+
+  @org.junit.jupiter.api.Test
+  void sharedAverageProjectionPreservesCollectionsAcrossBothGroupRoutes() {
     String property = "streamfusion.experimental.rustCollectionAggregates";
     String previous = System.getProperty(property);
     try {
       for (String enabled : new String[] {"false", "true"}) {
         System.setProperty(property, enabled);
+        var earlier =
+            METRICS.nativeOperators().stream()
+                .map(row -> row.get("jobId"))
+                .collect(java.util.stream.Collectors.toSet());
         var runs =
             NativeFailureParity.run(
                 FlinkCollectSqlHarnessTest::environment,
                 "SELECT k,COLLECT(v),SUM(v),MIN(v),MAX(v),AVG(v),COUNT(v) FROM src GROUP BY k");
-        runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
-        assertTrue(
-            runs.nativeRun().fallbackReasons().stream()
-                .anyMatch(reason -> reason.contains("generated collection representation")),
-            runs::toString);
+        runs.assertSuccess(NativeFailureParity.Route.NATIVE);
+        assertEquals(runs.host().resultTypes(), runs.nativeRun().resultTypes());
+        assertEquals(perKey(runs.host().rows()), perKey(runs.nativeRun().rows()));
+        var work =
+            METRICS.nativeOperators().stream()
+                .filter(row -> !earlier.contains(row.get("jobId")))
+                .collect(java.util.stream.Collectors.toList());
+        RecoveryExecutionMetrics.assertConsumed(
+            work, enabled.equals("true") ? "NativeColumnarGroupAggregate" : "NativeJvmGroup");
+        RecoveryExecutionMetrics.assertConsumed(work, "NativeCalc");
       }
     } finally {
       if (previous == null) System.clearProperty(property);
@@ -260,5 +309,13 @@ class FlinkCollectSqlHarnessTest {
             .filter(row -> !previous.contains(row.get("jobId")))
             .collect(java.util.stream.Collectors.toList()),
         "NativeColumnarGroupAggregate");
+  }
+
+  private static java.util.Map<Object, java.util.List<java.util.List<Object>>> perKey(
+      java.util.List<java.util.List<Object>> rows) {
+    var result = new java.util.HashMap<Object, java.util.List<java.util.List<Object>>>();
+    for (var row : rows)
+      result.computeIfAbsent(row.get(1), ignored -> new java.util.ArrayList<>()).add(row);
+    return result;
   }
 }

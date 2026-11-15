@@ -1,8 +1,13 @@
+pub(crate) mod canonical_records;
 use crate::*;
 
+pub(crate) mod canonical_context;
+pub(crate) mod canonical_memory;
 pub(crate) mod ttl;
 pub(crate) use ttl::*;
 
+#[cfg(feature = "rocksdb-state")]
+pub(crate) mod canonical_snapshot;
 #[cfg(feature = "rocksdb-state")]
 pub(crate) mod rocks_config;
 #[cfg(all(feature = "rocksdb-io-uring", target_os = "linux"))]
@@ -31,6 +36,14 @@ pub(crate) trait KeyedStateStore<V> {
         false
     }
 
+    fn attach_memory(&mut self, _memory: StateMemory) {}
+    fn owns_memory(&self) -> bool {
+        false
+    }
+    fn account_memory(&mut self) -> Result<(), DataFusionError> {
+        Ok(())
+    }
+
     fn enable_resident_cache(&mut self, _limit: usize, _reservation: Option<MemoryReservation>) {}
     fn contains(&self, key: &[u8]) -> bool;
     fn get(&self, key: &[u8]) -> Option<&V>;
@@ -46,6 +59,13 @@ pub(crate) trait KeyedStateStore<V> {
     /// Inserts a fresh value for a key not currently present and returns it for mutation.
     fn insert(&mut self, key: ByteKey, value: V) -> &mut V;
     fn remove(&mut self, key: &[u8]);
+
+    /// Makes actual savepoint keys resident before merging another transfer chunk. This reads
+    /// raw state without expiring or refreshing it while the canonical import is in progress.
+    /// Companion tables remain separate; their canonical import must follow the main rows.
+    fn prepare_canonical_import(&mut self, _keys: &BinaryArray) -> Result<(), DataFusionError> {
+        Ok(())
+    }
 
     /// Hydrates the working set with every key the given batch can touch (the batch's key columns
     /// under the operator's BinaryRow encoding). Called before the operator folds the batch.
@@ -92,6 +112,7 @@ pub(crate) trait KeyedStateStore<V> {
 
 /// Today's state backend: the whole working set resident in one hash map. This is the default
 /// store every operator runs on unless a job selects a persistent backend.
+#[derive(Clone)]
 pub(crate) struct MemoryStateStore<V> {
     map: ahash::HashMap<ByteKey, V>,
 }

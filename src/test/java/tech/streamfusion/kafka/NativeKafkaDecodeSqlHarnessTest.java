@@ -27,13 +27,13 @@ import tech.streamfusion.planner.PhysicalPlanScan;
 /**
  * End-to-end SQL test for the shallow native-decode path (Phase 2): a {@code CREATE TABLE ...
  * 'connector'='kafka', 'format'='csv'} routes through the planner to {@link
- * tech.streamfusion.planner.StreamPhysicalNativeKafkaDecode} — Flink's own KafkaSource
- * consumes raw bytes, a native operator decodes them straight to Arrow (no Flink {@code RowData} decode)
- * — and produces the expected rows. A bounded ({@code latest-offset}) scan so the query terminates and
- * the decode operator's end-of-input flush fires.
+ * tech.streamfusion.planner.stream.StreamPhysicalNativeKafkaDecode} — Flink's own KafkaSource
+ * consumes raw bytes, a native operator decodes them straight to Arrow (no Flink {@code RowData}
+ * decode) — and produces the expected rows. A bounded ({@code latest-offset}) scan so the query
+ * terminates and the decode operator's end-of-input flush fires.
  *
- * <p>Opt-in via {@code SF_BENCHMARK=true} (Docker for Testcontainers Kafka). Uses the default native
- * build's decoders — no {@code kafka} cargo feature needed (Flink owns the consume).
+ * <p>Opt-in via {@code SF_BENCHMARK=true} (Docker for Testcontainers Kafka). Uses the default
+ * native build's decoders — no {@code kafka} cargo feature needed (Flink owns the consume).
  */
 @Tag("streamfusion-kafka")
 @EnabledIfEnvironmentVariable(named = "SF_BENCHMARK", matches = "true")
@@ -63,7 +63,8 @@ class NativeKafkaDecodeSqlHarnessTest {
         }
       }
 
-      assertTrue(scan.substitutions() >= 1, "CSV Kafka table did not route to the native decode path");
+      assertTrue(
+          scan.substitutions() >= 1, "CSV Kafka table did not route to the native decode path");
       assertEquals(MESSAGES, ids.size(), "expected every produced id exactly once");
       for (long i = 0; i < MESSAGES; i++) {
         assertTrue(ids.contains(i), "missing id " + i);

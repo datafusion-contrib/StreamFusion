@@ -1,8 +1,11 @@
+mod canonical;
 #[cfg(test)]
 mod indexed_tests;
 mod pending;
 use crate::*;
 use pending::PendingRows;
+
+use crate::flink_key::binary_row_payload;
 
 const INDEX_PENDING_THRESHOLD: usize = 1024;
 
@@ -169,8 +172,9 @@ impl KeepFirstDeduplicator {
     /// Buffers an input batch (no output); emission is watermark-driven (`flush`). `now_ms` is the
     /// host's wall-clock reading for this call (only read when state TTL is on).
     pub(crate) fn push(&mut self, batch: &RecordBatch, now_ms: i64) -> Result<(), DataFusionError> {
+        let schema = self.schema.clone().unwrap_or_else(|| data_schema(batch));
+        let batch = crate::logical_input::insert_only(batch.clone(), &schema, "buffered dedup")?;
         self.snapshot_cache = None;
-        let schema = batch.schema();
         self.schema = Some(schema.clone());
         // Drop late rows (rowtime already below the watermark) with a columnar filter, counting
         // them as Flink's processElement does before any per-key state is consulted.
@@ -179,7 +183,7 @@ impl KeepFirstDeduplicator {
             .iter()
             .map(|v| Some(v.unwrap() >= self.current_watermark))
             .collect();
-        let live = filter_record_batch(batch, &live_mask).expect("dedup late filter");
+        let live = filter_record_batch(&batch, &live_mask).expect("dedup late filter");
         self.late_drops += (batch.num_rows() - live.num_rows()) as u64;
         #[cfg(feature = "rocksdb-state")]
         if self.store.is_some() {
@@ -254,14 +258,27 @@ impl KeepFirstDeduplicator {
         }
     }
 
-    fn add_pending(&mut self, batch: &RecordBatch, ttl: StateTtl) {
-        let arrays = self
-            .partition_columns
-            .iter()
-            .map(|&column| batch.column(column))
-            .collect::<Vec<_>>();
+    fn encoded_partition_keys(&mut self, batch: &RecordBatch) -> arrow::row::Rows {
+        let columns = crate::flink_key::stock_row_key_columns(
+            batch,
+            &self.partition_columns,
+            &self.key_timestamp_precisions,
+        );
+        let arrays = columns.as_ref().map_or_else(
+            || {
+                self.partition_columns
+                    .iter()
+                    .map(|&column| batch.column(column))
+                    .collect::<Vec<_>>()
+            },
+            |columns| columns.iter().collect::<Vec<_>>(),
+        );
         self.key_types = key_types(&arrays);
-        let encoded = encode_keys(&mut self.key_converter, &arrays, batch.num_rows());
+        encode_keys(&mut self.key_converter, &arrays, batch.num_rows())
+    }
+
+    fn add_pending(&mut self, batch: &RecordBatch, ttl: StateTtl) {
+        let encoded = self.encoded_partition_keys(batch);
         let times = rt_to_millis(batch.column(self.rt_column));
         let mut best: HashMap<&[u8], usize> = HashMap::default();
         for row in 0..batch.num_rows() {
@@ -319,13 +336,7 @@ impl KeepFirstDeduplicator {
     /// Flink's keep-first rule of replacing only on a strictly smaller rowtime). The winning rows are
     /// gathered with `take`; the row data is never materialized into scalars.
     fn min_per_key(&mut self, batch: &RecordBatch, ttl: StateTtl) -> RecordBatch {
-        let key_arrays: Vec<&ArrayRef> = self
-            .partition_columns
-            .iter()
-            .map(|&i| batch.column(i))
-            .collect();
-        self.key_types = key_types(&key_arrays);
-        let keys_encoded = encode_keys(&mut self.key_converter, &key_arrays, batch.num_rows());
+        let keys_encoded = self.encoded_partition_keys(batch);
         let rt = rt_to_millis(batch.column(self.rt_column));
         let track = self.memory.tracking();
         let mut reclaimed = 0isize;
@@ -480,13 +491,7 @@ impl KeepFirstDeduplicator {
         }
         self.pending = (not_ready.num_rows() > 0).then_some(not_ready);
         if ready.num_rows() > 0 {
-            let key_arrays: Vec<&ArrayRef> = self
-                .partition_columns
-                .iter()
-                .map(|&i| ready.column(i))
-                .collect();
-            self.key_types = key_types(&key_arrays);
-            let keys_encoded = encode_keys(&mut self.key_converter, &key_arrays, ready.num_rows());
+            let keys_encoded = self.encoded_partition_keys(&ready);
             let ttl = StateTtl::new(self.ttl_ms, now_ms);
             let stamp = if ttl.enabled() { ttl.now() } else { 0 };
             for row in 0..ready.num_rows() {
@@ -560,7 +565,15 @@ impl KeepFirstDeduplicator {
             fields.push(Field::new(TTL_TS_COLUMN, DataType::Int64, false));
             columns.push(Arc::new(Int64Array::from(fired)));
         }
-        Some(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("dedup emitted"))
+        Some(
+            RecordBatch::try_new_with_options(
+                Arc::new(Schema::new(fields)),
+                columns,
+                &arrow::record_batch::RecordBatchOptions::new()
+                    .with_row_count(Some(self.emitted.len())),
+            )
+            .expect("dedup emitted"),
+        )
     }
 
     fn snapshot_partitions(
@@ -633,7 +646,13 @@ impl KeepFirstDeduplicator {
                     .iter()
                     .map(|column| take(column, &indices, None).expect("partition dedup snapshot"))
                     .collect();
-                RecordBatch::try_new(batch.schema(), columns).expect("partitioned dedup snapshot")
+                RecordBatch::try_new_with_options(
+                    batch.schema(),
+                    columns,
+                    &arrow::record_batch::RecordBatchOptions::new()
+                        .with_row_count(Some(rows.len())),
+                )
+                .expect("partitioned dedup snapshot")
             };
             let pending_part = pending_by_group
                 .get(&key_group)
@@ -739,6 +758,14 @@ impl KeepFirstDeduplicator {
 /// (`[watermark][framed pending ipc][emitted ipc]`), for backend-independent canonical savepoints.
 #[cfg(feature = "rocksdb-state")]
 impl KeepFirstDeduplicator {
+    pub(crate) fn migrate_legacy_snapshot_store(&mut self) -> Result<(), DataFusionError> {
+        let reader = self.store.as_ref().unwrap().legacy_snapshot_reader()?;
+        if let Some(reader) = reader {
+            reader.migrate(|partitions, _timer| self.import_partitions(partitions))?;
+        }
+        Ok(())
+    }
+
     /// Decodes restored blob key groups once at open and writes them through the typed store, so
     /// a canonical or raw restore continues on the direct persistent path. Candidates append in
     /// blob order (fresh sequences reproduce the memory path's emission order), fired markers keep
@@ -855,7 +882,13 @@ impl KeepFirstDeduplicator {
                     fields.push(Field::new(TTL_TS_COLUMN, DataType::Int64, false));
                     columns.push(Arc::new(Int64Array::from(stamps)));
                 }
-                RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("dedup emitted")
+                RecordBatch::try_new_with_options(
+                    Arc::new(Schema::new(fields)),
+                    columns,
+                    &arrow::record_batch::RecordBatchOptions::new()
+                        .with_row_count(Some(entries.len())),
+                )
+                .expect("dedup emitted")
             });
             snapshots.insert(group, self.snapshot_parts(pending_part, emitted_part));
         }
@@ -931,6 +964,7 @@ pub(crate) struct KeepLastDeduplicator<S: KeyedStateStore<DedupRow> = MemoryDedu
 /// The resident default backend for the dedup store (see `state/` for the seam).
 pub(crate) type MemoryDedupStore = MemoryStateStore<DedupRow>;
 
+#[derive(Clone)]
 pub(crate) struct DedupRow {
     rowtime: i64,
     payload: Arc<[u8]>,
@@ -980,6 +1014,7 @@ pub(crate) type RocksDedupStore = crate::state::RocksStore<DedupStateCodec>;
 /// keyed-state snapshot carries, so the two persistence paths cannot drift). Every payload shape
 /// round-trips as opaque bytes, so every keep-last state shape is persistable.
 #[cfg(feature = "rocksdb-state")]
+#[derive(Clone)]
 pub(crate) struct DedupStateCodec;
 
 #[cfg(feature = "rocksdb-state")]
@@ -1103,6 +1138,7 @@ impl<S: KeyedStateStore<DedupRow>> KeepLastDeduplicator<S> {
         budget_bytes: i64,
     ) -> Result<Self, DataFusionError> {
         self.memory.attach("deduplicate", budget_bytes, 0)?;
+        self.rows.attach_memory(self.memory.state_memory());
         Ok(self)
     }
 
@@ -1219,6 +1255,15 @@ impl<S: KeyedStateStore<DedupRow>> KeepLastDeduplicator<S> {
         let arity = data_arity(batch);
         self.schema = Some(data_schema(batch));
         self.ensure_converters(batch, arity);
+        let logical_equality = self
+            .schema
+            .as_ref()
+            .unwrap()
+            .fields()
+            .iter()
+            .any(|field| binary_row_payload(field.data_type()));
+        let converter = self.payload_converter.as_ref().unwrap();
+        let fields = self.schema.as_ref().unwrap().fields();
         self.rows.begin_batch(
             batch,
             &self.partition_columns,
@@ -1375,7 +1420,16 @@ impl<S: KeyedStateStore<DedupRow>> KeepLastDeduplicator<S> {
                     if !rowtime_ordered
                         && (generate_update_before || generate_insert)
                         && !stored.update_kind
-                        && stored.payload.as_ref() == current
+                        && if logical_equality {
+                            crate::flink_row_equal::encoded_rows(
+                                converter,
+                                fields,
+                                &stored.payload,
+                                current,
+                            )?
+                        } else {
+                            stored.payload.as_ref() == current
+                        }
                         && !ttl.enabled() =>
                 {
                     continue;
@@ -1441,6 +1495,10 @@ impl<S: KeyedStateStore<DedupRow>> KeepLastDeduplicator<S> {
             self.rows.end_bundle()?;
         }
         self.memory.record(delta + self.rows.footprint_delta());
+        if self.rows.owns_memory() {
+            self.rows.account_memory()?;
+            self.memory.set(self.staged_bytes);
+        }
         self.memory.account()?;
         Ok(self.emit(out_rows, out_kinds))
     }
@@ -1517,7 +1575,26 @@ impl<S: KeyedStateStore<DedupRow>> KeepLastDeduplicator<S> {
             if self.ttl_ms == 0
                 && (self.generate_update_before || self.generate_insert)
                 && !row.update_kind
-                && before.as_ref() == Some(&after)
+                && match before.as_ref() {
+                    Some(before)
+                        if self
+                            .schema
+                            .as_ref()
+                            .unwrap()
+                            .fields()
+                            .iter()
+                            .any(|field| binary_row_payload(field.data_type())) =>
+                    {
+                        crate::flink_row_equal::encoded_rows(
+                            self.payload_converter.as_ref().unwrap(),
+                            self.schema.as_ref().unwrap().fields(),
+                            before,
+                            &after,
+                        )?
+                    }
+                    Some(before) => before.as_ref() == after.as_ref(),
+                    None => false,
+                }
             {
                 continue;
             }
@@ -1540,6 +1617,9 @@ impl<S: KeyedStateStore<DedupRow>> KeepLastDeduplicator<S> {
         self.memory
             .record(self.rows.footprint_delta() - self.staged_bytes as isize);
         self.staged_bytes = 0;
+        if self.rows.owns_memory() {
+            self.memory.set(0);
+        }
         self.memory.account()?;
         Ok(self.emit(out_rows, out_kinds))
     }
@@ -1555,9 +1635,17 @@ impl<S: KeyedStateStore<DedupRow>> KeepLastDeduplicator<S> {
         let conv = self.payload_converter.as_ref().expect("converter set");
         // One vectorized row->columnar pass rebuilds every data column (cf. the per-cell scalar build).
         let parser = conv.parser();
-        let mut columns: Vec<ArrayRef> = conv
+        let decoded = conv
             .convert_rows(out_rows.iter().map(|r| parser.parse(r)))
             .expect("decode dedup payloads");
+        let mut columns: Vec<ArrayRef> = decoded
+            .iter()
+            .zip(schema.fields())
+            .map(|(column, field)| {
+                streamfusion_bridge::timestamp::cast_array(column, field.data_type())
+                    .expect("align dedup payload fields")
+            })
+            .collect();
         let mut fields: Vec<Field> = schema.fields().iter().map(|f| f.as_ref().clone()).collect();
         // Proctime keep-first is insert-only (every emitted row is a +I), so it carries no
         // $row_kind$ column; keep-last — and rowtime keep-first, its mini-batch retracting twin —

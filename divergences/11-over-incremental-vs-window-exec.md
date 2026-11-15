@@ -70,31 +70,79 @@ serialized for checkpointing, matching Flink's `OverAggregate` exactly. For
 `ROW_NUMBER` this is identical to DataFusion's own evaluator (`n+1`), so nothing is
 re-derived; for the others the logic is small and Flink-defined.
 
-## Bounded frame — recompute over the slice, not incremental retraction
-A bounded frame — `ROWS BETWEEN n PRECEDING AND CURRENT ROW` (by row count) or
-`RANGE BETWEEN INTERVAL n PRECEDING AND CURRENT ROW` (by rowtime interval) — slides:
-rows fall off the trailing edge. The unbounded incremental accumulator above cannot
-serve it, because `MIN`/`MAX` are not retractable — once the running extreme leaves
-the frame there is no way to recover the new extreme without the underlying values.
-Flink's `RowTimeRowsBoundedPrecedingFunction` / `RowTimeRangeBoundedPrecedingFunction`
-solve this by keeping the frame's rows in `MapState` and a **retractable**
-accumulator, retracting each row as it leaves.
+## Bounded frame — retained rows and incremental arithmetic
 
-We take the model **RisingWave defaults to** instead: keep a per-key sorted buffer of
-the rows still reachable by some future frame and **recompute** each emitted row's
-aggregate over its frame slice with a fresh accumulator. The result is identical to
-Flink (both aggregate over the same frame extent), and recompute sidesteps the
-non-retractable-`MIN`/`MAX` problem entirely — the bounded path reuses the same
-`RunningAgg` fold the unbounded path uses, just folded fresh per row over the slice
-rather than once cumulatively. The slice is `buffer[i-n ..= i]` for ROWS; for RANGE it
-is `[first rt ≥ cur−offset, last rt ≤ cur]`, found by binary search, and rows of equal
-rowtime share one frame (ending at the last tied row), matching Flink's RANGE
-semantics. Cost is O(frame size) per row, fine for a bounded frame; the trailing edge
-is evicted (ROWS: keep the last `max(n, 1)` rows per key; RANGE: drop rows older than
-that key’s `lastRowtime − offset`) so memory stays bounded. This is an **algorithmic** divergence
-from Flink's retraction-based operator with **identical output** — chosen because it is
-simpler and correct where incremental retraction would need a MIN/MAX value multiset we
-do not keep.
+A bounded ROWS or RANGE frame retains a per-key sorted buffer. Numeric SUM/SUM0/AVG and COUNT
+keep raw incremental arithmetic beside the final retained row, retracting expired values before
+adding arrivals. Primitive SUM also retains its independent non-null count; an empty live count
+changes the result to NULL without resetting the raw sum. Recomputing the surviving slice loses
+FLOAT/DOUBLE rounding and NaN history, just as it loses decimal overflow history. AVG has its
+own widened sum and count, independent of SUM's input/result width. Numeric DISTINCT folds
+rebuild multiplicity from retained values without reapplying the saved arithmetic.
+
+Numeric MIN/MAX and other selections without retractable views still evaluate the reachable
+slice. String reductions retain their existing retractable membership and selection history.
+Event-time ROWS uses the slice through the current arrival; RANGE includes all peers up to the current
+rowtime. Arithmetic and string views retain the full `n + 1` prior event-time ROWS frame needed for the next
+retraction; value-only recomputation can retain `max(n, 1)`. Explicit original-input retention also
+keeps the full current frame. RANGE evicts values older than its key's latest rowtime minus offset.
+Our orchestration remains the incremental streaming operator rather than Arroyo's per-instant
+DataFusion window execution plan, because the state must survive native and stock snapshots.
+
+Event-time ROWS additionally preserves the released stock operator's terminal-timestamp sentinel
+behavior. Its minimum-bucket search starts at `Long.MAX_VALUE` and requires a strictly smaller
+timestamp, so peers in that bucket cease being retracted once earlier buckets are exhausted.
+We retain their original inputs and raw fold rather than applying a logical frame-width truncation.
+Native checkpoint/backend transfers keep that full bucket; an older writer cannot recreate peers
+it discarded. Completed rows emit in event-timer timestamp order, with stable peer order, instead
+of the pending buffer's original arrival order. These are stock runtime semantics rather than
+Arroyo/DataFusion's logical ROWS-frame rule. The stock event-time ROWS descriptor/counter/timer
+adapter is still pending under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+Processing-time bounded ROWS additionally follows Flink's clock-bucket eviction protocol rather
+than truncating an arrival slice. A per-key processed counter and minimum timestamp select the
+oldest element of the named bucket. When that bucket empties, the minimum is selected before
+appending the current row, with `Long.MAX_VALUE` for an empty map. This preserves Flink's
+width-one extra-row behavior and middle-frame eviction when clocks regress. Incremental arithmetic
+and string views retract the selected row; other selections evaluate only surviving membership.
+Each retained row owns its processing clock independently of the ordering sequence and original
+input payload. Native IPC carries an optional clock column; RocksDB uses a sibling frame-clock
+table. Separate counter/minimum metadata persists even without TTL and follows frame key groups
+through file restore and rescaling. Its owned memory counts toward the state budget. This keeps
+Arroyo's streaming/batch boundary while adopting Flink's persistent state machine; Arroyo's
+per-instant execution plan cannot express that restore contract. Older native snapshots can use
+legacy retained-frame bookkeeping but cannot reconstruct clocks their writers discarded. The
+released stock processing-time ROWS contract projects these fields separately from raw arithmetic,
+using stock input serializers and a Void processing-time queue. Bounded views and event-time ROWS
+remain pending under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569);
+benchmarking is deferred.
+
+The direct processing-time ROWS bridge visits counter/minimum/cleanup metadata separately from
+original frames and raw accumulators. The receiver installs complete frame rows, then validates
+the corresponding key's metadata before installing a counter. This preserves `Long.MAX_VALUE`
+even when the retained frame has other timestamp buckets. It avoids replay and intermediate
+native snapshots. The Java adapter reuses the event-time RANGE frame machinery while selecting
+processing-time descriptors, counter/minimum checks and timer ownership. Export
+rejects legacy frames whose exact scalar bookkeeping was never retained, rather than presenting
+inferred frame length/minimum as lossless state.
+
+Bounded event-time RANGE keeps Flink's registered data and cleanup timestamps separately from
+the retained frame. Replaced cleanup deadlines leave their older timers armed; those callbacks
+advance the per-key late cutoff even without a data row. A sorted, deduplicated timestamp vector
+and optional last-fired timestamp preserve this behavior across native checkpoints. Their owned
+capacity counts against the state budget, and RocksDB checkpoints persist them under the same
+key-group prefix as the frame. This follows Flink's timer protocol rather than Arroyo's
+per-instant execution lifetime. Native legacy restore cannot recover timers an older writer
+discarded. The stock bounded adapter remains pending in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569); benchmarking is deferred.
+
+Direct bounded-frame transfer reads each partition's owned original rows and raw arithmetic
+separately. Import installs the saved arithmetic beside the last retained row without folding
+those inputs again. A partition batch includes the current native cleanup/RANGE protocol and
+timestamp-map reconstruction order; pending input rows remain a separate stream. This is a
+temporary Arrow bridge for the eventual stock-schema writer/reader, not a new native checkpoint
+format or a claim of completed stock bounded interchange. A partition may be materialized during
+conversion; canonical handoffs prioritize correctness and performance validation is deferred.
 
 Flink seeds `lastTriggeringTs = 0` in these operators and drops a row whose rowtime is
 `<= 0` as late. We preserve that rule and reject timestamps at or before the key's last firing,
@@ -107,13 +155,15 @@ watermark comparison. See the OVER coverage page for restore and expiry behavior
 
 ## Scope
 
-Decimal reductions add an exception to bounded recomputation. Its
-sum/count fold is retained beside the final frame row in the existing frame
-codec, and expired values retract before new values accumulate. SUM can replace a
-NULL overflowed buffer on a later value, while SUM0 and AVG retain NULL. Rebuilding
-each frame from its remaining rows loses that history. ROWS therefore keeps the
-full prior frame for its next retraction; the existing non-arithmetic path keeps
-its previous snapshot columns.
+Arithmetic fold columns preserve the exact current sum and independent counts. SUM can replace
+a NULL overflowed decimal buffer on later input; SUM0 and AVG retain NULL. The raw scalar remains
+independent of DISTINCT membership and of whether the evaluated result is NULL. Native memory
+checkpoints read the two earlier fold layouts. Persistent frame rows carry an explicit format
+version: expanded arithmetic uses version 2 while readers retain unmarked and version 1 codecs.
+Known historical fields keep their values, and absent old fields retain missing markers until the
+ordinary native reader seeds them from retained rows. This cannot reconstruct discarded history
+and is distinct from direct stock canonical export. Frozen fixtures from an independently built
+prior library verify historical layouts without depending on the current writer to recreate them.
 
 Released Flink's RANGE SUM also exposes state-backend iteration order after
 decimal overflow. For a 1,000-ms frame with `(time,value)` arrivals
@@ -366,3 +416,48 @@ mutations, and checks complete emitted identities across snapshots. Released raw
 RocksDB recovery, mini-batch and shuffle tests qualify the final implementation. Flink 1.18
 receives an explicit compatibility gate: native substitution must not bypass its non-time
 OVER factory rejection. Performance evidence and remaining gates live on the OVER page.
+
+
+## Original bounded inputs for canonical interchange
+
+Flink's bounded OVER `inputState` retains complete input rows, while our ordinary frame buffers
+retain aggregate arguments. The latter cannot reconstruct unused original columns. For #569, an
+explicit canonical binding therefore retains owned original input rows alongside the existing
+frame representation. It leaves the aggregation algorithm intact and does not replace the operator
+with Arroyo's window execution plan. Captured ROWS frames retain all `n + 1` current rows, including
+COUNT-only frames whose unbound representation can discard one earlier. The sampled processing
+clock is distinct from the native arrival-sequence ordering key.
+
+Typed RocksDB keeps the payload in a parallel table at the same key group and frame position.
+Its table identifier overlaps the first unbounded DISTINCT table only because bounded and
+unbounded shapes never share a store. A persisted marker distinguishes captured frames from
+older frames without original rows. The input table follows exact eviction, per-key cleanup and
+rescale clipping. Memory and RocksDB native checkpoints preserve these rows; stock canonical
+export visits live retained inputs directly and never writes a native snapshot as an intermediate.
+The shared Arrow ownership helper follows the existing partial-window buffer pattern and owns
+dictionary children/validity as well as the gathered row buffers, so JNI release callbacks do not
+survive across calls.
+
+This is state-information preservation, not stock bounded-contract admission. Full stock
+accumulator/buffer/timer translation, planner binding and cross-engine qualification remain under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Performance work is deferred
+by the maintainer's functionality-first instruction.
+
+
+## Bounded RANGE timer callbacks
+
+Arroyo's window-function implementation splits timestamp-sorted batches and schedules timestamp
+buckets in a BTreeMap. StreamFusion keeps its existing incremental frame algorithm, and now emits
+completed bounded RANGE rows in timestamp order as the released Flink callbacks do. The reasons
+for retaining this algorithm remain unchanged: it owns the retractable raw accumulator and full
+retained rows needed for direct canonical interchange.
+
+Flink also uses wrapping Java long additions for cleanup deadlines and leaves superseded timers
+registered. An overflow can place cleanup before pending data; clearing state does not cancel
+future callbacks. The native wrapper splits only those cleanup boundaries that precede later
+callbacks or can coincide with data after overflow, clears the key's pending inputs and frame,
+and keeps future timers. Ordinary RANGE firings keep the bulk frame path. Orphan callbacks and
+the resulting last-trigger-only keys are retained in optional native timer metadata and the
+independent direct RANGE protocol. This follows the released Flink operator contract rather than
+Arroyo's generic window execution. No intermediate native snapshot is introduced. Performance
+measurement and tuning remain deferred for #569.

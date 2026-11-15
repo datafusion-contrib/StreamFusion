@@ -1,0 +1,1522 @@
+{
+  "baseline_commit": "2b199b0e91e0d9a7abbf45a3412a9ac8e4c433b1",
+  "date": "2026-10-28 01:07:34.818685+00:00",
+  "release_sha256": "540bd613dd3ef8fd36b7c398f0b22ac1dd5071c84b58807ef934c31a40684fa8",
+  "benchmark_source_sha256": "661408c011c4998154628915bddf000b5dcaa72210de89344898f0044dfabb1b",
+  "warmups": 2,
+  "trials": 3,
+  "parallelism": 1,
+  "values": 8,
+  "cohorts": [
+    {
+      "revision": "candidate",
+      "family": "collect",
+      "keys": 64,
+      "rows": 200000,
+      "wall_seconds": 18.053429126739502,
+      "returncode": 0,
+      "interference": [],
+      "log": "collect-64-candidate.log",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "surefire:test@default-test",
+        "-Pbench",
+        "-Dtest=JvmAggregateBenchmark#completeJobsRetainKeyedStateAndBothTransposes",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=<release-payload>",
+        "-Dsf.testForks=1",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<release-payload>",
+        "-Djvmagg.cases=collect_date,collect_time",
+        "-Djvmagg.rows=200000",
+        "-Djvmagg.keys=64",
+        "-Djvmagg.values=8",
+        "-Djvmagg.warmup=2",
+        "-Djvmagg.runs=3",
+        "-Djvmagg.expectCache=false",
+        "-Djvmagg.expectNative=true"
+      ],
+      "summaries": [
+        {
+          "shape": "collect_date",
+          "key_type": "int",
+          "key_prefix_chars": 16,
+          "rows": 200000,
+          "keys": 64,
+          "values": 8,
+          "stock_seconds": [
+            0.438641317,
+            0.428242181,
+            0.304937587
+          ],
+          "native_seconds": [
+            0.380744981,
+            0.380308713,
+            0.3739598
+          ],
+          "stock_median_seconds": 0.428242181,
+          "native_median_seconds": 0.380308713,
+          "stock_range_seconds": [
+            0.304937587,
+            0.438641317
+          ],
+          "native_range_seconds": [
+            0.3739598,
+            0.380744981
+          ],
+          "stock_over_native": 1.1260383114072907
+        },
+        {
+          "shape": "collect_time",
+          "key_type": "int",
+          "key_prefix_chars": 16,
+          "rows": 200000,
+          "keys": 64,
+          "values": 8,
+          "stock_seconds": [
+            0.294204369,
+            0.303026864,
+            0.384323017
+          ],
+          "native_seconds": [
+            0.368347388,
+            0.359525962,
+            0.393263605
+          ],
+          "stock_median_seconds": 0.303026864,
+          "native_median_seconds": 0.368347388,
+          "stock_range_seconds": [
+            0.294204369,
+            0.384323017
+          ],
+          "native_range_seconds": [
+            0.359525962,
+            0.393263605
+          ],
+          "stock_over_native": 0.8226659774766748
+        }
+      ],
+      "trials": [
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=Flink trial=0 warmup=true rows=200000 keys=64 start_ms=1793149661074 seconds=1.058145",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=StreamFusion trial=0 warmup=true rows=200000 keys=64 start_ms=1793149662494 seconds=0.799360",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=StreamFusion trial=1 warmup=true rows=200000 keys=64 start_ms=1793149663455 seconds=0.509415",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=Flink trial=1 warmup=true rows=200000 keys=64 start_ms=1793149664102 seconds=0.538421",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=Flink trial=2 warmup=false rows=200000 keys=64 start_ms=1793149664762 seconds=0.438641",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=StreamFusion trial=2 warmup=false rows=200000 keys=64 start_ms=1793149665307 seconds=0.380745",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=StreamFusion trial=3 warmup=false rows=200000 keys=64 start_ms=1793149665787 seconds=0.380309",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=Flink trial=3 warmup=false rows=200000 keys=64 start_ms=1793149666267 seconds=0.428242",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=Flink trial=4 warmup=false rows=200000 keys=64 start_ms=1793149666793 seconds=0.304938",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=StreamFusion trial=4 warmup=false rows=200000 keys=64 start_ms=1793149667175 seconds=0.373960",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=Flink trial=0 warmup=true rows=200000 keys=64 start_ms=1793149667679 seconds=0.371424",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=StreamFusion trial=0 warmup=true rows=200000 keys=64 start_ms=1793149668139 seconds=0.417068",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=StreamFusion trial=1 warmup=true rows=200000 keys=64 start_ms=1793149668632 seconds=0.376166",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=Flink trial=1 warmup=true rows=200000 keys=64 start_ms=1793149669087 seconds=0.301210",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=Flink trial=2 warmup=false rows=200000 keys=64 start_ms=1793149669473 seconds=0.294204",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=StreamFusion trial=2 warmup=false rows=200000 keys=64 start_ms=1793149669834 seconds=0.368347",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=StreamFusion trial=3 warmup=false rows=200000 keys=64 start_ms=1793149670277 seconds=0.359526",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=Flink trial=3 warmup=false rows=200000 keys=64 start_ms=1793149670715 seconds=0.303027",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=Flink trial=4 warmup=false rows=200000 keys=64 start_ms=1793149671098 seconds=0.384323",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=StreamFusion trial=4 warmup=false rows=200000 keys=64 start_ms=1793149671549 seconds=0.393264"
+      ],
+      "native_evidence": [
+        "[jvm-aggregate-native] shape=collect_date trial=0 operator=NativeColumnarGroupAggExecNode[18] records_in=200000 records_out=175008",
+        "[jvm-aggregate-native] shape=collect_date trial=0 operator=NativeColumnarExchangeExecNode[17] records_in=200000 records_out=200000",
+        "[jvm-aggregate-native] shape=collect_date trial=1 operator=NativeColumnarGroupAggExecNode[30] records_in=200000 records_out=175008",
+        "[jvm-aggregate-native] shape=collect_date trial=1 operator=NativeColumnarExchangeExecNode[29] records_in=200000 records_out=200000",
+        "[jvm-aggregate-native] shape=collect_date trial=2 operator=NativeColumnarGroupAggExecNode[58] records_in=200000 records_out=175008",
+        "[jvm-aggregate-native] shape=collect_date trial=2 operator=NativeColumnarExchangeExecNode[57] records_in=200000 records_out=200000",
+        "[jvm-aggregate-native] shape=collect_date trial=3 operator=NativeColumnarGroupAggExecNode[70] records_in=200000 records_out=175008",
+        "[jvm-aggregate-native] shape=collect_date trial=3 operator=NativeColumnarExchangeExecNode[69] records_in=200000 records_out=200000",
+        "[jvm-aggregate-native] shape=collect_date trial=4 operator=NativeColumnarGroupAggExecNode[98] records_in=200000 records_out=175008",
+        "[jvm-aggregate-native] shape=collect_date trial=4 operator=NativeColumnarExchangeExecNode[97] records_in=200000 records_out=200000",
+        "[jvm-aggregate-native] shape=collect_time trial=0 operator=NativeColumnarGroupAggExecNode[118] records_in=200000 records_out=175008",
+        "[jvm-aggregate-native] shape=collect_time trial=0 operator=NativeColumnarExchangeExecNode[117] records_in=200000 records_out=200000",
+        "[jvm-aggregate-native] shape=collect_time trial=1 operator=NativeColumnarGroupAggExecNode[130] records_in=200000 records_out=175008",
+        "[jvm-aggregate-native] shape=collect_time trial=1 operator=NativeColumnarExchangeExecNode[129] records_in=200000 records_out=200000",
+        "[jvm-aggregate-native] shape=collect_time trial=2 operator=NativeColumnarGroupAggExecNode[158] records_in=200000 records_out=175008",
+        "[jvm-aggregate-native] shape=collect_time trial=2 operator=NativeColumnarExchangeExecNode[157] records_in=200000 records_out=200000",
+        "[jvm-aggregate-native] shape=collect_time trial=3 operator=NativeColumnarGroupAggExecNode[170] records_in=200000 records_out=175008",
+        "[jvm-aggregate-native] shape=collect_time trial=3 operator=NativeColumnarExchangeExecNode[169] records_in=200000 records_out=200000",
+        "[jvm-aggregate-native] shape=collect_time trial=4 operator=NativeColumnarGroupAggExecNode[198] records_in=200000 records_out=175008",
+        "[jvm-aggregate-native] shape=collect_time trial=4 operator=NativeColumnarExchangeExecNode[197] records_in=200000 records_out=200000"
+      ]
+    },
+    {
+      "revision": "previous",
+      "family": "collect",
+      "keys": 64,
+      "rows": 200000,
+      "wall_seconds": 17.05258870124817,
+      "returncode": 0,
+      "interference": [],
+      "log": "collect-64-previous.log",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "surefire:test@default-test",
+        "-Pbench",
+        "-Dtest=JvmAggregateBenchmark#completeJobsRetainKeyedStateAndBothTransposes",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=<release-payload>",
+        "-Dsf.testForks=1",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<release-payload>",
+        "-Djvmagg.cases=collect_date,collect_time",
+        "-Djvmagg.rows=200000",
+        "-Djvmagg.keys=64",
+        "-Djvmagg.values=8",
+        "-Djvmagg.warmup=2",
+        "-Djvmagg.runs=3",
+        "-Djvmagg.expectCache=false",
+        "-Djvmagg.expectNative=false"
+      ],
+      "summaries": [
+        {
+          "shape": "collect_date",
+          "key_type": "int",
+          "key_prefix_chars": 16,
+          "rows": 200000,
+          "keys": 64,
+          "values": 8,
+          "stock_seconds": [
+            0.382713931,
+            0.361631169,
+            0.302832208
+          ],
+          "native_seconds": [
+            0.430384646,
+            0.302913304,
+            0.298355936
+          ],
+          "stock_median_seconds": 0.361631169,
+          "native_median_seconds": 0.302913304,
+          "stock_range_seconds": [
+            0.302832208,
+            0.382713931
+          ],
+          "native_range_seconds": [
+            0.298355936,
+            0.430384646
+          ],
+          "stock_over_native": 1.1938437969697098
+        },
+        {
+          "shape": "collect_time",
+          "key_type": "int",
+          "key_prefix_chars": 16,
+          "rows": 200000,
+          "keys": 64,
+          "values": 8,
+          "stock_seconds": [
+            0.297267018,
+            0.293802296,
+            0.295325875
+          ],
+          "native_seconds": [
+            0.311298595,
+            0.320968477,
+            0.296475182
+          ],
+          "stock_median_seconds": 0.295325875,
+          "native_median_seconds": 0.311298595,
+          "stock_range_seconds": [
+            0.293802296,
+            0.297267018
+          ],
+          "native_range_seconds": [
+            0.296475182,
+            0.320968477
+          ],
+          "stock_over_native": 0.9486900350449703
+        }
+      ],
+      "trials": [
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=Flink trial=0 warmup=true rows=200000 keys=64 start_ms=1793149679347 seconds=1.144177",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=StreamFusion trial=0 warmup=true rows=200000 keys=64 start_ms=1793149680740 seconds=0.591831",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=StreamFusion trial=1 warmup=true rows=200000 keys=64 start_ms=1793149681497 seconds=0.442902",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=Flink trial=1 warmup=true rows=200000 keys=64 start_ms=1793149682050 seconds=0.392069",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=Flink trial=2 warmup=false rows=200000 keys=64 start_ms=1793149682557 seconds=0.382714",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=StreamFusion trial=2 warmup=false rows=200000 keys=64 start_ms=1793149683063 seconds=0.430385",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=StreamFusion trial=3 warmup=false rows=200000 keys=64 start_ms=1793149683607 seconds=0.302913",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=Flink trial=3 warmup=false rows=200000 keys=64 start_ms=1793149684023 seconds=0.361631",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=Flink trial=4 warmup=false rows=200000 keys=64 start_ms=1793149684478 seconds=0.302832",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=StreamFusion trial=4 warmup=false rows=200000 keys=64 start_ms=1793149684874 seconds=0.298356",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=Flink trial=0 warmup=true rows=200000 keys=64 start_ms=1793149685252 seconds=0.386815",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=StreamFusion trial=0 warmup=true rows=200000 keys=64 start_ms=1793149685749 seconds=0.307733",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=StreamFusion trial=1 warmup=true rows=200000 keys=64 start_ms=1793149686134 seconds=0.291189",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=Flink trial=1 warmup=true rows=200000 keys=64 start_ms=1793149686522 seconds=0.295502",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=Flink trial=2 warmup=false rows=200000 keys=64 start_ms=1793149686903 seconds=0.297267",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=StreamFusion trial=2 warmup=false rows=200000 keys=64 start_ms=1793149687280 seconds=0.311299",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=StreamFusion trial=3 warmup=false rows=200000 keys=64 start_ms=1793149687667 seconds=0.320968",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=Flink trial=3 warmup=false rows=200000 keys=64 start_ms=1793149688086 seconds=0.293802",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=Flink trial=4 warmup=false rows=200000 keys=64 start_ms=1793149688452 seconds=0.295326",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=StreamFusion trial=4 warmup=false rows=200000 keys=64 start_ms=1793149688824 seconds=0.296475"
+      ],
+      "native_evidence": []
+    },
+    {
+      "revision": "previous",
+      "family": "collect",
+      "keys": 4096,
+      "rows": 200000,
+      "wall_seconds": 17.047118425369263,
+      "returncode": 0,
+      "interference": [],
+      "log": "collect-4096-previous.log",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "surefire:test@default-test",
+        "-Pbench",
+        "-Dtest=JvmAggregateBenchmark#completeJobsRetainKeyedStateAndBothTransposes",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=<release-payload>",
+        "-Dsf.testForks=1",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<release-payload>",
+        "-Djvmagg.cases=collect_date,collect_time",
+        "-Djvmagg.rows=200000",
+        "-Djvmagg.keys=4096",
+        "-Djvmagg.values=8",
+        "-Djvmagg.warmup=2",
+        "-Djvmagg.runs=3",
+        "-Djvmagg.expectCache=false",
+        "-Djvmagg.expectNative=false"
+      ],
+      "summaries": [
+        {
+          "shape": "collect_date",
+          "key_type": "int",
+          "key_prefix_chars": 16,
+          "rows": 200000,
+          "keys": 4096,
+          "values": 8,
+          "stock_seconds": [
+            0.472741277,
+            0.456049316,
+            0.363068173
+          ],
+          "native_seconds": [
+            0.387095689,
+            0.388156235,
+            0.325800478
+          ],
+          "stock_median_seconds": 0.456049316,
+          "native_median_seconds": 0.387095689,
+          "stock_range_seconds": [
+            0.363068173,
+            0.472741277
+          ],
+          "native_range_seconds": [
+            0.325800478,
+            0.388156235
+          ],
+          "stock_over_native": 1.1781307024579133
+        },
+        {
+          "shape": "collect_time",
+          "key_type": "int",
+          "key_prefix_chars": 16,
+          "rows": 200000,
+          "keys": 4096,
+          "values": 8,
+          "stock_seconds": [
+            0.329780323,
+            0.378970641,
+            0.345959535
+          ],
+          "native_seconds": [
+            0.434806924,
+            0.334875721,
+            0.328101589
+          ],
+          "stock_median_seconds": 0.345959535,
+          "native_median_seconds": 0.334875721,
+          "stock_range_seconds": [
+            0.329780323,
+            0.378970641
+          ],
+          "native_range_seconds": [
+            0.328101589,
+            0.434806924
+          ],
+          "stock_over_native": 1.033098290813385
+        }
+      ],
+      "trials": [
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=Flink trial=0 warmup=true rows=200000 keys=4096 start_ms=1793149695795 seconds=1.301265",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=StreamFusion trial=0 warmup=true rows=200000 keys=4096 start_ms=1793149697317 seconds=0.568815",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=StreamFusion trial=1 warmup=true rows=200000 keys=4096 start_ms=1793149698043 seconds=0.468199",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=Flink trial=1 warmup=true rows=200000 keys=4096 start_ms=1793149698629 seconds=0.439086",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=Flink trial=2 warmup=false rows=200000 keys=4096 start_ms=1793149699180 seconds=0.472741",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=StreamFusion trial=2 warmup=false rows=200000 keys=4096 start_ms=1793149699756 seconds=0.387096",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=StreamFusion trial=3 warmup=false rows=200000 keys=4096 start_ms=1793149700242 seconds=0.388156",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=Flink trial=3 warmup=false rows=200000 keys=4096 start_ms=1793149700730 seconds=0.456049",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=Flink trial=4 warmup=false rows=200000 keys=4096 start_ms=1793149701278 seconds=0.363068",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=StreamFusion trial=4 warmup=false rows=200000 keys=4096 start_ms=1793149701726 seconds=0.325800",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=Flink trial=0 warmup=true rows=200000 keys=4096 start_ms=1793149702139 seconds=0.388897",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=StreamFusion trial=0 warmup=true rows=200000 keys=4096 start_ms=1793149702618 seconds=0.339979",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=StreamFusion trial=1 warmup=true rows=200000 keys=4096 start_ms=1793149703040 seconds=0.344600",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=Flink trial=1 warmup=true rows=200000 keys=4096 start_ms=1793149703470 seconds=0.387040",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=Flink trial=2 warmup=false rows=200000 keys=4096 start_ms=1793149703942 seconds=0.329780",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=StreamFusion trial=2 warmup=false rows=200000 keys=4096 start_ms=1793149704343 seconds=0.434807",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=StreamFusion trial=3 warmup=false rows=200000 keys=4096 start_ms=1793149704856 seconds=0.334876",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=Flink trial=3 warmup=false rows=200000 keys=4096 start_ms=1793149705264 seconds=0.378971",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=Flink trial=4 warmup=false rows=200000 keys=4096 start_ms=1793149705723 seconds=0.345960",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=StreamFusion trial=4 warmup=false rows=200000 keys=4096 start_ms=1793149706141 seconds=0.328102"
+      ],
+      "native_evidence": []
+    },
+    {
+      "revision": "candidate",
+      "family": "collect",
+      "keys": 4096,
+      "rows": 200000,
+      "wall_seconds": 18.05235195159912,
+      "returncode": 0,
+      "interference": [],
+      "log": "collect-4096-candidate.log",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "surefire:test@default-test",
+        "-Pbench",
+        "-Dtest=JvmAggregateBenchmark#completeJobsRetainKeyedStateAndBothTransposes",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=<release-payload>",
+        "-Dsf.testForks=1",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<release-payload>",
+        "-Djvmagg.cases=collect_date,collect_time",
+        "-Djvmagg.rows=200000",
+        "-Djvmagg.keys=4096",
+        "-Djvmagg.values=8",
+        "-Djvmagg.warmup=2",
+        "-Djvmagg.runs=3",
+        "-Djvmagg.expectCache=false",
+        "-Djvmagg.expectNative=true"
+      ],
+      "summaries": [
+        {
+          "shape": "collect_date",
+          "key_type": "int",
+          "key_prefix_chars": 16,
+          "rows": 200000,
+          "keys": 4096,
+          "values": 8,
+          "stock_seconds": [
+            0.499592391,
+            0.448308297,
+            0.337163946
+          ],
+          "native_seconds": [
+            0.397778547,
+            0.414324732,
+            0.384294102
+          ],
+          "stock_median_seconds": 0.448308297,
+          "native_median_seconds": 0.397778547,
+          "stock_range_seconds": [
+            0.337163946,
+            0.499592391
+          ],
+          "native_range_seconds": [
+            0.384294102,
+            0.414324732
+          ],
+          "stock_over_native": 1.1270298521151771
+        },
+        {
+          "shape": "collect_time",
+          "key_type": "int",
+          "key_prefix_chars": 16,
+          "rows": 200000,
+          "keys": 4096,
+          "values": 8,
+          "stock_seconds": [
+            0.408315624,
+            0.356738983,
+            0.378311111
+          ],
+          "native_seconds": [
+            0.39773971,
+            0.399494114,
+            0.386407592
+          ],
+          "stock_median_seconds": 0.378311111,
+          "native_median_seconds": 0.39773971,
+          "stock_range_seconds": [
+            0.356738983,
+            0.408315624
+          ],
+          "native_range_seconds": [
+            0.386407592,
+            0.399494114
+          ],
+          "stock_over_native": 0.951152478589578
+        }
+      ],
+      "trials": [
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=Flink trial=0 warmup=true rows=200000 keys=4096 start_ms=1793149712787 seconds=1.232841",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=StreamFusion trial=0 warmup=true rows=200000 keys=4096 start_ms=1793149714385 seconds=0.770469",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=StreamFusion trial=1 warmup=true rows=200000 keys=4096 start_ms=1793149715315 seconds=0.533744",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=Flink trial=1 warmup=true rows=200000 keys=4096 start_ms=1793149715985 seconds=0.559687",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=Flink trial=2 warmup=false rows=200000 keys=4096 start_ms=1793149716662 seconds=0.499592",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=StreamFusion trial=2 warmup=false rows=200000 keys=4096 start_ms=1793149717254 seconds=0.397779",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=StreamFusion trial=3 warmup=false rows=200000 keys=4096 start_ms=1793149717743 seconds=0.414325",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=Flink trial=3 warmup=false rows=200000 keys=4096 start_ms=1793149718272 seconds=0.448308",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=Flink trial=4 warmup=false rows=200000 keys=4096 start_ms=1793149718813 seconds=0.337164",
+        "[jvm-aggregate-trial] shape=collect_date key_type=int engine=StreamFusion trial=4 warmup=false rows=200000 keys=4096 start_ms=1793149719227 seconds=0.384294",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=Flink trial=0 warmup=true rows=200000 keys=4096 start_ms=1793149719704 seconds=0.447496",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=StreamFusion trial=0 warmup=true rows=200000 keys=4096 start_ms=1793149720238 seconds=0.438559",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=StreamFusion trial=1 warmup=true rows=200000 keys=4096 start_ms=1793149720783 seconds=0.404809",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=Flink trial=1 warmup=true rows=200000 keys=4096 start_ms=1793149721279 seconds=0.343064",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=Flink trial=2 warmup=false rows=200000 keys=4096 start_ms=1793149721706 seconds=0.408316",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=StreamFusion trial=2 warmup=false rows=200000 keys=4096 start_ms=1793149722184 seconds=0.397740",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=StreamFusion trial=3 warmup=false rows=200000 keys=4096 start_ms=1793149722665 seconds=0.399494",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=Flink trial=3 warmup=false rows=200000 keys=4096 start_ms=1793149723139 seconds=0.356739",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=Flink trial=4 warmup=false rows=200000 keys=4096 start_ms=1793149723580 seconds=0.378311",
+        "[jvm-aggregate-trial] shape=collect_time key_type=int engine=StreamFusion trial=4 warmup=false rows=200000 keys=4096 start_ms=1793149724022 seconds=0.386408"
+      ],
+      "native_evidence": [
+        "[jvm-aggregate-native] shape=collect_date trial=0 operator=NativeColumnarGroupAggExecNode[18] records_in=200000 records_out=175512",
+        "[jvm-aggregate-native] shape=collect_date trial=0 operator=NativeColumnarExchangeExecNode[17] records_in=200000 records_out=200000",
+        "[jvm-aggregate-native] shape=collect_date trial=1 operator=NativeColumnarGroupAggExecNode[30] records_in=200000 records_out=175512",
+        "[jvm-aggregate-native] shape=collect_date trial=1 operator=NativeColumnarExchangeExecNode[29] records_in=200000 records_out=200000",
+        "[jvm-aggregate-native] shape=collect_date trial=2 operator=NativeColumnarGroupAggExecNode[58] records_in=200000 records_out=175512",
+        "[jvm-aggregate-native] shape=collect_date trial=2 operator=NativeColumnarExchangeExecNode[57] records_in=200000 records_out=200000",
+        "[jvm-aggregate-native] shape=collect_date trial=3 operator=NativeColumnarGroupAggExecNode[70] records_in=200000 records_out=175512",
+        "[jvm-aggregate-native] shape=collect_date trial=3 operator=NativeColumnarExchangeExecNode[69] records_in=200000 records_out=200000",
+        "[jvm-aggregate-native] shape=collect_date trial=4 operator=NativeColumnarGroupAggExecNode[98] records_in=200000 records_out=175512",
+        "[jvm-aggregate-native] shape=collect_date trial=4 operator=NativeColumnarExchangeExecNode[97] records_in=200000 records_out=200000",
+        "[jvm-aggregate-native] shape=collect_time trial=0 operator=NativeColumnarGroupAggExecNode[118] records_in=200000 records_out=175512",
+        "[jvm-aggregate-native] shape=collect_time trial=0 operator=NativeColumnarExchangeExecNode[117] records_in=200000 records_out=200000",
+        "[jvm-aggregate-native] shape=collect_time trial=1 operator=NativeColumnarGroupAggExecNode[130] records_in=200000 records_out=175512",
+        "[jvm-aggregate-native] shape=collect_time trial=1 operator=NativeColumnarExchangeExecNode[129] records_in=200000 records_out=200000",
+        "[jvm-aggregate-native] shape=collect_time trial=2 operator=NativeColumnarGroupAggExecNode[158] records_in=200000 records_out=175512",
+        "[jvm-aggregate-native] shape=collect_time trial=2 operator=NativeColumnarExchangeExecNode[157] records_in=200000 records_out=200000",
+        "[jvm-aggregate-native] shape=collect_time trial=3 operator=NativeColumnarGroupAggExecNode[170] records_in=200000 records_out=175512",
+        "[jvm-aggregate-native] shape=collect_time trial=3 operator=NativeColumnarExchangeExecNode[169] records_in=200000 records_out=200000",
+        "[jvm-aggregate-native] shape=collect_time trial=4 operator=NativeColumnarGroupAggExecNode[198] records_in=200000 records_out=175512",
+        "[jvm-aggregate-native] shape=collect_time trial=4 operator=NativeColumnarExchangeExecNode[197] records_in=200000 records_out=200000"
+      ]
+    },
+    {
+      "revision": "candidate",
+      "family": "array_agg",
+      "keys": 64,
+      "rows": 50000,
+      "wall_seconds": 19.0581796169281,
+      "returncode": 0,
+      "interference": [],
+      "log": "array_agg-64-candidate.log",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "surefire:test@default-test",
+        "-Pbench",
+        "-Dtest=JvmAggregateBenchmark#completeJobsRetainKeyedStateAndBothTransposes",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=<release-payload>",
+        "-Dsf.testForks=1",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<release-payload>",
+        "-Djvmagg.cases=array_agg_date,array_agg_time",
+        "-Djvmagg.rows=50000",
+        "-Djvmagg.keys=64",
+        "-Djvmagg.values=8",
+        "-Djvmagg.warmup=2",
+        "-Djvmagg.runs=3",
+        "-Djvmagg.expectCache=false",
+        "-Djvmagg.expectNative=true"
+      ],
+      "summaries": [
+        {
+          "shape": "array_agg_date",
+          "key_type": "int",
+          "key_prefix_chars": 16,
+          "rows": 50000,
+          "keys": 64,
+          "values": 8,
+          "stock_seconds": [
+            0.570472271,
+            0.536785681,
+            0.517886193
+          ],
+          "native_seconds": [
+            0.266242528,
+            0.306507362,
+            0.247364883
+          ],
+          "stock_median_seconds": 0.536785681,
+          "native_median_seconds": 0.266242528,
+          "stock_range_seconds": [
+            0.517886193,
+            0.570472271
+          ],
+          "native_range_seconds": [
+            0.247364883,
+            0.306507362
+          ],
+          "stock_over_native": 2.0161530354759853
+        },
+        {
+          "shape": "array_agg_time",
+          "key_type": "int",
+          "key_prefix_chars": 16,
+          "rows": 50000,
+          "keys": 64,
+          "values": 8,
+          "stock_seconds": [
+            0.801741422,
+            0.733790797,
+            0.738172741
+          ],
+          "native_seconds": [
+            0.28037729,
+            0.282258444,
+            0.282639013
+          ],
+          "stock_median_seconds": 0.738172741,
+          "native_median_seconds": 0.282258444,
+          "stock_range_seconds": [
+            0.733790797,
+            0.801741422
+          ],
+          "native_range_seconds": [
+            0.28037729,
+            0.282639013
+          ],
+          "stock_over_native": 2.615237052040151
+        }
+      ],
+      "trials": [
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=Flink trial=0 warmup=true rows=50000 keys=64 start_ms=1793149730620 seconds=1.186255",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=StreamFusion trial=0 warmup=true rows=50000 keys=64 start_ms=1793149732151 seconds=0.461775",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=StreamFusion trial=1 warmup=true rows=50000 keys=64 start_ms=1793149732764 seconds=0.359874",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=Flink trial=1 warmup=true rows=50000 keys=64 start_ms=1793149733247 seconds=0.677144",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=Flink trial=2 warmup=false rows=50000 keys=64 start_ms=1793149734044 seconds=0.570472",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=StreamFusion trial=2 warmup=false rows=50000 keys=64 start_ms=1793149734718 seconds=0.266243",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=StreamFusion trial=3 warmup=false rows=50000 keys=64 start_ms=1793149735085 seconds=0.306507",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=Flink trial=3 warmup=false rows=50000 keys=64 start_ms=1793149735489 seconds=0.536786",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=Flink trial=4 warmup=false rows=50000 keys=64 start_ms=1793149736107 seconds=0.517886",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=StreamFusion trial=4 warmup=false rows=50000 keys=64 start_ms=1793149736729 seconds=0.247365",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=Flink trial=0 warmup=true rows=50000 keys=64 start_ms=1793149737078 seconds=0.761796",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=StreamFusion trial=0 warmup=true rows=50000 keys=64 start_ms=1793149737926 seconds=0.301964",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=StreamFusion trial=1 warmup=true rows=50000 keys=64 start_ms=1793149738309 seconds=0.273380",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=Flink trial=1 warmup=true rows=50000 keys=64 start_ms=1793149738670 seconds=0.917570",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=Flink trial=2 warmup=false rows=50000 keys=64 start_ms=1793149739683 seconds=0.801741",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=StreamFusion trial=2 warmup=false rows=50000 keys=64 start_ms=1793149740563 seconds=0.280377",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=StreamFusion trial=3 warmup=false rows=50000 keys=64 start_ms=1793149740919 seconds=0.282258",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=Flink trial=3 warmup=false rows=50000 keys=64 start_ms=1793149741282 seconds=0.733791",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=Flink trial=4 warmup=false rows=50000 keys=64 start_ms=1793149742097 seconds=0.738173",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=StreamFusion trial=4 warmup=false rows=50000 keys=64 start_ms=1793149742904 seconds=0.282639"
+      ],
+      "native_evidence": [
+        "[jvm-aggregate-native] shape=array_agg_date trial=0 operator=NativeColumnarExchangeExecNode[17] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_date trial=0 operator=NativeColumnarGroupAggExecNode[18] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_date trial=1 operator=NativeColumnarExchangeExecNode[29] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_date trial=1 operator=NativeColumnarGroupAggExecNode[30] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_date trial=2 operator=NativeColumnarExchangeExecNode[57] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_date trial=2 operator=NativeColumnarGroupAggExecNode[58] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_date trial=3 operator=NativeColumnarExchangeExecNode[69] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_date trial=3 operator=NativeColumnarGroupAggExecNode[70] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_date trial=4 operator=NativeColumnarExchangeExecNode[97] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_date trial=4 operator=NativeColumnarGroupAggExecNode[98] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_time trial=0 operator=NativeColumnarExchangeExecNode[117] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_time trial=0 operator=NativeColumnarGroupAggExecNode[118] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_time trial=1 operator=NativeColumnarExchangeExecNode[129] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_time trial=1 operator=NativeColumnarGroupAggExecNode[130] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_time trial=2 operator=NativeColumnarExchangeExecNode[157] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_time trial=2 operator=NativeColumnarGroupAggExecNode[158] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_time trial=3 operator=NativeColumnarExchangeExecNode[169] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_time trial=3 operator=NativeColumnarGroupAggExecNode[170] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_time trial=4 operator=NativeColumnarExchangeExecNode[197] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_time trial=4 operator=NativeColumnarGroupAggExecNode[198] records_in=50000 records_out=50000"
+      ]
+    },
+    {
+      "revision": "previous",
+      "family": "array_agg",
+      "keys": 64,
+      "rows": 50000,
+      "wall_seconds": 21.060545206069946,
+      "returncode": 0,
+      "interference": [],
+      "log": "array_agg-64-previous.log",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "surefire:test@default-test",
+        "-Pbench",
+        "-Dtest=JvmAggregateBenchmark#completeJobsRetainKeyedStateAndBothTransposes",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=<release-payload>",
+        "-Dsf.testForks=1",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<release-payload>",
+        "-Djvmagg.cases=array_agg_date,array_agg_time",
+        "-Djvmagg.rows=50000",
+        "-Djvmagg.keys=64",
+        "-Djvmagg.values=8",
+        "-Djvmagg.warmup=2",
+        "-Djvmagg.runs=3",
+        "-Djvmagg.expectCache=false",
+        "-Djvmagg.expectNative=false"
+      ],
+      "summaries": [
+        {
+          "shape": "array_agg_date",
+          "key_type": "int",
+          "key_prefix_chars": 16,
+          "rows": 50000,
+          "keys": 64,
+          "values": 8,
+          "stock_seconds": [
+            0.63837989,
+            0.559637809,
+            0.65664002
+          ],
+          "native_seconds": [
+            0.652226491,
+            0.572140197,
+            0.528303753
+          ],
+          "stock_median_seconds": 0.63837989,
+          "native_median_seconds": 0.572140197,
+          "stock_range_seconds": [
+            0.559637809,
+            0.65664002
+          ],
+          "native_range_seconds": [
+            0.528303753,
+            0.652226491
+          ],
+          "stock_over_native": 1.1157752826096223
+        },
+        {
+          "shape": "array_agg_time",
+          "key_type": "int",
+          "key_prefix_chars": 16,
+          "rows": 50000,
+          "keys": 64,
+          "values": 8,
+          "stock_seconds": [
+            0.702684128,
+            0.525810342,
+            0.600106043
+          ],
+          "native_seconds": [
+            0.610720937,
+            0.543917023,
+            0.819237818
+          ],
+          "stock_median_seconds": 0.600106043,
+          "native_median_seconds": 0.610720937,
+          "stock_range_seconds": [
+            0.525810342,
+            0.702684128
+          ],
+          "native_range_seconds": [
+            0.543917023,
+            0.819237818
+          ],
+          "stock_over_native": 0.9826190763130822
+        }
+      ],
+      "trials": [
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=Flink trial=0 warmup=true rows=50000 keys=64 start_ms=1793149749725 seconds=1.162352",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=StreamFusion trial=0 warmup=true rows=50000 keys=64 start_ms=1793149751151 seconds=0.729710",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=StreamFusion trial=1 warmup=true rows=50000 keys=64 start_ms=1793149752029 seconds=0.652908",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=Flink trial=1 warmup=true rows=50000 keys=64 start_ms=1793149752801 seconds=0.610211",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=Flink trial=2 warmup=false rows=50000 keys=64 start_ms=1793149753567 seconds=0.638380",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=StreamFusion trial=2 warmup=false rows=50000 keys=64 start_ms=1793149754304 seconds=0.652226",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=StreamFusion trial=3 warmup=false rows=50000 keys=64 start_ms=1793149755065 seconds=0.572140",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=Flink trial=3 warmup=false rows=50000 keys=64 start_ms=1793149755737 seconds=0.559638",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=Flink trial=4 warmup=false rows=50000 keys=64 start_ms=1793149756407 seconds=0.656640",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=StreamFusion trial=4 warmup=false rows=50000 keys=64 start_ms=1793149757149 seconds=0.528304",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=Flink trial=0 warmup=true rows=50000 keys=64 start_ms=1793149757769 seconds=0.626997",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=StreamFusion trial=0 warmup=true rows=50000 keys=64 start_ms=1793149758482 seconds=0.558845",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=StreamFusion trial=1 warmup=true rows=50000 keys=64 start_ms=1793149759123 seconds=0.622723",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=Flink trial=1 warmup=true rows=50000 keys=64 start_ms=1793149759827 seconds=0.789255",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=Flink trial=2 warmup=false rows=50000 keys=64 start_ms=1793149760710 seconds=0.702684",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=StreamFusion trial=2 warmup=false rows=50000 keys=64 start_ms=1793149761477 seconds=0.610721",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=StreamFusion trial=3 warmup=false rows=50000 keys=64 start_ms=1793149762174 seconds=0.543917",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=Flink trial=3 warmup=false rows=50000 keys=64 start_ms=1793149762798 seconds=0.525810",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=Flink trial=4 warmup=false rows=50000 keys=64 start_ms=1793149763414 seconds=0.600106",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=StreamFusion trial=4 warmup=false rows=50000 keys=64 start_ms=1793149764088 seconds=0.819238"
+      ],
+      "native_evidence": []
+    },
+    {
+      "revision": "previous",
+      "family": "array_agg",
+      "keys": 4096,
+      "rows": 50000,
+      "wall_seconds": 12.037514209747314,
+      "returncode": 0,
+      "interference": [],
+      "log": "array_agg-4096-previous.log",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "surefire:test@default-test",
+        "-Pbench",
+        "-Dtest=JvmAggregateBenchmark#completeJobsRetainKeyedStateAndBothTransposes",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=<release-payload>",
+        "-Dsf.testForks=1",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<release-payload>",
+        "-Djvmagg.cases=array_agg_date,array_agg_time",
+        "-Djvmagg.rows=50000",
+        "-Djvmagg.keys=4096",
+        "-Djvmagg.values=8",
+        "-Djvmagg.warmup=2",
+        "-Djvmagg.runs=3",
+        "-Djvmagg.expectCache=false",
+        "-Djvmagg.expectNative=false"
+      ],
+      "summaries": [
+        {
+          "shape": "array_agg_date",
+          "key_type": "int",
+          "key_prefix_chars": 16,
+          "rows": 50000,
+          "keys": 4096,
+          "values": 8,
+          "stock_seconds": [
+            0.194577253,
+            0.169560367,
+            0.096133621
+          ],
+          "native_seconds": [
+            0.181732942,
+            0.165887676,
+            0.089291351
+          ],
+          "stock_median_seconds": 0.169560367,
+          "native_median_seconds": 0.165887676,
+          "stock_range_seconds": [
+            0.096133621,
+            0.194577253
+          ],
+          "native_range_seconds": [
+            0.089291351,
+            0.181732942
+          ],
+          "stock_over_native": 1.0221396253691564
+        },
+        {
+          "shape": "array_agg_time",
+          "key_type": "int",
+          "key_prefix_chars": 16,
+          "rows": 50000,
+          "keys": 4096,
+          "values": 8,
+          "stock_seconds": [
+            0.094944163,
+            0.108450971,
+            0.086367464
+          ],
+          "native_seconds": [
+            0.10537448,
+            0.083647345,
+            0.097836709
+          ],
+          "stock_median_seconds": 0.094944163,
+          "native_median_seconds": 0.097836709,
+          "stock_range_seconds": [
+            0.086367464,
+            0.108450971
+          ],
+          "native_range_seconds": [
+            0.083647345,
+            0.10537448
+          ],
+          "stock_over_native": 0.9704349621980846
+        }
+      ],
+      "trials": [
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=Flink trial=0 warmup=true rows=50000 keys=4096 start_ms=1793149770707 seconds=0.730744",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=StreamFusion trial=0 warmup=true rows=50000 keys=4096 start_ms=1793149771724 seconds=0.337384",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=StreamFusion trial=1 warmup=true rows=50000 keys=4096 start_ms=1793149772244 seconds=0.235266",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=Flink trial=1 warmup=true rows=50000 keys=4096 start_ms=1793149772603 seconds=0.218178",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=Flink trial=2 warmup=false rows=50000 keys=4096 start_ms=1793149772967 seconds=0.194577",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=StreamFusion trial=2 warmup=false rows=50000 keys=4096 start_ms=1793149773264 seconds=0.181733",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=StreamFusion trial=3 warmup=false rows=50000 keys=4096 start_ms=1793149773550 seconds=0.165888",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=Flink trial=3 warmup=false rows=50000 keys=4096 start_ms=1793149773837 seconds=0.169560",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=Flink trial=4 warmup=false rows=50000 keys=4096 start_ms=1793149774095 seconds=0.096134",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=StreamFusion trial=4 warmup=false rows=50000 keys=4096 start_ms=1793149774293 seconds=0.089291",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=Flink trial=0 warmup=true rows=50000 keys=4096 start_ms=1793149774471 seconds=0.207200",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=StreamFusion trial=0 warmup=true rows=50000 keys=4096 start_ms=1793149774774 seconds=0.084653",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=StreamFusion trial=1 warmup=true rows=50000 keys=4096 start_ms=1793149774947 seconds=0.094206",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=Flink trial=1 warmup=true rows=50000 keys=4096 start_ms=1793149775118 seconds=0.098431",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=Flink trial=2 warmup=false rows=50000 keys=4096 start_ms=1793149775300 seconds=0.094944",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=StreamFusion trial=2 warmup=false rows=50000 keys=4096 start_ms=1793149775470 seconds=0.105374",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=StreamFusion trial=3 warmup=false rows=50000 keys=4096 start_ms=1793149775653 seconds=0.083647",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=Flink trial=3 warmup=false rows=50000 keys=4096 start_ms=1793149775824 seconds=0.108451",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=Flink trial=4 warmup=false rows=50000 keys=4096 start_ms=1793149776018 seconds=0.086367",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=StreamFusion trial=4 warmup=false rows=50000 keys=4096 start_ms=1793149776176 seconds=0.097837"
+      ],
+      "native_evidence": []
+    },
+    {
+      "revision": "candidate",
+      "family": "array_agg",
+      "keys": 4096,
+      "rows": 50000,
+      "wall_seconds": 12.040469408035278,
+      "returncode": 0,
+      "interference": [],
+      "log": "array_agg-4096-candidate.log",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "surefire:test@default-test",
+        "-Pbench",
+        "-Dtest=JvmAggregateBenchmark#completeJobsRetainKeyedStateAndBothTransposes",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=<release-payload>",
+        "-Dsf.testForks=1",
+        "-Dsf.extraJvmArgs=-Djava.library.path=<release-payload>",
+        "-Djvmagg.cases=array_agg_date,array_agg_time",
+        "-Djvmagg.rows=50000",
+        "-Djvmagg.keys=4096",
+        "-Djvmagg.values=8",
+        "-Djvmagg.warmup=2",
+        "-Djvmagg.runs=3",
+        "-Djvmagg.expectCache=false",
+        "-Djvmagg.expectNative=true"
+      ],
+      "summaries": [
+        {
+          "shape": "array_agg_date",
+          "key_type": "int",
+          "key_prefix_chars": 16,
+          "rows": 50000,
+          "keys": 4096,
+          "values": 8,
+          "stock_seconds": [
+            0.223859459,
+            0.191790653,
+            0.186950653
+          ],
+          "native_seconds": [
+            0.100197009,
+            0.115949022,
+            0.110609714
+          ],
+          "stock_median_seconds": 0.191790653,
+          "native_median_seconds": 0.110609714,
+          "stock_range_seconds": [
+            0.186950653,
+            0.223859459
+          ],
+          "native_range_seconds": [
+            0.100197009,
+            0.115949022
+          ],
+          "stock_over_native": 1.7339404114181147
+        },
+        {
+          "shape": "array_agg_time",
+          "key_type": "int",
+          "key_prefix_chars": 16,
+          "rows": 50000,
+          "keys": 4096,
+          "values": 8,
+          "stock_seconds": [
+            0.099233314,
+            0.103836348,
+            0.098049689
+          ],
+          "native_seconds": [
+            0.1118828,
+            0.106399444,
+            0.118755609
+          ],
+          "stock_median_seconds": 0.099233314,
+          "native_median_seconds": 0.1118828,
+          "stock_range_seconds": [
+            0.098049689,
+            0.103836348
+          ],
+          "native_range_seconds": [
+            0.106399444,
+            0.118755609
+          ],
+          "stock_over_native": 0.8869398513444425
+        }
+      ],
+      "trials": [
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=Flink trial=0 warmup=true rows=50000 keys=4096 start_ms=1793149782712 seconds=0.741855",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=StreamFusion trial=0 warmup=true rows=50000 keys=4096 start_ms=1793149783846 seconds=0.331836",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=StreamFusion trial=1 warmup=true rows=50000 keys=4096 start_ms=1793149784341 seconds=0.207406",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=Flink trial=1 warmup=true rows=50000 keys=4096 start_ms=1793149784686 seconds=0.286741",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=Flink trial=2 warmup=false rows=50000 keys=4096 start_ms=1793149785120 seconds=0.223859",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=StreamFusion trial=2 warmup=false rows=50000 keys=4096 start_ms=1793149785457 seconds=0.100197",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=StreamFusion trial=3 warmup=false rows=50000 keys=4096 start_ms=1793149785683 seconds=0.115949",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=Flink trial=3 warmup=false rows=50000 keys=4096 start_ms=1793149785907 seconds=0.191791",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=Flink trial=4 warmup=false rows=50000 keys=4096 start_ms=1793149786199 seconds=0.186951",
+        "[jvm-aggregate-trial] shape=array_agg_date key_type=int engine=StreamFusion trial=4 warmup=false rows=50000 keys=4096 start_ms=1793149786494 seconds=0.110610",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=Flink trial=0 warmup=true rows=50000 keys=4096 start_ms=1793149786715 seconds=0.163226",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=StreamFusion trial=0 warmup=true rows=50000 keys=4096 start_ms=1793149786969 seconds=0.121545",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=StreamFusion trial=1 warmup=true rows=50000 keys=4096 start_ms=1793149787178 seconds=0.100584",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=Flink trial=1 warmup=true rows=50000 keys=4096 start_ms=1793149787378 seconds=0.090694",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=Flink trial=2 warmup=false rows=50000 keys=4096 start_ms=1793149787558 seconds=0.099233",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=StreamFusion trial=2 warmup=false rows=50000 keys=4096 start_ms=1793149787731 seconds=0.111883",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=StreamFusion trial=3 warmup=false rows=50000 keys=4096 start_ms=1793149787911 seconds=0.106399",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=Flink trial=3 warmup=false rows=50000 keys=4096 start_ms=1793149788101 seconds=0.103836",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=Flink trial=4 warmup=false rows=50000 keys=4096 start_ms=1793149788283 seconds=0.098050",
+        "[jvm-aggregate-trial] shape=array_agg_time key_type=int engine=StreamFusion trial=4 warmup=false rows=50000 keys=4096 start_ms=1793149788444 seconds=0.118756"
+      ],
+      "native_evidence": [
+        "[jvm-aggregate-native] shape=array_agg_date trial=0 operator=NativeColumnarExchangeExecNode[17] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_date trial=0 operator=NativeColumnarGroupAggExecNode[18] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_date trial=1 operator=NativeColumnarExchangeExecNode[29] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_date trial=1 operator=NativeColumnarGroupAggExecNode[30] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_date trial=2 operator=NativeColumnarExchangeExecNode[57] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_date trial=2 operator=NativeColumnarGroupAggExecNode[58] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_date trial=3 operator=NativeColumnarExchangeExecNode[69] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_date trial=3 operator=NativeColumnarGroupAggExecNode[70] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_date trial=4 operator=NativeColumnarExchangeExecNode[97] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_date trial=4 operator=NativeColumnarGroupAggExecNode[98] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_time trial=0 operator=NativeColumnarExchangeExecNode[117] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_time trial=0 operator=NativeColumnarGroupAggExecNode[118] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_time trial=1 operator=NativeColumnarExchangeExecNode[129] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_time trial=1 operator=NativeColumnarGroupAggExecNode[130] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_time trial=2 operator=NativeColumnarExchangeExecNode[157] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_time trial=2 operator=NativeColumnarGroupAggExecNode[158] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_time trial=3 operator=NativeColumnarExchangeExecNode[169] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_time trial=3 operator=NativeColumnarGroupAggExecNode[170] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_time trial=4 operator=NativeColumnarExchangeExecNode[197] records_in=50000 records_out=50000",
+        "[jvm-aggregate-native] shape=array_agg_time trial=4 operator=NativeColumnarGroupAggExecNode[198] records_in=50000 records_out=50000"
+      ]
+    }
+  ],
+  "configuration": {
+    "flink": "2.2.1",
+    "java": "openjdk version \"17.0.20.1\" 2026-08-18\nOpenJDK Runtime Environment (build 17.0.20.1+1-1-22.04-Ubuntu)\nOpenJDK 64-Bit Server VM (build 17.0.20.1+1-1-22.04-Ubuntu, mixed mode, sharing)",
+    "os": "Linux x86-64 / WSL2",
+    "cpu": "Intel Core i7-12650H, 16 logical CPUs",
+    "heap": "8 GiB",
+    "state": "heap",
+    "accumulator_cache_entries": 0,
+    "native_features": [
+      "rocksdb-state",
+      "mimalloc"
+    ],
+    "exchange_zero_copy_local": false,
+    "timer": "complete job including planning/submission, source/sink, keyed state, output and both perimeter transposes; cluster setup and initial explain excluded",
+    "input": "INT keys; every eighth row NULL; bounded eight-value per-key domain; DATE epoch-day minus three; TIME one millisecond plus domain whole seconds",
+    "release_build": [
+      "cargo",
+      "build",
+      "--release",
+      "-p",
+      "streamfusion",
+      "--features",
+      "mimalloc"
+    ]
+  },
+  "source_sha256": {
+    "native/engine/src/group_agg/collection_agg.rs": "0917658ff4cbf5af7ae14cb3274f70b2fa04344b42a66d95ea490af4648d4bdf",
+    "src/main/java/tech/streamfusion/planner/JvmGroupAggregateMatcher.java": "7868050c81fa13ebe8687d4752b1d3b0d9260a0be5e0489db7110f9b930dac64",
+    "src/test/java/tech/streamfusion/JvmAggregateBenchmark.java": "661408c011c4998154628915bddf000b5dcaa72210de89344898f0044dfabb1b"
+  },
+  "profiles": [
+    {
+      "pass": 1,
+      "shape": "collect_time",
+      "keys": 64,
+      "cpu_samples": 16800,
+      "top_self": [
+        [
+          "_raw_spin_unlock_irqrestore_[k]",
+          723
+        ],
+        [
+          "/usr/lib/x86_64-linux-gnu/libc.so.6",
+          709
+        ],
+        [
+          "streamfusion::flink_float::nested_equal::value_equal",
+          293
+        ],
+        [
+          "IndexSetIterator::advance_and_next",
+          280
+        ],
+        [
+          "streamfusion::group_agg::GroupAggState::emit",
+          242
+        ],
+        [
+          "PhaseChaitin::Split",
+          224
+        ],
+        [
+          "Copy::fill_to_memory_atomic",
+          218
+        ],
+        [
+          "clear_page_erms_[k]",
+          177
+        ],
+        [
+          "PhaseChaitin::interfere_with_live",
+          168
+        ],
+        [
+          "G1ParScanThreadState::trim_queue_to_threshold",
+          152
+        ],
+        [
+          "PhaseChaitin::gather_lrg_masks",
+          148
+        ],
+        [
+          "streamfusion::group_agg::GroupAggregator<S>::update_regular",
+          144
+        ],
+        [
+          "PhaseChaitin::elide_copy",
+          140
+        ],
+        [
+          "PhaseLive::compute",
+          139
+        ],
+        [
+          "org/apache/flink/streaming/runtime/tasks/CopyingChainingOutput.pushToOperator_[i]",
+          136
+        ],
+        [
+          "mi_malloc",
+          130
+        ],
+        [
+          "org/apache/flink/table/data/ArrayData$$Lambda$2754.0x00007ca1c4ceb8b0.getElementOrNull_[i]",
+          118
+        ],
+        [
+          "PhaseIdealLoop::build_loop_early",
+          108
+        ],
+        [
+          "core::ptr::drop_in_place<alloc::vec::Vec<alloc::sync::Arc<dyn arrow_array::array::Array>>>",
+          105
+        ],
+        [
+          "arrow_data::transform::MutableArrayData::with_capacities",
+          105
+        ]
+      ],
+      "top_native_inclusive": [
+        [
+          "streamfusion::group_agg::GroupAggregator<S>::update",
+          3778
+        ],
+        [
+          "streamfusion::group_agg::GroupAggregator<S>::update_regular",
+          3776
+        ],
+        [
+          "streamfusion::group_agg::values::ScalarValues::finish",
+          1733
+        ],
+        [
+          "streamfusion::aggregates::scalars_to_array",
+          1730
+        ],
+        [
+          "streamfusion::group_agg::output_of",
+          955
+        ],
+        [
+          "streamfusion::group_agg::GroupAggState::emit",
+          858
+        ],
+        [
+          "streamfusion::flink_float::record_equal",
+          492
+        ],
+        [
+          "streamfusion::flink_float::nested_equal::value_equal",
+          450
+        ],
+        [
+          "streamfusion::flink_float::nested_equal::range_equal",
+          423
+        ],
+        [
+          "<streamfusion::state::MemoryStateStore<V> as streamfusion::state::KeyedStateStore<V>>::get",
+          93
+        ],
+        [
+          "streamfusion::group_agg::GroupChanges::push_ref",
+          60
+        ],
+        [
+          "streamfusion::group_agg::values::ScalarValues::push_ref",
+          51
+        ],
+        [
+          "streamfusion::group_agg::collection_agg::CollectionState::update",
+          39
+        ],
+        [
+          "streamfusion::flink_key::write_value",
+          31
+        ],
+        [
+          "streamfusion::flink_float::nested_equal::nested_equal",
+          28
+        ],
+        [
+          "streamfusion::group_agg::group_key_state_bytes",
+          25
+        ],
+        [
+          "streamfusion::group_agg::group_agg_state_bytes",
+          20
+        ],
+        [
+          "streamfusion::flink_float::contains_floating",
+          17
+        ],
+        [
+          "streamfusion::exchange::coalesce::coalesce_batches",
+          13
+        ],
+        [
+          "core::ptr::drop_in_place<alloc::vec::drain::Drain<(usize,streamfusion::group_agg::ordered_retention::ValueKey,core::option::Option<bool>)>>",
+          7
+        ]
+      ],
+      "seconds": 8,
+      "event": "cpu",
+      "interval": "1ms",
+      "all_threads": true,
+      "jfr_sha256": "44a584a5db55e7cb09a756fc4f8cdf3050d4dd941d58fab556c522126f794326"
+    },
+    {
+      "pass": 2,
+      "shape": "array_agg_time",
+      "keys": 4096,
+      "cpu_samples": 20327,
+      "top_self": [
+        [
+          "_raw_spin_unlock_irqrestore_[k]",
+          1358
+        ],
+        [
+          "IndexSetIterator::advance_and_next",
+          442
+        ],
+        [
+          "/usr/lib/x86_64-linux-gnu/libc.so.6",
+          409
+        ],
+        [
+          "PhaseChaitin::Split",
+          310
+        ],
+        [
+          "clear_page_erms_[k]",
+          241
+        ],
+        [
+          "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+          241
+        ],
+        [
+          "PhaseChaitin::gather_lrg_masks",
+          237
+        ],
+        [
+          "PhaseChaitin::interfere_with_live",
+          231
+        ],
+        [
+          "PhaseLive::compute",
+          198
+        ],
+        [
+          "PhaseChaitin::elide_copy",
+          195
+        ],
+        [
+          "Copy::fill_to_memory_atomic",
+          175
+        ],
+        [
+          "PhaseIdealLoop::build_loop_late",
+          171
+        ],
+        [
+          "PhaseIdealLoop::build_loop_early",
+          163
+        ],
+        [
+          "streamfusion::group_agg::GroupAggregator<S>::update_regular",
+          149
+        ],
+        [
+          "PhaseLive::add_liveout",
+          147
+        ],
+        [
+          "G1ParScanThreadState::trim_queue_to_threshold",
+          147
+        ],
+        [
+          "PhaseChaitin::build_ifg_physical",
+          146
+        ],
+        [
+          "PhaseChaitin::post_allocate_copy_removal",
+          138
+        ],
+        [
+          "itable stub",
+          125
+        ],
+        [
+          "finish_task_switch.isra.0_[k]",
+          125
+        ]
+      ],
+      "top_native_inclusive": [
+        [
+          "streamfusion::group_agg::GroupAggregator<S>::update",
+          991
+        ],
+        [
+          "streamfusion::group_agg::GroupAggregator<S>::update_regular",
+          991
+        ],
+        [
+          "streamfusion::group_agg::output_of",
+          271
+        ],
+        [
+          "streamfusion::group_agg::GroupAggState::emit",
+          214
+        ],
+        [
+          "streamfusion::aggregates::scalars_to_array",
+          126
+        ],
+        [
+          "streamfusion::group_agg::values::ScalarValues::finish",
+          126
+        ],
+        [
+          "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggregator>",
+          62
+        ],
+        [
+          "core::ptr::drop_in_place<(streamfusion::keys::ByteKey,streamfusion::group_agg::GroupKeyState)>",
+          61
+        ],
+        [
+          "streamfusion::group_agg::group_key_state_bytes",
+          45
+        ],
+        [
+          "streamfusion::group_agg::GroupAggregator<S>::create",
+          39
+        ],
+        [
+          "streamfusion::flink_float::record_equal",
+          36
+        ],
+        [
+          "streamfusion::group_agg::GroupChanges::push_ref",
+          35
+        ],
+        [
+          "streamfusion::group_agg::values::ScalarValues::push_ref",
+          32
+        ],
+        [
+          "<streamfusion::state::MemoryStateStore<V> as streamfusion::state::KeyedStateStore<V>>::get",
+          32
+        ],
+        [
+          "streamfusion::group_agg::group_agg_state_bytes",
+          22
+        ],
+        [
+          "core::ptr::drop_in_place<alloc::vec::Vec<streamfusion::group_agg::GroupAggState>>",
+          20
+        ],
+        [
+          "streamfusion::flink_key::write_value",
+          20
+        ],
+        [
+          "streamfusion::group_agg::GroupAggState::new",
+          20
+        ],
+        [
+          "core::ptr::drop_in_place<streamfusion::group_agg::GroupAggState>",
+          19
+        ],
+        [
+          "streamfusion::flink_float::nested_equal::value_equal",
+          17
+        ]
+      ],
+      "seconds": 8,
+      "event": "cpu",
+      "interval": "1ms",
+      "all_threads": true,
+      "jfr_sha256": "28d3512d1973126f98aa36adc928f65af3a660c86fad7ebf689bcd6b19bae2d2"
+    }
+  ],
+  "validation": {
+    "rust_group_state": {
+      "passed": 105
+    },
+    "flink_2_2": {
+      "passed": 98,
+      "skipped": 0
+    },
+    "flink_1_18": {
+      "passed": 58,
+      "skipped": 40
+    },
+    "upstream": {
+      "22": [
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testUnboundedGroupByCollect",
+          "variant": "miniBatch=true&aggMode=OFF",
+          "native_rows": "",
+          "fallbacks": "GROUP BY: JVM aggregates require verified scalar fields or verified COLLECT/ARRAY_AGG with non-character aggregate results and synchronous single-phase execution without mini-batching, specialization, approximate or ordered calls"
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testUnboundedGroupByCollect",
+          "variant": "miniBatch=false&enableAsyncState=false",
+          "native_rows": "NativeCalcOperator=21,NativeColumnarGroupAggregateOperator=21",
+          "fallbacks": ""
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testUnboundedGroupByCollect",
+          "variant": "miniBatch=false&enableAsyncState=true",
+          "native_rows": "",
+          "fallbacks": "GROUP BY: JVM aggregates require verified scalar fields or verified COLLECT/ARRAY_AGG with non-character aggregate results and synchronous single-phase execution without mini-batching, specialization, approximate or ordered calls"
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testUnboundedGroupByCollect",
+          "variant": "miniBatch=true&aggMode=ON",
+          "native_rows": "",
+          "fallbacks": "local group aggregate: needs SUM/MIN/MAX/COUNT over integer/float/double/decimal values with no widening of the partial, MIN/MAX over string/date/time/boolean/timestamp, AVG over any AvgAggFunction numeric, or SINGLE_VALUE over supported scalar values, and bigint/int/string/boolean/date/timestamp/decimal grouping keys\nglobal group aggregate: only SUM/MIN/MAX/COUNT/AVG/SINGLE_VALUE merges"
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testUnboundedGroupByCollect",
+          "variant": "miniBatch=true&aggMode=OFF",
+          "native_rows": "",
+          "fallbacks": "GROUP BY: JVM aggregates require verified scalar fields or verified COLLECT/ARRAY_AGG with non-character aggregate results and synchronous single-phase execution without mini-batching, specialization, approximate or ordered calls"
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testUnboundedGroupByCollect",
+          "variant": "miniBatch=false&enableAsyncState=false",
+          "native_rows": "NativeCalcOperator=21,NativeColumnarGroupAggregateOperator=21",
+          "fallbacks": ""
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testUnboundedGroupByCollect",
+          "variant": "miniBatch=true&aggMode=ON",
+          "native_rows": "",
+          "fallbacks": "local group aggregate: needs SUM/MIN/MAX/COUNT over integer/float/double/decimal values with no widening of the partial, MIN/MAX over string/date/time/boolean/timestamp, AVG over any AvgAggFunction numeric, or SINGLE_VALUE over supported scalar values, and bigint/int/string/boolean/date/timestamp/decimal grouping keys\nglobal group aggregate: only SUM/MIN/MAX/COUNT/AVG/SINGLE_VALUE merges"
+        }
+      ],
+      "118": [
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testUnboundedGroupByCollect",
+          "variant": "miniBatch=true&aggMode=ON",
+          "native_rows": "",
+          "fallbacks": "local group aggregate: needs SUM/MIN/MAX/COUNT over integer/float/double/decimal values with no widening of the partial, MIN/MAX over string/date/time/boolean/timestamp, AVG over any AvgAggFunction numeric, or SINGLE_VALUE over supported scalar values, and bigint/int/string/boolean/date/timestamp/decimal grouping keys\nglobal group aggregate: only SUM/MIN/MAX/COUNT/AVG/SINGLE_VALUE merges"
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testUnboundedGroupByCollect",
+          "variant": "miniBatch=false&changelog=false",
+          "native_rows": "NativeCalcOperator=21,NativeColumnarGroupAggregateOperator=21",
+          "fallbacks": ""
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testUnboundedGroupByCollect",
+          "variant": "miniBatch=true&aggMode=OFF",
+          "native_rows": "",
+          "fallbacks": "GROUP BY: JVM aggregates require verified scalar fields or verified COLLECT/ARRAY_AGG with non-character aggregate results and synchronous single-phase execution without mini-batching, specialization, approximate or ordered calls"
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testUnboundedGroupByCollect",
+          "variant": "miniBatch=false&changelog=false",
+          "native_rows": "NativeCalcOperator=21,NativeColumnarGroupAggregateOperator=21",
+          "fallbacks": ""
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testUnboundedGroupByCollect",
+          "variant": "miniBatch=true&aggMode=ON",
+          "native_rows": "",
+          "fallbacks": "local group aggregate: needs SUM/MIN/MAX/COUNT over integer/float/double/decimal values with no widening of the partial, MIN/MAX over string/date/time/boolean/timestamp, AVG over any AvgAggFunction numeric, or SINGLE_VALUE over supported scalar values, and bigint/int/string/boolean/date/timestamp/decimal grouping keys\nglobal group aggregate: only SUM/MIN/MAX/COUNT/AVG/SINGLE_VALUE merges"
+        },
+        {
+          "test": "org.apache.flink.table.planner.runtime.stream.sql.AggregateITCase#testUnboundedGroupByCollect",
+          "variant": "miniBatch=true&aggMode=OFF",
+          "native_rows": "",
+          "fallbacks": "GROUP BY: JVM aggregates require verified scalar fields or verified COLLECT/ARRAY_AGG with non-character aggregate results and synchronous single-phase execution without mini-batching, specialization, approximate or ordered calls"
+        }
+      ]
+    },
+    "not_null_source_hint_guard": {
+      "types": [
+        "DATE",
+        "TIME"
+      ],
+      "stock": "success with real NULL slots",
+      "unguarded_native": "Arrow import rejects a non-nullable column containing NULLs",
+      "final_route": "planning-time fallback"
+    },
+    "final_nullable_release_fixture_smoke": [
+      "[jvm-aggregate-native] shape=collect_date trial=0 operator=NativeColumnarGroupAggExecNode[18] records_in=1024 records_out=898",
+      "[jvm-aggregate-native] shape=collect_time trial=0 operator=NativeColumnarGroupAggExecNode[38] records_in=1024 records_out=898",
+      "[jvm-aggregate-native] shape=array_agg_date trial=0 operator=NativeColumnarGroupAggExecNode[58] records_in=1024 records_out=1024",
+      "[jvm-aggregate-native] shape=array_agg_time trial=0 operator=NativeColumnarGroupAggExecNode[78] records_in=1024 records_out=1024"
+    ],
+    "upstream_artifacts": {
+      "2.2.1": {
+        "artifact": "org.apache.flink:flink-table-planner_2.12:2.2.1:tests",
+        "sha256": "6d382af1f84ee5fe3ec26d43ad2a764ff705f4f07db2015d623fd77fd48da441"
+      },
+      "1.18.1": {
+        "artifact": "org.apache.flink:flink-table-planner_2.12:1.18.1:tests",
+        "sha256": "a6c3f2c288c7de1c725fef48a1a20a2dbf9e921900224440ea89572780dc854b"
+      }
+    }
+  },
+  "final_admission_source_sha256": "53f68a06b857b07914d25d81c1187d0999b131db128fa8cf6d28598406e8f672",
+  "measurement_note": "Measurements predate the final NOT NULL-argument guard. Nullable profiles use identical operator/state code; final release fixture smoke verifies continued native routing. Smoke timings are not performance evidence."
+}

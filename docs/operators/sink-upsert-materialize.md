@@ -52,12 +52,20 @@ neighbours. ADAPTIVE changes these on-disk layouts at the same thresholds as Fli
 set is bounded to the current batch and affected records, including for one key with many candidates;
 RocksDB cache and write buffers use the shared slot pool. Native checkpoints retain the database
 files without decoding all candidates. Portable snapshots retain payloads, matching identities,
-linked topology and key-index entries. Restore
-retains ordering and permits key-group redistribution on rescale. Snapshot version 2 is specific
+linked topology, key-index entries and sampled per-candidate timestamps. Restore
+retains ordering and permits key-group redistribution on rescale. Snapshot version 3 is specific
 to this native operator; it does not import a stock Flink materializer's savepoint state. Portable
 exports materialize one key's candidates at a time and return serialized key-group buffers. Existing
 version-2 native payloads remain readable, including automatic import of the former RocksDB
-snapshot-store checkpoints into the record-level tables.
+snapshot-store checkpoints into the record-level tables. New native input samples the batch
+processing clock for each retained candidate. Replacing a candidate replaces its sample; successful
+removals and unmatched retracts do not refresh the surviving candidates. Native snapshots, direct
+RocksDB records and adaptive layout changes retain these samples independently of whole-list TTL.
+Historical version-2 payloads and disk records did not record candidate timestamps. Recovery keeps
+that history explicitly unknown instead of assigning the restore clock. Frozen bytes written by the
+preceding writer qualify both historical readers; new timestamps coexist with unknown historical
+ones. JNI clock/recovery controls run on released Flink 1.18.1 and 2.2.1. This native metadata
+retention is groundwork for canonical interchange, not a stock adapter.
 
 Legacy materialization applies `table.exec.state.ttl` to the whole candidate list, refreshed on
 successful additions and removals. Expiry is silent. Enabling TTL when restoring a TTL-disabled
@@ -68,6 +76,9 @@ for the VALUE, MAP and ADAPTIVE materializer strategies; the native path also di
 those strategies.
 The strategy option is `table.exec.sink.upsert-materialize-strategy.type`. ADAPTIVE high/low
 threshold validation retains Flink 2.2's backend defaults (400/300 for heap, 50/40 otherwise).
+Native sink translation shares these strategy and backend-dependent matching rules, including after
+ordinary native checkpoint recovery. The released comparison controls cover scalar and nested
+matching values on both stores; sharing strategy construction keeps sink integrations consistent.
 
 Insert-only sinks do not need this stage, matching Flink's runtime decision even when
 `table.exec.sink.upsert-materialize=FORCE` marks the physical sink.
@@ -84,3 +95,132 @@ stock, actual previous RAM-backed candidate state and current RocksDB trials. Th
 one-million-row MAP jobs improve stock medians by 2.29–3.75×, while costing 1.35–2.28× the
 previous RAM-backed implementation. The capacity regression retains 10,000 candidates for one
 key under a 16 KiB operator budget and recovers them from native database files.
+
+## Canonical interchange qualification
+
+The shared adapter imports and exports the released stock LEGACY candidate list on Flink 1.18.1
+and 2.2.1. Flink 2.2 additionally has VALUE, MAP and both ADAPTIVE representations; their released
+serializers stay behind a narrow version adapter. Flink 1.18 has no V2 materializer runtime.
+
+The resumed #569 implementation now attaches the contract to captured stock sink materializers
+through ordinary SQL and portable compiled plans. Existing Arrow payload types are admitted,
+including nested ROW/ARRAY/MAP/MULTISET values. Sink and inferred input matching keys admit
+scalars and ROWs with scalar/ROW descendants; array/map key descendants retain the stock owner. It retains the released sink's
+constraint, writer and committer translation, replaces its materializer hook, and captures the
+actual stock strategy, input matching key, LEGACY TTL and adaptive threshold overrides. The shared
+runtime supports LEGACY on both releases and the V2 strategies on 2.2. Stateful registration uses
+the final runtime primary hash, including generated IDs with UID generation disabled; canonical
+identity projection maps that owner back to the original stock materializer and accounts for its
+stateless transpose/exchange helpers.
+
+This new automatic path awaits complete qualification; selected local results are recorded in
+the [canonical inventory](../backends/canonical-state.md#resumed-scope-local-qualification). New controls cover both engine orders, ordinary SQL and
+compiled plans, matching keys, strategies, no-input returns, native checkpoint recovery and
+1→3→2 source/materializer/writer rescaling. They are authored but have not run yet. Historical
+component evidence below does not qualify these new jobs. Typed planner and full-job cases additionally retain narrow integers, floating values, wide
+decimals, nanosecond timestamps, binary data and nested payloads. The fixture’s typed sink
+serializes whole candidate rows, compares the complete committed changelog with stock, and
+checks an independent final candidate table; no projection hides the materializer payload.
+Earlier claims of seventy qualified automatic jobs remain withdrawn. Array/map key descendants,
+async/unaligned state and accelerated Doris binding
+remain separate work; existing accelerated connector replacements retain their prior route.
+`streamfusion.operator.sinkMaterializer.enabled=false` keeps the captured stock materializer.
+Native-format portable snapshots remain separate from stock-compatible canonical savepoints.
+
+For native RocksDB, the barrier flushes pending writes and pins an independent MVCC view. Conversion
+starts on Flink's async writer thread and reads native candidate/index records in bounded frames.
+List rows stage once in the shared disk spool; the released stock serializer consumes each lazy
+list once into a temporary stock RocksDB backend. It does not repeatedly deserialize and rewrite a
+candidate list or collect every owner key in heap. Stock list import also decodes one row at a time;
+ADAPTIVE shares that path and inventories linked owners on disk. The encoded bytes of the largest
+stock list value remain a working-memory floor of Flink's full-snapshot API. No whole-operator heap
+copy is required. Normal native checkpoints keep their existing database-file path.
+
+Shared async controls cover original LEGACY TTL ages, optional input keys, both native stores,
+two overlapping captures, live writes, native-owner closure and reverse writer completion. A
+2,051-candidate hot key crosses native transport frames. Separate 2.2 controls exercise VALUE,
+MAP and both ADAPTIVE representations with optional input keys and both native stores, including
+sampled timestamps and nonempty stock continuation after the native owner closes.
+
+Released 2.2.1 stock protocol controls cover LEGACY, VALUE, MAP and both ADAPTIVE representations
+across heap/RocksDB canonical handoffs, including a second handoff without input. They compare
+actual serialized keys/values and descriptor serializers, then check continued changelog output.
+LEGACY uses `values` with a list serializer and optional whole-list TTL age. VALUE uses `list`
+with row/timestamp tuples. MAP uses `rowToSqnState`, `sqnToNodeState` and `highestSqnState` for
+matching indexes, linked candidates and the sequence cursor/size. ADAPTIVE registers both layouts.
+The adapter reads live memory candidates or persistent records directly into bounded Arrow
+transport chunks and Flink's stock serializers; it does not first create or decode a native snapshot.
+Separate streams carry group metadata, complete original rows and matching keys. Restore installs
+one group at a time without replaying input or rebuilding linked order. Actual binary keys, the
+sequence cursor/size, independent index entries, links, sampled timestamps and original LEGACY
+TTL ages survive handoff. The Arrow transport is internal, not the canonical file format.
+
+Managed values and serializer snapshots use released Flink classes, including its sequenced-multiset
+serializers and generated matching-key equaliser/hash functions. Their factories are generated at
+planning time, so task restore does not require planner implementation classes. No StreamFusion serializer or
+private replacement for a stock state object is written. A serializer-reader test blocks loading
+StreamFusion and planner implementation classes. Accelerated connector replacements and their delivery guarantees still require
+separate qualification.
+
+Internal candidate row kinds are normalized to INSERT. LEGACY explicitly ignores the stored flags
+when matching, and V2 normalizes incoming flags before multiset operations. Live heap candidates
+can acquire output flags when stock emits them; those mutable flags are not a byte-identity promise
+across continued input. Emitted INSERT/UPDATE/DELETE kinds and future stock behavior remain strict
+continuation checks. V2's
+sampled timestamps are preserved even with TTL disabled. Historical native V2 candidates whose
+timestamps were never recorded fail canonical export explicitly; the adapter does not assign the
+restore clock. Such native snapshots remain usable for ordinary native recovery, and LEGACY has
+no stock per-candidate timestamp field.
+
+Operator controls cover both stock and native stores, repeated no-input handoffs, native ingress
+and resumed processing, empty savepoints, nested ARRAY matching keys with released Java import
+buffers, LEGACY TTL expiry across ordinary native checkpoints, unknown state and mismatched keys.
+The native visitor preserves live state on receiver failure and exports large persistent groups
+in chunks.
+Forty-eight JNI capture-failure controls throw before Arrow import and after importing the batch.
+They require the original JVM exception, released buffers, unchanged canonical metadata/entry bytes
+on retry, and correct native and stock continuation through later retractions. Broader logical types,
+key layouts, other parallelism/version combinations and accelerated-connector workflows remain
+qualification work. The new ordinary-SQL binding and full-job controls above await execution.
+
+The controls retain a released MAP/linked-ADAPTIVE failure boundary: replacing an older input-key
+candidate moves the cursor; appending can overwrite a live sequence, and a later removal throws
+from the stock `REMOVAL_ALL` invariant. They assert the same failure before and after handoffs,
+alongside successful continuation sequences. Canonical conversion must preserve the stock cursor
+and indexes rather than rebuild an apparently equivalent ordered list. The original stock protocol
+controls establish this failure boundary; no successful continuation is claimed for that failing
+released sequence. Benchmarking remains deferred for #569.
+
+The automatic hook keeps the materializer's original maximum parallelism for state and key-group
+routing. Its stateless transpose/split helpers instead also cover the upstream source's declared
+parallelism and maximum, so a narrower sink does not impose its state-owner limit on the source
+side of the exchange. Writer/committer translation still belongs to the released stock sink.
+This topology refinement remains part of the pending two-release qualification.
+
+The independent transactional fixture names commits by restored checkpoint generation, writer
+subtask and local sequence. Newly assigned writers after rescaling cannot reuse an earlier
+writer's transaction number; replayed prepared commits retain their original identity. Its
+versioned serializer also reads the earlier single-writer state. This is the custom test sink's
+protocol, separate from any accelerated connector's own transaction contract.
+
+### ROW-key binding awaiting qualification
+
+The pending automatic binding additionally accepts ROW-bearing sink and inferred input keys
+with scalar/ROW descendants. It preserves their original binary representation through live
+input, canonical schema binding, candidate transfer and V2 matching-index transfer. This is
+required for stock key hashing when nested row kinds or padding distinguish otherwise similar
+logical fields. The same representation also retains ROW payloads when full-row matching needs
+them. New legacy component and released-strategy planner/full-job controls cover both engine
+orders, original TTL ages, native recovery, empty returns and rescaling, with committed byte
+comparison. Complete qualification on both Flink lines remains pending. Array/map
+key descendants and migration of older private ROW checkpoint representations remain separate.
+
+The captured materializer uses the released sink's physical consumed schema, including its
+nullability, independently from the upstream transformation's output declaration. Internal V2
+VALUE_STATE/MAP_STATE strategies map to their public VALUE/MAP names, and legacy empty matching
+key arrays retain the released full-row matching semantics. Connector and helper translation
+continues through the stock sink on both release lines.
+
+Live materializer batches reconcile physical list-child aliases with the bound canonical
+schema over shared buffers before TTL cleanup or candidate mutation. Logical ROW names,
+metadata, nullability, and value types must still match.

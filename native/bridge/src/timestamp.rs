@@ -158,6 +158,9 @@ impl TimestampBuilder {
 /// External formats choose their own unit. Floor fractional values exactly as Flink does,
 /// but report an unrepresentable range rather than overflowing the target integer.
 pub fn cast_timestamp(array: &ArrayRef, target: &DataType) -> Result<ArrayRef, ArrowError> {
+    if array.data_type() == target {
+        return Ok(array.clone());
+    }
     if is_component_timestamp(target) {
         let components = to_components(array)?;
         return Ok(arrow::array::make_array(
@@ -167,9 +170,6 @@ pub fn cast_timestamp(array: &ArrayRef, target: &DataType) -> Result<ArrayRef, A
                 .data_type(target.clone())
                 .build()?,
         ));
-    }
-    if array.data_type() == target {
-        return Ok(array.clone());
     }
     let DataType::Timestamp(unit, _) = target else {
         return Err(ArrowError::CastError(format!(

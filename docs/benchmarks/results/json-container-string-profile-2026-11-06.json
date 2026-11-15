@@ -1,0 +1,119 @@
+{
+  "counts": {
+    "jdk.ObjectAllocationSample": 5961,
+    "jdk.NativeMethodSample": 957,
+    "jdk.ExecutionSample": 10,
+    "jdk.GarbageCollection": 390
+  },
+  "areas": {
+    "input_transpose": {
+      "jdk.ObjectAllocationSample": 1924,
+      "sampled_allocation_weight": 19814382288,
+      "jdk.ExecutionSample": 6,
+      "jdk.NativeMethodSample": 47
+    },
+    "rowdata_copy": {
+      "jdk.ObjectAllocationSample": 3269,
+      "sampled_allocation_weight": 35209929856,
+      "jdk.ExecutionSample": 3
+    },
+    "array_copy": {
+      "jdk.ObjectAllocationSample": 4566,
+      "sampled_allocation_weight": 47772562664,
+      "jdk.ExecutionSample": 2
+    },
+    "string_copy": {
+      "jdk.ObjectAllocationSample": 4718,
+      "sampled_allocation_weight": 49011818896,
+      "jdk.ExecutionSample": 5
+    },
+    "source_fixture": {
+      "jdk.ObjectAllocationSample": 963,
+      "sampled_allocation_weight": 9613212344
+    },
+    "output_transpose": {
+      "jdk.ExecutionSample": 3,
+      "jdk.ObjectAllocationSample": 311,
+      "sampled_allocation_weight": 3640468504,
+      "jdk.NativeMethodSample": 1
+    },
+    "nested_string_write": {
+      "jdk.NativeMethodSample": 8,
+      "jdk.ObjectAllocationSample": 3,
+      "sampled_allocation_weight": 12546176
+    },
+    "utf16_cache_write": {
+      "jdk.NativeMethodSample": 8,
+      "jdk.ObjectAllocationSample": 2,
+      "sampled_allocation_weight": 9409776
+    },
+    "native_calc": {
+      "jdk.NativeMethodSample": 38
+    }
+  },
+  "classes": [
+    [
+      "org.apache.flink.core.memory.MemorySegment",
+      17562445344
+    ],
+    [
+      "[B",
+      16467825736
+    ],
+    [
+      "org.apache.flink.table.data.binary.BinaryStringData",
+      6640597464
+    ],
+    [
+      "[Lorg.apache.flink.core.memory.MemorySegment;",
+      5404515208
+    ],
+    [
+      "org.apache.flink.table.data.binary.BinarySection",
+      4945527920
+    ],
+    [
+      "java.util.concurrent.atomic.AtomicBoolean",
+      4726309400
+    ],
+    [
+      "java.lang.String",
+      2509874456
+    ],
+    [
+      "[Lorg.apache.flink.table.data.StringData;",
+      2116339216
+    ],
+    [
+      "[Ljava.lang.Object;",
+      429787768
+    ],
+    [
+      "org.apache.flink.streaming.runtime.streamrecord.StreamRecord",
+      367704104
+    ],
+    [
+      "org.apache.flink.table.data.GenericArrayData",
+      96178616
+    ],
+    [
+      "org.apache.flink.table.data.GenericRowData",
+      75788016
+    ]
+  ],
+  "method": "Diagnostic profile of the PR #606 container JSON_STRING candidate with released Flink 2.2.1/JDK17, four million runtime rows, nullable width-32 ARRAY<VARCHAR(128)>, parallelism one and a 2 GiB heap. JFR profile recording starts after an unprofiled paired stock job and includes native-job setup, processing and teardown. Profiled durations are excluded from every performance median.",
+  "interpretation": "Inclusive stack occurrence counts overlap and cannot be added. ObjectAllocationSample weight is the sampled allocation-byte estimate, not an exact byte count; it does not measure off-heap allocations. Only ten Java ExecutionSample events were captured, so these data cannot establish CPU-time percentages or prove a dominant bottleneck. NativeMethodSample includes blocked infrastructure threads. The selected areas show allocation/copy work within the production input transpose as well as source/chain copies; this is an investigation direction, not a completed attribution against stock. Java profiles do not reconstruct Rust interior frames.",
+  "configuration": {
+    "rows": 4000000,
+    "width": 32,
+    "flink": "2.2.1",
+    "jdk": 17,
+    "heap": "-Xmx2g",
+    "parallelism": 1,
+    "jfr_settings": "profile",
+    "printed_stack_depth": 64
+  },
+  "jfr_sha256": "1c8d4ed06fc6cd6a5ec7f6344d34b2a464b8e6b6eb7b1b809a5e5767e4a158f2",
+  "native_dso_sha256": "15880901cf3eb2262110ec1e836719d357ba719916a3a71d7c2f34f33ab20083",
+  "privacy": "Only aggregate counters and public implementation symbols are published. Raw JFR and event dumps remain local because recordings can contain environment/process details."
+}

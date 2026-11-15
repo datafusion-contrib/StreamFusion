@@ -1,0 +1,126 @@
+{
+  "date": "2026-11-09",
+  "query": 6,
+  "scale": 1,
+  "method": "Separate verification-mode JFR profile for stock and native. Not a throughput measurement; sampling perturbs execution.",
+  "interpretation": "CSV parsing/date conversion and row-to-Arrow writing are prominent. Native aggregate/JNI is a small part of sampled stacks. Counts overlap and include native blocked calls, so they are not percentages of CPU or wall time.",
+  "profiles": {
+    "stock": {
+      "samples": 1326,
+      "categoriesOverlapping": {
+        "csv": 275,
+        "decimal": 37
+      },
+      "topFrames": [
+        [
+          "sun.nio.ch.Net.accept",
+          264
+        ],
+        [
+          "sun.nio.ch.KQueue.poll",
+          264
+        ],
+        [
+          "java.io.FileInputStream.readBytes",
+          141
+        ],
+        [
+          "org.apache.flink.shaded.jackson2.com.fasterxml.jackson.dataformat.csv.impl.CsvDecoder.nextString",
+          86
+        ],
+        [
+          "org.apache.flink.shaded.jackson2.com.fasterxml.jackson.dataformat.csv.impl.CsvDecoder.loadMore",
+          71
+        ],
+        [
+          "BatchExecCalc$24.processElement_split23",
+          61
+        ],
+        [
+          "org.apache.flink.streaming.api.operators.SourceOperator.emitNext",
+          47
+        ],
+        [
+          "java.lang.StringLatin1.hashCode",
+          41
+        ],
+        [
+          "sun.util.calendar.ZoneInfo.getTransitionIndex",
+          40
+        ],
+        [
+          "sun.util.calendar.BaseCalendar.isLeapYear",
+          27
+        ],
+        [
+          "java.util.LinkedHashMap.newNode",
+          26
+        ],
+        [
+          "java.math.BigDecimal.<init>",
+          24
+        ]
+      ]
+    },
+    "native": {
+      "samples": 1218,
+      "categoriesOverlapping": {
+        "csv": 219,
+        "nativeJNI": 6,
+        "arrow": 170,
+        "decimal": 95,
+        "transpose": 109
+      },
+      "topFrames": [
+        [
+          "sun.nio.ch.Net.accept",
+          230
+        ],
+        [
+          "sun.nio.ch.KQueue.poll",
+          230
+        ],
+        [
+          "java.io.FileInputStream.readBytes",
+          123
+        ],
+        [
+          "tech.streamfusion.arrow.ArrowWriter.write",
+          106
+        ],
+        [
+          "org.apache.flink.shaded.jackson2.com.fasterxml.jackson.dataformat.csv.impl.CsvDecoder.nextString",
+          90
+        ],
+        [
+          "org.apache.arrow.vector.util.DecimalUtility.writeLongToArrowBuf",
+          64
+        ],
+        [
+          "org.apache.flink.shaded.jackson2.com.fasterxml.jackson.dataformat.csv.impl.CsvDecoder.loadMore",
+          50
+        ],
+        [
+          "java.lang.StringLatin1.hashCode",
+          45
+        ],
+        [
+          "sun.util.calendar.BaseCalendar.isLeapYear",
+          41
+        ],
+        [
+          "java.util.LinkedHashMap.newNode",
+          26
+        ],
+        [
+          "java.math.BigDecimal.<init>",
+          24
+        ],
+        [
+          "sun.util.calendar.ZoneInfo.getTransitionIndex",
+          23
+        ]
+      ]
+    }
+  }
+}

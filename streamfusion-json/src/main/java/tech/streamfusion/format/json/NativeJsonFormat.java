@@ -1,0 +1,93 @@
+package tech.streamfusion.format.json;
+
+import tech.streamfusion.NativeExtensionLoader;
+
+/** JNI entry point for the optional native JSON and JSON-CDC format implementation. */
+public final class NativeJsonFormat {
+
+  static {
+    NativeExtensionLoader.load(
+        NativeJsonFormat.class,
+        "json",
+        NativeJsonFormat::nativeBuildVersion,
+        NativeJsonFormat::liveNativeHandles);
+  }
+
+  private NativeJsonFormat() {}
+
+  /** The loaded extension library's StreamFusion build stamp (the loader's version check). */
+  private static native String nativeBuildVersion();
+
+  /** Live handles owned by this library, used by the shared leak sentinel. */
+  public static native String liveNativeHandles();
+
+  /** Probes that this optional library has loaded. */
+  public static native boolean isLoaded();
+
+  /**
+   * Address of this library's exported driver init ({@code streamfusion_format_driver_init}): a
+   * connector calls it with the ABI version it speaks and the format fills the decode vtable or
+   * refuses (the ADBC driver-init pattern).
+   */
+  public static native long driverInitAddress();
+
+  static native long createDecoder(
+      int format,
+      long schemaArrayAddress,
+      long schemaAddress,
+      boolean skipParseErrors,
+      String formatOptions);
+
+  /**
+   * A Canal decoder that applies {@code database.include} / {@code table.include} before any row
+   * conversion, asking {@code include} once per distinct value.
+   */
+  static native long createCanalDecoder(
+      long schemaArrayAddress,
+      long schemaAddress,
+      boolean skipParseErrors,
+      String formatOptions,
+      CanalIncludeFilter include,
+      boolean database,
+      boolean table);
+
+  static native void decodeInto(
+      long handle,
+      long inArrayAddress,
+      long inSchemaAddress,
+      long outArrayAddress,
+      long outSchemaAddress);
+
+  static native void decodeContiguousBytesInto(
+      long handle,
+      long dataAddress,
+      long dataLength,
+      long keyBytes,
+      int[] lengths,
+      int count,
+      boolean keyed,
+      long outArrayAddress,
+      long outSchemaAddress);
+
+  static native void closeDecoder(long handle);
+
+  public static native boolean encoderSupported(int format);
+
+  public static native byte[] spellFloatingPoint(double[] doubles, float[] floats);
+
+  private static native long createEncoder(
+      int format, String options, String[] types, String[] names, int[] fields);
+
+  private static native tech.streamfusion.format.EncodedMessages encodeBatch(
+      long handle, long array, long schema);
+
+  private static native void closeEncoder(long handle);
+
+  public static tech.streamfusion.format.NativeMessageEncoder encoder(
+      int format, String options, String[] types, String[] names, int[] fields) {
+    return tech.streamfusion.format.NativeHandleMessageEncoder.open(
+        () -> createEncoder(format, options, types, names, fields),
+        NativeJsonFormat::encodeBatch,
+        NativeJsonFormat::closeEncoder);
+  }
+}
