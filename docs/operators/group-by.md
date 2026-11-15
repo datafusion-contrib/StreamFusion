@@ -4066,3 +4066,8 @@ Integer AVG finalization shares the same signed-count, wrapping-division and nar
 as window accumulators and native OVER. Storage layouts and update/merge loops remain
 specialized; shared contract cases cover NULLs, changelog retractions and partial-state restore.
 See [the integer AVG decision](https://github.com/datafusion-contrib/StreamFusion/blob/main/divergences/01-integer-truncating-avg.md) in the repository.
+
+Composite-key mini-batch extrema interchange compares committed changelogs with a stock
+reference stopped at the same savepoint cuts. Those cuts flush pending bundles, so an
+uninterrupted reference can emit different intermediate updates despite equal final tables.
+The independent final MIN/MAX oracle remains required.

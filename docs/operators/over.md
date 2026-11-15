@@ -1508,6 +1508,10 @@ serializers, counters, timers and automatic job binding. Additional views and th
 schema/connector/version/failure matrix remain in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.
 
+The typed event-time canonical jobs retain the declared argument and accumulator types,
+including DECIMAL SUM and AVG. Their final projections normalize results to the shared BIGINT
+fixture sink after aggregation, so the sink schema remains valid without changing saved state.
+
 ### RANGE callback order and keys without frames
 
 Bounded event-time RANGE emits completed rows in timestamp order, preserving arrival order among

@@ -46,7 +46,9 @@ abstract class CanonicalTypedKeyEventOverJobTest extends CanonicalEventUnbounded
     Files.writeString(
         root.resolve("query.sql"),
         Files.readString(root.resolve("query.sql"))
-            .replace("SELECT k,", "SELECT CAST(k AS BIGINT),"));
+            .replace("SELECT k,", "SELECT CAST(k AS BIGINT),")
+            .replace("SUM(v) OVER w", "CAST(SUM(v) OVER w AS BIGINT)")
+            .replace("AVG(v) OVER w", "CAST(AVG(v) OVER w AS BIGINT)"));
     return root;
   }
 }
