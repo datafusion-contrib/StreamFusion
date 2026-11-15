@@ -575,6 +575,38 @@ class KafkaDecodeRoutingTest {
   }
 
   @Test
+  void aPortableCompiledPlanCarriesAJsonKeyAndMetadataToTheNativeDecode() throws Exception {
+    TableEnvironment tEnv = NativePlannerTestEnvironment.create(new Configuration());
+    tEnv.executeSql(
+        keyedTable(
+            "k_id BIGINT, id BIGINT, off BIGINT METADATA FROM 'offset'",
+            "'key.format' = 'json', 'key.fields' = 'k_id', 'key.fields-prefix' = 'k_',"
+                + " 'value.fields-include' = 'EXCEPT_KEY'"));
+    tEnv.executeSql(
+        "CREATE TABLE s (k_id BIGINT, id BIGINT, off BIGINT) WITH ('connector' = 'blackhole')");
+    String portable = tEnv.compilePlanSql("INSERT INTO s SELECT * FROM t").asJsonString();
+    PlannerBase planner = (PlannerBase) ((TableEnvironmentImpl) tEnv).getPlanner();
+
+    List<Transformation<?>> transformations =
+        planner.translatePlan(planner.loadPlan(PlanReference.fromJsonString(portable)));
+
+    List<?> sources =
+        transformations.stream()
+            .flatMap(sink -> sink.getTransitivePredecessors().stream())
+            .filter(SourceTransformation.class::isInstance)
+            .map(source -> ((SourceTransformation<?, ?, ?>) source).getSource())
+            .collect(Collectors.toList());
+    assertEquals(1, sources.size(), sources.toString());
+    NativeKafkaSource source = assertInstanceOf(NativeKafkaSource.class, sources.get(0));
+    Field keyed = NativeKafkaSource.class.getDeclaredField("keyed");
+    keyed.setAccessible(true);
+    Field metadataKeys = NativeKafkaSource.class.getDeclaredField("metadataKeys");
+    metadataKeys.setAccessible(true);
+    assertEquals(true, keyed.get(source));
+    assertEquals(List.of("offset"), metadataKeys.get(source));
+  }
+
+  @Test
   void aSkippingJsonKeyStaysOnFlinkWhereFlinkCollectsNullKeyRows() {
     StreamTableEnvironment tEnv = env();
     tEnv.executeSql(
