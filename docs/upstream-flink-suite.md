@@ -683,10 +683,6 @@ native computation, then its corrected configuration succeeds. The original
 exception and successful result assertions remain unchanged. Its native contract
 requires positive Calc work from the successful execution. `CalcITCase#testSelectStar`
 also requires positive native Calc work because its released plan includes a filter.
-The unchanged `CodeSplitITCase#testManyIns` and `#testManyOrsInCondition` fixtures likewise
-require positive native Calc input on both releases. Their existing result assertions and exact
-runtime variants remain in the audit; the contracts follow the executable expression plans
-rather than retaining the obsolete nesting-limit fallback expectation.
 
 The keyed `AggregateITCase#testGroupByAgg` fixture covers HEAP/ROCKSDB, immediate/mini-batch
 and local/global modes. Local and global native operators must each have positive associated

@@ -1236,13 +1236,13 @@
       "test": "org.apache.flink.table.planner.runtime.batch.sql.CodeSplitITCase#testManyIns",
       "display_name": "testManyIns()",
       "count": 1,
-      "route": "native"
+      "route": "batch_host_only"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.batch.sql.CodeSplitITCase#testManyOrsInCondition",
       "display_name": "testManyOrsInCondition()",
       "count": 1,
-      "route": "native"
+      "route": "batch_host_only"
     },
     {
       "test": "org.apache.flink.table.planner.runtime.batch.sql.CodeSplitITCase#testManyAggregationsWithGroupBy",
