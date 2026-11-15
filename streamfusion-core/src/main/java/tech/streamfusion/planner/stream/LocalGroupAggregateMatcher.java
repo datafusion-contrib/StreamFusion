@@ -1,5 +1,6 @@
 package tech.streamfusion.planner.stream;
 
+import tech.streamfusion.planner.common.GroupAggregateKind;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.calcite.rel.RelNode;
@@ -596,10 +597,10 @@ final class LocalGroupAggregateMatcher {
   /**
    * Native aggregate kind 7 (COUNT(DISTINCT)); matches the convention in the Rust GroupAggState.
    */
-  static final int KIND_COUNT_DISTINCT = 7;
+  static final int KIND_COUNT_DISTINCT = GroupAggregateKind.COUNT_DISTINCT;
 
   /** Native aggregate kind 9 (SUM(DISTINCT)); matches the convention in the Rust GroupAggState. */
-  static final int KIND_SUM_DISTINCT = 9;
+  static final int KIND_SUM_DISTINCT = GroupAggregateKind.SUM_DISTINCT;
 
   /** Expanded native states. AVG/SINGLE_VALUE use two; LISTAGG emits two partials from one. */
   static int[] kinds(StreamPhysicalLocalGroupAggregate agg) {

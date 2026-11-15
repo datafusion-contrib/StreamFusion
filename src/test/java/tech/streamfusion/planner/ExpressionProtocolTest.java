@@ -5,6 +5,9 @@ import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 import tech.streamfusion.planner.common.CastTarget;
 import tech.streamfusion.planner.common.ExpressionKind;
+import tech.streamfusion.planner.common.ScalarOp;
+import tech.streamfusion.planner.common.GroupAggregateKind;
+import tech.streamfusion.planner.common.WindowAggregateKind;
 
 class ExpressionProtocolTest {
   @Test
@@ -20,5 +23,18 @@ class ExpressionProtocolTest {
     assertEquals(CastTarget.TINYINT, CastTarget.fromCode(0));
     assertEquals(CastTarget.STRING, CastTarget.fromCode(6));
     assertThrows(IllegalArgumentException.class, () -> CastTarget.fromCode(7));
+  }
+
+  @Test
+  void scalarAndAggregateCodeFamiliesKeepTheExistingWireNamespaces() {
+    assertEquals(0, ScalarOp.ADD);
+    assertEquals(52, ScalarOp.CHAR_LENGTH);
+    assertEquals(141, ScalarOp.JSON_VALUE);
+    assertEquals(202, ScalarOp.JSON_VALUE_JAVA_INPUT);
+    assertEquals(254, ScalarOp.JSON_QUERY);
+    assertEquals(9, GroupAggregateKind.SUM_DISTINCT);
+    assertEquals(9, WindowAggregateKind.RETRACT_SUM);
+    assertEquals(43, GroupAggregateKind.JSON_OBJECT_MERGE_NULL_ON_NULL);
+    assertEquals(43, WindowAggregateKind.COUNT_DISTINCT_WITH_COUNTS);
   }
 }

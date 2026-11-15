@@ -1,5 +1,6 @@
 package tech.streamfusion.planner.stream;
 
+import tech.streamfusion.planner.common.GroupAggregateKind;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rel.type.RelDataType;
@@ -20,16 +21,16 @@ import tech.streamfusion.planner.JvmFunctionTypes;
  * Flink.
  */
 final class GroupAggregateMatcher {
-  static final int KIND_SUM_ZERO = 22;
-  static final int KIND_SUM_ZERO_MERGE = 23;
-  static final int KIND_SUM_ZERO_DISTINCT = 34;
-  static final int KIND_RETRACTING_DECIMAL_SUM = 40;
-  static final int KIND_RAW_SUM_PARTIAL = 41;
-  static final int KIND_LISTAGG_APPEND = 24;
-  static final int KIND_LISTAGG_RETRACT = 25;
+  static final int KIND_SUM_ZERO = GroupAggregateKind.SUM_ZERO;
+  static final int KIND_SUM_ZERO_MERGE = GroupAggregateKind.SUM_ZERO_MERGE;
+  static final int KIND_SUM_ZERO_DISTINCT = GroupAggregateKind.SUM_ZERO_DISTINCT;
+  static final int KIND_RETRACTING_DECIMAL_SUM = GroupAggregateKind.RETRACTING_DECIMAL_SUM;
+  static final int KIND_RAW_SUM_PARTIAL = GroupAggregateKind.RAW_SUM_PARTIAL;
+  static final int KIND_LISTAGG_APPEND = GroupAggregateKind.LISTAGG_APPEND;
+  static final int KIND_LISTAGG_RETRACT = GroupAggregateKind.LISTAGG_RETRACT;
 
-  static final int KIND_LISTAGG_DISTINCT_APPEND = 32;
-  static final int KIND_LISTAGG_DISTINCT_RETRACT = 33;
+  static final int KIND_LISTAGG_DISTINCT_APPEND = GroupAggregateKind.LISTAGG_DISTINCT_APPEND;
+  static final int KIND_LISTAGG_DISTINCT_RETRACT = GroupAggregateKind.LISTAGG_DISTINCT_RETRACT;
 
   private GroupAggregateMatcher() {}
 
@@ -304,12 +305,12 @@ final class GroupAggregateMatcher {
   /**
    * Native aggregate kind 7 (COUNT(DISTINCT)); matches the convention in the Rust GroupAggState.
    */
-  private static final int KIND_COUNT_DISTINCT = 7;
+  private static final int KIND_COUNT_DISTINCT = GroupAggregateKind.COUNT_DISTINCT;
 
   /** Native aggregate kind 9 (SUM(DISTINCT)); matches the convention in the Rust GroupAggState. */
-  private static final int KIND_SUM_DISTINCT = 9;
+  private static final int KIND_SUM_DISTINCT = GroupAggregateKind.SUM_DISTINCT;
 
-  static final int KIND_AVG_DISTINCT = 17;
+  static final int KIND_AVG_DISTINCT = GroupAggregateKind.AVG_DISTINCT;
 
   /**
    * Native kinds 10/11: MIN/MAX over an insert-only input. No retraction can ever arrive, so the
@@ -317,9 +318,9 @@ final class GroupAggregateMatcher {
    * value multiset (and, on the RocksDB backend, no companion element table). Numeric, DATE, TIME
    * and BOOLEAN running folds use these kinds; other value types keep the multiset kinds.
    */
-  static final int KIND_MIN_APPEND = 10;
+  static final int KIND_MIN_APPEND = GroupAggregateKind.MIN_APPEND;
 
-  static final int KIND_MAX_APPEND = 11;
+  static final int KIND_MAX_APPEND = GroupAggregateKind.MAX_APPEND;
 
   /** Whether an insert-only MIN/MAX over this value type can run as a plain running extreme. */
   static boolean runningExtremeType(SqlTypeName type) {

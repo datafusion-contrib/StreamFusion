@@ -1,5 +1,6 @@
 package tech.streamfusion.operator;
 
+import tech.streamfusion.planner.common.WindowAggregateKind;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -68,11 +69,11 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
     canonicalInputWatermark = watermark;
   }
 
-  public static final int KIND_RETRACT_SUM = 9;
-  public static final int KIND_RETRACT_COUNT = 10;
-  public static final int KIND_LIVE_COUNT = 11;
-  public static final int KIND_HIDDEN_LIVE_COUNT = 12;
-  public static final int KIND_COUNT_DISTINCT_WITH_COUNTS = 43;
+  public static final int KIND_RETRACT_SUM = WindowAggregateKind.RETRACT_SUM;
+  public static final int KIND_RETRACT_COUNT = WindowAggregateKind.RETRACT_COUNT;
+  public static final int KIND_LIVE_COUNT = WindowAggregateKind.LIVE_COUNT;
+  public static final int KIND_HIDDEN_LIVE_COUNT = WindowAggregateKind.HIDDEN_LIVE_COUNT;
+  public static final int KIND_COUNT_DISTINCT_WITH_COUNTS = WindowAggregateKind.COUNT_DISTINCT_WITH_COUNTS;
 
   protected static final int TIMESTAMP_PRECISION = 3;
 
@@ -133,10 +134,10 @@ public abstract class NativeWindowOperatorCore<OUT> extends AbstractNativeStatef
   private static final long NANOS_PER_MILLI = 1_000_000L;
 
   /** Aggregate kind code for COUNT, whose partial is always a bigint regardless of value type. */
-  protected static final int KIND_COUNT = 3;
+  protected static final int KIND_COUNT = WindowAggregateKind.COUNT;
 
-  private static final int KIND_MIN = 1;
-  private static final int KIND_MAX = 2;
+  private static final int KIND_MIN = WindowAggregateKind.MIN;
+  private static final int KIND_MAX = WindowAggregateKind.MAX;
 
   private final String timeZoneId;
   private long windowOffsetMillis;

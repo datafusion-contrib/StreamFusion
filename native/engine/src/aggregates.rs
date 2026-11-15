@@ -1,3 +1,4 @@
+use crate::expression_protocol::{group_aggregate_kind, window_aggregate_kind};
 mod shared_snapshot;
 use crate::*;
 
@@ -6,7 +7,8 @@ pub(crate) mod canonical_distinct;
 mod counted_distinct;
 mod floating_distinct;
 pub(crate) use counted_distinct::CountedDistinctAccumulator;
-pub(crate) const COUNT_DISTINCT_WITH_COUNTS: i64 = 43;
+pub(crate) const COUNT_DISTINCT_WITH_COUNTS: i64 =
+    window_aggregate_kind::COUNT_DISTINCT_WITH_COUNTS;
 mod floating_extreme;
 mod floating_sum;
 mod retracting_window;
@@ -19,8 +21,8 @@ mod zero_sum;
 pub(crate) use retracting_window::{HIDDEN_LIVE_COUNT, LIVE_COUNT, RETRACT_COUNT, RETRACT_SUM};
 pub(crate) use timestamp_extreme::TimestampExtremeAccumulator;
 
-pub(crate) const RETRACTING_DECIMAL_SUM: i64 = 40;
-pub(crate) const RAW_SUM_PARTIAL: i64 = 41;
+pub(crate) const RETRACTING_DECIMAL_SUM: i64 = group_aggregate_kind::RETRACTING_DECIMAL_SUM;
+pub(crate) const RAW_SUM_PARTIAL: i64 = group_aggregate_kind::RAW_SUM_PARTIAL;
 
 /// Builds a built-in aggregate over an int64 `value` column. SUM/MIN/MAX/COUNT all reduce an int64
 /// column to a single int64 with single-scalar partial state, driven through DataFusion's
@@ -58,10 +60,10 @@ pub(crate) fn value_data_type(code: i64) -> DataType {
 
 pub(crate) fn build_builtin(kind: i64, value_type: &DataType) -> AggregateFunctionExpr {
     let function: Arc<AggregateUDF> = match kind {
-        0 => sum_udaf(),
-        1 => min_udaf(),
-        2 => max_udaf(),
-        3 | 7 => count_udaf(),
+        group_aggregate_kind::SUM => sum_udaf(),
+        group_aggregate_kind::MIN => min_udaf(),
+        group_aggregate_kind::MAX => max_udaf(),
+        group_aggregate_kind::COUNT | group_aggregate_kind::COUNT_DISTINCT => count_udaf(),
         other => panic!("unsupported builtin aggregate kind: {other}"),
     };
     let schema = Arc::new(Schema::new(vec![Field::new(
@@ -73,7 +75,7 @@ pub(crate) fn build_builtin(kind: i64, value_type: &DataType) -> AggregateFuncti
     AggregateExprBuilder::new(function, vec![value])
         .schema(schema)
         .alias("result")
-        .with_distinct(kind == 7)
+        .with_distinct(kind == group_aggregate_kind::COUNT_DISTINCT)
         .build()
         .expect("failed to build aggregate")
 }
@@ -1413,63 +1415,68 @@ impl RunningAgg {
         };
         // kind: 0=SUM, 1=MIN, 2=MAX, 5=FIRST_VALUE, 6=LAST_VALUE (3=COUNT handled above).
         match (kind, value_type) {
-            (0, DataType::Int64) => SumI64(None),
-            (1, DataType::Int64) => MinI64(None),
-            (2, DataType::Int64) => MaxI64(None),
-            (5, DataType::Int64) => FirstI64(None),
-            (6, DataType::Int64) => LastI64(None),
-            (0, DataType::Int32) => SumI32(None),
-            (1, DataType::Int32) => MinI32(None),
-            (2, DataType::Int32) => MaxI32(None),
-            (5, DataType::Int32) => FirstI32(None),
-            (6, DataType::Int32) => LastI32(None),
-            (0, DataType::Float64) => SumF64(None),
-            (1, DataType::Float64) => MinF64(None),
-            (2, DataType::Float64) => MaxF64(None),
-            (5, DataType::Float64) => FirstF64(None),
-            (6, DataType::Float64) => LastF64(None),
-            (0, DataType::Int16) => SumI16(None),
-            (1, DataType::Int16) => MinI16(None),
-            (2, DataType::Int16) => MaxI16(None),
-            (5, DataType::Int16) => FirstI16(None),
-            (6, DataType::Int16) => LastI16(None),
-            (0, DataType::Int8) => SumI8(None),
-            (1, DataType::Int8) => MinI8(None),
-            (2, DataType::Int8) => MaxI8(None),
-            (5, DataType::Int8) => FirstI8(None),
-            (6, DataType::Int8) => LastI8(None),
-            (0, DataType::Float32) => SumF32(None),
-            (1, DataType::Float32) => MinF32(None),
-            (2, DataType::Float32) => MaxF32(None),
-            (5, DataType::Float32) => FirstF32(None),
-            (6, DataType::Float32) => LastF32(None),
+            (group_aggregate_kind::SUM, DataType::Int64) => SumI64(None),
+            (group_aggregate_kind::MIN, DataType::Int64) => MinI64(None),
+            (group_aggregate_kind::MAX, DataType::Int64) => MaxI64(None),
+            (group_aggregate_kind::FIRST_VALUE_LEGACY, DataType::Int64) => FirstI64(None),
+            (group_aggregate_kind::LAST_VALUE_LEGACY, DataType::Int64) => LastI64(None),
+            (group_aggregate_kind::SUM, DataType::Int32) => SumI32(None),
+            (group_aggregate_kind::MIN, DataType::Int32) => MinI32(None),
+            (group_aggregate_kind::MAX, DataType::Int32) => MaxI32(None),
+            (group_aggregate_kind::FIRST_VALUE_LEGACY, DataType::Int32) => FirstI32(None),
+            (group_aggregate_kind::LAST_VALUE_LEGACY, DataType::Int32) => LastI32(None),
+            (group_aggregate_kind::SUM, DataType::Float64) => SumF64(None),
+            (group_aggregate_kind::MIN, DataType::Float64) => MinF64(None),
+            (group_aggregate_kind::MAX, DataType::Float64) => MaxF64(None),
+            (group_aggregate_kind::FIRST_VALUE_LEGACY, DataType::Float64) => FirstF64(None),
+            (group_aggregate_kind::LAST_VALUE_LEGACY, DataType::Float64) => LastF64(None),
+            (group_aggregate_kind::SUM, DataType::Int16) => SumI16(None),
+            (group_aggregate_kind::MIN, DataType::Int16) => MinI16(None),
+            (group_aggregate_kind::MAX, DataType::Int16) => MaxI16(None),
+            (group_aggregate_kind::FIRST_VALUE_LEGACY, DataType::Int16) => FirstI16(None),
+            (group_aggregate_kind::LAST_VALUE_LEGACY, DataType::Int16) => LastI16(None),
+            (group_aggregate_kind::SUM, DataType::Int8) => SumI8(None),
+            (group_aggregate_kind::MIN, DataType::Int8) => MinI8(None),
+            (group_aggregate_kind::MAX, DataType::Int8) => MaxI8(None),
+            (group_aggregate_kind::FIRST_VALUE_LEGACY, DataType::Int8) => FirstI8(None),
+            (group_aggregate_kind::LAST_VALUE_LEGACY, DataType::Int8) => LastI8(None),
+            (group_aggregate_kind::SUM, DataType::Float32) => SumF32(None),
+            (group_aggregate_kind::MIN, DataType::Float32) => MinF32(None),
+            (group_aggregate_kind::MAX, DataType::Float32) => MaxF32(None),
+            (group_aggregate_kind::FIRST_VALUE_LEGACY, DataType::Float32) => FirstF32(None),
+            (group_aggregate_kind::LAST_VALUE_LEGACY, DataType::Float32) => LastF32(None),
             // AVG(integer) — sum widens to BIGINT, result casts back to the input type on emit.
-            (4, DataType::Int64 | DataType::Int32 | DataType::Int16 | DataType::Int8) => AvgInt {
+            (
+                group_aggregate_kind::AVG,
+                DataType::Int64 | DataType::Int32 | DataType::Int16 | DataType::Int8,
+            ) => AvgInt {
                 sum: 0,
                 result: value_type.clone(),
             },
             // Two-phase AVG's local sum partial: the declared type is the WIDENED partial type
             // (BIGINT for integer inputs, DOUBLE for float/double — Flink's AvgAggFunction).
-            (8, DataType::Int64) => AvgPartialSumInt(0),
-            (8, DataType::Float64) => AvgPartialSumFloat(0.0),
-            (8, DataType::Decimal128(_, s)) => AvgPartialSumDecimal {
-                sum: 0,
-                scale: *s,
-                overflow: false,
-            },
+            (group_aggregate_kind::AVG_PARTIAL_SUM, DataType::Int64) => AvgPartialSumInt(0),
+            (group_aggregate_kind::AVG_PARTIAL_SUM, DataType::Float64) => AvgPartialSumFloat(0.0),
+            (group_aggregate_kind::AVG_PARTIAL_SUM, DataType::Decimal128(_, s)) => {
+                AvgPartialSumDecimal {
+                    sum: 0,
+                    scale: *s,
+                    overflow: false,
+                }
+            }
             // AVG(float/double) — sum in DOUBLE, result casts back to the input type on emit.
-            (4, DataType::Float64 | DataType::Float32) => AvgFloat {
+            (group_aggregate_kind::AVG, DataType::Float64 | DataType::Float32) => AvgFloat {
                 sum: 0.0,
                 result: value_type.clone(),
             },
             // SUM(DECIMAL(_, s)) — accumulate the unscaled i128 at scale s; result is DECIMAL(38, s).
-            (0, DataType::Decimal128(_, s)) => SumDecimal {
+            (group_aggregate_kind::SUM, DataType::Decimal128(_, s)) => SumDecimal {
                 sum: 0,
                 scale: *s,
                 overflow: false,
             },
             // AVG(DECIMAL(_, s)) — SUM's accumulator plus the exact divide on emit.
-            (4, DataType::Decimal128(_, s)) => AvgDecimal {
+            (group_aggregate_kind::AVG, DataType::Decimal128(_, s)) => AvgDecimal {
                 sum: 0,
                 scale: *s,
                 overflow: false,
