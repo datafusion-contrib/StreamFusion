@@ -92,7 +92,9 @@ gh workflow run ci-profile.yml --repo YOUR_LOGIN/YOUR_FORK --ref main -f suite=n
 GitHub lets feature branches restore the default branch's cache, while sibling branches
 cannot restore each other's caches ([cache access rules](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache)).
 The native-only producer builds the complete workspace with the normal debug dependency
-configuration. A verified sibling-branch run restored that default-branch cache in about
+configuration, verifies JNI exports and retains the libraries for one day as `debug-native-SHA`.
+Its successful **Shared debug native libraries** job can then supply source-verified focused
+diagnostics without another Rust build. A verified sibling-branch run restored that default-branch cache in about
 33 seconds, then built in 24.06 seconds with 42 positive-duration compilation units and
 no RocksDB rebuild. Cold builds of the same native tree recorded 639 such units and
 598.57–632 seconds. The consumer created no duplicate branch cache. This is native setup

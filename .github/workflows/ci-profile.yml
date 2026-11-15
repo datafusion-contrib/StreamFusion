@@ -235,6 +235,7 @@ jobs:
       kafka_rescale_regression: ${{ inputs.kafka_rescale_regression }}
 
   native:
+    name: ${{ inputs.suite == 'native-only' && 'Shared debug native libraries' || 'native' }}
     if: ${{ inputs.suite != 'runtime-hotspots' && inputs.suite != 'canonical-setup' && inputs.suite != 'canonical-reference' && inputs.suite != 'lake-setup' && inputs.suite != 'native-lz4' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -251,6 +252,17 @@ jobs:
           shared-key: debug-jvm
           save-if: ${{ github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main' }}
       - run: cargo build --manifest-path native/Cargo.toml --workspace --lib --locked --timings
+      - name: Verify native JNI exports
+        if: inputs.suite == 'native-only'
+        run: python3 bin/check-native-workspace.py --libraries native/target/debug
+      - uses: actions/upload-artifact@v4
+        if: inputs.suite == 'native-only'
+        with:
+          name: debug-native-${{ github.sha }}
+          path: native/target/debug/libstreamfusion*.so
+          compression-level: 1
+          retention-days: 1
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: inputs.suite != 'native-only'
         with:
