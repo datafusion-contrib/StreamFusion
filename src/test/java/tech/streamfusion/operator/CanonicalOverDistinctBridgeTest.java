@@ -84,7 +84,8 @@ class CanonicalOverDistinctBridgeTest {
   }
 
   static Stream<Arguments> malformedCases() {
-    return Stream.of("null", "type", "duplicate", "orphan", "negative", "index", "oversized")
+    return Stream.of(
+            "duplicate-null", "type", "duplicate", "orphan", "negative", "index", "oversized")
         .flatMap(mode -> Stream.of(Arguments.of(mode, false), Arguments.of(mode, true)));
   }
 
@@ -106,8 +107,8 @@ class CanonicalOverDistinctBridgeTest {
         rows.add(
             GenericRowData.of(
                 mode.equals("orphan") ? 9L : 1L,
-                mode.equals("null") ? null : mode.equals("type") ? (Object) 1L : 1.0));
-      if (mode.equals("duplicate")) rows.add(rows.get(0));
+                mode.equals("duplicate-null") ? null : mode.equals("type") ? (Object) 1L : 1.0));
+      if (mode.equals("duplicate") || mode.equals("duplicate-null")) rows.add(rows.get(0));
       assertThrows(IllegalStateException.class, () -> importRows(handle, index, rows, type));
       assertEquals(live, NativeAllocator.SHARED.getAllocatedMemory());
       assertThrows(IllegalStateException.class, () -> memberCount(handle));

@@ -22,7 +22,7 @@ class CanonicalRetractingRankProctimePlanTest {
     "false,false,ALWAYS", "false,true,ALWAYS", "true,false,ALWAYS", "true,true,ALWAYS",
     "false,false,DISABLED", "false,true,DISABLED", "true,false,DISABLED", "true,true,DISABLED"
   })
-  void retainedIndicatorBindsButOrdinaryTimestampKeepsItsStockOwner(
+  void retainedIndicatorAndOrdinaryTimestampBindTheirCapturedStockOwner(
       boolean compiled, boolean ordinaryTimestamp, String identities) throws Exception {
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", "true");
@@ -57,27 +57,25 @@ class CanonicalRetractingRankProctimePlanTest {
                         && ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator()
                             instanceof NativeColumnarTopNOperator)
             .collect(java.util.stream.Collectors.toList());
-    assertEquals(ordinaryTimestamp ? 0 : 1, owners.size(), graph.getStreamingPlanAsJSON());
-    if (!ordinaryTimestamp) {
-      var contractField =
-          AbstractNativeStatefulOperator.class.getDeclaredField("stockStateContract");
-      contractField.setAccessible(true);
-      var contract =
-          assertInstanceOf(
-              StockRetractingTopNStateContract.class,
-              contractField.get(
-                  ((SimpleOperatorFactory<?>) owners.get(0).getOperatorFactory()).getOperator()));
-      var inputField = StockRetractingTopNStateContract.class.getDeclaredField("rowType");
-      inputField.setAccessible(true);
-      var input = (RowType) inputField.get(contract);
-      assertTrue(
-          input.getChildren().stream().anyMatch(LogicalTypeChecks::isProctimeAttribute),
-          input.toString());
-      assertEquals(
-          java.util.Set.of("data-state", "sorted-map"), contract.stateDescriptors().keySet());
-      assertTrue(graph.getStreamingPlanAsJSON().contains("RowDataToArrow"));
-      assertTrue(graph.getStreamingPlanAsJSON().contains("ArrowToRowData"));
-    }
+    assertEquals(1, owners.size(), graph.getStreamingPlanAsJSON());
+    var contractField = AbstractNativeStatefulOperator.class.getDeclaredField("stockStateContract");
+    contractField.setAccessible(true);
+    var contract =
+        assertInstanceOf(
+            StockRetractingTopNStateContract.class,
+            contractField.get(
+                ((SimpleOperatorFactory<?>) owners.get(0).getOperatorFactory()).getOperator()));
+    var inputField = StockRetractingTopNStateContract.class.getDeclaredField("rowType");
+    inputField.setAccessible(true);
+    var input = (RowType) inputField.get(contract);
+    assertEquals(
+        !ordinaryTimestamp,
+        input.getChildren().stream().anyMatch(LogicalTypeChecks::isProctimeAttribute),
+        input.toString());
+    assertEquals(
+        java.util.Set.of("data-state", "sorted-map"), contract.stateDescriptors().keySet());
+    assertTrue(graph.getStreamingPlanAsJSON().contains("RowDataToArrow"));
+    assertTrue(graph.getStreamingPlanAsJSON().contains("ArrowToRowData"));
     if (compiled) assertEquals(portable, plan.asJsonString());
   }
 }

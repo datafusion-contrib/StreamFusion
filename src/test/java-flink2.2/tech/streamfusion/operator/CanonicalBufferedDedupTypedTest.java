@@ -99,7 +99,7 @@ class CanonicalBufferedDedupTypedTest {
       time(stock, 1800);
       feed(stock, type, continued);
       stock.processWatermark(new Watermark(250));
-      push(nativeHarness, type, continued, 1800);
+      push(nativeHarness, type, keys, continued, 1800);
       var nativeOutput = flush(nativeHarness, type, 250);
       assertEquals(List.of(21L), ids(nativeOutput));
       assertEquals(bytes(type, stock.extractOutputValues()), bytes(type, nativeOutput));
@@ -122,7 +122,7 @@ class CanonicalBufferedDedupTypedTest {
         feed(restored, type, future);
         stock.processWatermark(new Watermark(1000));
         restored.processWatermark(new Watermark(1000));
-        push(nativeHarness, type, future, 2600);
+        push(nativeHarness, type, keys, future, 2600);
         var output = flush(nativeHarness, type, 1000);
         assertEquals(ttl ? List.of(30L, 99L) : List.of(30L), ids(output));
         assertEquals(bytes(type, stock.extractOutputValues()), bytes(type, output));
@@ -170,7 +170,7 @@ class CanonicalBufferedDedupTypedTest {
                   row(shape, null, stage + 20, 700 - stage * 100));
           time(stock, 1500 + stage * 100);
           feed(stock, type, rows);
-          push(source, type, rows, 1500 + stage * 100);
+          push(source, type, keys, rows, 1500 + stage * 100);
           if (stage < 2) {
             expected[stage] = snapshot(stock);
             captured[stage] = CanonicalDistinctWindowAsyncTest.capture(source, 10 + stage);
@@ -305,6 +305,7 @@ class CanonicalBufferedDedupTypedTest {
           StockBufferedDedupStateContract contract)
           throws Exception {
     var operator = new CanonicalBuffered(type, keys, descriptor(type, keys), ttl);
+    if (binaryRowKeys(type, keys)) operator.withBinaryRowKeys();
     operator.setStockStateContract(contract);
     var harness =
         new KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>(
@@ -391,14 +392,40 @@ class CanonicalBufferedDedupTypedTest {
   private static void push(
       KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness,
       RowType type,
+      int[] keys,
       List<RowData> rows,
       long now)
       throws Exception {
     harness.setProcessingTime(now);
     harness.setStateTtlProcessingTime(now);
-    harness.processElement(
-        new StreamRecord<>(
-            new ArrowBatch(RowDataArrowConverter.write(rows, type, NativeAllocator.SHARED))));
+    harness.processElement(new StreamRecord<>(new ArrowBatch(arrowRows(rows, type, keys))));
+  }
+
+  private static boolean containsRow(LogicalType type) {
+    return type.is(LogicalTypeRoot.ROW)
+        || type.getChildren().stream().anyMatch(CanonicalBufferedDedupTypedTest::containsRow);
+  }
+
+  private static boolean binaryRowKeys(RowType type, int[] keys) {
+    return java.util.Arrays.stream(keys).anyMatch(key -> containsRow(type.getTypeAt(key)));
+  }
+
+  private static org.apache.arrow.vector.VectorSchemaRoot arrowRows(
+      List<RowData> rows, RowType type, int[] keys) {
+    if (!binaryRowKeys(type, keys))
+      return RowDataArrowConverter.write(rows, type, NativeAllocator.SHARED);
+    var root =
+        org.apache.arrow.vector.VectorSchemaRoot.create(
+            ArrowConversion.toBinaryRowKeySchema(type), NativeAllocator.SHARED);
+    try {
+      var writer = ArrowConversion.createRowDataArrowWriter(root, type);
+      for (var row : rows) writer.write(row);
+      writer.finish();
+      return root;
+    } catch (RuntimeException | Error failure) {
+      root.close();
+      throw failure;
+    }
   }
 
   private static List<RowData> flush(

@@ -287,3 +287,7 @@ refire after its original TTL expires. Native controls exercise both candidate s
 the index threshold and both stores. These controls await execution. The new buffered ROW-key
 binding is limited to scalar/ROW descendants; collection-bearing ROW keys remain outside this
 extension. Existing eager key admission retains its separate binary-key implementation.
+
+Buffered ROW-key component fixtures use the same binary ROW schema and operator setting as the
+planner's live transpose. Both restore directions retain raw stock bytes, TTL and captured-view
+checks; generic Arrow ROW batches do not substitute for that bound key transport.

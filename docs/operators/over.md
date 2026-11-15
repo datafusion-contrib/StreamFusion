@@ -2081,6 +2081,8 @@ typed NULL in the existing membership table. Raw checkpoints retain that NULL in
 nullable membership list, without new record fields. Live NULL input records membership only for
 the bound TTL-disabled processing fold, in bounded temporary memory. Stock export reconstructs
 the original shared null-state bits and the released non-null RAW view placeholder.
+The JNI rejection control uses duplicate NULL markers for one owner; a single NULL marker is
+valid in this binding. Ownership release, partial-restore isolation and retry remain required.
 
 TTL, event-time and bounded DISTINCT, other argument
 types, filtered DISTINCT and DISTINCT extrema retain their existing gates.

@@ -1050,3 +1050,8 @@ Canonical rank capture reconciles physical Arrow collection-child labels in reta
 payloads after network exchange. Append, updating and retracting schema checks use the shared
 logical collection-label normalization; logical ROW names, types and nullability remain strict.
 Retained bytes, arrival order, clocks and the checkpoint encoding remain unchanged.
+
+Retracting-rank planner controls require the captured stock owner for both retained PROCTIME
+indicators and supported ordinary timestamp payloads. They independently check the logical
+indicator flag in the bound row type, stock descriptor names and both transposes; an ordinary
+timestamp payload alone does not require fallback.
