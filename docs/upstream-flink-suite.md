@@ -46,7 +46,10 @@ Flink 1.18 additionally needs its released Scala Table bridge on the test classp
 The batch Calc contracts require positive native work for
 `testManySelectWithFilter`, `testFilterOnInteger`, `testUserDefinedScalarFunction`
 and the contracted standalone DATE comparisons. Both runtime-route scope files
-require native execution for these methods. Batch compute admission uses semantic
+require native execution for these methods. The unchanged `CodeSplitITCase`
+methods `testManyIns` and `testManyOrsInCondition` also require positive native
+Calc work: balanced pure Boolean trees now fit the native compiler's depth limit.
+Their contracts and route scopes no longer expect a nesting fallback. Batch compute admission uses semantic
 compatibility and whole-query columnar composition, without an operator/expression
 performance whitelist. Pass the current suite agent through `sf.extraJvmArgs`,
 with fresh `streamfusion.flink-suite.native-reports` and
