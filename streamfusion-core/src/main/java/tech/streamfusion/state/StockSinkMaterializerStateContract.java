@@ -30,7 +30,6 @@ import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.arrow.MapListRepresentation;
 import tech.streamfusion.compat.MaterializerStateCompat;
 import tech.streamfusion.operator.NativeAllocator;
-import tech.streamfusion.operator.RowDataArrowConverter;
 
 /**
  * Released stock materializer descriptors; transport is separate from their canonical file format.
@@ -48,6 +47,7 @@ public final class StockSinkMaterializerStateContract implements StockStateContr
 
   private final TypeSerializer<RowData> keys;
   private final RowType keyType, input, matches, headers, candidates, indexes;
+  private final boolean binaryRows;
   private final Strategy strategy;
   private final long ttl;
   private final RowDataSerializer inputSerializer, matchSerializer;
@@ -82,6 +82,10 @@ public final class StockSinkMaterializerStateContract implements StockStateContr
       matchFields.add(input.getFields().get(column));
     }
     matches = new RowType(matchFields);
+    binaryRows =
+        java.util.stream.Stream.concat(
+                keyType.getChildren().stream(), matches.getChildren().stream())
+            .anyMatch(StockKeyedRowSchema::containsRow);
     if (strategy == Strategy.MAP || strategy == Strategy.ADAPTIVE) {
       keyEqualiser = MaterializerStateCompat.equaliser(matches);
       keyHash = MaterializerStateCompat.hash(matches);
@@ -359,7 +363,7 @@ public final class StockSinkMaterializerStateContract implements StockStateContr
   }
 
   private void send(long handle, int section, List<RowData> rows, RowType type) {
-    try (var root = RowDataArrowConverter.write(rows, type, NativeAllocator.SHARED);
+    try (var root = StockKeyedRowSchema.write(rows, type, arrowSchema(type));
         var array = ArrowArray.allocateNew(NativeAllocator.SHARED);
         var schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
       Data.exportVectorSchemaRoot(
@@ -374,6 +378,16 @@ public final class StockSinkMaterializerStateContract implements StockStateContr
         Native.importSinkMaterializerCanonical(
             handle, section, array.memoryAddress(), schema.memoryAddress());
     }
+  }
+
+  public org.apache.arrow.vector.types.pojo.Schema inputArrowSchema() {
+    return arrowSchema(input);
+  }
+
+  private org.apache.arrow.vector.types.pojo.Schema arrowSchema(RowType type) {
+    return binaryRows
+        ? ArrowConversion.toBinaryRowKeySchema(type)
+        : ArrowConversion.toArrowSchema(type);
   }
 
   @Override
@@ -430,6 +444,7 @@ public final class StockSinkMaterializerStateContract implements StockStateContr
               new StockRowBatch(
                   candidates,
                   true,
+                  arrowSchema(candidates),
                   (array, schema) ->
                       Native.importSinkMaterializerCanonical(handle, 1, array, schema));
           for (var entry : entries(s.nodes)) {
@@ -453,6 +468,7 @@ public final class StockSinkMaterializerStateContract implements StockStateContr
               new StockRowBatch(
                   indexes,
                   true,
+                  arrowSchema(indexes),
                   (array, schema) ->
                       Native.importSinkMaterializerCanonical(handle, 2, array, schema));
           for (var entry : entries(s.matching)) {
@@ -518,6 +534,7 @@ public final class StockSinkMaterializerStateContract implements StockStateContr
         new StockRowBatch(
             candidates,
             true,
+            arrowSchema(candidates),
             (array, schema) -> Native.importSinkMaterializerCanonical(handle, 1, array, schema));
     for (int position = 0; position < count; position++) {
       Object stored = elements.deserialize(source);

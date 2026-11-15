@@ -84,6 +84,7 @@ pub(super) fn ranked_batch(
     ranks: Vec<i64>,
     output_rank_number: bool,
 ) -> Result<RecordBatch, DataFusionError> {
+    columns = crate::logical_input::reconcile_columns(&columns, schema.fields())?;
     let mut fields = schema
         .fields()
         .iter()
@@ -256,6 +257,86 @@ mod tests {
         operator(batch.num_rows() as i64)
             .with_store(store, batch.schema())
             .with_key_timestamp_precisions(vec![-1])
+    }
+
+    #[cfg(feature = "rocksdb-state")]
+    #[test]
+    fn persistent_firing_reconciles_nested_collection_labels() {
+        use arrow::array::{Int64Builder, ListArray, MapBuilder, StringBuilder, StructArray};
+        use arrow::datatypes::Int64Type;
+
+        let list = Arc::new(ListArray::from_iter_primitive::<Int64Type, _, _>([Some(
+            vec![Some(7), None],
+        )])) as ArrayRef;
+        let mut map = MapBuilder::new(None, StringBuilder::new(), Int64Builder::new());
+        map.keys().append_value("key");
+        map.values().append_value(11);
+        map.append(true).unwrap();
+        let map = Arc::new(map.finish()) as ArrayRef;
+        let payload = Arc::new(StructArray::new(
+            vec![
+                Field::new("a", list.data_type().clone(), true),
+                Field::new("m", map.data_type().clone(), true),
+            ]
+            .into(),
+            vec![list, map],
+            None,
+        )) as ArrayRef;
+        let original = input(1, 0, true);
+        let mut columns = original.columns().to_vec();
+        columns[2] = payload;
+        let fields = original
+            .schema()
+            .fields()
+            .iter()
+            .zip(&columns)
+            .map(|(field, column)| {
+                field
+                    .as_ref()
+                    .clone()
+                    .with_data_type(column.data_type().clone())
+            })
+            .collect::<Vec<_>>();
+        let original = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap();
+        let mut fields = original.schema().fields().to_vec();
+        let DataType::Struct(children) = fields[2].data_type() else {
+            unreachable!()
+        };
+        let mut children = children.to_vec();
+        let DataType::List(element) = children[0].data_type() else {
+            unreachable!()
+        };
+        children[0] = Arc::new(children[0].as_ref().clone().with_data_type(DataType::List(
+            Arc::new(element.as_ref().clone().with_name("$data$")),
+        )));
+        let DataType::Map(entry, sorted) = children[1].data_type() else {
+            unreachable!()
+        };
+        children[1] = Arc::new(children[1].as_ref().clone().with_data_type(DataType::Map(
+            Arc::new(entry.as_ref().clone().with_name("items")),
+            *sorted,
+        )));
+        fields[2] = Arc::new(
+            fields[2]
+                .as_ref()
+                .clone()
+                .with_data_type(DataType::Struct(children.into())),
+        );
+        let network = crate::owned::align_batch_prefix(&original, &fields.into()).unwrap();
+        assert_ne!(original.schema(), network.schema());
+        let directory = tempfile::tempdir().unwrap();
+        let mut ranker = persistent(directory.path(), &original);
+        ranker.push(&network).unwrap();
+        let mut emitted = 0;
+        ranker
+            .flush_to(1000, &mut |batch| {
+                assert_eq!(batch.column(2).as_ref(), network.column(2).as_ref());
+                assert_eq!(batch.column(5).as_ref(), &Int64Array::from(vec![1]));
+                emitted += batch.num_rows();
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(emitted, 1);
     }
 
     #[cfg(feature = "rocksdb-state")]

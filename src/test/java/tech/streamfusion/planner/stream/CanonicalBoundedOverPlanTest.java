@@ -27,7 +27,16 @@ class CanonicalBoundedOverPlanTest {
     return Stream.of("processing-rows", "event-rows", "event-range")
         .flatMap(
             mode ->
-                Stream.of("BIGINT", "FLOAT", "DOUBLE", "DECIMAL(38,2)")
+                Stream.of(
+                        "TINYINT",
+                        "SMALLINT",
+                        "INT",
+                        "BIGINT",
+                        "FLOAT",
+                        "DOUBLE",
+                        "DECIMAL(18,2)",
+                        "DECIMAL(38,2)",
+                        "DECIMAL(38,20)")
                     .flatMap(
                         type ->
                             Stream.of(false, true)
@@ -39,9 +48,7 @@ class CanonicalBoundedOverPlanTest {
                                                     Stream.of("DISABLED", "ALWAYS")
                                                         .flatMap(
                                                             uids ->
-                                                                (mode.equals("event-rows")
-                                                                        ? Stream.of(0L)
-                                                                        : Stream.of(0L, 1000L))
+                                                                Stream.of(0L, 1000L)
                                                                     .map(
                                                                         ttl ->
                                                                             Arguments.of(
@@ -103,20 +110,76 @@ class CanonicalBoundedOverPlanTest {
       boolean starAndLiteral,
       boolean proctimePayload)
       throws Exception {
+    assertPlan(
+        mode,
+        type,
+        keyless,
+        compiled,
+        uids,
+        ttl,
+        starAndLiteral,
+        proctimePayload,
+        tech.streamfusion.compat.FlinkPlanCompat.unboundedOverVersion());
+  }
+
+  void assertPlan(
+      String mode,
+      String type,
+      boolean keyless,
+      boolean compiled,
+      String uids,
+      long ttl,
+      boolean starAndLiteral,
+      boolean proctimePayload,
+      int version)
+      throws Exception {
+    assertPlan(
+        mode,
+        type,
+        keyless,
+        compiled,
+        uids,
+        ttl,
+        starAndLiteral,
+        proctimePayload,
+        version,
+        "BIGINT",
+        false);
+  }
+
+  void assertPlan(
+      String mode,
+      String type,
+      boolean keyless,
+      boolean compiled,
+      String uids,
+      long ttl,
+      boolean starAndLiteral,
+      boolean proctimePayload,
+      int version,
+      String keyType,
+      boolean composite)
+      throws Exception {
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", "true");
     config.setString("parallelism.default", "2");
     config.setString("pipeline.max-parallelism", "257");
     config.setString("table.exec.uid.generation", uids);
     config.setString("table.exec.state.ttl", ttl + " ms");
+    config.setString("table.exec.unbounded-over.version", Integer.toString(version));
     var table = NativePlannerTestEnvironment.create(config);
     table.executeSql(
-        "CREATE TABLE over_input(k BIGINT,v "
+        "CREATE TABLE over_input(k "
+            + keyType
+            + ",v "
             + type
+            + (composite ? ",k2 BIGINT" : "")
             + ",rt TIMESTAMP(3),pt AS PROCTIME(),WATERMARK FOR rt AS rt) WITH"
             + " ('connector'='datagen')");
     table.executeSql(
-        "CREATE TABLE over_output(k BIGINT,v "
+        "CREATE TABLE over_output(k "
+            + keyType
+            + ",v "
             + type
             + ",rt TIMESTAMP(3),s "
             + type
@@ -133,7 +196,7 @@ class CanonicalBoundedOverPlanTest {
                 : "SUM(v) OVER w,COUNT(v) OVER w,AVG(v) OVER w")
             + (proctimePayload ? ",pt" : "")
             + " FROM over_input WINDOW w AS ("
-            + (keyless ? "" : "PARTITION BY k ")
+            + (keyless ? "" : "PARTITION BY k" + (composite ? ",k2" : "") + " ")
             + "ORDER BY "
             + (processing ? "pt" : "rt")
             + (unbounded
@@ -194,6 +257,10 @@ class CanonicalBoundedOverPlanTest {
     }
     var contract = GroupAggregateStockTestFixture.field(operator, "stockStateContract");
     assertNotNull(contract);
+    if (unbounded && !processing) {
+      assertEquals(version, GroupAggregateStockTestFixture.field(operator, "eventTimeVersion"));
+      assertEquals(version == 1, GroupAggregateStockTestFixture.field(contract, "pollingTimers"));
+    }
     if (starAndLiteral && !unbounded)
       assertEquals(-1, GroupAggregateStockTestFixture.field(contract, "hiddenCount"));
     assertEquals(
@@ -211,7 +278,7 @@ class CanonicalBoundedOverPlanTest {
     assertEquals(uids.equals("DISABLED"), owner.getTransformationUID() == null);
     assertEquals(ttl, GroupAggregateStockTestFixture.field(operator, "stateTtlMillis"));
     assertEquals(
-        keyless ? 0 : 1,
+        keyless ? 0 : composite ? 2 : 1,
         ((org.apache.flink.table.types.logical.RowType)
                 GroupAggregateStockTestFixture.field(contract, "keyType"))
             .getFieldCount());

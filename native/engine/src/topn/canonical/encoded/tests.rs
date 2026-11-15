@@ -397,3 +397,79 @@ fn malformed_lengths_trailers_and_row_kinds_fail_without_panics() {
     *invalid.last_mut().unwrap() = 9;
     assert!(visit(b"key", &invalid, Layout::Update, false, |_| Ok(())).is_err());
 }
+
+#[test]
+fn updating_first_bounds_keep_full_width_and_empty_partitions_in_both_visitors() {
+    for count in [0, 2051] {
+        let fixture = Fixture::new(count, 16);
+        let key = ByteKey::from(b"owner".as_slice());
+        for value in [-7, 0, i64::MAX] {
+            let mut partition = fixture.update();
+            partition.first_rank_end = Some(FirstRankEnd {
+                value,
+                written_at: 1234,
+            });
+            let codec = UpdatableTopNStateCodec::new(&fixture.converters);
+            let mut bytes = Vec::new();
+            codec.raw_write(&partition, &mut bytes);
+            let raw = fixture.raw(Layout::Update, &key.0, &bytes, false);
+            let mut memory = Vec::new();
+            Emitter::new(
+                &fixture.schema,
+                &fixture.converters,
+                &fixture.sorts,
+                Layout::Update,
+                None,
+                |batch| {
+                    memory.push(batch);
+                    Ok(())
+                },
+            )
+            .update(std::iter::once((&key, &partition)))
+            .unwrap();
+            assert_eq!(raw, memory);
+            assert_eq!(
+                raw.iter().map(RecordBatch::num_rows).sum::<usize>(),
+                count + 1
+            );
+            let first = &raw[0];
+            assert_eq!(
+                first
+                    .column(6)
+                    .as_any()
+                    .downcast_ref::<Int32Array>()
+                    .unwrap()
+                    .value(0),
+                -1
+            );
+            assert_eq!(
+                first
+                    .column(7)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap()
+                    .value(0),
+                value
+            );
+            assert_eq!(
+                first
+                    .column(8)
+                    .as_any()
+                    .downcast_ref::<Int8Array>()
+                    .unwrap()
+                    .value(0),
+                -1
+            );
+            assert!(first.columns()[..4].iter().all(|column| column.is_null(0)));
+            assert_eq!(
+                first
+                    .column(5)
+                    .as_any()
+                    .downcast_ref::<BinaryArray>()
+                    .unwrap()
+                    .value(0),
+                b""
+            );
+        }
+    }
+}

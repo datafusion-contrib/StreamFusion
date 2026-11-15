@@ -39,6 +39,7 @@ public class CommonRowDataToArrowExecNode extends ExecNodeBase<ArrowBatch>
   private byte[] arrowSchema;
   private final boolean preserveStringCaches;
   private boolean binaryRowKeys;
+  private int[] binaryRowKeyColumns;
   private SourceConversion fileSource;
 
   public boolean acceptsNativeFileSource() {
@@ -157,6 +158,13 @@ public class CommonRowDataToArrowExecNode extends ExecNodeBase<ArrowBatch>
 
   public CommonRowDataToArrowExecNode withBinaryRowKeys() {
     binaryRowKeys = true;
+    binaryRowKeyColumns = null;
+    return this;
+  }
+
+  public CommonRowDataToArrowExecNode withBinaryRowKeys(int[] columns) {
+    binaryRowKeys = true;
+    binaryRowKeyColumns = columns.clone();
     return this;
   }
 
@@ -203,7 +211,12 @@ public class CommonRowDataToArrowExecNode extends ExecNodeBase<ArrowBatch>
             carryRowKind,
             sourceType,
             preserveStringCaches,
-            binaryRowKeys ? binaryRowKeySchema(rowType).serializeAsMessage() : arrowSchema,
+            binaryRowKeys
+                ? (binaryRowKeyColumns == null
+                        ? binaryRowKeySchema(rowType)
+                        : ArrowConversion.toBinaryRowKeySchema(rowType, binaryRowKeyColumns))
+                    .serializeAsMessage()
+                : arrowSchema,
             config.get(org.apache.flink.configuration.ExecutionOptions.RUNTIME_MODE)
                 == org.apache.flink.api.common.RuntimeExecutionMode.BATCH),
         ArrowBatchTypeInformation.INSTANCE,

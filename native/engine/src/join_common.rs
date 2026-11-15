@@ -466,32 +466,152 @@ pub(crate) fn payload_columns(batch: &RecordBatch, schema: &SchemaRef) -> Vec<Ar
         .iter()
         .enumerate()
         .map(|(index, field)| {
-            let input = batch.column(index);
-            let value = if field.data_type() == &DataType::Utf8
-                && crate::flink_key::represented_string(input.data_type())
-            {
-                let represented = input
-                    .as_any()
-                    .downcast_ref::<arrow::array::StructArray>()
-                    .unwrap();
-                let utf8 = represented.column(0);
-                arrow::array::make_array(
-                    utf8.to_data()
-                        .into_builder()
-                        .nulls(arrow::buffer::NullBuffer::union(
-                            utf8.nulls(),
-                            represented.nulls(),
-                        ))
-                        .build()
-                        .expect("materialize join string"),
-                )
-            } else {
-                input.clone()
-            };
-            streamfusion_bridge::timestamp::cast_array(&value, field.data_type())
+            payload_column(batch.column(index), field.data_type())
                 .expect("align join payload fields")
         })
         .collect()
+}
+
+/// Reserve newly introduced optional ROW transport arrays before their buffers exist.
+pub(crate) fn payload_transport_bytes(batch: &RecordBatch, schema: &SchemaRef) -> usize {
+    schema
+        .fields()
+        .iter()
+        .enumerate()
+        .map(|(index, field)| payload_column_work(batch.column(index), field.data_type()))
+        .fold(0usize, usize::saturating_add)
+}
+
+fn payload_column_work(input: &ArrayRef, target: &DataType) -> usize {
+    if input.data_type() == target {
+        return 0;
+    }
+    match (input.data_type(), target) {
+        (DataType::Struct(source), DataType::Struct(fields))
+            if !streamfusion_bridge::timestamp::is_timestamp(target) =>
+        {
+            let row = input
+                .as_any()
+                .downcast_ref::<arrow::array::StructArray>()
+                .unwrap();
+            let logical = source
+                .iter()
+                .enumerate()
+                .filter(|(_, field)| !row_transport(field))
+                .map(|(index, _)| index)
+                .collect::<Vec<_>>();
+            let mut ordinal = 0;
+            let mut bytes = 1024usize.saturating_add(fields.len().saturating_mul(256));
+            for field in fields {
+                if row_transport(field) {
+                    if !source
+                        .iter()
+                        .any(|candidate| candidate.metadata() == field.metadata())
+                    {
+                        bytes =
+                            bytes.saturating_add(row.len().saturating_mul(16).saturating_add(1024));
+                    }
+                } else if let Some(index) = logical.get(ordinal) {
+                    bytes = bytes
+                        .saturating_add(payload_column_work(row.column(*index), field.data_type()));
+                    ordinal += 1;
+                }
+            }
+            bytes
+        }
+        (DataType::List(_), DataType::List(field))
+        | (DataType::Map(_, _), DataType::Map(field, _)) => {
+            let child = arrow::array::make_array(input.to_data().child_data()[0].clone());
+            512usize.saturating_add(payload_column_work(&child, field.data_type()))
+        }
+        _ => 512,
+    }
+}
+
+fn row_transport(field: &Field) -> bool {
+    field
+        .metadata()
+        .get("streamfusion.nested-row-binary")
+        .is_some_and(|value| value == "1")
+        || field
+            .metadata()
+            .get("streamfusion.nested-row-kind")
+            .is_some_and(|value| value == "1")
+}
+
+fn payload_column(
+    input: &ArrayRef,
+    target: &DataType,
+) -> Result<ArrayRef, arrow::error::ArrowError> {
+    use arrow::array::{make_array, new_null_array, StructArray};
+    if input.data_type() == target {
+        return Ok(input.clone());
+    }
+    if target == &DataType::Utf8 && crate::flink_key::represented_string(input.data_type()) {
+        let row = input.as_any().downcast_ref::<StructArray>().unwrap();
+        let utf8 = row.column(0);
+        return Ok(make_array(
+            utf8.to_data()
+                .into_builder()
+                .nulls(arrow::buffer::NullBuffer::union(utf8.nulls(), row.nulls()))
+                .build()?,
+        ));
+    }
+    if streamfusion_bridge::timestamp::is_timestamp(input.data_type())
+        && streamfusion_bridge::timestamp::is_timestamp(target)
+    {
+        return streamfusion_bridge::timestamp::cast_array(input, target);
+    }
+    match (input.data_type(), target) {
+        (DataType::Struct(source), DataType::Struct(fields)) => {
+            let row = input.as_any().downcast_ref::<StructArray>().unwrap();
+            let logical = source
+                .iter()
+                .enumerate()
+                .filter(|(_, field)| !row_transport(field))
+                .map(|(index, _)| index)
+                .collect::<Vec<_>>();
+            if logical.len() != fields.iter().filter(|field| !row_transport(field)).count() {
+                return Err(arrow::error::ArrowError::CastError(
+                    "ROW payload logical arity changed".into(),
+                ));
+            }
+            let mut ordinal = 0;
+            let mut columns = Vec::with_capacity(fields.len());
+            for field in fields {
+                let column = if row_transport(field) {
+                    source
+                        .iter()
+                        .position(|candidate| candidate.metadata() == field.metadata())
+                        .map(|index| row.column(index).clone())
+                        .unwrap_or_else(|| new_null_array(field.data_type(), row.len()))
+                } else {
+                    let column = payload_column(row.column(logical[ordinal]), field.data_type())?;
+                    ordinal += 1;
+                    column
+                };
+                columns.push(column);
+            }
+            Ok(Arc::new(StructArray::try_new(
+                fields.clone(),
+                columns,
+                row.nulls().cloned(),
+            )?))
+        }
+        (DataType::List(_), DataType::List(field))
+        | (DataType::Map(_, _), DataType::Map(field, _)) => {
+            let data = input.to_data();
+            let child =
+                payload_column(&make_array(data.child_data()[0].clone()), field.data_type())?;
+            Ok(make_array(
+                data.into_builder()
+                    .data_type(target.clone())
+                    .child_data(vec![child.to_data()])
+                    .build()?,
+            ))
+        }
+        _ => streamfusion_bridge::timestamp::cast_array(input, target),
+    }
 }
 
 /// Value-encodes a single all-null row for `schema` (the outer-join null pad), as arrow-row bytes.
@@ -615,5 +735,75 @@ mod payload_tests {
             assert_eq!(strings.value(0), "?");
             assert!(strings.is_null(1));
         }
+    }
+}
+
+#[cfg(test)]
+mod retained_transport_tests {
+    use super::*;
+    #[test]
+    fn retained_join_payload_keeps_owned_row_bytes_while_materializing_string_views() {
+        use arrow::array::{BinaryArray, StructArray};
+        let batch = crate::flink_key::represented_row_key_fixture(2, true, 0);
+        let source = batch.column(0);
+        let row = source.as_any().downcast_ref::<StructArray>().unwrap();
+        let binary = row
+            .fields()
+            .iter()
+            .position(|field| {
+                field
+                    .metadata()
+                    .contains_key("streamfusion.nested-row-binary")
+            })
+            .unwrap();
+        let mut fields = row.fields().to_vec();
+        fields[1] = Arc::new(fields[1].as_ref().clone().with_data_type(DataType::Utf8));
+        fields[binary] = Arc::new(
+            fields[binary]
+                .as_ref()
+                .clone()
+                .with_name("different-physical-byte-name"),
+        );
+        let target = DataType::Struct(fields.clone().into());
+        let adapted = payload_column(source, &target).unwrap();
+        let adapted = adapted.as_any().downcast_ref::<StructArray>().unwrap();
+        assert_eq!(row.column(binary), adapted.column(binary));
+        assert!(adapted.column(1).as_any().is::<StringArray>());
+        let plain_fields = fields
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| *index != binary)
+            .map(|(_, field)| field.clone())
+            .collect::<Vec<_>>();
+        let plain_columns = adapted
+            .columns()
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| *index != binary)
+            .map(|(_, column)| column.clone())
+            .collect::<Vec<_>>();
+        let plain = Arc::new(StructArray::new(
+            plain_fields.into(),
+            plain_columns,
+            adapted.nulls().cloned(),
+        )) as ArrayRef;
+        let promoted = payload_column(&plain, &target).unwrap();
+        let promoted = promoted.as_any().downcast_ref::<StructArray>().unwrap();
+        assert_eq!(
+            promoted
+                .column(binary)
+                .as_any()
+                .downcast_ref::<BinaryArray>()
+                .unwrap()
+                .null_count(),
+            2
+        );
+        assert_eq!(promoted.column(0), adapted.column(0));
+        fields.push(Arc::new(Field::new(
+            "new-logical-field",
+            DataType::Int64,
+            true,
+        )));
+        assert!(payload_column(source, &DataType::Struct(fields.into())).is_err());
     }
 }

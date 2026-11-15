@@ -14,7 +14,16 @@ class CanonicalEventUnboundedOverPlanTest {
     return Stream.of("event-unbounded-rows", "event-unbounded-range")
         .flatMap(
             mode ->
-                Stream.of("BIGINT", "FLOAT", "DOUBLE")
+                Stream.of(
+                        "TINYINT",
+                        "SMALLINT",
+                        "INT",
+                        "BIGINT",
+                        "FLOAT",
+                        "DOUBLE",
+                        "DECIMAL(18,2)",
+                        "DECIMAL(38,2)",
+                        "DECIMAL(38,20)")
                     .flatMap(
                         type ->
                             Stream.of(false, true)
@@ -41,6 +50,15 @@ class CanonicalEventUnboundedOverPlanTest {
       String mode, String type, boolean global, boolean compiled, String uids, long ttl)
       throws Exception {
     new CanonicalBoundedOverPlanTest().assertPlan(mode, type, global, compiled, uids, ttl, false);
+  }
+
+  @ParameterizedTest
+  @MethodSource("cases")
+  void explicitLegacySubmissionRetainsItsPollingOwnerAndOriginalStockIdentity(
+      String mode, String type, boolean global, boolean compiled, String uids, long ttl)
+      throws Exception {
+    new CanonicalBoundedOverPlanTest()
+        .assertPlan(mode, type, global, compiled, uids, ttl, false, false, 1);
   }
 
   static Stream<Arguments> constantCases() {

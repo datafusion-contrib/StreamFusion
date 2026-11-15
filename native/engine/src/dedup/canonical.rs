@@ -87,8 +87,11 @@ impl<S: KeyedStateStore<DedupRow>> KeepLastDeduplicator<S> {
             if existing
                 .fields()
                 .iter()
-                .map(|field| field.data_type())
-                .ne(schema.fields().iter().map(|field| field.data_type()))
+                .map(|field| crate::logical_input::canonical_list_labels(field.data_type()))
+                .ne(schema
+                    .fields()
+                    .iter()
+                    .map(|field| crate::logical_input::canonical_list_labels(field.data_type())))
             {
                 return Err(DataFusionError::Execution(
                     "canonical dedup row schema changed".into(),
@@ -648,6 +651,32 @@ mod tests {
         assert!(target.canonical_schema(data_schema(&incoming)).is_err());
         assert_eq!(target.flush_mini_batch().unwrap().num_rows(), 1);
         target.canonical_schema(data_schema(&incoming)).unwrap();
+    }
+
+    #[test]
+    fn eager_capture_accepts_network_row_cache_labels_without_changing_logical_fields() {
+        let expected = crate::flink_key::represented_row_key_fixture(2, false, 100);
+        let network = crate::flink_key::row_key_fixture_with_list_label(expected.clone(), "$data$");
+        let mut target = KeepLastDeduplicator::new(vec![0], 1, true, false, false)
+            .with_key_timestamp_precisions(vec![i32::MIN, -1, -1, -1]);
+        target.push(&network, 100).unwrap();
+        target.canonical_schema(expected.schema()).unwrap();
+        let rows: Vec<_> = target.rows.iter().collect();
+        let exported = canonical_batch(
+            &expected.schema(),
+            target.payload_converter.as_ref().unwrap(),
+            false,
+            &rows,
+        )
+        .unwrap();
+        assert_eq!(exported.num_rows(), 2);
+        assert_eq!(
+            exported.column(0).data_type(),
+            expected.column(0).data_type()
+        );
+        let invalid = crate::flink_key::row_key_fixture_with_list_label(expected, "other");
+        assert!(target.canonical_schema(invalid.schema()).is_err());
+        assert_eq!(target.rows.iter().count(), 2);
     }
 
     #[cfg(feature = "rocksdb-state")]

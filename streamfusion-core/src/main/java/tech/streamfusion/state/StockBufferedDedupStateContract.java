@@ -27,7 +27,6 @@ import org.apache.flink.table.types.logical.utils.LogicalTypeChecks;
 import tech.streamfusion.Native;
 import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.operator.NativeAllocator;
-import tech.streamfusion.operator.RowDataArrowConverter;
 
 /** Released event-time keep-first rows, emitted markers, and user-timers priority queues. */
 public final class StockBufferedDedupStateContract implements StockStateContract {
@@ -331,7 +330,7 @@ public final class StockBufferedDedupStateContract implements StockStateContract
     try {
       Data.exportSchema(
           NativeAllocator.SHARED,
-          ArrowConversion.toArrowSchema(rowType),
+          StockKeyedRowSchema.schema(rowType, keyType),
           NativeAllocator.DICTIONARIES,
           schema);
       return schema;
@@ -348,8 +347,7 @@ public final class StockBufferedDedupStateContract implements StockStateContract
       boolean markers,
       List<RowData> rows,
       boolean validateOnly) {
-    try (VectorSchemaRoot root =
-            RowDataArrowConverter.write(rows, bridgeType, NativeAllocator.SHARED);
+    try (VectorSchemaRoot root = StockKeyedRowSchema.write(rows, bridgeType, keyType);
         ArrowArray array = ArrowArray.allocateNew(NativeAllocator.SHARED);
         ArrowSchema schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
       Data.exportVectorSchemaRoot(

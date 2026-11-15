@@ -1711,3 +1711,33 @@ The runtime Java CI command bounds each Surefire fork at 30 minutes. A fork that
 reporting its test results fails the gate instead of occupying a runner until the full job timeout;
 the test selection and assertions remain the same. Canonical child-worker timeouts embed their
 logs and thread dumps in the failure report for diagnosis.
+
+## Large canonical case scheduling
+
+New high-cardinality providers are partitioned into concrete schema/control suites sharing the
+same inherited test bodies. Typed materializer cases are split by payload/key shape and declared
+input-key presence; the plain materializer matrix is split by input-key presence. OVER extrema
+are split by processing/event time and frame; typed event-time OVER is split by key/value schema,
+and validity-only COUNT payload jobs by frame. No parameter combination, handoff assertion,
+malformed-state check or native-execution requirement is removed.
+
+Independent configuration-set tests retain the original full inventories: 6,160 typed
+materializer cases on Flink 2.2 and 1,232 on Flink 1.18; 560/112 plain materializer cases;
+1,176/784 extrema cases; 896/448 typed event-time cases; and 672/448 COUNT payload cases. The real
+Maven partition regression checks inherited static providers through the existing includes files.
+
+The ten shards, four forks per runner and complete default selection remain unchanged.
+Per-worker and per-invocation timeouts remain unchanged.
+Splitting the new large classes lets the existing scheduler place them among those forks rather
+than leave one fork executing thousands of jobs serially. Unmeasured suites receive separately
+labelled placement estimates from their full provider invocation counts and the historical
+per-invocation cost of the existing grouped-arithmetic suite. Measured class/line costs take
+precedence. These are scheduling hints, not full-suite timing measurements or an elapsed-time
+speedup claim. Previously measured cohorts remain historical evidence for their original scope.
+
+The expanded complete inventory receives a 300-minute canonical-job budget. With the separately
+labelled scheduling estimates and four forks, an alphabetical-order model reaches about 233
+minutes on Flink 2.2 and 209 minutes on Flink 1.18. Those are model outputs, not measured job
+times. The previous 180-minute job budget could stop a successful expanded cohort before it
+finished. The larger job guard accommodates the added cases without multiplying runners or
+changing the four-minute worker and eight-minute invocation failure limits.

@@ -84,49 +84,68 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
     if (!bounded
             && (frameKind != 0 && frameKind != 3
                 || !proctime
-                    && getPersistedConfig()
+                    && !tech.streamfusion.compat.FlinkPlanCompat.supportsUnboundedOverVersion(
+                        getPersistedConfig()
                             .get(
                                 org.apache.flink.configuration.ConfigOptions.key(
                                         "table.exec.unbounded-over.version")
                                     .intType()
                                     .defaultValue(
                                         tech.streamfusion.compat.FlinkPlanCompat
-                                            .unboundedOverVersion()))
-                        != tech.streamfusion.compat.FlinkPlanCompat.unboundedOverVersion())
+                                            .unboundedOverVersion()))))
         || bounded && proctime && frameKind == 2
-        || keyColumns.length > 1
         || java.util.Arrays.stream(aggregateKinds)
-            .anyMatch(kind -> kind != 0 && kind != 3 && kind != 4 && kind != 22)
-        || !proctime
-            && frameKind == 1
-            && getPersistedConfig()
-                    .get(
-                        org.apache.flink.table.api.config.ExecutionConfigOptions
-                            .IDLE_STATE_RETENTION)
-                    .toMillis()
-                > 1) return false;
+            .anyMatch(
+                kind ->
+                    kind != 0
+                        && kind != 3
+                        && kind != 4
+                        && kind != 22
+                        && (bounded || kind != 1 && kind != 2)
+                        && (bounded
+                            || !proctime
+                            || !tech.streamfusion.state.StockOverDistinctView.supportsAggregate(
+                                kind)))) return false;
     var input = (RowType) getInputEdges().get(0).getOutputType();
-    if (keyColumns.length == 1
-        && !input
-            .getTypeAt(keyColumns[0])
-            .is(org.apache.flink.table.types.logical.LogicalTypeRoot.BIGINT)) return false;
-    for (int column : valueColumns) {
+    if (java.util.Arrays.stream(keyColumns)
+        .anyMatch(
+            key ->
+                !(proctime && !bounded
+                    ? tech.streamfusion.state.StockOverFoldStateContract
+                        .supportsProcessingPartitionKey(input.getTypeAt(key))
+                    : tech.streamfusion.state.StockOverFoldStateContract.supportsPartitionKey(
+                        input.getTypeAt(key))))) return false;
+    for (int i = 0; i < valueColumns.length; i++) {
+      int column = valueColumns[i];
       if (column < 0 || column >= input.getFieldCount()) return false;
       var type = input.getTypeAt(column);
-      if (!stockArithmeticValueType(type)
-          || !bounded && type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.DECIMAL))
-        return false;
+      if (!stockFoldValueType(aggregateKinds[i], type)) return false;
     }
     return true;
   }
 
   static boolean stockArithmeticValueType(org.apache.flink.table.types.logical.LogicalType type) {
-    return type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.BIGINT)
+    return type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.TINYINT)
+        || type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.SMALLINT)
+        || type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.INTEGER)
+        || type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.BIGINT)
         || type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.FLOAT)
         || type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.DOUBLE)
-        || type instanceof org.apache.flink.table.types.logical.DecimalType
-            && ((org.apache.flink.table.types.logical.DecimalType) type).getPrecision() == 38
-            && ((org.apache.flink.table.types.logical.DecimalType) type).getScale() == 2;
+        || type instanceof org.apache.flink.table.types.logical.DecimalType;
+  }
+
+  static boolean stockFoldValueType(
+      int kind, org.apache.flink.table.types.logical.LogicalType type) {
+    if (tech.streamfusion.state.StockOverDistinctView.supportsAggregate(kind))
+      return kind == 103
+          ? tech.streamfusion.state.StockOverDistinctView.supportsCountValueType(type)
+          : tech.streamfusion.state.StockOverDistinctView.supportsValueType(type);
+    if (kind == 3)
+      return !type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.BINARY)
+          && tech.streamfusion.operator.RowDataArrowConverter.supports(RowType.of(type));
+    if (kind == 1 || kind == 2)
+      return tech.streamfusion.state.StockOverFoldStateContract.supportsExtremumType(type);
+    return stockArithmeticValueType(type);
   }
 
   public NativeOverAggExecNode withStateMaxParallelism(int maximum) {
@@ -175,6 +194,15 @@ public class NativeOverAggExecNode extends ExecNodeBase<ArrowBatch>
             maxParallelism);
     if (constantType != null) operator.withConstantArguments(constantType, constantValues);
     if (eventCleanupTimers) operator.withEventTimeCleanupTimers();
+    if (!proctime && (frameKind == 0 || frameKind == 3))
+      operator.withEventTimeVersion(
+          getPersistedConfig()
+              .get(
+                  org.apache.flink.configuration.ConfigOptions.key(
+                          "table.exec.unbounded-over.version")
+                      .intType()
+                      .defaultValue(
+                          tech.streamfusion.compat.FlinkPlanCompat.unboundedOverVersion())));
     OneInputTransformation<ArrowBatch, ArrowBatch> transformation =
         ExecNodeUtil.createOneInputTransformation(
             input,

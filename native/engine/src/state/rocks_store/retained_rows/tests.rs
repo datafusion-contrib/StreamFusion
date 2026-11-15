@@ -511,3 +511,37 @@ fn nested_over_and_join_payloads_migrate_legacy_partitions_and_continue() {
         }
     }
 }
+
+#[test]
+fn retained_window_join_nested_map_payloads_keep_declared_schema() {
+    let temporary = tempfile::tempdir().unwrap();
+    let batch = input();
+    let mut buffer = RocksWindowBuffer::create(
+        config(temporary.path(), "window-join"),
+        batch.schema(),
+        batch.schema(),
+    )
+    .unwrap();
+    buffer
+        .push(
+            true,
+            &batch,
+            &[0],
+            &[-1],
+            batch
+                .column(3)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap(),
+        )
+        .unwrap();
+    let actual = buffer
+        .take_closed(true, 1000, &batch.schema())
+        .unwrap()
+        .unwrap();
+    assert_eq!(batch, actual);
+    assert!(buffer
+        .take_closed(true, 1000, &batch.schema())
+        .unwrap()
+        .is_none());
+}

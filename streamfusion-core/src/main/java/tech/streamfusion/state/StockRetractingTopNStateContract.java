@@ -54,6 +54,7 @@ public final class StockRetractingTopNStateContract implements StockStateContrac
   private final RowType keyType, rowType, sortType, bridgeType;
   private final Comparator<RowData> comparator;
   private final boolean variable, ttl;
+  private final int[] partitionColumns;
 
   public StockRetractingTopNStateContract(
       TypeSerializer<RowData> keys,
@@ -64,6 +65,29 @@ public final class StockRetractingTopNStateContract implements StockStateContrac
       ComparableRecordComparator comparator,
       boolean variable,
       boolean ttl) {
+    this(
+        keys,
+        partitionSelector,
+        sortSelector,
+        keyType,
+        rowType,
+        comparator,
+        variable,
+        ttl,
+        new int[0]);
+  }
+
+  public StockRetractingTopNStateContract(
+      TypeSerializer<RowData> keys,
+      RowDataKeySelector partitionSelector,
+      RowDataKeySelector sortSelector,
+      RowType keyType,
+      RowType rowType,
+      ComparableRecordComparator comparator,
+      boolean variable,
+      boolean ttl,
+      int[] partitionColumns) {
+    this.partitionColumns = partitionColumns.clone();
     this.keys = keys;
     this.partitionSelector = partitionSelector;
     this.sortSelector = sortSelector;
@@ -282,7 +306,8 @@ public final class StockRetractingTopNStateContract implements StockStateContrac
             }) {
       Data.exportSchema(
           NativeAllocator.SHARED,
-          MapListRepresentation.forIpc(ArrowConversion.toArrowSchema(rowType)),
+          MapListRepresentation.forIpc(
+              ArrowConversion.toBinaryRowKeySchema(rowType, partitionColumns)),
           NativeAllocator.DICTIONARIES,
           schema);
       Native.exportRetractingTopNCanonical(handle, persistent, schema.memoryAddress(), receiver);
@@ -327,6 +352,7 @@ public final class StockRetractingTopNStateContract implements StockStateContrac
         new StockRowBatch(
             bridgeType,
             true,
+            ArrowConversion.toBinaryRowKeySchema(bridgeType, partitionColumns),
             (transferred, array, schema) ->
                 batch(handle, persistent, transferred, validating, array, schema));
     var ownerType =

@@ -28,6 +28,7 @@ final class StockRowBatch {
 
   private final RowsReceiver receiver;
   private final boolean mapLists;
+  private final org.apache.arrow.vector.types.pojo.Schema arrowSchema;
   private final ArrayList<RowData> rows = new ArrayList<>(1024);
   private long bytes;
 
@@ -44,7 +45,24 @@ final class StockRowBatch {
   }
 
   StockRowBatch(RowType type, boolean mapLists, RowsReceiver receiver) {
+    this(type, mapLists, null, receiver);
+  }
+
+  StockRowBatch(
+      RowType type,
+      boolean mapLists,
+      org.apache.arrow.vector.types.pojo.Schema arrowSchema,
+      Receiver receiver) {
+    this(type, mapLists, arrowSchema, (rows, array, schema) -> receiver.accept(array, schema));
+  }
+
+  StockRowBatch(
+      RowType type,
+      boolean mapLists,
+      org.apache.arrow.vector.types.pojo.Schema arrowSchema,
+      RowsReceiver receiver) {
     this.mapLists = mapLists;
+    this.arrowSchema = arrowSchema;
     this.type = type;
     this.serializer = new RowDataSerializer(type);
     this.receiver = receiver;
@@ -59,7 +77,10 @@ final class StockRowBatch {
 
   void flush() {
     if (rows.isEmpty()) return;
-    try (var root = RowDataArrowConverter.write(rows, type, NativeAllocator.SHARED);
+    try (var root =
+            arrowSchema == null
+                ? RowDataArrowConverter.write(rows, type, NativeAllocator.SHARED)
+                : StockKeyedRowSchema.write(rows, type, arrowSchema);
         var array = ArrowArray.allocateNew(NativeAllocator.SHARED);
         var schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
       Data.exportVectorSchemaRoot(

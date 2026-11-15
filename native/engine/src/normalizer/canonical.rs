@@ -1,4 +1,5 @@
 use super::*;
+use crate::logical_input::canonical_list_labels;
 use jni::objects::JObject;
 
 const CHUNK_ROWS: usize = 1024;
@@ -51,34 +52,6 @@ fn canonical_batch(
         Arc::new(Schema::new(fields)),
         columns,
     )?)
-}
-
-// Java ListVector replaces the UTF-16 carrier's child name when an Arrow batch crosses
-// a network edge. Its bytes and nullability are unchanged; retain every other field property.
-fn canonical_list_labels(data_type: &DataType) -> DataType {
-    match data_type {
-        DataType::Struct(fields) => DataType::Struct(
-            fields
-                .iter()
-                .map(|field| {
-                    Arc::new(
-                        field
-                            .as_ref()
-                            .clone()
-                            .with_data_type(canonical_list_labels(field.data_type())),
-                    )
-                })
-                .collect(),
-        ),
-        DataType::List(field)
-            if field.data_type() == &DataType::UInt16
-                && !field.is_nullable()
-                && matches!(field.name().as_str(), "unit" | "$data$") =>
-        {
-            DataType::List(Arc::new(field.as_ref().clone().with_name("unit")))
-        }
-        _ => data_type.clone(),
-    }
 }
 
 impl<S: KeyedStateStore<NormalizedRow>> ChangelogNormalizer<S> {

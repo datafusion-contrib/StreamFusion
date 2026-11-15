@@ -260,3 +260,16 @@ and exact key-layout/admission limits are documented in
 [ordinary SQL canonical handoffs](../../backends/canonical-state.md#ordinary-sql-canonical-handoffs).
 This does not qualify the full ordinary variant/type/rescale/failure/connector matrix; the family
 remains partial under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+### Nested canonical payload binding
+
+Canonical submission now retains existing native ROW/ARRAY/MAP payloads instead of rejecting
+every constructed non-key field. Join-key, time, predicate and backend admission remain
+independent. New ordinary/compiled planner and clean-stock-worker fixtures keep complete nested
+payloads through the join, with NULL parents, NULL descendants, Unicode map keys and duplicate
+rows. The authored fixtures cover continued input, no-input re-export, native checkpoints and
+1 → 3 → 2 rescaling; qualification on Flink 1.18 and 2.2 is pending.
+
+Live input reconciles Arrow’s physical ARRAY and MAP child labels with the captured
+logical schema before buffering or probing. Logical ROW names and collection value types
+remain unchanged, so restored and newly arriving rows share one schema.

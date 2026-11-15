@@ -33,6 +33,10 @@ public class NativeFirstNExecNode extends ExecNodeBase<ArrowBatch>
     return this;
   }
 
+  int[] stateKeyColumns() {
+    return partitions.clone();
+  }
+
   boolean sameStateDefinition(NativeFirstNExecNode other) {
     return limit == other.limit
         && outputRank == other.outputRank

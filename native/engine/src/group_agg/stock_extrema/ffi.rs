@@ -66,12 +66,12 @@ pub extern "system" fn Java_tech_streamfusion_Native_exportGroupExtremaCanonical
         let result = check_handle(handle).and_then(|_| {
             owner!(handle, persistent, |owner| {
                 let mut memory = owner.memory.temporary_reservation();
-                owner.visit_stock_extrema(|kind, batch| {
+                owner.visit_stock_extrema_with_memory(&mut memory, |kind, batch, memory| {
                     let receiver = match kind {
                         FrameKind::Headers => &header_receiver,
                         FrameKind::Entries => &entry_receiver,
                     };
-                    canonical::emit(&mut env, receiver, batch, &mut memory)
+                    canonical::emit(&mut env, receiver, batch, memory)
                 })
             })
         });

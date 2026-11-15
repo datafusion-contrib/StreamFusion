@@ -27,7 +27,7 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
   final RowType accumulatorType, outputType, inputType;
   final int[] kinds, scalarFields, countFields, valueColumns, keyColumns;
   final int maximum;
-  final boolean before;
+  final boolean before, miniBatch;
   final long ttl;
 
   @SuppressWarnings("unchecked")
@@ -83,6 +83,42 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
       boolean global,
       String valueSqlType)
       throws Exception {
+    this(mode, rocks, ttl, beforePolicy, append, integerKey, global, valueSqlType, false);
+  }
+
+  @SuppressWarnings("unchecked")
+  GroupAggregateStockTestFixture(
+      String mode,
+      boolean rocks,
+      long ttl,
+      Boolean beforePolicy,
+      boolean append,
+      boolean integerKey,
+      boolean global,
+      String valueSqlType,
+      boolean miniBatch)
+      throws Exception {
+    this(mode, rocks, ttl, beforePolicy, append, integerKey, global, valueSqlType, miniBatch, null);
+  }
+
+  @SuppressWarnings("unchecked")
+  GroupAggregateStockTestFixture(
+      String mode,
+      boolean rocks,
+      long ttl,
+      Boolean beforePolicy,
+      boolean append,
+      boolean integerKey,
+      boolean global,
+      String valueSqlType,
+      boolean miniBatch,
+      RowType groupKeys)
+      throws Exception {
+    if (groupKeys != null && global)
+      throw new IllegalArgumentException("Global fixture has no group fields");
+    this.miniBatch = miniBatch;
+    if (miniBatch && beforePolicy != null)
+      throw new IllegalArgumentException("Use the captured mini-batch before-image policy");
     if (!valueSqlType.equals("BIGINT")
         && ((!mode.equals("extrema") && !mode.equals("counted-extrema")) || append))
       throw new IllegalArgumentException("Typed fixture requires retracting extrema");
@@ -93,9 +129,35 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
             : org.apache.flink.table.types.logical.utils.LogicalTypeParser.parse(
                 valueSqlType, GroupAggregateStockTestFixture.class.getClassLoader());
     this.ttl = ttl;
-    keyColumns = global ? new int[0] : new int[] {0};
+    var keySchema =
+        groupKeys == null
+            ? RowType.of(
+                org.apache.flink.table.types.logical.utils.LogicalTypeParser.parse(
+                    integerKey ? "INT" : "BIGINT", getClass().getClassLoader()))
+            : groupKeys;
+    keyColumns =
+        global
+            ? new int[0]
+            : java.util.stream.IntStream.range(0, keySchema.getFieldCount()).toArray();
     maximum = global ? 1 : 128;
-    String keyType = integerKey ? "INT" : "BIGINT";
+    String keyFields =
+        java.util.stream.IntStream.range(0, keySchema.getFieldCount())
+            .mapToObj(index -> groupKeys == null ? "k" : "k" + index)
+            .collect(java.util.stream.Collectors.joining(","));
+    var inputSchema = org.apache.flink.table.api.Schema.newBuilder();
+    var outputSchema = org.apache.flink.table.api.Schema.newBuilder();
+    for (int index = 0; index < keySchema.getFieldCount(); index++) {
+      String name = groupKeys == null ? "k" : "k" + index;
+      var type =
+          org.apache.flink.table.types.utils.TypeConversions.fromLogicalToDataType(
+              keySchema.getTypeAt(index));
+      inputSchema.column(name, type);
+      if (!global) outputSchema.column(name, type);
+    }
+    inputSchema.column(
+        "v", org.apache.flink.table.types.utils.TypeConversions.fromLogicalToDataType(valueType));
+    var keyedFields = new java.util.ArrayList<LogicalType>(keySchema.getChildren());
+    keyedFields.add(valueType);
     var expectedInput =
         global
             ? (mode.equals("star")
@@ -103,15 +165,15 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
                     new org.apache.flink.table.types.logical.BigIntType(),
                     new org.apache.flink.table.types.logical.BigIntType())
                 : RowType.of(valueType))
-            : RowType.of(
-                integerKey
-                    ? new org.apache.flink.table.types.logical.IntType()
-                    : new org.apache.flink.table.types.logical.BigIntType(),
-                valueType);
+            : RowType.of(keyedFields.toArray(new LogicalType[0]));
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", "false");
     var table = NativePlannerTestEnvironment.create(config);
-    table.getConfig().set("table.exec.mini-batch.enabled", "false");
+    table.getConfig().set("table.exec.mini-batch.enabled", Boolean.toString(miniBatch));
+    if (miniBatch) {
+      table.getConfig().set("table.exec.mini-batch.size", "10000");
+      table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");
+    }
     table.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
     table.getConfig().set("table.exec.state.ttl", ttl + " ms");
     table.registerCatalog(
@@ -123,15 +185,14 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
           }
         });
     table.useCatalog("fixture");
-    table.executeSql(
-        "CREATE TABLE input_table(k "
-            + keyType
-            + ",v "
-            + valueSqlType
-            + ") WITH"
-            + " ('connector'='canonical-fixture','input'='unused.csv','ready'='unused.ready','insert-only'='"
-            + append
-            + "')");
+    table.createTable(
+        "input_table",
+        org.apache.flink.table.api.TableDescriptor.forConnector("canonical-fixture")
+            .schema(inputSchema.build())
+            .option("input", "unused.csv")
+            .option("ready", "unused.ready")
+            .option("insert-only", Boolean.toString(append))
+            .build());
     table.useCatalog("default_catalog");
     String fields =
         mode.equals("counted-extrema")
@@ -148,45 +209,68 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
                                 ? "COUNT(*) AS a,COUNT(v) AS b,SUM(v) AS c,AVG(v) AS d,MIN(v) AS"
                                     + " e,MAX(v) AS f"
                                 : mode.equals("count") ? "COUNT(v) AS a" : "COUNT(*) AS a";
-    table.executeSql(
-        "CREATE TABLE output_table("
-            + (global ? "" : "k " + keyType + ",")
-            + (mode.equals("counted-extrema")
-                ? "a BIGINT,b " + valueSqlType + ",c " + valueSqlType
-                : mode.equals("hidden-extrema")
-                    ? "c BIGINT,d BIGINT,e BIGINT,f BIGINT"
-                    : mode.equals("arithmetic")
-                        ? "a BIGINT,b BIGINT,c BIGINT,d BIGINT"
-                        : mode.equals("hidden")
-                            ? "c BIGINT,d BIGINT"
-                            : mode.equals("extrema")
-                                ? "a " + valueSqlType + ",b " + valueSqlType
-                                : mode.equals("mixed-extrema")
-                                    ? "a BIGINT,b BIGINT,c BIGINT,d BIGINT,e BIGINT,f BIGINT"
-                                    : "a BIGINT")
-            + ") WITH ('connector'='blackhole')");
+    String[] outputFields =
+        mode.equals("counted-extrema")
+            ? new String[] {"a", "b", "c"}
+            : mode.equals("hidden-extrema")
+                ? new String[] {"c", "d", "e", "f"}
+                : mode.equals("arithmetic")
+                    ? new String[] {"a", "b", "c", "d"}
+                    : mode.equals("hidden")
+                        ? new String[] {"c", "d"}
+                        : mode.equals("extrema")
+                            ? new String[] {"a", "b"}
+                            : mode.equals("mixed-extrema")
+                                ? new String[] {"a", "b", "c", "d", "e", "f"}
+                                : new String[] {"a"};
+    for (String name : outputFields) {
+      var type =
+          mode.equals("extrema") || mode.equals("counted-extrema") && !name.equals("a")
+              ? valueType
+              : new org.apache.flink.table.types.logical.BigIntType();
+      outputSchema.column(
+          name, org.apache.flink.table.types.utils.TypeConversions.fromLogicalToDataType(type));
+    }
+    table.createTable(
+        "output_table",
+        org.apache.flink.table.api.TableDescriptor.forConnector("blackhole")
+            .schema(outputSchema.build())
+            .build());
+
     var planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
     var transforms =
         CanonicalRegularJoinPlanTest.translate(
             planner,
             "INSERT INTO output_table SELECT "
-                + (global ? "" : "k,")
+                + (global ? "" : keyFields + ",")
                 + fields
                 + " FROM fixture.db.input_table"
-                + (global ? "" : " GROUP BY k"));
+                + (global ? "" : " GROUP BY " + keyFields));
     var graph = CanonicalRegularJoinPlanTest.graph(planner, table, transforms);
     var node =
         graph.getStreamNodes().stream()
             .filter(
-                n ->
-                    n.getOperatorFactory() instanceof SimpleOperatorFactory
-                        && ((SimpleOperatorFactory<?>) n.getOperatorFactory()).getOperator()
-                            instanceof KeyedProcessOperator
-                        && ((KeyedProcessOperator<?, ?, ?>)
-                                    ((SimpleOperatorFactory<?>) n.getOperatorFactory())
-                                        .getOperator())
-                                .getUserFunction()
-                            instanceof GroupAggFunction)
+                n -> {
+                  if (!(n.getOperatorFactory() instanceof SimpleOperatorFactory)) return false;
+                  var candidate = ((SimpleOperatorFactory<?>) n.getOperatorFactory()).getOperator();
+                  if (miniBatch) {
+                    if (!(candidate
+                        instanceof
+                        org.apache.flink.table.runtime.operators.bundle.KeyedMapBundleOperator))
+                      return false;
+                    try {
+                      return field(candidate, "function")
+                          instanceof
+                          org.apache.flink.table.runtime.operators.aggregate
+                              .MiniBatchGroupAggFunction;
+                    } catch (Exception failure) {
+                      throw new RuntimeException(failure);
+                    }
+                  }
+                  return candidate instanceof KeyedProcessOperator
+                      && ((KeyedProcessOperator<?, ?, ?>) candidate).getUserFunction()
+                          instanceof GroupAggFunction;
+                })
             .findFirst()
             .orElseThrow(() -> new AssertionError(graph.getStreamingPlanAsJSON()));
     inputType =
@@ -200,9 +284,12 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
             "Stock global owner must be singleton with maximum parallelism one");
     }
     var operator =
-        (KeyedProcessOperator<RowData, RowData, RowData>)
+        (org.apache.flink.streaming.api.operators.OneInputStreamOperator<RowData, RowData>)
             ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator();
-    var plannedFunction = operator.getUserFunction();
+    var plannedFunction =
+        miniBatch
+            ? field(operator, "function")
+            : ((KeyedProcessOperator<?, ?, ?>) operator).getUserFunction();
     if (beforePolicy != null) {
       var generated =
           (org.apache.flink.table.runtime.generated.GeneratedAggsHandleFunction)
@@ -222,54 +309,57 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
           new KeyedProcessOperator<>(
               new GroupAggFunction(generated, equaliser, acc, counter, beforePolicy, ttl));
     }
-    function = operator.getUserFunction();
+    function =
+        miniBatch
+            ? field(operator, "function")
+            : ((KeyedProcessOperator<?, ?, ?>) operator).getUserFunction();
     selector = (RowDataKeySelector) node.getStatePartitioners()[0];
     accumulatorType = RowType.of((LogicalType[]) field(function, "accTypes"));
     outputType = RowType.of((LogicalType[]) field(node.getTypeSerializerOut(), "types"));
     before = (boolean) field(function, "generateUpdateBefore");
+    int valueColumn = global ? 0 : keyColumns.length;
     switch (mode) {
       case "arithmetic":
         kinds = new int[] {3, 3, 22};
         scalarFields = new int[] {0, 1, 2};
         countFields = new int[] {-1, -1, -1};
-        valueColumns = new int[] {-1, global ? 0 : 1, global ? 0 : 1};
+        valueColumns = new int[] {-1, valueColumn, valueColumn};
         break;
       case "hidden":
         kinds = new int[] {0, 4};
         scalarFields = append ? new int[] {0, 1} : new int[] {0, 2};
         countFields = append ? new int[] {-1, 2} : new int[] {1, 3};
-        valueColumns = new int[] {global ? 0 : 1, global ? 0 : 1};
+        valueColumns = new int[] {valueColumn, valueColumn};
         break;
       case "hidden-extrema":
         kinds = append ? new int[] {0, 4, 10, 11} : new int[] {0, 4, 38, 39};
         scalarFields = append ? new int[] {0, 1, 3, 4} : new int[] {0, 2, 4, 5};
         countFields = append ? new int[] {-1, 2, -1, -1} : new int[] {1, 3, -1, -1};
-        valueColumns = new int[] {global ? 0 : 1, global ? 0 : 1, global ? 0 : 1, global ? 0 : 1};
+        valueColumns = new int[] {valueColumn, valueColumn, valueColumn, valueColumn};
         break;
       case "counted-extrema":
         kinds = new int[] {3, 38, 39};
         scalarFields = new int[] {0, 1, 2};
         countFields = new int[] {-1, -1, -1};
-        valueColumns = new int[] {global ? 0 : 1, global ? 0 : 1, global ? 0 : 1};
+        valueColumns = new int[] {valueColumn, valueColumn, valueColumn};
         break;
       case "extrema":
         kinds = append ? new int[] {10, 11} : new int[] {38, 39};
         scalarFields = new int[] {0, 1};
         countFields = new int[] {-1, -1};
-        valueColumns = new int[] {global ? 0 : 1, global ? 0 : 1};
+        valueColumns = new int[] {valueColumn, valueColumn};
         break;
       case "mixed-extrema":
         kinds = append ? new int[] {3, 3, 22, 10, 11} : new int[] {3, 3, 22, 38, 39};
         scalarFields = new int[] {0, 1, 2, 3, 4};
         countFields = new int[] {-1, -1, -1, -1, -1};
-        valueColumns =
-            new int[] {-1, global ? 0 : 1, global ? 0 : 1, global ? 0 : 1, global ? 0 : 1};
+        valueColumns = new int[] {-1, valueColumn, valueColumn, valueColumn, valueColumn};
         break;
       case "count":
         kinds = new int[] {3};
         scalarFields = new int[] {0};
         countFields = new int[] {-1};
-        valueColumns = new int[] {global ? 0 : 1};
+        valueColumns = new int[] {valueColumn};
         break;
       case "star":
         kinds = new int[] {3};

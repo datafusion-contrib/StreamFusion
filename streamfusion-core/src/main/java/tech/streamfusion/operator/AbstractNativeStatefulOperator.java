@@ -15,6 +15,7 @@ import org.apache.flink.runtime.state.StateInitializationContext;
 import org.apache.flink.runtime.state.StateSnapshotContext;
 import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.Native;
+import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.arrow.MapListRepresentation;
 import tech.streamfusion.compat.FlinkCanonicalStreamOperator;
 import tech.streamfusion.compat.RuntimeCompat;
@@ -664,12 +665,13 @@ public abstract class AbstractNativeStatefulOperator<OUT>
   }
 
   private long withRowSchema(RowType rowType, boolean mapList, LongUnaryOperator call) {
+    return withRowSchema(rowSchema(rowType, mapList), call);
+  }
+
+  protected static long withRowSchema(
+      org.apache.arrow.vector.types.pojo.Schema inputSchema, LongUnaryOperator call) {
     try (ArrowSchema schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
-      Data.exportSchema(
-          NativeAllocator.SHARED,
-          rowSchema(rowType, mapList),
-          NativeAllocator.DICTIONARIES,
-          schema);
+      Data.exportSchema(NativeAllocator.SHARED, inputSchema, NativeAllocator.DICTIONARIES, schema);
       return call.applyAsLong(schema.memoryAddress());
     }
   }
@@ -683,6 +685,28 @@ public abstract class AbstractNativeStatefulOperator<OUT>
   protected final long withMapListSchemas(
       RowType leftType, RowType rightType, LongBinaryOperator call) {
     return withRowSchemas(leftType, rightType, true, call);
+  }
+
+  protected static long withRetainedRowSchemas(
+      RowType leftType, RowType rightType, LongBinaryOperator call) {
+    try (ArrowSchema left = ArrowSchema.allocateNew(NativeAllocator.SHARED);
+        ArrowSchema right = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
+      Data.exportSchema(
+          NativeAllocator.SHARED,
+          MapListRepresentation.forIpc(
+              tech.streamfusion.arrow.NestedRepresentation.withBinaryRows(
+                  ArrowConversion.toArrowSchema(leftType))),
+          NativeAllocator.DICTIONARIES,
+          left);
+      Data.exportSchema(
+          NativeAllocator.SHARED,
+          MapListRepresentation.forIpc(
+              tech.streamfusion.arrow.NestedRepresentation.withBinaryRows(
+                  ArrowConversion.toArrowSchema(rightType))),
+          NativeAllocator.DICTIONARIES,
+          right);
+      return call.applyAsLong(left.memoryAddress(), right.memoryAddress());
+    }
   }
 
   private long withRowSchemas(

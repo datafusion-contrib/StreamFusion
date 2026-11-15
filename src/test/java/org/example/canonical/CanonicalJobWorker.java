@@ -82,7 +82,9 @@ public final class CanonicalJobWorker {
             ? Integer.parseInt(Files.readString(root.resolve(stage + "-parallelism")).trim())
             : 1;
     String fixedConnectorParallelism =
-        Files.exists(root.resolve("rescale")) ? ",'parallelism'='1'" : "";
+        Files.exists(root.resolve("rescale")) && !Files.exists(root.resolve("rescale-materializer"))
+            ? ",'parallelism'='1'"
+            : "";
     Configuration config = new Configuration();
     config.setString("execution.target", "local");
     config.setString("restart-strategy.type", "none");
@@ -184,6 +186,12 @@ public final class CanonicalJobWorker {
             .getConfig()
             .set("table.exec.state.ttl", Files.readString(root.resolve("state-ttl")).trim());
       }
+      if (Files.exists(root.resolve("unbounded-over-version")))
+        table
+            .getConfig()
+            .set(
+                "table.exec.unbounded-over.version",
+                Files.readString(root.resolve("unbounded-over-version")).trim());
       boolean twoPhase = Files.exists(root.resolve("two-phase-mini-batch"));
       boolean miniBatch = twoPhase || Files.exists(root.resolve("one-phase-mini-batch"));
       table.getConfig().set("table.exec.mini-batch.enabled", Boolean.toString(miniBatch));
@@ -229,6 +237,15 @@ public final class CanonicalJobWorker {
                     : CanonicalFixtureFactory.HistoryAggregate.class.getName())
                 + "'");
       }
+      if (Files.exists(root.resolve("nested-join-checksum")))
+        table.createTemporarySystemFunction(
+            "nested_checksum", CanonicalFixtureFactory.NestedJoinChecksum.class);
+      if (Files.exists(root.resolve("nested-rank-checksum")))
+        table.createTemporarySystemFunction(
+            "rank_checksum",
+            Files.readString(root.resolve("nested-rank-checksum")).trim().equals("map")
+                ? CanonicalFixtureFactory.NestedRankChecksum.class
+                : CanonicalFixtureFactory.NestedRowRankChecksum.class);
       registerInput(
           table, root, "input_table", "input.csv", ready, limit, fixedConnectorParallelism);
       if (twoInputs)
@@ -240,11 +257,16 @@ public final class CanonicalJobWorker {
             rightReady,
             limit,
             fixedConnectorParallelism);
+      String outputColumns =
+          Files.exists(root.resolve("output-columns.sql"))
+              ? Files.readString(root.resolve("output-columns.sql"))
+              : "k BIGINT, n BIGINT, total BIGINT"
+                  + (sinkMaterializer || Files.exists(root.resolve("upsert-sink"))
+                      ? ",PRIMARY KEY(k) NOT ENFORCED"
+                      : "");
       table.executeSql(
-          "CREATE TABLE output_table (k BIGINT, n BIGINT, total BIGINT"
-              + (sinkMaterializer || Files.exists(root.resolve("upsert-sink"))
-                  ? ",PRIMARY KEY(k) NOT ENFORCED"
-                  : "")
+          "CREATE TABLE output_table ("
+              + outputColumns
               + ") WITH ("
               + "'connector'='canonical-fixture','output'='"
               + sql(root.resolve("committed"))
@@ -314,6 +336,18 @@ public final class CanonicalJobWorker {
                 Files.readString(root.resolve("required-plan-node")).trim())) {
           throw new AssertionError("Fixture compiled a different stock operator: " + portablePlan);
         }
+        if (Files.exists(root.resolve("require-retained-map-owner"))) {
+          String family = Files.readString(root.resolve("require-retained-map-owner")).trim();
+          var graph =
+              new org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper()
+                  .readTree(portablePlan);
+          boolean retainedMap = false;
+          for (var node : graph.path("nodes"))
+            if (node.path("type").asText().startsWith(family))
+              retainedMap |= node.path("outputType").toString().contains("MAP");
+          if (!retainedMap)
+            throw new AssertionError("Fixture did not retain a MAP payload in " + family);
+        }
         if (Files.exists(root.resolve("require-rank-map-state"))) {
           var graph =
               new org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper()
@@ -324,6 +358,22 @@ public final class CanonicalJobWorker {
               retainedMap |= node.path("outputType").toString().contains("MAP");
           if (!retainedMap)
             throw new AssertionError("Fixture did not retain a MAP payload in rank state");
+        }
+        if (Files.exists(root.resolve("required-rank-strategy"))) {
+          String expected = Files.readString(root.resolve("required-rank-strategy")).trim();
+          var nodes =
+              new org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper()
+                  .readTree(portablePlan)
+                  .path("nodes");
+          boolean matched = false;
+          for (var node : nodes)
+            if (node.path("type").asText().startsWith("stream-exec-rank_")) {
+              String actual = node.path("rankStrategy").path("type").asText();
+              if (!expected.equals(actual))
+                throw new AssertionError("Fixture selected " + actual + " instead of " + expected);
+              matched = true;
+            }
+          if (!matched) throw new AssertionError("Fixture contains no stock rank owner");
         }
         explain = plan.explain(ExplainDetail.JSON_EXECUTION_PLAN);
         Files.writeString(root.resolve(stage + "-plan.txt"), explain);
@@ -340,6 +390,68 @@ public final class CanonicalJobWorker {
               ? table.executeSql(Files.readString(root.resolve("query.sql")))
               : plan.execute();
       if (nativeRun) {
+        if (Files.exists(root.resolve("required-over-distinct-views"))) {
+          int expected =
+              Integer.parseInt(
+                  Files.readString(root.resolve("required-over-distinct-views")).trim());
+          var registrations = canonicalRegistrations(table);
+          int owners = 0;
+          for (var bound : registrations.values()) {
+            var field = bound.getClass().getDeclaredField("contract");
+            field.setAccessible(true);
+            Object contract = field.get(bound);
+            if (contract == null) continue;
+            if (!contract
+                .getClass()
+                .getName()
+                .equals("tech.streamfusion.state.StockOverFoldStateContract")) continue;
+            var descriptors =
+                (java.util.Map<?, ?>)
+                    contract.getClass().getMethod("stateDescriptors").invoke(contract);
+            long views =
+                descriptors.values().stream()
+                    .filter(
+                        kind -> kind == org.apache.flink.api.common.state.StateDescriptor.Type.MAP)
+                    .count();
+            if (views != expected)
+              throw new AssertionError(
+                  "Expected " + expected + " independent OVER views, observed " + views);
+            owners++;
+          }
+          if (owners != 1)
+            throw new AssertionError("Expected one bound OVER owner, observed " + owners);
+          Files.writeString(
+              root.resolve(stage + "-independent-over-views-verified"), Integer.toString(expected));
+        }
+        if (Files.exists(root.resolve("required-extrema-key-fields"))) {
+          int expected =
+              Integer.parseInt(
+                  Files.readString(root.resolve("required-extrema-key-fields")).trim());
+          int owners = 0;
+          for (var bound : canonicalRegistrations(table).values()) {
+            var field = bound.getClass().getDeclaredField("contract");
+            field.setAccessible(true);
+            Object contract = field.get(bound);
+            if (contract == null
+                || !contract
+                    .getClass()
+                    .getName()
+                    .equals("tech.streamfusion.state.StockGroupExtremaStateContract")) continue;
+            var keyField = contract.getClass().getDeclaredField("keyType");
+            keyField.setAccessible(true);
+            int observed =
+                ((org.apache.flink.table.types.logical.RowType) keyField.get(contract))
+                    .getFieldCount();
+            if (observed != expected)
+              throw new AssertionError(
+                  "Expected " + expected + " extrema key fields, observed " + observed);
+            owners++;
+          }
+          if (owners != 1)
+            throw new AssertionError("Expected one bound extrema owner, observed " + owners);
+          Files.writeString(
+              root.resolve(stage + "-extrema-key-fields-verified"), Integer.toString(expected));
+        }
         var diagnostics = new StringBuilder();
         for (var entry : table.getConfig().getConfiguration().toMap().entrySet())
           if (entry.getKey().contains("storage") || entry.getKey().contains("projection-active"))
@@ -408,6 +520,13 @@ public final class CanonicalJobWorker {
           var execution = cluster.getExecutionGraph(job.getJobID()).get(5, TimeUnit.SECONDS);
           if (execution.getFailureInfo() != null)
             System.err.println(execution.getFailureInfo().getExceptionAsString());
+          for (var vertex : execution.getAllExecutionVertices()) {
+            System.err.println(
+                vertex.getTaskNameWithSubtaskIndex() + ": " + vertex.getExecutionState());
+            vertex
+                .getFailureInfo()
+                .ifPresent(failure -> System.err.println(failure.getExceptionAsString()));
+          }
           if (job.getJobStatus().get(5, TimeUnit.SECONDS).isGloballyTerminalState()) {
             try {
               job.getJobExecutionResult().get(10, TimeUnit.SECONDS);
@@ -581,14 +700,20 @@ public final class CanonicalJobWorker {
                   .flatMap(entry -> entry.getValue().stream())
                   .filter(counter -> counter.getCount() > 0)
                   .count();
-          int expectedTasks =
-              (Files.exists(root.resolve("global-aggregate")) && family.equals("GroupAgg")
-                      || Files.exists(root.resolve("global-over")) && family.equals("OverAgg")
-                      || Files.exists(root.resolve("singleton-owner"))
-                          && family.equals(
-                              Files.readString(root.resolve("singleton-owner")).trim()))
-                  ? 1
-                  : parallelism;
+          long expectedTasks =
+              cluster
+                  .getExecutionGraph(job.getJobID())
+                  .get(5, TimeUnit.SECONDS)
+                  .getAllVertices()
+                  .values()
+                  .stream()
+                  .filter(
+                      vertex ->
+                          vertex.getName().contains("Native") && vertex.getName().contains(family))
+                  .mapToLong(vertex -> vertex.getParallelism())
+                  .sum();
+          if (expectedTasks == 0)
+            throw new AssertionError("No native " + family + " owner in the executed graph");
           if (activeTasks != expectedTasks)
             throw new AssertionError(
                 "Expected "
@@ -665,6 +790,19 @@ public final class CanonicalJobWorker {
     } finally {
       Thread.currentThread().setContextClassLoader(original);
     }
+  }
+
+  private static java.util.Map<?, ?> canonicalRegistrations(
+      org.apache.flink.table.api.TableEnvironment table) throws Exception {
+    String encoded =
+        table
+            .getConfig()
+            .getConfiguration()
+            .getString("streamfusion.canonical.state-contracts", "");
+    if (encoded.isEmpty()) throw new AssertionError("Missing bound canonical state contracts");
+    return org.apache.flink.util.InstantiationUtil.deserializeObject(
+        java.util.Base64.getDecoder().decode(encoded),
+        Thread.currentThread().getContextClassLoader());
   }
 
   private static void verifyNativePlan(

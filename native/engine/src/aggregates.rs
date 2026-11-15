@@ -8,6 +8,7 @@ mod floating_distinct;
 pub(crate) use counted_distinct::CountedDistinctAccumulator;
 pub(crate) const COUNT_DISTINCT_WITH_COUNTS: i64 = 43;
 mod floating_extreme;
+mod floating_sum;
 mod retracting_window;
 mod scalar_extreme;
 mod timestamp_extreme;
@@ -473,52 +474,6 @@ impl Accumulator for WrappingNarrowSumAccumulator {
     }
 }
 
-/// Sum of a float (4-byte) column matching the host: the host keeps the input type and accumulates
-/// the running sum in float, so it rounds to 4-byte precision on every step (unlike DataFusion's
-/// sum, which widens to double). We accumulate in f32 in the same per-row fold order, so the result
-/// is bit-identical. The state is Flink's buffer — the nullable float sum alone (NULL until a
-/// non-null value is seen) — so it is a single-field mergeable partial for the two-phase split.
-#[derive(Debug, Default)]
-pub(crate) struct FloatSumAccumulator {
-    sum: Option<f32>,
-}
-
-impl Accumulator for FloatSumAccumulator {
-    fn update_batch(&mut self, values: &[ArrayRef]) -> datafusion::common::Result<()> {
-        let array = values[0]
-            .as_any()
-            .downcast_ref::<Float32Array>()
-            .expect("value float32");
-        for value in array.iter().flatten() {
-            self.sum = Some(self.sum.unwrap_or(0.0) + value);
-        }
-        Ok(())
-    }
-
-    fn merge_batch(&mut self, states: &[ArrayRef]) -> datafusion::common::Result<()> {
-        let sums = states[0]
-            .as_any()
-            .downcast_ref::<Float32Array>()
-            .expect("sum state float32");
-        for value in sums.iter().flatten() {
-            self.sum = Some(self.sum.unwrap_or(0.0) + value);
-        }
-        Ok(())
-    }
-
-    fn state(&mut self) -> datafusion::common::Result<Vec<ScalarValue>> {
-        Ok(vec![ScalarValue::Float32(self.sum)])
-    }
-
-    fn evaluate(&mut self) -> datafusion::common::Result<ScalarValue> {
-        Ok(ScalarValue::Float32(self.sum))
-    }
-
-    fn size(&self) -> usize {
-        std::mem::size_of::<Self>()
-    }
-}
-
 /// Average of a float column matching the host: the host accumulates the sum in double, divides by
 /// the count in double, then narrows the result to float. The two-field partial state (sum, count)
 /// rides the general checkpoint path.
@@ -666,7 +621,7 @@ pub(crate) enum WindowAggregate {
     IntegerAvg(DataType),
     WrappingIntSum,
     WrappingNarrowSum(DataType),
-    FloatSum,
+    FloatingSum(DataType),
     FloatAvg,
     DoubleAvg,
     FloatingExtreme { kind: i64, value_type: DataType },
@@ -683,7 +638,7 @@ pub(crate) enum WindowAggregate {
 impl WindowAggregate {
     pub(crate) fn state_requires_restore(&self) -> bool {
         match self {
-            Self::Count | Self::CountedDistinct(_) => false,
+            Self::Count | Self::CountedDistinct(_) | Self::FloatingSum(_) => false,
             Self::Builtin(aggregate)
                 if !aggregate.is_distinct()
                     && matches!(aggregate.fun().name(), "sum" | "count" | "min" | "max") =>
@@ -745,8 +700,9 @@ impl WindowAggregate {
             (0, DataType::Int16 | DataType::Int8) => {
                 WindowAggregate::WrappingNarrowSum(value_type.clone())
             }
-            // SUM over float keeps the host's 4-byte precision rather than widening to double.
-            (0, DataType::Float32) => WindowAggregate::FloatSum,
+            (0, DataType::Float32 | DataType::Float64) => {
+                WindowAggregate::FloatingSum(value_type.clone())
+            }
             (0, DataType::Decimal128(_, s)) => WindowAggregate::DecimalSum { scale: *s },
             (1 | 2, DataType::Float32 | DataType::Float64) => WindowAggregate::FloatingExtreme {
                 kind,
@@ -825,7 +781,17 @@ impl WindowAggregate {
             WindowAggregate::WrappingNarrowSum(data_type) => {
                 Box::new(WrappingNarrowSumAccumulator::new(data_type.clone()))
             }
-            WindowAggregate::FloatSum => Box::<FloatSumAccumulator>::default(),
+            WindowAggregate::FloatingSum(DataType::Float32) => {
+                Box::new(floating_sum::FloatingSumAccumulator::<
+                    arrow::datatypes::Float32Type,
+                >::new(ScalarValue::Float32))
+            }
+            WindowAggregate::FloatingSum(DataType::Float64) => {
+                Box::new(floating_sum::FloatingSumAccumulator::<
+                    arrow::datatypes::Float64Type,
+                >::new(ScalarValue::Float64))
+            }
+            WindowAggregate::FloatingSum(other) => unreachable!("floating SUM type: {other}"),
             WindowAggregate::FloatAvg => Box::<FloatAvgAccumulator>::default(),
             WindowAggregate::DoubleAvg => Box::<DoubleAvgAccumulator>::default(),
             WindowAggregate::FloatingExtreme { kind, value_type } => Box::new(
@@ -879,7 +845,9 @@ impl WindowAggregate {
             WindowAggregate::WrappingNarrowSum(data_type) => {
                 vec![Field::new("sum", data_type.clone(), true)]
             }
-            WindowAggregate::FloatSum => vec![Field::new("sum", DataType::Float32, true)],
+            WindowAggregate::FloatingSum(value_type) => {
+                vec![Field::new("sum", value_type.clone(), true)]
+            }
             WindowAggregate::FloatingExtreme { value_type, .. } => {
                 vec![Field::new("extreme", value_type.clone(), true)]
             }
@@ -920,7 +888,8 @@ impl WindowAggregate {
             WindowAggregate::IntegerAvg(result_type) => result_type.clone(),
             WindowAggregate::WrappingIntSum => DataType::Int32,
             WindowAggregate::WrappingNarrowSum(data_type) => data_type.clone(),
-            WindowAggregate::FloatSum | WindowAggregate::FloatAvg => DataType::Float32,
+            WindowAggregate::FloatingSum(value_type) => value_type.clone(),
+            WindowAggregate::FloatAvg => DataType::Float32,
             WindowAggregate::DoubleAvg => DataType::Float64,
             WindowAggregate::FloatingExtreme { value_type, .. } => value_type.clone(),
             WindowAggregate::ScalarExtreme { value_type, .. } => value_type.clone(),

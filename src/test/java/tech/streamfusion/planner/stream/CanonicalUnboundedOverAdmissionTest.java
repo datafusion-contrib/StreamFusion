@@ -88,13 +88,27 @@ class CanonicalUnboundedOverAdmissionTest {
             .map(node -> ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator())
             .filter(NativeOverAggregateOperator.class::isInstance)
             .collect(java.util.stream.Collectors.toList());
+    boolean event = mode.startsWith("legacy-event-");
     boolean admitted =
-        mode.startsWith("legacy-event-") && !tech.streamfusion.compat.CanonicalTestCompat.flink22();
+        event
+            || mode.equals("integer-key")
+            || mode.equals("composite-key")
+            || mode.equals("integer-value")
+            || mode.equals("decimal-value")
+            || mode.equals("distinct")
+            || mode.equals("minimum")
+            || mode.equals("maximum");
     if (admitted) {
       assertEquals(1, nativeOwners.size(), graph.getStreamingPlanAsJSON());
       assertInstanceOf(
-          tech.streamfusion.state.StockOverEventFoldStateContract.class,
+          (Class<?>)
+              (event
+                  ? tech.streamfusion.state.StockOverEventFoldStateContract.class
+                  : tech.streamfusion.state.StockOverFoldStateContract.class),
           GroupAggregateStockTestFixture.field(nativeOwners.get(0), "stockStateContract"));
+      if (event)
+        assertEquals(
+            1, GroupAggregateStockTestFixture.field(nativeOwners.get(0), "eventTimeVersion"));
     } else assertTrue(nativeOwners.isEmpty(), graph.getStreamingPlanAsJSON());
     assertEquals(portable, plan.asJsonString());
     assertFalse(portable.contains("tech.streamfusion"));

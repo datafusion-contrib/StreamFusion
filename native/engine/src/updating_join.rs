@@ -858,6 +858,10 @@ impl<S: JoinStateStore> UpdatingJoiner<S> {
         } else {
             &self.right_schema
         };
+        let payload_work = self.memory.temporary_reservation();
+        if let Some(reservation) = &payload_work {
+            reservation.try_resize(payload_transport_bytes(batch, schema))?;
+        }
         let data_arrays = payload_columns(batch, schema);
         let row_kinds = row_kind_column(batch);
         let payloads = if is_left {
@@ -1046,6 +1050,10 @@ impl<S: JoinStateStore> UpdatingJoiner<S> {
         } else {
             &self.right_schema
         };
+        let payload_work = self.memory.temporary_reservation();
+        if let Some(reservation) = &payload_work {
+            reservation.try_resize(payload_transport_bytes(batch, schema))?;
+        }
         let data_arrays = payload_columns(batch, schema);
         // The first-durable-row capture reads the input side's buckets, so they must be resident.
         if is_left {

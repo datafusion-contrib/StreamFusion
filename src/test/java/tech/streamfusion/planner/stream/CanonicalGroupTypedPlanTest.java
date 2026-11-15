@@ -21,6 +21,13 @@ import tech.streamfusion.operator.NativeColumnarGroupAggregateOperator;
 import tech.streamfusion.state.StockGroupTypedStateContract;
 
 class CanonicalGroupTypedPlanTest {
+  private static int valueCode(String type) {
+    if (type.equals("INT")) return 2;
+    if (type.equals("BIGINT")) return 0;
+    var parts = type.substring(8, type.length() - 1).split(",");
+    return 2000 + 100 * Integer.parseInt(parts[0]) + Integer.parseInt(parts[1]);
+  }
+
   static Stream<Arguments> cases() {
     return Stream.of(false, true)
         .flatMap(
@@ -37,7 +44,11 @@ class CanonicalGroupTypedPlanTest {
                                                     Stream.of("DISABLED", "ALWAYS")
                                                         .flatMap(
                                                             uids ->
-                                                                Stream.of("INT", "BIGINT")
+                                                                Stream.of(
+                                                                        "INT",
+                                                                        "BIGINT",
+                                                                        "DECIMAL(18,2)",
+                                                                        "DECIMAL(38,20)")
                                                                     .map(
                                                                         sumType ->
                                                                             Arguments.of(
@@ -118,7 +129,7 @@ class CanonicalGroupTypedPlanTest {
     assertEquals(uids.equals("DISABLED"), owner.getTransformationUID() == null);
     var operator = ((SimpleOperatorFactory<?>) owner.getOperatorFactory()).getOperator();
     assertEquals(
-        sumType.equals("INT") ? 2 : 0,
+        valueCode(sumType),
         ((int[]) GroupAggregateStockTestFixture.field(operator, "valueTypes"))[1]);
     var contract =
         assertInstanceOf(
@@ -130,7 +141,9 @@ class CanonicalGroupTypedPlanTest {
                 GroupAggregateStockTestFixture.field(contract, "keyType"))
             .getFieldCount());
     assertArrayEquals(
-        shared ? new int[] {3, 0, 7, 7} : new int[] {3, 0, 7},
+        shared
+            ? new int[] {3, sumType.startsWith("DECIMAL") && !append ? 40 : 0, 7, 7}
+            : new int[] {3, sumType.startsWith("DECIMAL") && !append ? 40 : 0, 7},
         (int[]) GroupAggregateStockTestFixture.field(contract, "kinds"));
     var views = (java.util.List<?>) GroupAggregateStockTestFixture.field(contract, "views");
     assertEquals(1, views.size());

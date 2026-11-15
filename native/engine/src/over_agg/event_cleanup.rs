@@ -3,13 +3,19 @@ use super::*;
 pub(super) const EVENT_CLEANUP_ARMED: &str = "__sf_over_cleanup_armed";
 
 impl OverWindowAggregator {
+    pub(super) fn event_cleanup_shape(&self) -> bool {
+        !self.proctime
+            && match &self.inner {
+                OverInner::Aggregates(_) => true,
+                OverInner::Bounded(inner) => inner.rows_frame,
+                OverInner::WindowFunctions(_) => false,
+            }
+    }
+
     pub(super) fn bind_event_cleanup_timers(&mut self) -> Result<(), DataFusionError> {
-        if self.proctime
-            || !matches!(self.inner, OverInner::Aggregates(_))
-            || !self.deadline_cleaning()
-        {
+        if !self.event_cleanup_shape() || !self.deadline_cleaning() {
             return Err(DataFusionError::Execution(
-                "event cleanup requires enabled unbounded rowtime OVER".into(),
+                "event cleanup requires enabled rowtime OVER cleanup".into(),
             ));
         }
         self.max_retention_ms = self.min_retention_ms.wrapping_mul(3) / 2;

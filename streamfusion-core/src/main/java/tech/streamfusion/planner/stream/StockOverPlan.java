@@ -4,7 +4,6 @@ import java.util.List;
 import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rex.RexLiteral;
 import org.apache.flink.table.planner.plan.nodes.exec.spec.OverSpec;
-import org.apache.flink.table.types.logical.LogicalTypeRoot;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.utils.LogicalTypeChecks;
 import tech.streamfusion.compat.FlinkPlanCompat;
@@ -25,35 +24,61 @@ final class StockOverPlan {
   static Admission<StockOverPlan> prepare(OverSpec spec, RowType input) {
     if (spec.getGroups().size() != 1) return Admission.declined("OVER: only a single window group");
     int[] keys = spec.getPartition().getFieldIndices();
-    if (keys.length > 1 || keys.length == 1 && !input.getTypeAt(keys[0]).is(LogicalTypeRoot.BIGINT))
-      return Admission.declined("OVER: canonical state requires at most one BIGINT partition key");
-    if (input.getChildren().stream().anyMatch(type ->
-        !NativeOverAggExecNode.stockArithmeticValueType(type)
-            && !((type.is(LogicalTypeRoot.TIMESTAMP_WITHOUT_TIME_ZONE)
-                    || type.is(LogicalTypeRoot.TIMESTAMP_WITH_LOCAL_TIME_ZONE))
-                && LogicalTypeChecks.getPrecision(type) <= 3)))
-      return Admission.declined("OVER: input types are not qualified for canonical arithmetic state");
+    if (java.util.Arrays.stream(keys)
+        .anyMatch(
+            key ->
+                !tech.streamfusion.state.StockOverFoldStateContract.supportsProcessingPartitionKey(
+                    input.getTypeAt(key))))
+      return Admission.declined("OVER: unsupported canonical partition key");
+    if (!tech.streamfusion.operator.RowDataArrowConverter.supports(input))
+      return Admission.declined("OVER: unsupported Arrow input schema");
     var frame = OverWindowSpec.compiled(spec, input);
     if (!frame.isAccepted()) return Admission.declined(frame.reason());
+    if (LogicalTypeChecks.getPrecision(input.getTypeAt(frame.value().timeColumn())) > 3)
+      return Admission.declined("OVER: canonical time precision exceeds milliseconds");
     if (frame.value().bounded() && frame.value().rows() && frame.value().offset() == Long.MAX_VALUE)
       return Admission.declined("OVER: canonical ROWS frame row count overflows");
     return Admission.accepted(new StockOverPlan(frame.value(), spec));
   }
 
   boolean acceptsStockFunction(Object function) {
-    Class<?> expected = !window.bounded()
-        ? window.processingTime()
-            ? org.apache.flink.table.runtime.operators.over.ProcTimeUnboundedPrecedingFunction.class
-            : FlinkPlanCompat.eventUnboundedOver(window.rows())
-        : window.processingTime()
-            ? org.apache.flink.table.runtime.operators.over.ProcTimeRowsBoundedPrecedingFunction.class
-            : window.rows()
-                ? org.apache.flink.table.runtime.operators.over.RowTimeRowsBoundedPrecedingFunction.class
-                : org.apache.flink.table.runtime.operators.over.RowTimeRangeBoundedPrecedingFunction.class;
-    return function.getClass() == expected;
+    Class<?> expected =
+        !window.bounded()
+            ? window.processingTime()
+                ? org.apache.flink.table.runtime.operators.over.ProcTimeUnboundedPrecedingFunction
+                    .class
+                : FlinkPlanCompat.eventUnboundedOver(window.rows())
+            : window.processingTime()
+                ? org.apache.flink.table.runtime.operators.over.ProcTimeRowsBoundedPrecedingFunction
+                    .class
+                : window.rows()
+                    ? org.apache.flink.table.runtime.operators.over
+                        .RowTimeRowsBoundedPrecedingFunction.class
+                    : org.apache.flink.table.runtime.operators.over
+                        .RowTimeRangeBoundedPrecedingFunction.class;
+    return function.getClass() == expected
+        || !window.bounded()
+            && !window.processingTime()
+            && function.getClass() == FlinkPlanCompat.eventUnboundedOver(window.rows(), 1);
   }
 
-  OverWindowSpec window() { return window; }
-  List<AggregateCall> calls() { return calls; }
-  List<RexLiteral> constants() { return constants; }
+  int eventTimeVersion(Object function) {
+    return !window.bounded()
+            && !window.processingTime()
+            && function.getClass() == FlinkPlanCompat.eventUnboundedOver(window.rows(), 1)
+        ? 1
+        : FlinkPlanCompat.unboundedOverVersion();
+  }
+
+  OverWindowSpec window() {
+    return window;
+  }
+
+  List<AggregateCall> calls() {
+    return calls;
+  }
+
+  List<RexLiteral> constants() {
+    return constants;
+  }
 }

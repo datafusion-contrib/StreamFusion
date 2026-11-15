@@ -7,10 +7,23 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 class CanonicalUnboundedOverPlanTest {
   static Stream<Arguments> cases() {
+    return tech.streamfusion.CanonicalTestMatrix.select(allCases());
+  }
+
+  private static Stream<Arguments> allCases() {
     return Stream.of("processing-unbounded-rows", "processing-unbounded-range")
         .flatMap(
             mode ->
-                Stream.of("BIGINT", "FLOAT", "DOUBLE")
+                Stream.of(
+                        "TINYINT",
+                        "SMALLINT",
+                        "INT",
+                        "BIGINT",
+                        "FLOAT",
+                        "DOUBLE",
+                        "DECIMAL(18,2)",
+                        "DECIMAL(38,2)",
+                        "DECIMAL(38,20)")
                     .flatMap(
                         type ->
                             Stream.of(false, true)

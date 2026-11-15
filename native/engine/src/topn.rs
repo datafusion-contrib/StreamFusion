@@ -17,6 +17,22 @@ mod rocks_memory_tests;
 #[cfg(test)]
 mod stock_state_tests;
 
+fn canonical_partition_input(
+    batch: &RecordBatch,
+    columns: &[usize],
+    descriptor: &[i32],
+) -> Result<Option<RecordBatch>, DataFusionError> {
+    if descriptor.first() != Some(&i32::MIN)
+        || columns.iter().any(|&column| column >= batch.num_columns())
+        || !columns
+            .iter()
+            .any(|&column| crate::flink_key::binary_row_payload(batch.column(column).data_type()))
+    {
+        return Ok(None);
+    }
+    crate::flink_key::canonical_stock_row_key_batch(batch.clone(), columns, descriptor).map(Some)
+}
+
 fn sort_array(array: &ArrayRef) -> ArrayRef {
     use arrow::array::AsArray;
     use arrow::datatypes::{Float32Type, Float64Type};
@@ -1003,6 +1019,12 @@ impl<S: KeyedStateStore<TopNPartition>> TopNRanker<S> {
         batch: &RecordBatch,
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
+        let canonical = canonical_partition_input(
+            batch,
+            &self.partition_columns,
+            &self.key_timestamp_precisions,
+        )?;
+        let batch = canonical.as_ref().unwrap_or(batch);
         if self.top1_fast && self.limit == 1 && self.rank_end_column.is_none() {
             return self.push_top1(batch, now_ms);
         }
@@ -2421,6 +2443,12 @@ impl<S: KeyedStateStore<TopNPartition>> RetractableTopNRanker<S> {
         batch: &RecordBatch,
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
+        let canonical = canonical_partition_input(
+            batch,
+            &self.partition_columns,
+            &self.key_timestamp_precisions,
+        )?;
+        let batch = canonical.as_ref().unwrap_or(batch);
         if self.stock_state {
             return self.push_stock_state(batch, now_ms);
         }
@@ -3524,6 +3552,12 @@ impl<S: KeyedStateStore<UpdatableTopNPartition>> UpdatableTopNRanker<S> {
         batch: &RecordBatch,
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
+        let canonical = canonical_partition_input(
+            batch,
+            &self.partition_columns,
+            &self.key_timestamp_precisions,
+        )?;
+        let batch = canonical.as_ref().unwrap_or(batch);
         let arity = data_arity(batch);
         let input_kinds = row_kind_column(batch);
         self.schema = Some(data_schema(batch));

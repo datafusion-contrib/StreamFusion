@@ -297,6 +297,7 @@ pub(crate) struct OverAggState {
     retracting_sum: bool,
     non_null: i64,
     distinct: Option<DistinctSet>,
+    distinct_null: bool,
     distinct_payload_bytes: usize,
     value_type: DataType,
 }
@@ -309,6 +310,7 @@ impl OverAggState {
             retracting_sum: false,
             non_null: 0,
             distinct: distinct.then(|| DistinctSet::new(value_type)),
+            distinct_null: false,
             distinct_payload_bytes: 0,
             value_type: value_type.clone(),
         }
@@ -316,6 +318,9 @@ impl OverAggState {
 
     fn bounded(kind: i64, value_type: &DataType) -> Self {
         let mut state = Self::new(kind, value_type);
+        if kind % 100 == 0 && matches!(value_type, DataType::Decimal128(_, _)) {
+            state.agg = RunningAgg::new(crate::aggregates::RETRACTING_DECIMAL_SUM, value_type);
+        }
         state.retracting_sum = matches!(
             state.agg,
             RunningAgg::SumI8(_)
@@ -439,6 +444,10 @@ impl OverAggState {
     }
 
     fn remember_distinct(&mut self, value: ScalarValue) {
+        if value.is_null() {
+            self.distinct_null = true;
+            return;
+        }
         let payload = match &value {
             ScalarValue::Utf8(Some(text)) => text.len(),
             _ => 0,
@@ -515,7 +524,8 @@ impl OverAggState {
     }
 
     fn distinct_values(&self) -> Vec<ScalarValue> {
-        self.distinct
+        let mut values: Vec<ScalarValue> = self
+            .distinct
             .as_ref()
             .map(|seen| {
                 seen.scalar_entries()
@@ -523,7 +533,11 @@ impl OverAggState {
                     .map(|(value, _)| value)
                     .collect()
             })
-            .unwrap_or_default()
+            .unwrap_or_default();
+        if self.distinct_null {
+            values.push(ScalarValue::try_from(&self.value_type).expect("typed DISTINCT NULL"));
+        }
+        values
     }
 }
 
@@ -4644,6 +4658,11 @@ impl OverWindowAggregator {
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
         self.ensure_canonical_ready()?;
+        let batch = crate::flink_key::canonical_stock_row_key_batch(
+            batch,
+            &self.key_columns,
+            &self.key_timestamp_precisions,
+        )?;
         self.frame_clock = now_ms;
         #[cfg(feature = "rocksdb-state")]
         let batch = if self.store.is_some() {
@@ -4682,6 +4701,7 @@ impl OverWindowAggregator {
         } else {
             self.inner.update(&projected)
         };
+        self.retain_canonical_distinct_nulls(&batch)?;
         self.account()?;
         Ok(Self::append_aggregates(&batch, &aggregates))
     }
@@ -4715,6 +4735,7 @@ impl OverWindowAggregator {
             let aggregates = self.fold_unbounded_on_store(&batch, Arc::new(seq), None)?;
             Self::append_aggregates(&batch, &aggregates)
         };
+        self.retain_canonical_distinct_nulls(&batch)?;
         self.inner.clear_resident();
         self.flush_tombstones()?;
         self.account()?;

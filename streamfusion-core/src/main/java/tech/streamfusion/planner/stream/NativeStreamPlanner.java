@@ -159,8 +159,12 @@ public final class NativeStreamPlanner extends StreamPlanner {
   private ExecNodeGraph ordinaryRuntimeGraph(SqlPlanOrigins.RuntimeGraph graph) {
     resetInterop();
     if (!NativeConfig.nativeEnabled()
-        || !StockCompiledPlanLowering.canSerializeStockTemplate(graph.stock)
-        || StockCompiledPlanLowering.hasOrdinarySinkMaterializer(graph)) return graph;
+        || !StockCompiledPlanLowering.canSerializeStockTemplate(graph.stock)) return graph;
+    if (StockCompiledPlanLowering.hasOrdinarySinkMaterializer(graph))
+      return StockCompiledPlanLowering.hasUnqualifiedConnectorState(
+              graph, getFlinkContext().getClassLoader())
+          ? graph
+          : runtimeGraph(graph.stock);
     if (!StockCompiledPlanLowering.containsNativeNodes(graph)) return runtimeGraph(graph.stock);
     if (StockCompiledPlanLowering.hasUnqualifiedConnectorState(
         graph, getFlinkContext().getClassLoader())) return graph;

@@ -219,3 +219,12 @@ count, recover a real checkpoint, then complete canonical engine switches. Final
 match uninterrupted stock execution and the independent temporal-history oracle without duplicate
 transactions. This qualifies the fixture's idempotent commit protocol; full-job TTL expiry, writer
 rescaling, other connector protocols and broader schema/version/failure matrices remain open.
+
+### Nested canonical payload binding
+
+Canonical submission now retains existing native ROW/ARRAY/MAP payloads instead of rejecting
+every constructed non-key field. Join-key, time, predicate and backend admission remain
+independent. New ordinary/compiled planner and clean-stock-worker fixtures keep complete nested
+payloads through the join, with NULL parents, NULL descendants, Unicode map keys and duplicate
+rows. The authored fixtures cover continued input, no-input re-export, native checkpoints and
+1 → 3 → 2 rescaling; qualification on Flink 1.18 and 2.2 is pending.

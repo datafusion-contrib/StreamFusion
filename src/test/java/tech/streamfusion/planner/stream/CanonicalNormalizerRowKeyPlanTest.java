@@ -119,18 +119,16 @@ class CanonicalNormalizerRowKeyPlanTest {
                         .getConfiguration()
                         .getString("streamfusion.canonical.state-contracts", "")),
             getClass().getClassLoader());
-    assertEquals(mini ? 1 : 2, registrations.size());
-    if (mini)
-      assertTrue(
-          graph.getStreamNodes().stream()
-              .anyMatch(
-                  node ->
-                      node.getOperatorFactory() instanceof SimpleOperatorFactory
-                          && ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator()
-                              instanceof
-                              org.apache.flink.table.runtime.operators.bundle
-                                  .KeyedMapBundleOperator),
-          "The neighboring retracting aggregate must retain its stock state owner");
+    assertEquals(2, registrations.size());
+    assertTrue(
+        graph.getStreamNodes().stream()
+            .anyMatch(
+                node ->
+                    node.getOperatorFactory() instanceof SimpleOperatorFactory
+                        && ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator()
+                            instanceof
+                            tech.streamfusion.operator.NativeColumnarGroupAggregateOperator),
+        "The neighboring retracting aggregate must bind its own stock-compatible state");
     var hashes = new StreamGraphHasherV2().traverseStreamGraphAndGenerateHashes(graph);
     assertTrue(registrations.containsKey(new OperatorID(hashes.get(owner.getId())).toString()));
     assertTrue(

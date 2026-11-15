@@ -31,15 +31,117 @@ import org.apache.flink.types.RowKind;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import tech.streamfusion.Native;
 import tech.streamfusion.state.CanonicalStateBackend;
 import tech.streamfusion.state.CanonicalStateBackendFactory;
 import tech.streamfusion.state.StockUpdatingTopNStateContract;
 
 class CanonicalUpdateRankTypedTest {
+  private final List<OperatorSubtaskState> snapshots = new ArrayList<>();
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+  void independentUpstreamInterleavingsKeepTheSameReleasedRankTable(boolean rocks)
+      throws Exception {
+    var layout = new Layout("bound-int", false);
+    var fields = new ArrayList<>(layout.type.getFields());
+    fields.add(new RowType.RowField("rank", new BigIntType()));
+    var output = new RowType(fields);
+    var changes =
+        List.of(
+            layout.row(1, 20, 1), layout.row(1, 10, 2),
+            layout.update(1, 5, 1), layout.update(1, 0, 2));
+    for (var row : changes) ((GenericRowData) row).setField(3, 1);
+    var changelogs = new ArrayList<List<String>>();
+    var tables = new ArrayList<java.util.Map<String, Long>>();
+    for (var order : new int[][] {{0, 1, 2, 3}, {0, 2, 1, 3}}) {
+      try (var stock = stock(layout, output, false, rocks, true, true, 0)) {
+        stock.open();
+        var ordered = new ArrayList<RowData>();
+        for (int index : order) ordered.add(changes.get(index));
+        feed(stock, layout.type, ordered);
+        var rows = stock.extractOutputValues();
+        changelogs.add(bytes(output, rows));
+        var table = new java.util.TreeMap<String, Long>();
+        var serializer = new RowDataSerializer(output);
+        for (var row : rows) {
+          long sign =
+              row.getRowKind() == RowKind.INSERT || row.getRowKind() == RowKind.UPDATE_AFTER
+                  ? 1
+                  : -1;
+          var value = serializer.copy(row);
+          value.setRowKind(RowKind.INSERT);
+          table.merge(bytes(output, List.of(value)).get(0), sign, Long::sum);
+        }
+        table.values().removeIf(count -> count == 0);
+        tables.add(table);
+      }
+    }
+    assertNotEquals(changelogs.get(0), changelogs.get(1));
+    var winner = GenericRowData.of(1, 0L, StringData.fromString("row-😀-2"), 1, 1L);
+    var expected = java.util.Map.of(bytes(output, List.of(winner)).get(0), 1L);
+    assertEquals(expected, tables.get(0));
+    assertEquals(expected, tables.get(1));
+  }
+
+  @org.junit.jupiter.api.AfterEach
+  void discardSnapshots() throws Exception {
+    for (var state : snapshots) state.discardState();
+  }
+
+  static Stream<Arguments> offsetCases() {
+    var cases = new ArrayList<Arguments>();
+    for (String shape :
+        new String[] {"int", "composite", "three-sort", "payload-row", "row-key-padded"})
+      for (int offset : new int[] {1, 2})
+        for (boolean rocks : new boolean[] {false, true})
+          for (boolean before : new boolean[] {false, true})
+            for (boolean rank : new boolean[] {false, true})
+              cases.add(Arguments.of(shape, offset, rocks, before, rank));
+    return tech.streamfusion.CanonicalTestMatrix.select(cases.stream());
+  }
+
+  @ParameterizedTest
+  @MethodSource("offsetCases")
+  void hiddenPrefixAndVisibleRowsSurviveCanonicalAndNativeRecovery(
+      String shape, int offset, boolean rocks, boolean before, boolean rank) throws Exception {
+    verify(shape, false, rocks, before, rank, false, offset);
+  }
+
+  static Stream<Arguments> variableCases() {
+    var cases = new ArrayList<Arguments>();
+    for (String shape : new String[] {"bound-int", "bound-long"})
+      for (boolean rocks : new boolean[] {false, true})
+        for (boolean before : new boolean[] {false, true})
+          for (boolean rank : new boolean[] {false, true})
+            cases.add(Arguments.of(shape, rocks, before, rank));
+    return tech.streamfusion.CanonicalTestMatrix.select(cases.stream());
+  }
+
+  @ParameterizedTest
+  @MethodSource("variableCases")
+  void independentFirstBoundsSurviveEmptyPartitionsAndNativeRecovery(
+      String shape, boolean rocks, boolean before, boolean rank) throws Exception {
+    verify(shape, false, rocks, before, rank, false, 0);
+  }
+
   static Stream<Arguments> cases() {
     var cases = new ArrayList<Arguments>();
-    for (String shape : List.of("int", "string", "long", "not-null", "collision", "composite"))
+    for (String shape :
+        Stream.concat(
+                Stream.of(
+                    "int",
+                    "string",
+                    "long",
+                    "not-null",
+                    "collision",
+                    "composite",
+                    "three-sort",
+                    "row-key",
+                    "row-key-nested",
+                    "row-key-padded"),
+                Stream.concat(
+                    CanonicalRankScalarFixture.shapes(), CanonicalRankPayloadFixture.shapes(false)))
+            .collect(java.util.stream.Collectors.toList()))
       for (boolean fast : new boolean[] {false, true})
         for (boolean rocks : new boolean[] {false, true})
           for (boolean before : new boolean[] {false, true})
@@ -54,6 +156,18 @@ class CanonicalUpdateRankTypedTest {
   void typedUniqueKeysAndStoredRowsContinueAcrossCanonicalSwitches(
       String shape, boolean fast, boolean rocks, boolean before, boolean rank, boolean twoSorts)
       throws Exception {
+    verify(shape, fast, rocks, before, rank, twoSorts, 0);
+  }
+
+  private void verify(
+      String shape,
+      boolean fast,
+      boolean rocks,
+      boolean before,
+      boolean rank,
+      boolean twoSorts,
+      int offset)
+      throws Exception {
     var layout = new Layout(shape, twoSorts);
     RowType output = layout.type;
     if (rank) {
@@ -61,8 +175,12 @@ class CanonicalUpdateRankTypedTest {
       fields.add(new RowType.RowField("rank", new BigIntType()));
       output = new RowType(fields);
     }
-    try (var stock = stock(layout, output, fast, rocks, before, rank);
-        var nativeHarness = nativeHarness(layout, fast, rocks, before, rank)) {
+    if (shape.equals("scalar-float") || shape.equals("scalar-double")) {
+      assertThrows(IllegalArgumentException.class, () -> contract(layout, fast));
+      return;
+    }
+    try (var stock = stock(layout, output, fast, rocks, before, rank, offset);
+        var nativeHarness = nativeHarness(layout, fast, rocks, before, rank, offset)) {
       stock.open();
       var prefix =
           List.of(
@@ -77,6 +195,16 @@ class CanonicalUpdateRankTypedTest {
       nativeHarness.open();
       assertEquals(
           rocks ? "rocksdb" : "memory", ((CanonicalRank) nativeHarness.getOperator()).storage());
+      if (shape.startsWith("row-key")
+          || shape.startsWith("scalar-")
+          || shape.startsWith("payload-"))
+        try (var returned = stock(layout, output, fast, rocks, before, rank, offset)) {
+          returned.initializeState(snapshot(nativeHarness));
+          returned.open();
+          assertEquals(
+              CanonicalUnboundedOverScalarTest.raw(stock),
+              CanonicalUnboundedOverScalarTest.raw(returned));
+        }
       var suffix =
           List.of(
               layout.update(1, 5, 4),
@@ -89,8 +217,19 @@ class CanonicalUpdateRankTypedTest {
       var expected = bytes(output, stock.extractOutputValues());
       assertFalse(expected.isEmpty());
       assertEquals(expected, bytes(output, collect(nativeHarness, output)));
-      try (var restored = stock(layout, output, fast, rocks, before, rank)) {
-        restored.initializeState(snapshot(nativeHarness));
+      OperatorSubtaskState returned;
+      if (offset == 0 && !layout.variable) returned = snapshot(nativeHarness);
+      else {
+        var checkpoint = nativeHarness.snapshot(3, 0);
+        snapshots.add(checkpoint);
+        try (var recovered = nativeHarness(layout, fast, rocks, before, rank, offset)) {
+          recovered.initializeState(checkpoint);
+          recovered.open();
+          returned = snapshot(recovered);
+        }
+      }
+      try (var restored = stock(layout, output, fast, rocks, before, rank, offset)) {
+        restored.initializeState(returned);
         restored.open();
         var future =
             List.of(
@@ -116,10 +255,48 @@ class CanonicalUpdateRankTypedTest {
     final int[] rowKeys;
     final int sort;
     final int[] sortColumns;
+    final boolean variable;
 
     Layout(String shape, boolean twoSorts) {
       this.shape = shape;
-      if (shape.equals("composite")) {
+      variable = shape.startsWith("bound-");
+      if (shape.startsWith("row-key")) {
+        type =
+            RowType.of(
+                CanonicalRankRowKeyFixture.type(shape), new BigIntType(), new VarCharType(100));
+        keys = new int[] {0};
+        rowKeys = new int[] {0, 2};
+        sort = 1;
+      } else if (variable) {
+        type =
+            RowType.of(
+                new IntType(),
+                new BigIntType(),
+                new VarCharType(100),
+                shape.equals("bound-int") ? new IntType(false) : new BigIntType(false));
+        keys = new int[] {0};
+        rowKeys = new int[] {0, 2};
+        sort = 1;
+      } else if (shape.startsWith("payload-")) {
+        type =
+            RowType.of(
+                new BigIntType(),
+                new BigIntType(),
+                new VarCharType(100),
+                CanonicalRankPayloadFixture.type(shape));
+        keys = new int[] {0};
+        rowKeys = new int[] {0, 2};
+        sort = 1;
+      } else if (shape.startsWith("scalar-")) {
+        type =
+            RowType.of(
+                CanonicalRankScalarFixture.type(shape),
+                CanonicalRankScalarFixture.type(shape),
+                new VarCharType(100));
+        keys = new int[] {0};
+        rowKeys = new int[] {0, 2};
+        sort = 1;
+      } else if (shape.equals("composite")) {
         type = RowType.of(new IntType(), new VarCharType(100), new IntType(), new VarCharType(100));
         keys = new int[] {3, 2};
         rowKeys = new int[] {3, 1, 2};
@@ -145,11 +322,32 @@ class CanonicalUpdateRankTypedTest {
         rowKeys = new int[] {0, 2};
         sort = 1;
       }
-      sortColumns = twoSorts ? new int[] {sort, keys[0]} : new int[] {sort};
+      sortColumns =
+          shape.equals("three-sort")
+              ? new int[] {sort, 2, keys[0]}
+              : twoSorts
+                  ? new int[] {sort, shape.startsWith("row-key") ? 2 : keys[0]}
+                  : new int[] {sort};
     }
 
     RowData row(Integer key, Integer score, int id) {
       var label = StringData.fromString("row-😀-" + id);
+      if (shape.startsWith("row-key"))
+        return GenericRowData.of(
+            CanonicalRankRowKeyFixture.key(shape, key, id),
+            score == null ? null : score.longValue(),
+            label);
+      if (shape.startsWith("payload-"))
+        return GenericRowData.of(
+            key == null ? null : key.longValue(),
+            score == null ? null : score.longValue(),
+            label,
+            CanonicalRankPayloadFixture.value(shape, id));
+      if (shape.startsWith("scalar-"))
+        return GenericRowData.of(
+            CanonicalRankScalarFixture.value(shape, key),
+            CanonicalRankScalarFixture.score(shape, score),
+            label);
       if (shape.equals("composite"))
         return GenericRowData.of(
             score, label, key, key == null ? null : StringData.fromString("分区-" + key));
@@ -165,11 +363,18 @@ class CanonicalUpdateRankTypedTest {
               : shape.equals("long")
                   ? StringData.fromString(String.format(java.util.Locale.ROOT, "%03d", score))
                   : shape.equals("string") ? (Object) score : score.longValue();
+      if (variable) {
+        long bound = key == null ? 1 : key == 2 ? -2 : 3;
+        Object proposed = shape.equals("bound-int") ? (Object) (int) bound : bound;
+        return GenericRowData.of(partition, value, label, proposed);
+      }
       return GenericRowData.of(partition, value, label);
     }
 
     RowData update(Integer key, Integer score, int id) {
       var row = row(key, score, id);
+      if (variable)
+        ((GenericRowData) row).setField(3, shape.equals("bound-int") ? (Object) 99 : 99L);
       row.setRowKind(RowKind.UPDATE_AFTER);
       return row;
     }
@@ -181,7 +386,13 @@ class CanonicalUpdateRankTypedTest {
   }
 
   private static KeyedOneInputStreamOperatorTestHarness<RowData, RowData, RowData> stock(
-      Layout layout, RowType output, boolean fast, boolean rocks, boolean before, boolean rank)
+      Layout layout,
+      RowType output,
+      boolean fast,
+      boolean rocks,
+      boolean before,
+      boolean rank,
+      int offset)
       throws Exception {
     var selector = selector(layout.type, layout.keys);
     var sort = selector(layout.type, layout.sortColumns);
@@ -214,7 +425,7 @@ class CanonicalUpdateRankTypedTest {
                 comparator,
                 sort,
                 RankType.ROW_NUMBER,
-                new ConstantRankRange(1, 3),
+                layout.variable ? new VariableRankRange(3) : new ConstantRankRange(offset + 1, 3),
                 before,
                 rank,
                 10000);
@@ -231,20 +442,26 @@ class CanonicalUpdateRankTypedTest {
     return harness;
   }
 
-  private KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> nativeHarness(
-      Layout layout, boolean fast, boolean rocks, boolean before, boolean rank) throws Exception {
+  private static StockUpdatingTopNStateContract contract(Layout layout, boolean fast) {
     var selector = selector(layout.type, layout.keys);
     var keyType = (RowType) selector.getProducedType().toLogicalType();
-    var contract =
-        new StockUpdatingTopNStateContract(
-            new RowDataSerializer(keyType),
-            selector,
-            selector(layout.type, layout.rowKeys),
-            selector(layout.type, layout.sortColumns),
-            keyType,
-            layout.type,
-            fast);
-    var operator = new CanonicalRank(layout, fast, before, rank);
+    return new StockUpdatingTopNStateContract(
+        new RowDataSerializer(keyType),
+        selector,
+        selector(layout.type, layout.rowKeys),
+        selector(layout.type, layout.sortColumns),
+        keyType,
+        layout.type,
+        fast,
+        layout.variable,
+        layout.keys);
+  }
+
+  private KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> nativeHarness(
+      Layout layout, boolean fast, boolean rocks, boolean before, boolean rank, int offset)
+      throws Exception {
+    var contract = contract(layout, fast);
+    var operator = new CanonicalRank(layout, fast, before, rank, offset);
     operator.setStockStateContract(contract);
     var harness =
         new KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>(
@@ -268,13 +485,6 @@ class CanonicalUpdateRankTypedTest {
     return harness;
   }
 
-  private static int[] descriptor(int[] columns) {
-    var descriptor = new int[columns.length + 1];
-    java.util.Arrays.fill(descriptor, -1);
-    descriptor[0] = Native.STOCK_KEY_PROJECTION;
-    return descriptor;
-  }
-
   private static void push(
       KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness,
       RowType type,
@@ -282,21 +492,27 @@ class CanonicalUpdateRankTypedTest {
       throws Exception {
     harness.processElement(
         new StreamRecord<>(
-            new ArrowBatch(RowDataArrowConverter.write(rows, type, NativeAllocator.SHARED, true))));
+            new ArrowBatch(
+                CanonicalRankRowKeyFixture.required(type)
+                    ? CanonicalRowKeyFixture.arrow(rows, type, new int[] {0})
+                    : RowDataArrowConverter.write(rows, type, NativeAllocator.SHARED, true))));
     harness.prepareSnapshotPreBarrier(0);
   }
 
-  private static OperatorSubtaskState snapshot(
+  private OperatorSubtaskState snapshot(
       org.apache.flink.streaming.util.OneInputStreamOperatorTestHarness<?, ?> harness)
       throws Exception {
     harness.prepareSnapshotPreBarrier(2);
-    return harness
-        .snapshotWithLocalState(
-            2,
-            0,
-            org.apache.flink.runtime.checkpoint.SavepointType.savepoint(
-                org.apache.flink.core.execution.SavepointFormatType.CANONICAL))
-        .getJobManagerOwnedState();
+    var state =
+        harness
+            .snapshotWithLocalState(
+                2,
+                0,
+                org.apache.flink.runtime.checkpoint.SavepointType.savepoint(
+                    org.apache.flink.core.execution.SavepointFormatType.CANONICAL))
+            .getJobManagerOwnedState();
+    snapshots.add(state);
+    return state;
   }
 
   private static int[] ascending(int length) {
@@ -308,25 +524,28 @@ class CanonicalUpdateRankTypedTest {
   private static final class CanonicalRank extends NativeColumnarTopNOperator {
     private boolean canonical;
 
-    CanonicalRank(Layout layout, boolean fast, boolean before, boolean rank) {
+    CanonicalRank(Layout layout, boolean fast, boolean before, boolean rank, int offset) {
       super(
           layout.keys,
-          descriptor(layout.keys),
+          tech.streamfusion.planner.FlinkKeyGroupUtils.stockKeyDescriptor(layout.type, layout.keys),
           layout.type,
           layout.sortColumns,
           ascending(layout.sortColumns.length),
           ascending(layout.sortColumns.length),
-          0,
+          offset,
           fast ? 1 : 3,
           rank,
           false,
           layout.rowKeys,
-          descriptor(layout.rowKeys),
+          tech.streamfusion.planner.FlinkKeyGroupUtils.stockKeyDescriptor(
+              layout.type, layout.rowKeys),
           before,
           false,
           -1,
           0,
-          128);
+          128,
+          layout.variable ? 3 : -1,
+          layout.variable);
     }
 
     String storage() {

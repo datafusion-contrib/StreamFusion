@@ -26,7 +26,6 @@ import org.apache.flink.types.RowKind;
 import tech.streamfusion.Native;
 import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.operator.NativeAllocator;
-import tech.streamfusion.operator.RowDataArrowConverter;
 
 /** Released eager dedup state: a processing-time presence marker or a complete retained row. */
 public final class StockDedupStateContract implements StockStateContract {
@@ -194,7 +193,7 @@ public final class StockDedupStateContract implements StockStateContract {
       try {
         Data.exportSchema(
             NativeAllocator.SHARED,
-            ArrowConversion.toArrowSchema(rowType),
+            StockKeyedRowSchema.schema(rowType, keyType),
             NativeAllocator.DICTIONARIES,
             schema);
         return action.apply(schema.memoryAddress());
@@ -293,8 +292,7 @@ public final class StockDedupStateContract implements StockStateContract {
 
   private void importBatch(
       List<RowData> rows, long handle, boolean persistent, boolean validateOnly) {
-    try (VectorSchemaRoot root =
-            RowDataArrowConverter.write(rows, bridgeType, NativeAllocator.SHARED);
+    try (VectorSchemaRoot root = StockKeyedRowSchema.write(rows, bridgeType, keyType);
         ArrowArray array = ArrowArray.allocateNew(NativeAllocator.SHARED);
         ArrowSchema schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
       Data.exportVectorSchemaRoot(

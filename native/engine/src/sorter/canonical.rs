@@ -262,6 +262,20 @@ mod tests {
     }
 
     #[test]
+    fn restored_pending_rows_accept_network_collection_labels_without_changing_values() {
+        let original = crate::flink_key::represented_row_key_fixture(3, false, 100);
+        let network = crate::flink_key::row_key_fixture_with_list_label(original.clone(), "$data$");
+        let mut source = TemporalSorter::new(1);
+        source.push(original.clone()).unwrap();
+        let snapshot = source.snapshot();
+        let mut restored = TemporalSorter::restore(1, &snapshot);
+        restored.push(network).unwrap();
+        let expected = concat_batches(&original.schema(), [&original, &original]).unwrap();
+        assert_eq!(restored.flush(100).unwrap(), expected);
+        assert_eq!(restored.flush(100).unwrap().num_rows(), 0);
+    }
+
+    #[test]
     fn a_user_column_with_the_row_kind_name_remains_plain_payload() {
         let batch = RecordBatch::try_from_iter(vec![
             (

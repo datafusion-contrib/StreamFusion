@@ -44,7 +44,6 @@ import org.apache.flink.table.planner.utils.JavaScalaConversionUtil;
 import org.apache.flink.table.runtime.keyselector.RowDataKeySelector;
 import org.apache.flink.table.runtime.typeutils.RowDataSerializer;
 import org.apache.flink.table.types.logical.LogicalType;
-import org.apache.flink.table.types.logical.LogicalTypeRoot;
 import org.apache.flink.table.types.logical.RowType;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -64,7 +63,16 @@ class CanonicalEventUnboundedOverInteropTest {
   }
 
   private static Stream<Arguments> allModes() {
-    return Stream.of("BIGINT", "FLOAT", "DOUBLE")
+    return Stream.of(
+            "TINYINT",
+            "SMALLINT",
+            "INT",
+            "BIGINT",
+            "FLOAT",
+            "DOUBLE",
+            "DECIMAL(18,2)",
+            "DECIMAL(38,2)",
+            "DECIMAL(38,20)")
         .flatMap(
             type ->
                 Stream.of(false, true)
@@ -106,6 +114,87 @@ class CanonicalEventUnboundedOverInteropTest {
       String type, boolean rows, boolean global, long ttl, boolean stockStore, boolean nativeStore)
       throws Exception {
     verifyInterchange(new Plan(type, rows, global, ttl), stockStore, nativeStore);
+  }
+
+  static Stream<Arguments> extremaCases() {
+    return tech.streamfusion.CanonicalTestMatrix.select(
+        CanonicalUnboundedOverScalarTest.extremaCases()
+            .flatMap(
+                args ->
+                    Stream.of(1, FlinkPlanCompat.unboundedOverVersion())
+                        .distinct()
+                        .map(
+                            version ->
+                                Arguments.of(
+                                    args.get()[0],
+                                    args.get()[1],
+                                    args.get()[2],
+                                    args.get()[3],
+                                    args.get()[4],
+                                    version))));
+  }
+
+  @ParameterizedTest
+  @MethodSource("extremaCases")
+  void eventTimeExtremaKeepPendingRowsCallbacksAndRawValues(
+      String type, boolean rows, boolean global, long ttl, boolean rocks, int version)
+      throws Exception {
+    var plan =
+        new Plan(
+            type, rows, global, ttl, false, false, false, null, version, "BIGINT", false, true);
+    verifyInterchange(plan, !rocks, rocks);
+    verifyCheckpoint(plan, !rocks, rocks);
+  }
+
+  static Stream<Arguments> countPayloadCases() {
+    return tech.streamfusion.CanonicalTestMatrix.select(
+        CanonicalUnboundedOverScalarTest.countPayloadCases()
+            .flatMap(
+                args ->
+                    Stream.of(1, FlinkPlanCompat.unboundedOverVersion())
+                        .distinct()
+                        .map(
+                            version ->
+                                Arguments.of(
+                                    args.get()[0],
+                                    args.get()[1],
+                                    args.get()[2],
+                                    args.get()[3],
+                                    args.get()[4],
+                                    version))));
+  }
+
+  @ParameterizedTest
+  @MethodSource("countPayloadCases")
+  void countPayloadsRetainBufferedRowsAndCallbacksInEachReleasedTimerVersion(
+      String type, boolean rows, boolean global, long ttl, boolean rocks, int version)
+      throws Exception {
+    var plan =
+        new Plan(
+            type, rows, global, ttl, false, false, false, null, version, "BIGINT", false, false,
+            true);
+    verifyInterchange(plan, !rocks, rocks);
+    verifyCheckpoint(plan, !rocks, rocks);
+  }
+
+  static Stream<Arguments> typedKeys() {
+    return CanonicalOverKeyFixture.stores()
+        .flatMap(
+            args ->
+                Stream.of(false, true)
+                    .map(rows -> Arguments.of(args.get()[0], args.get()[1], args.get()[2], rows)));
+  }
+
+  @ParameterizedTest
+  @MethodSource("typedKeys")
+  void scalarAndCompositeKeysRetainFoldsPendingRowsAndPhysicalCallbacks(
+      String keyType, boolean composite, boolean rocks, boolean rows) throws Exception {
+    for (int version = 1; version <= FlinkPlanCompat.unboundedOverVersion(); version++) {
+      var plan =
+          new Plan(
+              "BIGINT", rows, false, 1000, false, false, false, null, version, keyType, composite);
+      verifyInterchange(plan, rocks, rocks);
+    }
   }
 
   @ParameterizedTest
@@ -213,6 +302,20 @@ class CanonicalEventUnboundedOverInteropTest {
   }
 
   @ParameterizedTest
+  @MethodSource("pollingCases")
+  void explicitV1StateAndCallbacksContinueInBothEngineOrders(
+      boolean rows, boolean stockStore, boolean nativeStore, long ttl) throws Exception {
+    verifyInterchange(new Plan("BIGINT", rows, false, ttl, 1), stockStore, nativeStore);
+  }
+
+  @ParameterizedTest
+  @MethodSource("pollingCases")
+  void explicitV1NativeCheckpointRetainsThePollingContractBeforeCanonicalReturn(
+      boolean rows, boolean stockStore, boolean nativeStore, long ttl) throws Exception {
+    verifyCheckpoint(new Plan("BIGINT", rows, false, ttl, 1), stockStore, nativeStore);
+  }
+
+  @ParameterizedTest
   @MethodSource("inventoryStores")
   void manyRestoredOwnersPreservePendingTimersAndContinueAfterImport(
       boolean stockStore, boolean nativeStore) throws Exception {
@@ -251,8 +354,7 @@ class CanonicalEventUnboundedOverInteropTest {
   @MethodSource("inventoryStores")
   void hotV1PhysicalCallbacksCrossExportChunksAndReturnToStockExactly(
       boolean stockStore, boolean nativeStore) throws Exception {
-    org.junit.jupiter.api.Assumptions.assumeTrue(FlinkPlanCompat.unboundedOverVersion() == 1);
-    var plan = new Plan("BIGINT", true, false, 1000);
+    var plan = new Plan("BIGINT", true, false, 1000, 1);
     long allocated = NativeAllocator.SHARED.getAllocatedMemory();
     try (var reference = plan.stock(stockStore);
         var target = plan.nativeHarness(nativeStore)) {
@@ -294,8 +396,7 @@ class CanonicalEventUnboundedOverInteropTest {
   @MethodSource("pollingCases")
   void pollingCallbacksRetainTheirPhysicalTimersAcrossTheFirstRestoredWatermark(
       boolean rows, boolean stockStore, boolean nativeStore, long ttl) throws Exception {
-    org.junit.jupiter.api.Assumptions.assumeTrue(FlinkPlanCompat.unboundedOverVersion() == 1);
-    var plan = new Plan("BIGINT", rows, false, ttl);
+    var plan = new Plan("BIGINT", rows, false, ttl, 1);
     OperatorSubtaskState state;
     try (var stock = plan.stock(stockStore);
         var nativeOp = plan.nativeHarness(nativeStore)) {
@@ -357,8 +458,7 @@ class CanonicalEventUnboundedOverInteropTest {
   @MethodSource("pollingCases")
   void orphanPollingCallbacksPreserveCleanupWithoutInventingInputOrFolds(
       boolean rows, boolean stockStore, boolean nativeStore, long ttl) throws Exception {
-    org.junit.jupiter.api.Assumptions.assumeTrue(FlinkPlanCompat.unboundedOverVersion() == 1);
-    var plan = new Plan("BIGINT", rows, false, ttl);
+    var plan = new Plan("BIGINT", rows, false, ttl, 1);
     OperatorSubtaskState state;
     try (var stock = plan.stock(stockStore)) {
       stock.open();
@@ -471,7 +571,19 @@ class CanonicalEventUnboundedOverInteropTest {
       nativeOp.open();
       time(stock, 100);
       time(nativeOp, 100);
-      var prefix = List.of(plan.row(1L, 3L, 1), plan.row(null, null, 1));
+      var prefix = new ArrayList<RowData>(List.of(plan.row(1L, 3L, 1), plan.row(null, null, 1)));
+      if (plan.extrema)
+        prefix.addAll(
+            List.of(
+                plan.row(8L, 9L, 1),
+                plan.row(8L, 10L, 1),
+                plan.row(8L, -5L, 1),
+                plan.row(9L, 7L, 1),
+                plan.row(9L, 8L, 1),
+                plan.row(9L, 9L, 1),
+                plan.row(10L, 8L, 1),
+                plan.row(10L, 7L, 1),
+                plan.row(10L, 9L, 1)));
       assertTrue(plan.stockInput(stock, prefix).isEmpty());
       assertTrue(plan.nativeInput(nativeOp, prefix).isEmpty());
       stock.processWatermark(new Watermark(1));
@@ -718,11 +830,17 @@ class CanonicalEventUnboundedOverInteropTest {
     final int[] kinds, columns, codes, partitions;
     final int timeColumn;
     final boolean rows;
+    final int version;
     final long ttl;
+    final boolean countOnly, extrema;
     final tech.streamfusion.planner.stream.OverConstantArguments constants;
 
     Plan(String type, boolean rows, boolean global, long ttl) throws Exception {
       this(type, rows, global, ttl, false);
+    }
+
+    Plan(String type, boolean rows, boolean global, long ttl, int version) throws Exception {
+      this(type, rows, global, ttl, false, false, false, null, version);
     }
 
     Plan(String type, boolean rows, boolean global, long ttl, boolean literals) throws Exception {
@@ -756,41 +874,193 @@ class CanonicalEventUnboundedOverInteropTest {
         boolean requiredValue,
         String payload)
         throws Exception {
+      this(
+          type,
+          rows,
+          global,
+          ttl,
+          literals,
+          proctime,
+          requiredValue,
+          payload,
+          FlinkPlanCompat.unboundedOverVersion());
+    }
+
+    Plan(
+        String type,
+        boolean rows,
+        boolean global,
+        long ttl,
+        boolean literals,
+        boolean proctime,
+        boolean requiredValue,
+        String payload,
+        int version)
+        throws Exception {
+      this(
+          type,
+          rows,
+          global,
+          ttl,
+          literals,
+          proctime,
+          requiredValue,
+          payload,
+          version,
+          "BIGINT",
+          false);
+    }
+
+    Plan(
+        String type,
+        boolean rows,
+        boolean global,
+        long ttl,
+        boolean literals,
+        boolean proctime,
+        boolean requiredValue,
+        String payload,
+        int version,
+        String keyType,
+        boolean composite)
+        throws Exception {
+      this(
+          type,
+          rows,
+          global,
+          ttl,
+          literals,
+          proctime,
+          requiredValue,
+          payload,
+          version,
+          keyType,
+          composite,
+          false);
+    }
+
+    Plan(
+        String type,
+        boolean rows,
+        boolean global,
+        long ttl,
+        boolean literals,
+        boolean proctime,
+        boolean requiredValue,
+        String payload,
+        int version,
+        String keyType,
+        boolean composite,
+        boolean extrema)
+        throws Exception {
+      this(
+          type,
+          rows,
+          global,
+          ttl,
+          literals,
+          proctime,
+          requiredValue,
+          payload,
+          version,
+          keyType,
+          composite,
+          extrema,
+          false);
+    }
+
+    Plan(
+        String type,
+        boolean rows,
+        boolean global,
+        long ttl,
+        boolean literals,
+        boolean proctime,
+        boolean requiredValue,
+        String payload,
+        int version,
+        String keyType,
+        boolean composite,
+        boolean extrema,
+        boolean countOnly)
+        throws Exception {
       this.rows = rows;
       this.ttl = ttl;
+      this.version = version;
+      this.countOnly = countOnly;
+      this.extrema = extrema;
       var config = new Configuration();
       config.setString("streamfusion.native.enabled", "false");
       config.setString("table.exec.state.ttl", ttl + " ms");
-      var table = NativePlannerTestEnvironment.create(config);
-      table.executeSql(
-          "CREATE TABLE scalar_input(k BIGINT,v "
-              + type
-              + (requiredValue ? " NOT NULL" : "")
-              + (payload == null ? "" : ",payload " + payload)
-              + ",rt TIMESTAMP_LTZ(3),"
-              + (proctime ? "pt AS PROCTIME()," : "")
-              + "WATERMARK FOR rt AS rt) WITH ('connector'='datagen')");
-      table.executeSql(
-          "CREATE TABLE scalar_output(k BIGINT,v "
-              + type
-              + (payload == null ? "" : ",payload " + payload)
-              + ",s "
-              + type
-              + ",c BIGINT,a "
-              + type
-              + (proctime ? ",pt TIMESTAMP_LTZ(3)" : "")
-              + ") WITH ('connector'='blackhole')");
+      config.setString("table.exec.unbounded-over.version", Integer.toString(version));
+      var table =
+          countOnly
+              ? NativePlannerTestEnvironment.create(
+                  config, org.example.canonical.CanonicalFixtureFactory.class)
+              : NativePlannerTestEnvironment.create(config);
+      var inputSchema =
+          tech.streamfusion.CanonicalTestSchemas.columns(
+              "k",
+              keyType,
+              "v",
+              type + (requiredValue ? " NOT NULL" : ""),
+              "rt",
+              "TIMESTAMP_LTZ(3)");
+      if (composite) inputSchema.column("k2", org.apache.flink.table.api.DataTypes.BIGINT());
+      if (payload != null)
+        inputSchema.column(
+            "payload",
+            org.apache.flink.table.types.utils.TypeConversions.fromLogicalToDataType(
+                org.apache.flink.table.types.logical.utils.LogicalTypeParser.parse(
+                    payload, getClass().getClassLoader())));
+      if (proctime) inputSchema.columnByExpression("pt", "PROCTIME()");
+      inputSchema.watermark("rt", "rt");
+      var inputTable =
+          org.apache.flink.table.api.TableDescriptor.forConnector(
+                  countOnly ? "canonical-fixture" : "datagen")
+              .schema(inputSchema.build());
+      if (countOnly) inputTable.option("input", "unused.csv").option("insert-only", "true");
+      table.createTable("scalar_input", inputTable.build());
+      var outputSchema = tech.streamfusion.CanonicalTestSchemas.columns("k", keyType, "v", type);
+      if (payload != null)
+        outputSchema.column(
+            "payload",
+            org.apache.flink.table.types.utils.TypeConversions.fromLogicalToDataType(
+                org.apache.flink.table.types.logical.utils.LogicalTypeParser.parse(
+                    payload, getClass().getClassLoader())));
+      if (countOnly) outputSchema.column("n", org.apache.flink.table.api.DataTypes.BIGINT());
+      else
+        outputSchema.fromSchema(
+            tech.streamfusion.CanonicalTestSchemas.columns(
+                    extrema ? "lo" : "s",
+                    type,
+                    extrema ? "hi" : "c",
+                    extrema ? type : "BIGINT",
+                    extrema ? "n" : "a",
+                    extrema ? "BIGINT" : type)
+                .build());
+      if (proctime)
+        outputSchema.column("pt", org.apache.flink.table.api.DataTypes.TIMESTAMP_LTZ(3));
+      table.createTable(
+          "scalar_output",
+          org.apache.flink.table.api.TableDescriptor.forConnector("blackhole")
+              .schema(outputSchema.build())
+              .build());
       json =
           table
               .compilePlanSql(
                   "INSERT INTO scalar_output SELECT k,v,"
                       + (payload == null ? "" : "payload,")
-                      + (literals
-                          ? "COUNT(*) OVER w,SUM(CAST(7 AS BIGINT)) OVER w,AVG(v) OVER w"
-                          : "SUM(v) OVER w,COUNT(v) OVER w,AVG(v) OVER w")
+                      + (countOnly
+                          ? "COUNT(v) OVER w"
+                          : extrema
+                              ? "MIN(v) OVER w,MAX(v) OVER w,COUNT(v) OVER w"
+                              : literals
+                                  ? "COUNT(*) OVER w,SUM(CAST(7 AS BIGINT)) OVER w,AVG(v) OVER w"
+                                  : "SUM(v) OVER w,COUNT(v) OVER w,AVG(v) OVER w")
                       + (proctime ? ",pt" : "")
                       + " FROM scalar_input WINDOW w AS ("
-                      + (global ? "" : "PARTITION BY k ")
+                      + (global ? "" : "PARTITION BY k" + (composite ? ",k2" : "") + " ")
                       + "ORDER BY rt "
                       + (rows ? "ROWS" : "RANGE")
                       + " BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)")
@@ -804,7 +1074,7 @@ class CanonicalEventUnboundedOverInteropTest {
           (KeyedProcessOperator<?, ?, ?>)
               ((SimpleOperatorFactory<?>) transform.getOperatorFactory()).getOperator();
       var function = operator.getUserFunction();
-      assertEquals(FlinkPlanCompat.eventUnboundedOver(rows), function.getClass());
+      assertEquals(FlinkPlanCompat.eventUnboundedOver(rows, version), function.getClass());
       Class<?> owner = function.getClass();
       while (Arrays.stream(owner.getDeclaredFields())
           .noneMatch(candidate -> candidate.getName().equals("accTypes")))
@@ -857,6 +1127,10 @@ class CanonicalEventUnboundedOverInteropTest {
                     switch (call.getAggregation().getKind()) {
                       case SUM:
                         return 0;
+                      case MIN:
+                        return 1;
+                      case MAX:
+                        return 2;
                       case COUNT:
                         return 3;
                       case AVG:
@@ -881,9 +1155,7 @@ class CanonicalEventUnboundedOverInteropTest {
               .map(
                   column -> {
                     var logical = argumentType.getTypeAt(column);
-                    return logical.is(LogicalTypeRoot.FLOAT)
-                        ? 6
-                        : logical.is(LogicalTypeRoot.DOUBLE) ? 1 : 0;
+                    return CanonicalOverValueFixture.nativeCode(logical);
                   })
               .toArray();
       assertArrayEquals(
@@ -903,7 +1175,8 @@ class CanonicalEventUnboundedOverInteropTest {
               widths,
               constants.type(),
               constants.encodedValues(),
-              ttl > 1);
+              ttl > 1,
+              version);
     }
 
     ExecNode<?> node() throws Exception {
@@ -956,21 +1229,21 @@ class CanonicalEventUnboundedOverInteropTest {
     KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> nativeHarness(
         boolean rocks) throws Exception {
       var operator =
-          new NativeOverAggregateOperator(
-              timeColumn,
-              columns,
-              partitions,
-              codes,
-              kinds,
-              rows ? 3 : 0,
-              0,
-              false,
-              partitions.length == 0
-                  ? new int[] {Native.STOCK_KEY_PROJECTION}
-                  : new int[] {Native.STOCK_KEY_PROJECTION, -1},
-              ttl,
-              input,
-              128);
+          new CanonicalOverSnapshotTestSupport.DirectOver(
+                  timeColumn,
+                  columns,
+                  partitions,
+                  codes,
+                  kinds,
+                  rows ? 3 : 0,
+                  0,
+                  false,
+                  tech.streamfusion.planner.FlinkKeyGroupUtils.stockKeyDescriptor(
+                      input, partitions),
+                  ttl,
+                  input,
+                  128)
+              .withEventTimeVersion(version);
       if (constants.type().getFieldCount() > 0)
         operator.withConstantArguments(constants.type(), constants.encodedValues());
       if (ttl > 1) operator.withEventTimeCleanupTimers();
@@ -996,13 +1269,12 @@ class CanonicalEventUnboundedOverInteropTest {
 
     RowData row(Long key, Long value, long timestamp) {
       var row = new GenericRowData(input.getFieldCount());
-      row.setField(0, key);
-      Object number = value;
-      if (value != null && input.getTypeAt(1).is(LogicalTypeRoot.FLOAT))
-        number = value.floatValue();
-      else if (value != null && input.getTypeAt(1).is(LogicalTypeRoot.DOUBLE))
-        number = value.doubleValue();
-      row.setField(1, number);
+      CanonicalOverKeyFixture.set(row, input, key);
+      row.setField(
+          1,
+          extrema
+              ? CanonicalOverDistinctValueFixture.number(input.getTypeAt(1), value)
+              : CanonicalOverValueFixture.number(input.getTypeAt(1), value));
       row.setField(timeColumn, TimestampData.fromEpochMillis(timestamp));
       return row;
     }
@@ -1025,7 +1297,11 @@ class CanonicalEventUnboundedOverInteropTest {
       harness.processElement(
           new StreamRecord<>(
               new ArrowBatch(
-                  RowDataArrowConverter.write(rows, input, NativeAllocator.SHARED, true))));
+                  RowDataArrowConverter.write(
+                      CanonicalOverValueFixture.physicalRows(rows, input),
+                      input,
+                      NativeAllocator.SHARED,
+                      true))));
       return nativeOutput(harness);
     }
 
@@ -1054,6 +1330,13 @@ class CanonicalEventUnboundedOverInteropTest {
     }
 
     private String value(RowData row) {
+      if (countOnly
+          || extrema
+              && (input.getTypeAt(1).is(org.apache.flink.table.types.logical.LogicalTypeRoot.FLOAT)
+                  || input
+                      .getTypeAt(1)
+                      .is(org.apache.flink.table.types.logical.LogicalTypeRoot.DOUBLE)))
+        return CanonicalOverValueFixture.serialized(row, output);
       var values = new ArrayList<String>();
       for (int i = 0; i < output.getFieldCount(); i++) {
         Object value =

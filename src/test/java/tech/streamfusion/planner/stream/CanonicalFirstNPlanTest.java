@@ -38,18 +38,54 @@ class CanonicalFirstNPlanTest {
   @MethodSource("cases")
   void normalSubmissionCapturesTheReleasedCounterContract(
       int limit, boolean compiled, boolean keyless, boolean rank, boolean ttl) throws Exception {
+    verify(limit, compiled, keyless, rank, ttl, "BIGINT");
+  }
+
+  static Stream<Arguments> rowKeyCases() {
+    return Stream.of(false, true)
+        .flatMap(
+            nested ->
+                Stream.of(false, true)
+                    .flatMap(
+                        compiled ->
+                            Stream.of(false, true)
+                                .map(ttl -> Arguments.of(nested, compiled, ttl))));
+  }
+
+  @ParameterizedTest
+  @MethodSource("rowKeyCases")
+  void rowKeyCountersCaptureTheBinaryInputBoundary(boolean nested, boolean compiled, boolean ttl)
+      throws Exception {
+    verify(
+        3,
+        compiled,
+        false,
+        true,
+        ttl,
+        tech.streamfusion.operator.CanonicalRowKeyFixture.sql(nested));
+  }
+
+  private void verify(
+      int limit, boolean compiled, boolean keyless, boolean rank, boolean ttl, String keySql)
+      throws Exception {
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", "true");
     config.setString("parallelism.default", "2");
     config.setString("pipeline.max-parallelism", "257");
     config.setString("table.exec.uid.generation", "DISABLED");
     config.setString("table.exec.state.ttl", ttl ? "1 h" : "0 ms");
-    var table = NativePlannerTestEnvironment.create(config);
+    var table =
+        NativePlannerTestEnvironment.create(
+            config, org.example.canonical.CanonicalFixtureFactory.class);
     table.executeSql(
-        "CREATE TABLE input_table(k BIGINT,v BIGINT,pt AS PROCTIME()) WITH"
-            + " ('connector'='datagen')");
+        "CREATE TABLE input_table(k "
+            + keySql
+            + ",v BIGINT,pt AS PROCTIME()) WITH"
+            + " ('connector'='canonical-fixture','input'='unused.csv','insert-only'='true')");
     table.executeSql(
-        "CREATE TABLE output_table(k BIGINT,v BIGINT,n BIGINT) WITH ('connector'='blackhole')");
+        "CREATE TABLE output_table(k "
+            + keySql
+            + ",v BIGINT,n BIGINT) WITH ('connector'='blackhole')");
     String query =
         "INSERT INTO output_table SELECT k,v,"
             + (rank ? "rn" : "CAST(0 AS BIGINT)")
@@ -110,6 +146,26 @@ class CanonicalFirstNPlanTest {
                 .getConfig()
                 .getConfiguration()
                 .getString("streamfusion.canonical.metadata-projection-active", "false")));
+    if (keySql.startsWith("ROW"))
+      assertTrue(
+          graph.getStreamNodes().stream()
+              .filter(node -> node.getOperatorFactory() instanceof SimpleOperatorFactory)
+              .map(node -> ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator())
+              .filter(tech.streamfusion.operator.RowDataToArrowOperator.class::isInstance)
+              .anyMatch(
+                  entry -> {
+                    try {
+                      return org.apache.arrow.vector.types.pojo.Schema.deserializeMessage(
+                              java.nio.ByteBuffer.wrap(
+                                  (byte[])
+                                      GroupAggregateStockTestFixture.field(entry, "arrowSchema")))
+                          .toJson()
+                          .contains("streamfusion.nested-row-binary");
+                    } catch (Exception failure) {
+                      throw new AssertionError(failure);
+                    }
+                  }),
+          "The actual first-N boundary must retain original ROW bytes");
     if (compiled) assertEquals(json, plan.asJsonString());
   }
 }

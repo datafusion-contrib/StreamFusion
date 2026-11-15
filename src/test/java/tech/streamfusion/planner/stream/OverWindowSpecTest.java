@@ -79,11 +79,11 @@ class OverWindowSpecTest {
   }
 
   @Test
-  void canonicalKeyAndRowCountRestrictionsRemainSeparateFromFrameSemantics() {
+  void canonicalCompositeKeysAndRowCountRestrictionsRemainSeparateFromFrameSemantics() {
     var input = FlinkTypeFactory.toLogicalRowType(input(false));
     var multiple = compiled(true, RexWindowBounds.UNBOUNDED_PRECEDING, new int[] {0, 1}, List.of());
     assertTrue(OverWindowSpec.compiled(multiple, input).isAccepted());
-    assertTrue(StockOverPlan.prepare(multiple, input).reason().contains("one BIGINT"));
+    assertTrue(StockOverPlan.prepare(multiple, input).isAccepted());
     var lower = RexWindowBounds.preceding(rex.makeInputRef(types.createSqlType(SqlTypeName.BIGINT), 3));
     var maximum = compiled(true, lower, new int[] {0},
         List.of(rex.makeBigintLiteral(BigDecimal.valueOf(Long.MAX_VALUE))));

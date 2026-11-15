@@ -54,8 +54,7 @@ public final class StockOverEventFoldStateContract implements StockStateContract
   private final int[] keyColumns;
   private final int timeColumn;
   private final boolean cleanupEnabled;
-  private final boolean pollingTimers =
-      tech.streamfusion.compat.FlinkPlanCompat.unboundedOverVersion() == 1;
+  private final boolean pollingTimers;
   private transient RowData constantRow;
   private transient CheckpointableKeyedStateBackend<RowData> timerBackend;
   private transient KeyGroupedInternalPriorityQueue<TimerHeapInternalTimer<RowData, VoidNamespace>>
@@ -74,6 +73,38 @@ public final class StockOverEventFoldStateContract implements StockStateContract
       RowType constants,
       byte[] constantBytes,
       boolean cleanupEnabled) {
+    this(
+        keys,
+        keyType,
+        inputType,
+        accumulatorType,
+        keyColumns,
+        timeColumn,
+        kinds,
+        widths,
+        constants,
+        constantBytes,
+        cleanupEnabled,
+        tech.streamfusion.compat.FlinkPlanCompat.unboundedOverVersion());
+  }
+
+  public StockOverEventFoldStateContract(
+      TypeSerializer<RowData> keys,
+      RowType keyType,
+      RowType inputType,
+      RowType accumulatorType,
+      int[] keyColumns,
+      int timeColumn,
+      int[] kinds,
+      int[] widths,
+      RowType constants,
+      byte[] constantBytes,
+      boolean cleanupEnabled,
+      int version) {
+    if (!tech.streamfusion.compat.FlinkPlanCompat.supportsUnboundedOverVersion(version))
+      throw new IllegalArgumentException(
+          "Unsupported event-time unbounded OVER version: " + version);
+    pollingTimers = version == 1;
     folds = new StockOverFoldStateContract(keys, keyType, accumulatorType, kinds, widths, false);
     this.keyType = keyType;
     this.inputType = inputType;
@@ -181,7 +212,9 @@ public final class StockOverEventFoldStateContract implements StockStateContract
     for (int i = 0; i < keyType.getFieldCount(); i++)
       if (!keyType.getTypeAt(i).isNullable() && key.isNullAt(i))
         throw new IllegalArgumentException("NULL in required event OVER key");
-    return new RowDataSerializer(keyType).toBinaryRow(key).copy();
+    return key instanceof BinaryRowData
+        ? ((BinaryRowData) key).copy()
+        : new StockKeyProjection(keyType).project(key);
   }
 
   private static Object get(RowData row, RowType type, int index) {
@@ -194,7 +227,7 @@ public final class StockOverEventFoldStateContract implements StockStateContract
     var value = new GenericRowData(keyColumns.length);
     for (int i = 0; i < keyColumns.length; i++)
       value.setField(i, get(row, inputType, keyColumns[i]));
-    return new RowDataSerializer(keyType).toBinaryRow(value).copy();
+    return new StockKeyProjection(keyType).project(value);
   }
 
   private long time(RowData row) {
@@ -255,7 +288,12 @@ public final class StockOverEventFoldStateContract implements StockStateContract
     try (var root = RowDataArrowConverter.write(rows, type, NativeAllocator.SHARED);
         var a = ArrowArray.allocateNew(NativeAllocator.SHARED);
         var s = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
-      Data.exportVectorSchemaRoot(NativeAllocator.SHARED, root, NativeAllocator.DICTIONARIES, a, s);
+      Data.exportVectorSchemaRoot(
+          NativeAllocator.SHARED,
+          tech.streamfusion.arrow.MapListRepresentation.forExport(root),
+          NativeAllocator.DICTIONARIES,
+          a,
+          s);
       importer.run(handle, a.memoryAddress(), s.memoryAddress());
     }
   }

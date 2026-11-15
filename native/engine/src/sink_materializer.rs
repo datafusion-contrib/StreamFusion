@@ -383,6 +383,19 @@ impl SinkMaterializer {
         // that normalization without copying ordinary input columns or already canonical arrays.
         let normalized = serialized::batch(batch);
         let batch = normalized.as_ref().unwrap_or(batch);
+        let aligned = match &self.codec {
+            Some(codec) if codec.schema != data_schema(batch) => {
+                if codec.schema.fields().len() != data_arity(batch) {
+                    return Err(canonical::invalid("input schema arity changed"));
+                }
+                Some(crate::owned::align_batch_prefix(
+                    batch,
+                    codec.schema.fields(),
+                )?)
+            }
+            _ => None,
+        };
+        let batch = aligned.as_ref().unwrap_or(batch);
         let ttl = StateTtl::new(self.ttl_ms, now);
         let track = self.memory.tracking();
         if ttl.enabled() && now >= self.last_sweep.saturating_add(self.ttl_ms) {

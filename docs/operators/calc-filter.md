@@ -20,6 +20,11 @@ comparisons and experiments from these current coverage rules.
 
 ## Admission and routing
 
+Stock compiled-plan lowering keeps a Calc on its released owner if serialized input-reference
+types differ from the captured physical input types. This includes interval qualifier metadata
+that changes representation through plan serialization. The guarded fallback avoids constructing
+an invalid Rex program; neighboring qualified stateful operators retain their own bindings.
+
 `Calc` (Flink's fused projection + filter node) and standalone filters are where per-row expression
 evaluation happens, so their admission is expression-level rather than shape-level: the operator
 itself always has a native form, but it only runs natively if **every** expression node inside it —

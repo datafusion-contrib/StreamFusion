@@ -22,24 +22,25 @@ import tech.streamfusion.state.StockGroupExtremaStateContract;
 
 class CanonicalTypedRetractingExtremaPlanTest {
   static Stream<Arguments> cases() {
-    return CanonicalTypedRetractingExtremaTest.types()
-        .flatMap(
-            type ->
-                Stream.of(false, true)
-                    .flatMap(
-                        compiled ->
-                            Stream.of("BIGINT", "INT", "global")
-                                .flatMap(
-                                    key ->
-                                        Stream.of("DISABLED", "ALWAYS")
-                                            .flatMap(
-                                                uid ->
-                                                    Stream.of(0L, 1000L)
-                                                        .map(
-                                                            ttl ->
-                                                                Arguments.of(
-                                                                    type, compiled, key, uid,
-                                                                    ttl))))));
+    return tech.streamfusion.CanonicalTestMatrix.select(
+        CanonicalTypedRetractingExtremaTest.types()
+            .flatMap(
+                type ->
+                    Stream.of(false, true)
+                        .flatMap(
+                            compiled ->
+                                Stream.of("BIGINT", "INT", "global")
+                                    .flatMap(
+                                        key ->
+                                            Stream.of("DISABLED", "ALWAYS")
+                                                .flatMap(
+                                                    uid ->
+                                                        Stream.of(0L, 1000L)
+                                                            .map(
+                                                                ttl ->
+                                                                    Arguments.of(
+                                                                        type, compiled, key, uid,
+                                                                        ttl)))))));
   }
 
   @ParameterizedTest(name = "{0},compiled={1},key={2},uid={3},ttl={4}")
@@ -59,6 +60,25 @@ class CanonicalTypedRetractingExtremaPlanTest {
   private void assertPlan(
       String type, boolean compiled, String key, String uid, long ttl, boolean counted)
       throws Exception {
+    assertPlan(type, compiled, key, uid, ttl, counted, false);
+  }
+
+  @ParameterizedTest
+  @MethodSource("cases")
+  void onePhaseMiniBatchesKeepTheReleasedExtremaViews(
+      String type, boolean compiled, String key, String uid, long ttl) throws Exception {
+    assertPlan(type, compiled, key, uid, ttl, true, true);
+  }
+
+  private void assertPlan(
+      String type,
+      boolean compiled,
+      String key,
+      String uid,
+      long ttl,
+      boolean counted,
+      boolean miniBatch)
+      throws Exception {
     boolean global = key.equals("global");
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", "true");
@@ -67,7 +87,11 @@ class CanonicalTypedRetractingExtremaPlanTest {
     config.setString("table.exec.uid.generation", uid);
     config.setString("table.exec.state.ttl", ttl + " ms");
     var table = NativePlannerTestEnvironment.create(config);
-    table.getConfig().set("table.exec.mini-batch.enabled", "false");
+    table.getConfig().set("table.exec.mini-batch.enabled", Boolean.toString(miniBatch));
+    if (miniBatch) {
+      table.getConfig().set("table.exec.mini-batch.size", "7");
+      table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");
+    }
     table.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
     table.registerCatalog(
         "fixture",
@@ -151,5 +175,7 @@ class CanonicalTypedRetractingExtremaPlanTest {
           assertInstanceOf(ExternalSerializer.class, values[i]).getDataType());
     }
     assertEquals(ttl > 0, field(contract, "ttl"));
+    assertEquals(miniBatch, field(operator, "miniBatch"));
+    if (miniBatch) assertEquals(7L, field(operator, "miniBatchSize"));
   }
 }

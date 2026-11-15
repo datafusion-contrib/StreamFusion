@@ -17,8 +17,11 @@ source entries on malformed later chunks or a failed target allocation. A fresh 
 a valid immutable source. The JNI boundary follows Comet's moved Arrow ownership: imported C Data
 is released before reporting an exception so release callbacks cannot erase the original failure.
 
-The initial scalar binding qualifies BIGINT, FLOAT and DOUBLE arithmetic. Decimal, DISTINCT,
-views, wider keys and the remaining connector/version/failure protocols are
+The initial scalar binding qualifies BIGINT, FLOAT and DOUBLE arithmetic. The resumed implementation
+also uses the existing scalar key codec for composite integer, boolean, string, decimal and temporal
+keys; no key is re-encoded through a BIGINT carrier. Additional decimal accumulators, DISTINCT
+memberships and processing-time ROW keys are authored but await both-release qualification.
+Floating-point partition keys, wider views and the remaining connector/version/failure protocols are
 unfinished work in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569), not
 alternative compatibility formats. Benchmarking is explicitly deferred.
 
@@ -29,8 +32,21 @@ visitors, preflighting the complete source before applying native state. Arroyo'
 retained input and computation is preserved; released Flink's exact descriptors and callbacks
 supply the interoperability contract. Constants remain native arguments, not saved row fields.
 
+The event-time policy belongs to the captured released operator rather than its Flink release.
+Flink 2.2 can still instantiate the V1 ROWS/RANGE owners, including from an older compiled plan.
+Both the native execution owner and its async canonical reader retain that explicit choice.
+The existing V1 polling implementation is reused on either supported release; no new timer or
+savepoint encoding is introduced.
+
 A Flink PROCTIME indicator is physically NULL until materialized even when its logical type is
 NOT NULL. The Arrow schema therefore describes the nullable physical slot, while the stock
 serializer and logical row type remain unchanged. This follows Comet's export of actual vector
 fields through the moved Arrow ownership boundary. Required ordinary fields retain their NULL
 checks. No alternate savepoint encoding, native snapshot intermediate or input replay is added.
+
+Unbounded scalar MIN/MAX also reuse the existing direct field for FLOAT/DOUBLE. Released
+handlers use primitive less/greater comparisons, so tied signed zeros retain their first value,
+a first NaN remains retained and later NaNs do not replace a finite value. Raw transfers preserve
+that field rather than rebuilding an extremum from input. Additional actual-stock raw-state,
+serialized-output, pending-timer, TTL, native-recovery and clean-worker controls are authored but
+unexecuted. Bounded extrema and FIRST/LAST order metadata retain their separate gates.

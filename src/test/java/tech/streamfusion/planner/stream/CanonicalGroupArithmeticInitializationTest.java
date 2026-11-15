@@ -8,10 +8,8 @@ import java.util.List;
 import java.util.stream.Stream;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.configuration.Configuration;
-import org.apache.flink.core.execution.SavepointFormatType;
 import org.apache.flink.core.memory.DataOutputSerializer;
 import org.apache.flink.runtime.checkpoint.OperatorSubtaskState;
-import org.apache.flink.runtime.checkpoint.SavepointType;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.streaming.util.KeyedOneInputStreamOperatorTestHarness;
 import org.apache.flink.streaming.util.OneInputStreamOperatorTestHarness;
@@ -312,7 +310,7 @@ class CanonicalGroupArithmeticInitializationTest {
     return row;
   }
 
-  private static List<String> bytes(List<RowData> rows, RowType type) throws Exception {
+  static List<String> bytes(List<RowData> rows, RowType type) throws Exception {
     var serializer = new RowDataSerializer(type);
     var result = new ArrayList<String>();
     for (var row : rows) {
@@ -386,10 +384,7 @@ class CanonicalGroupArithmeticInitializationTest {
       throws Exception {
     if (harness.getOperator() instanceof DirectGroup)
       ((DirectGroup) harness.getOperator()).assertStorage();
-    harness.prepareSnapshotPreBarrier(1);
-    return harness
-        .snapshotWithLocalState(1, 0, SavepointType.savepoint(SavepointFormatType.CANONICAL))
-        .getJobManagerOwnedState();
+    return tech.streamfusion.CanonicalTestSnapshots.snapshot(harness, 1, 0);
   }
 
   static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> nativeHarness(
@@ -436,8 +431,8 @@ class CanonicalGroupArithmeticInitializationTest {
           new int[0],
           -1,
           fixture.before,
-          false,
-          -1,
+          fixture.miniBatch,
+          fixture.miniBatch ? 10000 : -1,
           fixture.ttl,
           FlinkKeyGroupUtils.stockKeyDescriptor(fixture.inputType, fixture.keyColumns),
           fixture.maximum);

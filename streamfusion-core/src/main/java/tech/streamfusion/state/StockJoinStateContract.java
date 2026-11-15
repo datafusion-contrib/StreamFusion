@@ -37,7 +37,6 @@ import org.apache.flink.types.RowKind;
 import tech.streamfusion.Native;
 import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.operator.NativeAllocator;
-import tech.streamfusion.operator.RowDataArrowConverter;
 
 /** Stock regular-join values, unique-key maps, or full-row multisets on each input side. */
 public final class StockJoinStateContract implements StockStateContract {
@@ -352,11 +351,19 @@ public final class StockJoinStateContract implements StockStateContract {
     void importBatch(
         long handle, boolean persistent, boolean left, List<RowData> rows, boolean validateOnly) {
       try (VectorSchemaRoot root =
-              RowDataArrowConverter.write(rows, bridgeType, NativeAllocator.SHARED);
+              StockKeyedRowSchema.write(
+                  rows,
+                  bridgeType,
+                  tech.streamfusion.arrow.NestedRepresentation.withBinaryRows(
+                      tech.streamfusion.arrow.ArrowConversion.toArrowSchema(bridgeType)));
           ArrowArray array = ArrowArray.allocateNew(NativeAllocator.SHARED);
           ArrowSchema schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
         Data.exportVectorSchemaRoot(
-            NativeAllocator.SHARED, root, NativeAllocator.DICTIONARIES, array, schema);
+            NativeAllocator.SHARED,
+            tech.streamfusion.arrow.MapListRepresentation.forExport(root),
+            NativeAllocator.DICTIONARIES,
+            array,
+            schema);
         if (validateOnly)
           Native.validateUpdatingJoinCanonical(
               handle, persistent, left, array.memoryAddress(), schema.memoryAddress());

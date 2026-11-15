@@ -39,7 +39,7 @@ caching, shared build artifacts, grouped connector suites and combined coverage 
 Those measurements describe CI job counts and elapsed time, not SQL execution throughput.
 
 - [Retain final sink candidate replacements](sink-materializer-state.md): emit every change while storing only final same-key replacements per batch.
-- [Copy canonical state directly](canonical-state-installation.md): remove a full temporary payload copy while retaining managed chunk ownership.
+- [Copy canonical state directly](canonical-state-installation.md): remove a full temporary payload copy while retaining managed chunk ownership, and clear consumed stock maps once per serialized owner.
 - [Reuse Iceberg boundary setup](iceberg-boundary-overhead.md): cached task schemas and serializers, shared Arrow leases and routing maps.
 
 - [Bounded Arrow batch sizing](bounded-batch-sizing.md): 8,192-row bounded batches amortize JNI, ownership copies and IPC while retaining the shared memory cap.

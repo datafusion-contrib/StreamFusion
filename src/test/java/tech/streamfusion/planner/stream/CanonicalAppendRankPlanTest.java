@@ -206,8 +206,8 @@ class CanonicalAppendRankPlanTest {
 
   @ParameterizedTest
   @MethodSource("unsupportedCases")
-  void unqualifiedContractsAreNeverRegisteredAsStockCompatible(String shape, boolean compiled)
-      throws Exception {
+  void widerScalarContractsBindWhileUnsupportedRuntimeModesRetainTheirRoute(
+      String shape, boolean compiled) throws Exception {
     var config = new Configuration();
     config.setString("streamfusion.native.enabled", "true");
     config.setString("table.exec.uid.generation", "DISABLED");
@@ -241,11 +241,18 @@ class CanonicalAppendRankPlanTest {
     var graph = CanonicalRegularJoinPlanTest.graph(planner, table, transformations);
     var field = AbstractNativeStatefulOperator.class.getDeclaredField("stockStateContract");
     field.setAccessible(true);
+    boolean admitted = shape.equals("payload-double") || shape.equals("two-sorts");
+    int owners = 0;
     for (var node : graph.getStreamNodes()) {
       if (!(node.getOperatorFactory() instanceof SimpleOperatorFactory)) continue;
       var operator = ((SimpleOperatorFactory<?>) node.getOperatorFactory()).getOperator();
-      if (operator instanceof NativeColumnarTopNOperator)
-        assertNull(field.get(operator), shape + ": " + graph.getStreamingPlanAsJSON());
+      if (operator instanceof NativeColumnarTopNOperator) {
+        owners++;
+        if (admitted)
+          assertNotNull(field.get(operator), shape + ": " + graph.getStreamingPlanAsJSON());
+        else assertNull(field.get(operator), shape + ": " + graph.getStreamingPlanAsJSON());
+      }
     }
+    if (admitted) assertEquals(1, owners, graph.getStreamingPlanAsJSON());
   }
 }

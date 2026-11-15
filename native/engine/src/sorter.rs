@@ -125,7 +125,11 @@ impl TemporalSorter {
     }
 
     pub(crate) fn push(&mut self, mut batch: RecordBatch) -> Result<(), DataFusionError> {
-        self.input_schema = Some(batch.schema());
+        if let Some(schema) = &self.input_schema {
+            batch = crate::owned::align_batch_prefix(&batch, schema.fields())?;
+        } else {
+            self.input_schema = Some(batch.schema());
+        }
         if let Some(last_emitted) = self.last_emitted {
             let rowtimes = rt_to_millis(batch.column(self.rt_column));
             let admitted: BooleanArray = rowtimes

@@ -89,6 +89,12 @@ public class RowDataToArrowExecNode extends CommonRowDataToArrowExecNode
   }
 
   @Override
+  public RowDataToArrowExecNode withBinaryRowKeys(int[] columns) {
+    super.withBinaryRowKeys(columns);
+    return this;
+  }
+
+  @Override
   public RowDataToArrowExecNode withByteStringColumns(int[] columns) {
     super.withByteStringColumns(columns);
     return this;

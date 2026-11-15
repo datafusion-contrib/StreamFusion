@@ -47,6 +47,28 @@ class RuntimeTestShardsTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     shards.partition(root, 2, "runtime", line="1.18")
 
+    def test_unmeasured_shape_estimates_balance_without_overriding_measured_costs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            names = ["ShapeAJobTest", "ShapeBJobTest", "MeasuredTest", "NewTest"]
+            for name in names:
+                (root / (name + ".class")).touch()
+            data = root / "durations.json"
+            data.write_text(json.dumps({
+                "seconds": {"MeasuredTest": 30},
+                "estimated_seconds": {"ShapeAJobTest": 100, "ShapeBJobTest": 100,
+                                      "MeasuredTest": 1000},
+                "estimated_seconds_by_line": {"1.18": {"ShapeAJobTest": 10,
+                                                      "ShapeBJobTest": 10}},
+                "seconds_by_line": {"1.18": {"MeasuredTest": 5}}}))
+            with patch.object(shards, "DURATIONS", data):
+                current = shards.partition(root, 2)
+                legacy = shards.partition(root, 2, line="1.18")
+            self.assertEqual([["MeasuredTest", "ShapeAJobTest"],
+                              ["NewTest", "ShapeBJobTest"]], current)
+            self.assertEqual(current, legacy)
+            self.assertEqual(Counter(names), Counter(x for part in current for x in part))
+
     def test_canonical_jobs_and_runtime_are_a_complete_disjoint_bounded_partition(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -196,6 +218,19 @@ void inherited(int value) throws Exception { ''' + body('getClass().getSimpleNam
 class CanonicalChildJobTest extends CanonicalParentJobTest {
 @org.junit.jupiter.api.Test void own() throws Exception { ''' + body('"child-only"') + ''' }
 }''')
+
+            (source / "CanonicalMatrixBaseJobTest.java").write_text('''package tech.streamfusion;
+abstract class CanonicalMatrixBaseJobTest {
+@org.junit.jupiter.params.ParameterizedTest
+@org.junit.jupiter.params.provider.MethodSource("cases")
+void inherited(int value) throws Exception { ''' + body('getClass().getSimpleName() + value') + ''' }
+}''')
+            for label, values in (("A", "1,2"), ("B", "3,4")):
+                name = "CanonicalMatrix" + label + "JobTest"
+                (source / (name + ".java")).write_text(f'''package tech.streamfusion;
+class {name} extends CanonicalMatrixBaseJobTest {{
+static java.util.stream.Stream<Integer> cases() {{ return java.util.stream.Stream.of({values}); }}
+}}''')
 
             def run(*options):
                 result = subprocess.run(["mvn", "-B", "-ntp", "test", *options], cwd=root,

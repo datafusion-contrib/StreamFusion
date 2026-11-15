@@ -49,6 +49,8 @@ final class StockStateCleanup {
         }
       }
       var input = new DataInputDeserializer();
+      int previousState = -1;
+      byte[] previousOwner = null;
       while (iterator.isValid()) {
         var descriptor = descriptors.get(iterator.kvStateId());
         if (descriptor != null) {
@@ -62,8 +64,17 @@ final class StockStateCleanup {
               CompositeKeySerializationUtils.readKey(backend.getKeySerializer(), input, ambiguous);
           Object namespace =
               CompositeKeySerializationUtils.readNamespace(namespaceSerializer, input, ambiguous);
-          StateCompat.setCurrentKeyAndGroup(backend, key, group);
-          backend.getPartitionedState(namespace, namespaceSerializer, descriptor).clear();
+          int ownerBytes = input.getPosition();
+          byte[] encoded = iterator.key();
+          if (previousState != iterator.kvStateId()
+              || previousOwner == null
+              || previousOwner.length != ownerBytes
+              || !java.util.Arrays.equals(previousOwner, 0, ownerBytes, encoded, 0, ownerBytes)) {
+            StateCompat.setCurrentKeyAndGroup(backend, key, group);
+            backend.getPartitionedState(namespace, namespaceSerializer, descriptor).clear();
+            previousState = iterator.kvStateId();
+            previousOwner = java.util.Arrays.copyOf(encoded, ownerBytes);
+          }
         }
         iterator.next();
       }

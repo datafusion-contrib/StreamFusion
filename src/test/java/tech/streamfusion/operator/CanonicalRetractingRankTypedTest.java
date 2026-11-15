@@ -31,7 +31,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import tech.streamfusion.Native;
 import tech.streamfusion.state.CanonicalStateBackend;
 import tech.streamfusion.state.CanonicalStateBackendFactory;
 import tech.streamfusion.state.StockRetractingTopNStateContract;
@@ -40,7 +39,26 @@ import tech.streamfusion.state.StockRetractingTopNStateContract;
 class CanonicalRetractingRankTypedTest {
   static Stream<Arguments> cases() {
     var cases = new ArrayList<Arguments>();
-    for (String shape : List.of("int", "string", "long", "not-null", "collision", "composite"))
+    for (String shape :
+        Stream.concat(
+                Stream.of(
+                    "int",
+                    "string",
+                    "long",
+                    "not-null",
+                    "collision",
+                    "composite",
+                    "three-sort",
+                    "row-key",
+                    "row-key-nested",
+                    "row-key-padded"),
+                Stream.concat(
+                    CanonicalRankScalarFixture.shapes()
+                        .filter(
+                            shape ->
+                                !shape.equals("scalar-float") && !shape.equals("scalar-double")),
+                    CanonicalRankPayloadFixture.shapes(false)))
+            .collect(java.util.stream.Collectors.toList()))
       for (String mode :
           List.of("fixed", "offset", "variable", "fixed-ttl", "offset-ttl", "variable-ttl"))
         for (boolean rocks : new boolean[] {false, true})
@@ -127,11 +145,31 @@ class CanonicalRetractingRankTypedTest {
         if (nativeFirst) {
           second.initializeState(saved);
           second.open();
+          if (shape.startsWith("row-key")
+              || shape.startsWith("scalar-")
+              || shape.startsWith("payload-"))
+            assertEquals(
+                CanonicalUnboundedOverScalarTest.raw(reference),
+                CanonicalUnboundedOverScalarTest.raw(second));
           time(second, 1500);
           feed(second, layout.type, suffix);
         } else {
           nativeHarness.initializeState(saved);
           nativeHarness.open();
+          if (shape.startsWith("row-key")
+              || shape.startsWith("scalar-")
+              || shape.startsWith("payload-")) {
+            var roundTrip = snapshot(nativeHarness);
+            try (var returned = stock(layout, output, start, variable, ttl, rocks, before, rank)) {
+              returned.initializeState(roundTrip);
+              returned.open();
+              assertEquals(
+                  CanonicalUnboundedOverScalarTest.raw(reference),
+                  CanonicalUnboundedOverScalarTest.raw(returned));
+            } finally {
+              roundTrip.discardState();
+            }
+          }
           assertEquals(
               rocks ? "rocksdb" : "memory",
               ((CanonicalRank) nativeHarness.getOperator()).storage());
@@ -178,7 +216,30 @@ class CanonicalRetractingRankTypedTest {
     Layout(String shape, boolean twoSorts) {
       this.shape = shape;
       RowType base;
-      if (shape.equals("composite")) {
+      if (shape.startsWith("row-key")) {
+        base =
+            RowType.of(
+                CanonicalRankRowKeyFixture.type(shape), new BigIntType(), new VarCharType(100));
+        keys = new int[] {0};
+        score = 1;
+      } else if (shape.startsWith("payload-")) {
+        base =
+            RowType.of(
+                new BigIntType(),
+                new BigIntType(),
+                new VarCharType(100),
+                CanonicalRankPayloadFixture.type(shape));
+        keys = new int[] {0};
+        score = 1;
+      } else if (shape.startsWith("scalar-")) {
+        base =
+            RowType.of(
+                CanonicalRankScalarFixture.type(shape),
+                CanonicalRankScalarFixture.type(shape),
+                new VarCharType(100));
+        keys = new int[] {0};
+        score = 1;
+      } else if (shape.equals("composite")) {
         base = RowType.of(new IntType(), new VarCharType(100), new IntType(), new VarCharType(100));
         keys = new int[] {3, 2};
         score = 0;
@@ -211,18 +272,45 @@ class CanonicalRetractingRankTypedTest {
                   ? new IntType(false)
                   : new BigIntType(false)));
       type = new RowType(fields);
-      sorts = twoSorts ? new int[] {score, shape.equals("composite") ? 1 : 2} : new int[] {score};
+      sorts =
+          shape.equals("three-sort")
+              ? new int[] {score, 2, bound}
+              : twoSorts ? new int[] {score, shape.equals("composite") ? 1 : 2} : new int[] {score};
       ascending =
-          twoSorts
-              ? new int[] {shape.equals("long") ? 0 : 1, 0}
-              : new int[] {shape.equals("long") ? 0 : 1};
-      nullsFirst = twoSorts ? new int[] {1, 0} : new int[] {1};
+          shape.equals("three-sort")
+              ? new int[] {1, 0, 1}
+              : twoSorts
+                  ? new int[] {shape.equals("long") ? 0 : 1, 0}
+                  : new int[] {shape.equals("long") ? 0 : 1};
+      nullsFirst =
+          shape.equals("three-sort")
+              ? new int[] {1, 0, 1}
+              : twoSorts ? new int[] {1, 0} : new int[] {1};
     }
 
     RowData row(Integer key, Integer score, int id, int bound) {
       var label = StringData.fromString("row-😀-" + id);
       Object size =
           type.getTypeAt(this.bound).is(LogicalTypeRoot.INTEGER) ? (Object) bound : (long) bound;
+      if (shape.startsWith("row-key"))
+        return GenericRowData.of(
+            CanonicalRankRowKeyFixture.key(shape, key, id),
+            score == null ? null : score.longValue(),
+            label,
+            size);
+      if (shape.startsWith("payload-"))
+        return GenericRowData.of(
+            key == null ? null : key.longValue(),
+            score == null ? null : score.longValue(),
+            label,
+            CanonicalRankPayloadFixture.value(shape, id),
+            size);
+      if (shape.startsWith("scalar-"))
+        return GenericRowData.of(
+            CanonicalRankScalarFixture.value(shape, key),
+            CanonicalRankScalarFixture.score(shape, score),
+            label,
+            size);
       if (shape.equals("composite"))
         return GenericRowData.of(
             score, label, key, key == null ? null : StringData.fromString("分区-" + key), size);
@@ -339,7 +427,8 @@ class CanonicalRetractingRankTypedTest {
             layout.type,
             comparator(layout),
             variable,
-            ttl > 0);
+            ttl > 0,
+            layout.keys);
     var operator = new CanonicalRank(layout, start, variable, ttl, before, rank);
     operator.setStockStateContract(contract);
     var harness =
@@ -364,13 +453,6 @@ class CanonicalRetractingRankTypedTest {
     return harness;
   }
 
-  private static int[] descriptor(int length) {
-    var descriptor = new int[length + 1];
-    java.util.Arrays.fill(descriptor, -1);
-    descriptor[0] = Native.STOCK_KEY_PROJECTION;
-    return descriptor;
-  }
-
   private static void push(
       KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness,
       RowType type,
@@ -380,7 +462,15 @@ class CanonicalRetractingRankTypedTest {
     time(harness, now);
     harness.processElement(
         new StreamRecord<>(
-            new ArrowBatch(RowDataArrowConverter.write(rows, type, NativeAllocator.SHARED, true))));
+            new ArrowBatch(
+                CanonicalRankRowKeyFixture.required(type)
+                    ? CanonicalRowKeyFixture.arrow(
+                        CanonicalOverValueFixture.physicalRows(rows, type), type, new int[] {0})
+                    : RowDataArrowConverter.write(
+                        CanonicalOverValueFixture.physicalRows(rows, type),
+                        type,
+                        NativeAllocator.SHARED,
+                        true))));
     harness.prepareSnapshotPreBarrier(0);
   }
 
@@ -404,7 +494,7 @@ class CanonicalRetractingRankTypedTest {
         Layout layout, long start, boolean variable, long ttl, boolean before, boolean rank) {
       super(
           layout.keys,
-          descriptor(layout.keys.length),
+          tech.streamfusion.planner.FlinkKeyGroupUtils.stockKeyDescriptor(layout.type, layout.keys),
           layout.type,
           layout.sorts,
           layout.ascending,

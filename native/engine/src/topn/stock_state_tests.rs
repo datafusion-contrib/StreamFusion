@@ -1,5 +1,101 @@
 use super::*;
 
+fn represented_ranker(algorithm: usize, snapshots: &[Vec<u8>]) -> TopNHandle {
+    let descriptor = vec![i32::MIN, -1, -1, -1];
+    let sorts = vec![SortColumn {
+        index: 1,
+        ascending: true,
+        nulls_first: true,
+    }];
+    if algorithm == 2 {
+        TopNHandle::UpdateFast(UpdatableTopNRanker::restore_partitions(
+            vec![0],
+            descriptor,
+            vec![2],
+            vec![i32::MIN, -1],
+            sorts,
+            3,
+            true,
+            true,
+            snapshots,
+            0,
+        ))
+    } else {
+        let mut owner = TopNHandle::restore_partitions(
+            vec![0],
+            descriptor,
+            sorts,
+            0,
+            3,
+            true,
+            algorithm == 1,
+            false,
+            0,
+            snapshots,
+            0,
+        );
+        if let TopNHandle::Retract(inner) = &mut owner {
+            inner.enable_stock_state().unwrap();
+        }
+        owner
+    }
+}
+
+#[test]
+fn represented_partition_rows_keep_rank_payloads_identical_through_native_recovery() {
+    for algorithm in 0..3 {
+        for count in [2, 2051] {
+            let mut source = represented_ranker(algorithm, &[]);
+            source
+                .push(
+                    &crate::flink_key::represented_row_key_fixture(count, false, 20),
+                    100,
+                )
+                .unwrap();
+            let snapshots = source
+                .snapshot_partitions(128)
+                .into_values()
+                .collect::<Vec<_>>();
+            let mut target = represented_ranker(algorithm, &snapshots);
+            for (binary, time) in [(true, 10), (false, 5)] {
+                let expected = source
+                    .push(
+                        &crate::flink_key::represented_row_key_fixture(count, binary, time),
+                        500,
+                    )
+                    .unwrap();
+                let actual = target
+                    .push(
+                        &crate::flink_key::represented_row_key_fixture(count, !binary, time),
+                        500,
+                    )
+                    .unwrap();
+                assert_eq!(expected, actual, "algorithm={algorithm},count={count}");
+                assert!(actual.num_rows() > 0);
+            }
+            if algorithm == 1 {
+                let change = |binary| {
+                    let input = crate::flink_key::represented_row_key_fixture(count, binary, 20);
+                    let mut columns = input.columns().to_vec();
+                    columns.push(Arc::new(Int8Array::from(vec![3; count])));
+                    let mut fields = input
+                        .schema()
+                        .fields()
+                        .iter()
+                        .map(|f| f.as_ref().clone())
+                        .collect::<Vec<_>>();
+                    fields.push(Field::new(ROW_KIND_COLUMN, DataType::Int8, false));
+                    RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap()
+                };
+                assert_eq!(
+                    source.push(&change(true), 600).unwrap(),
+                    target.push(&change(false), 600).unwrap()
+                );
+            }
+        }
+    }
+}
+
 fn ranker(limit: i64) -> TopNRanker {
     TopNRanker::new(
         vec![0],

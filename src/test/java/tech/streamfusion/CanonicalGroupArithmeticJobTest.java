@@ -23,26 +23,29 @@ class CanonicalGroupArithmeticJobTest {
   Path directory;
 
   static Stream<Arguments> cases() {
-    return Stream.of("continue", "no-input", "checkpoint", "rescale")
-        .flatMap(
-            mode ->
-                Stream.of(false, true)
-                    .flatMap(
-                        ordinary ->
-                            Stream.of(false, true)
-                                .filter(first -> !mode.equals("checkpoint") || first)
-                                .flatMap(
-                                    first ->
-                                        Stream.of("hashmap", "rocksdb")
-                                            .map(
-                                                store ->
-                                                    Arguments.of(mode, ordinary, first, store)))))
-        .filter(
-            test ->
-                !Boolean.getBoolean("streamfusion.test.groupArithmeticJobSmoke")
-                    || test.get()[0].equals("continue")
-                        && !(boolean) test.get()[1]
-                        && (boolean) test.get()[2]);
+    var cases =
+        Stream.of("continue", "no-input", "checkpoint", "rescale")
+            .flatMap(
+                mode ->
+                    Stream.of(false, true)
+                        .flatMap(
+                            ordinary ->
+                                Stream.of(false, true)
+                                    .filter(first -> !mode.equals("checkpoint") || first)
+                                    .flatMap(
+                                        first ->
+                                            Stream.of("hashmap", "rocksdb")
+                                                .map(
+                                                    store ->
+                                                        Arguments.of(
+                                                            mode, ordinary, first, store)))))
+            .filter(
+                test ->
+                    !Boolean.getBoolean("streamfusion.test.groupArithmeticJobSmoke")
+                        || test.get()[0].equals("continue")
+                            && !(boolean) test.get()[1]
+                            && (boolean) test.get()[2]);
+    return CanonicalTestMatrix.select(cases);
   }
 
   @ParameterizedTest

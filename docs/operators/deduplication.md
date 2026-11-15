@@ -229,3 +229,65 @@ canonical qualification. Benchmarking remains deferred.
 Processing-time ordinary SQL retains its existing native owner rather than passing through the
 released stock translator, which rejects that shape. Six dedicated keyed/global rank/first/last
 planner controls check actual owner routing and the stock rejection separately.
+
+## ROW-bearing canonical partition keys awaiting qualification
+
+Canonical submission now binds ROW-bearing partition keys through the same binary-row boundary
+used by normalization. Eager winners/presence and buffered winners/emitted markers preserve
+actual nested row kinds, reserved bytes and key-group placement during import, input, capture
+and export. Buffered native RocksDB declares that same representation before opening its store.
+Flink 1.18’s released event-time first-row function retains its eager contract; Flink 2.2’s
+watermark-buffered function retains its pending/timer contract.
+
+Processing-time keep-last uses the existing stock-compatible binary-row comparison for represented
+ROW payloads. It retains their original nested bytes rather than comparing reconstructed fields.
+The scalar path retains its existing byte comparison. New direct, planner and clean-stock job
+controls cover both directions, original TTL ages, nested timestamp/decimal keys, all nested row
+kinds, padding, NULLs, bundles, native checkpoint recovery, no-input returns and rescaling.
+Selected local results are recorded in the
+[canonical inventory](../backends/canonical-state.md#resumed-scope-local-qualification);
+earlier scalar evidence does not qualify this extension. MAP-bearing keys remain outside the
+existing Arrow key-codec admission. Benchmarking remains deferred.
+
+Additional window-selection payload controls await qualification on Flink 1.18 and 2.2. They
+retain complete nested ROW/ARRAY/MAP values through stock import, no-input return and native
+checkpoint recovery before firing. Clean-worker jobs include continued input and rescaling,
+retain the payload with a user function, and compare committed effects against an independent
+window/payload oracle. This exercises existing execution and state codecs; no processing-time
+canonical window-selection contract or new input semantics is introduced.
+
+## Buffered ROW-key representation consistency awaiting qualification
+
+Key normalization also removes Arrow-only ROW runtime-class flags while retaining logical row
+kinds and authoritative stock binary bytes. Matching generic, binary and nested-row classes must
+therefore address the same emitted marker and pending winner. The shared native fixture now
+emits actual Java class flags; this correction remains pending both-release execution.
+
+Buffered keep-first also shares the normalizer's strict internal UTF-16 list-label equivalence
+(`unit`/`$data$`). Live input and imported candidates retain their full value/cache buffers while
+reconciling that network alias to the bound payload schema. Its decodable key codec uses one fixed
+label in memory, canonical marker transfers and RocksDB initialization. Other child names, types,
+metadata and nullability remain strict. New network/canonical/marker/native-recovery controls
+are authored and pending full qualification on both release lines.
+
+Eager capture also reconciles the existing physical list-child labels of represented ROW
+caches after a network exchange. Logical ROW names, cache element types and nullability stay
+strict; the retained row bytes and checkpoint encoding are unchanged.
+
+Stock-bound buffered keep-first keys normalize their transient Arrow representation before
+decodable row encoding: every non-NULL ROW has its original or stock-encoded owned bytes,
+while redundant nested ownership and string caches do not distinguish the same stock key.
+The full candidate payload remains unchanged. Small reductions, indexed candidates, emitted
+markers, canonical import and persistent lookups use the same key vectors; native checkpoint
+schemas and table layouts retain their existing fields. Ordinary scalar key paths are unchanged.
+
+New controls mix generic and binary forms of an actual equal stock key, retain all nested
+RowKinds, import pending/marker state, recover native checkpoints, suppress a live marker and
+refire after its original TTL expires. Native controls exercise both candidate sizes around
+the index threshold and both stores. These controls await execution. The new buffered ROW-key
+binding is limited to scalar/ROW descendants; collection-bearing ROW keys remain outside this
+extension. Existing eager key admission retains its separate binary-key implementation.
+
+Buffered ROW-key component fixtures use the same binary ROW schema and operator setting as the
+planner's live transpose. Both restore directions retain raw stock bytes, TTL and captured-view
+checks; generic Arrow ROW batches do not substitute for that bound key transport.

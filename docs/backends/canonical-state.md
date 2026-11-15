@@ -19,26 +19,59 @@ pages. Historical cohorts are not silently requalified against each newer librar
 
 | Family | Current stock-interchange scope | Main remaining work |
 | --- | --- | --- |
-| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Arithmetic, typed scalar/shared COUNT DISTINCT and append numeric SUM DISTINCT, append extrema, integral/date/time/boolean retracting MIN/MAX, append scalar and local/global DISTINCT mini-batches, and captured immediate/mini-batch/local-global managed UDFs | Wider types/keys, retracting mini-batches, wider UDF contracts, other views/phases and failures |
-| [Deduplication](../operators/deduplication.md#canonical-state-adapter) | Automatic eager and buffered contracts, selected mini-batch and TTL modes | Remaining schemas/emission variants and full failure matrix |
-| [Top-N / First-N / LIMIT](../operators/top-n.md#first-n-canonical-handoffs) | Automatic first-N, append, updating and retracting rank subsets | Algorithm-specific bounds, TTL, sort and retained-type gaps |
-| [Regular joins](../operators/joins/regular-join.md) | Automatic qualified stock layouts and complete-job handoffs | Wider uniqueness, mini-batch, schema and TTL combinations |
-| [Fixed windows](../operators/window-aggregate.md#stock-canonical-savepoint-interoperability) | Automatic binding, namespaced/DISTINCT state and selected complete-job handoffs | Complete phase/type/view and failure matrix |
+| [GROUP BY](../operators/group-by.md#stock-arithmetic-accumulator-projection-partial) | Arithmetic, typed scalar/shared COUNT DISTINCT and append numeric SUM DISTINCT, append extrema, integral/date/time/boolean retracting MIN/MAX, append scalar and local/global DISTINCT mini-batches, and captured managed UDFs; ROW keys, validity-only COUNT arguments, one-phase decimal SUM/AVG, one-phase retracting scalar/COUNT DISTINCT/extrema, scalar/composite extrema keys and two-phase retracting scalar mini-batches awaiting qualification | Wider types/keys, remaining retracting mini-batches, wider UDF contracts, other views/phases and failures |
+| [Deduplication](../operators/deduplication.md#canonical-state-adapter) | Automatic eager and buffered contracts, selected mini-batch and TTL modes; ROW-key binding awaiting qualification | Remaining schemas/emission variants and full failure matrix |
+| [Top-N / First-N / LIMIT](../operators/top-n.md#first-n-canonical-handoffs) | Automatic first-N, append, updating and retracting rank subsets; wider scalar/arbitrary-sort, nested payloads, ROW partitions, updating OFFSET and first-bound state awaiting qualification | Algorithm-specific bounds, TTL, constructed sort types, independent ROW unique keys and complete new-scope qualification |
+| [Regular joins](../operators/joins/regular-join.md) | Automatic qualified stock layouts and complete-job handoffs; nested payload binding awaiting qualification | Wider uniqueness, mini-batch, schema and TTL combinations |
+| [Fixed windows](../operators/window-aggregate.md#stock-canonical-savepoint-interoperability) | Automatic binding, namespaced/DISTINCT state and selected complete-job handoffs; floating SUM preservation and 2.2 single-phase retracting binding awaiting qualification | Complete phase/type/view and failure matrix |
 | [Sessions](../operators/window-aggregate.md) | Automatic partitioned TVF and legacy event/processing-time SESSION binding, operator recovery and selected complete-job handoffs | Native unpartitioned SESSION TVF assignment and wider merging/timer/recovery matrix |
-| [Window rank](../operators/top-n.md#window-rank-canonical-interchange-partial) | Automatic event-time retained sort-list, timer and watermark binding | Wider bounds/types, processing-time projection and failure/delivery matrix |
-| [Window deduplication](../operators/deduplication.md#window-deduplication-canonical-interchange-partial) | Automatic event-time winner, timer and watermark binding | Wider winner/types, processing-time projection and failure/delivery matrix |
-| [OVER](../operators/over.md#automatic-bounded-arithmetic-state-binding-partial) | Bounded arithmetic, processing-time unbounded scalar and event-time unbounded scalar contracts (1.18 V1 / 2.2 V2) with automatic binding | Explicit legacy V1 on 2.2, wider keys/types, DISTINCT/views and bounded event-ROWS cleanup |
+| [Window rank](../operators/top-n.md#window-rank-canonical-interchange-partial) | Automatic event-time retained sort-list, timer and watermark binding; additional complete nested-payload state/job controls awaiting qualification | Wider bounds/types, processing-time projection and failure/delivery matrix |
+| [Window deduplication](../operators/deduplication.md#window-deduplication-canonical-interchange-partial) | Automatic event-time winner, timer and watermark binding; additional nested-payload complete-job controls awaiting qualification | Wider winner/types, processing-time projection and failure/delivery matrix |
+| [OVER](../operators/over.md#automatic-bounded-arithmetic-state-binding-partial) | Bounded arithmetic, processing-time unbounded scalar and event-time unbounded scalar contracts with automatic binding; narrow/decimal values, scalar/composite keys, explicit 2.2 V1, bounded event-ROWS cleanup, unbounded scalar MIN/MAX, validity-only COUNT arguments, processing ROW partitions and nullable scalar DISTINCT awaiting qualification | Remaining keys/types, clock/TTL/view combinations and complete new-scope qualification |
 | [Changelog normalization](../operators/changelog-normalize.md#canonical-savepoint-adapter) | Automatic retained-row/TTL contract and complete jobs | Wider keys, mini-batches, consumers and failure matrix |
-| [Interval joins](../operators/joins/interval-join.md#complete-job-handoff-matrix) | Event/proctime state, four join kinds and selected complete-job/rescale matrices | Wider schemas, cleanup edges and remaining ordinary-SQL combinations |
-| [Temporal joins](../operators/joins/temporal-join.md#complete-job-handoff-matrix) | Qualified INNER/LEFT history/probe/timer state and complete jobs | Legacy proctime variant, wider schemas and commit-failure matrix |
+| [Interval joins](../operators/joins/interval-join.md#complete-job-handoff-matrix) | Event/proctime state, four join kinds and selected complete-job/rescale matrices; nested binding awaiting qualification | Wider schemas, cleanup edges and remaining ordinary-SQL combinations |
+| [Temporal joins](../operators/joins/temporal-join.md#complete-job-handoff-matrix) | Qualified INNER/LEFT history/probe/timer state and complete jobs; nested binding awaiting qualification | Legacy proctime variant, wider schemas and commit-failure matrix |
 | [Event-time sort](../operators/event-time-sort.md#stock-compatible-canonical-interchange) | Automatic single ascending-rowtime contract and complete-job handoffs | Secondary sorting and wider schema/connector/failure/version matrices |
-| [Sink materialization](../operators/sink-upsert-materialize.md#canonical-interchange-qualification) | Explicit LEGACY contract on both releases; 2.2 VALUE/MAP/ADAPTIVE layouts | Automatic planner/connector binding, complete jobs, wider types and writer rescaling |
-| [Window joins](../operators/joins/window-join.md#stock-canonical-savepoint-interoperability) | Qualified event-time INNER/outer window layouts and complete jobs | Wider schemas/residuals and additional exchange/rescale combinations |
+| [Sink materialization](../operators/sink-upsert-materialize.md#canonical-interchange-qualification) | LEGACY contract on both releases; 2.2 VALUE/MAP/ADAPTIVE layouts; automatic typed-payload/scalar-and-ROW-key stock-sink binding awaiting qualification | Accelerated connector binding, array/map keys and complete new-job/writer-rescale qualification |
+| [Window joins](../operators/joins/window-join.md#stock-canonical-savepoint-interoperability) | Qualified event-time INNER/outer window layouts and complete jobs; nested binding awaiting qualification | Wider schemas/residuals and additional exchange/rescale combinations |
+
+## Resumed scope local qualification
+
+The resumed #569 extension has separate local evidence from the frozen #607 cohorts below.
+The sections marked awaiting qualification describe implemented scope whose complete default
+matrices remain pending. Selected checks establish only the exercised contracts and parameters.
+
+| Selection | Local result |
+| --- | --- |
+| Native library, final production sources | 1,611 passed; two release-only diagnostic ignores |
+| Native memory-only build and workspace formatting | Passed |
+| Flink 1.18 latest selected per-class reports | 5,558 checks across 124 classes; zero failures/errors; 40 explicit release/platform skips |
+| Flink 1.18 unchanged released heap/RocksDB backend-switch fixtures | Eight passed per engine; runtime-only backend evidence |
+| Flink 2.2 clean component/planner selection | 5,106 passed across 67 classes; no failures, errors or skips |
+| Flink 2.2 latest selected per-class reports | 6,192 checks across 121 classes; zero failures/errors/skips |
+| Flink 2.2 corrective normal pairwise job selection | 129 passed, including rank, ROW grouping/dedup and typed materializer rescaling |
+| Flink 2.2 unchanged released GROUP/OVER/event-window restore fixtures | 41 passed per engine; strict audit: 29 native and 12 explicitly mixed native/stock routes |
+| Final Flink 2.2 nested-rank, retracting-window and typed DISTINCT job cohort | 51 passed with the final native library |
+| Execution-evidence controls | 69 normal-mode checks passed (62 conditional skips), 222 canonical checks passed; 52 report-validator checks passed |
+
+Initial common arithmetic job smoke limited its shared provider to continued-input, compiled,
+native-first handoffs on both native stores. The corrective pairwise cohorts on both releases remove
+that additional restriction and include all handoff modes selected by their providers. Other
+pairwise worker providers retain their own engine orders, ordinary/compiled submission, no-input, checkpoint and rescaling cases. Their
+stock workers exclude StreamFusion classes and native libraries and require positive native
+execution in the native stages. Raw-state and malformed-state controls complement output oracles.
+The new large validity-only COUNT payload complete-job matrices remain unexecuted; component
+checks do not qualify those jobs. These selections do not replace the pending exact-head hosted
+merge gates or complete default matrices. No benchmark or throughput claim is made. Same-build
+native recovery does not qualify
+historical physical ROW checkpoint layouts or cross-line state upgrades under
+[#188](https://github.com/datafusion-contrib/StreamFusion/issues/188).
 
 ## Release parity and frozen scope
 
-The current scope freezes the admitted logical operator contracts above. It adds no operator,
-type, algorithm or canonical-state layout. Flink 1.18.1 and 2.2.1 compile the same planner and
+The historical release-parity baseline froze the admitted logical contracts. Resumed #569 work
+extends canonical binding only for operators and execution shapes StreamFusion already
+accelerates; new coverage is explicitly marked pending until tested on both releases. Flink 1.18.1 and 2.2.1 compile the same planner and
 conversion contracts; narrow release adapters select actual stock serializers and runtime owners.
 For SESSION, 1.18 uses the legacy group-window owner because it has no SESSION TVF. Event-time
 unbounded OVER uses V1 on 1.18 and V2 on 2.2. Sink materialization uses LEGACY on 1.18; VALUE,
@@ -46,9 +79,16 @@ MAP and ADAPTIVE exist only in 2.2. Parity means the same admitted logical opera
 state to their own released stock runtime, including async native RocksDB capture. It does not
 claim a downgrade from a newer stock state format into an older release.
 
-Sink-materializer contracts require explicit attachment on both lines. An unused 2.2 runtime-node
-prototype was never called by the planner; earlier automatic-binding and complete-job claims on
-its operator page were stale. Automatic sink binding remains outside this frozen scope.
+The resumed one-day scope covers these existing accelerated operator families. Missing native
+operators or execution shapes, including unpartitioned SESSION TVF assignment, legacy proctime
+temporal joins and secondary event-time sorting, remain separate implementation gaps. They are
+not prerequisites for this scope's canonical bindings and receive no new qualification credit.
+
+The frozen sink-materializer cohort used explicit attachment on both lines. Resumed #569 work now
+connects automatic stock-sink binding through the shared materializer hook, including existing
+Arrow payloads and scalar/ROW sink/matching keys; new planner and
+complete-job controls await complete qualification; selected local results are reported above. Earlier automatic-job qualification
+claims remain withdrawn. This extension is separate from the historical frozen evidence.
 Captured JVM aggregate handlers already store their accumulators/views in released Flink managed
 state. Their bounded bundles/caches drain at the barrier, then Flink's own RocksDB snapshot and
 canonical writer handle that state; no native-state projection is needed.
@@ -80,7 +120,8 @@ Legacy event/processing-time TUMBLE/HOP group windows share the slicing converte
 TimeWindow accumulator/pane and timer namespaces. HOP requires a positive size that is an integral
 multiple of its slide. These legacy owners also reset their watermark and write no operator state.
 Buffered dedup
-uses the older eager owner, and explicit legacy V1 mode on 2.2 remains unqualified. The shared
+uses the older eager owner. Explicit legacy V1 mode on 2.2 now selects the captured stock
+owner's polling policy; its newly added continuation controls await execution. The shared
 unbounded event-time scalar binding preserves 1.18 polling callbacks separately from pending
 timestamps; its captured RocksDB reader leaves metadata on disk. These same-line controls do not qualify every variant or cross-line upgrades. Both lines
 compile the shared canonical job fixtures, including all twelve Kafka sink/pipeline families. Their release adapters
@@ -954,9 +995,10 @@ currently retains the stock join state owner rather than eliding its pending wor
 
 The clean compiled-plan qualification includes 46 complete-job window-join cases, 50 planner
 controls, unchanged released restore fixtures and existing ordinary SQL/planner regression checks.
-The shared Flink 1.18 planner retains its previous implementation; its regression checks do not
-qualify Flink 1.18 stock canonical interchange. Canonical conversion runs only at the canonical
-savepoint boundary; ordinary native checkpoints retain their existing paths. Benchmarking remains
+In that frozen cohort, the shared Flink 1.18 planner retained its previous implementation; its
+regression checks did not qualify Flink 1.18 stock canonical interchange. Resumed 1.18 binding
+and selected local qualification are reported separately above. Canonical conversion runs only at
+the canonical savepoint boundary; ordinary native checkpoints retain their existing paths. Benchmarking remains
 deferred while the full #569 functionality is completed.
 
 ### Event-time interval cache projection
@@ -1304,7 +1346,7 @@ assigners keep explicit original logical identities; they are not elided as tran
 When rewriting duplicates a shared stock calculation, filter or watermark role, equivalent copies
 with the same original input role collapse to one execution owner. Arrow sharing is then rebuilt
 for the actual fan-out. Missing or incompatible roles still reject canonical binding.
-Constructed payloads, unaligned exchange reassembly, asynchronous/changelog state backends,
+Unaligned exchange reassembly, asynchronous/changelog state backends,
 ambiguous rewrites and unqualified ordinary wide-key layouts retain their existing owners/routes.
 
 Fifty-six planner controls pass across six join kinds, three stock side layouts, both submission
@@ -1849,7 +1891,8 @@ The current bounded binding passes one 1,834-check regression cohort and a separ
 handoff/recovery/rescale cohort on Flink 2.2.1. See the operator page for the exact type, key and
 scenario split; earlier overlapping cohorts are not cumulative coverage. Original released OVER
 restore programs remain stock controls where their UDF/key layouts are outside this binding.
-The shared 1.18 processing tests do not establish stock-compatible canonical restore there.
+Those frozen 1.18 processing tests did not establish stock-compatible canonical restore there;
+the resumed 1.18 scope and selected local qualification are reported separately above.
 
 
 ## Unbounded processing-time OVER binding (partial)
@@ -2267,11 +2310,12 @@ Connector factories that depend on a custom in-memory catalog-table implementati
 the physical route. Stock plan serialization reconstructs a standard catalog table and cannot
 preserve arbitrary subclass fields; such factories are not admitted to portable-template lowering.
 
-Ordinary SQL that requires a stock sink-materialization helper retains its complete physical
-execution and native-checkpoint route. These ordinary helper identities are not yet qualified
-for canonical interchange; fresh planner display IDs must not make a working job fail during
-topology binding. Compiled-plan lowering also has no automatic materializer contract binding;
-explicit adapters have their own component qualification.
+Ordinary SQL using an unqualified accelerated connector retains its complete physical execution
+and native-checkpoint route, including its sink-materialization helper. The resumed automatic
+BIGINT stock-sink binding instead uses the portable stock template, captures the materializer's
+original identity and explicitly accounts for transpose/exchange helpers. That new implementation
+and its generated-ID/full-job controls await testing; the explicit adapters retain their separate
+historical component qualification.
 
 The shared two-phase JVM aggregate node also rebuilds its local/global state owners from the
 stock template. This keeps canonical identities, maximum parallelism and serializer contracts
@@ -2309,3 +2353,400 @@ write-batch copy before allocation. Keys and timer/counter ledgers allocate thei
 capacity once; batching occurs before adding an owner. A denied reservation keeps the dirty
 journal intact and writes nothing for that batch, so a fresh allowance can retry. The encoded
 formats and ordinary native recovery behavior remain unchanged.
+
+## Nested join binding awaiting qualification
+
+The canonical loader now binds existing native ROW/ARRAY/MAP retained payloads for regular,
+interval, event-time temporal and event-time window joins. Scalar join keys and each family’s
+existing time/predicate/backend restrictions remain. Regular joins retain the insert-only
+restriction for MAP/MULTISET descendants and import stock rows through the same tagged Arrow
+map view as native input. No new join semantics are introduced. New planner and clean-worker
+fixtures cover full nested rows, duplicate/NULL inputs, continued and empty handoffs, native
+checkpoint recovery and keyed rescaling. These additions await local qualification on both
+released Flink lines; earlier scalar evidence above does not establish this wider scope.
+
+## Bounded event-time ROWS cleanup awaiting qualification
+
+Canonical binding now includes the released processing cleanup value and independent processing
+callback for existing bounded arithmetic event-time ROWS execution. The shared external callback
+mode preserves pending-row deferral, exact retained deadlines, late-only owners and idle frame/
+cutoff removal. The flat callback bridge carries armed state separately from a retained deadline;
+raw frame accumulators and event timers retain their existing protocol. Import validates both
+timer domains before installing state. New controls exercise both directions, overdue callbacks,
+pending/processed/empty cuts, native checkpoints, corrupt cleanup ownership, ordinary/compiled
+jobs and keyed rescaling. Selected Flink 1.18 and 2.2 local results are reported above; complete qualification remains pending. This adds canonical compatibility without introducing a new execution operator.
+
+## Decimal OVER projection awaiting qualification
+
+The shared unbounded scalar adapter now projects existing native decimal SUM, SUM0 and AVG
+into released stock accumulator fields. SUM’s native non-null count supplies presence for
+stock’s single nullable field; stock import derives only that internal presence marker. AVG’s
+raw widened sum and independent count transfer exactly, including an overflowed NULL sum.
+All-NULL and post-overflow nullable SUM continuation need no input replay. Existing native
+checkpoint formats retain their original layout. Bounded arithmetic binding also admits the
+existing native decimal precisions/scales. New compact/wide-scale planner, operator, TTL and
+clean-worker continuation/recovery/rescale fixtures await testing on both Flink releases.
+The compatibility source fixture parses declared scalar types so narrow integers, strings and
+decimals retain their physical representation; nested rows continue using its binary protocol.
+
+## Rank payload binding awaiting qualification
+
+Existing rank state codecs now bind retained ROW/ARRAY payloads with scalar partition, sort and
+update keys. Append-only rank additionally admits MAP/MULTISET descendants through its existing
+tagged Arrow representation. Updating map-bearing inputs retain the established equality fallback
+tracked separately in #437. New planner and component controls retain full nested rows across
+append, updating and retracting state; clean-worker append/retract jobs combine the full payload
+and computed rank in a user function to prevent payload pruning. Both-direction continuation,
+no-input, native checkpoint and rescale cases await testing on both supported release lines.
+
+## Deduplication ROW-key binding awaiting qualification
+
+Eager and buffered canonical deduplication now share normalization’s binary-row schema boundary
+for ROW-bearing keys, preserving nested row kinds and original byte identity for stock hashing.
+The loader retains the stock producer and explicitly rebuilds its Arrow input representation.
+Released first-row timing stays version-specific: eager on 1.18, watermark-buffered on 2.2.
+The buffered persistent store declares the same schema as import and live input. Processing-time
+keep-last compares represented ROW payload content using the shared stock equaliser; ordinary
+scalar byte comparison stays on its existing path. New state/planner/clean-worker controls await
+qualification across both lines, including malformed representation edges through existing
+validation, TTL, no-input returns, native checkpoints and keyed rescaling.
+
+## Typed materializer binding awaiting qualification
+
+The captured stock materializer hook now admits existing Arrow payload types with scalar/ROW sink
+and inferred input keys, instead of rejecting every non-BIGINT retained row. ROW/ARRAY/MAP/
+MULTISET payloads use the existing candidate and matching codecs. ARRAY/MAP/MULTISET key descendants, empty input
+upsert keys, async/unaligned state and independent accelerated-connector contracts retain their
+existing exclusions. New planner and clean-worker fixtures keep typed rows through the stock
+writer, compare committed row bytes and independently check the final candidate table after
+continued/empty handoffs, native checkpoint recovery and source/materializer/writer rescaling.
+These controls await qualification on both release lines; 1.18 uses LEGACY and 2.2 additionally
+uses VALUE/MAP/ADAPTIVE. The compatibility fixture exposes typed output columns and committed
+record bytes while retaining its existing default BIGINT protocol.
+
+## GROUP BY ROW-key binding awaiting qualification
+
+Typed scalar and shared DISTINCT aggregate state already carries raw Flink keys. Its canonical
+input boundary now also retains binary ROW-bearing grouping keys, including nested row kinds,
+wide decimal/timestamp fields and original padding. Ordinary submission uses the captured stock
+producer before that boundary. One-phase eager/retracting mini-batches and append-only two-phase
+partials share this representation; aggregate execution and private checkpoint formats stay on
+the existing paths. New raw-state, planner and clean-worker controls cover both engine orders,
+NULL keys, checkpoint recovery and rescaling. These additions await qualification on Flink 1.18
+and 2.2. Two-phase retracting DISTINCT layouts remain outside canonical binding; scalar layout binding is described below.
+
+## Two-phase retracting scalar binding awaiting qualification
+
+The existing native global bundle policy now carries released scalar SUM/AVG partial counts and
+the signed input-record counter. A zero net count does not erase a floating sum adjustment or
+raw nullable SUM history. The local produces raw SUM plus count, and includes Flink's hidden
+COUNT(*) when it is needed only for liveness. The global precombines these partials before
+merging once into retained state, preserving the stock arithmetic order. Group deletion is
+decided after the complete bundle. Canonical import/export uses the existing typed scalar state
+contract and does not change native checkpoint formats. New raw-state/checkpoint controls and
+clean-worker two-phase jobs await testing on both released lines. Retracting DISTINCT global
+views remain excluded; append DISTINCT and one-phase signed views retain their existing paths.
+
+## Window selection payload controls awaiting qualification
+
+New window-rank and window-deduplication controls exercise existing retained ROW/ARRAY/MAP
+payload codecs without changing their representation or admission. Component controls compare
+complete serialized output rows after stock import, an immediate no-input return, native
+checkpoint recovery and eventual window firing, across fixed window shapes and both stores.
+Clean-worker jobs keep the complete nested payload through a user function, compare committed
+effects and check an independent window-selection/payload checksum oracle for continuation,
+empty returns, recovery and rescaling. Selected local results are reported above; these controls do not extend earlier historical evidence.
+
+## One-phase decimal group binding awaiting qualification
+
+The typed scalar adapter now binds existing decimal SUM/AVG for eager and one-phase mini-batch
+GROUP BY, including retracting input and existing shared COUNT DISTINCT views. Append SUM
+exports an unseen native zero accumulator as stock NULL and imports only the necessary presence
+marker. Retracting SUM uses the existing nullable decimal accumulator kind and transfers its
+signed non-null count separately. AVG transfers the widened raw sum and full count, including
+a latched overflowed NULL sum. Private native checkpoint formats are unchanged. Decimal
+two-phase scalar/DISTINCT reductions and decimal extrema retain their existing canonical
+fallbacks. New compact/wide-scale raw-state, overflow, planner and isolated job controls await
+complete qualification on Flink 1.18 and 2.2; selected local results are reported above.
+
+## Unbounded OVER extrema binding awaiting qualification
+
+The existing raw fold bridge now binds the single nullable stock MIN/MAX field for integral,
+FLOAT/DOUBLE, decimal, string/CHAR, boolean, date, time and timestamp values. Processing-time and event-time
+unbounded ROWS/RANGE use the same scalar projection; event-time owners retain their released
+V1 polling or V2 callback policy, pending rows and cleanup contract. No native accumulator or
+checkpoint encoding changes. New raw-state/TTL, native-recovery, planner and clean-worker
+controls await testing on Flink 1.18 and 2.2. Floating controls retain first-NaN values and
+both signed-zero arrival orders in raw state and serialized output; they use the released primitive
+comparison policy. Bounded extrema with views and FIRST/LAST_VALUE order metadata remain outside
+this extension.
+
+COUNT over the same scalar argument types uses its existing non-null reader and released
+BIGINT accumulator, allowing mixed MIN/MAX/COUNT folds without a numeric-only argument gate.
+The new typed component fixtures feed both engines the same serialized physical rows so
+timestamp precision and string representation are aligned at the boundary.
+
+Automatic sink-materializer helpers retain a maximum parallelism large enough for their upstream
+input. The native state owner and exchange continue using the captured materializer maximum;
+source-side transpose/split helpers must not inherit a smaller sink-side limit. This refinement
+is awaiting qualification with the automatic materializer extension.
+
+## Materializer ROW keys awaiting qualification
+
+The automatic stock-sink hook now admits ROW-bearing sink and inferred input keys whose
+descendants are scalar or ROW. Its live input, input-schema binding, retained candidate rows
+and V2 matching indexes all use the same original binary-row representation. This retains
+nested row kinds, padding and wide decimal/timestamp NULL slots for stock hashing and matching.
+The explicit legacy state fixture exercises both engine orders, TTL and native checkpoint
+recovery; automatic ordinary/compiled job fixtures cover LEGACY and released V2 strategies,
+committed row bytes, empty returns and keyed rescaling. These additions await both-release
+qualification. ARRAY/MAP/MULTISET key descendants remain gated. Historical private-checkpoint
+upgrade compatibility for earlier ROW representations is outside this new same-build cohort.
+
+Bounded decimal SUM uses the existing nullable decimal accumulator at creation so an unseen
+raw sum is NULL, while a previously initialized sum can retain zero after eviction. Raw-state
+controls distinguish those cases across all three admitted bounded time/frame modes and both
+stores. The schema stays unchanged; two-release execution remains deferred to qualification.
+
+For represented ROW keys, the stock local GROUP BY boundary uses binary-key equality before
+producing partials, so optional transport children do not split a stock group and reorder its
+floating fold. New mixed-representation/repeated-flush controls await local execution. This
+reuses the key encoder already used by the retained global state; no persisted format changes.
+
+Event-time sort additionally has pending qualification controls for nested ROW/ARRAY/MAP
+payloads. Raw component snapshots compare complete serialized rows, while full jobs assert
+the nested values and global peer order through ordinary/portable submissions, empty returns,
+native recovery and source rescaling. Existing singleton ownership and actual cursor rules
+remain unchanged. These additions await both-release execution in the local testing window.
+
+The new alternating GROUP BY ROW-key fixture releases superseded snapshots after their last
+restore and discards its final snapshot on every exit. Test-owned checkpoint files therefore
+have an explicit lifetime within the qualification run.
+
+Existing window/session floating SUM preserves its first nullable value on canonical import
+and ordinary checkpoint rebuild, including negative zero, then folds in arrival order. FLOAT
+and DOUBLE retain their single-field state layout. New raw-state controls await execution;
+the correction is not a new operator or performance qualification.
+
+New single-phase floating-window job fixtures compare committed serialized rows with an
+independent window/session oracle, retaining negative-zero bits, NULL-only state, source
+progress and transactional writers across the standard handoff/recovery/rescale modes.
+They await both-release qualification; selected local results are reported above.
+
+Ordinary OVER COUNT additionally binds its existing binary, interval and nested argument
+readers while retaining the same BIGINT state. New component/planner/full-job controls cover
+retained input and frame schemas, released timer versions, TTL and recovery/rescaling; these
+remain pending full qualification. DISTINCT views and other aggregate argument gates stay separate.
+
+Flink 2.2 additionally has a pending canonical binding for existing single-phase retracting
+fixed event-time COUNT/SUM/SUM0/AVG kernels. It captures the released signed scalar/hidden-count
+layout and retains RowKinds at entry, without changing the native state format. Retracting AVG
+NULL overflow at a zero count remains raw state. Flink 1.18 has no matching released retracting
+TVF owner; its established append-only and legacy contracts are unchanged. Wider retracting
+phases and time/assignment families remain outside this extension.
+
+Buffered keep-first ROW keys additionally normalize optional Arrow transport children around
+the stock binary key bytes, so generic live keys and binary restored keys share candidates and
+emitted markers. The codec fields and persistent tables are unchanged. Mixed-representation,
+pending/marker restore, native recovery and original-age TTL controls await execution. This
+buffered extension admits scalar/ROW descendants; collection-bearing ROW keys remain gated.
+
+
+Updating Top-N additionally binds constant OFFSET ranges through the existing complete retained-row
+projection, including hidden-prefix rows and equal-sort positions. No serializer or native state
+format changes. New raw/changelog, recovery and clean-worker controls await both-release execution;
+Updating TTL remains gated; the first-bound extension below covers required variable bounds.
+See the Top-N page for the exact pending scope.
+
+
+Pending ROW-key normalizer consumer controls now require the newly bound retracting mini-batch
+aggregate or nested regular join to retain its own canonical owner and perform native work.
+They no longer accept the former consumer fallback as evidence for the combined graph. These
+joint continuation/recovery/rescale controls await both-release execution.
+
+
+Nested regular-join component controls additionally compare serialized canonical keys and values,
+not only projected job output, through no-input returns and native checkpoint recovery. They use
+all released side layouts and join kinds, with nested row kinds and insert-only MAP inputs.
+Execution on Flink 1.18 and 2.2 remains pending.
+
+
+GROUP BY non-DISTINCT COUNT additionally binds existing binary, interval and nested validity
+readers to the unchanged BIGINT accumulator, including filtered eager/one-phase/two-phase paths.
+New plan/raw-state/clean-worker controls await both-release execution. DISTINCT views, grouping
+key representations and other aggregate argument restrictions are unchanged.
+
+
+A pending OVER extension binds existing unbounded processing-time COUNT/SUM/SUM0/AVG DISTINCT membership
+transfers for TINYINT/SMALLINT/INT/BIGINT/FLOAT/DOUBLE/DECIMAL arguments with TTL disabled. It preserves the released raw
+counts, wrapping integral sums, shared membership-map serializers and null-state descriptor. Both-release component and
+clean-worker controls are written and pending full qualification. Nullable arguments retain independent NULL
+membership without contributing to scalar sums/counts; existing nullable member-list/table
+encodings preserve it through native recovery. Valid NULL-only owners and malformed marker bits
+or orphan owners have pending controls. TTL, event/bounded frames
+and DISTINCT extrema remain outside this extension; see the OVER page for its exact scope.
+
+COUNT DISTINCT additionally binds the existing decimal, boolean and date/time/timestamp member
+codecs while retaining the stock BIGINT scalar. Typed preflight and nullable/raw-recovery controls,
+plus independent clean-stock boolean/decimal/nanosecond timestamp jobs, await both-release
+execution. Complex members and the
+existing clock/TTL exclusions remain outside this binding.
+
+COUNT DISTINCT also has a pending CHAR/VARCHAR binding to the existing UTF-8 member codec.
+Preflight rejects malformed bytes and inconsistent Java caches before native mutation. Source
+state remains intact on failure; native memory/RocksDB handoffs, nullable raw-state/recovery,
+overlapping writers and a complete clean-stock text job await both-release execution.
+
+FLOAT/DOUBLE COUNT DISTINCT additionally reuses existing boxed membership equality: signed zeros
+stay distinct and NaN payloads canonicalize in memory and RocksDB. New exact-count controls,
+raw/recovery and complete-job fixtures remain pending. FLOAT/DOUBLE DISTINCT arithmetic also
+binds existing raw sums/counts, retaining IEEE addition history instead of replaying unordered
+members. Preflight checks exact AVG cardinality and empty-sum invariants. Cancellation, signed
+zero/NaN, malformed floating sums and fractional clean-worker arithmetic controls are authored
+and pending full qualification; no native state field is added.
+
+DECIMAL DISTINCT arithmetic additionally preserves existing raw SUM/SUM0/AVG fields. Membership
+bits recover SUM's omitted native count without interpreting an overflowed NULL as an empty set.
+SUM restart and latched AVG/SUM0 overflow remain separate from cardinality. Typed preflight,
+empty-field rejection, actual-stock overflow/recovery and fractional wide-decimal complete-job
+controls remain pending full qualification on either release. No native persisted field is added.
+
+Pending bounded and unbounded OVER controls also forbid intermediate native snapshot entry points during
+canonical capture and check the counter after writer completion, while retaining ordinary
+checkpoint recovery. This covers both the specialized scalar projection and the pinned full-view
+capture used by DISTINCT; the new guards are authored and await execution.
+Overlapping DISTINCT capture controls additionally compare complete stock state at two cuts after
+live membership changes and native-owner closure, finishing in reverse order on a writer thread.
+Nullable scalar and represented ROW keys use both native stores; this new matrix remains pending.
+
+Pending value-rank component controls compare complete raw stock state after no-input returns for
+the newly added scalar and nested-payload shapes, in addition to ROW partition keys and continued
+outputs. Both-release execution must qualify independent map/list keys and cached fields.
+
+The pending represented ROW key paths additionally normalize Arrow-only runtime-class flags.
+Logical nested row kinds and original binary bytes are preserved. Shared native fixtures now
+carry actual Java binary/nested class flags, preventing identical stock keys from splitting solely
+because of their transport class; this correction awaits execution with the new state matrices.
+
+The shared insert-only input boundary now reconciles the existing internal UTF-16 `unit`/`$data$`
+network alias without clearing payload buffers. Buffered keep-first uses that same strict schema
+equivalence for canonical candidates and one fixed label for decodable ROW keys, including native
+RocksDB initialization and emitted markers. Normalization reuses the existing normalizer rule;
+other schema differences still reject. New buffer-preservation and network/recovery controls await
+execution on both releases.
+
+The pending nested regular-join component controls feed serialized SQL binary rows into both
+engines, matching the existing released-owner fixture. Heap occurrence-map keys and restored
+keys therefore share the same input representation, independent of generic Java object equality.
+This fixture correction adds no runtime binding scope and still awaits execution.
+
+Independent OVER DISTINCT views have additional pending planner/clean-worker controls. The job
+consumes decimal-value and nullable-key memberships separately, verifies two actual bound MAP
+views in each native worker, and checks independent counts through recovery and rescaling.
+This complements the shared-membership fixtures without adding a new state format or admission.
+
+
+Retracting GROUP BY MIN/MAX additionally captures the existing one-phase mini-batch owner and
+count trigger for the already bound integral/date/time/boolean map views. New raw-state and
+clean-worker continuation/recovery/rescale controls await both-release execution. Filtered and
+local/global extrema keep their existing gates, and the native state format is unchanged.
+
+
+Updating Top-N also has a pending first-bound canonical extension: a transient header projects
+the existing independent native bound to released `rankEnd` VALUE state, including bound-only
+owners and full signed 64-bit values. Stock tuple serializers and native checkpoint layouts are
+unchanged. Required INT/BIGINT bound columns with TTL disabled await both-release component/job
+qualification; nullable columns, updating TTL and inner-position gaps remain gated.
+
+
+First-N ROW-key binding additionally rebuilds the shared binary-row input representation for
+ordinary SQL and stock portable plans. Restored raw counter keys and live keys therefore retain
+original nested kinds/bytes. New raw-counter, TTL, recovery and clean-worker rescale controls
+await both-release execution; the counter serializer and private native state format are unchanged.
+
+Unbounded processing-time OVER additionally binds scalar/ROW-descendant ROW partition keys.
+Ordinary mixed Calc/stock-OVER graphs force the captured stock template for these builtin folds,
+so downstream field projection does not bypass the bound ROW representation.
+The live boundary, transient fold projection and persistent native initialization use the same
+owned binary ROW schema; redundant nested transport caches cannot split restored keys from
+live keys. Original bytes, padding, nested kinds and per-value TTL stamps remain authoritative.
+New raw-state/native-recovery and clean-stock job controls await both-release qualification.
+The selective schema preserves original-byte metadata only on ROW partition columns, admitting
+standalone string companion keys and string accumulator fields without changing their existing
+representation. These combinations also have pending raw-state and clean-stock controls.
+Bound DISTINCT membership views now share that selective key schema, including NULL markers;
+leading membership keys normalize before native installation. New cross-store/native, raw-state
+and clean-stock job controls for these combined owners await both-release execution.
+Event/bounded ROW keys and collection descendants remain gated.
+This does not qualify historical native
+checkpoint upgrades with changed physical ROW transports.
+
+Value Top-N additionally has a pending selective ROW partition binding for append, retracting
+and updating algorithms. The original bytes are preserved only on partition ROW columns, and
+redundant transport caches normalize before retained payload encoding. Stock tuple/list/count
+serializers and native checkpoint fields remain unchanged. New raw-state, mixed-form, native
+recovery, planner and clean-stock continuation/rescale controls await both-release execution.
+Scalar sort fields retain their existing encoding; ROW sort fields, collection keys and ROW
+unique-key columns outside the partition key remain gated. Existing bound/TTL algorithm gates
+still apply. See the Top-N page for the exact pending scope and historical-layout limitation.
+
+The pending scalar-rank widening preserves the native retracting FLOAT/DOUBLE sort guard at
+planning time. Stock comparator ties and binary map-key equality require independent floating
+representations, so stock-interchange binding excludes those sorts. Portable canonical plans keep
+stock owners; ordinary unbound native routes retain their existing private checkpoint contract.
+Floating payload/partition types
+remain eligible. Explicit both-release fallback controls replace unqualified positive sort
+cases; non-floating scalar and ROW-partition matrices remain pending qualification.
+
+Append-list FLOAT/DOUBLE sorts additionally stay outside stock-interchange binding: comparator-equal
+signed zeros can leave overlapping lists under distinct binary MapState keys, which the compact
+native rank buffer cannot reconstruct. Fast Top-1 and updating rank also need the released
+primitive NaN comparison policy rather than native encoded total rank order; their FLOAT/DOUBLE
+sort bindings remain gated. Actual released heap/RocksDB overlap and first-NaN Top-1 controls,
+constructor rejection and ordinary/portable planner controls are authored but await execution
+on both supported lines. Floating payloads/partition
+fields with non-floating sorts remain eligible; no native state format is extended.
+
+Positive floating-carrier controls additionally use BIGINT sort fields with FLOAT/DOUBLE keys
+and payloads, retaining signed-zero partition identity and NaN/zero payload bits through raw
+no-input returns and continuation. These authored append/Top-1 controls exercise both orders and
+stores and remain pending full qualification on both releases; they do not qualify floating sort policies.
+
+Retracting GROUP BY MIN/MAX additionally admits existing scalar and composite key codecs,
+retaining complete fixed/variable BinaryRow key bytes in the current header/map protocol. This
+includes string/binary, wide DECIMAL and nanosecond TIMESTAMP/LTZ; constructed keys remain gated.
+The transfer checks the minimum fixed prefix and eight-byte alignment, matching typed grouped
+state, while preserving variable bytes opaquely. New eager/mini-batch raw-state, no-input,
+65-column/null-bitmap, TTL and native-recovery controls, native long-key/unaligned-frame checks,
+ordinary/portable admission and compact/variable two-key jobs are authored and pending full qualification.
+Worker checks require both physical key fields on the actual bound extrema contract, and the
+complete jobs retain independent final-value oracles. Existing historical cohorts remain separate.
+
+Pending variable-key extrema export additionally uses row/estimated-byte limits for resident
+headers and companion entries, with an oversized-record allowance. A conversion reservation
+precedes Arrow allocation and remains attached through the same synchronous receiver, including
+native RocksDB conversion. New hot two-MiB-key, denied-build and failed-receiver/retry controls
+are authored and pending full qualification; no native state field or stock serializer changes.
+
+The retained-row codec also accepts the internal unsigned 16-bit UTF-16 cache child used by
+represented ROW keys. This is a transport implementation field, not additional SQL scalar
+admission; encoded logical row bytes, nested kinds and stock serializers remain unchanged.
+
+Validated stock-state cleanup clears each selected state/owner/namespace once while streaming
+its immutable snapshot. Repeated map members do not trigger repeated whole-map deletion, and
+unknown real state is still validated independently before any cleanup.
+
+Isolated stock-worker fixture JARs include compiler-generated nest members as well as
+declared user classes. This keeps source value conversion self-contained when javac emits
+synthetic enum-dispatch helpers, while the worker still excludes StreamFusion classes.
+
+Typed group fixtures declare released widened decimal SUM/AVG output types. Rank planner
+controls retain released constant-rank pruning and construct nested payloads after a monotonic
+COUNT, avoiding unsupported ROW LAST_VALUE calls. Admission expectations distinguish the
+existing arithmetic COUNT layout, newly bound DISTINCT folds and floating-sort fallbacks.
+
+The existing deduplication and OVER operators retain their deployed Java serialization IDs as
+canonical admission gains explicit ROW-key carriage and the released event-time algorithm
+version. These two settings are durable operator configuration and are listed in the descriptor
+controls; live runtime helpers remain transient. Stock savepoint serializers and native
+checkpoint payload encodings are unchanged by this Java configuration extension.

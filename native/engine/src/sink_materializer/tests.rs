@@ -769,3 +769,57 @@ fn disk_legacy_ttl_cleanup_and_snapshot_store_upgrade_preserve_live_state() {
         0
     );
 }
+
+#[test]
+fn retained_materializer_list_aliases_accept_unchanged_types_before_mutation() {
+    use arrow::array::{Array, ListArray};
+    use arrow::datatypes::Int64Type;
+    let values = Arc::new(ListArray::from_iter_primitive::<Int64Type, _, _>([Some(
+        vec![Some(7), None],
+    )])) as ArrayRef;
+    let input = |alias: &str, kind: i8, metadata: bool| {
+        let ty = DataType::List(Arc::new(Field::new(alias, DataType::Int64, true)));
+        let array = arrow::array::make_array(
+            crate::owned::align_nested_data(values.to_data(), &ty).unwrap(),
+        );
+        let mut field = Field::new("payload", ty, true);
+        if metadata {
+            field = field.with_metadata(std::collections::HashMap::from([(
+                "changed".into(),
+                "1".into(),
+            )]));
+        }
+        RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("key", DataType::Int64, false),
+                field,
+                Field::new(ROW_KIND_COLUMN, DataType::Int8, false),
+            ])),
+            vec![
+                Arc::new(Int64Array::from(vec![1])) as ArrayRef,
+                array,
+                Arc::new(Int8Array::from(vec![kind])),
+            ],
+        )
+        .unwrap()
+    };
+    let mut owner = materializer(false, 0);
+    assert_eq!(
+        owner
+            .push(&input("element", 0, false), 100)
+            .unwrap()
+            .num_rows(),
+        1
+    );
+    assert!(owner.push(&input("$data$", 3, true), 200).is_err());
+    let output = owner.push(&input("$data$", 3, false), 200).unwrap();
+    assert_eq!(output.num_rows(), 1);
+    assert_eq!(row_kind_column(&output).unwrap().value(0), 3);
+    assert_eq!(
+        owner
+            .push(&input("element", 3, false), 300)
+            .unwrap()
+            .num_rows(),
+        0
+    );
+}

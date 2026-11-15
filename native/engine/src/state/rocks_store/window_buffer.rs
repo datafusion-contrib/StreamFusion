@@ -1,10 +1,10 @@
+use super::retained_rows::RetainedRows;
 use super::{
     checkpoint_files, copy_checkpoint_db, merged_timer_deadline, open_shared_db, re,
     stored_timer_deadline, write_timer_deadline, FlinkWriteBatch, OpenedDb, PAIR_FIRST_TABLE,
     PAIR_SECOND_TABLE, TIMER_DEADLINE_KEY,
 };
 use crate::*;
-use arrow::row::{RowConverter, SortField};
 use rocksdb::{Cache, IteratorMode, Options, DB};
 #[cfg(test)]
 use std::sync::Arc;
@@ -33,7 +33,7 @@ pub(crate) struct RocksWindowBuffer {
     db: StateDb,
     _cache: Option<Cache>,
     max_parallelism: usize,
-    converters: (RowConverter, RowConverter),
+    converters: (RetainedRows, RetainedRows),
     next_exclusive_ends: [Option<i64>; 2],
     next_seq: [u64; 2],
     timer_deadline: i64,
@@ -115,14 +115,13 @@ impl RocksWindowBuffer {
         right_schema: SchemaRef,
     ) -> Result<Self, DataFusionError> {
         let converter = |schema: &SchemaRef| {
-            RowConverter::new(
-                schema
+            RetainedRows::new(
+                &schema
                     .fields()
                     .iter()
-                    .map(|field| SortField::new(field.data_type().clone()))
-                    .collect(),
+                    .map(|field| field.data_type().clone())
+                    .collect::<Vec<_>>(),
             )
-            .map_err(|e| DataFusionError::External(Box::new(e)))
         };
         Ok(Self {
             db: opened.db,
@@ -153,9 +152,7 @@ impl RocksWindowBuffer {
         } else {
             &self.converters.1
         };
-        let rows = converter
-            .convert_columns(batch.columns())
-            .map_err(|e| DataFusionError::External(Box::new(e)))?;
+        let rows = converter.encode(batch.columns())?;
         let mut encoder = BinaryRowBatchEncoder::new(batch, key_columns, key_timestamp_precisions);
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         for (index, row) in rows.iter().enumerate() {
@@ -291,11 +288,12 @@ impl RocksWindowBuffer {
         } else {
             &self.converters.1
         };
-        let parser = converter.parser();
-        let parsed: Vec<_> = rows.map(|bytes| parser.parse(bytes)).collect();
-        let columns = converter
-            .convert_rows(parsed)
-            .map_err(|e| DataFusionError::External(Box::new(e)))?;
+        let types = schema
+            .fields()
+            .iter()
+            .map(|field| field.data_type().clone())
+            .collect::<Vec<_>>();
+        let columns = converter.decode_as(rows, &types)?;
         Ok(RecordBatch::try_new(schema.clone(), columns)?)
     }
 

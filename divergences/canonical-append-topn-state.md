@@ -35,8 +35,9 @@ pending batches before the barrier. This is a correctness choice; benchmarking r
 The released append restore fixture is selected by a thin subclass with original inherited
 assertions. Its native audit records only successfully committed import batches, separately from
 validation and new input. Typed expiry controls synchronize Guava's ticker with the harness TTL
-clock without changing Flink's cache or state logic. Admission remains limited to tested scalar
-fields and one sort column while broader rank/state variants are qualified.
+clock without changing Flink's cache or state logic. Historical admission qualified scalar
+fields and one sort column. Resumed wider scalar, multiple-sort, nested-payload and ROW-partition
+bindings are authored but await both-release execution.
 
 
 Runtime modes must be installed before the shared initializer imports stock state. Calling the
@@ -45,3 +46,15 @@ headers. Reuse the existing pre-restore hook for both first-bound and non-time R
 Also propagate the actual update-before flag through append create/restore, as the retracting path
 already does; the previous default silently added before-images to negotiated Top-1 upsert streams.
 Tests retain stock's raw wire rows and compare them separately from final materialized effects.
+
+Append-list FLOAT/DOUBLE sorts keep stock owners. The released runtime writes the current binary
+sort key even when the sorted buffer ties it with another representation. Opposite signed zeros
+can therefore retain overlapping lists under different MapState keys. The compact native rank
+buffer cannot reconstruct those independent entries from its payloads. Fast Top-1 stores one
+winner value, but its native encoded ordering places NaNs instead of retaining the released
+primitive comparator's ties. Its floating sorts also remain gated. Released heap/RocksDB overlap
+and first-NaN Top-1 controls, plus constructor/planner fallback controls, are authored but
+unexecuted; floating retained values
+and partition keys with non-floating sorts remain eligible. This is an explicit remaining scope
+under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569), not an alternate state
+encoding or a claim that floating sort-map interchange is complete.

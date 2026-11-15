@@ -75,7 +75,7 @@ class CanonicalWindowRankJobTest {
     return false;
   }
 
-  private Path prepare(String name, String mode, boolean ordinary) throws Exception {
+  Path prepare(String name, String mode, boolean ordinary) throws Exception {
     var root = directory.resolve(name);
     Files.createDirectories(root);
     if (ordinary) Files.createFile(root.resolve("ordinary-sql"));
@@ -106,7 +106,7 @@ class CanonicalWindowRankJobTest {
     return root;
   }
 
-  private static List<String> input(String mode) {
+  static List<String> input(String mode) {
     if (mode.equals("rescale")) {
       var rows = new ArrayList<String>();
       for (int round = 0; round < 6; round++)
@@ -141,7 +141,7 @@ class CanonicalWindowRankJobTest {
         "WATERMARK,5999");
   }
 
-  private List<String> expected(String mode) {
+  List<String> expected(String mode) {
     var windows = new java.util.HashMap<String, List<String[]>>();
     long watermark = Long.MIN_VALUE;
     for (String line : input(mode)) {

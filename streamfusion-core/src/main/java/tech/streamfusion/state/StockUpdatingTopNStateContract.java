@@ -50,7 +50,8 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
   private final RowDataKeySelector keySelector;
   private final RowDataKeySelector rowKeySelector;
   private final RowDataKeySelector sortSelector;
-  private final boolean top1;
+  private final boolean top1, variable;
+  private final int[] partitionColumns;
 
   public StockUpdatingTopNStateContract(
       TypeSerializer<RowData> keys,
@@ -60,6 +61,44 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
       RowType keyType,
       RowType rowType,
       boolean top1) {
+    this(keys, keySelector, rowKeySelector, sortSelector, keyType, rowType, top1, false);
+  }
+
+  public StockUpdatingTopNStateContract(
+      TypeSerializer<RowData> keys,
+      RowDataKeySelector keySelector,
+      RowDataKeySelector rowKeySelector,
+      RowDataKeySelector sortSelector,
+      RowType keyType,
+      RowType rowType,
+      boolean top1,
+      boolean variable) {
+    this(
+        keys,
+        keySelector,
+        rowKeySelector,
+        sortSelector,
+        keyType,
+        rowType,
+        top1,
+        variable,
+        new int[0]);
+  }
+
+  public StockUpdatingTopNStateContract(
+      TypeSerializer<RowData> keys,
+      RowDataKeySelector keySelector,
+      RowDataKeySelector rowKeySelector,
+      RowDataKeySelector sortSelector,
+      RowType keyType,
+      RowType rowType,
+      boolean top1,
+      boolean variable,
+      int[] partitionColumns) {
+    this.partitionColumns = partitionColumns.clone();
+    if (top1 && variable)
+      throw new IllegalArgumentException("Variable rank requires updating tuple state");
+    this.variable = variable;
     this.keys = keys;
     this.keyType = keyType;
     this.rowType = rowType;
@@ -69,6 +108,13 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
     this.top1 = top1;
     rowKeyType = (RowType) rowKeySelector.getProducedType().toLogicalType();
     sortType = (RowType) sortSelector.getProducedType().toLogicalType();
+    if (sortType.getChildren().stream()
+        .anyMatch(
+            type ->
+                type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.FLOAT)
+                    || type.is(org.apache.flink.table.types.logical.LogicalTypeRoot.DOUBLE)))
+      throw new IllegalArgumentException(
+          "Floating rank continuation requires the released comparison policy");
     var fields = new ArrayList<RowType.RowField>();
     for (var field : rowType.getFields())
       fields.add(new RowType.RowField(field.getName(), field.getType().copy(true)));
@@ -92,9 +138,12 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
 
   @Override
   public Map<String, StateDescriptor.Type> stateDescriptors() {
-    return Map.of(
+    var result = new java.util.LinkedHashMap<String, StateDescriptor.Type>();
+    result.put(
         top1 ? "Top1-Rank-State" : DATA,
         top1 ? StateDescriptor.Type.VALUE : StateDescriptor.Type.MAP);
+    if (variable) result.put("rankEnd", StateDescriptor.Type.VALUE);
+    return Map.copyOf(result);
   }
 
   @Override
@@ -122,6 +171,15 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
     return new StockValueState<>(backend, "Top1-Rank-State", new RowDataSerializer(rowType), false);
   }
 
+  private StockValueState<Long> bound(CheckpointableKeyedStateBackend<RowData> backend)
+      throws Exception {
+    return new StockValueState<>(
+        backend,
+        "rankEnd",
+        org.apache.flink.api.common.typeutils.base.LongSerializer.INSTANCE,
+        false);
+  }
+
   @Override
   public void exportState(
       CheckpointableKeyedStateBackend<RowData> backend, long handle, boolean persistent)
@@ -129,6 +187,7 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
     clear(backend);
     var data = top1 ? null : data(backend);
     var winner = top1 ? winner(backend) : null;
+    var bound = variable ? bound(backend) : null;
     var serializer = new RowDataSerializer(rowType);
     int arity = rowType.getFieldCount();
     try (ArrowSchema rowSchema = ArrowSchema.allocateNew(NativeAllocator.SHARED);
@@ -138,7 +197,8 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
             }) {
       Data.exportSchema(
           NativeAllocator.SHARED,
-          MapListRepresentation.forIpc(ArrowConversion.toArrowSchema(rowType)),
+          MapListRepresentation.forIpc(
+              ArrowConversion.toBinaryRowKeySchema(rowType, partitionColumns)),
           NativeAllocator.DICTIONARIES,
           rowSchema);
       Native.exportUpdatingTopNCanonical(
@@ -157,6 +217,19 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
                 RowData key = binary(row.getBinary(arity), keyType.getFieldCount());
                 validateKey(key, keyType);
                 backend.setCurrentKey(key);
+                if (row.getInt(arity + 2) == -1) {
+                  if (bound == null
+                      || bound.value() != null
+                      || row.getByte(arity + 4) != -1
+                      || row.getBinary(arity + 1).length != 0
+                      || java.util.stream.IntStream.range(0, arity)
+                          .anyMatch(field -> !row.isNullAt(field)))
+                    throw new IllegalStateException("Invalid or duplicate updating first bound");
+                  bound.update(row.getLong(arity + 3), 0);
+                  continue;
+                }
+                if (bound != null && bound.value() == null)
+                  throw new IllegalStateException("Updating rows have no first-bound state");
                 RowData retained = payload(row);
                 validatePayload(key, null, retained);
                 RowData payload = serializer.copy(retained);
@@ -204,7 +277,8 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
             }) {
       Data.exportSchema(
           NativeAllocator.SHARED,
-          MapListRepresentation.forIpc(ArrowConversion.toArrowSchema(rowType)),
+          MapListRepresentation.forIpc(
+              ArrowConversion.toBinaryRowKeySchema(rowType, partitionColumns)),
           NativeAllocator.DICTIONARIES,
           schema);
       Native.exportUpdatingTopNCanonical(
@@ -256,15 +330,17 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
       throws Exception {
     var data = top1 ? null : data(backend);
     var winner = top1 ? winner(backend) : null;
+    var bound = variable ? bound(backend) : null;
     var serializer = new RowDataSerializer(rowType);
     var keySerializer = keys.duplicate();
-    var binaryKeys = new RowDataSerializer(keyType);
+    var binaryKeys = new StockKeyProjection(keyType);
     var rowKeySerializer = new RowDataSerializer(rowKeyType);
     var sortSerializer = new RowDataSerializer(sortType);
     var batch =
         new StockRowBatch(
             bridgeType,
             true,
+            ArrowConversion.toBinaryRowKeySchema(bridgeType, partitionColumns),
             (transferred, array, schema) ->
                 importBatch(handle, persistent, transferred, validateOnly, array, schema));
     var ownerType =
@@ -274,6 +350,28 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
         new TupleSerializer<Tuple2<RowData, RowData>>(
             (Class) Tuple2.class, new TypeSerializer<?>[] {rowKeySerializer, serializer});
     try (var inventory = new StockStateSpool(ownerType)) {
+      if (bound != null)
+        try (var stream = backend.getKeys("rankEnd", VoidNamespace.INSTANCE)) {
+          var iterator = stream.iterator();
+          while (iterator.hasNext()) {
+            RowData key = keySerializer.copy(iterator.next());
+            validateKey(key, keyType);
+            backend.setCurrentKey(key);
+            var value = bound.value();
+            if (value == null
+                || value.getUserValue() == null
+                || !inventory.add(5, GenericRowData.of(key, new byte[0]), 0))
+              throw new IllegalStateException("Invalid or duplicate updating first bound");
+            var header = new GenericRowData(bridgeType.getFieldCount());
+            int arity = rowType.getFieldCount();
+            header.setField(arity, bytes(binaryKeys.project(key)));
+            header.setField(arity + 1, new byte[0]);
+            header.setField(arity + 2, -1);
+            header.setField(arity + 3, value.getUserValue());
+            header.setField(arity + 4, (byte) -1);
+            batch.append(header);
+          }
+        }
       try (var stream = backend.getKeys(top1 ? "Top1-Rank-State" : DATA, VoidNamespace.INSTANCE)) {
         var iterator = stream.iterator();
         while (iterator.hasNext()) {
@@ -282,7 +380,9 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
           if (!inventory.add(1, GenericRowData.of(key, new byte[0]), 0))
             throw new IllegalStateException("Duplicate update rank partition key");
           backend.setCurrentKey(key);
-          byte[] encoded = bytes(binaryKeys.toBinaryRow(key));
+          if (bound != null && bound.value() == null)
+            throw new IllegalStateException("Updating rows have no first-bound state");
+          byte[] encoded = bytes(binaryKeys.project(key));
           if (top1) {
             var value = winner.value();
             if (value == null || value.getUserValue() == null)
@@ -322,8 +422,7 @@ public final class StockUpdatingTopNStateContract implements StockStateContract 
         try (var groups = inventory.owners()) {
           while (groups.hasNext()) {
             var group = groups.next();
-            byte[] encoded =
-                bytes(binaryKeys.toBinaryRow(group.getRow(0, keyType.getFieldCount())));
+            byte[] encoded = bytes(binaryKeys.project(group.getRow(0, keyType.getFieldCount())));
             try (var positions = inventory.times(3, group);
                 var rows = inventory.values(4, group, tuple)) {
               long next = 1;

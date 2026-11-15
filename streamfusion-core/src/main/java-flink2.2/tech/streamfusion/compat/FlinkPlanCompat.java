@@ -173,6 +173,20 @@ public final class FlinkPlanCompat {
         .deriveStreamWindowAggregateInfoList(factory, input, calls, false, window, true);
   }
 
+  public static boolean supportsRetractingWindowAggregation() {
+    return true;
+  }
+
+  public static org.apache.flink.table.planner.plan.utils.AggregateInfoList windowAggregates(
+      org.apache.flink.table.planner.calcite.FlinkTypeFactory factory,
+      org.apache.flink.table.types.logical.RowType input,
+      scala.collection.Seq<org.apache.calcite.rel.core.AggregateCall> calls,
+      boolean retracting,
+      org.apache.flink.table.planner.plan.logical.WindowSpec window) {
+    return org.apache.flink.table.planner.plan.utils.AggregateUtil
+        .deriveStreamWindowAggregateInfoList(factory, input, calls, retracting, window, true);
+  }
+
   public static tech.streamfusion.state.StockSlicingWindowStateContract.WindowStart windowStart(
       org.apache.flink.table.planner.plan.logical.WindowSpec spec,
       java.time.ZoneId zone,
@@ -211,8 +225,24 @@ public final class FlinkPlanCompat {
   }
 
   public static Class<?> eventUnboundedOver(boolean rows) {
-    return org.apache.flink.table.runtime.operators.over.RowTimeUnboundedPrecedingOverFunctionV2
-        .class;
+    return eventUnboundedOver(rows, unboundedOverVersion());
+  }
+
+  public static boolean supportsUnboundedOverVersion(int version) {
+    return version == 1 || version == 2;
+  }
+
+  public static Class<?> eventUnboundedOver(boolean rows, int version) {
+    if (version == 1)
+      return rows
+          ? org.apache.flink.table.runtime.operators.over.RowTimeRowsUnboundedPrecedingFunction
+              .class
+          : org.apache.flink.table.runtime.operators.over.RowTimeRangeUnboundedPrecedingFunction
+              .class;
+    if (version == 2)
+      return org.apache.flink.table.runtime.operators.over.RowTimeUnboundedPrecedingOverFunctionV2
+          .class;
+    throw new IllegalArgumentException("Unsupported event-time unbounded OVER version: " + version);
   }
 
   public static org.apache.flink.table.planner.plan.nodes.physical.stream

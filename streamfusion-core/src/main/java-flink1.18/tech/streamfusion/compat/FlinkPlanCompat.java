@@ -175,6 +175,21 @@ public final class FlinkPlanCompat {
         .deriveStreamWindowAggregateInfoList(factory, input, calls, window, true);
   }
 
+  public static boolean supportsRetractingWindowAggregation() {
+    return false;
+  }
+
+  public static org.apache.flink.table.planner.plan.utils.AggregateInfoList windowAggregates(
+      org.apache.flink.table.planner.calcite.FlinkTypeFactory factory,
+      org.apache.flink.table.types.logical.RowType input,
+      scala.collection.Seq<org.apache.calcite.rel.core.AggregateCall> calls,
+      boolean retracting,
+      org.apache.flink.table.planner.plan.logical.WindowSpec window) {
+    if (retracting)
+      throw new IllegalArgumentException("Released Flink 1.18 has no retracting TVF owner");
+    return windowAggregates(factory, input, calls, window);
+  }
+
   public static tech.streamfusion.state.StockSlicingWindowStateContract.WindowStart windowStart(
       org.apache.flink.table.planner.plan.logical.WindowSpec spec,
       java.time.ZoneId zone,
@@ -213,6 +228,17 @@ public final class FlinkPlanCompat {
   }
 
   public static Class<?> eventUnboundedOver(boolean rows) {
+    return eventUnboundedOver(rows, unboundedOverVersion());
+  }
+
+  public static boolean supportsUnboundedOverVersion(int version) {
+    return version == 1;
+  }
+
+  public static Class<?> eventUnboundedOver(boolean rows, int version) {
+    if (!supportsUnboundedOverVersion(version))
+      throw new IllegalArgumentException(
+          "Unsupported event-time unbounded OVER version: " + version);
     return rows
         ? org.apache.flink.table.runtime.operators.over.RowTimeRowsUnboundedPrecedingFunction.class
         : org.apache.flink.table.runtime.operators.over.RowTimeRangeUnboundedPrecedingFunction

@@ -166,3 +166,21 @@ INNER TUMBLE/HOP/CUMULATE and keyed outer TUMBLE cases retain two custom sources
 sink and both transposes; actual native input, clean stock classpaths, stock-only metadata and
 external committed effects are checked. This extends submission coverage without qualifying
 wider key/type/version/failure/connector variants. Every operator family remains partial.
+
+### Nested canonical payload binding
+
+Canonical submission now retains existing native ROW/ARRAY/MAP payloads instead of rejecting
+every constructed non-key field. Join-key, time, predicate and backend admission remain
+independent. New ordinary/compiled planner and clean-stock-worker fixtures keep complete nested
+payloads through the join, with NULL parents, NULL descendants, Unicode map keys and duplicate
+rows. The authored fixtures cover continued input, no-input re-export, native checkpoints and
+1 → 3 → 2 rescaling; qualification on Flink 1.18 and 2.2 is pending.
+
+The persistent window-join buffer uses the shared retained-row codec for payloads,
+including nested MAP fields. MAP input keeps its declared Arrow representation;
+only the private storage codec uses the equivalent list layout and reconstructs
+the requested schema when reading rows. Join-key admission is unchanged.
+
+Live input reconciles Arrow’s physical ARRAY and MAP child labels with the captured
+logical schema before buffering or probing. Logical ROW names and collection value types
+remain unchanged, so restored and newly arriving rows share one schema.
