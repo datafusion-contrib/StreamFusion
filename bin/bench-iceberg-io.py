@@ -57,7 +57,7 @@ def build(force):
         'native': digest(files(ROOT / 'native', glob='*.rs') + files(ROOT / 'native', glob='Cargo.*')),
         'module': digest(files(MODULE / 'src/main/java')),
         'benchmark': digest([BENCHMARK]),
-        'support': digest(files(ROOT / 'src/main') + files(MODULE / 'src/main/resources') + [ROOT / 'pom.xml', MODULE / 'pom.xml', ROOT / 'streamfusion-core/pom.xml']),
+        'support': digest(files(ROOT / 'streamfusion-core/src/main') + files(MODULE / 'src/main/resources') + [ROOT / 'pom.xml', MODULE / 'pom.xml', ROOT / 'streamfusion-core/pom.xml']),
     }
     native_changed = force or previous.get('native') != current['native'] or not Path(previous.get('nativeDirectory', '/nonexistent')).is_dir()
     if native_changed:

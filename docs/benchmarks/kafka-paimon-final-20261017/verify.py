@@ -8,6 +8,7 @@ import tarfile
 
 root = Path(__file__).resolve().parent
 repo = root.parents[2]
+subprocess.run([sys.executable, str(repo / 'dev/benchmark_artifacts.py'), str(root.relative_to(repo))], check=True)
 subprocess.run([sys.executable, str(repo / 'bin/report-paimon.py'), str(root)], check=True)
 method = json.loads((root / 'method.json').read_text())
 environment = json.loads((root / 'environment.json').read_text())

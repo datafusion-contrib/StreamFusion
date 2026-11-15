@@ -8,6 +8,7 @@ pub(super) const RETAINED_DISTINCT_COLUMN: &str = "distinct_retention_key";
 pub(super) const PRESERVED_DISTINCT_APPEND: &str = "streamfusion.distinct-retained-append";
 pub(super) const PRESERVED_DISTINCT_STATE: &str = "streamfusion.distinct-retained-state";
 
+#[derive(Clone)]
 struct View {
     data_type: DataType,
     timestamps: HashMap<ValueKey, i64>,
@@ -28,7 +29,7 @@ impl View {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(super) struct DistinctViewRetention {
     views: BTreeMap<usize, View>,
 }

@@ -2,6 +2,7 @@ use crate::flink_key::string_distinct_map_hash;
 use std::sync::Arc;
 use streamfusion_bridge::java_map_order::JavaMapOrder;
 
+#[derive(Clone)]
 pub(super) struct StringMapOrder {
     order: JavaMapOrder<usize>,
     keys: Vec<Option<Arc<str>>>,

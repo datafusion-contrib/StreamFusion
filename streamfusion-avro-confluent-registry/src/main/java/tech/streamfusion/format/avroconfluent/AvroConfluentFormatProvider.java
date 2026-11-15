@@ -1,0 +1,111 @@
+package tech.streamfusion.format.avroconfluent;
+
+import java.util.Map;
+import org.apache.flink.formats.avro.typeutils.AvroSchemaConverter;
+import org.apache.flink.table.types.logical.RowType;
+import tech.streamfusion.format.EncodeFormat;
+import tech.streamfusion.format.FormatCodes;
+import tech.streamfusion.format.NativeFormatContext;
+import tech.streamfusion.format.NativeFormatOptions;
+import tech.streamfusion.format.NativeFormatProvider;
+import tech.streamfusion.format.NativeMessageDecoderFactory;
+import tech.streamfusion.format.avro.AvroDecodeGate;
+import tech.streamfusion.format.avro.AvroEncodeGate;
+import tech.streamfusion.kafka.ConfluentSchemaRegistry;
+
+/** Native provider for Flink's {@code avro-confluent} format. */
+public final class AvroConfluentFormatProvider implements NativeFormatProvider {
+
+  @Override
+  public tech.streamfusion.format.NativeMessageEncoderFactory encoderFactory() {
+    return (options, types, names, fields) ->
+        tech.streamfusion.format.avro.NativeAvroFormat.encoder(
+            tech.streamfusion.format.FormatCodes.AVRO_CONFLUENT, options, types, names, fields);
+  }
+
+  @Override
+  public String formatIdentifier() {
+    return "avro-confluent";
+  }
+
+  @Override
+  public boolean honorsProjection() {
+    return true;
+  }
+
+  @Override
+  public boolean composesKafkaMetadata() {
+    return true;
+  }
+
+  @Override
+  public boolean supportsIgnoreParseErrors() {
+    return false;
+  }
+
+  @Override
+  public boolean supports(NativeFormatContext context) {
+    // Flink's avro-confluent factory has no timestamp-mapping option: it is hard-wired to the
+    // legacy mapping, so the gate always checks the legacy derivation.
+    return !context.ignoreParseErrors()
+        && ConfluentSchemaRegistry.fromOptions(context.options()) != null
+        && AvroDecodeGate.supports(context.writerType(), true);
+  }
+
+  /** A key's writer schemas come from its own registry; it resolves them to its fields' schema. */
+  @Override
+  public String keyDecoderOptions(NativeFormatContext context) {
+    if (!supports(context)) {
+      return null;
+    }
+    return "avro.reader-schema="
+        + AvroSchemaConverter.convertToSchema(context.outputType().copy(false))
+        + "\n";
+  }
+
+  @Override
+  public NativeMessageDecoderFactory createDecoder(NativeFormatContext context) {
+    Map<String, String> options = context.options();
+    ConfluentSchemaRegistry registry = ConfluentSchemaRegistry.fromOptions(options);
+    String readerSchema =
+        AvroSchemaConverter.convertToSchema(context.outputType().copy(false)).toString();
+    String formatOptions = NativeFormatOptions.encode(options);
+    // A Confluent-framed key fetches its writer schemas through the key format's own registry.
+    boolean confluentKey =
+        String.valueOf(FormatCodes.AVRO_CONFLUENT)
+            .equals(options.get(NativeFormatOptions.KEYED_KEY_FORMAT));
+    ConfluentSchemaRegistry keyRegistry =
+        confluentKey ? ConfluentSchemaRegistry.fromKeyOptions(options) : null;
+    String keyReaderSchema =
+        confluentKey ? NativeFormatOptions.keyedKeyOption(options, "avro.reader-schema") : null;
+    return () ->
+        new RegistryAvroDecoder(
+            registry, readerSchema, false, formatOptions, keyRegistry, keyReaderSchema);
+  }
+
+  @Override
+  public EncodeFormat encodeFormat(NativeFormatContext context) {
+    if (!tech.streamfusion.format.avro.NativeAvroFormat.encoderSupported(
+        FormatCodes.AVRO_CONFLUENT)) return null;
+    RowType rowType = context.writerType();
+    Map<String, String> options = context.options();
+    ConfluentSchemaRegistry registry = ConfluentSchemaRegistry.fromFormatOptions(options);
+    // The subject is required for serialization; the sink translator auto-completes it from the
+    // topic under the fallback spelling exactly like Flink's Kafka factories, so a missing one
+    // means an option shape (multiple topics) the translator already declined.
+    String subject = options.getOrDefault("subject", options.get("schema-registry.subject"));
+    // Flink's avro-confluent serializer hard-wires the legacy timestamp mapping, like the decode.
+    if (registry == null || subject == null || !AvroEncodeGate.supports(rowType, true)) {
+      return null;
+    }
+    String schema = AvroEncodeGate.derivedSchema(rowType, true);
+    return EncodeFormat.resolved(
+        FormatCodes.AVRO_CONFLUENT,
+        "avro-schema=" + schema + "\n",
+        new ConfluentSchemaRegistration(registry, subject, schema),
+        false,
+        (resolved, types, names, fields) ->
+            tech.streamfusion.format.avro.NativeAvroFormat.encoder(
+                FormatCodes.AVRO_CONFLUENT, resolved, types, names, fields));
+  }
+}

@@ -8,6 +8,7 @@ import org.apache.calcite.jdbc.JavaTypeFactoryImpl;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.volcano.VolcanoPlanner;
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.SingleRel;
 import org.apache.calcite.rel.logical.LogicalCalc;
 import org.apache.calcite.rel.logical.LogicalValues;
 import org.apache.calcite.rex.RexBuilder;
@@ -20,8 +21,33 @@ import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.flink.configuration.Configuration;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.planner.common.ExpressionInput;
+import tech.streamfusion.planner.stream.StreamPhysicalNativeCalc;
+import tech.streamfusion.planner.stream.StreamPhysicalRowDataToArrow;
 
 class CollectionValueIdentityTest {
+  @Test
+  void sharedAdmissionUsesProducerPropertiesAndRetainsUnknownColumnarFallback() {
+    var types = new JavaTypeFactoryImpl();
+    var cluster = RelOptCluster.create(new VolcanoPlanner(), new RexBuilder(types));
+    RelNode source =
+        LogicalValues.createEmpty(
+            cluster,
+            types.builder().add("s", types.createSqlType(SqlTypeName.VARCHAR, 20)).build());
+    var unknown = new ColumnarProducer(source);
+    var represented = new RepresentedProducer(source);
+    var config = new Configuration();
+    config.setString("streamfusion.experimental.collectionExpressions", "true");
+    try (var ignored = NativeConfig.usePlannerConfig(config)) {
+      assertTrue(CollectionExpressionSemantics.unverifiedInput(consumer(unknown)));
+      assertFalse(CollectionExpressionSemantics.unverifiedInput(consumer(represented)));
+    }
+    assertFalse(CollectionExpressionSemantics.stringCarrierProducer(unknown));
+    assertTrue(CollectionExpressionSemantics.stringCarrierProducer(represented));
+    assertFalse(JvmFunctionConversions.aliasedProducer(unknown));
+    assertTrue(JvmFunctionConversions.aliasedProducer(consumer(represented)));
+  }
+
   @Test
   void sensitiveConsumersRequireAnExplicitlyRepresentedColumnarProducer() {
     var config = new Configuration();
@@ -39,8 +65,8 @@ class CollectionValueIdentityTest {
       var represented =
           new StreamPhysicalRowDataToArrow(
               source.getCluster(), source.getTraitSet(), source, false, null, true);
-      assertTrue(CollectionValueIdentity.unverifiedInput(consumer(ordinary)));
-      assertFalse(CollectionValueIdentity.unverifiedInput(consumer(represented)));
+      assertTrue(CollectionExpressionSemantics.unverifiedInput(consumer(ordinary)));
+      assertFalse(CollectionExpressionSemantics.unverifiedInput(consumer(represented)));
       var encoded =
           RexExpression.encodeProjections(
               List.of(RexInputRef.of(0, source.getRowType())), List.of("s"));
@@ -48,7 +74,7 @@ class CollectionValueIdentityTest {
       var ordinaryCalc =
           new StreamPhysicalNativeCalc(
               source.getCluster(), source.getTraitSet(), represented, source.getRowType(), encoded);
-      assertTrue(CollectionValueIdentity.unverifiedInput(consumer(ordinaryCalc)));
+      assertTrue(CollectionExpressionSemantics.unverifiedInput(consumer(ordinaryCalc)));
     }
   }
 
@@ -127,9 +153,9 @@ class CollectionValueIdentityTest {
 
       assertEquals(
           org.apache.flink.runtime.util.EnvironmentInformation.getVersion().startsWith("1.18"),
-          CollectionValueIdentity.unverifiedInput(widenedCalc));
-      assertTrue(CollectionValueIdentity.unverifiedInput(narrowedCalc));
-      assertTrue(CollectionValueIdentity.unverifiedInput(rekeyedCalc));
+          CollectionExpressionSemantics.unverifiedInput(widenedCalc));
+      assertTrue(CollectionExpressionSemantics.unverifiedInput(narrowedCalc));
+      assertTrue(CollectionExpressionSemantics.unverifiedInput(rekeyedCalc));
     }
   }
 
@@ -179,7 +205,7 @@ class CollectionValueIdentityTest {
       var widenedArrayEncoding =
           RexExpression.encodeProjections(List.of(widenedArray), List.of("a"));
 
-      assertEquals(!identity, CollectionValueIdentity.unverifiedInput(widenedMapCalc));
+      assertEquals(!identity, CollectionExpressionSemantics.unverifiedInput(widenedMapCalc));
       assertNotNull(mapColumnEncoding);
       assertEquals(
           identity,
@@ -259,5 +285,33 @@ class CollectionValueIdentityTest {
     var output = rex.getTypeFactory().builder().add("a", array.getType()).build();
     return LogicalCalc.create(
         input, RexProgram.create(input.getRowType(), List.of(array), null, output, rex));
+  }
+
+  private static class ColumnarProducer extends SingleRel implements ColumnarOutput {
+    ColumnarProducer(RelNode input) {
+      super(input.getCluster(), input.getTraitSet(), input);
+    }
+  }
+
+  private static final class RepresentedProducer extends ColumnarProducer
+      implements ExpressionInput {
+    RepresentedProducer(RelNode input) {
+      super(input);
+    }
+
+    @Override
+    public boolean unverifiedCollectionInput() {
+      return false;
+    }
+
+    @Override
+    public boolean carriesStringValues() {
+      return true;
+    }
+
+    @Override
+    public boolean aliasesFunctionResults() {
+      return true;
+    }
   }
 }

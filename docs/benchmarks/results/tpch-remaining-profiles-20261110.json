@@ -1,0 +1,456 @@
+{
+  "method": "Separate release verification JFR; no instrumented timings used as performance evidence. Samples include background/blocked threads, are not CPU percentages, and Java stacks do not identify internal Rust hotspots. Frame containment counts overlap.",
+  "format": "parquet",
+  "scale": 1,
+  "nativeBatchRows": 8192,
+  "queries": {
+    "6": {
+      "stock": {
+        "samples": 224,
+        "topFrames": [
+          [
+            "sun.nio.ch.Net.accept",
+            56
+          ],
+          [
+            "sun.nio.ch.KQueue.poll",
+            55
+          ],
+          [
+            "java.io.FileInputStream.readBytes",
+            28
+          ],
+          [
+            "org.apache.parquet.io.api.Binary$ByteArraySliceBackedBinary.toByteBuffer",
+            9
+          ],
+          [
+            "java.nio.ByteBuffer.wrap",
+            7
+          ],
+          [
+            "jdk.internal.loader.NativeLibraries.load",
+            4
+          ],
+          [
+            "org.apache.flink.streaming.runtime.tasks.SourceOperatorStreamTask$AsyncDataOutputToOutput.emitRecord",
+            4
+          ],
+          [
+            "BatchExecCalc$24.processElement_split23",
+            3
+          ],
+          [
+            "org.apache.flink.formats.parquet.vector.ParquetDecimalVector.isNullAt",
+            2
+          ],
+          [
+            "org.apache.logging.log4j.spi.AbstractLogger.logIfEnabled",
+            2
+          ],
+          [
+            "jdk.internal.org.objectweb.asm.Frame.setInputFrameFromDescriptor",
+            1
+          ],
+          [
+            "org.apache.pekko.actor.LightArrayRevolverScheduler.org$apache$pekko$actor$LightArrayRevolverScheduler$$tickNanos",
+            1
+          ]
+        ],
+        "firstStreamFusionFrame": [],
+        "overlappingFrameContainment": {
+          "parquetReader": 25
+        }
+      },
+      "native": {
+        "samples": 129,
+        "topFrames": [
+          [
+            "sun.nio.ch.KQueue.poll",
+            29
+          ],
+          [
+            "sun.nio.ch.Net.accept",
+            28
+          ],
+          [
+            "java.io.FileInputStream.readBytes",
+            14
+          ],
+          [
+            "org.apache.flink.table.data.columnar.vector.VectorizedColumnBatch.isNullAt",
+            12
+          ],
+          [
+            "org.apache.arrow.vector.util.DecimalUtility.writeLongToArrowBuf",
+            10
+          ],
+          [
+            "org.apache.flink.streaming.runtime.tasks.SourceOperatorStreamTask$AsyncDataOutputToOutput.emitRecord",
+            6
+          ],
+          [
+            "tech.streamfusion.operator.RowDataToArrowOperator.processElement",
+            4
+          ],
+          [
+            "tech.streamfusion.operator.NativeUdf.writeValue",
+            3
+          ],
+          [
+            "org.apache.parquet.io.api.Binary$ByteArraySliceBackedBinary.toByteBuffer",
+            3
+          ],
+          [
+            "tech.streamfusion.arrow.ArrowWriter.write",
+            3
+          ],
+          [
+            "tech.streamfusion.operator.NativeUdf.invokeUdf",
+            2
+          ],
+          [
+            "tech.streamfusion.Native.calcExpressionWithCachedSchemasAtWatermark",
+            2
+          ]
+        ],
+        "firstStreamFusionFrame": [
+          [
+            "tech.streamfusion.arrow.DecimalAccessor.set",
+            10
+          ],
+          [
+            "tech.streamfusion.arrow.writers.DateWriter$DateWriterForRow.isNullAt",
+            9
+          ],
+          [
+            "tech.streamfusion.arrow.writers.DecimalWriter$DecimalWriterForRow.isNullAt",
+            4
+          ],
+          [
+            "tech.streamfusion.operator.RowDataToArrowOperator.processElement",
+            4
+          ],
+          [
+            "tech.streamfusion.operator.NativeUdf.writeValue",
+            3
+          ],
+          [
+            "tech.streamfusion.arrow.ArrowWriter.write",
+            3
+          ],
+          [
+            "tech.streamfusion.operator.NativeUdf.invokeUdf",
+            2
+          ],
+          [
+            "tech.streamfusion.Native.calcExpressionWithCachedSchemasAtWatermark",
+            2
+          ],
+          [
+            "tech.streamfusion.planner.FlinkExpressionFunction.evalRow",
+            1
+          ],
+          [
+            "tech.streamfusion.arrow.vectors.ArrowDateColumnVector.isNullAt",
+            1
+          ]
+        ],
+        "overlappingFrameContainment": {
+          "parquetReader": 8,
+          "decimalWriter": 14,
+          "rowToArrow": 7
+        }
+      }
+    },
+    "14": {
+      "stock": {
+        "samples": 142,
+        "topFrames": [
+          [
+            "sun.nio.ch.Net.accept",
+            30
+          ],
+          [
+            "sun.nio.ch.KQueue.poll",
+            29
+          ],
+          [
+            "java.io.FileInputStream.readBytes",
+            15
+          ],
+          [
+            "org.apache.flink.connector.base.source.reader.SourceReaderBase.pollNextWithoutRateLimiting",
+            5
+          ],
+          [
+            "org.apache.parquet.io.api.Binary$ByteArraySliceBackedBinary.toByteBuffer",
+            5
+          ],
+          [
+            "net.jpountz.lz4.LZ4JavaSafeFastDecompressor.decompress",
+            5
+          ],
+          [
+            "org.apache.flink.core.memory.MemorySegment.putLong",
+            4
+          ],
+          [
+            "org.apache.flink.streaming.api.operators.source.NoOpTimestampsAndWatermarks$TimestampsOnlyOutput.collect",
+            3
+          ],
+          [
+            "org.apache.flink.table.data.binary.BinaryStringData.fromBytes",
+            2
+          ],
+          [
+            "org.apache.flink.core.memory.MemorySegment.<init>",
+            2
+          ],
+          [
+            "org.apache.flink.table.data.binary.BinaryStringData.copy",
+            2
+          ],
+          [
+            "java.nio.Buffer.checkIndex",
+            2
+          ]
+        ],
+        "firstStreamFusionFrame": [],
+        "overlappingFrameContainment": {
+          "parquetReader": 8
+        }
+      },
+      "native": {
+        "samples": 151,
+        "topFrames": [
+          [
+            "sun.nio.ch.KQueue.poll",
+            34
+          ],
+          [
+            "sun.nio.ch.Net.accept",
+            33
+          ],
+          [
+            "java.io.FileInputStream.readBytes",
+            17
+          ],
+          [
+            "org.apache.flink.streaming.runtime.io.RecordProcessorUtils$$Lambda$3646+0x000000a002065268.1915980837.accept",
+            9
+          ],
+          [
+            "tech.streamfusion.operator.RowDataToArrowOperator.processElement",
+            8
+          ],
+          [
+            "org.apache.parquet.io.api.Binary$ByteArraySliceBackedBinary.toByteBuffer",
+            8
+          ],
+          [
+            "tech.streamfusion.operator.NativeUdf.invokeUdf",
+            5
+          ],
+          [
+            "tech.streamfusion.arrow.writers.ArrowFieldWriter.write",
+            5
+          ],
+          [
+            "org.apache.flink.table.data.columnar.vector.VectorizedColumnBatch.isNullAt",
+            5
+          ],
+          [
+            "net.jpountz.lz4.LZ4JavaSafeFastDecompressor.decompress",
+            5
+          ],
+          [
+            "org.apache.flink.table.data.columnar.vector.heap.AbstractHeapVector.isNullAt",
+            3
+          ],
+          [
+            "org.apache.flink.formats.parquet.vector.reader.FixedLenBytesColumnReader.heapBinaryToLong",
+            3
+          ]
+        ],
+        "firstStreamFusionFrame": [
+          [
+            "tech.streamfusion.operator.RowDataToArrowOperator.processElement",
+            8
+          ],
+          [
+            "tech.streamfusion.arrow.writers.DecimalWriter$DecimalWriterForRow.isNullAt",
+            7
+          ],
+          [
+            "tech.streamfusion.operator.NativeUdf.invokeUdf",
+            5
+          ],
+          [
+            "tech.streamfusion.arrow.writers.ArrowFieldWriter.write",
+            5
+          ],
+          [
+            "tech.streamfusion.planner.FlinkExpressionFunction.evalRow",
+            1
+          ],
+          [
+            "tech.streamfusion.operator.NativeUdf.writeValue",
+            1
+          ],
+          [
+            "tech.streamfusion.arrow.writers.BigIntWriter$BigIntWriterForRow.isNullAt",
+            1
+          ],
+          [
+            "tech.streamfusion.Native.calcExpressionWithCachedSchemasAtWatermark",
+            1
+          ]
+        ],
+        "overlappingFrameContainment": {
+          "rowToArrow": 13,
+          "parquetReader": 18,
+          "decimalWriter": 7
+        }
+      }
+    },
+    "15": {
+      "stock": {
+        "samples": 104,
+        "topFrames": [
+          [
+            "sun.nio.ch.Net.accept",
+            23
+          ],
+          [
+            "sun.nio.ch.KQueue.poll",
+            23
+          ],
+          [
+            "java.io.FileInputStream.readBytes",
+            12
+          ],
+          [
+            "org.apache.flink.streaming.runtime.io.RecordProcessorUtils$$Lambda$3646+0x000000a002065268.1915980837.accept",
+            5
+          ],
+          [
+            "org.apache.flink.table.data.columnar.vector.VectorizedColumnBatch.isNullAt",
+            5
+          ],
+          [
+            "org.apache.flink.streaming.api.operators.SourceOperator.emitNext",
+            4
+          ],
+          [
+            "jdk.internal.misc.Unsafe.checkOffset",
+            4
+          ],
+          [
+            "org.apache.flink.formats.parquet.vector.reader.FixedLenBytesColumnReader.heapBinaryToLong",
+            3
+          ],
+          [
+            "org.apache.flink.table.data.RowData$$Lambda$3203+0x000000a001f82c70.817894646.getFieldOrNull",
+            2
+          ],
+          [
+            "org.apache.parquet.io.api.Binary$ByteArraySliceBackedBinary.toByteBuffer",
+            2
+          ],
+          [
+            "org.apache.flink.table.planner.plan.utils.AggFunctionFactory.createAggFunction",
+            1
+          ],
+          [
+            "org.apache.flink.table.shaded.org.antlr.v4.runtime.atn.LexerActionExecutor.execute",
+            1
+          ]
+        ],
+        "firstStreamFusionFrame": [],
+        "overlappingFrameContainment": {
+          "parquetReader": 7
+        }
+      },
+      "native": {
+        "samples": 104,
+        "topFrames": [
+          [
+            "sun.nio.ch.KQueue.poll",
+            26
+          ],
+          [
+            "sun.nio.ch.Net.accept",
+            26
+          ],
+          [
+            "java.io.FileInputStream.readBytes",
+            13
+          ],
+          [
+            "tech.streamfusion.arrow.writers.ArrowFieldWriter.write",
+            6
+          ],
+          [
+            "org.apache.parquet.io.api.Binary$ByteArraySliceBackedBinary.toByteBuffer",
+            6
+          ],
+          [
+            "tech.streamfusion.operator.NativeUdf.writeValue",
+            5
+          ],
+          [
+            "org.apache.flink.connector.base.source.reader.SourceReaderBase.pollNextWithoutRateLimiting",
+            3
+          ],
+          [
+            "java.nio.ByteBuffer.wrap",
+            3
+          ],
+          [
+            "org.apache.flink.streaming.runtime.io.RecordProcessorUtils$$Lambda$3646+0x000000a002065268.1915980837.accept",
+            3
+          ],
+          [
+            "org.apache.flink.table.data.columnar.vector.VectorizedColumnBatch.isNullAt",
+            3
+          ],
+          [
+            "tech.streamfusion.operator.RowDataToArrowOperator.processElement",
+            2
+          ],
+          [
+            "java.lang.Object.<init>",
+            1
+          ]
+        ],
+        "firstStreamFusionFrame": [
+          [
+            "tech.streamfusion.arrow.writers.ArrowFieldWriter.write",
+            6
+          ],
+          [
+            "tech.streamfusion.operator.NativeUdf.writeValue",
+            5
+          ],
+          [
+            "tech.streamfusion.operator.RowDataToArrowOperator.processElement",
+            2
+          ],
+          [
+            "tech.streamfusion.arrow.writers.BigIntWriter$BigIntWriterForRow.isNullAt",
+            2
+          ],
+          [
+            "tech.streamfusion.arrow.writers.DateWriter$DateWriterForRow.isNullAt",
+            2
+          ]
+        ],
+        "overlappingFrameContainment": {
+          "rowToArrow": 8,
+          "parquetReader": 11
+        }
+      }
+    }
+  }
+}

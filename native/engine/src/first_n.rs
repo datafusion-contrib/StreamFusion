@@ -1,6 +1,8 @@
 use crate::*;
 use arrow::array::Int32Builder;
 
+mod canonical;
+
 /// Flink's AppendOnlyFirstNFunction: only accepted arrivals write the per-key counter.
 pub(crate) struct FirstN<S: FirstNStore = MemoryStateStore<ArrivalCount>> {
     partitions: Vec<usize>,
@@ -28,6 +30,7 @@ impl FirstNStore for RocksStore<FirstNCodec> {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct ArrivalCount {
     rank: i32,
     write_ms: i64,
@@ -248,6 +251,7 @@ impl FirstN {
 }
 
 #[cfg(feature = "rocksdb-state")]
+#[derive(Clone)]
 pub(crate) struct FirstNCodec;
 
 #[cfg(feature = "rocksdb-state")]

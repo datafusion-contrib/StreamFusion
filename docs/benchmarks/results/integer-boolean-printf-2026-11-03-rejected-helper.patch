@@ -1,0 +1,46 @@
+--- a/native/engine/src/flink_functions/certified/printf.rs
++++ b/native/engine/src/flink_functions/certified/printf.rs
+@@ -176,15 +176,6 @@
+                         value.to_string()
+                     }
+                 }
+-                // Formatter treats any non-NULL boxed integer, including zero, as true.
+-                b'b' | b'B'
+-                    if matches!(
+-                        arg.data_type(),
+-                        DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64
+-                    ) =>
+-                {
+-                    "true".to_owned()
+-                }
+                 b'f' => {
+                     // The released SQL evaluator passes DecimalData, not BigDecimal.
+                     // Formatter rejects it for %f; retain that evaluator for numeric formats.
+@@ -226,7 +217,7 @@
+                     }
+                     result
+                 }
+-                _ => return None,
++                _ => integer_boolean(conversion, arg)?.to_owned(),
+             }
+         };
+         if precision.is_some() && !matches!(conversion, b's' | b'S' | b'b' | b'B' | b'f') {
+@@ -254,6 +245,18 @@
+         }
+     }
+     Some(())
++}
++
++// Keep this extension out of the existing numeric dispatch's inlined branches.
++#[inline(never)]
++fn integer_boolean(conversion: u8, arg: &ArrayRef) -> Option<&'static str> {
++    // Formatter treats any non-NULL boxed integer, including zero, as true.
++    (matches!(conversion, b'b' | b'B')
++        && matches!(
++            arg.data_type(),
++            DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64
++        ))
++    .then_some("true")
+ }
+ 
+ fn fixed_decimal(value: i128, scale: i8) -> Option<String> {

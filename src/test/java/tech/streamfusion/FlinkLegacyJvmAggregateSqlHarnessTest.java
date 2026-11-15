@@ -84,7 +84,7 @@ class FlinkLegacyJvmAggregateSqlHarnessTest {
     }
   }
 
-  private static TableEnvironment environment(
+  static TableEnvironment environment(
       boolean updating, boolean ttl, RecoveryExecutionMetrics metrics) {
     var env = metrics.environment(new Configuration(), 1, 0);
     var table = StreamTableEnvironment.create(env);
@@ -122,6 +122,10 @@ class FlinkLegacyJvmAggregateSqlHarnessTest {
   }
 
   private static TableEnvironment register(TableEnvironment table, boolean ttl) {
+    return register(table, ttl, new WeightedAverage());
+  }
+
+  static TableEnvironment register(TableEnvironment table, boolean ttl, WeightedAverage function) {
     var planner = (PlannerBase) ((TableEnvironmentImpl) table).getPlanner();
     planner
         .getFlinkContext()
@@ -129,10 +133,7 @@ class FlinkLegacyJvmAggregateSqlHarnessTest {
         .registerTemporarySystemFunction(
             "legacy_avg",
             new AggregateFunctionDefinition(
-                "legacy_avg",
-                new WeightedAverage(),
-                Types.LONG,
-                TypeInformation.of(Accumulator.class)),
+                "legacy_avg", function, Types.LONG, TypeInformation.of(Accumulator.class)),
             false);
     table.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
     table.getConfig().set("table.exec.state.ttl", ttl ? "1 h" : "0 s");

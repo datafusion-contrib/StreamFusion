@@ -1,5 +1,6 @@
 package tech.streamfusion;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -15,6 +16,87 @@ import org.apache.flink.runtime.client.JobCancellationException;
 import org.junit.jupiter.api.Test;
 
 class NativeFailureParityTest {
+  @Test
+  void nativeBundleFailuresKeepTheirEvaluationPhaseAcrossAsyncBoundaries() {
+    for (String trigger : List.of("finish", "processWatermark", "prepareSnapshotPreBarrier")) {
+      var failure = new IllegalStateException("invalid aggregate input");
+      failure.setStackTrace(
+          new StackTraceElement[] {
+            new StackTraceElement(
+                "tech.streamfusion.Native", "flushGroupAggregator", "Native.java", -2),
+            new StackTraceElement(
+                "tech.streamfusion.operator.NativeColumnarGroupAggregateOperator",
+                "flushBundle",
+                "NativeColumnarGroupAggregateOperator.java",
+                318),
+            new StackTraceElement(
+                "tech.streamfusion.operator.NativeColumnarGroupAggregateOperator",
+                trigger,
+                "NativeColumnarGroupAggregateOperator.java",
+                279)
+          });
+
+      assertEquals(
+          NativeFailureParity.Phase.ROW_EVALUATION,
+          NativeFailureParity.failurePhase(
+              new ExecutionException(failure), NativeFailureParity.Phase.COLLECTION));
+    }
+  }
+
+  @Test
+  void coalescedInputEvaluationIsNotACollectorOrCheckpointStorageError() {
+    var evaluation = new IllegalStateException("invalid aggregate input");
+    evaluation.setStackTrace(
+        new StackTraceElement[] {
+          new StackTraceElement(
+              "tech.streamfusion.Native", "updateGroupAggregator", "Native.java", -2),
+          new StackTraceElement(
+              "tech.streamfusion.operator.BatchCoalescer", "flush", "BatchCoalescer.java", 118)
+        });
+    assertEquals(
+        NativeFailureParity.Phase.ROW_EVALUATION,
+        NativeFailureParity.failurePhase(
+            new IOException("could not perform checkpoint", evaluation),
+            NativeFailureParity.Phase.COLLECTION));
+
+    for (String owner : List.of("ResultCollector", "CheckpointStorage")) {
+      var io = new IOException("flush failed");
+      io.setStackTrace(
+          new StackTraceElement[] {
+            new StackTraceElement(owner, "flush", owner + ".java", 1)
+          });
+      assertEquals(
+          NativeFailureParity.Phase.COLLECTION,
+          NativeFailureParity.failurePhase(io, NativeFailureParity.Phase.COLLECTION));
+    }
+  }
+
+  @Test
+  void bundleClassificationDoesNotHideInitializationOrLocalCollectionFailures() {
+    var initialization = new IllegalStateException("initialization failed");
+    initialization.setStackTrace(
+        new StackTraceElement[] {
+          new StackTraceElement("TaskOperator", "open", "TaskOperator.java", 1)
+        });
+    var wrapper = new IllegalStateException(initialization);
+    wrapper.setStackTrace(
+        new StackTraceElement[] {
+          new StackTraceElement("TaskOperator", "flushBundle", "TaskOperator.java", 2)
+        });
+    assertEquals(
+        NativeFailureParity.Phase.INITIALIZATION,
+        NativeFailureParity.failurePhase(wrapper, NativeFailureParity.Phase.COLLECTION));
+
+    var collection = new IOException("invalid collected row");
+    collection.setStackTrace(
+        new StackTraceElement[] {
+          new StackTraceElement("ResultIterator", "next", "ResultIterator.java", 1)
+        });
+    assertEquals(
+        NativeFailureParity.Phase.COLLECTION,
+        NativeFailureParity.failurePhase(collection, NativeFailureParity.Phase.COLLECTION));
+  }
+
   @Test
   void optionalNpeDetailsKeepTheStableFailureContract() {
     for (String message : new String[] {null, "Cannot invoke Boolean.booleanValue()"}) {

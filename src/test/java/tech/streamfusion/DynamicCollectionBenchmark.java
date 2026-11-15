@@ -107,6 +107,8 @@ class DynamicCollectionBenchmark {
 
   private static String prepare(TableEnvironment table, String expression) {
     String select = "SELECT " + expression + " AS v, TRUE AS anchor FROM inputs";
+    if (Boolean.getBoolean("collection.expand"))
+      select = "SELECT x AS v,anchor FROM (" + select + ") s CROSS JOIN UNNEST(v) AS u(x)";
     String type =
         table
             .sqlQuery(select)
@@ -118,6 +120,23 @@ class DynamicCollectionBenchmark {
     table.executeSql(
         "CREATE TABLE sink (v " + type + ", anchor BOOLEAN) WITH ('connector' = 'blackhole')");
     return "INSERT INTO sink " + select;
+  }
+
+  @Test
+  @EnabledIfEnvironmentVariable(named = "SF_PROFILE_COLLECTION", matches = "true")
+  void profileNativeExpressions() throws Exception {
+    String expression = System.getProperty("collection.expression");
+    if (expression == null || !EXPECT_NATIVE)
+      throw new IllegalArgumentException("Profiling requires an admitted collection expression");
+    run(false, expression, true);
+    System.out.println("[collection-profile-ready] pid=" + ProcessHandle.current().pid());
+    long deadline =
+        System.nanoTime()
+            + java.util.concurrent.TimeUnit.SECONDS.toNanos(
+                Integer.getInteger("collection.profileSeconds", 12));
+    do {
+      run(false, expression, true);
+    } while (System.nanoTime() < deadline);
   }
 
   private static double run(boolean map, String expression, boolean nativeRun) throws Exception {
@@ -138,6 +157,9 @@ class DynamicCollectionBenchmark {
         if (EXPECT_NATIVE) {
           var observations = metrics.nativeOperators();
           RecoveryExecutionMetrics.assertConsumed(observations, "NativeCalc");
+          if (Boolean.getBoolean("collection.expand"))
+            RecoveryExecutionMetrics.assertConsumed(
+                observations, System.getProperty("collection.expansionOperator", "NativeUnnest"));
           System.out.println("[collection-route] " + observations);
         }
       }
@@ -186,6 +208,8 @@ class DynamicCollectionBenchmark {
   private static Object inputArray(long row) {
     if (EMPTY_ARRAYS) {
       switch (ELEMENT_TYPE) {
+        case "STRUCTURED":
+          return new StructuredItem[0];
         case "STRING":
           return new String[0];
         case "BOOLEAN":
@@ -197,6 +221,16 @@ class DynamicCollectionBenchmark {
         default:
           return new Integer[0];
       }
+    }
+    if (ELEMENT_TYPE.equals("STRUCTURED")) {
+      StructuredItem[] values = new StructuredItem[WIDTH == 0 ? 3 : WIDTH];
+      for (int i = 0; i < values.length; i++)
+        if (!elementNull(i))
+          values[i] =
+              new StructuredItem(
+                  row % 11 == 0 ? null : (int) (row + i),
+                  row % 13 == 0 ? null : STRING_VALUES[(int) ((row + i) % STRING_VALUES.length)]);
+      return values;
     }
     if (ELEMENT_TYPE.equals("STRING")) {
       if (WIDTH == 0) return new String[] {STRING_VALUES[0], null, "tail"};
@@ -293,6 +327,9 @@ class DynamicCollectionBenchmark {
     } else {
       org.apache.flink.api.common.typeinfo.TypeInformation<?> arrayType;
       switch (ELEMENT_TYPE) {
+        case "STRUCTURED":
+          arrayType = Types.OBJECT_ARRAY(Types.POJO(StructuredItem.class));
+          break;
         case "INT":
           arrayType = Types.OBJECT_ARRAY(Types.INT);
           break;
@@ -311,16 +348,54 @@ class DynamicCollectionBenchmark {
         default:
           throw new IllegalArgumentException("Unsupported collection.type: " + ELEMENT_TYPE);
       }
-      table.createTemporaryView(
-          "inputs",
+      var input =
           env.fromSequence(0, ROWS - 1)
               .map(
                   i ->
                       Row.of(
                           NULL_EVERY > 0 && i % NULL_EVERY == 0 ? null : inputArray(i),
                           i % 7 == 0 ? null : (int) (i % 6 - 1)))
-              .returns(Types.ROW_NAMED(new String[] {"arr", "idx"}, arrayType, Types.INT)));
+              .returns(Types.ROW_NAMED(new String[] {"arr", "idx"}, arrayType, Types.INT));
+      if (ELEMENT_TYPE.equals("STRUCTURED")) {
+        var item =
+            org.apache.flink.table.api.DataTypes.STRUCTURED(
+                StructuredItem.class,
+                org.apache.flink.table.api.DataTypes.FIELD(
+                    "a", org.apache.flink.table.api.DataTypes.INT()),
+                org.apache.flink.table.api.DataTypes.FIELD(
+                    "b", org.apache.flink.table.api.DataTypes.STRING()));
+        table.createTemporaryView(
+            "inputs",
+            input,
+            org.apache.flink.table.api.Schema.newBuilder()
+                .column("arr", org.apache.flink.table.api.DataTypes.ARRAY(item))
+                .column("idx", org.apache.flink.table.api.DataTypes.INT())
+                .build());
+        var declared =
+            (org.apache.flink.table.types.logical.ArrayType)
+                table
+                    .from("inputs")
+                    .getResolvedSchema()
+                    .getColumnDataTypes()
+                    .get(0)
+                    .getLogicalType();
+        if (declared.getElementType().getTypeRoot()
+            != org.apache.flink.table.types.logical.LogicalTypeRoot.STRUCTURED_TYPE)
+          throw new IllegalStateException("Fixture must retain STRUCTURED input");
+      } else table.createTemporaryView("inputs", input);
     }
     return table;
+  }
+
+  public static class StructuredItem {
+    public Integer a;
+    public String b;
+
+    public StructuredItem() {}
+
+    StructuredItem(Integer a, String b) {
+      this.a = a;
+      this.b = b;
+    }
   }
 }

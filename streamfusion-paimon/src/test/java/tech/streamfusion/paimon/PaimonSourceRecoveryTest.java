@@ -28,19 +28,22 @@ import tech.streamfusion.operator.RowDataArrowConverter;
 class PaimonSourceRecoveryTest {
   @ParameterizedTest
   @CsvSource({
-    "false,default",
-    "true,default",
-    "false,sequence",
-    "true,sequence",
-    "false,first-row",
-    "true,first-row",
-    "false,partial-update",
-    "true,partial-update"
+    "false,default,false",
+    "true,default,false",
+    "false,sequence,false",
+    "true,sequence,false",
+    "false,first-row,false",
+    "true,first-row,false",
+    "false,partial-update,false",
+    "true,partial-update,false",
+    "false,default,true",
+    "true,default,true"
   })
-  void checkpointOnlyAdvancesAfterEmissionAndRestoresInsideBatch(boolean tail, String mode)
-      throws Exception {
+  void checkpointOnlyAdvancesAfterEmissionAndRestoresInsideBatch(
+      boolean tail, String mode, boolean watermarkBounded) throws Exception {
     var options = new java.util.HashMap<String, String>();
     options.put("changelog-producer", "input");
+    if (watermarkBounded) options.put("scan.bounded.watermark", "0");
     options.put("consumer-id", "recovery-reader");
     options.put("consumer.mode", "at-least-once");
     options.put("consumer.expiration-time", "1 d");
@@ -135,6 +138,11 @@ class PaimonSourceRecoveryTest {
         };
     List<FileStoreSourceSplit> saved;
     var source = new NativePaimonSource(table, new int[] {0, 3}, 7, -1);
+    assertEquals(
+        watermarkBounded
+            ? org.apache.flink.api.connector.source.Boundedness.BOUNDED
+            : org.apache.flink.api.connector.source.Boundedness.CONTINUOUS_UNBOUNDED,
+        source.getBoundedness());
     try (var reader = source.createReader(new Context())) {
       reader.addSplits(assigned);
       reader.start();

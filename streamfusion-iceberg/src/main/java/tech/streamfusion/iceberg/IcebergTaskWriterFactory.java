@@ -55,7 +55,7 @@ final class IcebergTaskWriterFactory implements TaskWriterFactory<ArrowBatch> {
   @Override
   @SuppressWarnings("unchecked")
   public void initialize(int taskId, int attemptId) {
-    NativeAllocator.initializeFor(owner);
+    if (owner != null) NativeAllocator.initializeFor(owner);
     stock.initialize(taskId, attemptId);
     context = new ArrowWriteContext();
     var field = IcebergSinkAdapter.field(RowDataTaskWriterFactory.class, "fileWriterFactory");

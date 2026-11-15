@@ -50,6 +50,21 @@ class TaskOffHeapMemoryTest {
   }
 
   @Test
+  void spillableStateLeavesHeadroomWithoutPartitioningTheSharedBudget() {
+    TaskOffHeapMemory.resetForTests(32);
+    long state = TaskOffHeapMemory.registerOwner("state", "sort");
+    long arrow = TaskOffHeapMemory.registerOwner("arrow", "next input");
+    assertFalse(TaskOffHeapMemory.tryReserveWithHeadroom(state, 17, 16));
+    assertEquals(0, TaskOffHeapMemory.reservedBytes());
+    assertTrue(TaskOffHeapMemory.tryReserveWithHeadroom(state, 16, 16));
+    assertTrue(TaskOffHeapMemory.tryReserve(arrow, 16));
+    assertEquals(32, TaskOffHeapMemory.reservedBytes());
+    TaskOffHeapMemory.closeOwner(state);
+    TaskOffHeapMemory.closeOwner(arrow);
+    assertEquals(0, TaskOffHeapMemory.reservedBytes());
+  }
+
+  @Test
   void fixedReservationRollsBackAndCloseIsIdempotent() {
     TaskOffHeapMemory.resetForTests(32);
     TaskOffHeapMemory.Reservation reservation =

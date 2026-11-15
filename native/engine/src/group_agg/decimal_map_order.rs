@@ -2,12 +2,13 @@
 
 use streamfusion_bridge::java_map_order::JavaMapOrder;
 
+#[derive(Clone)]
 pub(super) struct DecimalMapOrder {
     scale: i8,
     order: JavaMapOrder<Option<i128>>,
 }
 
-fn decimal_hash(value: i128, scale: i8) -> i32 {
+pub(super) fn decimal_hash(value: i128, scale: i8) -> i32 {
     let magnitude = value.unsigned_abs();
     let mut hash = 0u32;
     for shift in [96, 64, 32, 0] {

@@ -50,7 +50,7 @@ import tech.streamfusion.format.NativeFormatOptions;
 import tech.streamfusion.format.csv.CsvFormatProvider;
 import tech.streamfusion.format.json.JsonFormatProvider;
 import tech.streamfusion.operator.RowDataArrowConverter;
-import tech.streamfusion.planner.KeyedDecodeSpec;
+import tech.streamfusion.planner.stream.KeyedDecodeSpec;
 
 /**
  * Pins the keyed decode to Flink's own Kafka record deserializer, record by record: the

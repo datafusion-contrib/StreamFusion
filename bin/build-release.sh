@@ -22,7 +22,7 @@ fi
 native_extensions="core fluss kafka json csv raw avro protobuf parquet orc paimon"
 case "$flink_line" in
   2.2) maven_profiles=dist,universal,release,delta,paimon,iceberg,doris; native_extensions="$native_extensions iceberg" ;;
-  1.18) maven_profiles=dist,universal,release,paimon,flink-1.18 ;;
+  1.18) maven_profiles=dist,universal,release,paimon,hudi,flink-1.18 ;;
   *) echo "unsupported Flink line: $flink_line" >&2; exit 64 ;;
 esac
 
@@ -54,6 +54,15 @@ native_package() {
   esac
 }
 
+build_target_libraries() {
+  for build_extension in $native_extensions; do
+    native_package "$build_extension"
+    set -- "$@" -p "$native_package_name"
+  done
+  (cd "$native_dir" && cargo build --release --lib --features mimalloc \
+    --target-dir "$native_dir/target/release-staging" "$@")
+}
+
 stage_host_library() {
   extension=$1
   platform=$(host_platform)
@@ -65,8 +74,6 @@ stage_host_library() {
 
   native_package "$extension"
   library=lib${native_library}.$suffix
-  (cd "$native_dir" && cargo build --release -p "$native_package_name" --features mimalloc \
-    --target-dir "$native_dir/target/release-staging")
   stage_native_library \
     "$extension" "$platform" "$architecture" \
     "$native_dir/target/release-staging/release/$library"
@@ -79,8 +86,6 @@ stage_darwin_library() {
   native_package "$extension"
   library=lib${native_library}.dylib
 
-  (cd "$native_dir" && cargo build --release -p "$native_package_name" --features mimalloc \
-    --target "$target" --target-dir "$native_dir/target/release-staging")
   stage_native_library \
     "$extension" darwin "$architecture" \
     "$native_dir/target/release-staging/$target/release/$library"
@@ -99,6 +104,7 @@ stage_darwin_libraries() {
   for target_and_architecture in aarch64-apple-darwin:aarch64 x86_64-apple-darwin:x86_64; do
     target=${target_and_architecture%:*}
     architecture=${target_and_architecture#*:}
+    build_target_libraries --target "$target"
     for extension in $native_extensions; do
       stage_darwin_library "$extension" "$target" "$architecture"
     done
@@ -181,6 +187,7 @@ assert_exports_only_its_own_entry_points() {
 rm -rf "$stage_dir"
 mkdir -p "$stage_dir"
 if [ "$host_only" = true ]; then
+  build_target_libraries
   for extension in $native_extensions; do
     stage_host_library "$extension"
   done

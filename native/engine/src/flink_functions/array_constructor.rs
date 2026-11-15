@@ -71,6 +71,23 @@ fn construct(arrays: &[ArrayRef], compact: bool) -> Result<ArrayRef> {
     let Some(first) = arrays.first() else {
         return exec_err!("ARRAY requires elements");
     };
+    if crate::flink_key::represented_string(first.data_type()) {
+        let result = datafusion::functions_nested::make_array::array_array::<i32>(
+            arrays,
+            first.data_type().clone(),
+            Field::LIST_FIELD_DEFAULT_NAME,
+        )?;
+        let list = datafusion::common::cast::as_list_array(&result)?;
+        let DataType::List(field) = list.data_type() else {
+            unreachable!()
+        };
+        return Ok(Arc::new(arrow::array::ListArray::try_new(
+            field.clone(),
+            list.offsets().clone(),
+            super::collection_string::binary_elements(list.values())?,
+            list.nulls().cloned(),
+        )?));
+    }
     let timestamp = streamfusion_bridge::timestamp::is_component_timestamp(first.data_type());
     if timestamp {
         let DataType::Struct(fields) = streamfusion_bridge::timestamp::timestamp_type() else {

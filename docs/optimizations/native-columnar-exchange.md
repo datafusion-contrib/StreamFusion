@@ -251,3 +251,31 @@ and decimal SQL checks on each released Flink line (2.2.1 and 1.18.1). They
 cover consecutive legacy/tagged frames, truncated-frame isolation, growing and
 shrinking payloads beyond the reuse limit, and aligned/unaligned checkpoint
 recovery with rescaling in both directions. All pass without skips.
+
+
+## Compact timestamp payload copy semantics
+
+Top-level TIMESTAMP/TIMESTAMP_LTZ payloads with precision at most three mirror Flink's row-shuffle
+serializer: retain milliseconds and clear the nanosecond remainder within that millisecond.
+This applies before the aligned single-channel fast path and before partitioning, including
+recoverable exchange. It preserves downstream hash/ordering behavior such as timestamp COLLECT
+followed by a string cast. Timestamp precisions above three retain their full components.
+
+The planner derives the selected physical columns from the exchange's logical row type. The
+existing C Data ownership protocol exports/imports the replacement batch; native code keeps
+component millisecond buffers, validity and metadata and allocates a zero remainder buffer only
+where needed. Unchanged columns and already-zero component columns retain their Arrow references.
+The source batch remains immutable. Native slice/NULL/metadata/ownership tests and released
+collection, key-byte and aligned-recovery checks validate the boundary. Legacy primitive Arrow
+timestamp units use the existing timestamp conversion helpers. Nested representation gates
+retain their existing contracts; this adds no support for deferred updating MAP/MULTISET state.
+
+
+Existing checkpoints whose compact timestamp payload state already contains hidden
+sub-millisecond remainders, including unaligned in-flight records, need a fresh-state upgrade
+decision. The corrected shuffle changes
+which physical values reach downstream state; this change does not migrate such historical
+payloads. Compact values whose remainders were already zero and higher-precision timestamp
+payloads retain their representation. New timestamp/interval collection states are validated
+through repeated recovery after this copy boundary; old primitive collection snapshot bytes
+remain unchanged.

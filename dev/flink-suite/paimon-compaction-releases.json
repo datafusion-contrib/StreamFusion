@@ -1,0 +1,46 @@
+{
+  "2.1.0": {
+    "module": "streamfusion-paimon",
+    "flink_line": "2.2",
+    "profiles": [
+      "paimon",
+      "upstream-paimon-compaction"
+    ],
+    "manifest": "paimon-compaction-cases.csv",
+    "case_count": 152,
+    "fixture_sha256": {
+      "paimon-core": "3f9ef9505f84c837bd015fb6a494d0309bca1f35716d66e48f360b8e82b1e076",
+      "paimon-flink-common": "b7e83358fa1df5ce7c7a215f979fa91ecf8b904fd12a70689bb5d503babfe3b1"
+    },
+    "excluded": {
+      "org.apache.paimon.append.BucketedAppendCompactManagerTest#testPick": "Disabled in the unchanged upstream release."
+    }
+  },
+  "1.0.0": {
+    "module": "streamfusion-paimon1",
+    "flink_line": "1.18",
+    "profiles": [
+      "flink-1.18",
+      "paimon1",
+      "upstream-paimon1"
+    ],
+    "manifest": "paimon-compaction-1.0-cases.csv",
+    "case_count": 72,
+    "fixture_sha256": {
+      "paimon-core": "6371a5e1ea4515c53cbb7f1bb7a83b2dce0886721be3b62a4b8be1c7e5ff5d6a",
+      "paimon-flink-common": "cd54b8d61bf5ff1b18f669ca2458484175ee124e226793df37ff0a78fb3883eb"
+    },
+    "excluded": {
+      "org.apache.paimon.flink.procedure.CompactProcedureITCase#testDynamicBucketSortCompact": "Published common fixture uses named SQL procedure arguments unsupported by the 1.18 host; unchanged stock baseline fails before maintenance executes.",
+      "org.apache.paimon.flink.procedure.CompactProcedureITCase#testBatchFullCompactStrategy": "Published common fixture uses named SQL procedure arguments unsupported by the 1.18 host; unchanged stock baseline fails before maintenance executes.",
+      "org.apache.paimon.flink.procedure.CompactProcedureITCase#testStreamFullCompactStrategy": "Published common fixture uses named SQL procedure arguments unsupported by the 1.18 host; unchanged stock baseline fails before maintenance executes.",
+      "org.apache.paimon.flink.procedure.CompactProcedureITCase#testStreamingCompact": "Published common fixture uses named SQL procedure arguments unsupported by the 1.18 host; unchanged stock baseline fails before maintenance executes.",
+      "org.apache.paimon.flink.procedure.CompactProcedureITCase#testHistoryPartitionCompact": "Published common fixture uses named SQL procedure arguments unsupported by the 1.18 host; unchanged stock baseline fails before maintenance executes.",
+      "org.apache.paimon.flink.procedure.CompactProcedureITCase#testBatchMinorCompactStrategy": "Published common fixture uses named SQL procedure arguments unsupported by the 1.18 host; unchanged stock baseline fails before maintenance executes.",
+      "org.apache.paimon.flink.procedure.CompactProcedureITCase#testBatchCompact": "Published common fixture uses named SQL procedure arguments unsupported by the 1.18 host; unchanged stock baseline fails before maintenance executes.",
+      "org.apache.paimon.flink.sink.AppendOnlySingleTableCompactionWorkerOperatorTest#testAsyncCompactionFileDeletedWhenShutdown": "Published common test fixture calls the six-argument StreamOperatorParameters constructor from a newer host; absent on Flink 1.18. Stock baseline raises NoSuchMethodError. The shared released-host worker harness separately requires native work.",
+      "org.apache.paimon.flink.sink.AppendOnlySingleTableCompactionWorkerOperatorTest#testAsyncCompactionWorks": "Published common test fixture calls the six-argument StreamOperatorParameters constructor from a newer host; absent on Flink 1.18. Stock baseline raises NoSuchMethodError. The shared released-host worker harness separately requires native work.",
+      "org.apache.paimon.flink.sink.AppendOnlyMultiTableCompactionWorkerOperatorTest#testAsyncCompactionWorks": "Published common test fixture calls the six-argument StreamOperatorParameters constructor from a newer host; absent on Flink 1.18. Stock baseline raises NoSuchMethodError. The shared released-host worker harness separately requires native work."
+    }
+  }
+}

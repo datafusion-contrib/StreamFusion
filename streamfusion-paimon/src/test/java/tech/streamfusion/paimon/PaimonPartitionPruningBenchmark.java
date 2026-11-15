@@ -18,7 +18,6 @@ import org.apache.paimon.fs.local.LocalFileIO;
 import org.apache.paimon.predicate.PredicateBuilder;
 import org.apache.paimon.reader.RecordReader;
 import org.apache.paimon.schema.Schema;
-import org.apache.paimon.schema.SchemaManager;
 import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.table.FileStoreTableFactory;
 import org.apache.paimon.table.source.DataSplit;
@@ -66,7 +65,7 @@ class PaimonPartitionPruningBenchmark {
         .column("pt", DataTypes.STRING().notNull()).column("payload", DataTypes.STRING())
         .partitionKeys("pt").options(Map.of("bucket", "-1", "file.format", "parquet",
             "write-only", "true")).build();
-    new SchemaManager(LocalFileIO.create(), path).createTable(schema);
+    PaimonTestCompat.schemaManager(LocalFileIO.create(), path).createTable(schema);
     FileStoreTable table = FileStoreTableFactory.create(LocalFileIO.create(), path);
     var builder = table.newStreamWriteBuilder().withCommitUser("pruning-benchmark");
     var payload = BinaryString.fromString("x".repeat(width));

@@ -1,0 +1,78 @@
+{
+  "date": "2026-11-03",
+  "base": "d01746e7adddd4deaee8da12f075524e60e7f35e",
+  "scope": "Existing released-planner BOOLEAN CASE rewrites; no production planner/kernel change and no performance claim.",
+  "flink": [
+    "1.18.1",
+    "2.2.1"
+  ],
+  "jdk": [
+    "11",
+    "17"
+  ],
+  "java_release": 11,
+  "rows_per_query": 5003,
+  "case_shapes": [
+    "CASE WHEN b THEN c ELSE NOT c END",
+    "CASE WHEN b THEN n<0 WHEN b IS NULL THEN n=1 ELSE NOT b END",
+    "CASE WHEN b IS NULL THEN c WHEN b THEN NOT c ELSE b OR c END",
+    "CASE WHEN b THEN CASE WHEN c THEN FALSE ELSE TRUE END ELSE c END",
+    "CASE WHEN b THEN c ELSE CAST(NULL AS BOOLEAN) END"
+  ],
+  "operators": [
+    "CAST",
+    "TRY_CAST"
+  ],
+  "targets": [
+    "STRING",
+    "VARCHAR(1)",
+    "VARCHAR(3)",
+    "CHAR(4)",
+    "CHAR(8)"
+  ],
+  "modes": [
+    "modern",
+    "legacy"
+  ],
+  "input_nullability": [
+    "nullable",
+    "NOT NULL"
+  ],
+  "validation": {
+    "22-11": {
+      "exit": 0,
+      "result": [
+        "RESULT found=4 succeeded=4 aborted=0 skipped=0 failed=0"
+      ]
+    },
+    "22-17": {
+      "exit": 0,
+      "result": [
+        "RESULT found=4 succeeded=4 aborted=0 skipped=0 failed=0"
+      ]
+    },
+    "118-11": {
+      "exit": 0,
+      "result": [
+        "RESULT found=4 succeeded=4 aborted=0 skipped=0 failed=0"
+      ]
+    },
+    "118-17": {
+      "exit": 0,
+      "result": [
+        "RESULT found=4 succeeded=4 aborted=0 skipped=0 failed=0"
+      ]
+    }
+  },
+  "evidence": "Complete maps compare values/types/NULLs/IDs/cardinality before completion; admitted paths require consumed NativeCalc work, no fallback and empty JVM evaluators.",
+  "planner_example": "The mixed integer-comparison CASE probe becomes an OR of AND/IS TRUE/IS NOT TRUE/IS NULL/IS NOT NULL/comparison/NOT terms before either CAST encoder.",
+  "limitations": [
+    "This does not qualify arbitrary CASE shapes, stateful or failing producers, or other comparison families.",
+    "Route/correctness evidence is not throughput qualification."
+  ],
+  "source_sha256": {
+    "src/main/java/tech/streamfusion/planner/RexExpression.java": "93fc43f22f01a444b8c9a01699de8b942c80bf1ea480f2943fb7ea70c9bf5e2a",
+    "src/test/java/tech/streamfusion/FlinkBooleanStringCastSqlHarnessTest.java": "b3daec51911ec642380c81cb75ec951741cfddc89598dd44d4a0c8920d191899",
+    "src/test/java/tech/streamfusion/FlinkBooleanCaseStringSqlHarnessTest.java": "0a9e4138d19e168f228dff2017b2836669991e941049ec655fea9d558f44c59a"
+  }
+}

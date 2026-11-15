@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prevent javac from emitting another module's newer shared sources into a connector JAR."""
+"""Require physical module source ownership and prevent implicit cross-module class emission."""
 import os
 import pathlib
 import subprocess
@@ -13,6 +13,42 @@ NS = {"m": "http://maven.apache.org/POM/4.0.0"}
 
 
 class ModuleSourceOwnershipTest(unittest.TestCase):
+    def test_runtime_assembles_artifacts_without_compiling_shared_production_sources(self):
+        self.assertFalse(any((ROOT / "src/main").glob("java*")))
+        runtime = ET.parse(ROOT / "streamfusion-runtime/pom.xml").getroot()
+        self.assertIsNone(runtime.find("m:build/m:sourceDirectory", NS))
+        self.assertFalse(list((ROOT / "streamfusion-runtime/src/main").rglob("*.java")))
+        dependencies = {d.findtext("m:artifactId", namespaces=NS)
+                        for d in runtime.findall("m:dependencies/m:dependency", NS)}
+        for module in ["core", "kafka", "json", "csv", "raw", "avro", "avro-confluent-registry", "protobuf", "parquet", "orc"]:
+            self.assertIn("streamfusion-" + module + "${streamfusion.artifact.suffix}", dependencies)
+
+    def test_default_deployable_modules_have_one_owner_per_binary_name(self):
+        parent = ET.parse(ROOT / "pom.xml").getroot()
+        modules = [m.text for m in parent.findall("m:modules/m:module", NS)
+                   if m.text != "streamfusion-runtime"]
+        for line in ["1.18", "2.2"]:
+            owners = {}
+            for module in modules:
+                pom = ET.parse(ROOT / module / "pom.xml").getroot()
+                self.assertIsNone(pom.find("m:build/m:sourceDirectory", NS), module)
+                for directory in ["src/main/java", "src/main/java-flink" + line]:
+                    source = ROOT / module / directory
+                    for file in source.rglob("*.java"):
+                        binary = file.relative_to(source).as_posix()
+                        self.assertNotIn(binary, owners, (line, binary, module, owners.get(binary)))
+                        owners[binary] = module
+            self.assertEqual("streamfusion-core", owners["tech/streamfusion/Native.java"])
+            self.assertEqual("streamfusion-kafka", owners["tech/streamfusion/kafka/NativeKafka.java"])
+            self.assertEqual("streamfusion-json", owners["tech/streamfusion/format/json/NativeJsonFormat.java"])
+
+    def test_optional_runtime_dependencies_are_not_inherited_by_core(self):
+        parent = ET.parse(ROOT / "pom.xml").getroot()
+        optional = {"flink-connector-kafka", "kafka-clients", "flink-json", "flink-csv", "flink-avro", "flink-orc", "hadoop-common"}
+        for dep in parent.findall("m:dependencies/m:dependency", NS):
+            if dep.findtext("m:artifactId", namespaces=NS) in optional:
+                self.assertEqual("test", dep.findtext("m:scope", namespaces=NS))
+
     def test_newer_shared_source_does_not_duplicate_old_jar_classes(self):
         pom = ET.parse(ROOT / "pom.xml").getroot()
         plugins = pom.findall("m:build/m:pluginManagement/m:plugins/m:plugin", NS)

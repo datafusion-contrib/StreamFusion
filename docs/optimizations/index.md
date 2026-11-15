@@ -15,15 +15,35 @@ comparisons from component measurements, profiles and rejected experiments.
 Those historical records support a decision; this ledger describes the current
 technique and its measured limits.
 
-CI build reuse and runner scheduling are documented separately in the
+CI JVM startup settings, repeated-check elimination and profiling are documented in the
+[CI guide](../ci.md#profiling-ci-latency-and-cost); its [canonical job matrix](../ci.md#complete-canonical-job-matrix)
+also documents sharing exact-commit Java compilation across savepoint shards while
+transferring native libraries separately, avoiding duplicate payloads in each Java archive.
+It also covers demand-started test clusters, pure Java preparation alongside native work,
+and smaller test-only native payloads while retaining full-symbol diagnostics.
+Upstream shared builds use the same ELF-verified stripping for their private native copies,
+retaining the original Cargo outputs and all Java payloads.
+Maven resolves ordinary release artifacts from Central before consulting the test-only vendor
+repository, avoiding unrelated vendor timeouts while retaining its required fallback.
+Canonical worker metadata snapshots also omit the bundled native copies already loaded through
+the worker's explicit library path, avoiding repeated packing and hashing in every parent fork.
+Archive generation uses G1 independently of the workers' measured collector settings to avoid
+the observed JDK 11 Serial full-GC crash during metadata relocation.
+Compatible Paimon format checks share compilation while keeping separate test processes
+and report sets, reducing required lake jobs from thirteen to nine with the same configurations.
+Canonical jobs group the same complete invocation inventory into forty jobs using a measured-class
+scheduling model; full hosted qualification remains necessary to establish actual savings.
+CI build reuse and runner scheduling are documented in the
 [upstream-suite guide](../upstream-flink-suite.md#shared-builds-and-runtime-shards): compiled Flink
 caching, shared build artifacts, grouped connector suites and combined coverage verification.
 Those measurements describe CI job counts and elapsed time, not SQL execution throughput.
 
+- [Native LZ4 shuffle decoding](native-lz4-shuffle.md): use the bounds-checked JNI decoder on StreamFusion task input gates while preserving Flink's block format and stock tasks.
 - [Retain final sink candidate replacements](sink-materializer-state.md): emit every change while storing only final same-key replacements per batch.
-- [Copy canonical state directly](canonical-state-installation.md): remove a full temporary payload copy while retaining managed chunk ownership.
+- [Copy canonical state directly](canonical-state-installation.md): remove a full temporary payload copy while retaining managed chunk ownership, and clear consumed stock maps once per serialized owner.
 - [Reuse Iceberg boundary setup](iceberg-boundary-overhead.md): cached task schemas and serializers, shared Arrow leases and routing maps.
 
+- [Bounded Arrow batch sizing](bounded-batch-sizing.md): 8,192-row bounded batches amortize JNI, ownership copies and IPC while retaining the shared memory cap.
 - [Columnar changelog operators](columnar-changelog-operators.md): pass unchanged filter batches by ownership and avoid standalone row/Arrow round trips.
 - [Collection representation work](collection-representation-work.md): share verified map projections, avoid redundant owned-row copies, reserve BIGINT array capacity and prune UNNEST expansion before copying.
 - [Native basic-array searches and extrema](native-array-search.md): scan or reduce flat values without JVM row reconstruction and avoid temporary bytes for wide-precision decimals whose actual value fits a long; retain measured standalone limits.
@@ -31,17 +51,25 @@ Those measurements describe CI job counts and elapsed time, not SQL execution th
 - [Decimal Arrow reads](decimal-arrow-reads.md): reconstruct signed-long values directly while retaining wide-value and overflow contracts.
 - [Transfer Calc schemas once](calc-schema-once-c-data.md): cache immutable input and output schemas while retaining independent per-batch buffer ownership.
 - [Fuse exact string consumers](native-string-fusion.md): compare padding/overlay UTF-16 spans before encoding and replace verified ASCII characters directly in the final Arrow buffer.
+- [Preserve JDK UTF-8 decoding](jdk-utf8-decoding.md): share valid buffers and write replacement groups directly into Arrow.
+- [Format Boolean words in blocks](boolean-word-blocks.md): use bitmap-indexed ASCII blocks while preserving cast mode, character lengths and NULL validity.
 - [Shared-window state costs](shared-window-state.md): exact memory deltas, batched reservations and preserved accumulator state.
 - [Compact window-rank timestamp cells](window-rank-timestamp-cells.md): exact numeric digits avoid per-row timestamp struct slicing.
 - [Bounded rank payload rejection](bounded-rank-payloads.md): skip full payload encoding for batches already outside fixed rank bounds.
 - [Top-1 winner state](top1-winner-state.md): conditional winner updates and bounded clean decoded RocksDB state.
 - [Retire dead Delta checkpoint buffers](delta-live-buffer-retirement.md): release fully superseded Arrow batches and metadata.
 - [Preserve Paimon partition pruning](paimon-partition-pruning.md): carry retained partition equalities into released split planning.
+- [Columnar Paimon compaction](paimon-compaction.md): reuse released Rust file processing inside Java's selected maintenance work.
 - [Indexed pending rowtime deduplication](pending-dedup-index.md): incoming-key probes over bounded Arrow chunks.
 - [Optional Linux RocksDB io_uring reads](rocksdb-io-uring.md): configurable concurrent SST batch reads, with full before/after trial data.
 - [Fluss Arrow transport](fluss-arrow-transport.md): retained receive buffers, exactly sized serialization and bounded acknowledgement pipelining.
 
 ## How these numbers are measured
+
+See also [bounded join and subplan planning](bounded-join-planning.md) for Cartesian
+elimination and retained-view aggregate reuse, including remaining regressions.
+The [DATE predicate path](date-predicates.md) removes generated Java comparison
+bridges while retaining the remaining complete-job regressions.
 
 - **Benchmark-gated**: a change that doesn't move the numbers is rejected, not merged with an
   aspirational justification.
@@ -53,3 +81,5 @@ Those measurements describe CI job counts and elapsed time, not SQL execution th
   loops by ~50% from unrelated code growth — both are controlled for.
 - **Release builds only** — see [Benchmarks](../benchmarks.md); every number on these pages comes
   from a release build, never debug.
+
+- [Native Parquet input batches](native-parquet-source.md) remove source row materialization for admitted bounded filesystem scans.

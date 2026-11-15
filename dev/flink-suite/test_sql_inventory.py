@@ -24,6 +24,35 @@ def plan(substitutions, reasons=(), translated=True, operators=('StreamPhysicalC
 
 
 class SqlInventoryTest(unittest.TestCase):
+    def test_bounded_connector_boundaries_keep_host_compute_visible(self):
+        event = plan(2)
+        event['roots'][0]['operators'] = ['BatchPhysicalNativeConnectorSink',
+            'BatchPhysicalRowDataToArrow', 'BatchPhysicalCalc', 'BatchPhysicalArrowToRowData',
+            'BatchPhysicalNativeConnectorSource', 'BatchPhysicalTableSourceScan']
+        observation = record([event], ['tech.streamfusion.planner.batch.NativeBatchPlanner'])
+        self.assertEqual(('should be accelerated', 'connector-boundary'),
+                         inventory.classify(observation, 'passed')[:2])
+        self.assertFalse(inventory.query_verdicts(observation, 'passed')[0]['fully_accelerated'])
+        event['roots'][0]['operators'].append('BatchPhysicalNativeShare')
+        self.assertEqual('connector-boundary', inventory.classify(observation, 'passed')[1])
+        self.assertIn('connector-boundary', inventory.features(observation))
+        event['roots'][0]['operators'] = ['BatchPhysicalNativeConnectorSink',
+            'BatchPhysicalNativeConnectorSource', 'BatchPhysicalTableSourceScan']
+        self.assertTrue(inventory.query_verdicts(observation, 'passed')[0]['fully_accelerated'])
+
+    def test_batch_columnar_island_and_host_gap_are_distinguished(self):
+        event = plan(1)
+        event['roots'][0]['operators'] = ['BatchPhysicalSink', 'BatchPhysicalArrowToRowData',
+            'BatchPhysicalNativeCalc', 'BatchPhysicalRowDataToArrow', 'BatchPhysicalTableSourceScan']
+        for planner in ('tech.streamfusion.planner.NativeBatchPlanner',
+                        'tech.streamfusion.planner.batch.NativeBatchPlanner'):
+            with self.subTest(planner=planner):
+                observation = record([event], [planner])
+                self.assertEqual('accelerated', inventory.classify(observation, 'passed')[0])
+                event['roots'][0]['operators'].append('BatchPhysicalHashAggregate')
+                self.assertEqual('all-or-nothing-violation', inventory.classify(observation, 'passed')[1])
+                event['roots'][0]['operators'].pop()
+
     def test_execution_and_explain_are_distinct(self):
         self.assertEqual('accelerated', inventory.classify(record([plan(1)]), 'passed')[0])
         self.assertEqual('plan-only', inventory.classify(record([plan(1, translated=False)]), 'passed')[1])

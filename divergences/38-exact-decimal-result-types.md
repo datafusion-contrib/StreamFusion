@@ -83,3 +83,15 @@ input for positions at or above its scale, including internal compact-parser car
 Positions below -38 call Flink's generated expression so BigDecimal range exceptions
 are preserved; native execution must not clamp those failures to zero. The existing
 AND/OR admission rule protects row short-circuiting for these fallible positions.
+
+DECIMAL SIGN follows Flink's released compact/noncompact split rather than a floating
+DataFusion signum. Comet supplies the typed unary array/scalar pattern but implements
+Spark's floating contract; Arroyo registers DataFusion's defaults. For `p > s`, the native
+kernel returns the sign times `10^s`. For noncompact `DECIMAL(p,p)`, Flink reconstructs
+the sign through `fromBigDecimal`, so nonzero results become NULL and zero retains its
+scale. Compact `DECIMAL(p,p)` SIGN instead retains out-of-precision +/-1 and stays
+generated. Its character casts and DECIMAL CASE/IF consumers execute in the same generated
+expression: character formatting must see the preserved value, whereas conditional branch
+conversion can reject it. Normalizing at every intermediate Arrow boundary would make one
+of those consumer contracts incorrect. Direct/literal inputs, same-scale lossless widening
+and nested verified SIGN are admitted; arithmetic, narrowing and rescaling remain generated.

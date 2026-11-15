@@ -1,0 +1,379 @@
+{
+  "schema_version": 1,
+  "source_revision": "7820d4787c46f50241aba31e0fdbd32e98d2c6c6",
+  "primary_base": "2a304d57757d01bfdd6804f63a23efa39732635c",
+  "bundles": {
+    "paimon-native-lz4-20261115": {
+      "url": "https://github.com/jordepic/StreamFusion-contrib/releases/download/paimon-native-lz4-evidence-2026-11-15-7820d4787/paimon-native-lz4-evidence-20261115.tar.gz",
+      "size": 2115417,
+      "sha256": "0fc92a6d1217ec08e45d16111f36edf2ed957a6d4950f8e89de9d38c2ffb73cf"
+    }
+  },
+  "files": {
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/README.txt": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 3309,
+      "sha256": "3a220b076ce6ddc29bbe66a3f08f7d7c564c1b6ca61f496044dc1b7b49d4b3fa"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/provenance/classpath.txt": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 31431,
+      "sha256": "691aeb0018a2c531c3785b45c9d7ae0373ef0a70e00df2c13cf3c3544d2ca678"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/provenance/snapshot.json": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 3301,
+      "sha256": "f1f96a08639bac04e9d4ef81d77cf246877658f28eff56b89cd1abe84d1e1bd6"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/reproduction/audit-lz4.py": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 3054,
+      "sha256": "70051357e8fa425f41cd702332ba35adcf84c40cf01dd26615e9a789006bc14a"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/reproduction/finalize-lz4-evidence.py": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 2072,
+      "sha256": "d40ca7e388824956b39ced190c95d203005818151f0638cd29804d23b27fdbae"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/reproduction/finish-lz4-report.py": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 7337,
+      "sha256": "bbd98359b3525dd723ca4b1a2f33535da89a0a9d866b527ba3c9dde7177a5969"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/reproduction/freeze-runtime.py": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 2270,
+      "sha256": "a7dfa64a45d20320f49a1ac879c6193768c69421254709245a39554b8eb3cf3a"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/reproduction/frozen-benchmark.py": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 1185,
+      "sha256": "e6d1e2b52bb56bf1155782f25a4ab9086034ceff5862dc9ef75bd2d153e96c47"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/reproduction/summarize-tpcds.py": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 3797,
+      "sha256": "8d88b95ac24ccfb5fc541a83269e54c97d2aa7249ea29097f873296f0d49372c"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/runs/lz4-focused-before-main-compare.json": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 1198279,
+      "sha256": "e6011d9eac5fafb8080af6d4615b2f0cc5077460a43abf0c981c476d9ad14bfa"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/runs/lz4-focused-integrated-compare.json": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 275222,
+      "sha256": "f794eb60b1328bea7575d22ae9b638d46c42aa32c5ad53a97f005f4c3c0c3675"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/runs/lz4-primary-compare.json": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 50376855,
+      "sha256": "3cd1547e9572bb4f6617464792228a1692ba55358214adc73f7d2ce84487c623"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/runs/lz4-tpcds-sf1-primary.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 357274,
+      "sha256": "9af667f4f85111e7ab9be1b78f749daf966e6360914a053a35b7313208a07699"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-ci-plan-check.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 795,
+      "sha256": "02af58ae57503e26c6e1a38d4ace05319677d7f75c0fac9254f6e32277890a03"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-codec-modern118-java-only.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 739,
+      "sha256": "df8602b1d62946854085f012c42df3316370ebe55c5d77264d0667da570c6aec"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-codec-modern22-java-only.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 739,
+      "sha256": "b0775e0ab22265d0c519562329750042a5b9d0d4d135ce4df06a4efac98cf816"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-codec-modern22.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 26701,
+      "sha256": "d9f41a6b54d9cdf7b1f2750027702039e3e94b9f54b8192d1e063952e06d87f8"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-codesplit-modern118.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 5753,
+      "sha256": "2c16b3f8f12b4a31cb5cef6949d1cf96052b8a78b5a81d63a02276d136306e40"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-codesplit-modern22.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 5994,
+      "sha256": "7d2d9577b159f70aaff715568289ba4c41df9c6f8a2fe5e5061dff3935db9565"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-codesplit118-native/2ffd8de8-b0c3-416a-9c4e-1575007eb64f.tsv": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 101,
+      "sha256": "a2e45f49aec329da8a49619309d2f3f8fff441e21870eff73f7be35a5318c2ff"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-codesplit118-native/82b2486c-51c0-4aad-b06e-dc8f5e3a0d60.tsv": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 112,
+      "sha256": "75bb13c45c92f1dc0a13bb5e661e532625ccb709a6afd92d545c990a56f0f63b"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-codesplit118-sql/3289543c-c697-4054-9830-7758f977ee91.json": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 24274,
+      "sha256": "b92bde2ef163c84544f7d588bf5fe957d1af7ee02f9be719673aae98bd4adba9"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-codesplit118-sql/fdcc8fd9-f5ae-472f-8c85-865b3d2b71b9.json": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 120719,
+      "sha256": "3e04681e27317166573acab93f54207c6abed09839a4f7947b4e259c1098c45e"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-codesplit22-native/c000afa8-b846-4cd7-9878-88e6c47e1f1f.tsv": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 112,
+      "sha256": "75bb13c45c92f1dc0a13bb5e661e532625ccb709a6afd92d545c990a56f0f63b"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-codesplit22-native/cb3620a7-79a7-4de3-983f-65707e650a34.tsv": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 101,
+      "sha256": "a2e45f49aec329da8a49619309d2f3f8fff441e21870eff73f7be35a5318c2ff"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-codesplit22-sql/5732ba38-3e4b-4a0a-a105-2c115054f775.json": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 24224,
+      "sha256": "df7c72ccca3fd7d016f30d56942ec9618e1211a5f0ea5013523cf766946fed5a"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-codesplit22-sql/b5a152ae-cecb-43ec-b91f-3f9b3d59776f.json": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 120670,
+      "sha256": "4406eb56d22eaf36c37a03e016d806b47f806e202489454aebb412566516758c"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-completion-audit.json": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 1059,
+      "sha256": "f43f3e3ae5760b10a1e3ccf3f99d158a7d56b2e3811c5db93dda26d10f4c5bf6"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-current-suite-agent-build.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-docs-strict.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 6089,
+      "sha256": "b16c33a89147bf5fb804508b40ea927c4eb4cdea0e55fbae977560d1c591fb57"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-execution-routes-check.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 113,
+      "sha256": "ac6e9da8bd627c0143d4f0935a2191f667799eff6766b01790f29565bc679b61"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-execution-scope-check.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 109,
+      "sha256": "9d5cbf50af2b5d43b53292e22efa8ffa4ca03168aabba92fa0d3e90b2ff6a317"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-fixture-files.json": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 5485,
+      "sha256": "2921bcfc8d25df9a0c6678e67b14ebc8cb4c2963baf09ef15be4a80cb21d30f1"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-focused-before-main-summary.json": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 581,
+      "sha256": "a9a54c706e4e17cff7279a0a09efc2ecca553891ed9579595b2154750c72a720"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-integrated-ci-plan-check.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 795,
+      "sha256": "3641315b8c144df537ba189d9e54cde1ae5c962f2a01b506719ff15dd67ca12a"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-integrated-compile-final.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-integrated-compile-fixed.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 1391,
+      "sha256": "cfa587d08bd89099cba620bd662748012377d181b34f090a8846c2baf1155505"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-integrated-compile.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 1381,
+      "sha256": "ec254b207689123544fc0d16b3e90b092c28b9fbe09d9d8934fcb95646b6c1fa"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-integrated-docs.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 5887,
+      "sha256": "6dceb05f5303642aee3daabf3a232650cbba2c31c407d6f8ba76b77d87b8cc3d"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-integrated-modern118.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 1785,
+      "sha256": "984fb26ac89cf55fc81d41e24eb1b6ce13ecbee62c12dbdbea4cef07c4f356ce"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-integrated-modern22.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 1785,
+      "sha256": "374329d0af5594cccf906f12382052b459efc4196ef5eed196273a64b350551a"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-integrated-paimon-focus.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 1274,
+      "sha256": "1be7fa628e151c686703072dd951650c76283d5b3718e1cf829a5b8e4aa35d63"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-integrated-release-build.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 14940,
+      "sha256": "5879c8d4b14f975c956dae74bfb6783434c4a0ec068002535f4a2e1b30b6465e"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-linux-codec-jobs.json": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 3621,
+      "sha256": "6bbe587ce48e0569adcda04664fbad32725456acbf126f435fb61f582179d90b"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-linux-codec-reports/TEST-tech.streamfusion.NativeLz4ShuffleTest.xml": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 56433,
+      "sha256": "3705e546ba6becde1e5723230e0b7344201a3a30d3a0dcb3d0745ed1f468f965"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-linux-codec-reports/tech.streamfusion.NativeLz4ShuffleTest.txt": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 327,
+      "sha256": "9a735f1ef0ccde0d9e4672f3b447d5f291e1f098555a94bc5af8cddc23e5dfe7"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-linux-codec-run.json": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 181,
+      "sha256": "e3c8776ccf3c2415b03f5f10b7fd65bf668f317337865f0d32b32297d87990ab"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-local-validation.json": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 2774,
+      "sha256": "2931bf30b79c2d357a4ea079f78b173fce38c2f7334264ab455064c79f02319b"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-main-integration.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 5134,
+      "sha256": "f7833ca80a513bc6c86379729eeb481e122ef00c962a367b582c11c0abb934df"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-module-ownership-check.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 102,
+      "sha256": "6f6cd0ee2c8e8b7a606258aa457d4ed454250998414f2f7e330789953c3c951b"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-multigate-modern118-qualified.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 1785,
+      "sha256": "aa47de5cab906e165f9967e9aee74273c050d2f540c28f0fff8d43650f748753"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-multigate-modern22-qualified.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 1785,
+      "sha256": "5649897e74aa3b1d31ca1872bc756b19a4f1e35c3ca395b31132f5dece8b2df0"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-multigate-modern22.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 3382,
+      "sha256": "67756132e7511f8bba14c1db197c890cdecc9f68b73dc1025fb714f70cc7c700"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-primary-provenance.json": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 1594,
+      "sha256": "bbd496558263002f3a914cc3ac581b6054ea86eb9af339e3a35c3cedd8efa254"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-release-build.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 28861,
+      "sha256": "74420158ea0edf54da7bf24a070b54612577ed77780f96e1b63f70d299891d20"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-released-factory-probe.json": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 216,
+      "sha256": "23192d5b1da143f2b4cac3d8c4410a9d8fe0a0091b93de7ba938c40af3f4081a"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-sql-modern118-qualified.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 1785,
+      "sha256": "5675d46db8442e431ab7baf96105b416c60c056415a28b449acefa8da1325ac5"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-sql-modern22-fixed.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 6214,
+      "sha256": "61f4b1bb8440f32e0133e8d20e4775b2909fb5b232c01bb6f0cdb52c83520f11"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-sql-modern22-qualified.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 1785,
+      "sha256": "feacc5890b4cebf79c11b19a07095c184b170bba3ee890af275b069ea0094e68"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-sql-modern22.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 3273,
+      "sha256": "571d46f410ed22c470d774833af158c30bec0cd2c88fd658072e2e0785773699"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-superseded-upstream-failure.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 886954,
+      "sha256": "7fd2e2e62595348e3ef1c220bf4bdc85d9976d66e0aa172b25b1e30057dadb54"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-tpcds-focused.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 3708,
+      "sha256": "4824412fc6a7285e3c3ac95da79249096cd5091811b42d6d0b079f829fd64e6e"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/lz4-tpcds-sf1-prepare.log": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 1435,
+      "sha256": "feaa8d0622914dabda7da879759ebf9215cfb8b6b3bb764d90ac15b5b6a07b22"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/streamfusion-paimon/TEST-tech.streamfusion.PaimonTpcdsBenchmark.xml": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 69977,
+      "sha256": "5a42fd0ec933b68b8836cddd0e34213481f1c3b3ae986cb7bd6b9755ecbd5db2"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/streamfusion-paimon/tech.streamfusion.PaimonTpcdsBenchmark.txt": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 326,
+      "sha256": "0a457fac7952cd881815c6ba6f200b2560375644c27976930c36cb3cab87d9d7"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/streamfusion-runtime/TEST-org.apache.flink.table.planner.runtime.batch.sql.CodeSplitITCase.xml": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 62612,
+      "sha256": "14fa127a51b7dde285059935acf8abc412b22a974655bac0842b3fda40154882"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/streamfusion-runtime/TEST-tech.streamfusion.BatchSortSqlTest.xml": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 60151,
+      "sha256": "dd6b0fa1ee54e0d9e1c8d75b5142343f13f99c58c9d137a40c0ec46be69d75d7"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/streamfusion-runtime/TEST-tech.streamfusion.NativeLz4ShuffleSqlTest.xml": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 60731,
+      "sha256": "9a60c6c6dec9572ed035316eb05f87c43dee674464b3f67ec4cc939b883c9fdd"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/streamfusion-runtime/TEST-tech.streamfusion.NativeLz4ShuffleTest.xml": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 60897,
+      "sha256": "050a17267bc6c645255f79d002d7eb489ee3927b3da87dc6e92d1abdfe06cb14"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/streamfusion-runtime/org.apache.flink.table.planner.runtime.batch.sql.CodeSplitITCase.txt": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 378,
+      "sha256": "c0974b47f85fd5864e5c897a6362ea93b113b3a3436a87c4d04d1542e3183a3f"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/streamfusion-runtime/tech.streamfusion.BatchSortSqlTest.txt": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 318,
+      "sha256": "70cc0bf6b56bd7de6959f765f60cd51e6f06fc72a037b485a72d080445e04e43"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/streamfusion-runtime/tech.streamfusion.NativeLz4ShuffleSqlTest.txt": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 332,
+      "sha256": "05ba079e62d3ad94df7c8d0d189140b8bf17c7bac0a497e1f54ed16c1eb41863"
+    },
+    "docs/benchmarks/paimon-native-lz4-20261115-evidence/validation/streamfusion-runtime/tech.streamfusion.NativeLz4ShuffleTest.txt": {
+      "bundle": "paimon-native-lz4-20261115",
+      "size": 327,
+      "sha256": "76869028b1e8bf0742c75e80df040279cf2e7467d073e03db073d7966ff0af6e"
+    }
+  }
+}

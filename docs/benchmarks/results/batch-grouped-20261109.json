@@ -1,0 +1,197 @@
+{
+  "date": "2026-11-09",
+  "flink": "2.2.1",
+  "nativeProfile": "release",
+  "warmups": 3,
+  "trials": 7,
+  "engineOrder": "alternating",
+  "jdk": "17",
+  "parallelism": 2,
+  "nativeCapBytes": 134217728,
+  "managedMemory": "1GiB",
+  "heap": "8GiB",
+  "boundaries": "Full bounded datagen->both transposes->local/final aggregate or DISTINCT->blocking Arrow hash IPC->blackhole->completed job future",
+  "stockAlsoPreviousStreamFusion": true,
+  "cohorts": [
+    {
+      "rows": 2000000,
+      "cardinality": 65536,
+      "sha2": false,
+      "distinct": true,
+      "stockNanos": [
+        223163958,
+        284040292,
+        257396250,
+        235153291,
+        214628958,
+        226413417,
+        246403875
+      ],
+      "nativeNanos": [
+        165823209,
+        168482792,
+        146655959,
+        134756167,
+        193962375,
+        249670959,
+        138343083
+      ],
+      "stockRuntimeMs": [
+        197,
+        220,
+        235,
+        214,
+        184,
+        206,
+        228
+      ],
+      "nativeRuntimeMs": [
+        148,
+        148,
+        130,
+        103,
+        180,
+        236,
+        127
+      ],
+      "stockMedianMs": 235.153291,
+      "nativeMedianMs": 165.823209,
+      "speedup": 1.4180963715398849
+    },
+    {
+      "rows": 1000000,
+      "cardinality": 64,
+      "sha2": false,
+      "distinct": true,
+      "stockNanos": [
+        160914416,
+        202479208,
+        141591708,
+        147256542,
+        137892541,
+        130998666,
+        141314375
+      ],
+      "nativeNanos": [
+        114861292,
+        122268917,
+        109763917,
+        105883292,
+        108731584,
+        109039000,
+        110758959
+      ],
+      "stockRuntimeMs": [
+        130,
+        178,
+        117,
+        124,
+        108,
+        110,
+        119
+      ],
+      "nativeRuntimeMs": [
+        95,
+        105,
+        94,
+        90,
+        95,
+        95,
+        97
+      ],
+      "stockMedianMs": 141.591708,
+      "nativeMedianMs": 109.763917,
+      "speedup": 1.289965881957365
+    },
+    {
+      "rows": 2000000,
+      "cardinality": 65536,
+      "sha2": false,
+      "distinct": false,
+      "stockNanos": [
+        393787416,
+        278803458,
+        355579625,
+        362452625,
+        271588833,
+        305034250,
+        350412166
+      ],
+      "nativeNanos": [
+        199557875,
+        182368542,
+        165252000,
+        195691000,
+        171698333,
+        281438583,
+        169246375
+      ],
+      "stockRuntimeMs": [
+        350,
+        225,
+        316,
+        318,
+        233,
+        267,
+        300
+      ],
+      "nativeRuntimeMs": [
+        182,
+        160,
+        145,
+        180,
+        156,
+        267,
+        156
+      ],
+      "stockMedianMs": 350.412166,
+      "nativeMedianMs": 182.368542,
+      "speedup": 1.9214507181836218
+    },
+    {
+      "rows": 1000000,
+      "cardinality": 64,
+      "sha2": false,
+      "distinct": false,
+      "stockNanos": [
+        201757583,
+        180719209,
+        183029542,
+        212288792,
+        163065375,
+        155301250,
+        146425917
+      ],
+      "nativeNanos": [
+        125951625,
+        119643125,
+        123902917,
+        118430459,
+        118530292,
+        112311625,
+        120313167
+      ],
+      "stockRuntimeMs": [
+        156,
+        143,
+        144,
+        175,
+        125,
+        119,
+        114
+      ],
+      "nativeRuntimeMs": [
+        107,
+        102,
+        103,
+        101,
+        101,
+        97,
+        107
+      ],
+      "stockMedianMs": 180.719209,
+      "nativeMedianMs": 119.643125,
+      "speedup": 1.510485529360755
+    }
+  ]
+}

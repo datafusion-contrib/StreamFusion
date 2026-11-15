@@ -287,3 +287,142 @@ fn timestamp_array_constructor_matches_compact_and_expanded_binary_array_storage
         assert_eq!(array.null_count(), 0);
     }
 }
+
+#[test]
+fn represented_string_elements_stay_scalar_with_owned_caches_and_null_padding() {
+    use arrow::buffer::{NullBuffer, OffsetBuffer};
+    let wide = "é🙂".repeat(1024);
+    let utf8: ArrayRef = Arc::new(StringArray::from(vec![
+        Some(wide.as_str()),
+        None,
+        Some("?"),
+        Some("tail"),
+    ]));
+    let cache: ArrayRef = Arc::new(streamfusion_bridge::string_cache::string_cache_array([
+        None,
+        None,
+        Some([0xd800u16].as_slice()),
+        None,
+    ]));
+    let fields: arrow::datatypes::Fields = vec![
+        Field::new("utf8", DataType::Utf8, true)
+            .with_metadata([("streamfusion.nested-string".into(), "1".into())].into()),
+        Field::new("java", cache.data_type().clone(), true),
+        Field::new("array_copy_class", DataType::Int8, true),
+    ]
+    .into();
+    let strings: ArrayRef = Arc::new(StructArray::new(
+        fields.clone(),
+        vec![utf8, cache, Arc::new(Int8Array::from(vec![0, 0, 0, 0]))],
+        Some(NullBuffer::from(vec![true, false, true, true])),
+    ));
+    let constructed = constructor(171).run(
+        RecordBatch::try_from_iter(vec![("a", strings.clone()), ("b", strings.clone())]).unwrap(),
+    );
+    let binary = constructed
+        .column(0)
+        .as_any()
+        .downcast_ref::<ListArray>()
+        .unwrap();
+    let binary_values = binary
+        .values()
+        .as_any()
+        .downcast_ref::<StructArray>()
+        .unwrap();
+    assert_eq!(binary_values.column(1).null_count(), binary_values.len());
+    assert!(binary_values
+        .column(2)
+        .as_any()
+        .downcast_ref::<Int8Array>()
+        .unwrap()
+        .iter()
+        .all(|flag| flag == Some(1)));
+    assert_eq!(
+        strings
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .unwrap()
+            .column(1)
+            .null_count(),
+        3
+    );
+    let list: ArrayRef = Arc::new(ListArray::new(
+        Arc::new(Field::new("item", strings.data_type().clone(), true)),
+        OffsetBuffer::new(vec![0, 3, 3, 3, 4].into()),
+        strings.clone(),
+        Some(NullBuffer::from(vec![true, true, false, true])),
+    ));
+    let input = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![
+            Field::new("key", DataType::Int64, false),
+            Field::new("items", list.data_type().clone(), true)
+                .with_metadata([("streamfusion.array-copy".into(), "1".into())].into()),
+            Field::new(ROW_KIND_COLUMN, DataType::Int8, false),
+        ])),
+        vec![
+            Arc::new(Int64Array::from(vec![10, 20, 30, 40])),
+            list,
+            Arc::new(Int8Array::from(vec![0, 1, 2, 3])),
+        ],
+    )
+    .unwrap();
+    let output = unnest_projected(&input, 1, true, true, false, Some(&[0, 1, 2, 3, 2]));
+    assert_eq!(output.num_rows(), 6);
+    assert_eq!(output.num_columns(), 6);
+    assert_eq!(
+        output.column(0).as_ref(),
+        &Int64Array::from(vec![10, 10, 10, 20, 30, 40])
+    );
+    assert_eq!(
+        output
+            .schema()
+            .field(1)
+            .metadata()
+            .get("streamfusion.array-copy")
+            .map(String::as_str),
+        Some("1")
+    );
+    let expected = take(
+        strings.as_ref(),
+        &UInt32Array::from(vec![Some(0), Some(1), Some(2), None, None, Some(3)]),
+        None,
+    )
+    .unwrap();
+    assert_eq!(output.column(2).as_ref(), expected.as_ref());
+    assert!(Arc::ptr_eq(output.column(2), output.column(4)));
+    assert_eq!(
+        output.column(3).as_ref(),
+        &Int32Array::from(vec![Some(1), Some(2), Some(3), None, None, Some(1)])
+    );
+    assert_eq!(
+        output.column(5).as_ref(),
+        &Int8Array::from(vec![0, 0, 0, 1, 2, 3])
+    );
+    let sliced = unnest_projected(&input.slice(1, 2), 1, true, true, false, Some(&[2, 3]));
+    assert_eq!(sliced.num_rows(), 2);
+    assert_eq!(sliced.column(0).null_count(), 2);
+    let ordinary_fields = fields
+        .iter()
+        .map(|field| Arc::new(field.as_ref().clone().with_metadata(Default::default())))
+        .collect::<Vec<_>>();
+    let carrier = strings.as_any().downcast_ref::<StructArray>().unwrap();
+    let ordinary: ArrayRef = Arc::new(StructArray::new(
+        ordinary_fields.into(),
+        carrier.columns().to_vec(),
+        carrier.nulls().cloned(),
+    ));
+    let list: ArrayRef = Arc::new(ListArray::new(
+        Arc::new(Field::new("item", ordinary.data_type().clone(), true)),
+        OffsetBuffer::new(vec![0, 4].into()),
+        ordinary,
+        None,
+    ));
+    let rows = RecordBatch::try_from_iter(vec![("items", list)]).unwrap();
+    let actual = unnest_array(&rows, 0, false, false, false);
+    assert_eq!(actual.num_columns(), 4);
+    assert_eq!(actual.num_rows(), 3);
+    assert_eq!(actual.column(1).data_type(), &DataType::Utf8);
+    drop(input);
+    drop(strings);
+    assert_eq!(output.column(2).as_ref(), expected.as_ref());
+}

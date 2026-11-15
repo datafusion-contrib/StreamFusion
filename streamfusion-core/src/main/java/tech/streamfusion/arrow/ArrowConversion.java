@@ -1,0 +1,803 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package tech.streamfusion.arrow;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.stream.Collectors;
+import org.apache.arrow.vector.BigIntVector;
+import org.apache.arrow.vector.BitVector;
+import org.apache.arrow.vector.DateDayVector;
+import org.apache.arrow.vector.DecimalVector;
+import org.apache.arrow.vector.FieldVector;
+import org.apache.arrow.vector.FixedSizeBinaryVector;
+import org.apache.arrow.vector.Float4Vector;
+import org.apache.arrow.vector.Float8Vector;
+import org.apache.arrow.vector.IntVector;
+import org.apache.arrow.vector.NullVector;
+import org.apache.arrow.vector.SmallIntVector;
+import org.apache.arrow.vector.TimeMicroVector;
+import org.apache.arrow.vector.TimeMilliVector;
+import org.apache.arrow.vector.TimeNanoVector;
+import org.apache.arrow.vector.TimeSecVector;
+import org.apache.arrow.vector.TinyIntVector;
+import org.apache.arrow.vector.ValueVector;
+import org.apache.arrow.vector.VarBinaryVector;
+import org.apache.arrow.vector.VarCharVector;
+import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.arrow.vector.complex.ListVector;
+import org.apache.arrow.vector.complex.MapVector;
+import org.apache.arrow.vector.complex.StructVector;
+import org.apache.arrow.vector.types.DateUnit;
+import org.apache.arrow.vector.types.FloatingPointPrecision;
+import org.apache.arrow.vector.types.TimeUnit;
+import org.apache.arrow.vector.types.pojo.ArrowType;
+import org.apache.arrow.vector.types.pojo.Field;
+import org.apache.arrow.vector.types.pojo.FieldType;
+import org.apache.arrow.vector.types.pojo.Schema;
+import org.apache.flink.table.data.ArrayData;
+import org.apache.flink.table.data.RowData;
+import org.apache.flink.table.data.columnar.vector.ColumnVector;
+import org.apache.flink.table.types.logical.ArrayType;
+import org.apache.flink.table.types.logical.BigIntType;
+import org.apache.flink.table.types.logical.BinaryType;
+import org.apache.flink.table.types.logical.BooleanType;
+import org.apache.flink.table.types.logical.CharType;
+import org.apache.flink.table.types.logical.DateType;
+import org.apache.flink.table.types.logical.DayTimeIntervalType;
+import org.apache.flink.table.types.logical.DecimalType;
+import org.apache.flink.table.types.logical.DoubleType;
+import org.apache.flink.table.types.logical.FloatType;
+import org.apache.flink.table.types.logical.IntType;
+import org.apache.flink.table.types.logical.LocalZonedTimestampType;
+import org.apache.flink.table.types.logical.LogicalType;
+import org.apache.flink.table.types.logical.MapType;
+import org.apache.flink.table.types.logical.MultisetType;
+import org.apache.flink.table.types.logical.RowType;
+import org.apache.flink.table.types.logical.SmallIntType;
+import org.apache.flink.table.types.logical.StructuredType;
+import org.apache.flink.table.types.logical.TimeType;
+import org.apache.flink.table.types.logical.TimestampType;
+import org.apache.flink.table.types.logical.TinyIntType;
+import org.apache.flink.table.types.logical.VarBinaryType;
+import org.apache.flink.table.types.logical.VarCharType;
+import org.apache.flink.table.types.logical.YearMonthIntervalType;
+import org.apache.flink.table.types.logical.utils.LogicalTypeChecks;
+import org.apache.flink.table.types.logical.utils.LogicalTypeDefaultVisitor;
+import tech.streamfusion.arrow.vectors.ArrowArrayColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowBigIntColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowBinaryColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowBooleanColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowDateColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowDecimalColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowDoubleColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowFloatColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowIntColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowMapColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowNullColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowRowColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowSmallIntColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowTimeColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowTimestampColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowTinyIntColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowVarBinaryColumnVector;
+import tech.streamfusion.arrow.vectors.ArrowVarCharColumnVector;
+import tech.streamfusion.arrow.writers.ArrayWriter;
+import tech.streamfusion.arrow.writers.ArrowFieldWriter;
+import tech.streamfusion.arrow.writers.BigIntWriter;
+import tech.streamfusion.arrow.writers.BinaryWriter;
+import tech.streamfusion.arrow.writers.BooleanWriter;
+import tech.streamfusion.arrow.writers.DateWriter;
+import tech.streamfusion.arrow.writers.DecimalWriter;
+import tech.streamfusion.arrow.writers.DoubleWriter;
+import tech.streamfusion.arrow.writers.FloatWriter;
+import tech.streamfusion.arrow.writers.IntWriter;
+import tech.streamfusion.arrow.writers.MapWriter;
+import tech.streamfusion.arrow.writers.NullWriter;
+import tech.streamfusion.arrow.writers.RowWriter;
+import tech.streamfusion.arrow.writers.SmallIntWriter;
+import tech.streamfusion.arrow.writers.TimeWriter;
+import tech.streamfusion.arrow.writers.TimestampWriter;
+import tech.streamfusion.arrow.writers.TinyIntWriter;
+import tech.streamfusion.arrow.writers.VarBinaryWriter;
+import tech.streamfusion.arrow.writers.VarCharWriter;
+
+/**
+ * The Arrow ↔ {@link RowData} type mapping, reader factory, and writer factory, ported (and
+ * trimmed) from Flink's {@code org.apache.flink.table.runtime.arrow.ArrowUtils}. Vendored rather
+ * than depended on because that class lives in {@code flink-python}, which ships in the
+ * distribution's {@code opt/} and is not on a normal Java job's classpath; the per-type
+ * readers/writers it drives are vendored alongside (this package), so a clean clone builds without
+ * it.
+ *
+ * <p>One deliberate divergence from upstream: a {@code TIMESTAMP}/{@code TIMESTAMP_LTZ} column maps
+ * to a struct of epoch milliseconds and nanos within the millisecond, regardless of declared
+ * precision. This preserves Flink's range and any fractional nanos already present in a runtime
+ * value.
+ */
+public final class ArrowConversion {
+  static {
+    ArrowRuntime.initialize();
+  }
+
+  private ArrowConversion() {}
+
+  /** The Arrow schema for a row type, with the two-component timestamp convention above. */
+  public static Schema toArrowSchema(RowType rowType) {
+    return toArrowSchema(rowType, false);
+  }
+
+  /** Canonical scalar columns with optional representation-preserving nested children. */
+  public static Schema toArrowSchema(RowType rowType, boolean preserveNested) {
+    return schema(rowType, preserveNested, false);
+  }
+
+  public static Schema toArrowInputSchema(RowType rowType, boolean preserve) {
+    return schema(rowType, preserve, true);
+  }
+
+  public static Schema toBinaryRowKeySchema(RowType rowType) {
+    return NestedRepresentation.withBinaryRows(toArrowInputSchema(rowType, true));
+  }
+
+  /** Preserve original ROW bytes only in the selected key columns. */
+  public static Schema toBinaryRowKeySchema(RowType rowType, int[] keyColumns) {
+    var fields = new ArrayList<>(toArrowSchema(rowType).getFields());
+    List<Field> represented = null;
+    for (int column : keyColumns) {
+      if (column < 0 || column >= rowType.getFieldCount())
+        throw new IllegalArgumentException("Invalid binary ROW key column");
+      if (rowType.getTypeAt(column).is(org.apache.flink.table.types.logical.LogicalTypeRoot.ROW)) {
+        if (represented == null) represented = toBinaryRowKeySchema(rowType).getFields();
+        fields.set(column, represented.get(column));
+      }
+    }
+    return new Schema(fields);
+  }
+
+  private static Schema schema(RowType rowType, boolean preserve, boolean input) {
+    List<Field> fields =
+        rowType.getFields().stream()
+            .map(f -> toArrowField(f.getName(), f.getType(), input, preserve))
+            .collect(Collectors.toCollection(ArrayList::new));
+    return new Schema(fields);
+  }
+
+  /** Synthetic complete-Calc envelope: its children are top-level SQL outputs. */
+  public static Schema toArrowRowResultSchema(RowType rowType) {
+    return toArrowRowResultSchema(rowType, false);
+  }
+
+  public static Schema toArrowRowResultSchema(RowType rowType, boolean preserve) {
+    return new Schema(
+        List.of(
+            new Field(
+                "result",
+                FieldType.nullable(ArrowType.Struct.INSTANCE),
+                schema(rowType, preserve, true).getFields())));
+  }
+
+  /**
+   * The (key, value) logical types of a map-like column: a {@link MapType}'s key/value, or — for a
+   * {@link MultisetType}, carried as a MAP&lt;element, count&gt; — the element type and a non-null
+   * INT count.
+   */
+  private static LogicalType[] mapKeyValue(LogicalType logicalType) {
+    if (logicalType instanceof MapType) {
+      MapType mapType = (MapType) logicalType;
+      return new LogicalType[] {mapType.getKeyType(), mapType.getValueType()};
+    }
+    MultisetType multisetType = (MultisetType) logicalType;
+    return new LogicalType[] {multisetType.getElementType(), new IntType(false)};
+  }
+
+  private static Field toArrowField(String fieldName, LogicalType logicalType) {
+    return toArrowField(fieldName, logicalType, false, false);
+  }
+
+  private static Field toArrowField(
+      String fieldName, LogicalType logicalType, boolean nested, boolean preserve) {
+    if (nested
+        && preserve
+        && (logicalType instanceof VarCharType || logicalType instanceof CharType))
+      return NestedRepresentation.stringField(fieldName, logicalType.isNullable());
+    // Processing-time indicators remain physical NULLs until Flink materializes them.
+    FieldType fieldType =
+        new FieldType(
+            logicalType.isNullable()
+                || org.apache.flink.table.types.logical.utils.LogicalTypeChecks.isProctimeAttribute(
+                    logicalType),
+            logicalType.accept(TypeConverter.INSTANCE),
+            null);
+    if (preserve && logicalType instanceof ArrayType)
+      fieldType =
+          new FieldType(
+              logicalType.isNullable(),
+              ArrowType.List.INSTANCE,
+              null,
+              java.util.Map.of(NestedRepresentation.ARRAY, "1"));
+    List<Field> children = null;
+    if (logicalType instanceof TimestampType || logicalType instanceof LocalZonedTimestampType) {
+      children = TimestampAccessor.fields();
+    } else if (logicalType instanceof ArrayType) {
+      var element = ((ArrayType) logicalType).getElementType();
+      children =
+          Collections.singletonList(
+              preserve && !element.isNullable()
+                  ? NestedRepresentation.elementField(
+                      toArrowField("value", element.copy(true), true, true))
+                  : toArrowField("element", element, true, preserve));
+    } else if (logicalType instanceof RowType || logicalType instanceof StructuredType) {
+      List<String> names = LogicalTypeChecks.getFieldNames(logicalType);
+      List<LogicalType> types = LogicalTypeChecks.getFieldTypes(logicalType);
+      children = new ArrayList<>(types.size());
+      for (int i = 0; i < types.size(); i++) {
+        children.add(toArrowField(names.get(i), types.get(i), true, preserve));
+      }
+      if (preserve || nestedScalarUdfsEnabled())
+        children.add(NestedRepresentation.kindField(children));
+    } else if (logicalType instanceof MapType || logicalType instanceof MultisetType) {
+      // A MAP, or a MULTISET carried as MAP<element, count> (mapKeyValue resolves which).
+      LogicalType[] kv = mapKeyValue(logicalType);
+      children =
+          Collections.singletonList(
+              new Field(
+                  "items",
+                  new FieldType(false, ArrowType.Struct.INSTANCE, null),
+                  Arrays.asList(
+                      // Arrow Java requires this key-field declaration. Flink's NULL-key
+                      // validity is retained by the vectors and the verified collection readers.
+                      toArrowField("key", kv[0].copy(false), true, preserve),
+                      toArrowField("value", kv[1], true, preserve))));
+    }
+    return new Field(fieldName, fieldType, children);
+  }
+
+  private static boolean variableBinaryTransport() {
+    return nestedScalarUdfsEnabled() || binaryEltEnabled();
+  }
+
+  public static boolean binaryEltEnabled() {
+    return tech.streamfusion.configuration.StreamFusionConfig.get(
+        tech.streamfusion.configuration.NativeRuntimeOptions.BINARY_ELT);
+  }
+
+  public static boolean nestedScalarUdfsEnabled() {
+    return tech.streamfusion.configuration.StreamFusionConfig.get(
+        tech.streamfusion.configuration.NativeRuntimeOptions.NESTED_SCALAR_UDFS);
+  }
+
+  /**
+   * Whether a column the native engine produces as {@code actual} is read correctly as the Flink
+   * type {@code declared} by the vectors {@link #createColumnVector} builds. That dispatch is by
+   * Arrow type, not by the declared type, so this is the contract a native output must meet: the
+   * same Arrow type the row type converts to, except that timestamps and times may carry any unit
+   * (and any zone), which the vectors convert on read. The nested-callback and binary-selection
+   * paths also read fixed binary outputs through its length-delimited binary schema. Nested
+   * children follow the same rules.
+   */
+  public static boolean readsAs(Field actual, LogicalType declared) {
+    return readsAs(actual, toArrowField(actual.getName(), declared));
+  }
+
+  private static boolean readsAs(Field actual, Field expected) {
+    if (NestedRepresentation.isElement(actual))
+      return readsAs(actual.getChildren().get(0), expected);
+    if (NestedRepresentation.isString(actual) && expected.getType() instanceof ArrowType.Utf8)
+      return true;
+    ArrowType actualType = actual.getType();
+    ArrowType expectedType = expected.getType();
+    if ((actualType instanceof ArrowType.Timestamp
+            || TimestampAccessor.isComponentTimestamp(actual))
+        && (expectedType instanceof ArrowType.Timestamp
+            || TimestampAccessor.isComponentTimestamp(expected))) {
+      return true;
+    }
+    boolean convertibleOnRead =
+        actualType instanceof ArrowType.Time && expectedType instanceof ArrowType.Time
+            || MapListRepresentation.isMapList(actual) && expectedType instanceof ArrowType.Map
+            || variableBinaryTransport()
+                && actualType instanceof ArrowType.FixedSizeBinary
+                && expectedType instanceof ArrowType.Binary;
+    if (!convertibleOnRead && !actualType.equals(expectedType)) {
+      return false;
+    }
+    List<Field> actualChildren =
+        NestedRowKinds.dataFields(actual.getChildren()).stream()
+            .filter(field -> !NestedRepresentation.isBinaryRowBytes(field))
+            .collect(Collectors.toList());
+    List<Field> expectedChildren =
+        NestedRowKinds.dataFields(expected.getChildren()).stream()
+            .filter(field -> !NestedRepresentation.isBinaryRowBytes(field))
+            .collect(Collectors.toList());
+    if (actualChildren.size() != expectedChildren.size()) {
+      return false;
+    }
+    for (int i = 0; i < actualChildren.size(); i++) {
+      if (!readsAs(actualChildren.get(i), expectedChildren.get(i))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * A reader that exposes the batch's rows as {@link RowData} backed directly by the Arrow buffers.
+   */
+  public static ArrowReader createArrowReader(VectorSchemaRoot root, RowType rowType) {
+    return createArrowReader(root, rowType, false);
+  }
+
+  /** Binary ROW payloads are used only by an immediate, verified exit projection. */
+  public static ArrowReader createArrowReader(
+      VectorSchemaRoot root, RowType rowType, boolean binaryRows) {
+    return createArrowReader(root, rowType, binaryRows, false);
+  }
+
+  /** Reader for synchronous consumers that copy or serialize before the batch closes. */
+  public static ArrowReader createBorrowedStringReader(VectorSchemaRoot root, RowType rowType) {
+    return createArrowReader(root, rowType, false, true);
+  }
+
+  private static ArrowReader createArrowReader(
+      VectorSchemaRoot root, RowType rowType, boolean binaryRows, boolean borrowStrings) {
+    List<ColumnVector> columnVectors = new ArrayList<>();
+    List<FieldVector> fieldVectors = root.getFieldVectors();
+    // Iterate the row type's columns, not the root's: a batch may carry trailing system columns
+    // (the
+    // hidden $row_kind$) the row type does not name, which the caller reads separately.
+    for (int i = 0; i < rowType.getFieldCount(); i++) {
+      var column = createColumnVector(fieldVectors.get(i), rowType.getTypeAt(i));
+      if (binaryRows && column instanceof ArrowRowColumnVector)
+        ((ArrowRowColumnVector) column).binaryRowsForExit();
+      columnVectors.add(column);
+    }
+    org.apache.arrow.vector.complex.ListVector[] caches =
+        StringCacheColumns.readers(root, rowType.getFieldCount());
+    BorrowedStringValues[] borrowed = null;
+    if (borrowStrings) {
+      for (int i = 0; i < rowType.getFieldCount(); i++) {
+        switch (rowType.getTypeAt(i).getTypeRoot()) {
+          case CHAR:
+          case VARCHAR:
+            var values = BorrowedStringValues.create(fieldVectors.get(i));
+            if (values != null) {
+              if (borrowed == null) borrowed = new BorrowedStringValues[rowType.getFieldCount()];
+              borrowed[i] = values;
+            }
+            break;
+          default:
+            break;
+        }
+      }
+    }
+    return new ArrowReader(columnVectors.toArray(new ColumnVector[0]), caches, borrowed);
+  }
+
+  /** A writer that appends {@link RowData} rows into the (pre-built, matching) Arrow vectors. */
+  public static ArrowWriter<RowData> createRowDataArrowWriter(
+      VectorSchemaRoot root, RowType rowType) {
+    return createRowDataArrowWriter(root, rowType, -1);
+  }
+
+  /** Sizes top-level fixed-width buffers for a known batch limit; safe writes can still grow. */
+  public static ArrowWriter<RowData> createRowDataArrowWriter(
+      VectorSchemaRoot root, RowType rowType, int fixedWidthCapacity) {
+    if (fixedWidthCapacity < -1) {
+      throw new IllegalArgumentException(
+          "Fixed-width capacity must be non-negative or unspecified");
+    }
+    ArrowFieldWriter<RowData>[] fieldWriters = new ArrowFieldWriter[root.getFieldVectors().size()];
+    List<FieldVector> vectors = root.getFieldVectors();
+    for (int i = 0; i < vectors.size(); i++) {
+      FieldVector vector = vectors.get(i);
+      if (fixedWidthCapacity >= 0
+          && vector instanceof org.apache.arrow.vector.BaseFixedWidthVector) {
+        org.apache.arrow.vector.BaseFixedWidthVector fixed =
+            ((org.apache.arrow.vector.BaseFixedWidthVector) vector);
+
+        fixed.allocateNew(fixedWidthCapacity);
+      } else {
+        vector.allocateNew();
+      }
+      fieldWriters[i] = createArrowFieldWriterForRow(vector, rowType.getTypeAt(i));
+    }
+    return new ArrowWriter<>(root, fieldWriters);
+  }
+
+  static ColumnVector createColumnVector(ValueVector vector, LogicalType fieldType) {
+    if (vector instanceof TinyIntVector) {
+      return new ArrowTinyIntColumnVector((TinyIntVector) vector);
+    } else if (vector instanceof SmallIntVector) {
+      return new ArrowSmallIntColumnVector((SmallIntVector) vector);
+    } else if (vector instanceof IntVector) {
+      return new ArrowIntColumnVector((IntVector) vector);
+    } else if (vector instanceof BigIntVector) {
+      return new ArrowBigIntColumnVector((BigIntVector) vector);
+    } else if (vector instanceof BitVector) {
+      return new ArrowBooleanColumnVector((BitVector) vector);
+    } else if (vector instanceof Float4Vector) {
+      return new ArrowFloatColumnVector((Float4Vector) vector);
+    } else if (vector instanceof Float8Vector) {
+      return new ArrowDoubleColumnVector((Float8Vector) vector);
+    } else if (vector instanceof VarCharVector) {
+      return new ArrowVarCharColumnVector((VarCharVector) vector);
+    } else if (vector instanceof FixedSizeBinaryVector) {
+      return new ArrowBinaryColumnVector((FixedSizeBinaryVector) vector);
+    } else if (vector instanceof VarBinaryVector) {
+      return new ArrowVarBinaryColumnVector((VarBinaryVector) vector);
+    } else if (vector instanceof DecimalVector) {
+      return new ArrowDecimalColumnVector((DecimalVector) vector);
+    } else if (vector instanceof DateDayVector) {
+      return new ArrowDateColumnVector((DateDayVector) vector);
+    } else if (vector instanceof TimeSecVector
+        || vector instanceof TimeMilliVector
+        || vector instanceof TimeMicroVector
+        || vector instanceof TimeNanoVector) {
+      return new ArrowTimeColumnVector(vector);
+    } else if (TimestampAccessor.isTimestamp(vector)) {
+      return new ArrowTimestampColumnVector(vector);
+    } else if (vector instanceof MapVector) {
+      MapVector mapVector = (MapVector) vector;
+      LogicalType[] kv = mapKeyValue(fieldType);
+      LogicalType keyType = kv[0];
+      LogicalType valueType = kv[1];
+      StructVector structVector = (StructVector) mapVector.getDataVector();
+      return new ArrowMapColumnVector(
+          mapVector,
+          createColumnVector(structVector.getChild(MapVector.KEY_NAME), keyType),
+          createColumnVector(structVector.getChild(MapVector.VALUE_NAME), valueType));
+    } else if (vector instanceof ListVector
+        && (fieldType instanceof MapType || fieldType instanceof MultisetType)) {
+      ListVector mapVector = (ListVector) vector;
+      LogicalType[] kv = mapKeyValue(fieldType);
+      StructVector entries = (StructVector) mapVector.getDataVector();
+      return new ArrowMapColumnVector(
+          mapVector,
+          createColumnVector(entries.getChild(MapVector.KEY_NAME), kv[0]),
+          createColumnVector(entries.getChild(MapVector.VALUE_NAME), kv[1]));
+    } else if (vector instanceof ListVector) {
+      ListVector listVector = (ListVector) vector;
+      var data = listVector.getDataVector();
+      var carrier = NestedRepresentation.isElement(data.getField()) ? (StructVector) data : null;
+      return new ArrowArrayColumnVector(
+          listVector,
+          createColumnVector(
+              carrier == null ? data : carrier.getChild("value"),
+              ((ArrayType) fieldType).getElementType()),
+          ((ArrayType) fieldType).getElementType(),
+          carrier == null ? null : (TinyIntVector) carrier.getChild("array_copy_class"));
+    } else if (vector instanceof StructVector) {
+      StructVector structVector = (StructVector) vector;
+      if (NestedRepresentation.isString(vector.getField()))
+        return new NestedStringColumnVector(structVector);
+      ColumnVector[] fieldColumns = new ColumnVector[LogicalTypeChecks.getFieldCount(fieldType)];
+      for (int i = 0; i < fieldColumns.length; ++i) {
+        fieldColumns[i] =
+            createColumnVector(
+                structVector.getVectorById(i), LogicalTypeChecks.getFieldTypes(fieldType).get(i));
+      }
+      return new ArrowRowColumnVector(
+          structVector,
+          fieldColumns,
+          LogicalTypeChecks.getFieldTypes(fieldType).toArray(LogicalType[]::new));
+    } else if (vector instanceof NullVector) {
+      return ArrowNullColumnVector.INSTANCE;
+    } else {
+      throw new UnsupportedOperationException(String.format("Unsupported type %s.", fieldType));
+    }
+  }
+
+  private static ArrowFieldWriter<RowData> createArrowFieldWriterForRow(
+      ValueVector vector, LogicalType fieldType) {
+    if (ByteStringTransport.isString(vector.getField()))
+      return VarCharWriter.forRow((VarBinaryVector) vector);
+    if (NestedRepresentation.isString(vector.getField()))
+      return tech.streamfusion.arrow.writers.NestedStringWriter.forRow((StructVector) vector);
+    if (vector instanceof TinyIntVector) {
+      return TinyIntWriter.forRow((TinyIntVector) vector);
+    } else if (vector instanceof SmallIntVector) {
+      return SmallIntWriter.forRow((SmallIntVector) vector);
+    } else if (vector instanceof IntVector) {
+      return IntWriter.forRow((IntVector) vector);
+    } else if (vector instanceof BigIntVector) {
+      return BigIntWriter.forRow((BigIntVector) vector);
+    } else if (vector instanceof BitVector) {
+      return BooleanWriter.forRow((BitVector) vector);
+    } else if (vector instanceof Float4Vector) {
+      return FloatWriter.forRow((Float4Vector) vector);
+    } else if (vector instanceof Float8Vector) {
+      return DoubleWriter.forRow((Float8Vector) vector);
+    } else if (vector instanceof VarCharVector) {
+      return VarCharWriter.forRow((VarCharVector) vector);
+    } else if (vector instanceof FixedSizeBinaryVector) {
+      return BinaryWriter.forRow((FixedSizeBinaryVector) vector);
+    } else if (vector instanceof VarBinaryVector) {
+      return VarBinaryWriter.forRow((VarBinaryVector) vector);
+    } else if (vector instanceof DecimalVector) {
+      DecimalVector decimalVector = (DecimalVector) vector;
+      return DecimalWriter.forRow(
+          decimalVector, getPrecision(decimalVector), decimalVector.getScale());
+    } else if (vector instanceof DateDayVector) {
+      return DateWriter.forRow((DateDayVector) vector);
+    } else if (vector instanceof TimeSecVector
+        || vector instanceof TimeMilliVector
+        || vector instanceof TimeMicroVector
+        || vector instanceof TimeNanoVector) {
+      return TimeWriter.forRow(vector);
+    } else if (TimestampAccessor.isTimestamp(vector)) {
+      int precision =
+          fieldType instanceof LocalZonedTimestampType
+              ? ((LocalZonedTimestampType) fieldType).getPrecision()
+              : ((TimestampType) fieldType).getPrecision();
+      return TimestampWriter.forRow(vector, precision);
+    } else if (vector instanceof MapVector) {
+      MapVector mapVector = (MapVector) vector;
+      LogicalType[] kv = mapKeyValue(fieldType);
+      LogicalType keyType = kv[0];
+      LogicalType valueType = kv[1];
+      StructVector structVector = (StructVector) mapVector.getDataVector();
+      return MapWriter.forRow(
+          mapVector,
+          createArrowFieldWriterForArray(structVector.getChild(MapVector.KEY_NAME), keyType),
+          createArrowFieldWriterForArray(structVector.getChild(MapVector.VALUE_NAME), valueType));
+    } else if (vector instanceof ListVector) {
+      ListVector listVector = (ListVector) vector;
+      LogicalType elementType = ((ArrayType) fieldType).getElementType();
+      return ArrayWriter.forRow(
+              listVector, createArrowFieldWriterForArray(listVector.getDataVector(), elementType))
+          .preserveArrayCopySemantics(elementType);
+    } else if (vector instanceof StructVector) {
+      List<LogicalType> types = LogicalTypeChecks.getFieldTypes(fieldType);
+      ArrowFieldWriter<RowData>[] fieldsWriters = new ArrowFieldWriter[types.size()];
+      for (int i = 0; i < fieldsWriters.length; i++) {
+        fieldsWriters[i] =
+            createArrowFieldWriterForRow(((StructVector) vector).getVectorById(i), types.get(i));
+      }
+      return RowWriter.forRow((StructVector) vector, fieldsWriters);
+    } else if (vector instanceof NullVector) {
+      return new NullWriter<>((NullVector) vector);
+    } else {
+      throw new UnsupportedOperationException(String.format("Unsupported type %s.", fieldType));
+    }
+  }
+
+  private static ArrowFieldWriter<ArrayData> createArrowFieldWriterForArray(
+      ValueVector vector, LogicalType fieldType) {
+    if (ByteStringTransport.isString(vector.getField()))
+      return VarCharWriter.forArray((VarBinaryVector) vector);
+    if (NestedRepresentation.isElement(vector.getField()))
+      return new tech.streamfusion.arrow.writers.ArrayElementWriter(
+          (StructVector) vector,
+          createArrowFieldWriterForArray(((StructVector) vector).getChild("value"), fieldType));
+    if (NestedRepresentation.isString(vector.getField()))
+      return tech.streamfusion.arrow.writers.NestedStringWriter.forArray((StructVector) vector);
+    if (vector instanceof TinyIntVector) {
+      return TinyIntWriter.forArray((TinyIntVector) vector);
+    } else if (vector instanceof SmallIntVector) {
+      return SmallIntWriter.forArray((SmallIntVector) vector);
+    } else if (vector instanceof IntVector) {
+      return IntWriter.forArray((IntVector) vector);
+    } else if (vector instanceof BigIntVector) {
+      return BigIntWriter.forArray((BigIntVector) vector);
+    } else if (vector instanceof BitVector) {
+      return BooleanWriter.forArray((BitVector) vector);
+    } else if (vector instanceof Float4Vector) {
+      return FloatWriter.forArray((Float4Vector) vector);
+    } else if (vector instanceof Float8Vector) {
+      return DoubleWriter.forArray((Float8Vector) vector);
+    } else if (vector instanceof VarCharVector) {
+      return VarCharWriter.forArray((VarCharVector) vector);
+    } else if (vector instanceof FixedSizeBinaryVector) {
+      return BinaryWriter.forArray((FixedSizeBinaryVector) vector);
+    } else if (vector instanceof VarBinaryVector) {
+      return VarBinaryWriter.forArray((VarBinaryVector) vector);
+    } else if (vector instanceof DecimalVector) {
+      DecimalVector decimalVector = (DecimalVector) vector;
+      return DecimalWriter.forArray(
+          decimalVector, getPrecision(decimalVector), decimalVector.getScale());
+    } else if (vector instanceof DateDayVector) {
+      return DateWriter.forArray((DateDayVector) vector);
+    } else if (vector instanceof TimeSecVector
+        || vector instanceof TimeMilliVector
+        || vector instanceof TimeMicroVector
+        || vector instanceof TimeNanoVector) {
+      return TimeWriter.forArray(vector);
+    } else if (TimestampAccessor.isTimestamp(vector)) {
+      int precision =
+          fieldType instanceof LocalZonedTimestampType
+              ? ((LocalZonedTimestampType) fieldType).getPrecision()
+              : ((TimestampType) fieldType).getPrecision();
+      return TimestampWriter.forArray(vector, precision);
+    } else if (vector instanceof MapVector) {
+      MapVector mapVector = (MapVector) vector;
+      LogicalType[] kv = mapKeyValue(fieldType);
+      LogicalType keyType = kv[0];
+      LogicalType valueType = kv[1];
+      StructVector structVector = (StructVector) mapVector.getDataVector();
+      return MapWriter.forArray(
+          mapVector,
+          createArrowFieldWriterForArray(structVector.getChild(MapVector.KEY_NAME), keyType),
+          createArrowFieldWriterForArray(structVector.getChild(MapVector.VALUE_NAME), valueType));
+    } else if (vector instanceof ListVector) {
+      ListVector listVector = (ListVector) vector;
+      LogicalType elementType = ((ArrayType) fieldType).getElementType();
+      return ArrayWriter.forArray(
+              listVector, createArrowFieldWriterForArray(listVector.getDataVector(), elementType))
+          .preserveArrayCopySemantics(elementType);
+    } else if (vector instanceof StructVector) {
+      List<LogicalType> types = LogicalTypeChecks.getFieldTypes(fieldType);
+      // A struct's children are always read as a RowData, even when the struct sits inside an
+      // array.
+      ArrowFieldWriter<RowData>[] fieldsWriters = new ArrowFieldWriter[types.size()];
+      for (int i = 0; i < fieldsWriters.length; i++) {
+        fieldsWriters[i] =
+            createArrowFieldWriterForRow(((StructVector) vector).getVectorById(i), types.get(i));
+      }
+      return RowWriter.forArray((StructVector) vector, fieldsWriters);
+    } else if (vector instanceof NullVector) {
+      return new NullWriter<>((NullVector) vector);
+    } else {
+      throw new UnsupportedOperationException(String.format("Unsupported type %s.", fieldType));
+    }
+  }
+
+  private static int getPrecision(DecimalVector decimalVector) {
+    return decimalVector.getPrecision();
+  }
+
+  /**
+   * Maps each Flink logical type to its Arrow type — see {@code
+   * ArrowUtils.LogicalTypeToArrowTypeConverter}, with lossless timestamp components (the divergence
+   * documented on the class).
+   */
+  private static final class TypeConverter extends LogicalTypeDefaultVisitor<ArrowType> {
+    private static final TypeConverter INSTANCE = new TypeConverter();
+
+    @Override
+    public ArrowType visit(TinyIntType tinyIntType) {
+      return new ArrowType.Int(8, true);
+    }
+
+    @Override
+    public ArrowType visit(SmallIntType smallIntType) {
+      return new ArrowType.Int(2 * 8, true);
+    }
+
+    @Override
+    public ArrowType visit(IntType intType) {
+      return new ArrowType.Int(4 * 8, true);
+    }
+
+    @Override
+    public ArrowType visit(BigIntType bigIntType) {
+      return new ArrowType.Int(8 * 8, true);
+    }
+
+    @Override
+    public ArrowType visit(BooleanType booleanType) {
+      return ArrowType.Bool.INSTANCE;
+    }
+
+    @Override
+    public ArrowType visit(FloatType floatType) {
+      return new ArrowType.FloatingPoint(FloatingPointPrecision.SINGLE);
+    }
+
+    @Override
+    public ArrowType visit(DoubleType doubleType) {
+      return new ArrowType.FloatingPoint(FloatingPointPrecision.DOUBLE);
+    }
+
+    @Override
+    public ArrowType visit(CharType charType) {
+      return ArrowType.Utf8.INSTANCE;
+    }
+
+    @Override
+    public ArrowType visit(VarCharType varCharType) {
+      return ArrowType.Utf8.INSTANCE;
+    }
+
+    @Override
+    public ArrowType visit(BinaryType binaryType) {
+      // Released Flink values can retain bytes whose length differs from BINARY(n).
+      if (variableBinaryTransport()) return ArrowType.Binary.INSTANCE;
+      return new ArrowType.FixedSizeBinary(binaryType.getLength());
+    }
+
+    @Override
+    public ArrowType visit(VarBinaryType varBinaryType) {
+      return ArrowType.Binary.INSTANCE;
+    }
+
+    @Override
+    public ArrowType visit(DecimalType decimalType) {
+      return new ArrowType.Decimal(decimalType.getPrecision(), decimalType.getScale());
+    }
+
+    @Override
+    public ArrowType visit(DateType dateType) {
+      return new ArrowType.Date(DateUnit.DAY);
+    }
+
+    @Override
+    public ArrowType visit(TimeType timeType) {
+      // Calcite can declare TIME(0) while Flink's internal int still carries milliseconds.
+      return new ArrowType.Time(TimeUnit.MILLISECOND, 32);
+    }
+
+    @Override
+    public ArrowType visit(YearMonthIntervalType yearMonthIntervalType) {
+      // Flink's internal form is the signed number of months.
+      return new ArrowType.Int(4 * 8, true);
+    }
+
+    @Override
+    public ArrowType visit(DayTimeIntervalType dayTimeIntervalType) {
+      // Flink's internal form is the signed number of milliseconds.
+      return new ArrowType.Int(8 * 8, true);
+    }
+
+    // TimestampAccessor supplies the component fields for both logical timestamp types.
+    @Override
+    public ArrowType visit(LocalZonedTimestampType localZonedTimestampType) {
+      return ArrowType.Struct.INSTANCE;
+    }
+
+    @Override
+    public ArrowType visit(TimestampType timestampType) {
+      return ArrowType.Struct.INSTANCE;
+    }
+
+    @Override
+    public ArrowType visit(ArrayType arrayType) {
+      return ArrowType.List.INSTANCE;
+    }
+
+    @Override
+    public ArrowType visit(RowType rowType) {
+      return ArrowType.Struct.INSTANCE;
+    }
+
+    @Override
+    public ArrowType visit(StructuredType structuredType) {
+      return ArrowType.Struct.INSTANCE;
+    }
+
+    @Override
+    public ArrowType visit(MapType mapType) {
+      return new ArrowType.Map(false);
+    }
+
+    @Override
+    public ArrowType visit(MultisetType multisetType) {
+      // A MULTISET<E> is carried as a MAP<E, INT> (element → occurrence count).
+      return new ArrowType.Map(false);
+    }
+
+    @Override
+    protected ArrowType defaultMethod(LogicalType logicalType) {
+      throw new UnsupportedOperationException(
+          String.format("Unsupported data type %s currently.", logicalType.asSummaryString()));
+    }
+  }
+}

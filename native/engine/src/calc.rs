@@ -199,6 +199,78 @@ pub(crate) struct CompiledCalc {
     projections: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) projection_input_indices: Vec<usize>,
     input_schema: SchemaRef,
+    json_reader_inputs: Vec<Arc<dyn PhysicalExpr>>,
+}
+
+fn collect_json_reader_inputs(
+    expression: &Arc<dyn PhysicalExpr>,
+    inputs: &mut Vec<Arc<dyn PhysicalExpr>>,
+) -> bool {
+    if let Some(function) =
+        expression.downcast_ref::<datafusion::physical_expr::ScalarFunctionExpr>()
+    {
+        if function.name() == "jvm_udf" {
+            return false;
+        }
+        if matches!(function.name(), "flink_json_query" | "flink_json_exists")
+            || function.name().starts_with("flink_json_value")
+            || function.name().starts_with("flink_is_json_")
+        {
+            if function.args()[0].downcast_ref::<Column>().is_none()
+                && function.args()[0]
+                    .downcast_ref::<datafusion::physical_expr::expressions::Literal>()
+                    .is_none()
+            {
+                return false;
+            }
+            inputs.push(function.args()[0].clone());
+            return true;
+        }
+    }
+    for child in expression.children() {
+        if !collect_json_reader_inputs(child, inputs) {
+            return false;
+        }
+    }
+    true
+}
+
+fn scheduled_json_inputs(
+    condition: Option<&Arc<dyn PhysicalExpr>>,
+    projections: &[Arc<dyn PhysicalExpr>],
+) -> Vec<Arc<dyn PhysicalExpr>> {
+    let mut inputs = Vec::new();
+    if condition.is_some_and(|condition| {
+        !collect_json_reader_inputs(condition, &mut inputs) || !inputs.is_empty()
+    }) {
+        return Vec::new();
+    }
+    for projection in projections {
+        let start = inputs.len();
+        if !collect_json_reader_inputs(projection, &mut inputs) {
+            return Vec::new();
+        }
+        if start == inputs.len() {
+            continue;
+        }
+        let mut root = projection;
+        while let Some(negated) =
+            root.downcast_ref::<datafusion::physical_expr::expressions::NotExpr>()
+        {
+            root = negated.arg();
+        }
+        if root
+            .downcast_ref::<datafusion::physical_expr::ScalarFunctionExpr>()
+            .is_none_or(|function| {
+                !matches!(function.name(), "flink_json_query" | "flink_json_exists")
+                    && !function.name().starts_with("flink_json_value")
+                    && !function.name().starts_with("flink_is_json_")
+            })
+        {
+            return Vec::new();
+        }
+    }
+    inputs
 }
 
 fn remap_projection_columns(
@@ -281,27 +353,30 @@ impl CalcExpression {
             }
             projection_input_indices.sort_unstable();
             projection_input_indices.dedup();
-            let projections = projections
+            let projections: Vec<_> = projections
                 .into_iter()
                 .map(|projection| remap_projection_columns(projection, &projection_input_indices))
                 .collect();
+            let json_reader_inputs = scheduled_json_inputs(condition.as_ref(), &projections);
             self.compiled = Some(CompiledCalc {
                 condition,
                 projections,
                 projection_input_indices,
                 input_schema: schema.clone(),
+                json_reader_inputs,
             });
         }
         self.compiled.as_ref().unwrap()
     }
 
     pub(crate) fn evaluate(&mut self, batch: RecordBatch) -> RecordBatch {
-        let (condition, projections, projection_input_indices) = {
+        let (condition, projections, projection_input_indices, json_reader_inputs) = {
             let compiled = self.compiled(&batch.schema());
             (
                 compiled.condition.clone(),
                 compiled.projections.clone(),
                 compiled.projection_input_indices.clone(),
+                compiled.json_reader_inputs.clone(),
             )
         };
         // Flink's generated Calc evaluates its condition first and constructs only the projected
@@ -351,18 +426,32 @@ impl CalcExpression {
                 filtered.column_by_name(ROW_KIND_COLUMN),
             );
         }
-        let mut columns: Vec<ArrayRef> = Vec::with_capacity(projections.len());
+        let evaluate = || {
+            projections
+                .iter()
+                .map(|projection| evaluate_projection(projection, &filtered))
+                .collect::<Vec<_>>()
+        };
+        let mut columns = if json_reader_inputs.len() > 1 && filtered.num_rows() > 0 {
+            let inputs = json_reader_inputs
+                .iter()
+                .map(|input| input.evaluate(&filtered))
+                .collect::<datafusion::common::Result<Vec<_>>>()
+                .expect_flink("failed to prepare shared JSON reader inputs");
+            crate::flink_functions::with_projection_readers(&inputs, filtered.num_rows(), evaluate)
+                .expect_flink("failed to schedule shared JSON readers")
+        } else {
+            evaluate()
+        };
         let mut fields: Vec<Field> = Vec::with_capacity(projections.len());
         for (i, projection) in projections.iter().enumerate() {
-            // Scalar arguments can fail before a kernel sees the empty array. Flink never
-            // evaluates a projection without a surviving row, but the output must keep its type.
-            let array = evaluate_projection(projection, &filtered);
-            fields.push(Field::new(
-                &self.output_names[i],
-                array.data_type().clone(),
-                true,
-            ));
-            columns.push(array);
+            let array = &columns[i];
+            let mut field = Field::new(&self.output_names[i], array.data_type().clone(), true);
+            if let Some(column) = projection.downcast_ref::<Column>() {
+                field =
+                    field.with_metadata(filtered.schema().field(column.index()).metadata().clone());
+            }
+            fields.push(field);
         }
         // Carry the changelog tag through: a Calc transforms each row independently (per-row
         // projection, optional deterministic filter), so a `$row_kind$` column rides through unchanged
@@ -372,8 +461,16 @@ impl CalcExpression {
             fields.push(Field::new(ROW_KIND_COLUMN, DataType::Int8, false));
             columns.push(kind.clone());
         }
-        RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
-            .expect("failed to build output")
+        RecordBatch::try_new_with_options(
+            Arc::new(Schema::new_with_metadata(
+                fields,
+                filtered.schema().metadata().clone(),
+            )),
+            columns,
+            &arrow::record_batch::RecordBatchOptions::new()
+                .with_row_count(Some(filtered.num_rows())),
+        )
+        .expect("failed to build output")
     }
 }
 
@@ -439,6 +536,66 @@ fn row_udf_output(
 mod row_udf_tests {
     use super::*;
     use arrow::buffer::NullBuffer;
+
+    #[test]
+    fn aliases_reordered_and_repeated_columns_keep_representation_metadata_and_buffers() {
+        let arrays: ArrayRef = Arc::new(arrow::array::ListArray::from_iter_primitive::<
+            arrow::datatypes::Date32Type,
+            _,
+            _,
+        >([
+            Some(vec![Some(-1), None]),
+            Some(vec![Some(1)]),
+        ]));
+        let metadata = [("streamfusion.array-copy".into(), "1".into())].into();
+        let schema = Arc::new(Schema::new_with_metadata(
+            vec![
+                Field::new("unused", DataType::Int64, false),
+                Field::new("arrays", arrays.data_type().clone(), true).with_metadata(metadata),
+                Field::new("key", DataType::Int32, false)
+                    .with_metadata([("role".into(), "key".into())].into()),
+            ],
+            [("origin".into(), "projection".into())].into(),
+        ));
+        let input = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(Int64Array::from(vec![8, 9])),
+                arrays.clone(),
+                Arc::new(Int32Array::from(vec![1, 2])),
+            ],
+        )
+        .unwrap();
+        let mut calc = CalcExpression {
+            kinds: vec![0, 0, 0, 1],
+            payload: vec![1, 2, 1, 0],
+            child_counts: vec![0; 4],
+            longs: vec![9],
+            doubles: vec![],
+            strings: vec![],
+            projection_roots: vec![0, 1, 2, 3],
+            condition_root: -1,
+            output_names: vec!["a".into(), "k".into(), "again".into(), "constant".into()],
+            compiled: None,
+        };
+        let output = calc.evaluate(input);
+        assert_eq!(
+            output.schema().field(0).metadata(),
+            schema.field(1).metadata()
+        );
+        assert_eq!(
+            output.schema().field(1).metadata(),
+            schema.field(2).metadata()
+        );
+        assert_eq!(
+            output.schema().field(2).metadata(),
+            schema.field(1).metadata()
+        );
+        assert!(output.schema().field(3).metadata().is_empty());
+        assert_eq!(output.schema().metadata(), schema.metadata());
+        assert!(Arc::ptr_eq(output.column(0), &arrays));
+        assert!(Arc::ptr_eq(output.column(2), &arrays));
+    }
 
     #[test]
     fn rejected_rows_do_not_violate_nonnullable_output_fields() {

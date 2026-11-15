@@ -203,7 +203,7 @@ class FlinkTableFunctionConversionSqlHarnessTest {
         "arraylist:array_row",
         "arraylist:array_map"
       })
-  void listElementsWithUnverifiedContainerConversionsRetainFallback(String name) {
+  void listElementsWithExternalContainerConversionsExecute(String name) {
     boolean arrayList = name.startsWith("arraylist:");
     String shape = arrayList ? name.substring("arraylist:".length()) : name;
     try (var metrics = new RecoveryExecutionMetrics()) {
@@ -221,17 +221,14 @@ class FlinkTableFunctionConversionSqlHarnessTest {
                 return table;
               },
               "SELECT t.v FROM src s,LATERAL TABLE(bridge_rows(s.id,s.p)) AS t(v,pos)");
-      runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
-      assertTrue(
-          runs.nativeRun().fallbackReasons().stream()
-              .anyMatch(reason -> reason.contains("verified external Java conversions")),
-          runs::toString);
+      runs.assertSuccess(NativeFailureParity.Route.NATIVE);
+      RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeTableFunction");
     }
   }
 
   @ParameterizedTest
   @org.junit.jupiter.params.provider.ValueSource(strings = {"primitive:FLOAT", "primitive:DOUBLE"})
-  void rawFloatingBitsSurviveBothArrayConversionBoundaries(String name) {
+  void primitiveArrayChainsRetainTheReleasedAliasingRoute(String name) {
     try (var metrics = new RecoveryExecutionMetrics()) {
       var runs =
           NativeFailureParity.run(
@@ -242,16 +239,16 @@ class FlinkTableFunctionConversionSqlHarnessTest {
               },
               "SELECT s.id,b.v,b.pos FROM src s,LATERAL TABLE(bridge_rows(s.id,s.p)) AS t(v,pos),"
                   + "LATERAL TABLE(bits_rows(t.pos,t.v)) AS b(v,pos)");
-      runs.assertSuccess(NativeFailureParity.Route.NATIVE);
+      runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
       long nan = name.endsWith("FLOAT") ? 0x7fc00001L : 0x7ff8000000000001L;
       assertTrue(runs.host().rows().stream().anyMatch(row -> row.contains(nan)), runs::toString);
-      RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeTableFunction");
+      assertTrue(metrics.nativeOperators().isEmpty());
     }
   }
 
   @ParameterizedTest
   @org.junit.jupiter.params.provider.ValueSource(strings = {"primitive:INT", "list:INT"})
-  void bridgesInsideRowArgumentsRemainOutsideTheVerifiedPositions(String name) {
+  void bridgesInsideRowArgumentsExecute(String name) {
     try (var metrics = new RecoveryExecutionMetrics()) {
       var runs =
           NativeFailureParity.run(
@@ -279,16 +276,13 @@ class FlinkTableFunctionConversionSqlHarnessTest {
                 return table;
               },
               "SELECT t.v FROM src s,LATERAL TABLE(bridge_rows(s.id,s.p)) AS t(v,pos)");
-      runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
-      assertTrue(
-          runs.nativeRun().fallbackReasons().stream()
-              .anyMatch(reason -> reason.contains("verified external Java conversions")),
-          runs::toString);
+      runs.assertSuccess(NativeFailureParity.Route.NATIVE);
+      RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeTableFunction");
     }
   }
 
   @org.junit.jupiter.api.Test
-  void concreteListBridgesInsideResultRowsKeepFallback() {
+  void concreteListBridgesInsideResultRowsExecute() {
     try (var metrics = new RecoveryExecutionMetrics()) {
       var runs =
           NativeFailureParity.run(
@@ -315,11 +309,8 @@ class FlinkTableFunctionConversionSqlHarnessTest {
                 return table;
               },
               "SELECT t.v FROM src s,LATERAL TABLE(nested_result(s.id,s.p)) AS t(v,pos)");
-      runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
-      assertTrue(
-          runs.nativeRun().fallbackReasons().stream()
-              .anyMatch(reason -> reason.contains("verified external Java conversions")),
-          runs::toString);
+      runs.assertSuccess(NativeFailureParity.Route.NATIVE);
+      RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeTableFunction");
     }
   }
 
@@ -407,12 +398,8 @@ class FlinkTableFunctionConversionSqlHarnessTest {
               },
               "SELECT s.id,t.v,t.pos FROM src s,LATERAL TABLE(empty_row_lists(s.id,s.p)) AS"
                   + " t(v,pos)");
-      runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
-      assertTrue(
-          runs.nativeRun().fallbackReasons().stream()
-              .anyMatch(reason -> reason.contains("verified external Java conversions")),
-          runs::toString);
-      assertTrue(metrics.nativeOperators().isEmpty());
+      runs.assertSuccess(NativeFailureParity.Route.NATIVE);
+      RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeTableFunction");
     }
   }
 

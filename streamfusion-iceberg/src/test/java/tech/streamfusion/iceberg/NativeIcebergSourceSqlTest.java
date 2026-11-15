@@ -18,15 +18,15 @@ import org.apache.iceberg.data.IcebergGenerics;
 import org.apache.iceberg.hadoop.HadoopCatalog;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
 import tech.streamfusion.planner.NativePlanner;
 
 class NativeIcebergSourceSqlTest {
   @TempDir Path temp;
 
   @ParameterizedTest
-  @ValueSource(booleans = {false, true})
-  void continuousSqlKeepsDiscoveryFiltersProjectionAndFinalDrain(boolean nativeMode)
+  @CsvSource({"false,2", "true,2", "false,3", "true,3"})
+  void continuousSqlKeepsDiscoveryFiltersProjectionAndFinalDrain(boolean nativeMode, int version)
       throws Exception {
     var config =
         Configuration.fromMap(
@@ -47,11 +47,15 @@ class NativeIcebergSourceSqlTest {
             + "')");
     sql.executeSql("CREATE DATABASE ice.db");
     sql.executeSql(
-        "CREATE TABLE ice.db.input (id INT, payload STRING) WITH ('format-version'='2',"
+        "CREATE TABLE ice.db.input (id INT, payload STRING) WITH ('format-version'='"
+            + version
+            + "',"
             + " 'streaming'='true', 'monitor-interval'='10ms',"
             + " 'starting-strategy'='TABLE_SCAN_THEN_INCREMENTAL')");
     sql.executeSql(
-        "CREATE TABLE ice.db.output (id INT, payload STRING) WITH ('format-version'='2',"
+        "CREATE TABLE ice.db.output (id INT, payload STRING) WITH ('format-version'='"
+            + version
+            + "',"
             + " 'write.distribution-mode'='none')");
     try (var catalog =
         new HadoopCatalog(
@@ -60,6 +64,23 @@ class NativeIcebergSourceSqlTest {
       var input = catalog.loadTable(TableIdentifier.of("db", "input"));
       var output = catalog.loadTable(TableIdentifier.of("db", "output"));
       append(input, 0, 101);
+      if (version == 3) {
+        try (var tasks = input.newScan().planFiles()) {
+          var file = tasks.iterator().next().file();
+          var vectors =
+              new org.apache.iceberg.deletes.BaseDVFileWriter(
+                  org.apache.iceberg.io.OutputFileFactory.builderFor(input, 0, 0)
+                      .format(FileFormat.PUFFIN)
+                      .build(),
+                  ignored -> null);
+          try (vectors) {
+            vectors.delete(file.location(), 17, input.spec(), null);
+          }
+          var delta = input.newRowDelta();
+          vectors.result().deleteFiles().forEach(delta::addDeletes);
+          delta.commit();
+        }
+      }
       String query =
           "INSERT INTO ice.db.output SELECT id + 1, payload FROM ice.db.input WHERE id >= 13 AND"
               + " payload IS NOT NULL";
@@ -71,9 +92,9 @@ class NativeIcebergSourceSqlTest {
       var job = sql.executeSql(query).getJobClient().orElseThrow();
       boolean stopped = false;
       try {
-        awaitRows(output, 88);
+        awaitRows(output, version == 3 ? 87 : 88);
         append(input, 101, 104);
-        awaitRows(output, 91);
+        awaitRows(output, version == 3 ? 90 : 91);
         var savepoint =
             job.stopWithSavepoint(
                     true,
@@ -91,6 +112,7 @@ class NativeIcebergSourceSqlTest {
         }
         assertEquals(
             java.util.stream.IntStream.range(14, 105)
+                .filter(id -> version != 3 || id != 18)
                 .boxed()
                 .collect(java.util.stream.Collectors.toSet()),
             ids);

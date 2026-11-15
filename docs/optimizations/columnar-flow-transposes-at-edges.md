@@ -7,6 +7,32 @@ operators flow Arrow batches into one another and a row↔Arrow transpose is ins
 columnar operator meets a rowwise one. The conversion is paid once at the region's edge, never
 inside a chain.
 
+Hudi's MOR sink retains each incoming Arrow batch in Java and records per-bucket
+row positions in bitsets. Hudi's original bucket function performs key routing
+and buffer admission in arrival order, including mid-batch flushes. Shared batch
+references keep the original vectors alive across buckets. The log writer passes
+selected vectors to Rust's Parquet encoder. This removes a payload gather for
+bucket routing, a second admission pass and a separate native append buffer.
+The Java page pool still controls flush boundaries, with a serializer hook that
+reserves the stock row geometry while skipping payload writes. The Hudi connector
+page records complete-job measurements and the current memory constraints. The
+million-row read/Calc/upsert pipeline measures 1.58× over stock and 1.38× over the
+previous SF pipeline with its stock sink.
+
+The MOR source reuses Hudi's Java file-group merger over Arrow row references.
+Terminal projection runs once per output batch, and spilled controls serialize
+batch/row locations. A Rust Arrow interleave gathers selected payloads into output batches.
+Only generated key-delete metadata needs new Arrow values. This boundary permits
+the existing merger to choose winners and operation kinds while retaining
+columnar payloads through the source and downstream native operators.
+The original Hudi fetcher performs decoding and merging asynchronously while the
+mailbox emits bounded batches and records logical-row checkpoint progress. Base
+row cursors are reused until their batch positions are recorded, following the
+SDK's transient base-row contract. Log records retain stable Arrow row views.
+The million-row MOR-to-COW append pipeline measures 1.68× over stock and 1.06× over
+previous SF. Small jobs and continuous row-collector pipelines have overlapping
+ranges and retain their measured regressions on the connector page.
+
 The [Doris adapter](../connectors/doris.md) borrows the released client's shaded Arrow buffers
 through retained foreign allocations and emits Arrow IPC into its stock writer/committer.
 Its verified snapshot-to-insert pipeline removes both row transposes. The 2026-10-22 release
@@ -40,16 +66,15 @@ with its input/output conversions. Whole SQL jobs measured 1.20× with Parquet a
 including ingress, shuffle, writing and commit.
 
 Paimon's streaming source applies the same boundary in reverse: Java plans committed files and
-owns storage access, while native Parquet decoding emits Arrow directly for append files and
-primary-key changelog files. Admitted initial deduplication snapshots also merge in native code,
-using paimon-rust's loser tree and Arrow cursors. Other snapshot merges stay in Java and pay one
-row-to-Arrow conversion after the merge. The
-[source file-reader diagnostic](../connectors/paimon.md#source-file-reader-diagnostic) measured
-1.30× append and 2.18× changelog throughput against the stock reader, including the Java byte-range
-bridge and Arrow import. These numbers measure local file reads, not whole Flink jobs.
+owns storage access, while released paimon-rust 0.4.0 decodes append and primary-key changelog
+files into Arrow. Both Paimon adapters use the same FileIO/Arrow bridge. Admitted initial
+snapshots use upstream deduplication, first-row or basic partial updates; a columnar selection
+removes winning retracts while preserving the stored add kind. The copied loser tree and reducers
+are removed. Potential sequence ties and other unverified semantics retain Java and pay one
+row-to-Arrow conversion after merging.
 
-The [snapshot catch-up diagnostic](../connectors/paimon.md#snapshot-catch-up-diagnostic) measured
-1.61–2.58× throughput over the Java merge-to-Arrow path with integer keys on one, four and eight
-commits, and 1.68–2.08× with decimal, timestamp, binary and date keys on four commits. Both paths
-include storage reads, emit Arrow and checksum the same integer payload. Keeping one running winner per key and flushing retained
-output references by bytes avoids pinning all input versions during snapshot catch-up.
+The [released-reader comparison](../connectors/paimon.md#released-reader-migration-diagnostic)
+retains production file access, JNI, projection, decode and Arrow import. It compares canonical
+released Paimon and the previous StreamFusion implementation, including unfavorable cases.
+Public reader reuse reduces owned algorithms; it does not make every merge faster. In particular,
+upstream partial-update allocation is more expensive than the previous custom gathering loop.

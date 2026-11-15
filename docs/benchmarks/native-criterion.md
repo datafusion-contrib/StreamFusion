@@ -2850,3 +2850,13 @@ revisions and slower-case follow-up.
 Release smoke validation for this extension passed all 1,752 catalog fixtures,
 including 384 represented collection/cast profiles. This is fixture-validation
 evidence and supplies no timing or speedup result.
+
+### Format-owned encoder benchmark location
+
+The `kafka_sink` and `format_encode` diagnostics now live in the `streamfusion-integration-tests`
+package. Their codecs are the same production kernels owned by the JSON, CSV, raw, Avro and
+Protobuf packages; Kafka no longer links them into its DSO. Use
+`bin/bench-native.py --package streamfusion-integration-tests --bench format_encode` or the
+corresponding `--bench kafka_sink`. These kernel diagnostics still exclude the production
+per-format JNI crossings and Kafka broker work; earlier measurements are not a measurement of
+this module ownership refactor.

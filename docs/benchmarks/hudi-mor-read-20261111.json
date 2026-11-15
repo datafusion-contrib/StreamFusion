@@ -1,0 +1,605 @@
+{
+  "date": "2026-11-11",
+  "status": "Bounded and continuous MOR complete release pipelines qualify at one million rows against stock and previous SF. Small cases retain startup regressions. Continuous qualification uses the public SDK engine-record iterator and validates every operation kind. Earlier internal-tag timings remain historical diagnostics.",
+  "platform": "Apple M4 (10 cores), macOS 15.3.1, Temurin 17",
+  "libraries": "Release engine and Parquet; canonical Hudi 1.2.1 Flink 1.18 bundle",
+  "query": "INSERT INTO output SELECT id,name,ts FROM h",
+  "fixture": "Stock-written MOR Parquet base with 25% full-row event-time updates in Parquet logs; nullable VARCHAR and BIGINT ordering; immutable COW append target",
+  "resources": {
+    "parallelism": 1,
+    "heap_gib": 8,
+    "task_offheap_gib": 1,
+    "decoder_batch_rows": 4096,
+    "merge_budget_mib": 256
+  },
+  "warmups": 2,
+  "trials": 5,
+  "order": "Rotating stock/previous SF/native",
+  "previous_sf": "Stock Hudi MOR source followed by native COW append sink",
+  "native": "Java Hudi merging Arrow references over Rust Parquet decode, Arrow gather and native COW append sink",
+  "timer": "SQL execute through committed job completion, including planning/admission, Java storage I/O, JNI, merging, Parquet encoding and commits. Fixture writes, EXPLAIN and stock aggregate readback are outside timing.",
+  "validation": "Every trial verifies stock-read count, key sum, event-version sum and nullable name count. Native plan requires Java Hudi merger and native append sink without a payload transpose.",
+  "measurements": [
+    {
+      "rows": 200000,
+      "updates": 50000,
+      "phase": "Initial Java Arrow reader",
+      "qualification": "Correctness passed. Native remains slower than previous SF. Profiling and optimization pending.",
+      "trial_ms": {
+        "stock": [
+          759.49925,
+          710.953458,
+          705.583208,
+          673.299542,
+          681.906125
+        ],
+        "previous_sf": [
+          553.691875,
+          669.787917,
+          596.052541,
+          612.182458,
+          594.117375
+        ],
+        "native": [
+          612.063416,
+          627.781375,
+          636.614417,
+          676.320959,
+          670.687125
+        ]
+      },
+      "summary_ms": {
+        "stock": {
+          "median": 705.583208,
+          "min": 673.299542,
+          "max": 759.49925
+        },
+        "previous_sf": {
+          "median": 596.052541,
+          "min": 553.691875,
+          "max": 669.787917
+        },
+        "native": {
+          "median": 636.614417,
+          "min": 612.063416,
+          "max": 676.320959
+        }
+      },
+      "host": {
+        "exit_code": 0,
+        "samples": 61,
+        "external_build_processes": []
+      }
+    },
+    {
+      "rows": 1000000,
+      "updates": 250000,
+      "phase": "Initial Java Arrow reader",
+      "qualification": "Correctness passed. Native remains slower than previous SF. Profiling and optimization pending.",
+      "trial_ms": {
+        "stock": [
+          1540.765,
+          1773.91625,
+          1810.3445,
+          1800.860292,
+          1960.241708
+        ],
+        "previous_sf": [
+          1070.759,
+          1013.329625,
+          1120.760958,
+          1159.590417,
+          1482.965541
+        ],
+        "native": [
+          1211.402417,
+          1317.065584,
+          1262.389542,
+          1311.2355,
+          1204.200666
+        ]
+      },
+      "summary_ms": {
+        "stock": {
+          "median": 1800.860292,
+          "min": 1540.765,
+          "max": 1960.241708
+        },
+        "previous_sf": {
+          "median": 1120.760958,
+          "min": 1013.329625,
+          "max": 1482.965541
+        },
+        "native": {
+          "median": 1262.389542,
+          "min": 1204.200666,
+          "max": 1317.065584
+        }
+      },
+      "host": {
+        "exit_code": 0,
+        "samples": 154,
+        "external_build_processes": []
+      }
+    },
+    {
+      "rows": 1000000,
+      "updates": 250000,
+      "phase": "ProjectedRowData wrapper and hoisted selection function",
+      "qualification": "Correctness passed. Per-row projection wrappers remain slower than previous SF. Next change defers terminal projection to the Arrow batch gather.",
+      "trial_ms": {
+        "stock": [
+          1662.764292,
+          1969.176541,
+          2026.9165,
+          2178.946459,
+          2141.825291
+        ],
+        "previous_sf": [
+          1258.632417,
+          1198.356,
+          1427.687416,
+          1282.896875,
+          1424.768666
+        ],
+        "native": [
+          1303.684125,
+          1473.504083,
+          1517.795958,
+          1713.758959,
+          1556.079375
+        ]
+      },
+      "summary_ms": {
+        "stock": {
+          "median": 2026.9165,
+          "min": 1662.764292,
+          "max": 2178.946459
+        },
+        "previous_sf": {
+          "median": 1282.896875,
+          "min": 1198.356,
+          "max": 1427.687416
+        },
+        "native": {
+          "median": 1517.795958,
+          "min": 1303.684125,
+          "max": 1713.758959
+        }
+      },
+      "host": {
+        "exit_code": 0,
+        "samples": 170,
+        "external_build_processes": []
+      }
+    },
+    {
+      "rows": 1000000,
+      "updates": 250000,
+      "phase": "Terminal projection deferred to Arrow batch gathering",
+      "qualification": "Correctness passed. Native median remains 14.2% slower than previous SF. Next change reuses stock fetch-thread decoding/merging and logical-row offsets, with transient base cursors.",
+      "trial_ms": {
+        "stock": [
+          1538.488333,
+          1442.145791,
+          1566.281959,
+          1452.367542,
+          1492.751209
+        ],
+        "previous_sf": [
+          925.378417,
+          936.600709,
+          1030.924375,
+          942.76425,
+          1019.725834
+        ],
+        "native": [
+          1165.519167,
+          1032.06675,
+          1076.529542,
+          1068.344292,
+          1135.462334
+        ]
+      },
+      "summary_ms": {
+        "stock": {
+          "median": 1492.751209,
+          "min": 1442.145791,
+          "max": 1566.281959
+        },
+        "previous_sf": {
+          "median": 942.76425,
+          "min": 925.378417,
+          "max": 1030.924375
+        },
+        "native": {
+          "median": 1076.529542,
+          "min": 1032.06675,
+          "max": 1165.519167
+        }
+      },
+      "host": {
+        "exit_code": 0,
+        "samples": 169,
+        "external_build_processes": []
+      }
+    },
+    {
+      "rows": 1000000,
+      "updates": 250000,
+      "phase": "Original fetch-thread decoding/merging, logical-row offsets and transient base cursors",
+      "qualification": "Correctness and complete-job comparison passed versus stock and previous SF. All 21 warmup/trial outputs matched stock aggregate readback. Sampled host had no competing builds.",
+      "trial_ms": {
+        "stock": [
+          1631.913125,
+          1848.654208,
+          1811.815459,
+          1883.697458,
+          1789.649084
+        ],
+        "previous_sf": [
+          957.676625,
+          1094.629458,
+          1325.646584,
+          1137.40675,
+          1349.519292
+        ],
+        "native": [
+          1047.42825,
+          1078.449042,
+          1031.734333,
+          1077.033875,
+          1121.89175
+        ]
+      },
+      "summary_ms": {
+        "stock": {
+          "median": 1811.815459,
+          "min": 1631.913125,
+          "max": 1883.697458
+        },
+        "previous_sf": {
+          "median": 1137.40675,
+          "min": 957.676625,
+          "max": 1349.519292
+        },
+        "native": {
+          "median": 1077.033875,
+          "min": 1031.734333,
+          "max": 1121.89175
+        }
+      },
+      "host": {
+        "exit_code": 0,
+        "samples": 154,
+        "external_build_processes": []
+      }
+    },
+    {
+      "rows": 200000,
+      "updates": 50000,
+      "phase": "Original fetch-thread decoding/merging, logical-row offsets and transient base cursors",
+      "workload": "bounded MOR to COW append",
+      "qualification": "All 21 warmup/trial outputs verified. No competing builds sampled. Report small/overlapping differences and previous-SF regressions explicitly.",
+      "trial_ms": {
+        "stock": [
+          697.9435,
+          808.675125,
+          825.498792,
+          839.450333,
+          903.044708
+        ],
+        "previous_sf": [
+          649.669208,
+          622.582417,
+          702.748209,
+          630.5885,
+          778.323709
+        ],
+        "native": [
+          730.642417,
+          563.712167,
+          693.711792,
+          606.692083,
+          776.075375
+        ]
+      },
+      "summary_ms": {
+        "stock": {
+          "median": 825.498792,
+          "min": 697.9435,
+          "max": 903.044708
+        },
+        "previous_sf": {
+          "median": 649.669208,
+          "min": 622.582417,
+          "max": 778.323709
+        },
+        "native": {
+          "median": 693.711792,
+          "min": 563.712167,
+          "max": 776.075375
+        }
+      },
+      "host": {
+        "exit_code": 0,
+        "samples": 63,
+        "external_build_processes": []
+      }
+    },
+    {
+      "rows": 200000,
+      "updates": 50000,
+      "phase": "Original fetch-thread decoding/merging, logical-row offsets and transient base cursors",
+      "workload": "continuous Calc to row collector",
+      "qualification": "Historical data-only diagnostic before the base/log row-kind regression was exposed. Counts, values and deletes passed, but internal UPDATE_AFTER tags differed from the stock engine-record INSERT tags. Superseded by the public-engine-iterator measurements with complete kind checks.",
+      "trial_ms": {
+        "stock": [
+          1254.048625,
+          1302.465292,
+          1269.578875,
+          1239.659458,
+          1187.220541
+        ],
+        "previous_sf": [
+          1161.471833,
+          1147.809125,
+          1227.665666,
+          1410.049125,
+          1235.881083
+        ],
+        "native": [
+          1153.366375,
+          1187.714541,
+          1362.591208,
+          1254.419333,
+          1203.276166
+        ]
+      },
+      "summary_ms": {
+        "stock": {
+          "median": 1254.048625,
+          "min": 1187.220541,
+          "max": 1302.465292
+        },
+        "previous_sf": {
+          "median": 1227.665666,
+          "min": 1147.809125,
+          "max": 1410.049125
+        },
+        "native": {
+          "median": 1203.276166,
+          "min": 1153.366375,
+          "max": 1362.591208
+        }
+      },
+      "host": {
+        "exit_code": 0,
+        "samples": 47,
+        "external_build_processes": []
+      },
+      "deletes": 2000,
+      "query": "SELECT id+1,name,ts FROM h",
+      "previous_sf": "Stock Hudi source -> Row-to-Arrow -> native Calc -> Arrow-to-row -> collector",
+      "native": "Java Hudi merging Arrow references with Rust Parquet decode/gather -> native Calc -> Arrow-to-row -> collector",
+      "timer": "SQL execute through consumption of all rows from the completed initial commit range, including planning, admission, discovery, I/O, JNI, merge and final row conversion. Fixture writes, EXPLAIN, cancellation and task termination are outside timing.",
+      "validation": "Each trial checks key sum, version sum, non-null name count, name hash sum and exact delete count. Native plan requires Java Hudi and NativeCalc without a RowData-to-Arrow edge."
+    },
+    {
+      "rows": 1000000,
+      "updates": 250000,
+      "phase": "Original fetch-thread decoding/merging, logical-row offsets and transient base cursors",
+      "workload": "continuous Calc to row collector",
+      "qualification": "Historical data-only diagnostic before the base/log row-kind regression was exposed. Counts, values and deletes passed, but internal UPDATE_AFTER tags differed from the stock engine-record INSERT tags. Superseded by the public-engine-iterator measurements with complete kind checks.",
+      "trial_ms": {
+        "stock": [
+          4066.695542,
+          3971.291,
+          3967.016667,
+          4111.747916,
+          4173.719458
+        ],
+        "previous_sf": [
+          3873.697875,
+          3773.955917,
+          3951.049875,
+          4381.731625,
+          4011.466167
+        ],
+        "native": [
+          4098.106416,
+          3964.219209,
+          3733.753542,
+          3777.44875,
+          4143.207917
+        ]
+      },
+      "summary_ms": {
+        "stock": {
+          "median": 4066.695542,
+          "min": 3967.016667,
+          "max": 4173.719458
+        },
+        "previous_sf": {
+          "median": 3951.049875,
+          "min": 3773.955917,
+          "max": 4381.731625
+        },
+        "native": {
+          "median": 3964.219209,
+          "min": 3733.753542,
+          "max": 4143.207917
+        }
+      },
+      "host": {
+        "exit_code": 0,
+        "samples": 110,
+        "external_build_processes": []
+      },
+      "deletes": 10000,
+      "query": "SELECT id+1,name,ts FROM h",
+      "previous_sf": "Stock Hudi source -> Row-to-Arrow -> native Calc -> Arrow-to-row -> collector",
+      "native": "Java Hudi merging Arrow references with Rust Parquet decode/gather -> native Calc -> Arrow-to-row -> collector",
+      "timer": "SQL execute through consumption of all rows from the completed initial commit range, including planning, admission, discovery, I/O, JNI, merge and final row conversion. Fixture writes, EXPLAIN, cancellation and task termination are outside timing.",
+      "validation": "Each trial checks key sum, version sum, non-null name count, name hash sum and exact delete count. Native plan requires Java Hudi and NativeCalc without a RowData-to-Arrow edge."
+    },
+    {
+      "rows": 200000,
+      "updates": 50000,
+      "deletes": 2000,
+      "phase": "Public Hudi engine-record iterator with original source row kinds; fetch-thread Arrow decoding/merge/gather",
+      "workload": "continuous Calc to row collector",
+      "query": "SELECT id+1,name,ts FROM h",
+      "qualification": "All 21 warmup/trial outputs passed all data, delete and positive-operation-kind checks. Million-row median improves both baselines. Small-run regressions and overlapping ranges are retained.",
+      "validation": "Key sum, event-version sum, non-null name count, name hash, exact delete count and zero unexpected positive/retract kinds. Every non-delete is INSERT, matching released SDK Source V2. Native source/Calc plan and absence of a RowData-to-Arrow edge required.",
+      "trial_ms": {
+        "stock": [
+          1042.131958,
+          1024.354584,
+          993.84375,
+          1053.104292,
+          1023.671583
+        ],
+        "previous_sf": [
+          995.763291,
+          1100.208375,
+          1096.192084,
+          988.965208,
+          978.823833
+        ],
+        "native": [
+          1196.48825,
+          1122.436042,
+          1034.080334,
+          1066.519417,
+          1002.535209
+        ]
+      },
+      "summary_ms": {
+        "stock": {
+          "median": 1024.354584,
+          "min": 993.84375,
+          "max": 1053.104292
+        },
+        "previous_sf": {
+          "median": 995.763291,
+          "min": 978.823833,
+          "max": 1100.208375
+        },
+        "native": {
+          "median": 1066.519417,
+          "min": 1002.535209,
+          "max": 1196.48825
+        }
+      },
+      "host": {
+        "exit_code": 0,
+        "samples": 38,
+        "external_jvm_or_build_processes": [],
+        "background_system_peak_cpu": {
+          "mds_stores": 33.8,
+          "mediaanalysisd": 111.4
+        }
+      }
+    },
+    {
+      "rows": 1000000,
+      "updates": 250000,
+      "deletes": 10000,
+      "phase": "Public Hudi engine-record iterator with original source row kinds; fetch-thread Arrow decoding/merge/gather",
+      "workload": "continuous Calc to row collector",
+      "query": "SELECT id+1,name,ts FROM h",
+      "qualification": "All 21 warmup/trial outputs passed all data, delete and positive-operation-kind checks. Million-row median improves both baselines. Small-run regressions and overlapping ranges are retained.",
+      "validation": "Key sum, event-version sum, non-null name count, name hash, exact delete count and zero unexpected positive/retract kinds. Every non-delete is INSERT, matching released SDK Source V2. Native source/Calc plan and absence of a RowData-to-Arrow edge required.",
+      "trial_ms": {
+        "stock": [
+          3285.416917,
+          3174.416125,
+          3439.534042,
+          3333.109792,
+          3532.291792
+        ],
+        "previous_sf": [
+          3115.59725,
+          3098.897958,
+          3420.946875,
+          3746.090416,
+          3406.786042
+        ],
+        "native": [
+          3018.856,
+          3053.586625,
+          3200.648958,
+          3327.78625,
+          3403.165417
+        ]
+      },
+      "summary_ms": {
+        "stock": {
+          "median": 3333.109792,
+          "min": 3174.416125,
+          "max": 3532.291792
+        },
+        "previous_sf": {
+          "median": 3406.786042,
+          "min": 3098.897958,
+          "max": 3746.090416
+        },
+        "native": {
+          "median": 3200.648958,
+          "min": 3018.856,
+          "max": 3403.165417
+        }
+      },
+      "host": {
+        "exit_code": 0,
+        "samples": 88,
+        "external_jvm_or_build_processes": [],
+        "background_system_peak_cpu": {
+          "mds_stores": 63.0,
+          "mediaanalysisd": 118.3
+        }
+      }
+    }
+  ],
+  "profiling": {
+    "workload": "Continuous MOR source -> Calc -> row collector, 200k rows, 25% updates, 1% key-only deletes",
+    "qualification": "JFR profile diagnostic, excluded from uninstrumented timing claims",
+    "trial_ms": {
+      "stock": [
+        1302.725292,
+        1321.773875,
+        1371.899917,
+        1280.574375,
+        1199.108041
+      ],
+      "previous_sf": [
+        1180.224458,
+        1174.976959,
+        1276.418666,
+        1220.735292,
+        1158.133667
+      ],
+      "native": [
+        1205.364,
+        1197.310958,
+        1480.537167,
+        1266.642458,
+        1152.290709
+      ]
+    },
+    "host": {
+      "exit_code": 0,
+      "samples": 47,
+      "external_build_processes": []
+    },
+    "hudi_allocation_samples": 119,
+    "sampled_allocation_mib": {
+      "Cursor.project": 111.5,
+      "reader_row_views": 34.19,
+      "Cursor.constructor": 26.26,
+      "selection_mapping": 21.63
+    },
+    "finding": "Per-row projection builds new column arrays, field mappings and VectorizedColumnBatch wrappers. Reuse Flink ProjectedRowData with the existing schema mapping and full-batch vector wrappers. Hoist the output-source mapping lambda outside the row loop."
+  }
+}

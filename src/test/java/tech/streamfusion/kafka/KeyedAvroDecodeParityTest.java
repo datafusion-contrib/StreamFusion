@@ -64,7 +64,7 @@ import tech.streamfusion.format.NativeFormatOptions;
 import tech.streamfusion.format.avro.AvroFormatProvider;
 import tech.streamfusion.format.avroconfluent.AvroConfluentFormatProvider;
 import tech.streamfusion.operator.RowDataArrowConverter;
-import tech.streamfusion.planner.KeyedDecodeSpec;
+import tech.streamfusion.planner.stream.KeyedDecodeSpec;
 
 /**
  * Pins keyed tables with Avro keys to Flink's own Kafka record deserializer, record by record,

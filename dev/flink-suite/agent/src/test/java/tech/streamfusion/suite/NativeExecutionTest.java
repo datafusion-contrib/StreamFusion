@@ -31,6 +31,37 @@ class NativeExecutionTest {
   }
 
   @Test
+  void inheritedBatchMethodsKeepTheirConcreteJUnitIdentity() {
+    String base = "org.apache.flink.table.planner.runtime.batch.sql.agg.AggregateITCaseBase";
+    if (System.getProperty("streamfusion.flink-suite.flink-line", "2.2").equals("1.18")
+        && Boolean.getBoolean("streamfusion.flink-suite.native-rocksdb")) {
+      assertFalse(java.util.Arrays.asList(NativeExecution.testClasses()).contains(base));
+      assertEquals(0, NativeExecution.testMethods(base).length);
+      return;
+    }
+    assertTrue(java.util.Arrays.asList(NativeExecution.testClasses()).contains(base));
+    for (String fixture : java.util.List.of("HashAggITCase", "SortAggITCase")) {
+      String concrete = "org.apache.flink.table.planner.runtime.batch.sql.agg." + fixture;
+      for (String method :
+          java.util.List.of(
+              "testAggWithoutGroups", "testAggregationWithoutGroupby", "testCountStar")) {
+        assertTrue(java.util.Arrays.asList(NativeExecution.testMethods(base)).contains(method));
+        assertEquals(
+            concrete + "#" + method, NativeExecution.invocationTest(base, concrete, method));
+      }
+    }
+    assertEquals(
+        CALC,
+        NativeExecution.invocationTest(
+            CALC.split("#")[0], "UncontractedSubclass", "testLongProjectionList"));
+    org.junit.jupiter.api.Assertions.assertNull(
+        NativeExecution.invocationTest(base, "OtherFixture", "testCountStar"));
+    org.junit.jupiter.api.Assertions.assertNull(
+        NativeExecution.beginInvocation(base, "testCountStar", new Object()));
+    StreamFusionSuiteAgent.RequireNativeExecution.exit(null, null);
+  }
+
+  @Test
   void requiresWorkInsteadOfOpeningAnOperator() {
     NativeExecution.Scope scope = begin(CALC);
     NativeExecution.opened(new NativeCalcOperator());
@@ -192,6 +223,59 @@ class NativeExecutionTest {
     assertThrows(AssertionError.class, () -> NativeExecution.finish(unexpectedlyNative));
   }
 
+  @ParameterizedTest
+  @ValueSource(strings = {"legacy", "operator", "island"})
+  void plannerAdviceRecordsBothTypedScopesAndLegacyStringReasons(String mode) throws Exception {
+    Class<?> observed =
+        StreamFusionSuiteAgent.observePlanning(
+                new net.bytebuddy.ByteBuddy().redefine(FallbackPlanner.class))
+            .make()
+            .load(
+                FallbackPlanner.class.getClassLoader(),
+                net.bytebuddy.dynamic.loading.ClassLoadingStrategy.Default.CHILD_FIRST)
+            .getLoaded();
+    Object planner = observed.getConstructor().newInstance();
+    NativeExecution.Scope scope = begin(FALLBACK);
+    try {
+      observed
+          .getMethod("recordFallback", Object.class, int.class)
+          .invoke(planner, new Object(), 7);
+      if (mode.equals("legacy")) {
+        observed.getMethod("recordFallback", String.class).invoke(planner, FALLBACK_REASON);
+      } else {
+        observed
+            .getMethod(
+                mode.equals("operator") ? "recordFallback" : "recordIslandFallback",
+                Object.class,
+                String.class)
+            .invoke(planner, new Object(), FALLBACK_REASON);
+      }
+    } finally {
+      NativeExecution.finish(scope);
+    }
+    assertEquals(2, observed.getField("calls").getInt(planner));
+  }
+
+  public static class FallbackPlanner {
+    public int calls;
+
+    public void recordFallback(String reason) {
+      calls++;
+    }
+
+    public void recordFallback(Object node, String reason) {
+      calls++;
+    }
+
+    public void recordFallback(Object node, int unrelated) {
+      calls++;
+    }
+
+    public void recordIslandFallback(Object node, String reason) {
+      calls++;
+    }
+  }
+
   @Test
   void aChangedUpstreamFixtureFailsInsteadOfSkippingItsContract() {
     assertThrows(AssertionError.class, () -> NativeExecution.begin(WINDOW, new Object()));
@@ -293,6 +377,29 @@ class NativeExecutionTest {
     NativeExecution.finish(second);
   }
 
+  @Test
+  void overRequiresConsumedInputInItsOwnJvmFrame() {
+    class Fixture {
+      private final FakeScalaEnvironment env = new FakeScalaEnvironment(false);
+    }
+    for (String test :
+        java.util.List.of(
+            "org.apache.flink.table.planner.runtime.stream.table.OverAggregateITCase#testOverWindowWithConstant",
+            "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRangeOver",
+            "org.apache.flink.table.planner.runtime.stream.sql.OverAggregateITCase#testRowTimeUnBoundedPartitionedRowsOver")) {
+      var first = NativeExecution.begin(test, new Fixture());
+      Object group = new NativeColumnarJvmGroupOperator();
+      NativeExecution.opened(group);
+      NativeExecution.completed(group, 12);
+      assertThrows(AssertionError.class, () -> NativeExecution.finish(first));
+      var second = NativeExecution.begin(test, new Fixture());
+      Object over = new NativeColumnarJvmOverOperator();
+      NativeExecution.opened(over);
+      NativeExecution.completed(over, 12);
+      NativeExecution.finish(second);
+    }
+  }
+
   public static final class FakeJavaEnvironment {
     private final boolean enabled;
 
@@ -310,6 +417,8 @@ class NativeExecutionTest {
   private static class NativeColumnarGroupAggregateOperator {}
 
   private static class NativeColumnarJvmGroupOperator {}
+
+  private static class NativeColumnarJvmOverOperator {}
 
   private static class NativeColumnarTopNOperator {}
 

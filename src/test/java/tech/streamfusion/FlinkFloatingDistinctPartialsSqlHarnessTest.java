@@ -62,7 +62,14 @@ class FlinkFloatingDistinctPartialsSqlHarnessTest {
               "SELECT SUM(DISTINCT d), AVG(DISTINCT d), SUM(DISTINCT f), AVG(DISTINCT f), "
                   + "COUNT(DISTINCT d), COUNT(*) FROM special"
                   + (empty ? " WHERE k < 0" : ""));
-      comparison.assertSuccess(NativeFailureParity.Route.NATIVE);
+      assertNull(comparison.host().failure(), comparison::toString);
+      assertNull(comparison.nativeRun().failure(), comparison::toString);
+      assertEquals(NativeFailureParity.Route.NATIVE, comparison.nativeRun().route());
+      // Independent processing-time flushes may expose different valid intermediate updates.
+      assertEquals(
+          globalResult(comparison.host().rows()),
+          globalResult(comparison.nativeRun().rows()),
+          comparison::toString);
       assertEquals(comparison.host().resultTypes(), comparison.nativeRun().resultTypes());
       if (!empty) {
         RecoveryExecutionMetrics.assertConsumed(
@@ -71,6 +78,28 @@ class FlinkFloatingDistinctPartialsSqlHarnessTest {
             metrics.nativeOperators(), "NativeColumnarGroupAggregate");
       }
     }
+  }
+
+  private static java.util.List<Object> globalResult(java.util.List<java.util.List<Object>> changes) {
+    java.util.List<Object> current = null;
+    for (var change : changes) {
+      var fields = change.subList(1, change.size());
+      switch (change.get(0).toString()) {
+        case "+I":
+        case "+U":
+          assertNull(current, "A global aggregate must retract its previous result first");
+          current = fields;
+          break;
+        case "-U":
+        case "-D":
+          assertEquals(current, fields, "A retraction must match the current global result");
+          current = null;
+          break;
+        default:
+          throw new AssertionError("Unknown RowKind: " + change);
+      }
+    }
+    return current;
   }
 
   @ParameterizedTest

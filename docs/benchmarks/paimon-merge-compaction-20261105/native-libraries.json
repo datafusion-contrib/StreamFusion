@@ -1,0 +1,6 @@
+{
+  "libstreamfusion_parquet.dylib": "fcecccccf5deced5237bbcfbd815347342ea58f1de35d65f76ca93b590ceaef5",
+  "libstreamfusion_paimon.dylib": "5695dc8d6286b22a7db4f4bdcf4d33044dad43f9d196b24e9699ccab9c647ac1",
+  "libstreamfusion.dylib": "1abc22d6bb882ea752e8644c2f312d5f18d9357adf69f651c113e7bcd870bf4d",
+  "libstreamfusion_orc.dylib": "6877079b3b3027efc9e2cd25462d7259742d51959643a8b09d9f55bd44d7d18b"
+}

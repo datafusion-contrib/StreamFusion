@@ -1,6 +1,6 @@
 # Host-exact builtins and verified Rust replacements
 
-**Applies to:** integral ABS, REGEXP_EXTRACT, UPPER/LOWER, temporal parsing/formatting/arithmetic/casts, DOUBLE TRUNCATE
+**Applies to:** exact ABS, REGEXP_EXTRACT, UPPER/LOWER, temporal parsing/formatting/arithmetic/casts, DOUBLE TRUNCATE
 
 ## Removing the callback for integral ABS
 
@@ -17,6 +17,24 @@ RowData, the preceding production JVM callback, and the compiled Rust Calc. Defa
 over the old callback but remain slower than stock; the generic Calc still constructs input
 projections and output batches per call. This optimization replaces an existing native-Calc
 computation; the small-batch and complete-job results do not establish universal acceleration.
+
+## DECIMAL ABS without a JVM evaluator
+
+Verified decimal ABS now extends the same scalar/array dispatch. Following Comet's decimal
+ABS structure, Arrow transforms the unscaled i128 values and retains the input decimal
+precision and scale explicitly. Every legal Flink DECIMAL value has a representable absolute
+value; no double conversion, rescale, or per-row DecimalData/BigDecimal construction is needed.
+The values buffer is new, validity remains shared, and the input is untouched.
+
+Released Flink 1.18.1 and 2.2.1 preserve the operand's decimal metadata in both compact and
+noncompact ABS. Admission therefore starts from direct inputs/literals, nested admitted ABS,
+and precision widening without a scale change. Other producers keep their complete generated
+expression. Decimal rounding metadata guards remain in force. This changes computation inside
+an existing native Calc, without a new switch, expression opcode, JNI contract or operator.
+See [release measurements and limitations](../benchmarks/scalar-functions.md#decimal-abs).
+The current previous-version control uses main's scalar generated callback and both decimal
+marshalling boundaries. It supersedes the earlier whole-row callback control, whose conversion
+costs differed from the emitted single-expression plan.
 
 ## Existing host-exact paths
 
@@ -55,11 +73,30 @@ per-row result adaptation. It does not change the native operator boundary or JN
 
 The matcher extracts only direct inputs/literals, lossless widening and nested admitted
 negation. Other producers stay in one generated expression so extracting their negation does
-not expose a different arithmetic overflow or division failure. DECIMAL remains generated.
+not expose a different arithmetic overflow or division failure. Verified DECIMAL producers
+use the separate exact path below; other DECIMAL producers remain generated.
 The [release controls](../benchmarks/scalar-functions.md#integral-unary-minus) compare stock,
 previous callback and candidate at equal prepared-input boundaries and separately measure the
 complete job. Small batches still pay generic Calc setup/materialization costs; native coverage
 does not imply a standalone speedup.
+
+## DECIMAL unary minus without a JVM evaluator
+
+Arrow's numeric negation kernel already preserves DECIMAL precision, scale and sliced
+validity, following the decimal branch of Comet's negative expression. The verified Flink
+domain (precision at most 38) fits both signs in i128, so it needs no floating conversion,
+rounding or BigDecimal allocation. Direct scalar dispatch also retains the decimal type
+without broadcasting a literal to an array.
+
+The planner shares the bounded decimal producer matcher with ABS, while admitting only
+same-function nesting for each operation. Direct columns/literals and precision widening
+at the same scale are verified; arithmetic, rescaling, narrowing and mixed unary producers
+keep one generated expression. Existing decimal-rounding metadata guards run first.
+This extends an existing expression kernel and introduces no opcode or configuration switch.
+The [release controls](../benchmarks/scalar-functions.md#decimal-unary-minus) retain both
+stock and preceding-callback measurements and the separate complete row-source job.
+The preceding prepared control uses the scalar callback emitted by main, rather than a
+whole-row evaluator; both decimal argument and result conversions remain timed.
 
 ## Canonical timestamp TRY_CAST
 
@@ -699,10 +736,32 @@ signum, so integer return types and signed minima follow released Flink's Intege
 rather than a floating coercion. Existing FLOAT/DOUBLE signed-zero and NaN handling is retained.
 Direct narrow-integer SIGN keeps Flink's compilation failure. Unverified producers keep their
 generated SIGN program instead of exposing different arithmetic/overflow behavior by moving
-just the outer call into Rust. DECIMAL SIGN remains generated.
+just the outer call into Rust. DECIMAL SIGN has the separate verified replacement below.
 
 Release stock/previous/native controls, allocation diagnostics and complete-job limits are
 reported in [Integral SIGN](../benchmarks/scalar-functions.md#integral-sign).
+
+## Verified DECIMAL SIGN replacement
+
+DECIMAL SIGN operates directly on unscaled Arrow Decimal128 values. Ordinary `p > s`
+arrays use one typed unary pass, multiply the sign by `10^s` and share input validity;
+scalar arguments avoid materializing arrays. Noncompact `DECIMAL(p,p)` needs an additional
+validity rule: Flink's `fromBigDecimal` rejects nonzero +/-1 at the declared precision,
+so the kernel emits NULL for those inputs and retains scaled zero. Both paths preserve
+precision and scale, including sliced, empty and all-NULL arrays.
+
+Comet's typed unary signum supplies the array/scalar structure, but its floating Spark
+semantics do not define Flink decimal behavior. Arroyo uses DataFusion's default functions.
+The decimal value and metadata rules instead follow the released Flink `DecimalDataUtils.sign`
+implementation, verified independently on both supported lines. No JNI ownership change is
+needed. Admission is limited to direct/literal inputs, same-scale lossless widening and
+nested verified SIGN calls. Compact `DECIMAL(p,p)` remains generated because Flink can retain
+an out-of-precision value there; changing its intermediate boundary would break consumers.
+Arithmetic, rescaling and narrowing remain generated with their enclosing function.
+
+The [DECIMAL SIGN measurements](../benchmarks/scalar-functions.md#decimal-sign) compare stock,
+the actual preceding scalar callback and the typed kernel, and retain both transposes for
+the separate complete-job diagnostic.
 
 ## Integer FLOOR and CEIL without rounding kernels
 
@@ -739,8 +798,9 @@ remain explicit; the common operand path introduces no separate rounding loop to
 Single-argument integer ROUND uses this same shared-operand production path. Released
 Flink rounds through BigDecimal but retains every integer exactly at its default zero
 scale. The native admission covers direct inputs, typed literals, recursive lossless
-widening and nested admitted FLOOR/CEIL/ROUND; explicit scales and unverified producers
-keep the complete generated expression. No new kernel, opcode or option is needed.
+widening and nested admitted FLOOR/CEIL/ROUND. The separate literal-position kernel below
+handles verified explicit positions; unverified producers/positions keep the complete
+generated expression. The single-argument identity needs no new kernel, opcode or option.
 Independent release controls on Flink 1.18.1 and 2.2.1 improve 6.30-29.46x over stock and
 52.14-169.98x over the preceding callback at 1,024 rows. Sixteen-row controls still lose
 to stock. The complete 1M-row stock/previous/native medians are
@@ -752,11 +812,84 @@ retain all measured variability and common Calc/perimeter limits.
 Single-argument INT/BIGINT TRUNCATE also reuses the verified operand. At its default
 zero scale, released Flink's DECIMAL(38,18) conversion/truncation returns the same integer
 for every admitted value. Skipping that work preserves NULLs, widths and signed minima.
-TINYINT/SMALLINT keep stock's compilation failure unless explicitly widened. Explicit
-scales and unverified producers keep generated evaluation; DECIMAL and floating paths
-are unchanged. On both released lines, 1,024-row prepared controls improve 64.21-321.56x
+TINYINT/SMALLINT keep stock's compilation failure unless explicitly widened. The separate
+literal-position kernel handles verified explicit positions; unverified producers/positions
+keep generated evaluation. DECIMAL and floating paths are unchanged. On both released lines,
+1,024-row prepared controls improve 64.21-321.56x
 over stock and 126.71-468.70x over the preceding callback; 16-row controls also win.
 The 1M-row stock/previous/native medians are 0.188721/0.261994/0.132958 seconds with
 both transposes. These measurements apply to the recorded workload, not every job.
 [Full TRUNCATE measurements](../benchmarks/scalar-functions.md#single-argument-integer-truncate)
 retain variability, consumed-work checks and complete-job boundaries.
+
+## Integer ROUND at literal positions
+
+Verified integer ROUND with a literal INT position in -38..38 uses an Arrow primitive
+kernel instead of the emitted scalar JVM callback. For negative positions it computes
+the remainder at the native width, truncates it and applies HALF_UP with wrapping
+arithmetic. When the power of ten exceeds that width, widened comparisons select zero
+or the wrapped positive/negative power. This follows Comet's native/widened split while
+preserving Flink's byte/short/int/long narrowing contract. No floating-point conversion
+or per-element BigDecimal is involved. Nonnegative positions share the input; a NULL
+position produces typed NULLs. Runtime/extreme positions and unverified producers retain
+the complete generated expression, including host exceptions.
+
+On both released Flink lines, 1,024-row release controls improve 6.43-41.38x over stock
+and 23.18-83.80x over the actual previous scalar callback. The 16-row controls still lose
+to stock (0.29-0.40x), while improving 19.93-23.71x over the callback. A native-only sample
+identifies scalar-function argument/result setup and destruction, Arrow allocation,
+Calc projection and checksum consumption as remaining small-batch costs. Overlapping
+sample frames are diagnostic, not independent CPU percentages; this does not establish
+a universal small-batch gain.
+
+The separate 1M-row job retains both transposes: stock/previous/candidate medians are
+0.143764/0.164713/0.139733 seconds. Ranges overlap; the short job does not establish
+sustained complete-job acceleration. The [full measurements and allocation probes](../benchmarks/scalar-functions.md#integer-round-with-a-literal-position)
+retain every trial and the slower controls. Generic Calc/perimeter work remains in
+[#491](https://github.com/datafusion-contrib/StreamFusion/issues/491).
+
+## Integer TRUNCATE at literal positions
+
+INT/BIGINT TRUNCATE shares ROUND's typed Arrow input/validity handling but uses a separate
+registered kernel mode: subtract the remainder toward zero, with no HALF_UP adjustment.
+When the power exceeds the input width every value truncates to zero; nonnegative
+positions share the input. This eliminates Flink's DECIMAL(38,18) intermediate while
+preserving widths and exact BIGINT values. The whitelist remains literal INT positions
+-38..38 or typed NULL and verified producers; runtime/extreme positions and stock-rejected
+narrow signatures retain their released execution contract. No configuration switch is added.
+
+On both Flink lines, recorded 1,024-row release controls improve 25.86-86.72x over stock
+and 51.59-113.30x over the actual previous scalar callback. Sixteen-row controls also win
+1.83-2.77x over stock and 20.49-25.94x over main. The 1M-row complete job retains both
+transposes: stock/main/candidate medians are 0.210510/0.215636/0.131336 seconds, a 1.60x
+stock improvement on this recorded workload. Short-job startup/JIT and remaining Calc
+costs are included; these numbers do not imply a gain for all jobs. The
+[full measurements](../benchmarks/scalar-functions.md#integer-truncate-with-a-literal-position)
+retain all trials, checksums, allocation probes, routes and applicability limits.
+
+## Batch masks for bounded epoch precision
+
+Verified runtime integer TO_TIMESTAMP_LTZ precision CASE trees execute in one batch kernel,
+avoiding partitioning and merging Struct timestamp branches or building a precision column
+for scalar leaves. The kernel uses the same packed remaining/selected-mask structure as
+Comet's infallible CASE path: exclude NULL predicates, remove rows after the first match,
+and combine selected branch masks. Eager argument evaluation is admitted only after proving
+the epoch producer and all conditions/branches total and free of state changes.
+
+For scalar 0/3/NULL leaves, validity combines original-unit bounds and CASE masks before
+scaling selected seconds. Millisecond-only selection shares immutable input values, including
+sliced arrays. Timestamp validity belongs to the parent; non-null component arrays borrow
+or own their buffers through Arrow reference counts. Nested precision CASE branches reuse
+the existing total integer selector. No JNI ownership or wire contract changes.
+
+The [runtime precision measurements](../benchmarks/scalar-functions.md#runtime-integer-epoch-precision)
+retain the slower timestamp-CASE, materialized-precision and row-selection implementations,
+CPU profiles, final prepared stock/actual-previous/native matrix and conversion-inclusive
+jobs. Tiny batches and unfavorable complete-job measurements remain explicit; native
+execution does not imply a speedup at those boundaries. Unproven signatures retain Flink.
+
+All 64 release prepared bulk controls improve 1.145-4.399x over stock and 6.227-38.014x
+over the actual preceding encoder. All 16 tiny controls lose to stock. The eight complete
+million-row configurations retain JNI and both transposes: native/stock elapsed is
+1.006-1.128, native/previous 0.803-0.865. The bulk function result does not establish a
+complete-job stock speedup.

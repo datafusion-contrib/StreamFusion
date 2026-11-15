@@ -1,0 +1,487 @@
+{
+  "date": "2026-11-09",
+  "scope": "Unchanged released Flink batch SQL MiscITCase methods. Positive native sort rows or exact supported fallback; all job graphs retain BATCH scheduling.",
+  "upstream": [
+    {
+      "flinkLine": "2.2",
+      "test": "testNullOrdering()",
+      "junitStatus": "SUCCESSFUL",
+      "nativeWork": {
+        "NativeBatchSortOperator": 18
+      },
+      "fallbackReasons": [],
+      "jobs": [
+        {
+          "id": "57409c9be064f1bc97578d2f13eff2c8",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 3
+          }
+        },
+        {
+          "id": "182dca1051757f900fca52e39ba732e6",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 3
+          }
+        },
+        {
+          "id": "9c90167bd192f00c3e1841ca2a699042",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 3
+          }
+        },
+        {
+          "id": "323646106f8ad4746a83b71c6783e284",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 3
+          }
+        },
+        {
+          "id": "02e34786dfdbe4fd15a87287d515c19b",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 3
+          }
+        },
+        {
+          "id": "cc90c46f9e4a8f61ddfc6f38e64f7c0b",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 3
+          }
+        }
+      ],
+      "operatorClasses": [
+        "SourceConversion$generated",
+        "org.apache.flink.streaming.api.operators.StreamSource",
+        "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+        "tech.streamfusion.operator.ArrowToRowDataOperator",
+        "tech.streamfusion.operator.NativeBatchSortOperator",
+        "tech.streamfusion.operator.RowDataToArrowOperator"
+      ]
+    },
+    {
+      "flinkLine": "2.2",
+      "test": "testNullOrderingOnMultiColumn()",
+      "junitStatus": "SUCCESSFUL",
+      "nativeWork": {},
+      "fallbackReasons": [
+        "batch sort: only signed integer keys are verified"
+      ],
+      "jobs": [
+        {
+          "id": "0de9d3e46510793dabf7696b7d1d33e0",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "eb168304d9ab17240307c49b7c9838b8",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "b28f3156981820fc244a1dbf79b2e90d",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "e6544b977b1981ed8ec04c313cd3cfad",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "93caeabaee72de912d26f024aa216f19",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "eeebf6daffc94f200cdd1de76f3e036e",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "0b842bb42c6391254b045f50baae5086",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "58337d2437aaccf8f81fcc5493c292bf",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "0fe7b5de741615c1715f1d3735db22ca",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "c3eae6c171fc2db477f81679079b90b0",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "750875f818078e97d5277cddc8764ddb",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "1b536866eba9497dc127a3ae097cba6d",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "99ddfe9d94cbaa2921af1d9f31943a48",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "d7e4ee2598d6f2e9699e964c58795985",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {}
+        }
+      ],
+      "operatorClasses": [
+        "SourceConversion$generated",
+        "org.apache.flink.streaming.api.operators.StreamSource",
+        "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+        "org.apache.flink.table.runtime.operators.sort.SortOperator"
+      ]
+    },
+    {
+      "flinkLine": "2.2",
+      "test": "testGlobalSorting()",
+      "junitStatus": "SUCCESSFUL",
+      "nativeWork": {
+        "NativeBatchSortOperator": 24
+      },
+      "fallbackReasons": [],
+      "jobs": [
+        {
+          "id": "ae45cc2cc5234990a509241e7ead5dda",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 6
+          }
+        },
+        {
+          "id": "771149f5308d4a40ff349b750b59d907",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 6
+          }
+        },
+        {
+          "id": "8d4fa8f9ef12a76373538d758cd54545",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 6
+          }
+        },
+        {
+          "id": "f69921eb38d67ed82eeb7db0f19ffd19",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 6
+          }
+        }
+      ],
+      "operatorClasses": [
+        "SourceConversion$generated",
+        "org.apache.flink.streaming.api.operators.StreamSource",
+        "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+        "tech.streamfusion.operator.ArrowToRowDataOperator",
+        "tech.streamfusion.operator.NativeBatchSortOperator",
+        "tech.streamfusion.operator.RowDataToArrowOperator"
+      ]
+    },
+    {
+      "flinkLine": "1.18",
+      "test": "testNullOrderingOnMultiColumn()",
+      "junitStatus": "SUCCESSFUL",
+      "nativeWork": {},
+      "fallbackReasons": [
+        "batch sort: only signed integer keys are verified"
+      ],
+      "jobs": [
+        {
+          "id": "d6e385e7ed6473dbc19ad903ad7a15b5",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "97a60ec782968c35f93192b1854fa2af",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "5e3bcd3bbe3f7b985b5063bb17a2336d",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "00a99eab7975cc7a0e6ba4c93e72b64d",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "eff880c4ed2db196df03bea63076bdc4",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "21122475151acfcd0b5af854e71736de",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "0b24db178b48f54c0535c96324baef05",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "677271edf349c1ee0dc56477a8948d05",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "cfe9cfceff3c84e2f6526e33fb04e14e",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "8c9b69210780d38ffd081436853fb17a",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "023cde0848d39db5289df8800b826311",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "47c856dc9929c2d71bd1a4f9ba11298a",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "851072e2bb126cd7bae67b527d989b93",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "4a21dd372706b3e13dfd550d76bed394",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {}
+        }
+      ],
+      "operatorClasses": [
+        "SourceConversion$generated",
+        "org.apache.flink.streaming.api.operators.StreamSource",
+        "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+        "org.apache.flink.table.runtime.operators.sort.SortOperator"
+      ]
+    },
+    {
+      "flinkLine": "1.18",
+      "test": "testNullOrdering()",
+      "junitStatus": "SUCCESSFUL",
+      "nativeWork": {
+        "NativeBatchSortOperator": 18
+      },
+      "fallbackReasons": [],
+      "jobs": [
+        {
+          "id": "57dc91fbb901fc3e6df53999098e234b",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 3
+          }
+        },
+        {
+          "id": "3a4e012dff2e8944b8a2b21060d212cb",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 3
+          }
+        },
+        {
+          "id": "d5f38e80e691c4f282ba202e8237ad41",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 3
+          }
+        },
+        {
+          "id": "4250b3f4e65ed01a694c1694f7a91f92",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 3
+          }
+        },
+        {
+          "id": "086f420ab36dd9aa75fba4fb79887050",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 3
+          }
+        },
+        {
+          "id": "4b4c383863fc800eaf97a7c8f1e559c2",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 3
+          }
+        }
+      ],
+      "operatorClasses": [
+        "SourceConversion$generated",
+        "org.apache.flink.streaming.api.operators.StreamSource",
+        "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+        "tech.streamfusion.operator.ArrowToRowDataOperator",
+        "tech.streamfusion.operator.NativeBatchSortOperator",
+        "tech.streamfusion.operator.RowDataToArrowOperator"
+      ]
+    },
+    {
+      "flinkLine": "1.18",
+      "test": "testGlobalSorting()",
+      "junitStatus": "SUCCESSFUL",
+      "nativeWork": {
+        "NativeBatchSortOperator": 24
+      },
+      "fallbackReasons": [],
+      "jobs": [
+        {
+          "id": "2ca9ef9aa577b7d73d7953e83ccf4b1f",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 6
+          }
+        },
+        {
+          "id": "0a7cabeba6e0bb9cc23532d8829ab51b",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 6
+          }
+        },
+        {
+          "id": "965ae6b6631dc91f1f1a030517e205a6",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 6
+          }
+        },
+        {
+          "id": "ac42e8c7a9eaafb35ebb3055433ff6f2",
+          "status": "SUCCEEDED",
+          "jobType": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 6
+          }
+        }
+      ],
+      "operatorClasses": [
+        "SourceConversion$generated",
+        "org.apache.flink.streaming.api.operators.StreamSource",
+        "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+        "tech.streamfusion.operator.ArrowToRowDataOperator",
+        "tech.streamfusion.operator.NativeBatchSortOperator",
+        "tech.streamfusion.operator.RowDataToArrowOperator"
+      ]
+    }
+  ],
+  "localControls": {
+    "nativeBoundedTests": 42,
+    "sortAndMemoryTestsPerLine": 20,
+    "packagedLoaderSortTestsPerLine": 1,
+    "replay": {
+      "rows": 2051,
+      "rowToArrowProducerAttempts": [
+        0
+      ],
+      "nativeSortAttempts": [
+        0,
+        1
+      ],
+      "arrowToRowExitAttempts": [
+        0,
+        1
+      ]
+    },
+    "spill": {
+      "rows": 262144,
+      "taskPoolBytes": 2097152,
+      "preEofFiles": true,
+      "positiveDataFusionSpillCountAndBytes": true
+    },
+    "memoryOwnership": [
+      "Borrowed input releases Arrow Java allocations during ingest",
+      "One reusable input workspace",
+      "Compact sliced UTF8/binary copies",
+      "Imported output survives producer close with only Arrow Java charge",
+      "Cancellation and failure release task pool and spill files"
+    ],
+    "sqlSortCasesPerLine": 5,
+    "regressionTestCasesPerLine": 55,
+    "regressionSelection": "13 planner, 6 stateless batch SQL, 5 sort SQL, 16 transpose, 8 bounded sorter, 7 task-memory",
+    "nullablePayload": "UTF8 and DECIMAL payloads with TINYINT/SMALLINT/INTEGER/BIGINT keys, stock/native ordered parity and positive native work on both lines"
+  },
+  "fingerprints": {
+    "native/engine/src/bounded_sort.rs": "275f995980641cef236d0a5c542bc96e78d07fc25b4fa89a549d13a9cc626c62",
+    "native/engine/src/bounded_exec.rs": "c224cfa4c71a1fb98801e9500ccecd184034c385eab2702459cebcb1ddcbbfaf",
+    "native/engine/src/memory.rs": "e86d8d3bad07f1445d48499d121467ddcdd205c109c463220c73b5ce957116aa",
+    "src/main/java/tech/streamfusion/operator/NativeBatchSortOperator.java": "80a764906defbbebf2be802fd4daf7b3aee1cb5e424cd2c57ee66ee053b6c941",
+    "src/main/java/tech/streamfusion/planner/BatchPlanScan.java": "7689a82f6383a66dd51c1649b41e6c7fbd54cad49528a6a3b8da1735f92c4c44"
+  }
+}

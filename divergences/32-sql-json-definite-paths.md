@@ -24,6 +24,29 @@ at operator boundaries remains; JSON_QUERY now participates in that gate too. JS
 connector serialization is unaffected. See the [coverage page](../docs/operators/calc-filter.md#sqljson-evaluation)
 and [measurements](../docs/benchmarks/scalar-functions.md).
 
+## ARRAY/ROW JSON serialization
+
+Comet's `native/spark-expr/src/json_funcs/to_json.rs` prepares struct metadata outside its
+row loop and produces an Arrow string array. StreamFusion follows that preparation pattern,
+but uses Flink's JSON serializer contract: retain NULL fields/elements, sort ROW names by
+Java UTF-16 order on both released lines, escape all JSON controls, and preserve the admitted
+decimal provider's rendering. Spark's null omission, cast formatting and escaping are not
+reused. The released Flink `JsonGenerateUtils` and `SqlJsonUtils.serializeJson` supply the
+semantic reference; 1.18 also sorts its final object despite constructing a schema-ordered tree.
+
+A recursive borrowed-column writer uses original list offsets, struct slices and validity
+buffers. It pre-escapes keys and ignores the internal nested-row-kind sidecar. Existing scalar
+formatters write directly into one Arrow string builder; no per-row DOM or JVM JSON callback
+is needed. The initial scope is final projections of direct ARRAY/ROW fields with nullable
+children and verified leaves. The planner retains computed/intermediate forms and unchecked
+nonnullable getters on Flink, including 1.18 DECIMAL normalization. Existing representation
+gates remain in force; this does not certify arbitrary UTF-8 replacements as Java string identities.
+Serialization itself materializes Flink strings: a cold ARRAY containing a supplementary character
+and U+E000 chooses a different ARRAY_MAX after JSON_STRING has decoded both leaves. Mixed readers
+and representation-sensitive outputs therefore retain whole-Calc generated evaluation. Regression
+tests compare both projection orders and Generic/Binary inputs; standalone final serializers do
+not acquire a JVM evaluator for this restriction.
+
 ## Retained native expression implementation
 
 Comet's `native/spark-expr/src/string_funcs/get_json_object.rs` separates scalar paths from
@@ -31,7 +54,7 @@ column inputs and streams through each document instead of building a DOM on its
 path. StreamFusion follows that structure: the path and policies remain scalar, a
 path is parsed once per batch, and unescaped selected strings borrow their input span until
 appended to the Arrow result. Every field is validated, including fields outside the selected
-path. JSON_VALUE, JSON_EXISTS and IS JSON share this parser under the scalar-function registry.
+path. JSON_VALUE, JSON_QUERY, JSON_EXISTS and IS JSON share this parser under the scalar-function registry.
 
 Signed array indexes follow Flink's released Jayway evaluator: negative indexes add the array
 length, and negative zero is zero. The streaming path counts a negatively indexed array using
@@ -84,6 +107,52 @@ Unicode age, and supplementary code points are tested as UTF-16 surrogate units,
 Jackson. This avoids treating a newly assigned character as a token suffix on an older JDK.
 Unmapped JDK versions are declined rather than silently using the build machine's rules.
 
+## Definite JSON_QUERY serialization
+
+Comet's `get_json_object` and `json_funcs/to_json.rs` provide the streaming-selection and
+Arrow-output references. Their Spark behavior cannot supply Flink's wrappers, path policies,
+member order or numeric spelling. Definite JSON_QUERY therefore validates with the shared
+reader and serializes only the selected subtree.
+Unlike scalar JSON_VALUE/JSON_EXISTS selection, JSON_QUERY must expose the container's actual
+members. Returning the source span directly would retain whitespace, replaced duplicate keys
+and original number spelling that Flink removes.
+
+The released 1.18 provider keeps insertion order, with the first insertion position surviving
+a duplicate-key replacement. Released 2.2 sorts by Java UTF-16 key order. Both retain the last
+value for an equal key, distinguish isolated surrogate keys from `?`, and render numbers under
+their existing Double/BigDecimal profiles. Original string caches remain represented through
+selection and member ordering. The final VARCHAR projection alone replaces isolated surrogates
+at its UTF-8 output boundary; intermediate consumers stay generated. The selected tree uses
+one flat arena with child/sibling indexes. Ordinary keys borrow the input; only escaped keys
+allocate decoded UTF-16. Objects group equal names with stable sorting, then retain the first
+position and last value under the released ordering profile. Single-member objects avoid that
+sort. This removes per-container child vectors, legacy deduplication hash tables and recursive
+destruction. Parsing/writing retain the existing stack-growth mechanism. Wide documents inside
+the existing SIMD compatibility gate serialize directly from its recycled tape, avoiding a
+second parse and tree construction. That gate requires fewer than 50,000 input bytes, at most
+1,000 tape nodes, no Unicode escape spelling and integer numbers alongside strings/booleans/nulls.
+Floating-point nodes, surrogate escapes and other Jackson edges retain the exact scalar
+reader and selected arena. Both writers apply the same released member-order and duplicate
+rules; input buffers, tape storage and output remain under existing batch ownership.
+
+On 2.2, column-order evaluation of multiple readers can change successful values near the
+released provider's numeric token limits. For unconditional final reader projections over direct
+fields/literals, Calc first computes capacity transitions in row/projection order from original
+UTF-16 document lengths. Kernels still evaluate complete Arrow columns but reset their reader to
+the scheduled capacity before each row. Ordinary short inputs need no per-row table. The scope
+owns one metadata acquisition/release for the batch; a thread-local guard supplies each kernel's
+state and clears it even when evaluation unwinds. The final capacity is published for subsequent
+native/generated calls. No document/result crosses JNI for evaluation and no new JNI API or
+dependency is added.
+
+This follows Comet's thread-local scratch ownership while accounting for Flink's observable
+Jackson recycler history, which Spark's JSON expressions do not require. Computed/conditional
+readers, parser calls in the condition and JVM evaluator combinations retain generated row-major
+execution on 2.2. The 1.18 profile lacks that token-limit interaction and retains its prior
+admission. This repair protects values, rather than independent exception ordering. See
+[#608](https://github.com/datafusion-contrib/StreamFusion/issues/608) and the remaining native
+coverage in [#506](https://github.com/datafusion-contrib/StreamFusion/issues/506).
+
 ## Final UNION forwarding
 
 The final UNION ALL admission follows Arroyo's forwarding structure, with a Flink-specific
@@ -133,7 +202,7 @@ compatibility dependency. Both factories must use `JsonRecyclerPools.ThreadLocal
 the default in 2.18.2 used by Flink's `SqlJsonUtils`. Jackson 2.17.0 changed the default
 pool, and 2.17.1 reverted it; another default cannot be assumed to share task-thread state.
 
-Before encoding JSON_VALUE, JSON_EXISTS or IS JSON, the planner checks a result cached once
+Before encoding JSON_VALUE, JSON_QUERY, JSON_EXISTS or IS JSON, the planner checks a result cached once
 per class loader. On Flink 2.2 the probe requires version 2.18.2 and the thread-local pool. It constructs a
 runtime, returns its buffer and verifies that a second default factory acquires the same
 recycler and buffer. Construction/release failures, missing classes/methods and other linkage
@@ -148,7 +217,7 @@ borrow the same buffer. Jackson 2.14 has no pool-release method, so the adapter 
 character buffer. That profile uses floating-point JSON values (including signed zero and overflow)
 instead of BigDecimal, reuses the shared JDK 17 double formatter, and omits the token/depth limits
 introduced after 2.14. The legacy recursive reader uses the released `stacker` crate to grow
-its stack for deep nesting instead of risking a native stack overflow. Native admission currently requires JDK 17 for this profile; other runtimes
+its stack for deep nesting instead of risking a native stack overflow. Native admission supports JDK 11 and 17 for this profile; other runtimes
 keep the host evaluator. The parser, SIMD selection, path handling and batch lifecycle are shared;
 there is no second legacy parser. Both profiles run the same direct JNI buffer-history fixture,
 with expected values supplied by their released Flink SQL/JSON provider.

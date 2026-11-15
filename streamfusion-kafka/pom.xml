@@ -26,10 +26,22 @@
             <version>${project.version}</version>
             <scope>provided</scope>
         </dependency>
+
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+            <version>${kafka.clients.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-connector-kafka</artifactId>
+            <version>${flink.connector.kafka.version}</version>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
 
     <build>
-        <sourceDirectory>${project.basedir}/../src/main/java</sourceDirectory>
         <resources combine.self="override">
             <resource>
                 <directory>${project.basedir}/src/main/resources</directory>
@@ -57,20 +69,6 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
-                <configuration><includes>
-                    <include>tech/streamfusion/kafka/**/*.java</include>
-                    <include>tech/streamfusion/planner/KafkaPlannerExtension.java</include>
-                    <include>tech/streamfusion/planner/KafkaTables.java</include>
-                    <include>tech/streamfusion/planner/KeyedDecodeSpec.java</include>
-                    <include>tech/streamfusion/planner/KafkaSinkMatcher.java</include>
-                    <include>tech/streamfusion/planner/KafkaSinkTranslator.java</include>
-                    <include>tech/streamfusion/planner/NativeKafkaDecodeExecNode.java</include>
-                    <include>tech/streamfusion/planner/NativeKafkaSinkExecNode.java</include>
-                    <include>tech/streamfusion/planner/StreamPhysicalNativeKafkaDecode.java</include>
-                    <include>tech/streamfusion/planner/StreamPhysicalNativeKafkaSink.java</include>
-                </includes><excludes>
-                    <exclude>tech/streamfusion/kafka/ConfluentSchemaRegistry.java</exclude>
-                </excludes></configuration>
             </plugin>
         </plugins>
     </build>

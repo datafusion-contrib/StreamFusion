@@ -1,3 +1,4 @@
+use crate::expression_protocol::{CastTarget, ExpressionKind};
 use crate::*;
 use arrow::datatypes::TimeUnit;
 
@@ -27,20 +28,22 @@ pub(crate) fn build_expr(
     let node = *cursor;
     *cursor += 1;
     let arg = payload[node] as usize;
-    match kinds[node] {
+    let kind = ExpressionKind::from_code(kinds[node])
+        .unwrap_or_else(|| panic!("unsupported expression kind: {}", kinds[node]));
+    match kind {
         // Reference the column by its exact field name, not via `col()`, which parses its argument as
         // a SQL identifier and lower-cases an unquoted name — breaking a mixed-case column like the
         // Nexmark `dateTime` rowtime.
-        0 => datafusion::prelude::Expr::Column(datafusion::common::Column::new_unqualified(
-            schema.field(arg).name(),
-        )),
-        1 => logical_lit(longs[arg]),
-        2 => logical_lit(doubles[arg]),
-        3 => logical_lit(ScalarValue::Utf8(strings[arg].clone())),
-        4 => logical_lit(longs[arg] != 0),
+        ExpressionKind::InputRef => datafusion::prelude::Expr::Column(
+            datafusion::common::Column::new_unqualified(schema.field(arg).name()),
+        ),
+        ExpressionKind::LitLong => logical_lit(longs[arg]),
+        ExpressionKind::LitDouble => logical_lit(doubles[arg]),
+        ExpressionKind::LitString => logical_lit(ScalarValue::Utf8(strings[arg].clone())),
+        ExpressionKind::LitBool => logical_lit(longs[arg] != 0),
         // An untyped NULL; the surrounding expression's coercion (e.g. a CASE branch) types it.
-        5 => datafusion::prelude::Expr::Literal(ScalarValue::Null, None),
-        31 => logical_lit(
+        ExpressionKind::LitNull => datafusion::prelude::Expr::Literal(ScalarValue::Null, None),
+        ExpressionKind::LitTypedNull => logical_lit(
             ScalarValue::try_from(&encoded_field_type(
                 strings[arg].as_deref().expect("typed NULL schema"),
             ))
@@ -48,12 +51,12 @@ pub(crate) fn build_expr(
         ),
         // Narrow integer literals carry their declared width so arithmetic evaluates in the same
         // type as the host (e.g. `int * 2` stays int32 and wraps), not a widened type.
-        7 => logical_lit(longs[arg] as i32),
-        8 => logical_lit(longs[arg] as i16),
-        9 => logical_lit(longs[arg] as i8),
+        ExpressionKind::LitInt => logical_lit(longs[arg] as i32),
+        ExpressionKind::LitSmall => logical_lit(longs[arg] as i16),
+        ExpressionKind::LitTiny => logical_lit(longs[arg] as i8),
         // Likewise for FLOAT, which the host evaluates in single precision.
-        22 => logical_lit(doubles[arg] as f32),
-        23 => {
+        ExpressionKind::LitFloat => logical_lit(doubles[arg] as f32),
+        ExpressionKind::LitBinary => {
             // Binary literals use a length followed by bytes in the existing long pool; -1 is NULL.
             let length = longs[arg];
             logical_lit(ScalarValue::Binary((length >= 0).then(|| {
@@ -63,7 +66,7 @@ pub(crate) fn build_expr(
                     .collect()
             })))
         }
-        29 => {
+        ExpressionKind::LitTimestamp => {
             let value = (longs[arg] != 0).then(|| {
                 streamfusion_bridge::timestamp::TimestampValue::new(
                     longs[arg + 1],
@@ -75,7 +78,7 @@ pub(crate) fn build_expr(
                 streamfusion_bridge::timestamp::timestamp_array([value]),
             )))
         }
-        24 => {
+        ExpressionKind::LitTemporal => {
             let value = (longs[arg + 1] != 0).then_some(longs[arg + 2]);
             logical_lit(match longs[arg] {
                 9 => ScalarValue::Date32(value.map(|v| v as i32)),
@@ -94,7 +97,7 @@ pub(crate) fn build_expr(
                 other => panic!("unsupported temporal literal type: {other}"),
             })
         }
-        25 => {
+        ExpressionKind::Clock => {
             let encoded = strings[arg].as_deref().expect("clock field and zone");
             let (field, zone) = encoded.split_once('|').expect("clock field and zone");
             crate::flink_functions::clock::function(
@@ -103,7 +106,7 @@ pub(crate) fn build_expr(
             )
             .call(vec![])
         }
-        32 => {
+        ExpressionKind::Random => {
             let children = (0..child_counts[node])
                 .map(|_| {
                     build_expr(
@@ -121,7 +124,7 @@ pub(crate) fn build_expr(
             crate::flink_functions::random::function(arg & 1 != 0, arg & 2 != 0, arg & 4 != 0)
                 .call(children)
         }
-        33 | 34 => {
+        ExpressionKind::StringToInteger | ExpressionKind::IntegerToString => {
             let child = build_expr(
                 schema,
                 kinds,
@@ -132,7 +135,7 @@ pub(crate) fn build_expr(
                 strings,
                 cursor,
             );
-            let function = if kinds[node] == 33 {
+            let function = if kind == ExpressionKind::StringToInteger {
                 crate::flink_functions::integer_string::parse_function(
                     cast_data_type(arg & 3),
                     arg & 4 != 0,
@@ -145,7 +148,7 @@ pub(crate) fn build_expr(
             };
             function.call(vec![child])
         }
-        36 => {
+        ExpressionKind::FromUnixtime => {
             let encoded = strings[arg]
                 .as_deref()
                 .expect("FROM_UNIXTIME format and offset");
@@ -168,7 +171,7 @@ pub(crate) fn build_expr(
                 .expect("admitted FROM_UNIXTIME pattern")
                 .call(vec![input])
         }
-        40 => {
+        ExpressionKind::BinaryElt => {
             let children = (0..child_counts[node])
                 .map(|_| {
                     build_expr(
@@ -185,7 +188,7 @@ pub(crate) fn build_expr(
                 .collect::<Vec<_>>();
             crate::flink_functions::binary_elt::function(children.len(), arg as i32).call(children)
         }
-        39 => {
+        ExpressionKind::BinaryCast => {
             let child = build_expr(
                 schema,
                 kinds,
@@ -204,7 +207,7 @@ pub(crate) fn build_expr(
             crate::flink_functions::binary_cast::function(length, payload[node] < 0)
                 .call(vec![child])
         }
-        37 => {
+        ExpressionKind::DecimalFloat => {
             let child = build_expr(
                 schema,
                 kinds,
@@ -217,7 +220,7 @@ pub(crate) fn build_expr(
             );
             crate::flink_functions::decimal_float::function(arg == 4).call(vec![child])
         }
-        46 => {
+        ExpressionKind::CollectionCast => {
             let encoded = strings[arg]
                 .as_deref()
                 .expect("container cast configuration");
@@ -240,7 +243,30 @@ pub(crate) fn build_expr(
                 cursor,
             )])
         }
-        43 => {
+        ExpressionKind::DecimalIf => {
+            let children = (0..3)
+                .map(|_| {
+                    build_expr(
+                        schema,
+                        kinds,
+                        payload,
+                        child_counts,
+                        longs,
+                        doubles,
+                        strings,
+                        cursor,
+                    )
+                })
+                .collect();
+            datafusion::logical_expr::ScalarUDF::new_from_impl(
+                crate::flink_functions::decimal::DecimalIf::new(
+                    (arg / 100) as u8,
+                    (arg % 100) as i8,
+                ),
+            )
+            .call(children)
+        }
+        ExpressionKind::ArrayCast => {
             let target = encoded_field_type(strings[arg].as_deref().expect("ARRAY cast schema"));
             let child = build_expr(
                 schema,
@@ -254,8 +280,8 @@ pub(crate) fn build_expr(
             );
             crate::flink_functions::array_cast::function(target).call(vec![child])
         }
-        11 => {
-            // A widening numeric cast: build the single child, then wrap it. `arg` is the target code.
+        ExpressionKind::Cast => {
+            // `arg` identifies the target; decimal formatting avoids Arrow's per-row Strings.
             let child = build_expr(
                 schema,
                 kinds,
@@ -266,15 +292,19 @@ pub(crate) fn build_expr(
                 strings,
                 cursor,
             );
-            datafusion::prelude::Expr::Cast(datafusion::logical_expr::Cast::new(
-                Box::new(child),
-                cast_data_type(arg),
-            ))
+            if arg == 6 {
+                crate::flink_functions::decimal_string::function().call(vec![child])
+            } else {
+                datafusion::prelude::Expr::Cast(datafusion::logical_expr::Cast::new(
+                    Box::new(child),
+                    cast_data_type(arg),
+                ))
+            }
         }
         // A narrowing cast to an integer target (`arg` is the target int code). Uses the NarrowingCast
         // kernel so the value wraps (integer source) / saturates with NaN→0 (float source) like Flink's
         // primitive Java cast, rather than erroring on overflow as arrow's own cast would.
-        18 => {
+        ExpressionKind::CastNarrow => {
             let target = cast_data_type(arg);
             let child = build_expr(
                 schema,
@@ -289,7 +319,7 @@ pub(crate) fn build_expr(
             datafusion::logical_expr::ScalarUDF::new_from_impl(NarrowingCast::new(target))
                 .call(vec![child])
         }
-        6 => {
+        ExpressionKind::Call => {
             let op = payload[node];
             let count = child_counts[node] as usize;
             let mut args = Vec::with_capacity(count);
@@ -307,7 +337,7 @@ pub(crate) fn build_expr(
             }
             build_typed_call(schema, op, args)
         }
-        45 => crate::flink_functions::calendar::zoned(
+        ExpressionKind::ZonedExtract => crate::flink_functions::calendar::zoned(
             strings[arg].as_deref().expect("calendar zone history"),
         )
         .expect("verified calendar zone history")
@@ -323,9 +353,13 @@ pub(crate) fn build_expr(
         )]),
         // A JVM UDF node: `arg` indexes the long pool at [udf id, return-type code]; the children are the
         // argument expressions. Builds a JvmUdf scalar function that upcalls the JVM per batch.
-        17 | 38 | 41 | 42 | 44 => {
+        ExpressionKind::Udf
+        | ExpressionKind::RowUdf
+        | ExpressionKind::DecimalRoundText
+        | ExpressionKind::NumericCast
+        | ExpressionKind::CertifiedBuiltin => {
             let id = longs[arg] as i32;
-            let row_result = kinds[node] == 38;
+            let row_result = kind == ExpressionKind::RowUdf;
             let return_type = if row_result {
                 encoded_field_type(
                     strings[longs[arg + 1] as usize]
@@ -350,11 +384,11 @@ pub(crate) fn build_expr(
                 ));
             }
             let mut function = JvmUdf::new(id, return_type, row_result);
-            if kinds[node] == 41 {
+            if kind == ExpressionKind::DecimalRoundText {
                 function.decimal_round_text = Some(longs[arg + 2] != 0);
             }
-            function.numeric_cast = kinds[node] == 42;
-            if kinds[node] == 44 {
+            function.numeric_cast = kind == ExpressionKind::NumericCast;
+            if kind == ExpressionKind::CertifiedBuiltin {
                 function.certified_builtin = Some((longs[arg + 2], count));
                 let cache_count = match longs[arg + 2] {
                     11 => 1, // Integer SPLIT_INDEX needs only the source string cache.
@@ -387,7 +421,7 @@ pub(crate) fn build_expr(
         }
         // Preserve the legacy literal encoding used by native timestamp arithmetic. The generated
         // temporal evaluator uses kind 24 for its signed millisecond interval arguments instead.
-        15 => {
+        ExpressionKind::LitInterval => {
             let millis = longs[arg];
             logical_lit(ScalarValue::IntervalDayTime(Some(
                 arrow::datatypes::IntervalDayTime {
@@ -398,7 +432,7 @@ pub(crate) fn build_expr(
         }
         // An exact DECIMAL literal, encoded "unscaled|precision|scale" in the string pool. Built as a
         // Decimal128 scalar so decimal arithmetic (q1's `0.908 * price`) stays exact.
-        16 => {
+        ExpressionKind::LitDecimal => {
             let encoded = strings[arg].as_deref().expect("decimal literal");
             let mut parts = encoded.split('|');
             let unscaled: i128 = parts
@@ -419,7 +453,11 @@ pub(crate) fn build_expr(
         }
         // Low 16 bits carry result precision*100 + scale; bit 16 retains Flink 1.18's
         // implicit integer casts. Kernels rescale before the final overflow check.
-        20 | 21 | 26..=28 => {
+        ExpressionKind::DecimalDivide
+        | ExpressionKind::DecimalMod
+        | ExpressionKind::DecimalAdd
+        | ExpressionKind::DecimalSubtract
+        | ExpressionKind::DecimalMultiply => {
             let legacy_integer_cast = arg & (1 << 16) != 0;
             let precision = ((arg & 0xffff) / 100) as u8;
             let scale = ((arg & 0xffff) % 100) as i8;
@@ -445,27 +483,27 @@ pub(crate) fn build_expr(
             );
             use crate::flink_functions::decimal::{DecimalBinary, DecimalOp};
             use datafusion::logical_expr::ScalarUDF;
-            let function = match kinds[node] {
-                26 => ScalarUDF::new_from_impl(
+            let function = match kind {
+                ExpressionKind::DecimalAdd => ScalarUDF::new_from_impl(
                     DecimalBinary::new(DecimalOp::Add, precision, scale)
                         .with_legacy_integer_cast(legacy_integer_cast),
                 ),
-                27 => ScalarUDF::new_from_impl(
+                ExpressionKind::DecimalSubtract => ScalarUDF::new_from_impl(
                     DecimalBinary::new(DecimalOp::Subtract, precision, scale)
                         .with_legacy_integer_cast(legacy_integer_cast),
                 ),
-                28 => ScalarUDF::new_from_impl(
+                ExpressionKind::DecimalMultiply => ScalarUDF::new_from_impl(
                     DecimalBinary::new(DecimalOp::Multiply, precision, scale)
                         .with_legacy_integer_cast(legacy_integer_cast),
                 ),
                 _ => ScalarUDF::new_from_impl(
-                    DecimalDivide::new(precision, scale, kinds[node] == 21)
+                    DecimalDivide::new(precision, scale, kind == ExpressionKind::DecimalMod)
                         .with_legacy_integer_cast(legacy_integer_cast),
                 ),
             };
             function.call(vec![left, right])
         }
-        30 | 35 => {
+        ExpressionKind::DecimalRound | ExpressionKind::DecimalTruncate => {
             let precision = (arg / 100) as u8;
             let scale = (arg % 100) as i8;
             let mut children = Vec::with_capacity(2);
@@ -482,7 +520,7 @@ pub(crate) fn build_expr(
                 ));
             }
             use crate::flink_functions::decimal::DecimalRound;
-            let function = if kinds[node] == 35 {
+            let function = if kind == ExpressionKind::DecimalTruncate {
                 DecimalRound::truncate(precision, scale)
             } else {
                 DecimalRound::new(precision, scale)
@@ -490,7 +528,7 @@ pub(crate) fn build_expr(
             datafusion::logical_expr::ScalarUDF::new_from_impl(function).call(children)
         }
         // Exact decimal cast: HALF_UP to the declared scale, then NULL on precision overflow.
-        14 => {
+        ExpressionKind::CastDecimal => {
             let precision = (arg / 100) as u8;
             let scale = (arg % 100) as i8;
             let child = build_expr(
@@ -511,7 +549,7 @@ pub(crate) fn build_expr(
         // Field access: extract a named field from a ROW/struct child. `arg` indexes the field name in
         // the string pool; the one child (built next) is the struct-typed expression. get_field returns
         // NULL for a null struct, matching Flink's field access.
-        13 => {
+        ExpressionKind::FieldAccess => {
             let name = strings[arg].clone().expect("field name");
             let child = build_expr(
                 schema,
@@ -529,7 +567,7 @@ pub(crate) fn build_expr(
         // type. Both paths reproduce Flink's subscript semantics: NULL for a null
         // collection, an out-of-range (1-based) index, or an absent key, and map lookup takes the
         // first match like Flink's linear scan. Runtime subscripts are evaluated as columns.
-        19 => {
+        ExpressionKind::Item => {
             use datafusion::logical_expr::ExprSchemable;
             let collection = build_expr(
                 schema,
@@ -581,21 +619,24 @@ pub(crate) fn build_expr(
                 other => panic!("ITEM over unsupported collection type {other}"),
             }
         }
-        12 => crate::flink_functions::clock::function(0, "UTC".into()).call(vec![]),
-        other => panic!("unsupported expression kind: {other}"),
+        ExpressionKind::Proctime => {
+            crate::flink_functions::clock::function(0, "UTC".into()).call(vec![])
+        }
     }
 }
 
 /// The Arrow type for a cast target code (mirrors the JVM encoder's widening cast targets).
 pub(crate) fn cast_data_type(code: usize) -> DataType {
-    match code {
-        0 => DataType::Int8,
-        1 => DataType::Int16,
-        2 => DataType::Int32,
-        3 => DataType::Int64,
-        4 => DataType::Float32,
-        5 => DataType::Float64,
-        other => panic!("unsupported cast target: {other}"),
+    match CastTarget::from_code(code as i64)
+        .unwrap_or_else(|| panic!("unsupported cast target: {code}"))
+    {
+        CastTarget::Tinyint => DataType::Int8,
+        CastTarget::Smallint => DataType::Int16,
+        CastTarget::Integer => DataType::Int32,
+        CastTarget::Bigint => DataType::Int64,
+        CastTarget::Float => DataType::Float32,
+        CastTarget::Double => DataType::Float64,
+        CastTarget::String => DataType::Utf8,
     }
 }
 
@@ -607,6 +648,21 @@ fn build_typed_call(
     args: Vec<datafusion::prelude::Expr>,
 ) -> datafusion::prelude::Expr {
     use datafusion::logical_expr::ExprSchemable;
+    if matches!(op, 67 | 94 | 107) {
+        let schema = DFSchema::try_from(Arc::clone(schema)).expect("byte-string input schema");
+        if args
+            .iter()
+            .any(|arg| arg.get_type(&schema).expect("operand type") == DataType::Binary)
+        {
+            let function = match op {
+                67 => crate::flink_functions::byte_ascii::function(),
+                94 => crate::flink_functions::byte_concat_ws::function(),
+                107 => crate::flink_functions::function(151, args.len()).expect("binary TO_BASE64"),
+                _ => unreachable!("matched byte-string function"),
+            };
+            return function.call(args);
+        }
+    }
     if op == 3 || (10..=15).contains(&op) {
         let schema = DFSchema::try_from(Arc::clone(schema)).expect("comparison input schema");
         let types: Vec<_> = args
@@ -823,8 +879,7 @@ struct FlinkConcat {
 impl FlinkConcat {
     fn new() -> Self {
         Self {
-            signature: datafusion::logical_expr::Signature::variadic(
-                vec![DataType::Utf8],
+            signature: datafusion::logical_expr::Signature::variadic_any(
                 datafusion::logical_expr::Volatility::Immutable,
             ),
         }
@@ -840,8 +895,19 @@ impl datafusion::logical_expr::ScalarUDFImpl for FlinkConcat {
         &self.signature
     }
 
-    fn return_type(&self, _: &[DataType]) -> datafusion::common::Result<DataType> {
-        Ok(DataType::Utf8)
+    fn return_type(&self, inputs: &[DataType]) -> datafusion::common::Result<DataType> {
+        if inputs.is_empty()
+            || inputs
+                .iter()
+                .any(|t| !matches!(t, DataType::Utf8 | DataType::Binary | DataType::Null))
+        {
+            return datafusion::common::exec_err!("CONCAT expects character arguments");
+        }
+        Ok(if inputs.contains(&DataType::Binary) {
+            DataType::Binary
+        } else {
+            DataType::Utf8
+        })
     }
 
     fn invoke_with_args(
@@ -850,6 +916,10 @@ impl datafusion::logical_expr::ScalarUDFImpl for FlinkConcat {
     ) -> datafusion::common::Result<datafusion::logical_expr::ColumnarValue> {
         use arrow::buffer::NullBuffer;
         use datafusion::logical_expr::ColumnarValue;
+
+        if args.return_field.data_type() == &DataType::Binary {
+            return crate::flink_functions::byte_concat::concat(&args.args, args.number_rows);
+        }
 
         // Children are already evaluated. Inspect their validity once, before copying any bytes.
         let mut nulls = None;
@@ -955,8 +1025,8 @@ impl FlinkHash {
     fn new(algorithm: HashAlgorithm) -> Self {
         Self {
             algorithm,
-            signature: datafusion::logical_expr::Signature::exact(
-                vec![DataType::Utf8],
+            signature: datafusion::logical_expr::Signature::any(
+                1,
                 datafusion::logical_expr::Volatility::Immutable,
             ),
         }
@@ -980,8 +1050,11 @@ impl datafusion::logical_expr::ScalarUDFImpl for FlinkHash {
     }
 
     fn return_type(&self, arg_types: &[DataType]) -> datafusion::common::Result<DataType> {
-        if arg_types.len() != 1 {
-            return datafusion::common::plan_err!("{} expects exactly one argument", self.name());
+        if !matches!(
+            arg_types,
+            [DataType::Utf8 | DataType::Binary | DataType::Null]
+        ) {
+            return datafusion::common::plan_err!("{} expects one character argument", self.name());
         }
         Ok(DataType::Utf8)
     }
@@ -994,36 +1067,56 @@ impl datafusion::logical_expr::ScalarUDFImpl for FlinkHash {
             return datafusion::common::exec_err!("{} expects exactly one argument", self.name());
         };
         match self.algorithm {
-            HashAlgorithm::Md5 => hash_utf8::<md5::Md5>(input),
-            HashAlgorithm::Sha1 => hash_utf8::<sha1::Sha1>(input),
-            HashAlgorithm::Sha224 => hash_utf8::<sha2::Sha224>(input),
-            HashAlgorithm::Sha256 => hash_utf8::<sha2::Sha256>(input),
-            HashAlgorithm::Sha384 => hash_utf8::<sha2::Sha384>(input),
-            HashAlgorithm::Sha512 => hash_utf8::<sha2::Sha512>(input),
+            HashAlgorithm::Md5 => hash_string::<md5::Md5>(input),
+            HashAlgorithm::Sha1 => hash_string::<sha1::Sha1>(input),
+            HashAlgorithm::Sha224 => hash_string::<sha2::Sha224>(input),
+            HashAlgorithm::Sha256 => hash_string::<sha2::Sha256>(input),
+            HashAlgorithm::Sha384 => hash_string::<sha2::Sha384>(input),
+            HashAlgorithm::Sha512 => hash_string::<sha2::Sha512>(input),
         }
     }
 }
 
-fn hash_utf8<D: sha2::Digest>(
+fn hash_string<D: sha2::Digest>(
     input: &datafusion::logical_expr::ColumnarValue,
 ) -> datafusion::common::Result<datafusion::logical_expr::ColumnarValue> {
+    use arrow::array::BinaryArray;
     use arrow::buffer::OffsetBuffer;
-    use datafusion::common::{cast::as_string_array, exec_datafusion_err, exec_err};
+    use datafusion::common::{cast::as_binary_array, exec_datafusion_err, exec_err};
     use datafusion::logical_expr::ColumnarValue;
 
     let width = <D as sha2::Digest>::output_size() * 2;
     match input {
-        ColumnarValue::Scalar(ScalarValue::Utf8(None) | ScalarValue::Null) => {
-            Ok(ColumnarValue::Scalar(ScalarValue::Utf8(None)))
-        }
+        ColumnarValue::Scalar(
+            ScalarValue::Utf8(None) | ScalarValue::Binary(None) | ScalarValue::Null,
+        ) => Ok(ColumnarValue::Scalar(ScalarValue::Utf8(None))),
         ColumnarValue::Scalar(ScalarValue::Utf8(Some(value))) => {
             let mut hex = Vec::with_capacity(width);
             append_digest_hex::<D>(value, &mut hex);
             let hex = String::from_utf8(hex).map_err(|e| exec_datafusion_err!("{e}"))?;
             Ok(ColumnarValue::Scalar(ScalarValue::Utf8(Some(hex))))
         }
+        ColumnarValue::Scalar(ScalarValue::Binary(Some(value))) => {
+            let mut hex = Vec::with_capacity(width);
+            append_digest_hex::<D>(value, &mut hex);
+            let hex = String::from_utf8(hex).map_err(|e| exec_datafusion_err!("{e}"))?;
+            Ok(ColumnarValue::Scalar(ScalarValue::Utf8(Some(hex))))
+        }
+        ColumnarValue::Array(array) if array.data_type() == &DataType::Null => Ok(
+            ColumnarValue::Array(arrow::array::new_null_array(&DataType::Utf8, array.len())),
+        ),
         ColumnarValue::Array(array) => {
-            let strings = as_string_array(array)?;
+            let binary;
+            let strings = if let Some(strings) = array.as_any().downcast_ref::<StringArray>() {
+                binary = BinaryArray::new(
+                    strings.offsets().clone(),
+                    strings.values().clone(),
+                    strings.nulls().cloned(),
+                );
+                &binary
+            } else {
+                as_binary_array(array)?
+            };
             let capacity = (strings.len() - strings.null_count())
                 .checked_mul(width)
                 .filter(|size| *size <= i32::MAX as usize)
@@ -1050,13 +1143,13 @@ fn hash_utf8<D: sha2::Digest>(
             };
             Ok(ColumnarValue::Array(Arc::new(result)))
         }
-        _ => exec_err!("Hash input must be a UTF-8 string"),
+        _ => exec_err!("Hash input must be a character string"),
     }
 }
 
-pub(crate) fn append_digest_hex<D: sha2::Digest>(value: &str, output: &mut Vec<u8>) {
+pub(crate) fn append_digest_hex<D: sha2::Digest>(value: impl AsRef<[u8]>, output: &mut Vec<u8>) {
     const HEX: &[u8; 16] = b"0123456789abcdef";
-    for byte in D::digest(value.as_bytes()) {
+    for byte in D::digest(value.as_ref()) {
         output.push(HEX[(byte >> 4) as usize]);
         output.push(HEX[(byte & 0xf) as usize]);
     }
@@ -1171,38 +1264,44 @@ impl datafusion::logical_expr::ScalarUDFImpl for NarrowingCast {
         args: datafusion::logical_expr::ScalarFunctionArgs,
     ) -> datafusion::common::Result<datafusion::logical_expr::ColumnarValue> {
         use datafusion::logical_expr::ColumnarValue;
+        if let [ColumnarValue::Array(input)] = args.args.as_slice() {
+            if matches!(
+                self.target,
+                DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64
+            ) && input.data_type() == &self.target
+            {
+                return Ok(ColumnarValue::Array(input.clone()));
+            }
+        }
         let arrays = ColumnarValue::values_to_arrays(&args.args)?;
         let input = &arrays[0];
         let result: ArrayRef = match input.data_type() {
-            // Integer source: widen losslessly to i64 (no overflow possible), then `as` the target,
-            // which truncates to the low bits exactly like Java's `(int)`/`(short)`/… primitive cast.
             DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
-                let widened = arrow::compute::cast(input, &DataType::Int64)?;
-                let vals = widened
-                    .as_any()
-                    .downcast_ref::<Int64Array>()
-                    .expect("i64 narrowing source");
-                match &self.target {
-                    DataType::Int8 => Arc::new(
-                        vals.iter()
-                            .map(|o| o.map(|v| v as i8))
-                            .collect::<Int8Array>(),
-                    ),
-                    DataType::Int16 => Arc::new(
-                        vals.iter()
-                            .map(|o| o.map(|v| v as i16))
-                            .collect::<Int16Array>(),
-                    ),
-                    DataType::Int32 => Arc::new(
-                        vals.iter()
-                            .map(|o| o.map(|v| v as i32))
-                            .collect::<Int32Array>(),
-                    ),
-                    _ => Arc::new(
-                        vals.iter()
-                            .map(|o| o.map(|v| v as i64))
-                            .collect::<Int64Array>(),
-                    ),
+                use arrow::datatypes::{Int16Type, Int32Type, Int64Type, Int8Type};
+                // Primitive narrowing is total: map values once and retain the immutable validity.
+                macro_rules! cast_integer {
+                    ($array:ty) => {{
+                        let values = input.as_any().downcast_ref::<$array>().unwrap();
+                        match &self.target {
+                            DataType::Int8 => {
+                                Arc::new(values.unary::<_, Int8Type>(|v| v as i8)) as ArrayRef
+                            }
+                            DataType::Int16 => {
+                                Arc::new(values.unary::<_, Int16Type>(|v| v as i16)) as ArrayRef
+                            }
+                            DataType::Int32 => {
+                                Arc::new(values.unary::<_, Int32Type>(|v| v as i32)) as ArrayRef
+                            }
+                            _ => Arc::new(values.unary::<_, Int64Type>(|v| v as i64)) as ArrayRef,
+                        }
+                    }};
+                }
+                match input.data_type() {
+                    DataType::Int8 => cast_integer!(Int8Array),
+                    DataType::Int16 => cast_integer!(Int16Array),
+                    DataType::Int32 => cast_integer!(Int32Array),
+                    DataType::Int64 => cast_integer!(Int64Array),
+                    _ => unreachable!(),
                 }
             }
             DataType::Decimal128(_, scale) if (0..=38).contains(scale) => {
@@ -1272,6 +1371,174 @@ impl datafusion::logical_expr::ScalarUDFImpl for NarrowingCast {
             }
         };
         Ok(ColumnarValue::Array(result))
+    }
+}
+
+#[cfg(test)]
+mod narrowing_identity_tests {
+    use super::*;
+    use datafusion::logical_expr::{ColumnarValue, ScalarFunctionArgs, ScalarUDFImpl};
+
+    fn invoke(input: ColumnarValue, target: DataType) -> ColumnarValue {
+        let source = input.data_type();
+        let rows = match &input {
+            ColumnarValue::Array(array) => array.len(),
+            ColumnarValue::Scalar(_) => 1,
+        };
+        NarrowingCast::new(target.clone())
+            .invoke_with_args(ScalarFunctionArgs {
+                args: vec![input],
+                arg_fields: vec![Arc::new(arrow::datatypes::Field::new("v", source, true))],
+                number_rows: rows,
+                return_field: Arc::new(arrow::datatypes::Field::new("v", target, true)),
+                config_options: Arc::new(Default::default()),
+            })
+            .unwrap()
+    }
+
+    #[test]
+    fn same_width_arrays_retain_slices_validity_and_owned_buffers() {
+        let arrays: Vec<ArrayRef> = vec![
+            Arc::new(arrow::array::Int8Array::from(vec![
+                Some(42),
+                Some(i8::MIN),
+                None,
+            ])),
+            Arc::new(arrow::array::Int16Array::from(vec![
+                Some(42),
+                Some(i16::MIN),
+                None,
+            ])),
+            Arc::new(arrow::array::Int32Array::from(vec![
+                Some(42),
+                Some(i32::MIN),
+                None,
+            ])),
+            Arc::new(arrow::array::Int64Array::from(vec![
+                Some(42),
+                Some(i64::MIN),
+                None,
+            ])),
+        ];
+        for array in arrays {
+            for len in [0, 2] {
+                let input = array.slice(1, len);
+                let ColumnarValue::Array(output) = invoke(
+                    ColumnarValue::Array(input.clone()),
+                    input.data_type().clone(),
+                ) else {
+                    panic!("expected array")
+                };
+                assert!(Arc::ptr_eq(&input, &output));
+                assert_eq!(output.len(), len);
+                output.to_data().validate_full().unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn scalar_materialization_and_real_narrowing_keep_their_existing_contract() {
+        for input in [ScalarValue::Int32(Some(i32::MIN)), ScalarValue::Int32(None)] {
+            let ColumnarValue::Array(output) =
+                invoke(ColumnarValue::Scalar(input.clone()), DataType::Int32)
+            else {
+                panic!("expected existing scalar materialization")
+            };
+            assert_eq!(output.len(), 1);
+            assert_eq!(ScalarValue::try_from_array(&output, 0).unwrap(), input);
+        }
+        let input: ArrayRef = Arc::new(Int64Array::from(vec![Some(i64::MAX), None, Some(128)]));
+        let ColumnarValue::Array(output) = invoke(ColumnarValue::Array(input), DataType::Int8)
+        else {
+            panic!("expected narrowed array")
+        };
+        assert_eq!(
+            output
+                .as_any()
+                .downcast_ref::<arrow::array::Int8Array>()
+                .unwrap(),
+            &arrow::array::Int8Array::from(vec![Some(-1), None, Some(-128)])
+        );
+    }
+
+    #[test]
+    fn primitive_narrowing_preserves_sliced_validity_and_wraps_each_destination_width() {
+        let short: ArrayRef = Arc::new(Int16Array::from(vec![
+            Some(i16::MIN),
+            Some(i16::MAX),
+            None,
+            Some(129),
+            Some(-129),
+        ]));
+        let int: ArrayRef = Arc::new(Int32Array::from(vec![
+            Some(i32::MIN),
+            Some(i32::MAX),
+            None,
+            Some(129),
+            Some(-129),
+        ]));
+        let long: ArrayRef = Arc::new(Int64Array::from(vec![
+            Some(i64::MIN),
+            Some(i64::MAX),
+            None,
+            Some(129),
+            Some(-129),
+        ]));
+        for (input, target) in [
+            (short, DataType::Int8),
+            (int.clone(), DataType::Int8),
+            (int, DataType::Int16),
+            (long.clone(), DataType::Int8),
+            (long.clone(), DataType::Int16),
+            (long, DataType::Int32),
+        ] {
+            let expected: ArrayRef = match target {
+                DataType::Int8 => Arc::new(Int8Array::from(vec![
+                    Some(0),
+                    Some(-1),
+                    None,
+                    Some(-127),
+                    Some(127),
+                ])),
+                DataType::Int16 => Arc::new(Int16Array::from(vec![
+                    Some(0),
+                    Some(-1),
+                    None,
+                    Some(129),
+                    Some(-129),
+                ])),
+                _ => Arc::new(Int32Array::from(vec![
+                    Some(0),
+                    Some(-1),
+                    None,
+                    Some(129),
+                    Some(-129),
+                ])),
+            };
+            let original = input.to_data();
+            for offset in 0..=input.len() {
+                let input = input.slice(offset, input.len() - offset);
+                let ColumnarValue::Array(output) =
+                    invoke(ColumnarValue::Array(input.clone()), target.clone())
+                else {
+                    panic!("expected integer array")
+                };
+                assert_eq!(
+                    output.to_data(),
+                    expected.slice(offset, input.len()).to_data()
+                );
+                assert_eq!(output.nulls(), input.nulls());
+                if let (Some(output), Some(input)) = (output.nulls(), input.nulls()) {
+                    assert_eq!(
+                        output.inner().values().as_ptr(),
+                        input.inner().values().as_ptr()
+                    );
+                }
+                drop(input);
+                output.to_data().validate_full().unwrap();
+            }
+            assert_eq!(input.to_data(), original);
+        }
     }
 }
 
@@ -1471,6 +1738,92 @@ fn rescale_compact_quotient(value: i128, scale: i16, precision: u8, target: i8) 
         0
     };
     (result.abs() < 10_i128.pow(precision as u32)).then_some(result)
+}
+
+#[cfg(test)]
+mod decimal_string_cast_tests {
+    use super::*;
+    use arrow::array::{Decimal128Array, StringArray};
+
+    fn projection() -> CalcExpression {
+        CalcExpression {
+            kinds: vec![11, 0],
+            payload: vec![6, 0],
+            child_counts: vec![1, 0],
+            longs: vec![],
+            doubles: vec![],
+            strings: vec![],
+            projection_roots: vec![0],
+            condition_root: -1,
+            output_names: vec!["v".into()],
+            compiled: None,
+        }
+    }
+
+    #[test]
+    fn decimal_cast_preserves_plain_notation_scale_nulls_and_slices() {
+        for (precision, scale, expected) in [
+            (4, 3, "0.001".to_owned()),
+            (18, 18, format!("0.{}1", "0".repeat(17))),
+            (38, 38, format!("0.{}1", "0".repeat(37))),
+            (38, 0, "1".to_owned()),
+        ] {
+            let values = Decimal128Array::from(vec![Some(7), Some(1), Some(-1), Some(0), None])
+                .with_precision_and_scale(precision, scale)
+                .unwrap();
+            let batch = RecordBatch::try_from_iter(vec![("d", Arc::new(values) as ArrayRef)])
+                .unwrap()
+                .slice(1, 4);
+            let zero = if scale == 0 {
+                "0".to_owned()
+            } else {
+                format!("0.{}", "0".repeat(scale as usize))
+            };
+            let negative = format!("-{expected}");
+            let mut cast = projection();
+            assert_eq!(
+                cast.evaluate(batch.clone()).column(0).as_ref(),
+                &StringArray::from(vec![
+                    Some(expected.as_str()),
+                    Some(&negative),
+                    Some(&zero),
+                    None
+                ])
+            );
+            assert_eq!(cast.evaluate(batch.slice(0, 0)).num_rows(), 0);
+        }
+    }
+
+    #[test]
+    fn decimal_cast_does_not_round_large_integer_coefficients() {
+        let max = 10_i128.pow(38) - 1;
+        let values = Decimal128Array::from(vec![max, -max, 9_007_199_254_740_993])
+            .with_precision_and_scale(38, 0)
+            .unwrap();
+        let batch = RecordBatch::try_from_iter(vec![("d", Arc::new(values) as ArrayRef)]).unwrap();
+        let expected = StringArray::from(vec![
+            max.to_string(),
+            (-max).to_string(),
+            "9007199254740993".into(),
+        ]);
+        assert_eq!(projection().evaluate(batch).column(0).as_ref(), &expected);
+    }
+
+    #[test]
+    fn decimal_literal_formatting_broadcasts_without_rounding() {
+        let input = Decimal128Array::from(vec![1, 2, 3])
+            .with_precision_and_scale(4, 3)
+            .unwrap();
+        let batch = RecordBatch::try_from_iter(vec![("d", Arc::new(input) as ArrayRef)]).unwrap();
+        let mut cast = projection();
+        cast.kinds[1] = 16;
+        cast.strings = vec![Some("-1|38|38".into())];
+        let expected = format!("-0.{}1", "0".repeat(37));
+        assert_eq!(
+            cast.evaluate(batch).column(0).as_ref(),
+            &StringArray::from(vec![expected; 3])
+        );
+    }
 }
 
 #[cfg(test)]
@@ -1752,10 +2105,9 @@ impl CompiledFormat {
 
 /// Flink's `DATE_FORMAT(timestamp, format)`: format the timestamp's UTC wall-clock with the given
 /// pattern — `LocalDateTime.ofInstant(ts, UTC).format(DateTimeFormatter.ofPattern(format))`. The JVM
-/// encoder validates the (literal) Java pattern and passes the equivalent chrono strftime pattern as
-/// the second argument, admitting only patterns whose chrono translation is byte-identical; the native
-/// side just formats. The timestamp column is naive (TIMESTAMP, no zone), so its stored millis are the
-/// wall-clock at UTC — `from_timestamp_millis` recovers exactly the fields Flink formats.
+/// encoder passes a restricted numeric pattern using strftime tokens. Formatting uses Java's
+/// proleptic Gregorian calendar and year-of-era over the full millisecond range, independently of
+/// chrono's smaller supported date range. TIMESTAMP values already represent the UTC wall-clock.
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub(crate) struct DateFormat {
     signature: datafusion::logical_expr::Signature,
@@ -1795,20 +2147,15 @@ impl datafusion::logical_expr::ScalarUDFImpl for DateFormat {
             .downcast_ref::<StringArray>()
             .expect("utf8 format");
         let mut builder = arrow::array::StringBuilder::new();
-        let mut compiled = CompiledFormat::new();
+        let mut compiled = crate::flink_functions::date_format::TimestampFormat::default();
         let mut buf = String::new();
         for row in 0..rows {
             if times.is_null(row) || formats.is_null(row) {
                 builder.append_null();
                 continue;
             }
-            match chrono::DateTime::from_timestamp_millis(times.value(row)) {
-                Some(instant) => {
-                    compiled.format_into(&mut buf, instant.naive_utc(), formats.value(row))?;
-                    builder.append_value(&buf);
-                }
-                None => builder.append_null(),
-            }
+            compiled.format_into(&mut buf, times.value(row), formats.value(row))?;
+            builder.append_value(&buf);
         }
         Ok(ColumnarValue::Array(Arc::new(builder.finish())))
     }
@@ -2254,7 +2601,7 @@ impl datafusion::logical_expr::ScalarUDFImpl for JvmUdf {
         };
         let mut string_caches = Vec::new();
         if let Some((operation, count)) = self.certified_builtin {
-            if (1..=12).contains(&operation) {
+            if (1..=15).contains(&operation) {
                 if let Some(output) = crate::flink_functions::certified::evaluate(
                     operation,
                     &arrays[..count],
@@ -2289,7 +2636,14 @@ impl datafusion::logical_expr::ScalarUDFImpl for JvmUdf {
         let mut fields: Vec<Field> = arrays
             .iter()
             .enumerate()
-            .map(|(i, a)| Field::new(format!("arg{i}"), a.data_type().clone(), true))
+            .map(|(i, a)| {
+                Field::new(format!("arg{i}"), a.data_type().clone(), true).with_metadata(
+                    args.arg_fields
+                        .get(i)
+                        .map(|field| field.metadata().clone())
+                        .unwrap_or_default(),
+                )
+            })
             .collect();
         for (index, cache) in string_caches {
             fields.push(streamfusion_bridge::string_cache::string_cache_field(
@@ -2824,6 +3178,52 @@ mod certified_builtin_tests {
                 result.column(0).as_ref(),
                 &StringArray::from(vec![Some(expected), None])
             );
+        }
+    }
+
+    #[test]
+    fn runtime_sql_trim_executes_each_direction_without_a_jvm() {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("set", DataType::Utf8, true),
+            Field::new("source", DataType::Utf8, true),
+        ]));
+        let input = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(StringArray::from(vec![
+                    Some("unused"),
+                    Some("ab"),
+                    None,
+                    Some("ab"),
+                ])),
+                Arc::new(StringArray::from(vec![
+                    Some("unused"),
+                    Some("abXYZba"),
+                    Some("XYZ"),
+                    None,
+                ])),
+            ],
+        )
+        .unwrap()
+        .slice(1, 3);
+        for (operation, expected) in [(13, "XYZ"), (14, "XYZba"), (15, "abXYZ")] {
+            let mut calc = CalcExpression {
+                kinds: vec![44, 0, 0],
+                payload: vec![0, 0, 1],
+                child_counts: vec![2, 0, 0],
+                longs: vec![999, 0, operation],
+                doubles: vec![],
+                strings: vec![],
+                projection_roots: vec![0],
+                condition_root: -1,
+                output_names: vec!["v".into()],
+                compiled: None,
+            };
+            assert_eq!(
+                calc.evaluate(input.clone()).column(0).as_ref(),
+                &StringArray::from(vec![Some(expected), None, None])
+            );
+            assert_eq!(calc.evaluate(input.slice(0, 0)).num_rows(), 0);
         }
     }
 

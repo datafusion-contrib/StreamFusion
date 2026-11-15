@@ -326,7 +326,7 @@ class NativeKeyedDecodeSqlHarnessTest {
       assertTrue(
           metrics.counterValue("nativeKafkaDecodeRecords") >= 6_000,
           "the native decode read " + metrics.counterValue("nativeKafkaDecodeRecords"));
-      long restoredDecoded = metrics.counterValue("nativeKafkaDecodeRecords", secondJobId);
+      long restoredDecoded = metrics.counterValue(secondJobId, "nativeKafkaDecodeRecords");
       assertTrue(
           restoredDecoded >= afterSavepoint.size(),
           "the restored job decoded " + restoredDecoded + " records natively");

@@ -401,3 +401,25 @@ Six Rust smokes assert key-child Arc identity, sliced offsets, duplicate key con
 at 16/1024 rows and 0/4/256-byte keys. The untimed System-allocation probe reports 104 requests
 for 6,475 bytes and zero new Arrow output-buffer bytes per fixture, including first schema
 binding. These counters do not measure copied bytes or end-to-end speedup.
+
+## Preserved scalar-array fan-out
+
+The existing Rust UNNEST kernel recognizes represented STRING carriers as scalars, alongside
+component timestamps, rather than expanding their physical children as ROW fields. Its selected
+Arrow takes retain ownership, caches and metadata for expanded values and original arrays.
+A shared producer-shape check covers collection Calcs and both collection aggregate routes;
+nullable elements use native expansion, while NOT NULL elements retain generated getters.
+Filters keep this contract. Computed Calcs prune unused whole columns before fan-out, reusing
+the existing input-reference remapping and preserving entire nested fields.
+
+Scalar consumers that observe represented string values use the existing generated evaluator.
+The input/output contract remains Arrow batches, with no new JNI ownership protocol. Native
+ARRAY construction also reuses the binary-element conversion used by map construction, matching
+Flink's BinaryArrayWriter cache reset. Applying the conversion after assembly keeps binary-copy
+markers on NULL elements; otherwise the first NULL can erase the containing array's category.
+
+The [release comparison](../operators/unnest-correlate.md#release-comparison-for-preserved-arrays-2026-10-28)
+records both the aggregate pipeline gains and slower narrow Calc cases, complete
+stock/previous/current trial ranges, unchanged released-test witnesses and the
+closed two-capture profiling timebox. Generated evaluation and conversion costs
+remain explicit follow-up work; native coverage alone is not a speedup claim.
