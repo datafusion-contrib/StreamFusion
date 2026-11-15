@@ -27,6 +27,7 @@ import tech.streamfusion.state.RocksDBNativeStateSupport;
  */
 public class NativeColumnarDeduplicateOperator extends AbstractNativeStatefulOperator<ArrowBatch>
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
+  private static final long serialVersionUID = -3774289627526197230L;
 
   private final int[] partitionColumns;
   private boolean binaryRowKeys;

@@ -26,6 +26,7 @@ import tech.streamfusion.state.RocksDBNativeStateSupport;
  */
 public class NativeOverAggregateOperator extends AbstractNativeStatefulOperator<ArrowBatch>
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
+  private static final long serialVersionUID = 402320924640833243L;
 
   private final int timeColumn;
   private final int[] valueColumns;

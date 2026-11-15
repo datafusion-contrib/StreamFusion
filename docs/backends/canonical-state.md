@@ -2744,3 +2744,9 @@ Typed group fixtures declare released widened decimal SUM/AVG output types. Rank
 controls retain released constant-rank pruning and construct nested payloads after a monotonic
 COUNT, avoiding unsupported ROW LAST_VALUE calls. Admission expectations distinguish the
 existing arithmetic COUNT layout, newly bound DISTINCT folds and floating-sort fallbacks.
+
+The existing deduplication and OVER operators retain their deployed Java serialization IDs as
+canonical admission gains explicit ROW-key carriage and the released event-time algorithm
+version. These two settings are durable operator configuration and are listed in the descriptor
+controls; live runtime helpers remain transient. Stock savepoint serializers and native
+checkpoint payload encodings are unchanged by this Java configuration extension.
