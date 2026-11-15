@@ -28,6 +28,13 @@ samples to regular-join watermark flushing. A Q9 CPU capture likewise attributed
 These inclusive CPU shares identify work performed while the process was active;
 they are not elapsed-time speedups.
 
+The planner selects a distinct terminal watermark operator for this proof. The
+ordinary assigner retains its deployed serialization identity and original
+configuration fields. Keeping the mode in the operator type preserves it across
+job-graph serialization without changing existing operator descriptors. Both
+modes are checked after serialization, including whole-batch forwarding and
+the ordinary eager watermark boundaries.
+
 Earlier Q0/Q1/Q4 full-value comparisons passed, but macOS power logs later showed
 repeated system suspension during the campaign. Their timing qualification has
 been withdrawn. The [benchmark method](../benchmarks/hudi-nexmark.md) now requires

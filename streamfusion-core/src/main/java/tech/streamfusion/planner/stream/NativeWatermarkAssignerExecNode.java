@@ -14,6 +14,7 @@ import org.apache.flink.table.planner.plan.nodes.exec.utils.ExecNodeUtil;
 import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.ArrowBatchTypeInformation;
+import tech.streamfusion.operator.NativeColumnarTerminalWatermarkAssignerOperator;
 import tech.streamfusion.operator.NativeColumnarWatermarkAssignerOperator;
 import tech.streamfusion.operator.WatermarkExpression;
 
@@ -69,7 +70,9 @@ public class NativeWatermarkAssignerExecNode extends ExecNodeBase<ArrowBatch>
     return ExecNodeUtil.createOneInputTransformation(
         input,
         createTransformationMeta(TRANSFORMATION, config),
-        new NativeColumnarWatermarkAssignerOperator(rowtimeColumn, expression, preserveBoundaries),
+        preserveBoundaries
+            ? new NativeColumnarWatermarkAssignerOperator(rowtimeColumn, expression)
+            : new NativeColumnarTerminalWatermarkAssignerOperator(rowtimeColumn, expression),
         ArrowBatchTypeInformation.INSTANCE,
         input.getParallelism(),
         false);

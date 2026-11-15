@@ -35,9 +35,11 @@ import tech.streamfusion.compat.FlinkStreamOperator;
 public class NativeColumnarWatermarkAssignerOperator extends FlinkStreamOperator<ArrowBatch>
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch>, ProcessingTimeCallback {
 
+  // Keep the deployed descriptor; terminal batching uses a separate operator type.
+  private static final long serialVersionUID = -8684463030741274822L;
+
   private final int rowtimeColumn;
   private final WatermarkExpression expression;
-  private final boolean preserveBoundaries;
 
   private transient WatermarkExpression.Evaluator evaluator;
 
@@ -52,14 +54,12 @@ public class NativeColumnarWatermarkAssignerOperator extends FlinkStreamOperator
 
   public NativeColumnarWatermarkAssignerOperator(
       int rowtimeColumn, WatermarkExpression expression) {
-    this(rowtimeColumn, expression, true);
-  }
-
-  public NativeColumnarWatermarkAssignerOperator(
-      int rowtimeColumn, WatermarkExpression expression, boolean preserveBoundaries) {
     this.rowtimeColumn = rowtimeColumn;
     this.expression = expression;
-    this.preserveBoundaries = preserveBoundaries;
+  }
+
+  protected boolean preserveBoundaries() {
+    return true;
   }
 
   @Override
@@ -108,7 +108,7 @@ public class NativeColumnarWatermarkAssignerOperator extends FlinkStreamOperator
     }
     boolean forwarded = false;
     try (WatermarkExpression.Values candidates = evaluator.evaluate(root)) {
-      if (!preserveBoundaries) {
+      if (!preserveBoundaries()) {
         for (int i = 0; i < rows; i++)
           if (!candidates.isNull(i))
             currentWatermark = Math.max(currentWatermark, candidates.getMillis(i));

@@ -19,6 +19,7 @@ import org.apache.flink.table.types.logical.BigIntType;
 import org.apache.flink.table.types.logical.LocalZonedTimestampType;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
+import org.apache.flink.util.InstantiationUtil;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -38,8 +39,10 @@ class NativeColumnarWatermarkAssignerOperatorTest {
   @Test
   void unobservedWatermarksKeepWholeBatchesAndValidateRowtime() throws Exception {
     var operator =
-        new NativeColumnarWatermarkAssignerOperator(
-            1, WatermarkExpression.subtractMillis(1, 100), false);
+        InstantiationUtil.clone(
+            new NativeColumnarTerminalWatermarkAssignerOperator(
+                1, WatermarkExpression.subtractMillis(1, 100)),
+            getClass().getClassLoader());
     try (var allocator = new RootAllocator();
         var harness =
             new OneInputStreamOperatorTestHarness<>(operator, new ArrowBatchSerializer())) {
@@ -63,7 +66,8 @@ class NativeColumnarWatermarkAssignerOperatorTest {
   @Test
   void sortedBatchesPreserveEveryEagerWatermarkBoundary() throws Exception {
     NativeColumnarWatermarkAssignerOperator operator =
-        new NativeColumnarWatermarkAssignerOperator(1, 100);
+        InstantiationUtil.clone(
+            new NativeColumnarWatermarkAssignerOperator(1, 100), getClass().getClassLoader());
     try (BufferAllocator allocator = new RootAllocator();
         OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch> harness =
             new OneInputStreamOperatorTestHarness<>(operator, new ArrowBatchSerializer())) {

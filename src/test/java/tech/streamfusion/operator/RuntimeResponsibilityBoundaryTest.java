@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
+import org.apache.flink.util.InstantiationUtil;
 import org.junit.jupiter.api.Test;
 import tech.streamfusion.operator.aggregate.stream.JvmAccumulatorCache;
 import tech.streamfusion.operator.aggregate.stream.JvmMiniBatchGroup;
@@ -70,6 +71,23 @@ class RuntimeResponsibilityBoundaryTest {
         checked++;
       }
       assertEquals(73, checked, "All pre-refactor operator descriptors must be checked");
+    }
+  }
+
+  @Test
+  void watermarkModesSurviveDeploymentSerializationWithoutChangingLegacyConfiguration()
+      throws Exception {
+    var expression = WatermarkExpression.subtractMillis(1, 100);
+    var operators =
+        List.of(
+            new NativeColumnarWatermarkAssignerOperator(1, expression),
+            new NativeColumnarTerminalWatermarkAssignerOperator(1, expression));
+    assertTrue(operators.get(0).preserveBoundaries());
+    assertFalse(operators.get(1).preserveBoundaries());
+    for (var operator : operators) {
+      var copy = InstantiationUtil.clone(operator, getClass().getClassLoader());
+      assertEquals(operator.getClass(), copy.getClass());
+      assertEquals(operator.preserveBoundaries(), copy.preserveBoundaries());
     }
   }
 
