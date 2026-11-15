@@ -9,12 +9,15 @@ import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class SqlInventoryTest {
   @TempDir Path directory;
 
-  @Test
-  void batchObserverRecordsTheSemanticRewriteOnceThroughItsConvenienceWrapper() throws Exception {
+  @ParameterizedTest
+  @ValueSource(ints = {1, 3})
+  void batchObserverRecordsTheSemanticRewriteOnceFromEachEntry(int arguments) throws Exception {
     Class<?> observed =
         StreamFusionSuiteAgent.observePlanning(
                 new net.bytebuddy.ByteBuddy().redefine(BatchScan.class))
@@ -27,11 +30,22 @@ class SqlInventoryTest {
     try {
       SqlInventory.started(new Identifier());
       Object translation = SqlInventory.translating(this);
+      Object scan = observed.getConstructor().newInstance();
+      List<Object> input = List.of(new StreamPhysicalNativeCalc());
       Object roots =
-          observed
-              .getMethod("optimizeRoots", List.class)
-              .invoke(
-                  observed.getConstructor().newInstance(), List.of(new StreamPhysicalNativeCalc()));
+          arguments == 1
+              ? observed.getMethod("optimizeRoots", List.class).invoke(scan, input)
+              : observed
+                  .getMethod(
+                      "optimizeRoots",
+                      List.class,
+                      java.util.function.UnaryOperator.class,
+                      java.util.function.Predicate.class)
+                  .invoke(
+                      scan,
+                      input,
+                      java.util.function.UnaryOperator.identity(),
+                      (java.util.function.Predicate<Object>) node -> false);
       SqlInventory.translated(translation, roots, null);
       SqlInventory.finished(new Identifier(), new Result());
       try (var files = Files.list(directory)) {
@@ -39,6 +53,7 @@ class SqlInventoryTest {
         org.junit.jupiter.api.Assertions.assertEquals(
             1, json.split("\"substitutions\":1", -1).length - 1);
         assertTrue(json.contains("StreamPhysicalNativeCalc"));
+        assertTrue(json.contains("Calc: unsupported function/operator: AS"));
       }
     } finally {
       System.clearProperty("streamfusion.flink-suite.sql-inventory");
@@ -52,6 +67,13 @@ class SqlInventoryTest {
 
     public List<Object> optimizeRoots(
         List<Object> roots, java.util.function.UnaryOperator<Object> normalize) {
+      return optimizeRoots(roots, normalize, node -> false);
+    }
+
+    public List<Object> optimizeRoots(
+        List<Object> roots,
+        java.util.function.UnaryOperator<Object> normalize,
+        java.util.function.Predicate<Object> nativeSource) {
       return roots;
     }
   }

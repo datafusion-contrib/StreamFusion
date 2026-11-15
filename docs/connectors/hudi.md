@@ -355,8 +355,11 @@ enabled upstream cases. Exactly 99 contracts now require positive native Calc
 work in place of the removed standalone-scalar performance rejection. Every
 other native-work requirement and semantic fallback reason is preserved. This
 credits core Calc execution, not native Hudi I/O. Batch plans must be observed at
-the current two-argument planner boundary; the unchanged vector cases also check
-that unsupported batch representations retain their fallback evidence.
+the current three-argument planner boundary, including calls through convenience
+wrappers without counting their observations twice. Runtime work observation also
+includes bounded columnar limits, independently of their presence in a plan. The
+unchanged vector cases check that unsupported batch representations retain their
+fallback evidence.
 The [historical route inventories and observer diagnostics](https://github.com/jordepic/StreamFusion-contrib/releases/tag/benchmark-evidence-hudi-contracts-20261115-905434b62)
 are independently archived with verified bundle/member hashes. They retain the
 withdrawn before-observer-fix observations separately; inventory collection does
