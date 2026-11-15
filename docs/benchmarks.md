@@ -523,19 +523,28 @@ cause. The original best-of Paimon runner remains available unchanged.
 
 ## Hudi storage comparison
 
-The [four-partition Hudi Nexmark matrix](benchmarks/hudi-nexmark.md) retains the
-shared query SQL and two-million-event Kafka corpus with Hudi tables at both
-ends. The completed post-optimization Linux configurations with mini-batching on
-have geometric means of median speedups of **1.27× stock / 10.28× previous
-StreamFusion** with heap state and **1.32× / 8.10×** with RocksDB. Native medians
-beat stock on 17 of 22 timed queries in each configuration; Q5/Q8/Q11/Q13/Q14
-retain substantial stock losses. Both mini-batching-off configurations hit their
-original three-hour limit and are being retried, so the full matrix remains
-incomplete. Compare engines within each configuration; different runner CPU
-models prevent a causal backend or before/after comparison. Full-value checks,
-processing-time exceptions, all trials/ranges, earlier baselines, profiling evidence
-and host memory context are recorded on that page. These are complete-job timings,
-not sustained streaming throughput.
+The [four-partition Hudi Nexmark matrix](benchmarks/hudi-nexmark.md) retains shared
+query SQL and the two-million-event Kafka corpus with Hudi tables at both ends.
+All four configurations pass at measured source `67d03a0f7`:
+
+| State | Mini-batching | Stock/native | Previous SF/native |
+| --- | --- | ---: | ---: |
+| Heap | off | **1.89×** | **11.23×** |
+| Heap | on | **2.21×** | **13.72×** |
+| RocksDB | off | **1.80×** | **9.28×** |
+| RocksDB | on | **2.09×** | **8.97×** |
+
+Native medians beat stock on 17/22 queries in each configuration;
+Q5/Q8/Q11/Q13/Q14 retain substantial stock losses. All 792 timings, four exact Q7
+stock planner exclusions, full-value deterministic comparisons, Q12 count
+invariants, actual RocksDB checks, Rust payload footers and final native cleanup
+validate. The historical Q10 control failure remains archived; the completed
+campaign passes every Q10 trial without claiming its cause or a fix.
+
+Compare engines within each configuration. Different runner hosts/CPU models
+prevent causal backend, mini-batch or before/after claims. These are complete-job
+timings, not sustained throughput, and precede later upstream integrations.
+The detailed page retains all trials/ranges, hashes, host context and raw archives.
 
 ## Historical Nexmark report review (2026-09-08)
 
