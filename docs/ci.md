@@ -1364,6 +1364,14 @@ Select `lake_module=hudi` to run the complete Hudi module on its released Flink 
 bundle instead. This checks Linux dependency resolution and native integration on one
 chosen JDK using the same verified producer; it retains the module's JUnit reports.
 The full upstream Hudi SQL corpus remains in the ordinary CI Hudi JDK 17 lane.
+Its Hive-enabled reactor and released-fixture setup use the existing `--model-only`
+dependency preparation mode. Maven Dependency Plugin 3.11.0's `go-offline` graph
+reconstruction drops dependency exclusions and attempts to resolve Hive's obsolete
+JDK 7 `tools.jar` even on JDK 17. Normal fixture and test builds preserve those
+exclusions and resolve their actual dependency graphs. The ordinary Hudi module
+and agent still use full dependency preparation; no test selection or assertion
+changes. The [released plugin implementation](https://github.com/apache/maven-dependency-plugin/blob/maven-dependency-plugin-3.11.0/src/main/java/org/apache/maven/plugins/dependency/resolvers/GoOfflineMojo.java)
+shows the dependency reconstruction used by this setup path.
 The setup probe's `metadata_regression` input instead runs all eight worker-cache controls plus
 the complete 28-case append-arithmetic class that exposed the JDK 11 crash. It requires all 36
 checks to pass, including actual collector isolation and unchanged native/stock continuation,
