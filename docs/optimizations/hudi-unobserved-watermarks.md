@@ -38,13 +38,16 @@ the ordinary eager watermark boundaries.
 Earlier Q0/Q1/Q4 full-value comparisons passed, but macOS power logs later showed
 repeated system suspension during the campaign. Their timing qualification has
 been withdrawn. The [benchmark method](../benchmarks/hudi-nexmark.md) now requires
-an awake host and records both clocks. The completed heap-state,
+an awake host and records both clocks. The historical heap-state,
 mini-batching-off comparison uses two million events, four source/sink tasks,
 one warmup and three rotating release trials per engine. Q0 medians are
 986.1 ms stock, 7,143.7 ms previous StreamFusion and 529.9 ms native; Q4 is
 2,039.6 / 85,742.2 / 1,323.7 ms respectively. The benchmark page retains all
 trial ranges and losses. The heap/mini-batching-on baseline is also recorded there.
-Persistent-window tuning and full-matrix requalification remain in progress.
+The later [full Linux matrix](../benchmarks/hudi-nexmark.md#full-linux-matrix-2026-11-15)
+completes all four configurations at source `67d03a0f7`, native tree `54cfc7608`.
+It includes the combined connector/core changes and retains five losses to stock
+in every configuration; it does not measure subsequent core/native integrations.
 
 A separate two-million-event Q12 diagnostic collected 6,711 CPU samples. Work
 under the watermark assigner/Calc accounted for 52.8% and key-group splitting
@@ -66,7 +69,8 @@ The [retained-configuration repeat](../benchmarks/hudi-calc-transport-20261114.j
 removes the owner candidate and combines the proof with Calc transport pruning and
 empty-result suppression. Q12 native medians are 8,138 -> 529 ms (15.39×), versus
 809 ms stock, in that isolated 200k-event run. Q8 improves 1.13× but still loses
-to stock by 3.66×. The full two-million-event matrix remains pending.
+to stock by 3.66×. The later full two-million-event matrix includes these changes
+and still loses to stock on Q8 in every configuration; it does not isolate their gain.
 
 An awake Q9 CPU capture then identified MOR log serialization (32.9% of samples)
 and its encoder handoff (25.7%, inclusive). Java previously filled metadata for
@@ -74,7 +78,7 @@ every parent row whenever the iterator changed source batches, even when only
 one selected row was encoded. Bounded reference chunks now share the reader
 interleave kernel, gather only selected payloads in Rust and create metadata
 only for dense output rows. Iterator order and repeated positions are preserved.
-In that same completed matrix, Q9 medians are 2,741.7 ms stock,
+In the historical heap/mini-batching-off baseline, Q9 medians are 2,741.7 ms stock,
 166,255.0 ms previous StreamFusion and 2,804.8 ms native. This is near stock
 parity (0.98×) and 59.3× faster than the previous boundaries. These measurements
 include the combined watermark and writer changes; they do not isolate a gain

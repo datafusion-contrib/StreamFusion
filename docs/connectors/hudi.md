@@ -397,18 +397,19 @@ log-only and base-plus-log merges with stock Hudi, including nested ROW/ARRAY/MA
 NULLs, microsecond timestamps, DECIMAL, TIME and binary payloads. It verifies
 projection and that an older event version cannot replace the latest payload.
 The [four-partition Hudi Nexmark harness](../benchmarks/hudi-nexmark.md)
-adds full-row stock readback and checks the actual Parquet encoder. Expanded
-matrix performance validation is ongoing; the earlier one-writer measurements
-above do not establish performance for the expanded matrix. The completed
-heap configurations have geometric means of median speedups over stock Flink
-of 0.55× with mini-batching off and 0.64× with it on: simple I/O improves, but
-window and lookup paths remain substantially slower. These are baseline results
-before the shared persistent-window deadline optimization. A focused 200k-event
-Q5 RocksDB comparison improves its native median 4.47× after deadline checks and
-bounded cursor reads, while remaining 6.32× slower than stock. The two-million-event
-recheck and full matrix are pending;
-the benchmark page retains all trial ranges and the draft's open performance
-disposition in [issue #663](https://github.com/datafusion-contrib/StreamFusion/issues/663).
+adds full-row stock readback and checks the actual Parquet encoder. Its completed
+two-million-event matrix at source `67d03a0f7`, native tree `54cfc7608`, covers
+heap/RocksDB state with mini-batching off/on. Geometric means of median speedups
+over stock Flink are 1.891×/2.208× for heap and 1.801×/2.094× for RocksDB.
+Native wins 17 of 22 query medians in every configuration; Q5/Q8/Q11/Q13/Q14
+still lose to stock. These complete-job measurements include the combined
+connector and core optimizations; they do not isolate individual gains, establish
+sustained throughput, or measure subsequent core/native integrations.
+The benchmark page retains every range and earlier baseline, including the
+0.55×/0.64× heap results and the focused 200k-event Q5 improvement that still
+loses to stock. [Issue #663](https://github.com/datafusion-contrib/StreamFusion/issues/663)
+tracks the remaining performance work. Final hosted correctness qualification
+of the current combined source remains separate from these timings.
 
 The terminal sink does not observe watermarks. When only native Calcs without
 `CURRENT_WATERMARK` or user functions separate it from an assigner, the planner retains whole

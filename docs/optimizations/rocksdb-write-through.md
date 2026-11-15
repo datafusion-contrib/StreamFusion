@@ -84,8 +84,11 @@ also reduces the previous StreamFusion boundary's median from 25,769 to 7,648 ms
 All 99 affected native tests pass, including timer import and heap/RocksDB state
 transfer. [Structured trials and diagnostic](../benchmarks/hudi-window-firing-20261114.json)
 retain source trees, library hashes, all ranges and positive RocksDB engagement.
-These are smaller complete-job measurements; the two-million-event recheck and
-full matrix remain pending.
+These are smaller complete-job measurements. The later
+[two-million-event full matrix](../benchmarks/hudi-nexmark.md#full-linux-matrix-2026-11-15)
+at source `67d03a0f7`, native tree `54cfc7608`, includes the subsequent bounded-output
+integration and completes all four configurations. Q5 remains slower than stock
+in every configuration; those combined results do not isolate this optimization.
 
 Firing and timer reads also reuse one snapshot-aware cursor across populated key
 groups. Fixed-grid seeks start at the known earliest live end, and timer reads
