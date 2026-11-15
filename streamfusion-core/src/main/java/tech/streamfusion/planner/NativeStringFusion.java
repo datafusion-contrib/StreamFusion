@@ -1,5 +1,6 @@
 package tech.streamfusion.planner;
 
+import tech.streamfusion.planner.common.CertifiedOp;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -66,7 +67,7 @@ final class NativeStringFusion {
             || replacement.charAt(0) > 127) continue;
       }
       return new NativeStringFusion(
-          call, producer, index, 20 + kind + (replace ? 6 : unequal ? 3 : 0));
+          call, producer, index, kind + (replace ? CertifiedOp.LPAD_REPLACE : unequal ? CertifiedOp.LPAD_NOT_EQUAL : CertifiedOp.LPAD_EQUAL));
     }
     return null;
   }

@@ -78,7 +78,7 @@ the always-on planning log also counts Calc/filter nodes containing JVM function
 Flink's operator metrics use these detailed names as well; select Calc/filter metric groups by the
 `NativeCalc(` or `NativeFilter(` prefix rather than their execution-node class names.
 
-Expression node kinds, primitive cast targets, scalar call opcodes and aggregate kinds come from
+Expression node kinds, primitive cast targets, scalar call and certified-builtin opcodes, and aggregate kinds come from
 one versioned protocol manifest. It generates Java and Rust enums for node/type tags and
 compile-time constants for operation codes used in dispatch. GROUP/OVER and window aggregate
 codes have separate namespaces because some existing values have different meanings in those

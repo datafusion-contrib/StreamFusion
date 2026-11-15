@@ -1328,5 +1328,103 @@
       "name": "COUNT_DISTINCT_WITH_COUNTS",
       "code": 43
     }
+  ],
+  "certifiedOps": [
+    {
+      "name": "REGEXP",
+      "code": 1
+    },
+    {
+      "name": "REGEXP_REPLACE",
+      "code": 2
+    },
+    {
+      "name": "REGEXP_EXTRACT",
+      "code": 3
+    },
+    {
+      "name": "REGEXP_COUNT",
+      "code": 4
+    },
+    {
+      "name": "REGEXP_INSTR",
+      "code": 5
+    },
+    {
+      "name": "REGEXP_SUBSTR",
+      "code": 6
+    },
+    {
+      "name": "LIKE_WITH_ESCAPE",
+      "code": 7
+    },
+    {
+      "name": "SIMILAR",
+      "code": 8
+    },
+    {
+      "name": "PARSE_URL",
+      "code": 9
+    },
+    {
+      "name": "PRINTF",
+      "code": 10
+    },
+    {
+      "name": "SPLIT_INDEX_INTEGER",
+      "code": 11
+    },
+    {
+      "name": "SHA2_RUNTIME",
+      "code": 12
+    },
+    {
+      "name": "TRIM",
+      "code": 13
+    },
+    {
+      "name": "LTRIM",
+      "code": 14
+    },
+    {
+      "name": "RTRIM",
+      "code": 15
+    },
+    {
+      "name": "LPAD_EQUAL",
+      "code": 20
+    },
+    {
+      "name": "RPAD_EQUAL",
+      "code": 21
+    },
+    {
+      "name": "OVERLAY_EQUAL",
+      "code": 22
+    },
+    {
+      "name": "LPAD_NOT_EQUAL",
+      "code": 23
+    },
+    {
+      "name": "RPAD_NOT_EQUAL",
+      "code": 24
+    },
+    {
+      "name": "OVERLAY_NOT_EQUAL",
+      "code": 25
+    },
+    {
+      "name": "LPAD_REPLACE",
+      "code": 26
+    },
+    {
+      "name": "RPAD_REPLACE",
+      "code": 27
+    },
+    {
+      "name": "OVERLAY_REPLACE",
+      "code": 28
+    }
   ]
 }

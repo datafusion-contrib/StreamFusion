@@ -1,4 +1,5 @@
 //! Consume padding/overlay UTF-16 intermediates before their final UTF-8 encoding.
+use crate::expression_protocol::certified_op;
 use arrow::array::{
     Array, ArrayRef, BooleanBuilder, Int32Array, Int64Array, NullBufferBuilder, StringArray,
 };
@@ -567,11 +568,11 @@ pub(crate) fn evaluate(
     caches: &[ColumnarValue],
     rows: usize,
 ) -> Option<ArrayRef> {
-    if !(20..=28).contains(&operation) {
+    if !(certified_op::LPAD_EQUAL..=certified_op::OVERLAY_REPLACE).contains(&operation) {
         return None;
     }
-    let producer = (operation - 20) % 3;
-    let consumer = (operation - 20) / 3;
+    let producer = (operation - certified_op::LPAD_EQUAL) % 3;
+    let consumer = (operation - certified_op::LPAD_EQUAL) / 3;
     let count = args.len().checked_sub(if consumer == 2 { 2 } else { 1 })?;
     if count != 3 && !(producer == 2 && count == 4) {
         return None;

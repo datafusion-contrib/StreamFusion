@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parent.parent
 MANIFEST = ROOT / "native/engine/expression-protocol.json"
 ENUMS = {"nodeKinds": "ExpressionKind", "castTargets": "CastTarget"}
 CODES = {
+    "certifiedOps": ("CertifiedOp", "certified_op"),
     "scalarOps": ("ScalarOp", "scalar_op"),
     "groupAggregateKinds": ("GroupAggregateKind", "group_aggregate_kind"),
     "windowAggregateKinds": ("WindowAggregateKind", "window_aggregate_kind"),

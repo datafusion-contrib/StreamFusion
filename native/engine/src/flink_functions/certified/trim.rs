@@ -1,3 +1,4 @@
+use crate::expression_protocol::certified_op;
 use arrow::array::{Array, ArrayRef, StringArray, StringBuilder};
 use std::sync::Arc;
 use streamfusion_bridge::string_cache::JavaStringCacheColumn;
@@ -43,12 +44,12 @@ pub(super) fn evaluate(
         let bytes = value.as_bytes();
         let mut start = 0;
         let mut end = bytes.len();
-        if operation != 15 {
+        if operation != certified_op::RTRIM {
             while start < end && mask & (1_u128 << bytes[start]) != 0 {
                 start += 1;
             }
         }
-        if operation != 14 {
+        if operation != certified_op::LTRIM {
             while end > start && mask & (1_u128 << bytes[end - 1]) != 0 {
                 end -= 1;
             }

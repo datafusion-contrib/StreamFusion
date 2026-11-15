@@ -34,6 +34,7 @@ import tech.streamfusion.planner.common.Admission;
 import tech.streamfusion.planner.common.EncodedExpression;
 import tech.streamfusion.planner.common.ExpressionKind;
 import tech.streamfusion.planner.common.ScalarOp;
+import tech.streamfusion.planner.common.CertifiedOp;
 import tech.streamfusion.planner.common.CastTarget;
 
 /**
@@ -6216,47 +6217,47 @@ final class RexExpression implements EncodedExpression {
     if (isRuntimeSqlTrim(call)) {
       switch (String.valueOf(((RexLiteral) call.getOperands().get(0)).getValue())) {
         case "BOTH":
-          return 13;
+          return CertifiedOp.TRIM;
         case "LEADING":
-          return 14;
+          return CertifiedOp.LTRIM;
         case "TRAILING":
-          return 15;
+          return CertifiedOp.RTRIM;
         default:
           return 0;
       }
     }
-    if (call.getKind() == SqlKind.LIKE && call.getOperands().size() == 3) return 7;
-    if (call.getKind() == SqlKind.SIMILAR) return 8;
+    if (call.getKind() == SqlKind.LIKE && call.getOperands().size() == 3) return CertifiedOp.LIKE_WITH_ESCAPE;
+    if (call.getKind() == SqlKind.SIMILAR) return CertifiedOp.SIMILAR;
     switch (call.getOperator().getName().toUpperCase(Locale.ROOT)) {
       case "REGEXP":
-        return 1;
+        return CertifiedOp.REGEXP;
       case "REGEXP_REPLACE":
-        return 2;
+        return CertifiedOp.REGEXP_REPLACE;
       case "REGEXP_EXTRACT":
         return NativeConfig.allowsIncompatible("REGEXP_EXTRACT") ? 0 : 3;
       case "REGEXP_COUNT":
-        return 4;
+        return CertifiedOp.REGEXP_COUNT;
       case "REGEXP_INSTR":
-        return 5;
+        return CertifiedOp.REGEXP_INSTR;
       case "REGEXP_SUBSTR":
-        return 6;
+        return CertifiedOp.REGEXP_SUBSTR;
       case "PARSE_URL":
-        return 9;
+        return CertifiedOp.PARSE_URL;
       case "PRINTF":
-        return 10;
+        return CertifiedOp.PRINTF;
       case "SHA2":
         return literalSha2Op(call) < 0
                 && call.getOperands().size() == 2
                 && isCharacter(call.getOperands().get(0))
                 && call.getOperands().get(1).getType().getSqlTypeName() == SqlTypeName.INTEGER
-            ? 12
+            ? CertifiedOp.SHA2_RUNTIME
             : 0;
       case "SPLIT_INDEX":
         return call.getOperands().size() == 3
                 && isCharacter(call.getOperands().get(0))
                 && call.getOperands().get(1).getType().getSqlTypeName() == SqlTypeName.INTEGER
                 && call.getOperands().get(2).getType().getSqlTypeName() == SqlTypeName.INTEGER
-            ? 11
+            ? CertifiedOp.SPLIT_INDEX_INTEGER
             : 0;
       default:
         return 0;
@@ -6269,7 +6270,7 @@ final class RexExpression implements EncodedExpression {
 
   private boolean emitCertifiedBuiltin(RexCall call, int operation, NativeStringFusion fusion) {
     if (!validateHostStringInputs(call)) return false;
-    boolean sqlTrim = operation >= 13 && operation <= 15;
+    boolean sqlTrim = operation >= CertifiedOp.TRIM && operation <= CertifiedOp.RTRIM;
     List<RexNode> operands =
         sqlTrim ? call.getOperands().subList(1, 3)
             : fusion == null ? call.getOperands() : fusion.operands;

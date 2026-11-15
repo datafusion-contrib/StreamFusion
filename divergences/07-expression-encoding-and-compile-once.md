@@ -25,7 +25,7 @@ grows toward Comet's scale (nested structs, N-ary functions, casts), switching t
 *wire format* to Protobuf is the natural upgrade — it is a maintainability change,
 not a performance one, since encoding happens once per operator, not per batch.
 
-The node-kind, primitive cast-target, scalar-call and aggregate vocabularies are defined in
+The node-kind, primitive cast-target, scalar-call, certified-builtin and aggregate vocabularies are defined in
 `native/engine/expression-protocol.json`. `bin/generate-expression-protocol.py` generates the
 Java and Rust enums for node/type tags and compile-time constants for dispatch codes; CI checks
 the generated sources and rejects duplicate or reused retired codes. A fixed v1 fixture protects

@@ -135,6 +135,34 @@ impl CastTarget {
 }
 
 #[allow(dead_code)]
+pub(crate) mod certified_op {
+    pub(crate) const REGEXP: i64 = 1;
+    pub(crate) const REGEXP_REPLACE: i64 = 2;
+    pub(crate) const REGEXP_EXTRACT: i64 = 3;
+    pub(crate) const REGEXP_COUNT: i64 = 4;
+    pub(crate) const REGEXP_INSTR: i64 = 5;
+    pub(crate) const REGEXP_SUBSTR: i64 = 6;
+    pub(crate) const LIKE_WITH_ESCAPE: i64 = 7;
+    pub(crate) const SIMILAR: i64 = 8;
+    pub(crate) const PARSE_URL: i64 = 9;
+    pub(crate) const PRINTF: i64 = 10;
+    pub(crate) const SPLIT_INDEX_INTEGER: i64 = 11;
+    pub(crate) const SHA2_RUNTIME: i64 = 12;
+    pub(crate) const TRIM: i64 = 13;
+    pub(crate) const LTRIM: i64 = 14;
+    pub(crate) const RTRIM: i64 = 15;
+    pub(crate) const LPAD_EQUAL: i64 = 20;
+    pub(crate) const RPAD_EQUAL: i64 = 21;
+    pub(crate) const OVERLAY_EQUAL: i64 = 22;
+    pub(crate) const LPAD_NOT_EQUAL: i64 = 23;
+    pub(crate) const RPAD_NOT_EQUAL: i64 = 24;
+    pub(crate) const OVERLAY_NOT_EQUAL: i64 = 25;
+    pub(crate) const LPAD_REPLACE: i64 = 26;
+    pub(crate) const RPAD_REPLACE: i64 = 27;
+    pub(crate) const OVERLAY_REPLACE: i64 = 28;
+}
+
+#[allow(dead_code)]
 pub(crate) mod scalar_op {
     pub(crate) const ADD: i64 = 0;
     pub(crate) const SUBTRACT: i64 = 1;

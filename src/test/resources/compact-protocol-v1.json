@@ -337,5 +337,31 @@
     "HIDDEN_LIVE_COUNT": 12,
     "SUM_ZERO": 22,
     "COUNT_DISTINCT_WITH_COUNTS": 43
+  },
+  "certifiedOps": {
+    "REGEXP": 1,
+    "REGEXP_REPLACE": 2,
+    "REGEXP_EXTRACT": 3,
+    "REGEXP_COUNT": 4,
+    "REGEXP_INSTR": 5,
+    "REGEXP_SUBSTR": 6,
+    "LIKE_WITH_ESCAPE": 7,
+    "SIMILAR": 8,
+    "PARSE_URL": 9,
+    "PRINTF": 10,
+    "SPLIT_INDEX_INTEGER": 11,
+    "SHA2_RUNTIME": 12,
+    "TRIM": 13,
+    "LTRIM": 14,
+    "RTRIM": 15,
+    "LPAD_EQUAL": 20,
+    "RPAD_EQUAL": 21,
+    "OVERLAY_EQUAL": 22,
+    "LPAD_NOT_EQUAL": 23,
+    "RPAD_NOT_EQUAL": 24,
+    "OVERLAY_NOT_EQUAL": 25,
+    "LPAD_REPLACE": 26,
+    "RPAD_REPLACE": 27,
+    "OVERLAY_REPLACE": 28
   }
 }

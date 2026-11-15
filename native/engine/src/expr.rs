@@ -1,4 +1,4 @@
-use crate::expression_protocol::{scalar_op, CastTarget, ExpressionKind};
+use crate::expression_protocol::{certified_op, scalar_op, CastTarget, ExpressionKind};
 use crate::*;
 use arrow::datatypes::TimeUnit;
 
@@ -391,8 +391,8 @@ pub(crate) fn build_expr(
             if kind == ExpressionKind::CertifiedBuiltin {
                 function.certified_builtin = Some((longs[arg + 2], count));
                 let cache_count = match longs[arg + 2] {
-                    11 => 1, // Integer SPLIT_INDEX needs only the source string cache.
-                    12 => 0, // SHA2 hashes bytes without consulting decoded string caches.
+                    certified_op::SPLIT_INDEX_INTEGER => 1, // Integer SPLIT_INDEX needs only the source string cache.
+                    certified_op::SHA2_RUNTIME => 0, // SHA2 hashes bytes without consulting decoded string caches.
                     _ => count,
                 };
                 for index in 0..cache_count {
@@ -2599,7 +2599,9 @@ impl datafusion::logical_expr::ScalarUDFImpl for JvmUdf {
                 }
             }
         }
-        if let Some((operation @ 20..=28, count)) = self.certified_builtin {
+        if let Some((operation @ certified_op::LPAD_EQUAL..=certified_op::OVERLAY_REPLACE, count)) =
+            self.certified_builtin
+        {
             if let Some(output) = crate::flink_functions::string_fusion::evaluate(
                 operation,
                 &args.args[..count],
