@@ -51,8 +51,10 @@ with remapped references, including whole-Calc JVM input coordinates; it cannot 
 prepared program. Whole-Calc representation flags remain attached to every logical output field,
 even when one row-valued evaluator root produces several columns. Each constructed operator
 receives its own unopened JVM-function binding.
-The Calc coordinator delegates numeric value proofs, exact builtin routing, temporal formatting
-and UDF overload selection to semantic owners that do not write protocol pools. A dedicated
+The Calc coordinator delegates numeric value proofs, collection/row representation, exact builtin
+routing, temporal formatting and UDF overload selection to semantic owners that do not write
+protocol pools. Shared collection rules use their own shape/type facts, without calling back into
+the encoder. A dedicated
 expression buffer owns node/payload alignment, literal storage, input remapping and exported
 array snapshots. Admission still preserves short-circuiting, shared UDF evaluation and existing
 native/JVM choices; this separation changes neither the wire format nor supported SQL.

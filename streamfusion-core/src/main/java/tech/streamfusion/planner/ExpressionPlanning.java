@@ -75,19 +75,19 @@ public final class ExpressionPlanning {
   }
 
   public static boolean containsGeneratedCollectionFunction(RexProgram program) {
-    return RexExpression.containsGeneratedCollectionFunction(program);
+    return CollectionExpressionSemantics.containsGeneratedCollectionFunction(program);
   }
 
   public static boolean containsGeneratedCollectionFunction(RexNode expression) {
-    return RexExpression.containsGeneratedCollectionFunction(expression);
+    return CollectionExpressionSemantics.containsGeneratedCollectionFunction(expression);
   }
 
   public static boolean collectionAggregateElement(RelDataType type) {
-    return RexExpression.collectionAggregateElement(type);
+    return CollectionExpressionSemantics.collectionAggregateElement(type);
   }
 
   public static boolean usesCollectionFunctions(RexProgram program) {
-    return RexExpression.usesCollectionFunctions(program);
+    return CollectionExpressionSemantics.usesCollectionFunctions(program);
   }
 
   public static boolean usesCollectionScalarUdf(RexProgram program) {

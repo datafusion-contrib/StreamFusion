@@ -59,11 +59,13 @@ Unknown configuration or unsupported context retains the existing rejection or g
 other cast families retain their current parity-specific paths. This separates semantic ownership
 from the compact wire encoding without introducing another general expression AST.
 
-Numeric value/range proofs, builtin exactness selection, temporal formatting and UDF overload
+Numeric value/range proofs, collection/row representation, builtin exactness selection, temporal formatting and UDF overload
 resolution have separate semantic owners. They cannot access wire storage. The Calc coordinator
 uses their decisions to schedule evaluation and emits through an expression buffer, which alone
 owns the parallel node/literal pools, remapping and exported array copies. This follows Flink's
 separation of call-generation policy and generated output while retaining the compact protocol.
+Collection admission and boundary analysis share their facts directly; they do not depend on
+encoder helpers. The shared type owner supplies nested conversion/type codes to both paths.
 
 ## Compile once, evaluate directly (performance)
 Independent of the wire format: the native side compiles the decoded `Expr` into a
