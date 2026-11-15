@@ -313,7 +313,7 @@ mod tests {
             unreachable!()
         };
         children[1] = Arc::new(children[1].as_ref().clone().with_data_type(DataType::Map(
-            Arc::new(entry.as_ref().clone().with_name("entries")),
+            Arc::new(entry.as_ref().clone().with_name("items")),
             *sorted,
         )));
         fields[2] = Arc::new(
