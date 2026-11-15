@@ -6,7 +6,7 @@ on:
       suite:
         description: 'Paired JVM comparison to run'
         type: choice
-        options: [runtime, runtime-parallel, runtime-jfr, canonical, native-only, runtime-hotspots, canonical-setup, lake-setup, native-lz4]
+        options: [runtime, runtime-parallel, runtime-jfr, canonical, native-only, runtime-hotspots, canonical-setup, canonical-reference, lake-setup, native-lz4]
         default: runtime
       native_run:
         description: 'Existing native producer for focused diagnostics'
@@ -53,6 +53,74 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  canonical-reference:
+    if: inputs.suite == 'canonical-reference' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        line: ${{ fromJSON(inputs.flink_line == 'all' && '["2.2","1.18"]' || format('["{0}"]', inputs.flink_line)) }}
+    env:
+      FLINK_PROFILES: ${{ matrix.line == '1.18' && 'flink-1.18,canonical-kafka' || 'canonical-kafka' }}
+      JAVA_TOOL_OPTIONS: ${{ inputs.jdk == '11' && '-XX:+UseSerialGC' || '' }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          filter: blob:none
+      - run: python3 bin/ci-free-disk.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.jdk == '11' && env.CANONICAL_JAVA_11 || env.CANONICAL_JAVA_17 }}
+          cache: maven
+      - name: Verify the existing native producer
+        id: native
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NATIVE_RUN: ${{ inputs.native_run }}
+        run: python3 bin/ci_native_source.py --run "$NATIVE_RUN"
+      - uses: actions/download-artifact@v5
+        with:
+          name: ${{ steps.native.outputs.artifact }}
+          run-id: ${{ inputs.native_run }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/original-native
+      - name: Stage the canonical native libraries
+        run: >-
+          python3 bin/ci_native_test_artifact.py --input "$RUNNER_TEMP/original-native"
+          --output native/target/debug
+      - name: Compile once before paired trials
+        run: |
+          python3 bin/ci-maven-dependencies.py --profile "$FLINK_PROFILES" --projects streamfusion-runtime --also-make
+          mvn -B -ntp -P"$FLINK_PROFILES" -pl streamfusion-runtime -am test-compile \
+            -DskipTests=true -Dnative.build.skip=true -Dsf.protobuf.checkStaleness=true
+      - name: Compare identical handoffs with independent reference cache lifetimes
+        run: >-
+          python3 bin/profile-canonical-reference-ci.py --line '${{ matrix.line }}'
+          --repetitions 3 --output "$RUNNER_TEMP/reference-comparison"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: canonical-reference-flink${{ matrix.line }}-jdk${{ inputs.jdk }}
+          path: |
+            ${{ runner.temp }}/reference-comparison/summary.json
+            ${{ runner.temp }}/reference-comparison/*.log
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove staged libraries and fixtures
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import os, shutil
+          from pathlib import Path
+          for path in (Path(os.environ['RUNNER_TEMP']) / 'original-native',
+                       Path(os.environ['RUNNER_TEMP']) / 'reference-comparison',
+                       Path('native/target/debug')):
+              if path.exists():
+                  shutil.rmtree(path)
+          PY
+
   native-lz4:
     if: inputs.suite == 'native-lz4' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main')
     runs-on: ubuntu-24.04
@@ -167,7 +235,7 @@ jobs:
       kafka_rescale_regression: ${{ inputs.kafka_rescale_regression }}
 
   native:
-    if: ${{ inputs.suite != 'runtime-hotspots' && inputs.suite != 'canonical-setup' && inputs.suite != 'lake-setup' && inputs.suite != 'native-lz4' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
+    if: ${{ inputs.suite != 'runtime-hotspots' && inputs.suite != 'canonical-setup' && inputs.suite != 'canonical-reference' && inputs.suite != 'lake-setup' && inputs.suite != 'native-lz4' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -238,7 +306,7 @@ jobs:
 
   runtime:
     needs: native
-    if: inputs.suite != 'canonical' && inputs.suite != 'native-only' && inputs.suite != 'runtime-hotspots' && inputs.suite != 'canonical-setup' && inputs.suite != 'lake-setup' && inputs.suite != 'native-lz4'
+    if: inputs.suite != 'canonical' && inputs.suite != 'native-only' && inputs.suite != 'runtime-hotspots' && inputs.suite != 'canonical-setup' && inputs.suite != 'canonical-reference' && inputs.suite != 'lake-setup' && inputs.suite != 'native-lz4'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:

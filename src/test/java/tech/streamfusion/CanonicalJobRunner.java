@@ -222,9 +222,21 @@ class CanonicalJobRunner {
       CommittedRows output)
       throws Exception {
     var fixture = fixtureJar();
-    if (Files.exists(baseline.resolve("same-cut-stock-reference")))
-      runStockAtSavepointCuts(fixture, baseline, mode);
-    else run(fixture, false, baseline, Integer.MAX_VALUE, "none", "baseline", 3, "hashmap");
+    var reference =
+        workerClass == CanonicalJobWorker.class ? CanonicalReferenceCache.configured() : null;
+    org.apache.flink.util.function.ThrowingRunnable<Exception> executeReference =
+        () -> {
+          if (Files.exists(baseline.resolve("same-cut-stock-reference")))
+            runStockAtSavepointCuts(fixture, baseline, mode);
+          else run(fixture, false, baseline, Integer.MAX_VALUE, "none", "baseline", 3, "hashmap");
+        };
+    if (reference == null) executeReference.run();
+    else
+      reference.reference(
+          fixture,
+          baseline,
+          Files.exists(baseline.resolve("same-cut-stock-reference")) ? mode : "complete",
+          executeReference);
     if (mode.equals("rescale")) {
       Files.createFile(switched.resolve("rescale"));
       Files.writeString(switched.resolve("native-rescale-family"), family);

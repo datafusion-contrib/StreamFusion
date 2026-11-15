@@ -211,6 +211,7 @@ jobs:
           python3 -m unittest discover -s bin -p 'test_ci_native_test_artifact.py'
           python3 -m unittest discover -s bin -p 'test_ci_maven_dependencies.py'
           python3 -m unittest discover -s bin -p 'test_ci_plan.py'
+          python3 -m unittest discover -s bin -p 'test_ci_campaign.py'
           python3 -m unittest discover -s bin -p 'test_profile_ci.py'
           python3 -m unittest discover -s bin -p 'test_profile_canonical_ci.py'
           python3 -m unittest discover -s bin -p 'test_profile_runtime_ci.py'
@@ -364,8 +365,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        jdk: ['11', '17']
         line: ['2.2', '1.18']
+        jdk: ['11', '17']
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
         include:
           - line: '2.2'
@@ -413,6 +414,7 @@ jobs:
       - name: Run every selected canonical job
         env:
           SF_CANONICAL_CDS_DIR: ${{ runner.temp }}/canonical-cds
+          SF_CANONICAL_REFERENCE_DIR: ${{ runner.temp }}/canonical-references
         run: |
           nproc
           free -m
@@ -449,16 +451,17 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Remove canonical worker class metadata
+      - name: Remove canonical worker metadata and reference outputs
         if: always()
         run: |
           python3 - <<'PY'
           import os
           from pathlib import Path
           import shutil
-          directory = Path(os.environ['RUNNER_TEMP']) / 'canonical-cds'
-          if directory.exists():
-              shutil.rmtree(directory)
+          for name in ('canonical-cds', 'canonical-references'):
+              directory = Path(os.environ['RUNNER_TEMP']) / name
+              if directory.exists():
+                  shutil.rmtree(directory)
           PY
 
   lake-module-tests:
@@ -746,11 +749,11 @@ jobs:
       - name: Require every test job to succeed
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
-          DOCS_ONLY: ${{ needs.plan.outputs.tests == 'false' }}
+          REUSED_COVERAGE: ${{ needs.plan.outputs.tests == 'false' }}
         run: |
-          jq -e --arg docs "$DOCS_ONLY" '
+          jq -e --arg reused "$REUSED_COVERAGE" '
             .plan.result == "success" and
-            if $docs == "true" then
+            if $reused == "true" then
               all(to_entries[]; .key == "plan" or .value.result == "skipped")
             else
               all(.[]; .result == "success")

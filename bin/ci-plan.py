@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reuse proven source coverage only when a push changes documentation alone."""
+"""Reuse proven coverage for identical merged trees or documentation-only pushes."""
 
 import json
 import os
@@ -7,6 +7,7 @@ from pathlib import PurePosixPath
 import re
 import subprocess
 import sys
+from urllib.parse import urlencode
 
 
 CANONICAL = "datafusion-contrib/StreamFusion"
@@ -25,7 +26,7 @@ def changed_paths(base, head, cwd=None):
 def documentation_only(paths):
     def allowed(name):
         path = PurePosixPath(name)
-        return (name == "readme.md"
+        return (name in ("readme.md", "CLAUDE.md", "AGENTS.md")
                 or name.startswith("docs/") and path.suffix == ".md"
                 or path.parent == PurePosixPath("docs/benchmarks")
                 and re.fullmatch(r"ci-profile-\d{8}\.json", path.name) is not None)
@@ -41,7 +42,70 @@ def proven_push(runs, sha, branch):
     return latest.get("status") == "completed" and latest.get("conclusion") == "success"
 
 
+def proven_qualification(runs, sha, branch, workflow):
+    matches = [run for run in runs if run.get("head_sha") == sha
+               and run.get("head_branch") == branch
+               and (run.get("event") == "push"
+                    or run.get("event") == "workflow_dispatch"
+                    and (workflow != "flink-suite.yml"
+                         or run.get("display_title") == "Full upstream Flink suite (merge gate)"))]
+    if not matches:
+        return None
+    latest = max(matches, key=lambda run: run["id"])
+    return latest if latest.get("status") == "completed" and latest.get("conclusion") == "success" else None
+
+
+def qualified_merge(repository, head, branch):
+    if repository != CANONICAL or branch != "main":
+        return None
+    pulls = api(f"repos/{repository}/commits/{head}/pulls?per_page=100")
+    for pr in pulls:
+        if (not pr.get("merged_at") or pr.get("merge_commit_sha") != head
+                or pr.get("base", {}).get("ref") != "main"):
+            continue
+        source = pr["head"]
+        fork = source.get("repo")
+        if not fork or not fork.get("fork") or fork["full_name"] == CANONICAL:
+            continue
+        sha = source["sha"]
+        if not re.fullmatch(r"[0-9a-f]{40}", sha):
+            continue
+        subprocess.run(["git", "fetch", "--no-tags", "--filter=blob:none", "--depth=1",
+                        f"https://github.com/{fork['full_name']}.git", sha], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        # Compare the complete committed tree, including workflows and fixtures.
+        # Merging additional upstream changes must retain its full integration run.
+        if changed_paths(sha, head):
+            continue
+        evidence = []
+        for workflow in ("ci.yml", "flink-suite.yml"):
+            query = urlencode({"head_sha": sha, "branch": source["ref"]})
+            path = f"repos/{fork['full_name']}/actions/workflows/{workflow}/runs?{query}"
+            runs = []
+            page = 1
+            while True:
+                batch = api(path + f"&per_page=100&page={page}")["workflow_runs"]
+                runs.extend(batch)
+                if len(batch) < 100:
+                    break
+                page += 1
+            proven = proven_qualification(runs, sha, source["ref"], workflow)
+            if not proven:
+                break
+            evidence.append(proven)
+        if len(evidence) == 2:
+            print(f"Verified identical merged tree from PR #{pr['number']}: {fork['full_name']}@{sha}",
+                  file=sys.stderr)
+            for run in evidence:
+                print(f"Verified complete qualification: {run['html_url']}", file=sys.stderr)
+            return sha
+    return None
+
+
 def plan(repository, head, before, branch):
+    qualified = qualified_merge(repository, head, branch)
+    if qualified:
+        return False, qualified, "identical-merged-tree-with-passing-fork-qualification"
     if re.fullmatch(r"[0-9a-f]{40}", before or "") and before != "0" * 40:
         base_repository, base, base_branch = repository, before, branch
     else:
@@ -52,7 +116,8 @@ def plan(repository, head, before, branch):
     subprocess.run(["git", "fetch", "--no-tags", "--filter=blob:none", "--depth=1",
                     f"https://github.com/{base_repository}.git", base], check=True,
                    stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-    if not documentation_only(changed_paths(base, head)):
+    paths = changed_paths(base, head)
+    if not documentation_only(paths) and (paths or base == head):
         return True, base, "source-or-configuration-changed"
     for workflow in ("ci.yml", "flink-suite.yml"):
         runs = api(f"repos/{base_repository}/actions/workflows/{workflow}/runs?head_sha={base}&event=push&per_page=100")
@@ -64,7 +129,10 @@ def plan(repository, head, before, branch):
 
 def main():
     tests, baseline, reason = True, "", "non-push-event"
-    if os.environ.get("GITHUB_EVENT_NAME") == "push":
+    event_name = os.environ.get("GITHUB_EVENT_NAME")
+    manual_docs = (event_name == "workflow_dispatch"
+                   and os.environ.get("GITHUB_REF_NAME") != "main")
+    if event_name == "push" or manual_docs:
         try:
             with open(os.environ["GITHUB_EVENT_PATH"]) as stream:
                 event = json.load(stream)
@@ -72,8 +140,8 @@ def main():
                                            event.get("before"), os.environ["GITHUB_REF_NAME"])
         except (OSError, ValueError, KeyError, subprocess.SubprocessError):
             # Missing API access, history or evidence must never turn untested source green.
-            reason = "unable-to-prove-documentation-only-coverage"
-            print("Could not prove passing baseline coverage; running the complete suite.", file=sys.stderr)
+            reason = "unable-to-prove-previous-coverage"
+            print("Could not prove unchanged qualified source; running the complete suite.", file=sys.stderr)
     print(f"tests={str(tests).lower()}\nbaseline={baseline}\nreason={reason}")
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as stream:

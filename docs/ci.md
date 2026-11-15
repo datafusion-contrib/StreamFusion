@@ -3,7 +3,9 @@
 Contributor builds and tests run in **personal forks**, using each fork owner's GitHub Actions
 quota instead of the shared `datafusion-contrib` quota. Opening or updating a PR does not launch
 the test matrix in the canonical repository. Source-changing canonical `main` pushes still run
-the complete post-merge checks, the upstream Flink weekly run remains available, and publishing stays upstream.
+post-merge integration checks when the merged tree differs from the qualified PR head. An identical
+merged tree reuses both complete fork qualifications after verifying the source and results. The
+upstream Flink weekly run remains available, and publishing stays upstream.
 
 Runtime shards finish independently after a sibling failure, preserving complete diagnostic reports
 from the cohort. Every required shard must still pass the aggregate gate. Superseded branch pushes
@@ -33,11 +35,12 @@ the required successful checks on its exact PR head before merging.
    as `origin`). Fetch upstream and rebase your feature branch on current `upstream/main` so it
    contains these workflow changes. Push the feature branch to your fork, then open a PR into
    `datafusion-contrib/StreamFusion:main`.
-4. After focused local validation, explicitly dispatch **CI** and **Upstream Flink suite**
-   on the fork branch, plus applicable compatibility, diagnostic or documentation workflows.
+4. After focused local validation, submit **CI** and **Upstream Flink suite** through
+   `bin/ci-campaign.py`, plus applicable compatibility or documentation workflows.
    Wait for the exact branch head to pass. Include fork run links
-   in the PR so reviewers can inspect jobs and artifacts directly. Rebase and rerun after
-   incorporating new upstream changes before merging.
+   in the PR so reviewers can inspect jobs and artifacts directly. Keep the qualified candidate
+   stable: unrelated movement on main alone does not require another rebase and matrix. Actual
+   conflicts or necessary integration corrections require local validation of the new candidate.
 
 For example, after adding the fork remote:
 
@@ -46,8 +49,9 @@ git fetch upstream
 git rebase upstream/main
 git push -u fork HEAD
 gh pr create --repo datafusion-contrib/StreamFusion --base main --head YOUR_LOGIN:YOUR_BRANCH
-gh workflow run ci.yml --repo YOUR_LOGIN/YOUR_FORK --ref YOUR_BRANCH
-gh workflow run flink-suite.yml --repo YOUR_LOGIN/YOUR_FORK --ref YOUR_BRANCH
+python3 bin/ci-campaign.py status --repo YOUR_LOGIN/YOUR_FORK
+python3 bin/ci-campaign.py start --repo YOUR_LOGIN/YOUR_FORK \
+  --validation 'focused regression commands and their actual passing outcomes'
 ```
 
 For docs changes, also dispatch `docs.yml`. Dispatch `paimon1.yml`,
@@ -56,6 +60,27 @@ compatibility/diagnostic scope. Run these once the combined change is locally re
 commits and intermediate pushes do not each need a matrix. Until older feature
 branches include this configuration, `[skip ci]` can suppress their push-triggered
 workflows; it does not suppress the lightweight `pull_request_target` reporter.
+
+Use `--include docs.yml` or `--include paimon1.yml` for applicable checks in the same
+qualification. The launcher requires a clean committed worktree and the exact pushed PR head;
+the first qualification also requires current canonical main to be integrated. It reuses the
+latest successful or active run for each requested workflow and submits only missing workflows.
+If an existing run failed, diagnose it in the short loop, then use
+`python3 bin/ci-campaign.py retry --repo OWNER/FORK --run RUN_ID --validation 'failure diagnosis
+and focused passing checks'`. Retry uses GitHub's failed-job endpoint; successful matrix jobs
+are retained. Retries and inspection do not force a rebase onto unrelated new main commits.
+
+Before a new submission the launcher checks queued/running work across the owner's accessible
+repositories and reads their actual job states in small pages. Queued work or a full scheduling
+budget makes it refuse another campaign; current-head runs belonging to the qualification are
+reused. If other campaigns have only already-running tail jobs, unused slots remain available.
+The default 20-job scheduling budget is conservative; `--capacity` accepts a measured budget,
+not a claim about the account's configured limit. Docs and status-reporting jobs do not block it.
+All worktrees share a kernel lock in the common Git directory, so concurrent agents on one host
+cannot both inspect an empty queue and dispatch duplicate campaigns. The lock inode remains as
+an empty coordination file; the kernel releases ownership when the command exits. Record the
+focused checks actually performed, finish implementation and documentation before submission,
+and wait for other tasks instead of bypassing this check or canceling their workflows.
 
 After syncing the fork's default branch with already-merged upstream code, the native
 dependency cache can be primed there once:
@@ -198,11 +223,28 @@ gate can wait for another runner after the obsolete test jobs have been canceled
 keeping the workflow's concurrency slot occupied and the replacement run pending.
 Failures and unexpected skipped dependencies still fail the aggregate's result checks.
 
+## Reusing identical merged source
+
+For canonical main pushes, the coverage planner first checks the PR GitHub records as merged
+at that exact commit. It fetches the PR's fork head and compares the **entire committed tree**,
+including tests, workflows, dependencies and fixtures. It reuses qualification only if that tree
+is identical and both latest exact-head, exact-branch fork workflows completed successfully.
+The upstream run must be the full merge gate; inventory-only dispatches do not count. A newer
+failed, canceled or active run prevents reuse. Missing API/history/results select full execution.
+
+When this proof succeeds, both main aggregates verify the successful plan and deliberately
+skipped dependencies. This avoids running the same complete source twice just because merging
+changed commit metadata. It works for a merge/squash whose resulting tree is unchanged from
+the tested candidate. If main advanced and the merge combined any additional content, the full
+post-merge integration matrices still run. Manual main dispatches and weekly schedules remain full
+execution. Source equivalence does not transfer pre-merge check results to another PR head;
+the PR must still have successful checks for its exact head before merging.
+
 ## Documentation-only pushes
 
-Both required workflows first compare committed paths with a candidate baseline. Only
-`readme.md`, Markdown under `docs/`, and `docs/benchmarks/ci-profile-YYYYMMDD.json` timing
-evidence qualify. Source, tests, workflows, dependency/build configuration, instruction files,
+After the identical-merge check, both required workflows compare committed paths with a candidate baseline. Only
+`readme.md`, root `CLAUDE.md`/`AGENTS.md`, Markdown under `docs/`, and
+`docs/benchmarks/ci-profile-YYYYMMDD.json` timing evidence qualify. Source, tests, workflows, dependency/build configuration,
 other data files and unknown paths require the full matrix. Rename detection is disabled so
 moving a source file into `docs/` still counts its deletion from source.
 
@@ -211,7 +253,9 @@ branch, it is current canonical `main`. Both **CI** and **Upstream Flink suite**
 completed successful **push** run for that exact baseline SHA and branch. A newer failed,
 canceled or running push prevents reuse; manual inventory runs cannot establish coverage.
 Missing history, unavailable API access, missing workflows or incomplete/failed evidence all
-select the full matrix. Manual dispatches and weekly schedules always run the full selection.
+select the full matrix. Feature-branch manual dispatches use the same proof against canonical
+main, allowing documentation-only follow-ups to avoid retesting unchanged source. Manual main
+dispatches and weekly schedules always run the full selection.
 
 When those proofs pass, the documentation push has unchanged tested source. Its native and
 integration jobs are deliberately skipped, and both aggregate checks succeed on the new head
@@ -931,8 +975,37 @@ Canonical workers also use class-data sharing through `SF_CANONICAL_CDS_DIR`, se
 their test step. The first successful worker on each classpath records loaded classes, then
 HotSpot builds a metadata archive. Later stages use that archive in fresh JVMs with
 `-Xshare:on`. A process lock serializes initial archive creation across the two Surefire forks.
-Every scenario still creates its own clusters, native state, user-function instances,
-checkpoints and results; the archive stores class metadata rather than a running application.
+Every engine handoff still creates fresh worker processes, clusters, native state, user-function
+instances and checkpoints; the archive stores class metadata rather than a running application.
+
+Canonical CI also sets `SF_CANONICAL_REFERENCE_DIR` for job-local stock reference outputs.
+Cases with identical prepared input files, compiled user fixture, stock execution recipe,
+JDK, classpath and VM options reuse those committed reference rows and their verification markers.
+The recipe distinguishes a complete stock run from each same-cut recovery sequence. Backend and
+engine-direction variants still execute all their original test bodies and fresh switched workers.
+The cache never contains restorable state, running clusters, user functions or checkpoints.
+Each consumer receives a separate copy of the output. Process locks serialize identical references;
+atomic publication and content checksums reject partial or corrupt results. Failed stock workers
+publish nothing. Local runs without the environment variable execute every stock reference afresh.
+
+Two alternating local pairs on macOS arm64 / Temurin 17.0.17 exercised four original configurations
+per family: both engine directions and both backends, retaining every assertion. Materializer
+elapsed medians fell from 23.47 to 20.53 seconds (12.5%), with CPU medians down 16.4%.
+Same-cut mini-batch COUNT fell from 37.09 to 23.41 seconds (36.9%), with CPU down 37.1%.
+Both versions launched the same twelve fresh handoff workers per four-case trial. Reference
+workers fell from four to one for the materializer and from twelve to three for COUNT.
+The preparation phase is separate; these component results do not establish whole-CI savings.
+Structured observations live in [the November 15 evidence](benchmarks/ci-profile-20261115.json).
+
+After compiling the selected line with its matching native library, reproduce with
+`JAVA_HOME=YOUR_JDK python3 bin/profile-canonical-reference-ci.py --line 2.2 --repetitions 3
+--output NEW_DIRECTORY`. The profiler checks cache invalidation/failure controls, invokes the
+unchanged test methods, verifies membership in their original providers, and compares exact
+case identities and fresh-worker counts. Each measured cached trial begins with an empty
+reference cache, while compiled class metadata is prepared separately. It removes fixtures and
+retains concise JSON. The hosted `canonical-reference` startup-profile suite takes one explicit
+JDK and Flink line, reuses a source-verified native producer, and retains the same boundaries.
+CI removes references and class metadata after reporting outcomes.
 
 [AppCDS requires JAR classpaths](https://docs.oracle.com/en/java/javase/11/tools/java.html),
 so the harness snapshots compiled class directories into deterministic JARs while preserving
@@ -1056,12 +1129,12 @@ campaign and invocation audit remain required before merging. The
 [structured model](benchmarks/ci-shard-layout-20261113.json) retains all class elapsed-time inputs,
 observed shard selections, model results, the offline partition audit and reproduction steps.
 
-Create the historically heavier JDK 11 cohorts before JDK 17, keeping Flink 2.2 before 1.18
-within each JDK. Run 43324959481 started the four cohorts at median delays of 2,517 seconds
-(2.2/17), 4,889.5 (2.2/11), 6,137 (1.18/17) and 7,483.5 (1.18/11); the final two running
-canonical jobs were on 1.18/JDK 11. All cohorts share the same prerequisites, so this skew
-is not different Java preparation work. Baseline cohort runner costs place both JDK 11
-cohorts above JDK 17. GitHub documents that
+Create both expanded Flink 2.2 cohorts before Flink 1.18, with JDK 11 first within each line.
+The November 15 expanded main run spent 36.04 and 33.54 runner-hours on 2.2/JDK 11 and 17,
+versus 21.18 and 18.78 on 1.18/JDK 11 and 17. Its last critical shard belonged to 2.2/JDK 17:
+it started 286.9 minutes after workflow creation, then ran another 239.8 minutes. The previous
+JDK-first ordering was based on the smaller inventory; expansion makes the Flink line the
+larger cost difference. All cohorts share the same prerequisites. GitHub documents that
 [matrix variable order controls job creation order](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idstrategymatrix).
 The scheduler still determines actual starts: creating heavier work earlier is a scheduling
 hypothesis to measure, not a guaranteed priority or additional runner capacity.

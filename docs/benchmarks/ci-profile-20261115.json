@@ -1,0 +1,644 @@
+{
+  "date": "2026-11-15",
+  "base_commit": "8277b11dd85b9ca62642b6e6f491ce70e3cea0f5",
+  "scope": "CI fixture and scheduling costs, not engine throughput. Default test inventory and fresh engine-handoff worker boundaries are retained.",
+  "reference_cache_local": {
+    "flink_line": "2.2",
+    "platform": "macOS-15.3.1-arm64-arm-64bit-Mach-O",
+    "java": "17.0.17+10",
+    "trials": [
+      {
+        "pair": 0,
+        "cached": false,
+        "phase": "preparation",
+        "family": "materializer",
+        "elapsed_seconds": 42.84707312507089,
+        "cpu_seconds": 45.90935799999999,
+        "exit_code": 0,
+        "invocations": [
+          "CANONICAL_CASE materializer false hashmap passed",
+          "CANONICAL_CASE materializer false rocksdb passed",
+          "CANONICAL_CASE materializer true hashmap passed",
+          "CANONICAL_CASE materializer true rocksdb passed"
+        ],
+        "reference_workers": 4,
+        "handoff_workers": 12
+      },
+      {
+        "pair": 0,
+        "cached": false,
+        "phase": "preparation",
+        "family": "count",
+        "elapsed_seconds": 36.88449733401649,
+        "cpu_seconds": 44.74898,
+        "exit_code": 0,
+        "invocations": [
+          "CANONICAL_CASE count false hashmap passed",
+          "CANONICAL_CASE count false rocksdb passed",
+          "CANONICAL_CASE count true hashmap passed",
+          "CANONICAL_CASE count true rocksdb passed"
+        ],
+        "reference_workers": 12,
+        "handoff_workers": 12
+      },
+      {
+        "pair": 1,
+        "cached": false,
+        "phase": "measurement",
+        "family": "materializer",
+        "elapsed_seconds": 23.66183662507683,
+        "cpu_seconds": 26.97404499999999,
+        "exit_code": 0,
+        "invocations": [
+          "CANONICAL_CASE materializer false hashmap passed",
+          "CANONICAL_CASE materializer false rocksdb passed",
+          "CANONICAL_CASE materializer true hashmap passed",
+          "CANONICAL_CASE materializer true rocksdb passed"
+        ],
+        "reference_workers": 4,
+        "handoff_workers": 12
+      },
+      {
+        "pair": 1,
+        "cached": false,
+        "phase": "measurement",
+        "family": "count",
+        "elapsed_seconds": 37.063462832942605,
+        "cpu_seconds": 45.315829,
+        "exit_code": 0,
+        "invocations": [
+          "CANONICAL_CASE count false hashmap passed",
+          "CANONICAL_CASE count false rocksdb passed",
+          "CANONICAL_CASE count true hashmap passed",
+          "CANONICAL_CASE count true rocksdb passed"
+        ],
+        "reference_workers": 12,
+        "handoff_workers": 12
+      },
+      {
+        "pair": 1,
+        "cached": true,
+        "phase": "measurement",
+        "family": "materializer",
+        "elapsed_seconds": 20.774868792039342,
+        "cpu_seconds": 22.523342000000014,
+        "exit_code": 0,
+        "invocations": [
+          "CANONICAL_CASE materializer false hashmap passed",
+          "CANONICAL_CASE materializer false rocksdb passed",
+          "CANONICAL_CASE materializer true hashmap passed",
+          "CANONICAL_CASE materializer true rocksdb passed"
+        ],
+        "reference_workers": 1,
+        "handoff_workers": 12
+      },
+      {
+        "pair": 1,
+        "cached": true,
+        "phase": "measurement",
+        "family": "count",
+        "elapsed_seconds": 23.694885584060103,
+        "cpu_seconds": 28.68998299999999,
+        "exit_code": 0,
+        "invocations": [
+          "CANONICAL_CASE count false hashmap passed",
+          "CANONICAL_CASE count false rocksdb passed",
+          "CANONICAL_CASE count true hashmap passed",
+          "CANONICAL_CASE count true rocksdb passed"
+        ],
+        "reference_workers": 3,
+        "handoff_workers": 12
+      },
+      {
+        "pair": 2,
+        "cached": true,
+        "phase": "measurement",
+        "family": "materializer",
+        "elapsed_seconds": 20.293608415988274,
+        "cpu_seconds": 21.97821400000003,
+        "exit_code": 0,
+        "invocations": [
+          "CANONICAL_CASE materializer false hashmap passed",
+          "CANONICAL_CASE materializer false rocksdb passed",
+          "CANONICAL_CASE materializer true hashmap passed",
+          "CANONICAL_CASE materializer true rocksdb passed"
+        ],
+        "reference_workers": 1,
+        "handoff_workers": 12
+      },
+      {
+        "pair": 2,
+        "cached": true,
+        "phase": "measurement",
+        "family": "count",
+        "elapsed_seconds": 23.126646624994464,
+        "cpu_seconds": 28.13604000000001,
+        "exit_code": 0,
+        "invocations": [
+          "CANONICAL_CASE count false hashmap passed",
+          "CANONICAL_CASE count false rocksdb passed",
+          "CANONICAL_CASE count true hashmap passed",
+          "CANONICAL_CASE count true rocksdb passed"
+        ],
+        "reference_workers": 3,
+        "handoff_workers": 12
+      },
+      {
+        "pair": 2,
+        "cached": false,
+        "phase": "measurement",
+        "family": "materializer",
+        "elapsed_seconds": 23.274239583988674,
+        "cpu_seconds": 26.22752699999998,
+        "exit_code": 0,
+        "invocations": [
+          "CANONICAL_CASE materializer false hashmap passed",
+          "CANONICAL_CASE materializer false rocksdb passed",
+          "CANONICAL_CASE materializer true hashmap passed",
+          "CANONICAL_CASE materializer true rocksdb passed"
+        ],
+        "reference_workers": 4,
+        "handoff_workers": 12
+      },
+      {
+        "pair": 2,
+        "cached": false,
+        "phase": "measurement",
+        "family": "count",
+        "elapsed_seconds": 37.11990254197735,
+        "cpu_seconds": 45.03623400000003,
+        "exit_code": 0,
+        "invocations": [
+          "CANONICAL_CASE count false hashmap passed",
+          "CANONICAL_CASE count false rocksdb passed",
+          "CANONICAL_CASE count true hashmap passed",
+          "CANONICAL_CASE count true rocksdb passed"
+        ],
+        "reference_workers": 12,
+        "handoff_workers": 12
+      }
+    ]
+  },
+  "exploratory_reference_trials": [
+    {
+      "pair": 0,
+      "cache": false,
+      "phase": "prepare",
+      "selection": "materializer",
+      "cases": 4,
+      "seconds": 45.48668570793234,
+      "cpu_seconds": 49.513175000000004,
+      "exit_code": 0,
+      "reference_workers": 4,
+      "handoff_workers": 12
+    },
+    {
+      "pair": 0,
+      "cache": false,
+      "phase": "prepare",
+      "selection": "count",
+      "cases": 4,
+      "seconds": 36.647125124931335,
+      "cpu_seconds": 40.731779,
+      "exit_code": 0,
+      "reference_workers": 12,
+      "handoff_workers": 12
+    },
+    {
+      "pair": 1,
+      "cache": false,
+      "phase": "measure",
+      "selection": "materializer",
+      "cases": 4,
+      "seconds": 23.40159991697874,
+      "cpu_seconds": 24.623042000000005,
+      "exit_code": 0,
+      "reference_workers": 4,
+      "handoff_workers": 12
+    },
+    {
+      "pair": 1,
+      "cache": false,
+      "phase": "measure",
+      "selection": "count",
+      "cases": 4,
+      "seconds": 36.392325291992165,
+      "cpu_seconds": 40.61677499999999,
+      "exit_code": 0,
+      "reference_workers": 12,
+      "handoff_workers": 12
+    },
+    {
+      "pair": 1,
+      "cache": true,
+      "phase": "measure",
+      "selection": "materializer",
+      "cases": 4,
+      "seconds": 20.480694792000577,
+      "cpu_seconds": 20.483584000000015,
+      "exit_code": 0,
+      "reference_workers": 1,
+      "handoff_workers": 12
+    },
+    {
+      "pair": 1,
+      "cache": true,
+      "phase": "measure",
+      "selection": "count",
+      "cases": 4,
+      "seconds": 23.493602499947883,
+      "cpu_seconds": 26.564373000000018,
+      "exit_code": 0,
+      "reference_workers": 3,
+      "handoff_workers": 12
+    },
+    {
+      "pair": 2,
+      "cache": true,
+      "phase": "measure",
+      "selection": "materializer",
+      "cases": 4,
+      "seconds": 20.604509375058115,
+      "cpu_seconds": 20.90645400000001,
+      "exit_code": 0,
+      "reference_workers": 1,
+      "handoff_workers": 12
+    },
+    {
+      "pair": 2,
+      "cache": true,
+      "phase": "measure",
+      "selection": "count",
+      "cases": 4,
+      "seconds": 23.364056208054535,
+      "cpu_seconds": 25.928891999999973,
+      "exit_code": 0,
+      "reference_workers": 3,
+      "handoff_workers": 12
+    },
+    {
+      "pair": 2,
+      "cache": false,
+      "phase": "measure",
+      "selection": "materializer",
+      "cases": 4,
+      "seconds": 23.13203312503174,
+      "cpu_seconds": 24.335846000000053,
+      "exit_code": 0,
+      "reference_workers": 4,
+      "handoff_workers": 12
+    },
+    {
+      "pair": 2,
+      "cache": false,
+      "phase": "measure",
+      "selection": "count",
+      "cases": 4,
+      "seconds": 86.13153795804828,
+      "cpu_seconds": 88.527818,
+      "exit_code": 0,
+      "reference_workers": 12,
+      "handoff_workers": 12
+    },
+    {
+      "pair": 3,
+      "cache": false,
+      "phase": "measure",
+      "selection": "materializer",
+      "cases": 4,
+      "seconds": 26.88408983394038,
+      "cpu_seconds": 27.829786999999996,
+      "exit_code": 0,
+      "reference_workers": 4,
+      "handoff_workers": 12
+    },
+    {
+      "pair": 3,
+      "cache": false,
+      "phase": "measure",
+      "selection": "count",
+      "cases": 4,
+      "seconds": 38.17123279196676,
+      "cpu_seconds": 45.34081800000001,
+      "exit_code": 0,
+      "reference_workers": 12,
+      "handoff_workers": 12
+    },
+    {
+      "pair": 3,
+      "cache": true,
+      "phase": "measure",
+      "selection": "materializer",
+      "cases": 4,
+      "seconds": 20.033231750014238,
+      "cpu_seconds": 20.569026999999956,
+      "exit_code": 0,
+      "reference_workers": 1,
+      "handoff_workers": 12
+    },
+    {
+      "pair": 3,
+      "cache": true,
+      "phase": "measure",
+      "selection": "count",
+      "cases": 4,
+      "seconds": 23.56058116594795,
+      "cpu_seconds": 27.285346999999987,
+      "exit_code": 0,
+      "reference_workers": 3,
+      "handoff_workers": 12
+    }
+  ],
+  "processor_count_experiment": {
+    "trials": [
+      {
+        "pair": 0,
+        "processors": 4,
+        "phase": "prepare",
+        "selection": "materializer",
+        "seconds": 23.673841207986698,
+        "cpu_seconds": 23.694231000000002,
+        "exit_code": 0
+      },
+      {
+        "pair": 0,
+        "processors": 4,
+        "phase": "prepare",
+        "selection": "count",
+        "seconds": 9.893186250003055,
+        "cpu_seconds": 10.757391,
+        "exit_code": 0
+      },
+      {
+        "pair": 0,
+        "processors": 1,
+        "phase": "prepare",
+        "selection": "materializer",
+        "seconds": 24.314606167026795,
+        "cpu_seconds": 23.477843999999997,
+        "exit_code": 0
+      },
+      {
+        "pair": 0,
+        "processors": 1,
+        "phase": "prepare",
+        "selection": "count",
+        "seconds": 9.846670959028415,
+        "cpu_seconds": 10.200088999999997,
+        "exit_code": 0
+      },
+      {
+        "pair": 1,
+        "processors": 4,
+        "phase": "measure",
+        "selection": "materializer",
+        "seconds": 6.374640750000253,
+        "cpu_seconds": 6.5215440000000005,
+        "exit_code": 0
+      },
+      {
+        "pair": 1,
+        "processors": 4,
+        "phase": "measure",
+        "selection": "count",
+        "seconds": 9.911340165999718,
+        "cpu_seconds": 10.805218999999996,
+        "exit_code": 0
+      },
+      {
+        "pair": 1,
+        "processors": 1,
+        "phase": "measure",
+        "selection": "materializer",
+        "seconds": 6.524552708026022,
+        "cpu_seconds": 6.494052999999996,
+        "exit_code": 0
+      },
+      {
+        "pair": 1,
+        "processors": 1,
+        "phase": "measure",
+        "selection": "count",
+        "seconds": 10.225885792053305,
+        "cpu_seconds": 10.749488000000008,
+        "exit_code": 0
+      },
+      {
+        "pair": 2,
+        "processors": 1,
+        "phase": "measure",
+        "selection": "materializer",
+        "seconds": 6.7617422910407186,
+        "cpu_seconds": 6.654260999999998,
+        "exit_code": 0
+      },
+      {
+        "pair": 2,
+        "processors": 1,
+        "phase": "measure",
+        "selection": "count",
+        "seconds": 9.947658582939766,
+        "cpu_seconds": 10.433772000000001,
+        "exit_code": 0
+      },
+      {
+        "pair": 2,
+        "processors": 4,
+        "phase": "measure",
+        "selection": "materializer",
+        "seconds": 6.367346207960509,
+        "cpu_seconds": 6.56871799999999,
+        "exit_code": 0
+      },
+      {
+        "pair": 2,
+        "processors": 4,
+        "phase": "measure",
+        "selection": "count",
+        "seconds": 9.839289083029144,
+        "cpu_seconds": 10.728891999999998,
+        "exit_code": 0
+      },
+      {
+        "pair": 3,
+        "processors": 4,
+        "phase": "measure",
+        "selection": "materializer",
+        "seconds": 6.336382334004156,
+        "cpu_seconds": 6.516981000000012,
+        "exit_code": 0
+      },
+      {
+        "pair": 3,
+        "processors": 4,
+        "phase": "measure",
+        "selection": "count",
+        "seconds": 9.652207333012484,
+        "cpu_seconds": 10.435590000000001,
+        "exit_code": 0
+      },
+      {
+        "pair": 3,
+        "processors": 1,
+        "phase": "measure",
+        "selection": "materializer",
+        "seconds": 6.501364499912597,
+        "cpu_seconds": 6.504654000000013,
+        "exit_code": 0
+      },
+      {
+        "pair": 3,
+        "processors": 1,
+        "phase": "measure",
+        "selection": "count",
+        "seconds": 9.873531499993987,
+        "cpu_seconds": 10.287064999999995,
+        "exit_code": 0
+      }
+    ],
+    "decision": "Do not change worker processor counts: elapsed medians did not improve."
+  },
+  "identical_merge_observations": [
+    {
+      "run": 43329675302,
+      "pr": 637,
+      "same_tree": false,
+      "runner_hours": 55.18,
+      "fork": "liuyongvs/StreamFusion",
+      "sha": "1a1f98817176a3662e707c8cca65beb24a4c8481",
+      "branch": "refactor/stream-planner-boundaries-20261111"
+    },
+    {
+      "run": 43422708248,
+      "pr": 659,
+      "same_tree": true,
+      "runner_hours": 43.57583,
+      "fork": "jordepic/StreamFusion-contrib",
+      "sha": "e09f8967a54b6880fa3790e4757a9bf4f5f89bbf",
+      "branch": "perf/ci-fast-loops",
+      "qualified": true,
+      "evidence": [
+        "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43378968967",
+        "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43378970852"
+      ]
+    },
+    {
+      "run": 43452920802,
+      "pr": 660,
+      "same_tree": false,
+      "runner_hours": 44.51139,
+      "fork": "jordepic/StreamFusion-contrib",
+      "sha": "93077f8fb9c86d5941bc81bab8a01065d51e396a",
+      "branch": "feature/parquet-row-group-splits"
+    },
+    {
+      "run": 43503239984,
+      "pr": 541,
+      "same_tree": false,
+      "runner_hours": 42.76917,
+      "fork": "Flanderzz/StreamFusion",
+      "sha": "4badf27f9a32bf951845bbe04b4ea7b1a2933e96",
+      "branch": "fix/json-decimal-path-parity"
+    },
+    {
+      "run": 43575040237,
+      "pr": 661,
+      "same_tree": true,
+      "runner_hours": 41.62917,
+      "fork": "jordepic/StreamFusion-contrib",
+      "sha": "8f12e1637ec81dbcc1af7bfd9bebfddd84314ae8",
+      "branch": "feature/paimon-batch-parity-20261113",
+      "qualified": true,
+      "evidence": [
+        "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43556073589",
+        "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43556075836"
+      ]
+    },
+    {
+      "run": 43629132056,
+      "pr": 664,
+      "same_tree": true,
+      "runner_hours": 42.28389,
+      "fork": "jordepic/StreamFusion-contrib",
+      "sha": "281c780762874f38cd7517a745993bfb3b5e9ea0",
+      "branch": "fix/batch-compatibility-admission",
+      "qualified": true,
+      "evidence": [
+        "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43608501359",
+        "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43608501476"
+      ]
+    },
+    {
+      "run": 43655033296,
+      "pr": 665,
+      "same_tree": true,
+      "runner_hours": 39.95778,
+      "fork": "jordepic/StreamFusion-contrib",
+      "sha": "de79daff5032770a9bf680cc43de340dd6a3d921",
+      "branch": "refactor/architecture-20261114",
+      "qualified": true,
+      "evidence": [
+        "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43638405549",
+        "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43638407192"
+      ]
+    },
+    {
+      "run": 43698215622,
+      "pr": 667,
+      "same_tree": false,
+      "runner_hours": 122.73694,
+      "fork": "jordepic/StreamFusion-contrib",
+      "sha": "976ccd6ac7788295a92d060bb2f452e17214de10",
+      "branch": "feature/paimon-batch-java-io-20261114"
+    }
+  ],
+  "limits": [
+    "Local reference measurements use two alternating pairs and an independent cold reference cache for each measured trial. Metadata archive preparation is separate.",
+    "Earlier exploratory trials include an 86.13-second uncached COUNT outlier; retain it without using those trials for the reported candidate medians.",
+    "No whole-workflow saving is inferred from these local component measurements. Hosted qualification and scheduling observations are separate.",
+    "Identical-merge savings are a historical counterfactual after checking complete tree equality and both successful fork qualifications, not a replayed workflow."
+  ],
+  "local_medians": {
+    "materializer": {
+      "fresh": {
+        "elapsed_seconds": 23.468038104532752,
+        "cpu_seconds": 26.600785999999985
+      },
+      "reused": {
+        "elapsed_seconds": 20.534238604013808,
+        "cpu_seconds": 22.25077800000002
+      }
+    },
+    "count": {
+      "fresh": {
+        "elapsed_seconds": 37.09168268745998,
+        "cpu_seconds": 45.176031500000015
+      },
+      "reused": {
+        "elapsed_seconds": 23.410766104527283,
+        "cpu_seconds": 28.4130115
+      }
+    }
+  },
+  "measured_sources_sha256": {
+    "src/test/java/tech/streamfusion/CanonicalReferenceCache.java": "badb01bf2cc838f74734de4e48c33487a9431f18ad55ecdf7fc9b8538b6521e1",
+    "src/test/java/tech/streamfusion/CanonicalJobRunner.java": "2130c9628b9d261e148e48592e51af38e36b483f72b58416417ad789f2794796",
+    "dev/ci/CanonicalReferenceProfile.java": "8220287af44afba65dea3606759c92f079ade248123ff29bef4b314f0a6fdcc3"
+  },
+  "local_cache_controls": [
+    {
+      "java": "11.0.28+6",
+      "tests": 5,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0
+    },
+    {
+      "java": "17.0.17+10",
+      "tests": 5,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0
+    }
+  ]
+}

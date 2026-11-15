@@ -13,6 +13,33 @@ maintainer authorization.
 
 Conserve runner capacity by testing changed functionality locally and reusing compatible build
 caches while iterating.
+Full CI is final qualification, never an agent's development loop. Do not dispatch it while
+implementation, investigation, benchmarks, required documentation, or known fixes remain.
+Batch the complete task into one ready candidate, including its documentation, before qualification.
+Do not run CI for each local commit, intermediate push, review edit, or progress checkpoint.
+First reproduce a failure locally or with the smallest focused hosted probe; fix the complete
+cause before considering another candidate. A red matrix is not a reason to restart the matrix.
+
+Submit merge-gate campaigns with `python3 bin/ci-campaign.py start --repo OWNER/FORK
+--validation 'the focused local checks actually run and their outcomes'`. Use its `status`
+command to inspect readiness and reuse, and `retry --run RUN_ID --validation 'diagnosis and
+focused regression outcomes'` only for failed jobs on the unchanged current head. Do not bypass
+the launcher with raw dispatches or whole-workflow reruns. It verifies a clean, pushed, current
+PR head based on current canonical main, reuses exact-head green/active runs, checks account-wide
+competing work, and locks submissions across local worktrees. It blocks when other work is queued
+or fills the observed scheduling budget; running tails may leave usable idle slots.
+A capacity refusal means finish
+local preparation and wait; it does not authorize canceling another task's workflows. Scoped
+hosted diagnostics remain separate and must follow the capacity rules below.
+
+After qualification starts, keep the candidate stable. Prepare optional follow-up work separately
+instead of invalidating hours of checks. If a necessary correction changes the candidate, stop
+this task's superseded runs, validate the correction in the short loop, and submit only when the
+whole candidate is ready again. Reuse automatically triggered `ci/**` and main runs; do not
+dispatch another copy after a submission push or merge. Optional diagnostics and compatibility
+workflows require an applicable code change or a specific unanswered diagnostic question; do not
+run them as a precaution for unrelated changes.
+
 Keep concurrent tasks on distinct branches and worktrees when a shared checkout is active.
 Preserve other work when isolating changes; shared-branch commits can invalidate another
 task's candidate checks and force unnecessary restarts.

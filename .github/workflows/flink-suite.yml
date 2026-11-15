@@ -90,11 +90,11 @@ jobs:
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
           INVENTORY: ${{ inputs.sql_inventory || false }}
-          DOCS_ONLY: ${{ needs.plan.outputs.tests == 'false' }}
+          REUSED_COVERAGE: ${{ needs.plan.outputs.tests == 'false' }}
         run: |
-          jq -e --arg inventory "$INVENTORY" --arg docs "$DOCS_ONLY" '
+          jq -e --arg inventory "$INVENTORY" --arg reused "$REUSED_COVERAGE" '
             .plan.result == "success" and
-            if $docs == "true" then
+            if $reused == "true" then
               all(to_entries[]; .key == "plan" or .value.result == "skipped")
             else
               all(to_entries[];
