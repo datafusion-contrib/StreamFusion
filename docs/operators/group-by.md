@@ -34,6 +34,9 @@ Ordinary SQL and stock compiled-plan GROUP BY share immutable call declarations 
 value/secondary arguments, FILTER columns, retained value types and retraction-dependent scalar
 widths. Ordinary single-phase admission prepares these declarations once and reuses the accepted
 plan for construction and fallback explanation; runtime operators retain their released fields.
+Boundary, modifier, family and arity guards run before value-payload preparation, preserving their
+legacy rejection order even for malformed or unverified aggregate calls. Accepted payloads remain
+cached for construction and repeated diagnostics.
 
 Canonical qualification remains narrower than ordinary native aggregation. A shared released-state
 qualifier verifies the actual Flink aggregate-function class, generated accumulator types, every

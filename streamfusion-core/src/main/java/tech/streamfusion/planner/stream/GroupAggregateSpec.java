@@ -41,10 +41,6 @@ final class GroupAggregateSpec {
     return stateTtlHint;
   }
 
-  AggregateCallSpec call(int index) {
-    return calls.get(index);
-  }
-
   int[] kinds() {
     return kinds.clone();
   }

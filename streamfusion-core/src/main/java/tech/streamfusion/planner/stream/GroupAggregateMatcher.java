@@ -36,9 +36,9 @@ final class GroupAggregateMatcher {
   private GroupAggregateMatcher() {}
 
   static Admission<PreparedPlan> prepare(StreamPhysicalGroupAggregate agg, PlanContext ctx) {
-    GroupAggregateSpec spec = GroupAggregateSpec.describe(agg);
-    String reason = unsupportedReason(agg, spec);
+    String reason = unsupportedReason(agg);
     if (reason != null) return Admission.declined(reason);
+    GroupAggregateSpec spec = GroupAggregateSpec.describe(agg);
     return Admission.accepted(() -> substitute(agg, ctx, spec));
   }
 
@@ -56,11 +56,6 @@ final class GroupAggregateMatcher {
 
   /** The specific reason this aggregate is not accelerable, or null if it is. */
   static String unsupportedReason(StreamPhysicalGroupAggregate agg) {
-    return unsupportedReason(agg, null);
-  }
-
-  private static String unsupportedReason(
-      StreamPhysicalGroupAggregate agg, GroupAggregateSpec spec) {
     RelDataType inputType = agg.getInput().getRowType();
     // The whole row crosses the boundary in both directions, so every input and output column must
     // be
@@ -111,7 +106,7 @@ final class GroupAggregateMatcher {
           return "GROUP BY: released Flink cannot initialize AVG/SUM0 DECIMAL(38,38)";
         }
       }
-      int kind = spec == null ? aggregateKind(agg, call) : spec.call(i).baseKind();
+      int kind = aggregateKind(agg, call);
       if (kind < 0 && call.getAggregation().getKind() == org.apache.calcite.sql.SqlKind.SUM0) {
         return "GROUP BY: SUM0 requires one supported numeric value";
       }
@@ -360,9 +355,15 @@ final class GroupAggregateMatcher {
   }
 
   private static int aggregateKind(StreamPhysicalGroupAggregate agg, AggregateCall call) {
-    return AggregateCallSpec.describe(
-            call, agg.getInput().getRowType(), !ChangelogPlanUtils.inputInsertOnly(agg))
-        .baseKind();
+    var kind = call.getAggregation().getKind();
+    // Only these base kinds inspect changelog traits before admission. Other rejected calls
+    // must not require a qualified physical input merely to report their original reason.
+    boolean retracting =
+        (kind == org.apache.calcite.sql.SqlKind.LISTAGG
+                || kind == org.apache.calcite.sql.SqlKind.FIRST_VALUE
+                || kind == org.apache.calcite.sql.SqlKind.LAST_VALUE)
+            && !ChangelogPlanUtils.inputInsertOnly(agg);
+    return AggregateCallSpec.baseKind(call, agg.getInput().getRowType(), retracting);
   }
 
   static boolean literalStringColumn(RelNode input, int column) {

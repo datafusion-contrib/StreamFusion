@@ -136,7 +136,7 @@ final class AggregateCallSpec {
         : 1;
   }
 
-  private static int baseKind(AggregateCall call, RelDataType input, boolean retracting) {
+  static int baseKind(AggregateCall call, RelDataType input, boolean retracting) {
     int collection = collectionKind(call);
     if (collection >= 0) return collection;
     switch (call.getAggregation().getKind()) {
