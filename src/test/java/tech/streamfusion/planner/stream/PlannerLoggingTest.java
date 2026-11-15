@@ -81,6 +81,12 @@ class PlannerLoggingTest {
 
     assertFalse(plan.contains("NativeCalc"), plan);
     assertTrue(scan.functionExecutions().isEmpty(), scan.explainSummary());
+    assertTrue(scan.planningRejections().stream().anyMatch(rejection ->
+        rejection.scope() == tech.streamfusion.planner.common.PlanningRejection.Scope.OPERATOR
+            && rejection.nodeId() >= 0));
+    assertTrue(scan.planningRejections().stream().anyMatch(rejection ->
+        rejection.scope() == tech.streamfusion.planner.common.PlanningRejection.Scope.ISLAND));
+    assertTrue(scan.explainSummary().contains("admission rejection(s)"));
     assertTrue(
         logs.getMessages().stream().noneMatch(message -> message.contains(" functions: ")),
         logs.getMessages().toString());

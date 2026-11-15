@@ -5,6 +5,11 @@ state in a RocksDB instance owned and accessed directly by Rust. Java coordinate
 handles and file upload, but native state reads, writes, flushes, and compactions do not cross JNI.
 Host-side fallback state and timers use Flink's `EmbeddedRocksDBStateBackend` delegate.
 
+Backend teardown attempts every independent release even when snapshot, stream or delegate cleanup
+fails. Canonical readers, working directories and shared native-memory leases still receive their
+cleanup attempt; later failures remain suppressed on the first failure. Operator-owned native
+handles close on the task thread before their shared-memory leases are released.
+
 Native builds enable `rocksdb-state` by default. Tests that transfer window
 partials between stores exercise memory-to-memory and all RocksDB combinations
 in that build. A `--no-default-features` build exercises only the memory-store
@@ -51,7 +56,12 @@ metadata and uses bounded key cleanup.
 Batch-oriented point reads use RocksDB's optimized MultiGet API on the default column family. The Rust
 binding borrows the batch's key bytes and returns pinned values, which remain valid through the
 batch decode and are then released. Operator state owns its decoded values; it does not retain
-RocksDB cache pins across bundles. Constant AppendFast Top-1 can retain clean,
+RocksDB cache pins across bundles. Generic keyed stores reserve their decoded working set and
+conversion workspace against the shared task off-heap pool before hydration and through bundle
+completion. Operator mini-batch staging has a separate reservation; state metrics include both
+owners. Checkpoint and canonical-scan completion release the decoded working-set charge as
+soon as those values are cleared. Persisted keys, row encodings, checkpoint handles and key-group
+routing are unchanged. Constant AppendFast Top-1 can retain clean,
 owned decoded winners in a bounded cache governed by task off-heap reservations;
 [the Top-N page](../operators/top-n.md) describes its admission, metrics and
 checkpoint behavior. This changes the read path without changing persisted keys,
@@ -404,3 +414,8 @@ copying the result into the DSO's allocator. The snapshot registry still uses re
 identities, including symlinks. This avoids returning a host library's allocated path to a different
 allocator during ordinary RocksDB initialization or asynchronous snapshot lookup. The release
 image SQL smoke exercises this path with the production allocator enabled.
+
+Ordered native scans merge pinned iterator heads using a heap of indices. A scan comparator
+requires each input range to already be monotonic under that comparison; layouts with an
+unbiased signed field split its negative and nonnegative spans into separate ranges. This
+preserves logical ordering without copying an entire key or payload backlog into the merge.

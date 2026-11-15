@@ -35,6 +35,22 @@ batches and batches carrying a row-kind column; Calc caches each schema separate
 those row kinds through projections and filters. Row-to-Arrow boundaries also retain actual
 retractions received from a source that advertised insert-only output.
 
+The streaming Calc and filter rules prepare their expression plans once for
+one candidate; a Calc also prepares its declared-result-type check. Construction and fallback diagnostics consume that same admission decision;
+explaining a declined Calc or filter does not repeat expression generation or optional native probes.
+A declined standalone filter passes to general Calc admission without repeating its predicate probe.
+Ordinary streaming, bounded batch and stock compiled-plan Calc lowering share an immutable
+Calc specification for the native result-type contract. Its expression pools, output names and
+representation requirements are fixed after admission. Input pruning creates a separate expression
+with remapped references, including whole-Calc JVM input coordinates; it cannot alter a sibling's
+prepared program. Whole-Calc representation flags remain attached to every logical output field,
+even when one row-valued evaluator root produces several columns. Each constructed operator
+receives its own unopened JVM-function binding.
+Batch and stock compiled-plan paths retain their existing, stricter boundary and state admission.
+Processing-time projection fusion prepares its changed candidate separately and retains the
+original admitted plan if fusion is unsupported. Optional-probe failures still yield to later
+rules, while failures constructing an admitted operator propagate.
+
 Planning logs the final function-engine assignments for admitted Calc/filter operators at INFO
 by default, including Calcs admitted while lowering a stock compiled plan. Repeated identical
 assignments within a pass are combined with their occurrence count. Distinct SQL function, UDF
@@ -56,6 +72,11 @@ No diagnostic flag is required for these plan attributes. The acceleration summa
 the always-on planning log also counts Calc/filter nodes containing JVM functions.
 Flink's operator metrics use these detailed names as well; select Calc/filter metric groups by the
 `NativeCalc(` or `NativeFilter(` prefix rather than their execution-node class names.
+
+Expression node kinds and primitive cast targets come from one versioned protocol manifest,
+which generates both Java and Rust enums. Native decoding is exhaustive over those kinds, and
+CI checks generation drift and retired-code reuse. The compact pools and existing wire values
+remain unchanged; this is a planning maintainability change rather than a throughput claim.
 
 Generated expression code is built entirely in the planner. Serialized Calc/filter bindings
 carry only the generated function, runtime types/schema and user-function references; workers
@@ -1317,6 +1338,14 @@ NULL propagates. Mixed primitive numeric operands use Java's FLOAT/DOUBLE promot
 These scalar rules are separate from grouping-key equality and sort ordering.
 
 ## Casts
+
+Primitive integer/string, Boolean/string and binary/string cast families resolve through shared
+semantic rules. Each family keeps its admission, native lowering, possible row failure and output
+representation together. Short-circuit analysis and ASCII or binary-width proofs consult those
+same families rather than independently recognizing casts. TRY_CAST still catches conversion
+failures only: a fallible argument retains Flink evaluation before the conversion. Decimal,
+temporal and collection casts keep their existing exact kernels or generated evaluators.
+This organization changes no coverage, configuration or runtime wire code.
 
 `CAST` and `TRY_CAST` from a direct BOOLEAN input or literal to STRING, bounded VARCHAR or CHAR use a
 native Arrow formatter. Both also admit recursively verified BOOLEAN-only NOT, AND, OR,

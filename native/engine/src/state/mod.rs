@@ -36,6 +36,14 @@ pub(crate) trait KeyedStateStore<V> {
         false
     }
 
+    fn attach_memory(&mut self, _memory: StateMemory) {}
+    fn owns_memory(&self) -> bool {
+        false
+    }
+    fn account_memory(&mut self) -> Result<(), DataFusionError> {
+        Ok(())
+    }
+
     fn enable_resident_cache(&mut self, _limit: usize, _reservation: Option<MemoryReservation>) {}
     fn contains(&self, key: &[u8]) -> bool;
     fn get(&self, key: &[u8]) -> Option<&V>;

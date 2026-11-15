@@ -35,3 +35,14 @@ pub extern "system" fn Java_tech_streamfusion_format_json_NativeJsonFormat_liveN
 ) -> jstring {
     streamfusion_bridge::live_handles_probe(env)
 }
+
+pub mod encode;
+streamfusion_format_support::format_encoder_jni_facade!(
+    Java_tech_streamfusion_format_json_NativeJsonFormat_createEncoder,
+    Java_tech_streamfusion_format_json_NativeJsonFormat_encodeBatch,
+    Java_tech_streamfusion_format_json_NativeJsonFormat_closeEncoder,
+    Java_tech_streamfusion_format_json_NativeJsonFormat_encoderSupported,
+    Java_tech_streamfusion_format_json_NativeJsonFormat_spellFloatingPoint,
+    encode::create_encoder,
+    encode::supports_encoder
+);

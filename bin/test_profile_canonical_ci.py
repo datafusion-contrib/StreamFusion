@@ -71,6 +71,12 @@ class CanonicalProfileTest(unittest.TestCase):
             self.assertEqual(trial["mode"] == "gc-g1", "-XX:+UseG1GC" in options)
             self.assertIn("-Dsf.testForks=4", command)
             self.assertIn("-Dsf.extraJvmArgs=-Xmx1g", command)
+            self.assertNotIn("surefire:test@default-test", command)
+            self.assertIn("-am", command)
+            self.assertIn("test", command)
+            self.assertIn("-Dsf.ci.precompiledJava=true", command)
+            self.assertIn("-DskipTests=true", command)
+            self.assertIn("-Dsf.runtime.tests.skip=false", command)
             self.assertEqual(5, trial["outcomes"]["tests"])
 
     def test_report_totals_cannot_hide_missing_invocations(self):

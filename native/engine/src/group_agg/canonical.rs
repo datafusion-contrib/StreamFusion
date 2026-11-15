@@ -126,7 +126,50 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         Ok((keys, values))
     }
 
+    pub(super) fn transfer_header_batches(
+        &mut self,
+        batch: &RecordBatch,
+        validating: bool,
+        transfer: fn(&mut Self, &RecordBatch, bool) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        const WORKING_ROWS: usize = 64;
+        if !self.store.serializes_values() || batch.num_rows() <= WORKING_ROWS {
+            return transfer(self, batch, validating);
+        }
+        // Existing target keys in the last working frame must reject before the first write.
+        for offset in (0..batch.num_rows()).step_by(WORKING_ROWS) {
+            crate::state::canonical_context::check_cancelled()?;
+            let count = WORKING_ROWS.min(batch.num_rows() - offset);
+            transfer(self, &batch.slice(offset, count), true)?;
+        }
+        if !validating {
+            for offset in (0..batch.num_rows()).step_by(WORKING_ROWS) {
+                crate::state::canonical_context::check_cancelled()?;
+                let count = WORKING_ROWS.min(batch.num_rows() - offset);
+                transfer(self, &batch.slice(offset, count), false)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn account_transfer_memory(&mut self) -> Result<(), DataFusionError> {
+        if self.store.owns_memory() {
+            self.store.account_memory()?;
+            self.memory.set(self.staging_bytes());
+        }
+        self.memory.account()
+    }
+
     fn transfer_arithmetic(
+        &mut self,
+        batch: &RecordBatch,
+        validating: bool,
+    ) -> Result<(), DataFusionError> {
+        self.transfer_columns(batch)?;
+        self.transfer_header_batches(batch, validating, Self::transfer_arithmetic_frame)
+    }
+
+    fn transfer_arithmetic_frame(
         &mut self,
         batch: &RecordBatch,
         validating: bool,
@@ -166,18 +209,18 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     last_write_ms: values[1].value(row),
                     distinct_retention: None,
                 };
-                if self.memory.tracking() {
+                if self.memory.tracking() && !self.store.owns_memory() {
                     self.memory.record(
                         (byte_key_bytes(keys.value(row)) + group_key_state_bytes(&state)) as isize,
                     );
                 }
                 self.store.insert(ByteKey::from(keys.value(row)), state);
             }
-            self.memory.account()
+            self.account_transfer_memory()
         })();
         let cleanup = self.store.end_bundle();
         self.memory.record(self.store.footprint_delta());
-        let accounted = self.memory.account();
+        let accounted = self.account_transfer_memory();
         result.and(cleanup).and(accounted)
     }
 }

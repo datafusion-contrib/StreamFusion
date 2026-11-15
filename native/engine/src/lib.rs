@@ -39,6 +39,7 @@ mod changelog_filter;
 mod dedup;
 mod exchange;
 mod expr;
+mod expression_protocol;
 mod file_partition;
 mod first_n;
 mod flatten;

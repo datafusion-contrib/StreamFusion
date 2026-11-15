@@ -14,6 +14,49 @@ class SqlInventoryTest {
   @TempDir Path directory;
 
   @Test
+  void batchObserverRecordsTheSemanticRewriteOnceThroughItsConvenienceWrapper() throws Exception {
+    Class<?> observed =
+        StreamFusionSuiteAgent.observePlanning(
+                new net.bytebuddy.ByteBuddy().redefine(BatchScan.class))
+            .make()
+            .load(
+                BatchScan.class.getClassLoader(),
+                net.bytebuddy.dynamic.loading.ClassLoadingStrategy.Default.CHILD_FIRST)
+            .getLoaded();
+    System.setProperty("streamfusion.flink-suite.sql-inventory", directory.toString());
+    try {
+      SqlInventory.started(new Identifier());
+      Object translation = SqlInventory.translating(this);
+      Object roots =
+          observed
+              .getMethod("optimizeRoots", List.class)
+              .invoke(
+                  observed.getConstructor().newInstance(), List.of(new StreamPhysicalNativeCalc()));
+      SqlInventory.translated(translation, roots, null);
+      SqlInventory.finished(new Identifier(), new Result());
+      try (var files = Files.list(directory)) {
+        String json = Files.readString(files.findFirst().orElseThrow());
+        org.junit.jupiter.api.Assertions.assertEquals(
+            1, json.split("\"substitutions\":1", -1).length - 1);
+        assertTrue(json.contains("StreamPhysicalNativeCalc"));
+      }
+    } finally {
+      System.clearProperty("streamfusion.flink-suite.sql-inventory");
+    }
+  }
+
+  public static class BatchScan extends Scan {
+    public List<Object> optimizeRoots(List<Object> roots) {
+      return optimizeRoots(roots, java.util.function.UnaryOperator.identity());
+    }
+
+    public List<Object> optimizeRoots(
+        List<Object> roots, java.util.function.UnaryOperator<Object> normalize) {
+      return roots;
+    }
+  }
+
+  @Test
   void boundedNativeSourceDoesNotReportItsDiscoveryScanAsAHostReader() throws Exception {
     System.setProperty("streamfusion.flink-suite.sql-inventory", directory.toString());
     try {

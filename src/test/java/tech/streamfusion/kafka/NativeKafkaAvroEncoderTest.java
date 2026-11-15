@@ -270,7 +270,7 @@ class NativeKafkaAvroEncoderTest {
   }
 
   private static byte[][] encode(
-      List<RowData> rows, RowType rowType, int format, String formatOptions) {
+      List<RowData> rows, RowType rowType, int format, String formatOptions) throws Exception {
     try (BufferAllocator allocator = new RootAllocator();
         CDataDictionaryProvider dictionaries = new CDataDictionaryProvider();
         VectorSchemaRoot root = RowDataArrowConverter.write(rows, rowType, allocator);

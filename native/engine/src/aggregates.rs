@@ -166,15 +166,7 @@ impl Accumulator for IntegerAvgAccumulator {
     }
 
     fn evaluate(&mut self) -> datafusion::common::Result<ScalarValue> {
-        // Truncating integer division, then a narrowing cast back to the input type (the host's
-        // `cast(sum / count, <type>)`), which wraps the low bits exactly like Rust's `as`.
-        let average = (self.count != 0).then(|| self.sum.wrapping_div(self.count));
-        Ok(match self.result_type {
-            DataType::Int32 => ScalarValue::Int32(average.map(|a| a as i32)),
-            DataType::Int16 => ScalarValue::Int16(average.map(|a| a as i16)),
-            DataType::Int8 => ScalarValue::Int8(average.map(|a| a as i8)),
-            _ => ScalarValue::Int64(average),
-        })
+        Ok(integer_average(self.sum, self.count, &self.result_type))
     }
 
     fn size(&self) -> usize {
@@ -2024,6 +2016,15 @@ pub(crate) fn distinct_num(value: &ScalarValue) -> Num {
     }
 }
 
+/// Flink's signed count, wrapping Java division and narrowing AVG result contract.
+pub(crate) fn integer_average(sum: i64, count: i64, result: &DataType) -> ScalarValue {
+    if count == 0 {
+        null_scalar(result)
+    } else {
+        avg_int_scalar(sum.wrapping_div(count), result)
+    }
+}
+
 /// Casts an integer average (`sum / count`, already truncated toward zero in i64) back to the AVG
 /// input type — Flink's `cast(div(sum, count), resultType)`.
 pub(crate) fn avg_int_scalar(value: i64, result: &DataType) -> ScalarValue {
@@ -2221,6 +2222,71 @@ mod avg_tests {
     }
 
     #[test]
+    fn running_and_window_integer_average_share_null_retraction_and_restore_contracts() {
+        for datatype in [
+            DataType::Int8,
+            DataType::Int16,
+            DataType::Int32,
+            DataType::Int64,
+        ] {
+            let mut window = IntegerAvgAccumulator::new(datatype.clone());
+            let mut running = RunningAgg::new(4, &datatype);
+            let mut count = 0_i64;
+            for (value, kind, expected) in [
+                (Some(10), 0, Some(10)),
+                (None, 0, Some(10)),
+                (Some(11), 0, Some(10)),
+                (Some(10), 1, Some(11)),
+                (Some(11), 3, None),
+                (Some(3), 3, Some(3)),
+                (Some(3), 0, None),
+            ] {
+                let values =
+                    arrow::compute::cast(&Int64Array::from(vec![value]), &datatype).unwrap();
+                window
+                    .update_batch(&[values.clone(), Arc::new(Int8Array::from(vec![kind]))])
+                    .unwrap();
+                if value.is_some() {
+                    let number = distinct_num(&ScalarValue::try_from_array(&values, 0).unwrap());
+                    if matches!(kind, 1 | 3) {
+                        running.retract(number);
+                        count = count.wrapping_sub(1);
+                    } else {
+                        running.fold(number);
+                        count = count.wrapping_add(1);
+                    }
+                }
+                let expected_array =
+                    arrow::compute::cast(&Int64Array::from(vec![expected]), &datatype).unwrap();
+                let expected = ScalarValue::try_from_array(&expected_array, 0).unwrap();
+                assert_eq!(window.evaluate().unwrap(), expected);
+                assert_eq!(
+                    crate::group_agg::emit_running(&running, count, &datatype),
+                    expected
+                );
+                let state = window.state().unwrap();
+                assert_eq!(state, vec![running.emit(), ScalarValue::Int64(Some(count))]);
+                let arrays = state
+                    .iter()
+                    .map(ScalarValue::to_array)
+                    .collect::<Result<Vec<_>, _>>()
+                    .unwrap();
+                let mut restored = IntegerAvgAccumulator::new(datatype.clone());
+                restored.merge_batch(&arrays).unwrap();
+                assert_eq!(restored.evaluate().unwrap(), expected);
+                window = restored;
+                let mut restored = RunningAgg::new(4, &datatype);
+                restored.restore_value(&state[0]);
+                assert_eq!(
+                    crate::group_agg::emit_running(&restored, count, &datatype),
+                    expected
+                );
+                running = restored;
+            }
+        }
+    }
+
+    #[test]
     fn negative_average_division_keeps_java_long_overflow() {
         let mut avg = IntegerAvgAccumulator::new(DataType::Int64);
         avg.update_batch(&[
@@ -2229,6 +2295,12 @@ mod avg_tests {
         ])
         .unwrap();
         assert_eq!(avg.evaluate().unwrap(), ScalarValue::Int64(Some(i64::MIN)));
+        let mut running = RunningAgg::new(4, &DataType::Int64);
+        running.retract(Num::I64(i64::MIN));
+        assert_eq!(
+            crate::group_agg::emit_running(&running, -1, &DataType::Int64),
+            ScalarValue::Int64(Some(i64::MIN))
+        );
     }
 
     #[test]

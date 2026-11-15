@@ -222,7 +222,7 @@ jobs:
           path: native/target/debug
       - name: Compile the unchanged profile cases once
         run: |
-          python3 bin/ci-maven-dependencies.py --projects streamfusion-runtime
+          python3 bin/ci-maven-dependencies.py --projects streamfusion-runtime --also-make
           python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5
           mvn -B -ntp -pl streamfusion-runtime -am test-compile -Dnative.build.skip=true
       - name: Alternate default and startup JVM settings on the same runner
@@ -267,7 +267,7 @@ jobs:
             profile=(-Pflink-1.18)
             profile_name='flink-1.18'
           fi
-          python3 bin/ci-maven-dependencies.py --profile "$profile_name" --projects streamfusion-runtime
+          python3 bin/ci-maven-dependencies.py --profile "$profile_name" --projects streamfusion-runtime --also-make
           python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5
           mvn -B -ntp "${profile[@]}" -pl streamfusion-runtime -am test-compile -Dnative.build.skip=true
       - name: Compare runtime JVM compilation with identical assertions
@@ -435,7 +435,9 @@ jobs:
           mvn -B -ntp "${profile[@]}" -pl streamfusion-runtime \
             "-Dtest=$selection" -Dsf.testForks=4 -Dsf.testReuseForks=false \
             '-Dsf.extraJvmArgs=-Xmx2g' -Dsurefire.reportNameSuffix=ci-cluster-controls \
-            surefire:test@default-test
+            -am test -Dsf.ci.precompiledJava=true -Dnative.build.skip=true \
+            -Dsf.protobuf.checkStaleness=true -DskipTests=true -Dsf.runtime.tests.skip=false \
+            -Dsurefire.failIfNoSpecifiedTests=false
           python3 - <<'PY'
           from collections import Counter
           import os

@@ -2,6 +2,7 @@ package tech.streamfusion.operator;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.util.ArrayList;
 import java.util.List;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.BigIntVector;
@@ -21,6 +22,7 @@ import org.apache.flink.table.types.logical.BigIntType;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.TimestampType;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import tech.streamfusion.Native;
@@ -84,6 +86,63 @@ class CanonicalLocalWindowBarrierTest {
               new ArrowBatch(RowDataArrowConverter.write(List.of(row), INPUT, allocator))));
       harness.prepareSnapshotPreBarrier(2);
       assertPartials(harness, counted, 1);
+    }
+  }
+
+  @Test
+  void highCardinalityBarrierTransfersBoundedPartialsAndRemainsStateless() throws Exception {
+    var operator =
+        new NativeColumnarLocalWindowAggregateOperator(
+            1000,
+            1000,
+            1,
+            -1,
+            -1,
+            new int[] {0},
+            new int[] {0},
+            new int[] {0},
+            new int[] {0},
+            new int[] {3},
+            "UTC",
+            new int[] {-1},
+            128);
+    operator.useStockLocalCheckpointing();
+    try (var allocator = new RootAllocator();
+        var harness =
+            new KeyedOneInputStreamOperatorTestHarness<>(
+                operator, new ConstantArrowBatchKeySelector(0), Types.INT, 128, 1, 0)) {
+      harness.setup(new ArrowBatchSerializer());
+      harness.open();
+      var rows = new ArrayList<org.apache.flink.table.data.RowData>();
+      for (int i = 0; i < 4101; i++)
+        rows.add(GenericRowData.of((long) i, TimestampData.fromEpochMillis(500)));
+      harness.processElement(
+          new StreamRecord<>(new ArrowBatch(RowDataArrowConverter.write(rows, INPUT, allocator))));
+      harness.prepareSnapshotPreBarrier(1);
+      int seen = 0;
+      int batches = 0;
+      for (Object item; (item = harness.getOutput().poll()) != null; ) {
+        if (!(item instanceof StreamRecord)) continue;
+        try (var root = ((ArrowBatch) ((StreamRecord<?>) item).getValue()).root()) {
+          assertTrue(root.getRowCount() <= 1024);
+          var keys = (BigIntVector) root.getVector("key0");
+          for (int i = 0; i < root.getRowCount(); i++) {
+            assertEquals(seen++, keys.get(i));
+            assertEquals(1, ((BigIntVector) root.getVector("partial0")).get(i));
+            assertEquals(1000, ((BigIntVector) root.getVector("slice_end")).get(i));
+          }
+          batches++;
+        }
+      }
+      assertEquals(4101, seen);
+      assertEquals(5, batches);
+      var state = snapshot(harness, true);
+      assertTrue(state.getManagedKeyedState().isEmpty());
+      assertTrue(state.getRawKeyedState().isEmpty());
+      assertTrue(state.getManagedOperatorState().isEmpty());
+      assertTrue(state.getRawOperatorState().isEmpty());
+      harness.prepareSnapshotPreBarrier(2);
+      assertTrue(harness.getOutput().isEmpty());
     }
   }
 

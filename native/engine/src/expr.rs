@@ -1,3 +1,4 @@
+use crate::expression_protocol::{CastTarget, ExpressionKind};
 use crate::*;
 use arrow::datatypes::TimeUnit;
 
@@ -27,20 +28,22 @@ pub(crate) fn build_expr(
     let node = *cursor;
     *cursor += 1;
     let arg = payload[node] as usize;
-    match kinds[node] {
+    let kind = ExpressionKind::from_code(kinds[node])
+        .unwrap_or_else(|| panic!("unsupported expression kind: {}", kinds[node]));
+    match kind {
         // Reference the column by its exact field name, not via `col()`, which parses its argument as
         // a SQL identifier and lower-cases an unquoted name — breaking a mixed-case column like the
         // Nexmark `dateTime` rowtime.
-        0 => datafusion::prelude::Expr::Column(datafusion::common::Column::new_unqualified(
-            schema.field(arg).name(),
-        )),
-        1 => logical_lit(longs[arg]),
-        2 => logical_lit(doubles[arg]),
-        3 => logical_lit(ScalarValue::Utf8(strings[arg].clone())),
-        4 => logical_lit(longs[arg] != 0),
+        ExpressionKind::InputRef => datafusion::prelude::Expr::Column(
+            datafusion::common::Column::new_unqualified(schema.field(arg).name()),
+        ),
+        ExpressionKind::LitLong => logical_lit(longs[arg]),
+        ExpressionKind::LitDouble => logical_lit(doubles[arg]),
+        ExpressionKind::LitString => logical_lit(ScalarValue::Utf8(strings[arg].clone())),
+        ExpressionKind::LitBool => logical_lit(longs[arg] != 0),
         // An untyped NULL; the surrounding expression's coercion (e.g. a CASE branch) types it.
-        5 => datafusion::prelude::Expr::Literal(ScalarValue::Null, None),
-        31 => logical_lit(
+        ExpressionKind::LitNull => datafusion::prelude::Expr::Literal(ScalarValue::Null, None),
+        ExpressionKind::LitTypedNull => logical_lit(
             ScalarValue::try_from(&encoded_field_type(
                 strings[arg].as_deref().expect("typed NULL schema"),
             ))
@@ -48,12 +51,12 @@ pub(crate) fn build_expr(
         ),
         // Narrow integer literals carry their declared width so arithmetic evaluates in the same
         // type as the host (e.g. `int * 2` stays int32 and wraps), not a widened type.
-        7 => logical_lit(longs[arg] as i32),
-        8 => logical_lit(longs[arg] as i16),
-        9 => logical_lit(longs[arg] as i8),
+        ExpressionKind::LitInt => logical_lit(longs[arg] as i32),
+        ExpressionKind::LitSmall => logical_lit(longs[arg] as i16),
+        ExpressionKind::LitTiny => logical_lit(longs[arg] as i8),
         // Likewise for FLOAT, which the host evaluates in single precision.
-        22 => logical_lit(doubles[arg] as f32),
-        23 => {
+        ExpressionKind::LitFloat => logical_lit(doubles[arg] as f32),
+        ExpressionKind::LitBinary => {
             // Binary literals use a length followed by bytes in the existing long pool; -1 is NULL.
             let length = longs[arg];
             logical_lit(ScalarValue::Binary((length >= 0).then(|| {
@@ -63,7 +66,7 @@ pub(crate) fn build_expr(
                     .collect()
             })))
         }
-        29 => {
+        ExpressionKind::LitTimestamp => {
             let value = (longs[arg] != 0).then(|| {
                 streamfusion_bridge::timestamp::TimestampValue::new(
                     longs[arg + 1],
@@ -75,7 +78,7 @@ pub(crate) fn build_expr(
                 streamfusion_bridge::timestamp::timestamp_array([value]),
             )))
         }
-        24 => {
+        ExpressionKind::LitTemporal => {
             let value = (longs[arg + 1] != 0).then_some(longs[arg + 2]);
             logical_lit(match longs[arg] {
                 9 => ScalarValue::Date32(value.map(|v| v as i32)),
@@ -94,7 +97,7 @@ pub(crate) fn build_expr(
                 other => panic!("unsupported temporal literal type: {other}"),
             })
         }
-        25 => {
+        ExpressionKind::Clock => {
             let encoded = strings[arg].as_deref().expect("clock field and zone");
             let (field, zone) = encoded.split_once('|').expect("clock field and zone");
             crate::flink_functions::clock::function(
@@ -103,7 +106,7 @@ pub(crate) fn build_expr(
             )
             .call(vec![])
         }
-        32 => {
+        ExpressionKind::Random => {
             let children = (0..child_counts[node])
                 .map(|_| {
                     build_expr(
@@ -121,7 +124,7 @@ pub(crate) fn build_expr(
             crate::flink_functions::random::function(arg & 1 != 0, arg & 2 != 0, arg & 4 != 0)
                 .call(children)
         }
-        33 | 34 => {
+        ExpressionKind::StringToInteger | ExpressionKind::IntegerToString => {
             let child = build_expr(
                 schema,
                 kinds,
@@ -132,7 +135,7 @@ pub(crate) fn build_expr(
                 strings,
                 cursor,
             );
-            let function = if kinds[node] == 33 {
+            let function = if kind == ExpressionKind::StringToInteger {
                 crate::flink_functions::integer_string::parse_function(
                     cast_data_type(arg & 3),
                     arg & 4 != 0,
@@ -145,7 +148,7 @@ pub(crate) fn build_expr(
             };
             function.call(vec![child])
         }
-        36 => {
+        ExpressionKind::FromUnixtime => {
             let encoded = strings[arg]
                 .as_deref()
                 .expect("FROM_UNIXTIME format and offset");
@@ -168,7 +171,7 @@ pub(crate) fn build_expr(
                 .expect("admitted FROM_UNIXTIME pattern")
                 .call(vec![input])
         }
-        40 => {
+        ExpressionKind::BinaryElt => {
             let children = (0..child_counts[node])
                 .map(|_| {
                     build_expr(
@@ -185,7 +188,7 @@ pub(crate) fn build_expr(
                 .collect::<Vec<_>>();
             crate::flink_functions::binary_elt::function(children.len(), arg as i32).call(children)
         }
-        39 => {
+        ExpressionKind::BinaryCast => {
             let child = build_expr(
                 schema,
                 kinds,
@@ -204,7 +207,7 @@ pub(crate) fn build_expr(
             crate::flink_functions::binary_cast::function(length, payload[node] < 0)
                 .call(vec![child])
         }
-        37 => {
+        ExpressionKind::DecimalFloat => {
             let child = build_expr(
                 schema,
                 kinds,
@@ -217,7 +220,7 @@ pub(crate) fn build_expr(
             );
             crate::flink_functions::decimal_float::function(arg == 4).call(vec![child])
         }
-        46 => {
+        ExpressionKind::CollectionCast => {
             let encoded = strings[arg]
                 .as_deref()
                 .expect("container cast configuration");
@@ -240,7 +243,7 @@ pub(crate) fn build_expr(
                 cursor,
             )])
         }
-        47 => {
+        ExpressionKind::DecimalIf => {
             let children = (0..3)
                 .map(|_| {
                     build_expr(
@@ -263,7 +266,7 @@ pub(crate) fn build_expr(
             )
             .call(children)
         }
-        43 => {
+        ExpressionKind::ArrayCast => {
             let target = encoded_field_type(strings[arg].as_deref().expect("ARRAY cast schema"));
             let child = build_expr(
                 schema,
@@ -277,7 +280,7 @@ pub(crate) fn build_expr(
             );
             crate::flink_functions::array_cast::function(target).call(vec![child])
         }
-        11 => {
+        ExpressionKind::Cast => {
             // `arg` identifies the target; decimal formatting avoids Arrow's per-row Strings.
             let child = build_expr(
                 schema,
@@ -301,7 +304,7 @@ pub(crate) fn build_expr(
         // A narrowing cast to an integer target (`arg` is the target int code). Uses the NarrowingCast
         // kernel so the value wraps (integer source) / saturates with NaN→0 (float source) like Flink's
         // primitive Java cast, rather than erroring on overflow as arrow's own cast would.
-        18 => {
+        ExpressionKind::CastNarrow => {
             let target = cast_data_type(arg);
             let child = build_expr(
                 schema,
@@ -316,7 +319,7 @@ pub(crate) fn build_expr(
             datafusion::logical_expr::ScalarUDF::new_from_impl(NarrowingCast::new(target))
                 .call(vec![child])
         }
-        6 => {
+        ExpressionKind::Call => {
             let op = payload[node];
             let count = child_counts[node] as usize;
             let mut args = Vec::with_capacity(count);
@@ -334,7 +337,7 @@ pub(crate) fn build_expr(
             }
             build_typed_call(schema, op, args)
         }
-        45 => crate::flink_functions::calendar::zoned(
+        ExpressionKind::ZonedExtract => crate::flink_functions::calendar::zoned(
             strings[arg].as_deref().expect("calendar zone history"),
         )
         .expect("verified calendar zone history")
@@ -350,9 +353,13 @@ pub(crate) fn build_expr(
         )]),
         // A JVM UDF node: `arg` indexes the long pool at [udf id, return-type code]; the children are the
         // argument expressions. Builds a JvmUdf scalar function that upcalls the JVM per batch.
-        17 | 38 | 41 | 42 | 44 => {
+        ExpressionKind::Udf
+        | ExpressionKind::RowUdf
+        | ExpressionKind::DecimalRoundText
+        | ExpressionKind::NumericCast
+        | ExpressionKind::CertifiedBuiltin => {
             let id = longs[arg] as i32;
-            let row_result = kinds[node] == 38;
+            let row_result = kind == ExpressionKind::RowUdf;
             let return_type = if row_result {
                 encoded_field_type(
                     strings[longs[arg + 1] as usize]
@@ -377,11 +384,11 @@ pub(crate) fn build_expr(
                 ));
             }
             let mut function = JvmUdf::new(id, return_type, row_result);
-            if kinds[node] == 41 {
+            if kind == ExpressionKind::DecimalRoundText {
                 function.decimal_round_text = Some(longs[arg + 2] != 0);
             }
-            function.numeric_cast = kinds[node] == 42;
-            if kinds[node] == 44 {
+            function.numeric_cast = kind == ExpressionKind::NumericCast;
+            if kind == ExpressionKind::CertifiedBuiltin {
                 function.certified_builtin = Some((longs[arg + 2], count));
                 let cache_count = match longs[arg + 2] {
                     11 => 1, // Integer SPLIT_INDEX needs only the source string cache.
@@ -414,7 +421,7 @@ pub(crate) fn build_expr(
         }
         // Preserve the legacy literal encoding used by native timestamp arithmetic. The generated
         // temporal evaluator uses kind 24 for its signed millisecond interval arguments instead.
-        15 => {
+        ExpressionKind::LitInterval => {
             let millis = longs[arg];
             logical_lit(ScalarValue::IntervalDayTime(Some(
                 arrow::datatypes::IntervalDayTime {
@@ -425,7 +432,7 @@ pub(crate) fn build_expr(
         }
         // An exact DECIMAL literal, encoded "unscaled|precision|scale" in the string pool. Built as a
         // Decimal128 scalar so decimal arithmetic (q1's `0.908 * price`) stays exact.
-        16 => {
+        ExpressionKind::LitDecimal => {
             let encoded = strings[arg].as_deref().expect("decimal literal");
             let mut parts = encoded.split('|');
             let unscaled: i128 = parts
@@ -446,7 +453,11 @@ pub(crate) fn build_expr(
         }
         // Low 16 bits carry result precision*100 + scale; bit 16 retains Flink 1.18's
         // implicit integer casts. Kernels rescale before the final overflow check.
-        20 | 21 | 26..=28 => {
+        ExpressionKind::DecimalDivide
+        | ExpressionKind::DecimalMod
+        | ExpressionKind::DecimalAdd
+        | ExpressionKind::DecimalSubtract
+        | ExpressionKind::DecimalMultiply => {
             let legacy_integer_cast = arg & (1 << 16) != 0;
             let precision = ((arg & 0xffff) / 100) as u8;
             let scale = ((arg & 0xffff) % 100) as i8;
@@ -472,27 +483,27 @@ pub(crate) fn build_expr(
             );
             use crate::flink_functions::decimal::{DecimalBinary, DecimalOp};
             use datafusion::logical_expr::ScalarUDF;
-            let function = match kinds[node] {
-                26 => ScalarUDF::new_from_impl(
+            let function = match kind {
+                ExpressionKind::DecimalAdd => ScalarUDF::new_from_impl(
                     DecimalBinary::new(DecimalOp::Add, precision, scale)
                         .with_legacy_integer_cast(legacy_integer_cast),
                 ),
-                27 => ScalarUDF::new_from_impl(
+                ExpressionKind::DecimalSubtract => ScalarUDF::new_from_impl(
                     DecimalBinary::new(DecimalOp::Subtract, precision, scale)
                         .with_legacy_integer_cast(legacy_integer_cast),
                 ),
-                28 => ScalarUDF::new_from_impl(
+                ExpressionKind::DecimalMultiply => ScalarUDF::new_from_impl(
                     DecimalBinary::new(DecimalOp::Multiply, precision, scale)
                         .with_legacy_integer_cast(legacy_integer_cast),
                 ),
                 _ => ScalarUDF::new_from_impl(
-                    DecimalDivide::new(precision, scale, kinds[node] == 21)
+                    DecimalDivide::new(precision, scale, kind == ExpressionKind::DecimalMod)
                         .with_legacy_integer_cast(legacy_integer_cast),
                 ),
             };
             function.call(vec![left, right])
         }
-        30 | 35 => {
+        ExpressionKind::DecimalRound | ExpressionKind::DecimalTruncate => {
             let precision = (arg / 100) as u8;
             let scale = (arg % 100) as i8;
             let mut children = Vec::with_capacity(2);
@@ -509,7 +520,7 @@ pub(crate) fn build_expr(
                 ));
             }
             use crate::flink_functions::decimal::DecimalRound;
-            let function = if kinds[node] == 35 {
+            let function = if kind == ExpressionKind::DecimalTruncate {
                 DecimalRound::truncate(precision, scale)
             } else {
                 DecimalRound::new(precision, scale)
@@ -517,7 +528,7 @@ pub(crate) fn build_expr(
             datafusion::logical_expr::ScalarUDF::new_from_impl(function).call(children)
         }
         // Exact decimal cast: HALF_UP to the declared scale, then NULL on precision overflow.
-        14 => {
+        ExpressionKind::CastDecimal => {
             let precision = (arg / 100) as u8;
             let scale = (arg % 100) as i8;
             let child = build_expr(
@@ -538,7 +549,7 @@ pub(crate) fn build_expr(
         // Field access: extract a named field from a ROW/struct child. `arg` indexes the field name in
         // the string pool; the one child (built next) is the struct-typed expression. get_field returns
         // NULL for a null struct, matching Flink's field access.
-        13 => {
+        ExpressionKind::FieldAccess => {
             let name = strings[arg].clone().expect("field name");
             let child = build_expr(
                 schema,
@@ -556,7 +567,7 @@ pub(crate) fn build_expr(
         // type. Both paths reproduce Flink's subscript semantics: NULL for a null
         // collection, an out-of-range (1-based) index, or an absent key, and map lookup takes the
         // first match like Flink's linear scan. Runtime subscripts are evaluated as columns.
-        19 => {
+        ExpressionKind::Item => {
             use datafusion::logical_expr::ExprSchemable;
             let collection = build_expr(
                 schema,
@@ -608,22 +619,24 @@ pub(crate) fn build_expr(
                 other => panic!("ITEM over unsupported collection type {other}"),
             }
         }
-        12 => crate::flink_functions::clock::function(0, "UTC".into()).call(vec![]),
-        other => panic!("unsupported expression kind: {other}"),
+        ExpressionKind::Proctime => {
+            crate::flink_functions::clock::function(0, "UTC".into()).call(vec![])
+        }
     }
 }
 
 /// The Arrow type for a cast target code (mirrors the JVM encoder's widening cast targets).
 pub(crate) fn cast_data_type(code: usize) -> DataType {
-    match code {
-        0 => DataType::Int8,
-        1 => DataType::Int16,
-        2 => DataType::Int32,
-        3 => DataType::Int64,
-        4 => DataType::Float32,
-        5 => DataType::Float64,
-        6 => DataType::Utf8,
-        other => panic!("unsupported cast target: {other}"),
+    match CastTarget::from_code(code as i64)
+        .unwrap_or_else(|| panic!("unsupported cast target: {code}"))
+    {
+        CastTarget::Tinyint => DataType::Int8,
+        CastTarget::Smallint => DataType::Int16,
+        CastTarget::Integer => DataType::Int32,
+        CastTarget::Bigint => DataType::Int64,
+        CastTarget::Float => DataType::Float32,
+        CastTarget::Double => DataType::Float64,
+        CastTarget::String => DataType::Utf8,
     }
 }
 

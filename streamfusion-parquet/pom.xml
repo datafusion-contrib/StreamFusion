@@ -25,10 +25,16 @@
             <version>${project.version}</version>
             <scope>provided</scope>
         </dependency>
+
+        <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-common</artifactId>
+            <version>3.3.4</version>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
 
     <build>
-        <sourceDirectory>${project.basedir}/../src/main/java</sourceDirectory>
         <resources combine.self="override">
             <resource>
                 <directory>${project.basedir}/src/main/resources</directory>
@@ -56,11 +62,6 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
-                <configuration><includes>
-                    <include>tech/streamfusion/parquet/**/*.java</include>
-                    <include>tech/streamfusion/planner/**/ParquetPlannerExtension.java</include>
-                    <include>tech/streamfusion/planner/**/ParquetSinkTranslator.java</include>
-                </includes></configuration>
             </plugin>
         </plugins>
     </build>

@@ -223,6 +223,59 @@ class NativeExecutionTest {
     assertThrows(AssertionError.class, () -> NativeExecution.finish(unexpectedlyNative));
   }
 
+  @ParameterizedTest
+  @ValueSource(strings = {"legacy", "operator", "island"})
+  void plannerAdviceRecordsBothTypedScopesAndLegacyStringReasons(String mode) throws Exception {
+    Class<?> observed =
+        StreamFusionSuiteAgent.observePlanning(
+                new net.bytebuddy.ByteBuddy().redefine(FallbackPlanner.class))
+            .make()
+            .load(
+                FallbackPlanner.class.getClassLoader(),
+                net.bytebuddy.dynamic.loading.ClassLoadingStrategy.Default.CHILD_FIRST)
+            .getLoaded();
+    Object planner = observed.getConstructor().newInstance();
+    NativeExecution.Scope scope = begin(FALLBACK);
+    try {
+      observed
+          .getMethod("recordFallback", Object.class, int.class)
+          .invoke(planner, new Object(), 7);
+      if (mode.equals("legacy")) {
+        observed.getMethod("recordFallback", String.class).invoke(planner, FALLBACK_REASON);
+      } else {
+        observed
+            .getMethod(
+                mode.equals("operator") ? "recordFallback" : "recordIslandFallback",
+                Object.class,
+                String.class)
+            .invoke(planner, new Object(), FALLBACK_REASON);
+      }
+    } finally {
+      NativeExecution.finish(scope);
+    }
+    assertEquals(2, observed.getField("calls").getInt(planner));
+  }
+
+  public static class FallbackPlanner {
+    public int calls;
+
+    public void recordFallback(String reason) {
+      calls++;
+    }
+
+    public void recordFallback(Object node, String reason) {
+      calls++;
+    }
+
+    public void recordFallback(Object node, int unrelated) {
+      calls++;
+    }
+
+    public void recordIslandFallback(Object node, String reason) {
+      calls++;
+    }
+  }
+
   @Test
   void aChangedUpstreamFixtureFailsInsteadOfSkippingItsContract() {
     assertThrows(AssertionError.class, () -> NativeExecution.begin(WINDOW, new Object()));

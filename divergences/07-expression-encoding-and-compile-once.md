@@ -25,6 +25,14 @@ grows toward Comet's scale (nested structs, N-ary functions, casts), switching t
 *wire format* to Protobuf is the natural upgrade — it is a maintainability change,
 not a performance one, since encoding happens once per operator, not per batch.
 
+The node-kind and primitive cast-target vocabularies are defined in
+`native/engine/expression-protocol.json`. `bin/generate-expression-protocol.py` generates the
+Java and Rust enums; CI checks the generated sources and rejects duplicate or reused retired
+codes. The native decoder matches the typed node enum exhaustively. This keeps the existing
+parallel-array payload and every numeric code intact, including legacy interval literals.
+It does not introduce a second expression AST or a new serialization dependency. Add a new
+node kind to the manifest, regenerate both languages, and implement its native match arm.
+
 Builtin function IDs share one namespace between the Java encoder and Rust registry.
 Coordinate IDs across pending implementations as well as merged code; a rebase must not
 assign different functions the same ID. Encoder assertions and prepared-operation helpers
@@ -37,6 +45,16 @@ value of the project. Its generality buys nothing toward parity and costs a heav
 dependency and a semantic-mapping layer we would own anyway. Parity-first means we
 admit ops one at a time behind a matcher gate — the opposite of accepting an open
 vocabulary we then have to defend against.
+
+## Scalar semantic rules
+
+Primitive integer/string, Boolean/string and binary/string casts follow Flink's CastRuleProvider
+and Comet's family-level expression handlers: one rule owns the admitted shape, lowering,
+fallibility and output representation. The Calc coordinator still decides whole-program JVM
+scheduling and shared user-function evaluation. Rules do not evaluate operands during admission.
+Unknown configuration or unsupported context retains the existing rejection or generated evaluator;
+other cast families retain their current parity-specific paths. This separates semantic ownership
+from the compact wire encoding without introducing another general expression AST.
 
 ## Compile once, evaluate directly (performance)
 Independent of the wire format: the native side compiles the decoded `Expr` into a

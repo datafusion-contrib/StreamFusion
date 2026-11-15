@@ -401,7 +401,11 @@ pub extern "system" fn Java_tech_streamfusion_Native_rocksdbGroupAggregatorState
     _class: JClass<'local>,
     handle: jlong,
 ) -> jlong {
-    crate::bridge::jni_guard(env, move |_env| unsafe { &*(handle as *const RocksGroupAggregator) }.memory.state_bytes as jlong)
+    crate::bridge::jni_guard(env, move |_env| {
+        unsafe { &*(handle as *const RocksGroupAggregator) }
+            .memory
+            .state_bytes() as jlong
+    })
 }
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_rocksdbGroupAggregatorStagingBytes<'local>(
@@ -4164,4 +4168,32 @@ pub extern "system" fn Java_tech_streamfusion_Native_rocksdbIntervalJoinerTimerD
             .store_mut()
             .timer_deadline() as jlong
     })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_flushRocksDBWindowAggregatorBatches<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    watermark: jlong,
+    receiver: jni::objects::JObject<'local>,
+) {
+    crate::window_agg::Java_tech_streamfusion_Native_flushTumblingAggregatorBatches(
+        env, _class, handle, watermark, receiver,
+    )
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_flushRocksDBSessionAggregatorBatches<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    watermark: jlong,
+    receiver: jni::objects::JObject<'local>,
+) {
+    crate::session_agg::Java_tech_streamfusion_Native_flushSessionAggregatorBatches(
+        env, _class, handle, watermark, receiver,
+    )
 }
