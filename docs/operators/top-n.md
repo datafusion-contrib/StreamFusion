@@ -1055,3 +1055,7 @@ Retracting-rank planner controls require the captured stock owner for both retai
 indicators and supported ordinary timestamp payloads. They independently check the logical
 indicator flag in the bound row type, stock descriptor names and both transposes; an ordinary
 timestamp payload alone does not require fallback.
+
+Persistent window-rank firing reconciles Arrow ARRAY element and MAP entry labels against
+the active output schema. A network exchange may rename those physical children after a
+restore; values, NULLs, SQL ROW field names and logical type metadata remain unchanged.

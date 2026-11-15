@@ -152,3 +152,7 @@ arrival order, the late-row boundary, clean stock workers, empty returns, native
 source rescaling for ordinary SQL and portable plans. The singleton sort and sink constraints
 remain the same. These new fixtures await execution on both Flink 1.18 and 2.2; the historical
 counts above do not qualify them. No sort semantics or persisted encoding changes are introduced.
+
+After canonical restore, newly arriving batches reconcile physical Arrow collection-child
+labels against the retained buffer schema before buffering. SQL ROW names, nullability,
+logical metadata, values and stable arrival order remain checked and preserved.
