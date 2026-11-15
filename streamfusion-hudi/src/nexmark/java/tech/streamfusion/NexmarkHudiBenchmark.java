@@ -40,6 +40,7 @@ class NexmarkHudiBenchmark {
   private String status = "running";
   private final List<Map<String, Object>> observations = new ArrayList<>();
   private final List<Map<String, Object>> stateChecks = new ArrayList<>();
+  private final List<Map<String, Object>> failureDiagnostics = new ArrayList<>();
 
   @AfterEach
   void releasesNativeResources() throws Exception {
@@ -167,6 +168,46 @@ class NexmarkHudiBenchmark {
                               .map(e -> e.getKey() + "=" + e.getValue().milliseconds)
                               .collect(Collectors.joining(" ")));
                 }
+              } catch (Exception | AssertionError failure) {
+                for (var entry : results.entrySet()) {
+                  var result = entry.getValue();
+                  var details = new LinkedHashMap<String, Object>();
+                  failureDiagnostics.add(details);
+                  try {
+                    details.put("query", query.label);
+                    details.put("engine", entry.getKey());
+                    details.put("backend", backend);
+                    details.put("mini_batch", miniBatch);
+                    details.put("trial", trial);
+                    details.put("readback_rows", result.outputRows);
+                    details.put("parquet", parquetRows(result.target));
+                    var conf = new Configuration();
+                    conf.setString("path", result.target.toUri().toString());
+                    var timeline =
+                        org.apache.hudi.util.StreamerUtil.createMetaClient(conf)
+                            .reloadActiveTimeline();
+                    details.put(
+                        "timeline",
+                        timeline.getInstantsAsStream()
+                            .map(Object::toString)
+                            .collect(Collectors.toList()));
+                    var commits = new LinkedHashMap<String, Long>();
+                    details.put("committed_rows_by_instant", commits);
+                    for (var instant :
+                        timeline.getCommitsTimeline().filterCompletedInstants()
+                            .getInstantsAsStream().collect(Collectors.toList())) {
+                      commits.put(
+                          instant.requestedTime(),
+                          timeline.readCommitMetadata(instant).fetchTotalRecordsWritten());
+                    }
+                    System.out.println(
+                        "[hudi-nexmark] failure diagnostics " + JSON.writeValueAsString(details));
+                  } catch (Exception diagnosticFailure) {
+                    details.put("diagnostic_error", diagnosticFailure.toString());
+                    failure.addSuppressed(diagnosticFailure);
+                  }
+                }
+                throw failure;
               } finally {
                 for (var result : results.values()) result.close();
               }
@@ -511,6 +552,7 @@ class NexmarkHudiBenchmark {
                     new org.apache.hadoop.conf.Configuration()))) {
           counts.merge("physical_rows", reader.getRecordCount(), Long::sum);
           counts.merge("physical_files", 1L, Long::sum);
+          counts.put("file_" + target.relativize(file), reader.getRecordCount());
           counts.merge(
               "instant_"
                   + org.apache.hudi.common.fs.FSUtils.getCommitTime(file.getFileName().toString()),
@@ -618,6 +660,7 @@ class NexmarkHudiBenchmark {
     Files.createDirectories(report.toAbsolutePath().getParent());
     var data = new LinkedHashMap<String, Object>();
     data.put("status", status);
+    data.put("failure_diagnostics", failureDiagnostics);
     data.put("rows", ROWS);
     data.put("input_bids", inputBids);
     data.put("parallelism", PARALLELISM);
