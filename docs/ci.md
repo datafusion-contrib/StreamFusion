@@ -211,6 +211,16 @@ path filters still apply there. On other branches, dispatch these optional
 workflows only when their functionality changed. Development branches belong in
 personal forks, and tags do not trigger these branch test workflows.
 
+The startup-profile workflow's `hudi-native` suite produces only the engine and
+Parquet release libraries for Hudi diagnostics and Nexmark. It reuses the focused
+Hudi job's release build/cache steps without requiring a Java-only comparison
+baseline. Consumers still verify the successful build, exact native/toolchain
+inputs and live artifact. A library producer supplies no test or benchmark gate;
+full Hudi configurations and final CI remain separate checks.
+`hudi-diagnostic` reuses one explicitly selected configuration and the verified
+libraries for unchanged focused queries. Its artifacts and successful status are
+labelled diagnostic and cannot satisfy the full Hudi matrix.
+
 The upstream full-suite dispatch is identified as **Full upstream Flink suite
 (merge gate)**. Inventory dispatches have a separate title and cannot satisfy that
 gate; older unmarked manual runs are also excluded. Existing exact-head push

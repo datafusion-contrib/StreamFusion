@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run one unchanged two-million-event Hudi Nexmark matrix configuration."""
+"""Run a full Hudi Nexmark configuration or an explicitly marked focused diagnostic."""
 
 import argparse
 from collections import Counter
@@ -58,15 +58,28 @@ def run_logged(command, environment, log):
         raise
 
 
-def validate(report, backend, mini_batch):
-    expected = Counter((query, engine, trial) for query in QUERIES
+def diagnostic_queries(value):
+    selected = value.split(",")
+    if len(set(selected)) != len(selected) or not set(selected) <= QUERIES:
+        raise ValueError("Use distinct unchanged timed query labels for a diagnostic")
+    return set(selected)
+
+
+def validate(report, backend, mini_batch, diagnostic=None):
+    if diagnostic is not None and (not diagnostic or not diagnostic <= QUERIES):
+        raise ValueError("Use nonempty unchanged timed queries for a diagnostic")
+    queries = QUERIES if diagnostic is None else diagnostic
+    expected = Counter((query, engine, trial) for query in queries
                        for engine in ENGINES for trial in range(3))
     timed = [item for item in report["observations"] if "milliseconds" in item]
     actual = Counter((item["query"], item["engine"], item["trial"]) for item in timed)
     rejected = [item for item in report["observations"] if "milliseconds" not in item]
     if report["status"] != "passed" or actual != expected:
         raise ValueError("Incomplete Hudi matrix or changed trial identities")
-    if (len(rejected) != 1 or rejected[0].get("query") != "q7"
+    if diagnostic is not None:
+        if rejected:
+            raise ValueError("Unexpected stock planner rejection in a diagnostic")
+    elif (len(rejected) != 1 or rejected[0].get("query") != "q7"
             or rejected[0].get("status") != "stock-planner-rejected"
             or rejected[0].get("reason") != REJECTION):
         raise ValueError("Changed q7 stock planner exclusion")
@@ -86,18 +99,19 @@ def validate(report, backend, mini_batch):
         if item["validation"] != expected_validation:
             raise ValueError("Changed Hudi matrix output validation")
     checks = report["state_backend_checks"]
-    if backend == "rocksdb":
+    if backend == "rocksdb" and "q4" in queries:
         actual_checks = Counter((item["engine"], item["query"], item["mini_batch"],
                                  item["rocksdb_opened"]) for item in checks)
         if actual_checks != Counter((engine, "q4", mini_batch, True) for engine in ENGINES):
             raise ValueError("Missing actual RocksDB backend engagement")
     elif checks:
-        raise ValueError("Unexpected RocksDB checks in a heap configuration")
+        raise ValueError("Unexpected RocksDB engagement checks for this selection")
 
 
 def run(args):
     if args.native_producer_run < 1:
         raise ValueError("Provide a verified native producer run ID")
+    diagnostic = diagnostic_queries(args.diagnostic_queries) if args.diagnostic_queries else None
     subprocess.run(["git", "diff", "--exit-code", "HEAD"], cwd=ROOT, check=True,
                    stdout=subprocess.DEVNULL)
     output = args.output.resolve()
@@ -116,6 +130,9 @@ def run(args):
               "native_producer_run": args.native_producer_run, "libraries_sha256": hashes(),
               "platform": platform.platform(), "processors": os.cpu_count(),
               "backend": args.backend, "mini_batch": args.mini_batch == "true"}
+    if diagnostic is not None:
+        result["scope"] = "Focused correctness diagnostic; not full-matrix qualification"
+        result["diagnostic_queries"] = sorted(diagnostic)
     if Path("/proc/cpuinfo").exists():
         result["cpu_model"] = next((line.partition(":")[2].strip()
                                     for line in Path("/proc/cpuinfo").read_text().splitlines()
@@ -142,6 +159,8 @@ def run(args):
                        "SF_HUDI_MINIBATCHES": args.mini_batch, "TMPDIR": str(temporary)}
         for name in ["SF_HUDI_PROFILE", "SF_MATRIX_QUERIES"]:
             environment.pop(name, None)
+        if diagnostic is not None:
+            environment["SF_MATRIX_QUERIES"] = args.diagnostic_queries
         command = ["mvn", "-B", "-ntp", "-Phudi,flink-1.18,bench,hudi-nexmark",
                    "-pl", "streamfusion-hudi", "-am", "test", "-Dnative.build.skip=true",
                    "-Dnative.test.resource.skip=true", "-Dmaven.javadoc.skip=true", "-Dsf.testForks=1",
@@ -156,10 +175,10 @@ def run(args):
             result["report"] = json.loads(report.read_text())
         if code:
             raise RuntimeError("Hudi matrix Maven invocation failed")
-        validate(result["report"], args.backend, args.mini_batch == "true")
+        validate(result["report"], args.backend, args.mini_batch == "true", diagnostic)
         if result["libraries_sha256"] != hashes():
             raise ValueError("Native libraries changed during Hudi matrix timing")
-        result["status"] = "passed"
+        result["status"] = "diagnostic-passed" if diagnostic is not None else "passed"
     except BaseException:
         result["status"] = "failed"
         raise
@@ -173,6 +192,8 @@ def main():
     parser.add_argument("--backend", choices=["memory", "rocksdb"], required=True)
     parser.add_argument("--mini-batch", choices=["false", "true"], required=True)
     parser.add_argument("--native-producer-run", type=int, required=True)
+    parser.add_argument("--diagnostic-queries", default="",
+                        help="Focused unchanged queries; never qualifies a complete configuration")
     parser.add_argument("--native-library-dir", type=Path, default=ROOT / "native/target/release")
     parser.add_argument("--output", type=Path, required=True)
     run(parser.parse_args())

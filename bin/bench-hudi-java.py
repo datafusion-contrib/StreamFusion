@@ -59,8 +59,8 @@ def validate(report, rows, queries):
 def compare(args):
     if not re.fullmatch(r"[0-9a-f]{40}", args.baseline):
         raise ValueError("Use a full baseline commit SHA")
-    if set(args.queries.split(",")) - {"q8", "q12"}:
-        raise ValueError("This focused comparison supports q8 and q12")
+    if set(args.queries.split(",")) - {"q8", "q10", "q12"}:
+        raise ValueError("This focused comparison supports q8, q10 and q12")
     queries = args.queries.split(",")
     if len(set(queries)) != len(queries):
         raise ValueError("Duplicate query")
@@ -96,7 +96,7 @@ def compare(args):
     result = {"status": "running", "baseline": args.baseline, "candidate": head,
               "native_tree": git("rev-parse", "HEAD:native"), "libraries_sha256": hashes,
               "platform": platform.platform(), "processors": os.cpu_count(),
-              "scope": "Focused q8/q12 complete jobs; not the full Nexmark matrix",
+              "scope": "Focused q8/q10/q12 complete jobs; not the full Nexmark matrix",
               "trials": []}
     summary = output / "summary.json"
 

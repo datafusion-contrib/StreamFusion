@@ -15,6 +15,9 @@ one warmup and three rotating stock/previous/native trials, four source/sink tas
 heap state and mini-batching off. It restores candidate sources and deletes runtime
 tables even after failure. The workflow artifact retains every observation and log.
 This focused comparison is separate from the complete four-configuration matrix.
+The Java-only runner follows the module-owned core sources and rejects unlisted
+core, Hudi or Parquet changes before replacing any source files.
+Q10 is also available for a Java-only comparison with matching native inputs.
 
 The same comparison can run on an otherwise idle developer machine using
 `python3 bin/bench-hudi-java.py --baseline FULL_BASELINE_SHA --output NEW_DIRECTORY`
@@ -24,8 +27,12 @@ to a supported JDK and prevent system sleep for local timings. The
 retains the local diagnostic and excluded contended attempts.
 
 For complete qualification, select suite `hudi-benchmark` with
-`hudi_full_matrix=true` and set `native_run` to a successful focused release
-producer. The full mode uses two million events and every unchanged query in four
+`hudi_full_matrix=true` and set `native_run` to a successful Hudi release
+producer. Suite `hudi-native` builds and publishes only the two release libraries
+using the same build/cache steps; it needs no Java comparison baseline and makes
+no benchmark or correctness qualification claim. Use it when native sources have
+changed. A successful focused `hudi-benchmark` run can also supply those libraries.
+The full mode uses two million events and every unchanged query in four
 isolated jobs: heap/RocksDB × mini-batching off/on. Native source/toolchain inputs
 must match the producer, its release-build step must have succeeded, and its
 library artifact must still be available. Each job downloads those same libraries
@@ -50,104 +57,224 @@ while retaining the complete byte-for-byte Maven log, including failure output.
 The selected queries, warmups, trials, resources and measured boundaries remain
 the fixed matrix above; the timeout does not exclude slow controls or partial runs.
 
-## Current hosted qualification (partial)
+For a focused correctness reproduction, select suite `hudi-diagnostic`, one
+explicit `hudi_configurations` value such as `rocksdb-false`, `hudi_queries=q10`
+and a source-compatible `native_run`. This reuses the same two-million-event
+runner, resources, warmup and three-engine rotating trials for the selected
+unchanged queries. It publishes `hudi-diagnostic-*` artifacts and records
+`diagnostic-passed`; it cannot qualify a complete configuration. The default full
+matrix still requires all 198 timing identities and Q7's exact exclusion.
 
-Both post-optimization two-million-event configurations with **mini-batching on**
-have passed: heap and RocksDB. Each retains all 198 timings and the exact Q7
-stock planner exclusion. Geometric means of median speedups across 22 timed
-queries are:
+## Full Linux matrix (2026-11-15)
 
-| State | Stock/native | Previous SF/native | Native medians faster than stock |
-| --- | ---: | ---: | ---: |
-| memory | 1.27× | 10.28× | 17/22 |
-| rocksdb | 1.32× | 8.10× | 17/22 |
+The [complete hosted campaign](https://github.com/jordepic/StreamFusion-contrib/actions/runs/43680106018)
+passes all four configurations at source `67d03a0f775e7ea8d5339c9bfd8bdc316778d23d`,
+native tree `54cfc7608463ba3a18aefac0d98764fcbfa88c4c`. All configurations reuse
+the source-verified release libraries from producer `43663389459`. They include
+the bounded window output and resource-ownership integration from upstream
+`2a304d5`. Subsequent upstream canonical-state and Paimon integrations are outside
+these timings; final merge qualification is separate from this measured source.
 
-The two mini-batching-off configurations reached the original three-hour job
-limit and retain partial diagnostics; they have not qualified. Their retries use
-the longer limit and retain the two successful configurations. This is not a
-complete matrix or a measured before/after comparison with the earlier heap
-runs. Compare engines within each configuration: these are isolated Linux
-x86-64 runners with four available processors, about 15.6 GiB physical memory
-and JDK 17.0.21; heap ran on AMD EPYC 9V74 and RocksDB on AMD EPYC 9V45.
-Their absolute times do not isolate a backend or mini-batch effect.
+Geometric means of median speedups across the same 22 timed queries are:
 
-The [original campaign archive](https://github.com/jordepic/StreamFusion-contrib/releases/tag/benchmark-evidence-hudi-matrix-attempt1-20261114-866620764)
-preserves all four raw logs/reports and terminal timeout evidence. Its manifest
-records the bundle/member sizes and SHA-256 hashes; all were independently
-downloaded and verified. The off snapshots retain their original `running`
-status at cancellation and are diagnostic only, with 189/159 completed timings.
-They do not establish the full-configuration or final native-cleanup gates.
+| State | Mini-batching | Stock/native | Previous SF/native |
+| --- | --- | ---: | ---: |
+| Heap | off | **1.891×** | **11.232×** |
+| Heap | on | **2.208×** | **13.724×** |
+| RocksDB | off | **1.801×** | **9.284×** |
+| RocksDB | on | **2.094×** | **8.974×** |
 
-The fixed configuration retains four Hudi source/sink tasks, eight slots,
-8 GiB heap, a 48 GiB logical native off-heap limit, object reuse, one-second
-checkpoints, one warmup and three rotating trials per engine. All deterministic
-outputs passed full-value multiset comparison; Q12 passed processing-time count
-invariants. Both native boundaries, Rust payload footers and final native
-resource cleanup passed. RocksDB also passed all three actual backend engagement
-checks. [Every observation, range, source/library hash and configuration field](hudi-nexmark-linux-20261114.json) is retained.
+Native medians beat stock on **17/22 queries in every configuration**. All
+**792 timing identities and four exact Q7 stock planner exclusions** validate
+without combining source versions or partial attempts. Every deterministic
+result passes full-value multiset comparison; Q12 uses processing-time bounded
+count invariants. Both native Hudi boundaries, absence of payload transposes,
+Rust user-payload Parquet footers and final native handle/memory cleanup pass.
+Both RocksDB configurations also pass all three actual backend engagement checks.
+The jobs remove their runtime tables and logs after retaining their reports.
 
-Values below are median milliseconds (minimum–maximum). Q5/Q8/Q11/Q13/Q14
-retain large stock losses. Q13/Q14 also lose to the Hudi-disabled SF control
-in both configurations; Q5 additionally loses to that control on RocksDB.
+The fixed configuration retains two million events, four physical Hudi
+source/sink partitions, eight slots, 8 GiB heap, a 48 GiB logical native off-heap
+limit, object reuse, one-second checkpoints, one warmup and three rotating
+stock/previous/native trials. Each runner has four processors and JDK 17.0.21+9.
+Heap/off uses an Intel Xeon Platinum 8573C host. Heap/on and RocksDB/off use
+Intel Xeon 6975P-C hosts; RocksDB/on uses AMD EPYC 9V45. Physical memory is about
+15.3–15.6 GiB. Compare engines **within each
+configuration**: these hosts do not establish causal backend, mini-batch or
+before/after effects. These are complete-job timings, not sustained throughput.
+
+[Every observation, range, source/library hash and configuration](hudi-nexmark-linux-20261115.json)
+is retained. The [raw evidence archive](https://github.com/jordepic/StreamFusion-contrib/releases/tag/benchmark-evidence-hudi-matrix-20261115-67d03a0f7)
+contains all four original reports/logs, the consolidation script, capacity
+snapshot and verification record. Its 136,335-byte bundle has SHA-256
+`ac00363b0aed7c9ab92614d4b4f1c5daac78162736e6d06c771ca6c52bfdf91f`;
+the bundle and all 16 members were independently downloaded and checked before
+local raw-log cleanup.
+
+Q5/Q8/Q11/Q13/Q14 retain substantial stock losses in all four configurations.
+For example, heap/on Q11 is 55,432 ms native versus 2,860 ms stock; RocksDB/off Q5
+is 176,694 ms versus 19,677 ms. RocksDB Q5 also loses to previous SF in both modes.
+Q8 on RocksDB/on has nearly identical previous/native medians with overlapping
+trial ranges. [Issue #663](https://github.com/datafusion-contrib/StreamFusion/issues/663)
+tracks these remaining costs. The tables retain every loss.
+
+### Per-query results
+
+Values are median milliseconds (minimum–maximum).
+
+### memory, minibatching false
+
+| Query | Stock ms (range) | Previous SF ms (range) | Native ms (range) | Stock/native |
+| --- | ---: | ---: | ---: | ---: |
+| q0 | 19,576.6 (19,259.1–19,922.6) | 39,112.6 (38,871.4–39,873.3) | 1,356.6 (1,261.1–1,622.4) | 14.43× |
+| q1 | 19,597.7 (19,360.1–19,927.4) | 39,737.8 (39,481.2–40,038.1) | 1,377.0 (1,342.8–1,377.7) | 14.23× |
+| q2 | 2,076.9 (1,944.4–2,132.3) | 15,544.2 (15,538.0–15,727.8) | 825.8 (743.5–838.4) | 2.52× |
+| q3 | 2,225.2 (2,073.1–2,306.1) | 32,000.5 (31,883.2–32,021.3) | 1,205.1 (1,196.0–1,224.6) | 1.85× |
+| q4 | 7,603.1 (6,810.2–8,505.7) | 178,320.8 (176,097.5–182,653.8) | 3,725.5 (3,364.5–4,794.6) | 2.04× |
+| q5 | 15,875.2 (15,821.5–16,070.1) | 87,544.1 (87,534.5–88,309.4) | 78,360.7 (78,084.6–78,383.1) | 0.20× |
+| q8 | 5,702.6 (5,622.5–5,937.3) | 53,993.9 (53,923.3–55,195.1) | 51,322.6 (50,504.9–51,912.2) | 0.11× |
+| q9 | 16,902.6 (16,828.0–16,984.8) | 397,675.2 (393,362.6–400,368.1) | 8,627.0 (8,497.6–8,774.2) | 1.96× |
+| q10 | 25,357.9 (25,210.5–25,737.2) | 59,424.5 (59,404.3–59,796.7) | 1,808.5 (1,804.3–1,851.8) | 14.02× |
+| q11 | 4,031.1 (3,995.3–4,222.2) | 65,600.8 (65,518.4–65,610.9) | 63,681.1 (63,592.6–63,724.6) | 0.06× |
+| q12 | 2,446.3 (2,429.6–2,469.5) | 63,380.0 (63,372.2–63,628.4) | 742.0 (723.9–763.4) | 3.30× |
+| q13 | 15,130.6 (14,961.5–15,362.6) | 40,557.4 (40,484.7–40,558.0) | 34,724.3 (33,771.8–35,421.9) | 0.44× |
+| q14 | 26,522.6 (26,130.7–26,926.6) | 57,183.5 (57,104.1–57,316.9) | 49,519.5 (49,345.0–49,671.6) | 0.54× |
+| q15 | 18,394.1 (17,980.3–18,428.6) | 68,953.4 (68,950.9–69,576.3) | 16,636.4 (15,910.1–16,765.6) | 1.11× |
+| q16 | 16,642.9 (16,491.8–16,774.7) | 91,619.5 (90,897.3–91,709.9) | 14,444.0 (14,224.4–14,495.0) | 1.15× |
+| q17 | 17,379.9 (16,809.9–18,189.2) | 107,411.0 (107,352.8–107,748.2) | 10,620.0 (10,284.4–10,648.8) | 1.64× |
+| q18 | 51,102.7 (50,924.7–51,907.2) | 204,097.9 (203,797.8–204,223.1) | 10,847.2 (10,575.3–10,900.8) | 4.71× |
+| q19 | 114,347.6 (114,227.4–122,803.4) | 280,507.1 (276,681.4–282,996.0) | 34,514.3 (33,500.7–34,685.7) | 3.31× |
+| q20 | 5,688.8 (5,688.7–7,210.4) | 136,020.7 (135,518.6–136,511.1) | 2,444.4 (2,314.2–2,570.1) | 2.33× |
+| q21 | 2,834.4 (2,756.6–2,887.5) | 26,972.3 (26,589.8–27,301.6) | 2,146.0 (2,056.9–2,162.1) | 1.32× |
+| q22 | 21,465.4 (21,146.8–21,716.0) | 41,208.6 (40,818.4–41,298.5) | 1,515.8 (1,473.4–1,523.0) | 14.16× |
+| q23 | 77,165.7 (76,301.8–78,012.5) | 207,366.6 (206,921.6–208,644.8) | 5,230.0 (5,015.0–5,299.4) | 14.75× |
+
+Geometric mean: **1.891× stock / 11.232× previous SF**.
 
 ### memory, minibatching true
 
 | Query | Stock ms (range) | Previous SF ms (range) | Native ms (range) | Stock/native |
 | --- | ---: | ---: | ---: | ---: |
-| q0 | 3,245.7 (3,196.0–3,522.4) | 17,987.1 (17,871.2–18,058.0) | 1,237.4 (1,131.2–1,246.5) | 2.62× |
-| q1 | 3,326.9 (3,246.2–3,400.0) | 18,089.1 (18,010.3–18,261.3) | 1,170.7 (1,138.2–1,211.8) | 2.84× |
-| q2 | 1,634.6 (1,582.0–1,740.6) | 10,829.8 (10,777.5–10,999.7) | 580.5 (571.5–617.4) | 2.82× |
-| q3 | 1,359.3 (1,325.7–1,685.2) | 21,122.3 (21,112.4–21,167.5) | 890.1 (852.9–931.0) | 1.53× |
-| q4 | 4,716.9 (4,569.5–5,189.6) | 75,644.5 (75,566.0–77,471.2) | 2,385.7 (2,372.8–2,700.3) | 1.98× |
-| q5 | 12,863.9 (12,741.8–13,468.1) | 58,454.2 (57,812.1–58,469.3) | 52,128.0 (51,530.7–52,181.7) | 0.25× |
-| q8 | 4,279.9 (4,233.5–4,982.1) | 35,296.4 (35,022.9–35,429.2) | 33,261.6 (33,150.0–33,502.8) | 0.13× |
-| q9 | 10,050.4 (9,967.0–10,429.2) | 133,224.3 (131,301.5–137,989.6) | 3,844.0 (3,811.5–4,248.6) | 2.61× |
-| q10 | 3,960.9 (3,907.6–3,967.3) | 29,220.4 (29,098.7–29,260.0) | 1,676.6 (1,599.3–1,723.6) | 2.36× |
-| q11 | 3,103.6 (2,920.6–3,133.5) | 47,776.2 (47,621.4–47,963.9) | 46,404.4 (46,389.2–46,457.6) | 0.07× |
-| q12 | 2,105.8 (2,099.8–2,118.2) | 49,827.6 (49,753.9–49,926.1) | 637.3 (595.3–701.1) | 3.30× |
-| q13 | 3,743.8 (3,720.5–3,751.6) | 22,338.6 (22,275.6–22,439.7) | 25,376.0 (25,046.7–25,790.3) | 0.15× |
-| q14 | 4,263.2 (4,229.2–4,354.9) | 27,790.7 (26,984.6–28,224.1) | 37,951.6 (36,791.6–38,012.9) | 0.11× |
-| q15 | 2,628.6 (2,555.8–2,734.8) | 21,529.1 (21,516.2–21,575.2) | 1,020.6 (952.2–1,066.9) | 2.58× |
-| q16 | 3,351.9 (3,121.3–3,947.3) | 30,024.3 (29,856.2–30,794.9) | 1,632.4 (1,541.4–1,651.2) | 2.05× |
-| q17 | 3,911.6 (3,667.6–3,990.3) | 29,682.8 (29,638.8–32,739.8) | 2,243.1 (2,201.4–2,487.0) | 1.74× |
-| q18 | 13,806.3 (13,787.6–14,715.8) | 138,566.4 (137,447.9–140,900.4) | 10,094.7 (9,230.6–10,534.0) | 1.37× |
-| q19 | 52,309.9 (51,474.2–52,650.5) | 91,735.1 (91,362.3–97,184.0) | 6,646.7 (5,456.2–7,051.5) | 7.87× |
-| q20 | 4,751.5 (4,729.6–5,129.2) | 96,520.9 (95,411.1–96,699.7) | 1,905.5 (1,821.0–1,986.7) | 2.49× |
-| q21 | 2,372.3 (2,342.1–2,374.0) | 19,068.7 (19,051.7–19,410.7) | 1,648.8 (1,638.3–1,828.5) | 1.44× |
-| q22 | 4,385.0 (4,226.1–4,785.7) | 18,864.1 (18,810.0–19,111.5) | 1,395.6 (1,374.0–1,433.4) | 3.14× |
-| q23 | 16,097.9 (15,431.1–19,668.0) | 84,557.3 (82,873.1–84,918.5) | 4,198.8 (4,092.3–4,607.5) | 3.83× |
+| q0 | 15,466.5 (15,380.9–15,738.2) | 29,554.9 (29,361.7–29,985.3) | 1,090.5 (1,042.4–1,097.9) | 14.18× |
+| q1 | 15,770.3 (15,198.9–16,086.6) | 30,111.4 (30,089.2–30,421.9) | 1,041.0 (1,032.5–1,151.1) | 15.15× |
+| q2 | 1,496.5 (1,482.5–1,516.4) | 12,048.8 (11,939.1–12,157.8) | 607.1 (569.2–654.1) | 2.46× |
+| q3 | 1,664.7 (1,633.0–1,779.0) | 25,270.6 (25,220.8–26,256.6) | 904.3 (903.1–980.5) | 1.84× |
+| q4 | 4,571.2 (4,313.8–5,562.9) | 90,965.3 (90,653.7–91,809.8) | 2,133.4 (1,989.3–2,249.1) | 2.14× |
+| q5 | 11,239.0 (11,157.1–11,254.4) | 64,327.7 (63,857.8–64,894.5) | 59,454.0 (59,352.7–60,303.4) | 0.19× |
+| q8 | 4,019.0 (3,820.2–4,206.7) | 40,520.4 (40,498.6–40,854.9) | 38,461.3 (38,213.1–38,845.2) | 0.10× |
+| q9 | 11,649.0 (11,566.1–12,623.5) | 160,221.0 (159,071.4–164,762.4) | 3,841.5 (3,643.6–3,919.3) | 3.03× |
+| q10 | 19,945.2 (19,779.9–20,841.6) | 44,506.6 (44,435.1–45,587.5) | 1,322.7 (1,309.1–1,347.7) | 15.08× |
+| q11 | 2,859.7 (2,814.6–3,002.3) | 56,128.2 (55,682.2–56,487.2) | 55,431.5 (54,518.4–55,459.0) | 0.05× |
+| q12 | 1,716.0 (1,700.0–1,734.9) | 54,251.6 (54,000.0–54,413.2) | 649.3 (641.7–650.8) | 2.64× |
+| q13 | 11,789.6 (11,692.4–12,092.1) | 30,288.4 (30,196.3–30,537.9) | 26,213.5 (26,178.2–26,643.7) | 0.45× |
+| q14 | 21,551.9 (20,940.2–21,651.0) | 42,518.9 (42,358.2–42,591.2) | 38,086.1 (37,962.0–38,286.9) | 0.57× |
+| q15 | 2,215.6 (2,085.0–2,329.2) | 25,465.4 (25,309.6–25,555.5) | 949.7 (928.4–994.8) | 2.33× |
+| q16 | 2,653.6 (2,620.8–2,714.9) | 35,469.4 (35,451.6–35,585.9) | 1,529.8 (1,442.7–1,547.5) | 1.73× |
+| q17 | 5,288.7 (5,050.6–5,686.9) | 34,950.7 (33,098.5–35,850.3) | 1,845.2 (1,827.9–1,897.5) | 2.87× |
+| q18 | 40,757.6 (39,200.1–41,836.7) | 157,625.5 (157,487.8–161,612.4) | 8,855.7 (8,849.7–8,874.7) | 4.60× |
+| q19 | 86,188.8 (84,472.3–88,952.9) | 123,509.0 (122,859.7–125,967.6) | 5,997.6 (4,861.0–6,301.6) | 14.37× |
+| q20 | 3,841.5 (3,759.9–4,241.3) | 104,497.4 (104,226.6–105,108.7) | 1,711.2 (1,707.7–1,781.6) | 2.24× |
+| q21 | 1,968.4 (1,950.2–1,992.5) | 21,095.0 (20,994.5–21,136.1) | 1,355.7 (1,327.8–1,382.3) | 1.45× |
+| q22 | 16,236.6 (15,625.5–16,444.4) | 30,234.1 (29,822.7–30,234.7) | 1,177.6 (1,068.6–1,204.7) | 13.79× |
+| q23 | 60,511.9 (59,508.3–64,178.5) | 114,741.9 (114,016.3–116,121.4) | 3,694.9 (3,324.4–3,857.2) | 16.38× |
 
-Geometric mean: **1.271× stock / 10.277× previous SF**.
+Geometric mean: **2.208× stock / 13.724× previous SF**.
+
+### rocksdb, minibatching false
+
+| Query | Stock ms (range) | Previous SF ms (range) | Native ms (range) | Stock/native |
+| --- | ---: | ---: | ---: | ---: |
+| q0 | 15,919.8 (15,840.1–16,280.3) | 30,101.6 (29,215.9–30,560.4) | 1,054.8 (989.3–1,085.5) | 15.09× |
+| q1 | 15,691.8 (15,377.3–15,777.1) | 30,218.9 (30,083.9–30,821.0) | 976.3 (969.3–1,110.0) | 16.07× |
+| q2 | 1,414.4 (1,410.9–1,447.6) | 12,033.3 (11,977.6–12,058.6) | 654.5 (628.5–655.2) | 2.16× |
+| q3 | 1,600.5 (1,448.2–1,702.3) | 25,496.8 (25,361.6–25,717.2) | 1,023.0 (956.7–1,117.8) | 1.56× |
+| q4 | 15,432.1 (14,807.3–16,277.4) | 158,454.6 (156,960.6–170,166.3) | 8,354.8 (7,831.5–9,426.8) | 1.85× |
+| q5 | 19,676.8 (19,663.0–20,319.2) | 141,110.6 (140,744.4–142,547.8) | 176,693.6 (173,066.4–178,622.7) | 0.11× |
+| q8 | 5,651.2 (5,649.1–5,739.0) | 45,630.7 (45,017.0–45,698.5) | 44,287.4 (43,888.6–44,350.9) | 0.13× |
+| q9 | 23,907.0 (23,688.2–24,041.1) | 329,589.3 (326,921.9–336,902.1) | 13,540.0 (12,629.7–14,291.6) | 1.77× |
+| q10 | 19,776.0 (19,768.8–20,151.7) | 44,619.4 (44,466.7–44,678.0) | 1,363.5 (1,347.5–1,364.0) | 14.50× |
+| q11 | 8,652.8 (8,637.6–8,693.4) | 85,781.4 (85,559.5–86,499.5) | 83,172.1 (83,022.1–83,994.6) | 0.10× |
+| q12 | 1,832.5 (1,819.2–1,966.1) | 53,328.4 (53,123.9–53,546.4) | 702.8 (641.7–759.6) | 2.61× |
+| q13 | 11,592.6 (11,265.6–11,597.7) | 29,691.7 (29,678.6–30,090.6) | 26,216.2 (26,116.9–26,319.8) | 0.44× |
+| q14 | 20,137.6 (19,815.1–21,715.7) | 42,488.4 (41,760.7–42,767.2) | 37,965.2 (37,745.5–38,516.7) | 0.53× |
+| q15 | 21,616.8 (21,423.0–21,910.3) | 69,906.8 (69,125.0–70,060.5) | 17,695.7 (17,655.2–18,202.4) | 1.22× |
+| q16 | 16,810.7 (16,501.9–16,899.8) | 76,548.9 (76,491.3–76,663.5) | 14,268.0 (13,993.9–14,676.9) | 1.18× |
+| q17 | 14,146.2 (14,060.0–14,435.9) | 82,954.0 (82,102.1–83,911.2) | 8,208.8 (8,183.2–8,290.3) | 1.72× |
+| q18 | 45,155.8 (43,873.4–46,618.2) | 157,551.8 (157,176.0–158,959.5) | 10,327.5 (10,170.6–10,426.2) | 4.37× |
+| q19 | 92,197.7 (91,778.4–95,345.5) | 186,116.4 (182,398.4–190,668.9) | 24,469.3 (23,718.6–24,762.3) | 3.77× |
+| q20 | 10,915.6 (10,638.7–11,015.3) | 111,258.4 (110,103.9–114,076.1) | 6,250.9 (5,737.4–6,653.1) | 1.75× |
+| q21 | 1,934.0 (1,917.6–2,006.6) | 21,268.0 (21,224.0–21,388.3) | 1,489.4 (1,432.8–1,586.2) | 1.30× |
+| q22 | 16,472.6 (16,335.9–17,309.3) | 30,672.4 (30,541.5–30,830.7) | 1,087.3 (1,086.4–1,096.3) | 15.15× |
+| q23 | 71,849.4 (71,449.9–78,736.8) | 186,150.4 (176,763.6–189,766.1) | 8,479.2 (8,220.7–8,761.9) | 8.47× |
+
+Geometric mean: **1.801× stock / 9.284× previous SF**.
 
 ### rocksdb, minibatching true
 
 | Query | Stock ms (range) | Previous SF ms (range) | Native ms (range) | Stock/native |
 | --- | ---: | ---: | ---: | ---: |
-| q0 | 2,621.6 (2,584.3–2,946.9) | 13,174.3 (12,745.7–13,528.6) | 1,055.1 (980.5–1,104.9) | 2.48× |
-| q1 | 2,796.0 (2,560.1–2,838.1) | 13,717.3 (13,241.5–14,020.1) | 965.0 (895.1–1,031.7) | 2.90× |
-| q2 | 1,354.0 (1,265.9–1,365.7) | 8,307.9 (8,232.5–8,318.1) | 611.0 (498.6–668.9) | 2.22× |
-| q3 | 1,305.4 (1,295.2–1,543.0) | 16,892.3 (16,788.3–16,953.2) | 873.0 (790.0–965.3) | 1.50× |
-| q4 | 9,616.1 (9,216.5–10,854.8) | 62,540.7 (62,158.1–62,833.3) | 3,005.9 (2,928.4–3,334.7) | 3.20× |
-| q5 | 17,746.8 (16,879.3–17,902.2) | 117,666.5 (117,368.1–117,828.6) | 143,312.1 (142,981.0–144,223.1) | 0.12× |
-| q8 | 4,784.0 (4,610.2–4,903.1) | 30,026.9 (29,868.9–30,895.5) | 29,470.0 (29,171.2–30,247.3) | 0.16× |
-| q9 | 19,129.1 (19,127.4–19,205.9) | 101,478.3 (101,381.9–103,916.9) | 4,250.5 (4,046.7–4,681.4) | 4.50× |
-| q10 | 3,377.1 (2,955.4–3,400.5) | 20,462.2 (19,909.4–20,640.4) | 1,244.1 (1,237.3–1,267.3) | 2.71× |
-| q11 | 7,649.6 (7,443.8–7,729.9) | 65,190.3 (64,530.4–67,393.1) | 64,734.3 (64,046.7–67,745.1) | 0.12× |
-| q12 | 1,579.9 (1,555.3–1,933.9) | 36,911.0 (36,484.3–37,066.3) | 616.8 (476.4–622.5) | 2.56× |
-| q13 | 3,223.7 (2,805.3–3,224.5) | 14,875.4 (14,697.3–14,883.6) | 16,337.5 (16,197.8–16,431.4) | 0.20× |
-| q14 | 3,326.4 (3,219.5–3,341.1) | 17,392.7 (17,153.3–17,506.7) | 23,631.0 (23,462.1–23,838.8) | 0.14× |
-| q15 | 2,081.5 (2,049.8–2,163.4) | 14,902.1 (14,895.7–15,177.6) | 1,198.3 (1,122.2–1,368.3) | 1.74× |
-| q16 | 3,541.7 (3,181.3–3,968.9) | 22,133.5 (22,060.8–22,554.0) | 2,771.3 (2,534.6–3,389.0) | 1.28× |
-| q17 | 3,585.4 (3,356.4–3,638.9) | 21,446.4 (21,416.7–22,147.2) | 2,164.4 (2,101.4–2,474.0) | 1.66× |
-| q18 | 15,953.1 (15,563.1–16,039.0) | 102,948.3 (99,612.0–104,160.3) | 9,634.6 (9,505.1–9,775.1) | 1.66× |
-| q19 | 36,532.0 (35,720.2–37,800.6) | 68,775.8 (67,532.4–73,665.7) | 5,311.1 (5,221.4–7,302.1) | 6.88× |
-| q20 | 9,204.6 (9,041.1–9,777.9) | 72,230.0 (71,890.2–72,306.5) | 2,055.5 (1,825.4–2,304.6) | 4.48× |
-| q21 | 1,801.4 (1,637.8–1,984.4) | 14,064.1 (13,378.7–14,271.0) | 1,511.5 (1,210.5–1,630.6) | 1.19× |
-| q22 | 3,167.2 (3,085.8–3,372.1) | 13,088.6 (12,830.2–13,314.7) | 996.5 (888.9–1,169.9) | 3.18× |
-| q23 | 24,150.2 (24,138.3–25,407.8) | 75,257.8 (74,986.9–75,755.3) | 5,928.8 (5,897.7–6,413.8) | 4.07× |
+| q0 | 10,431.4 (10,368.6–10,810.6) | 20,673.3 (20,666.0–21,455.6) | 1,020.7 (963.7–1,159.6) | 10.22× |
+| q1 | 10,488.1 (10,321.1–10,695.2) | 21,598.7 (20,624.9–21,795.6) | 1,069.8 (1,064.2–1,203.8) | 9.80× |
+| q2 | 1,648.3 (1,569.7–1,726.1) | 8,430.7 (8,278.6–8,761.7) | 652.3 (541.8–737.3) | 2.53× |
+| q3 | 1,581.3 (1,554.6–1,618.4) | 17,130.5 (17,004.5–17,607.5) | 828.2 (766.4–867.5) | 1.91× |
+| q4 | 10,188.2 (10,047.9–19,946.9) | 64,296.9 (63,916.5–65,702.9) | 3,454.1 (3,126.7–4,388.0) | 2.95× |
+| q5 | 19,045.1 (17,667.0–21,114.1) | 124,406.6 (124,090.6–126,377.8) | 154,184.0 (152,802.1–155,165.3) | 0.12× |
+| q8 | 4,845.1 (4,368.1–5,284.2) | 30,121.9 (29,809.4–31,065.5) | 30,146.5 (29,192.0–31,023.6) | 0.16× |
+| q9 | 21,974.6 (20,404.7–24,310.7) | 102,314.0 (101,772.0–103,376.6) | 4,704.2 (4,236.6–5,218.9) | 4.67× |
+| q10 | 13,593.3 (13,461.7–13,603.2) | 30,472.3 (30,465.0–31,414.4) | 1,320.0 (1,284.9–1,458.9) | 10.30× |
+| q11 | 8,425.2 (8,237.6–8,525.5) | 66,550.1 (66,525.1–67,501.7) | 65,238.5 (63,574.9–65,926.0) | 0.13× |
+| q12 | 1,767.7 (1,761.9–1,887.7) | 36,365.5 (36,187.9–36,582.0) | 729.9 (521.9–777.2) | 2.42× |
+| q13 | 7,982.2 (7,940.1–9,460.8) | 20,991.2 (20,283.5–22,851.1) | 17,385.4 (16,712.3–17,700.9) | 0.46× |
+| q14 | 14,695.6 (14,598.1–14,924.5) | 29,556.5 (29,224.2–31,279.9) | 25,700.0 (24,766.9–26,590.2) | 0.57× |
+| q15 | 2,453.3 (2,427.6–2,499.1) | 16,670.9 (16,532.5–16,701.9) | 1,496.3 (1,273.4–1,681.9) | 1.64× |
+| q16 | 3,503.7 (3,266.5–3,518.2) | 23,423.5 (22,593.5–24,389.0) | 2,970.4 (2,799.3–3,037.6) | 1.18× |
+| q17 | 5,165.1 (5,063.4–5,324.8) | 24,418.4 (22,757.9–24,440.7) | 2,253.2 (2,032.0–2,499.4) | 2.29× |
+| q18 | 38,674.1 (35,004.5–42,205.5) | 120,275.4 (118,563.1–130,247.9) | 10,323.5 (9,785.1–10,329.6) | 3.75× |
+| q19 | 71,592.9 (71,592.7–73,108.0) | 84,071.9 (79,664.3–85,507.1) | 6,584.6 (5,965.1–7,189.4) | 10.87× |
+| q20 | 10,177.0 (9,932.0–10,525.2) | 75,149.0 (74,592.8–78,296.3) | 2,350.2 (2,027.8–2,373.2) | 4.33× |
+| q21 | 1,954.9 (1,846.0–2,153.3) | 14,556.3 (14,414.0–14,844.5) | 1,338.6 (1,296.0–1,360.0) | 1.46× |
+| q22 | 11,654.1 (11,590.2–11,809.4) | 21,758.0 (21,248.3–21,789.1) | 1,126.0 (1,119.5–1,199.2) | 10.35× |
+| q23 | 53,035.0 (52,475.7–53,999.4) | 101,342.2 (99,327.8–107,577.6) | 6,060.5 (5,874.7–7,216.4) | 8.75× |
 
-Geometric mean: **1.321× stock / 8.095× previous SF**.
+Geometric mean: **2.094× stock / 8.974× previous SF**.
 
+
+## Historical cohorts and Q10 failure
+
+The preceding [partial Linux matrix](hudi-nexmark-linux-20261114.json), measured
+at source `866620764` and native tree `16d4c0052bb61c9a6c783bd03bdafc6c02fe9896`,
+qualified only its two mini-batching-on configurations: heap 1.271× stock /
+10.277× previous SF, and RocksDB 1.321× / 8.095×. Its off jobs timed out at the
+original three-hour limit. [All original reports and timeout evidence](https://github.com/jordepic/StreamFusion-contrib/releases/tag/benchmark-evidence-hudi-matrix-attempt1-20261114-866620764)
+remain archived; those partial attempts do not qualify the completed campaign above.
+
+The [old RocksDB/off retry](https://github.com/jordepic/StreamFusion-contrib/actions/runs/43650417787)
+failed Q10 previous-SF control trial 1: 1,696,199 rows instead of 1,840,000.
+That control uses stock Hudi endpoints. Its 66 timings and Q7 exclusion remain
+diagnostic only. Heap/off was cancelled when new native inputs superseded that
+attempt; its 153 timings and Q7 exclusion also remain unqualified.
+The [original failure archive](https://github.com/jordepic/StreamFusion-contrib/releases/tag/benchmark-evidence-hudi-q10-failure-20261115-5cf84474a)
+and [separate superseded-cohort/integration archive](https://github.com/jordepic/StreamFusion-contrib/releases/tag/benchmark-evidence-hudi-integration-20261115-bf877576f)
+were independently downloaded and verified before local raw-log cleanup.
+
+The completed campaign validates all **36 timed Q10 identities** across four
+configurations, including that previous-control trial, with 1,840,000 rows and
+full values each. Earlier focused [local](https://github.com/jordepic/StreamFusion-contrib/releases/tag/benchmark-evidence-hudi-integration-20261115-bf877576f)
+and [Linux](https://github.com/jordepic/StreamFusion-contrib/releases/tag/benchmark-evidence-hudi-q10-linux-20261115-480eefc2a)
+repeats also pass. These later results do not establish the cause or claim a fix
+for the archived failure on the older source. The [failure/repeat record](hudi-q10-validation-20261115.json)
+retains the original identities and limits. On any new failure the harness
+captures per-file physical row counts, timeline and commit totals before cleanup;
+a metadata inspection error retains partial counts and the original assertion.
+
+The measured source also shares production/corpus inputs with the full default
+upstream Hudi replay at `bf877576f`: 349 enabled cases and one unchanged upstream
+skip in each stock/native mode, with all native-work/fallback contracts intact.
+Its [source-pinned compatibility report and provenance](https://github.com/jordepic/StreamFusion-contrib/releases/tag/benchmark-evidence-hudi-upstream-20261115-bf877576f)
+remain independently archived. This local compatibility evidence does not replace
+final exact-head hosted CI and the full upstream Flink suite.
+
+## Focused Java transport comparisons
 
 The first [isolated comparison](hudi-java-comparison-20261114.json) passed on Linux
 x86-64 with four available processors, JDK 17.0.21, 200k events, heap state and
@@ -183,7 +310,7 @@ These inclusive shares overlap, and Calc chains include downstream operators;
 they are not isolated component timings or a matched speedup comparison. The
 [compact observations](hudi-q8-profile-20261114.json) record source/library hashes
 and link the independently verified, versioned archive of folded stacks and logs.
-Repeated handoffs remain a target for profiling after the complete matrix.
+Repeated handoffs remain a target for further profiling.
 
 Historical development logs and diagnostics are preserved in a separate
 [versioned evidence archive](https://github.com/jordepic/StreamFusion-contrib/releases/tag/benchmark-evidence-hudi-development-20261114-866620764).
@@ -268,7 +395,7 @@ are removed after each run.
 
 The completed heap configurations below are the baseline before persistent-window
 deadline caching. The first RocksDB campaign stopped during Q5 to prioritize its
-performance regression. The full matrix will be requalified after focused tuning.
+performance regression. The complete Linux matrix above follows that tuning.
 macOS power logs confirmed repeated host
 suspensions during the earlier campaign, and a later previous-path Q10 run failed
 with an expired Hudi commit heartbeat. The earlier full-value comparisons remain
@@ -417,7 +544,11 @@ state code. [All 18 timings, source trees, library hashes and CPU diagnostic](hu
 are retained. A separate smoke checks actual RocksDB databases for all three engines.
 All 99 affected native window/store tests pass, including canonical state transfer.
 These smaller complete jobs do not establish the two-million-event result or
-sustained throughput; those checks and full-matrix qualification remain pending.
+sustained throughput. The later full Linux matrix above completes all four
+configurations at its recorded source/native trees, including the subsequent
+bounded-output integration. Q5 remains slower than stock in every configuration;
+the combined results do not isolate this deadline optimization or establish
+sustained throughput.
 
 The subsequent cursor revision visits populated key groups through one iterator,
 seeks from the earliest live end, and skips accumulator namespaces when loading
