@@ -7,14 +7,17 @@ pub fn configure() {
     // the process-wide override benchmark-grade only. strdup/strndup must be aliased along with
     // malloc/free: leaving them to libc would hand out libc-owned pointers that mimalloc's free
     // would later reject. The deallocation half of that same hazard cannot be closed by aliasing —
-    // libc APIs like realpath(3) allocate INTERNALLY with the system allocator and hand the buffer
-    // out — so `free` and `realloc` alias to checked shims (mimalloc_shim.c) that route each
-    // pointer to the allocator that owns it.
+    // host APIs can allocate internally and hand the buffer out. Checked free/realloc shims route
+    // those pointers to their owning allocator. Linux realpath resolves into caller-owned storage
+    // and returns a DSO-owned copy, avoiding a host library's third allocator.
     if std::env::var_os("CARGO_FEATURE_MIMALLOC").is_some() {
         let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
         let shim = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mimalloc_shim.c");
         println!("cargo:rerun-if-changed={}", shim.display());
         cc::Build::new().file(shim).compile("mimalloc_shim");
+        if target_os == "linux" {
+            println!("cargo:rustc-link-arg=-Wl,--defsym=realpath=sf_realpath");
+        }
         let symbols = [
             ("malloc", "mi_malloc"),
             ("calloc", "mi_calloc"),

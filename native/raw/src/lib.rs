@@ -28,3 +28,17 @@ pub extern "system" fn Java_tech_streamfusion_format_raw_NativeRawFormat_liveNat
 ) -> jstring {
     streamfusion_bridge::live_handles_probe(env)
 }
+
+pub mod encode;
+streamfusion_format_support::format_encoder_jni_facade!(
+    Java_tech_streamfusion_format_raw_NativeRawFormat_createEncoder,
+    Java_tech_streamfusion_format_raw_NativeRawFormat_encodeBatch,
+    Java_tech_streamfusion_format_raw_NativeRawFormat_closeEncoder,
+    Java_tech_streamfusion_format_raw_NativeRawFormat_encoderSupported,
+    Java_tech_streamfusion_format_raw_NativeRawFormat_spellFloatingPoint,
+    encode::create_encoder,
+    encode::supports_encoder
+);
+
+#[allow(unused_imports)]
+use encode::*;

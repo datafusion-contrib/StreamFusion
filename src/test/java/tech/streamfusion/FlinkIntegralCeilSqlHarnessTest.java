@@ -85,7 +85,7 @@ class FlinkIntegralCeilSqlHarnessTest {
   void unverifiedProducersKeepTheGeneratedProgram() {
     for (String expression :
         List.of(
-            "CEIL(v+1)", "CEIL(-v)", "CEIL(CAST(CAST(v AS SMALLINT) AS INT))", "CEIL(1/(id-id))")) {
+            "CEIL(v+MOD(v,2))", "CEIL(-v)", "CEIL(CAST(CAST(v AS SMALLINT) AS INT))", "CEIL(1/(id-id))")) {
       var table = environment("INT");
       var scan = NativePlanner.install(table);
       table.explainSql("SELECT " + expression + " FROM src");

@@ -1,0 +1,1749 @@
+{
+  "purpose": "Further CI attribution beyond fixture-plan caching; no uninstrumented speedup claimed.",
+  "recursive": {
+    "source_sha": "f18dda64f929b3dba45cea027cbbb7c04c241fb2",
+    "run": 42531639118,
+    "jdk": 17,
+    "flink": "2.2",
+    "forks": 4,
+    "heap_per_fork": "2g",
+    "instrumented": true,
+    "elapsed_seconds": 402.130349089,
+    "cpu_seconds": 440.508189,
+    "outcomes": {
+      "tests": 1817,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "classes": {
+      "tech.streamfusion.FlinkRecursiveScalarSqlHarnessTest": {
+        "tests": 1134,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "seconds": 339.814
+      },
+      "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest": {
+        "tests": 683,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "seconds": 397.168
+      }
+    },
+    "summed_phase_intervals": {
+      "parity.host.collect": {
+        "seconds": 254.515146389,
+        "calls": 2500
+      },
+      "parity.host.environment": {
+        "seconds": 63.513443495,
+        "calls": 2500
+      },
+      "parity.host.explain": {
+        "seconds": 16.509104158,
+        "calls": 2500
+      },
+      "parity.host.sql-query": {
+        "seconds": 4.357060719,
+        "calls": 2500
+      },
+      "parity.host.submit": {
+        "seconds": 22.501399952,
+        "calls": 2500
+      },
+      "parity.native.collect": {
+        "seconds": 261.790555044,
+        "calls": 2500
+      },
+      "parity.native.environment": {
+        "seconds": 12.013898730000001,
+        "calls": 2500
+      },
+      "parity.native.explain": {
+        "seconds": 20.832817864,
+        "calls": 2500
+      },
+      "parity.native.sql-query": {
+        "seconds": 4.102579865,
+        "calls": 2500
+      },
+      "parity.native.submit": {
+        "seconds": 23.513365375,
+        "calls": 2500
+      },
+      "recovery-metrics.cluster-close": {
+        "seconds": 44.985609172,
+        "calls": 2500
+      },
+      "recovery-metrics.cluster-start": {
+        "seconds": 50.174328939999995,
+        "calls": 2500
+      }
+    },
+    "jfr": {
+      "events": {
+        "jdk.ThreadPark": 288540,
+        "jdk.ThreadSleep": 268619,
+        "jdk.Compilation": 138941,
+        "jdk.NativeMethodSample": 72640,
+        "jdk.ObjectAllocationSample": 16055,
+        "jdk.JavaMonitorWait": 13403,
+        "jdk.ExecutionSample": 3791,
+        "jdk.GCHeapSummary": 1996,
+        "jdk.GarbageCollection": 998
+      },
+      "java_leaf_frames": {
+        "java.util.zip.ZipFile$Source.getEntryPos": 411,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.atn.LexerATNSimulator.execATN": 87,
+        "java.util.Stack.peek": 61,
+        "java.lang.StringBuilder.<init>": 52,
+        "java.lang.StringUTF16.checkIndex": 46,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.CodePointCharStream$CodePoint8BitCharStream.LA": 44,
+        "java.util.zip.ZipFile.getEntry": 42,
+        "java.lang.StringBuilder.toString": 41,
+        "jdk.internal.util.Preconditions.outOfBoundsCheckIndex": 40,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.atn.ParserATNSimulator.execATN": 34,
+        "java.util.ArrayList.add": 34,
+        "jdk.internal.util.Preconditions.checkIndex": 33,
+        "java.util.zip.ZipFile.ensureOpen": 33,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.misc.IntervalSet.contains": 32,
+        "java.lang.StringLatin1.inflate": 27,
+        "java.lang.AbstractStringBuilder.append": 24,
+        "java.util.ArrayList.grow": 23,
+        "org.apache.calcite.plan.RelOptRule.equals": 22,
+        "java.lang.StringLatin1.indexOf": 21,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.Lexer.nextToken": 21,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.BufferedTokenStream.LA": 21,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.BufferedTokenStream.nextTokenOnChannel": 20,
+        "java.util.HashMap.getNode": 19,
+        "java.util.Objects.requireNonNull": 19,
+        "java.lang.StringLatin1.compareTo": 19,
+        "jdk.internal.util.Preconditions.checkFromIndexSize": 18,
+        "java.util.HashMap.putVal": 17,
+        "java.util.jar.JarFile.getJarEntry": 17,
+        "java.lang.AbstractStringBuilder.ensureCapacityInternal": 17,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.atn.LexerATNSimulator.consume": 17,
+        "java.util.HashMap$HashIterator.nextNode": 16,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.BufferedTokenStream.size": 16,
+        "org.apache.flink.table.planner.plan.optimize.program.FlinkRuleSetProgram.contains": 15,
+        "java.lang.StringLatin1.hashCode": 15,
+        "java.lang.StringLatin1.equals": 15,
+        "java.lang.StringLatin1.indexOfChar": 14,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.CommonToken.getText": 14,
+        "jdk.internal.loader.URLClassPath.getLoader": 14,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.BufferedTokenStream.fetch": 14,
+        "java.util.concurrent.ConcurrentHashMap.get": 13
+      },
+      "java_inclusive_frames": {
+        "tech.streamfusion.CiFixtureTimings.measure": 851,
+        "tech.streamfusion.NativeFailureParity.execute": 814,
+        "org.apache.flink.table.planner.codegen.OperatorCodeGenerator$.generateOneInputStreamOperator": 690,
+        "org.apache.flink.table.codesplit.JavaCodeSplitter.splitImpl": 673,
+        "org.apache.flink.table.codesplit.JavaCodeSplitter.split": 665,
+        "org.apache.flink.table.runtime.generated.GeneratedClass.<init>": 655,
+        "org.apache.flink.table.runtime.generated.GeneratedOperator.<init>": 650,
+        "org.apache.flink.table.planner.plan.nodes.exec.ExecNodeBase.translateToPlan": 649,
+        "org.apache.flink.runtime.minicluster.MiniCluster.start": 621,
+        "scala.collection.Iterator.foreach": 611,
+        "org.apache.flink.runtime.testutils.MiniClusterResource.startMiniCluster": 610,
+        "scala.collection.Iterator.foreach$": 585,
+        "org.apache.flink.runtime.testutils.MiniClusterResource.before": 583,
+        "jdk.internal.loader.URLClassPath$JarLoader.getResource": 572,
+        "org.apache.flink.table.codesplit.JavaParser.compilationUnit": 559,
+        "jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke": 558,
+        "tech.streamfusion.RecoveryExecutionMetrics.environment": 558,
+        "scala.collection.AbstractIterator.foreach": 556,
+        "org.apache.flink.table.codesplit.JavaParser.typeDeclaration": 554,
+        "tech.streamfusion.NativeFailureParity.run": 552,
+        "org.apache.flink.table.codesplit.JavaParser.classDeclaration": 552,
+        "org.apache.flink.table.planner.codegen.CorrelateCodeGenerator$.generateOperator": 550,
+        "org.apache.flink.table.planner.delegation.StreamPlanner.$anonfun$translateToPlan$1": 546,
+        "java.util.jar.JarFile.getJarEntry": 545,
+        "java.lang.reflect.Method.invoke": 530,
+        "org.apache.flink.table.codesplit.JavaParser.classBody": 529,
+        "java.util.jar.JarFile.getEntry": 528,
+        "org.apache.flink.table.codesplit.JavaParser.classBodyDeclaration": 525,
+        "scala.collection.TraversableLike.$anonfun$map$1": 523,
+        "scala.collection.IterableLike.foreach": 521,
+        "java.util.zip.ZipFile.getEntry": 509,
+        "scala.collection.IterableLike.foreach$": 491,
+        "org.apache.flink.table.codesplit.JavaParser.memberDeclaration": 490,
+        "scala.collection.AbstractIterable.foreach": 466,
+        "java.lang.Thread.run": 428,
+        "java.util.zip.ZipFile$Source.getEntryPos": 424,
+        "java.lang.ClassLoader.loadClass": 399,
+        "jdk.internal.loader.ClassLoaders$AppClassLoader.loadClass": 395,
+        "jdk.internal.loader.BuiltinClassLoader.loadClass": 395,
+        "jdk.internal.loader.BuiltinClassLoader.loadClassOrNull": 394
+      },
+      "java_sampled_threads": {
+        "main": 2445,
+        "flink-pekko.actor.default-dispatcher-9": 71,
+        "flink-pekko.actor.default-dispatcher-8": 66,
+        "jobmanager-io-thread-1": 60,
+        "flink-operator-serialization-io-thread-1": 54,
+        "flink-pekko.actor.default-dispatcher-10": 46,
+        "flink-pekko.actor.default-dispatcher-6": 43,
+        "jobmanager-io-thread-2": 38,
+        "flink-pekko.actor.default-dispatcher-7": 37,
+        "flink-pekko.actor.default-dispatcher-5": 37,
+        "flink-rest-server-netty-boss-thread-1": 22,
+        "mini-cluster-io-thread-4": 17,
+        "flink-pekko.actor.internal-dispatcher-3": 13,
+        "ForkJoinPool.commonPool-worker-1": 12,
+        "ForkJoinPool.commonPool-worker-3": 12,
+        "RpcService-Supervisor-Termination-Future-Executor-thread-1": 12,
+        "jobmanager-future-thread-3": 11,
+        "flink-metrics-pekko.actor.internal-dispatcher-4": 10,
+        "flink-metrics-pekko.actor.internal-dispatcher-2": 10,
+        "channel-state-unspilling-thread-1": 10,
+        "jobmanager-future-thread-1": 10,
+        "flink-pekko.actor.supervisor-dispatcher-7": 9,
+        "mini-cluster-io-thread-3": 9,
+        "SourceCoordinator-Source: Sequence Source": 9,
+        "ForkJoinPool.commonPool-worker-2": 9,
+        "mini-cluster-io-thread-2": 8,
+        "jobmanager-future-thread-2": 8,
+        "jobmanager-future-thread-4": 8,
+        "mini-cluster-io-thread-1": 8,
+        "flink-metrics-pekko.actor.internal-dispatcher-3": 7,
+        "flink-pekko.actor.internal-dispatcher-2": 6,
+        "surefire-forkedjvm-stream-flusher": 6,
+        "flink-scheduler-1": 4,
+        "flink-metrics-pekko.actor.internal-dispatcher-8": 4,
+        "flink-metrics-pekko.actor.supervisor-dispatcher-7": 4,
+        "CloseableReaperThread": 4,
+        "flink-pekko.actor.supervisor-dispatcher-6": 4,
+        "flink-taskexecutor-io-thread-1": 4,
+        "Source: Sequence Source -> Filter -> Map -> *anonymous_datastream_source$1*[3] -> Correlate[4] -> ConstraintEnforcer[5] -> Sink: Collect table sink (1/1)#0": 3,
+        "flink-rest-server-netty-worker-thread-1": 3
+      },
+      "native_leaf_frames": {
+        "sun.nio.ch.Net.accept": 29297,
+        "sun.nio.ch.EPoll.wait": 27747,
+        "java.io.FileInputStream.readBytes": 15187,
+        "java.util.zip.Inflater.inflateBytesBytes": 46,
+        "java.io.UnixFileSystem.getBooleanAttributes0": 41,
+        "sun.nio.fs.UnixNativeDispatcher.rmdir0": 29,
+        "tech.streamfusion.Native.inferCalcOutputSchema": 26,
+        "tech.streamfusion.Native.calcExpressionWithCachedSchemasAtWatermark": 25,
+        "java.io.UnixFileSystem.list": 22,
+        "java.io.RandomAccessFile.readBytes": 20,
+        "java.lang.Class.forName0": 19,
+        "tech.streamfusion.Native.calcExpressionAtWatermark": 19,
+        "sun.nio.fs.UnixNativeDispatcher.stat0": 18,
+        "java.io.FileDescriptor.close0": 16,
+        "java.io.UnixFileSystem.createDirectory": 14,
+        "java.io.UnixFileSystem.delete0": 10,
+        "sun.nio.ch.SocketDispatcher.read0": 9,
+        "sun.nio.ch.FileDispatcherImpl.write0": 8,
+        "java.io.RandomAccessFile.seek0": 8,
+        "sun.nio.fs.UnixNativeDispatcher.mkdir0": 7,
+        "sun.nio.fs.UnixNativeDispatcher.lstat0": 5,
+        "sun.nio.ch.Net.socket0": 5,
+        "jdk.internal.loader.NativeLibraries.load": 4,
+        "sun.nio.ch.FileDispatcherImpl.closeIntFD": 4,
+        "tech.streamfusion.Native.createCalcExpression": 4,
+        "sun.nio.ch.EventFD.set0": 3,
+        "java.io.UnixFileSystem.canonicalize0": 3,
+        "sun.nio.ch.Net.bind0": 3,
+        "java.io.FileOutputStream.writeBytes": 3,
+        "java.io.FileInputStream.open0": 2,
+        "sun.nio.ch.Net.poll": 2,
+        "jdk.internal.misc.Unsafe.allocateInstance": 2,
+        "sun.nio.ch.NativeThread.signal": 2,
+        "java.lang.ClassLoader.defineClass1": 2,
+        "java.lang.reflect.Array.set": 2,
+        "java.util.zip.Inflater.init": 2,
+        "java.util.zip.Inflater.end": 2,
+        "tech.streamfusion.Native.liveNativeHandles": 2,
+        "java.lang.ProcessImpl.forkAndExec": 1,
+        "sun.nio.ch.EPoll.create": 1
+      },
+      "native_inclusive_frames": {
+        "java.lang.Thread.run": 42956,
+        "sun.nio.ch.NioSocketImpl.accept": 29297,
+        "java.net.ServerSocket.platformImplAccept": 29297,
+        "java.net.ServerSocket.accept": 29297,
+        "java.net.ServerSocket.implAccept": 29297,
+        "org.apache.flink.util.NetUtils.acceptWithoutTimeout": 29297,
+        "sun.nio.ch.Net.accept": 29297,
+        "org.apache.flink.runtime.blob.BlobServer.run": 28737,
+        "org.apache.flink.shaded.netty4.io.netty.util.internal.ThreadExecutorMap$2.run": 27755,
+        "org.apache.flink.shaded.netty4.io.netty.util.concurrent.SingleThreadEventExecutor$4.run": 27755,
+        "org.apache.flink.shaded.netty4.io.netty.channel.nio.NioEventLoop.run": 27749,
+        "sun.nio.ch.SelectorImpl.lockAndDoSelect": 27748,
+        "sun.nio.ch.EPollSelectorImpl.doSelect": 27748,
+        "org.apache.flink.shaded.netty4.io.netty.channel.nio.NioEventLoop.select": 27747,
+        "org.apache.flink.shaded.netty4.io.netty.channel.nio.SelectedSelectionKeySetSelector.select": 27747,
+        "sun.nio.ch.SelectorImpl.select": 27747,
+        "sun.nio.ch.EPoll.wait": 27747,
+        "java.io.BufferedInputStream.read": 15188,
+        "org.apache.maven.surefire.api.util.internal.AbstractNoninterruptibleReadableChannel.read": 15187,
+        "java.io.BufferedInputStream.read1": 15187,
+        "java.io.FileInputStream.read": 15187,
+        "org.apache.maven.surefire.booter.CommandReader$CommandRunnable.run": 15187,
+        "org.apache.maven.surefire.api.stream.AbstractStreamDecoder.readMessageType": 15187,
+        "java.io.BufferedInputStream.fill": 15187,
+        "org.apache.maven.surefire.booter.stream.CommandDecoder.decode": 15187,
+        "java.io.FileInputStream.readBytes": 15187,
+        "org.apache.maven.surefire.api.util.internal.Channels$3.readImpl": 15187,
+        "org.apache.maven.surefire.api.stream.AbstractStreamDecoder.read": 15187,
+        "org.apache.maven.surefire.booter.spi.CommandChannelDecoder.decode": 15187,
+        "org.apache.flink.streaming.api.operators.collect.CollectSinkFunction$ServerThread.run": 571,
+        "tech.streamfusion.CiFixtureTimings.measure": 92,
+        "tech.streamfusion.NativeFailureParity.execute": 86,
+        "java.util.ServiceLoader$LazyClassPathLookupIterator.hasNext": 78,
+        "java.util.ServiceLoader$3.hasNext": 78,
+        "java.util.ServiceLoader$LazyClassPathLookupIterator.nextProviderClass": 78,
+        "java.util.ServiceLoader$2.hasNext": 78,
+        "java.util.ServiceLoader$LazyClassPathLookupIterator.hasNextService": 78,
+        "java.util.zip.InflaterInputStream.read": 74,
+        "tech.streamfusion.NativeFailureParity.run": 70,
+        "org.apache.flink.runtime.testutils.MiniClusterResource.startMiniCluster": 69
+      },
+      "native_sampled_threads": {
+        "flink-rest-server-netty-boss-thread-1": 27747,
+        "surefire-forkedjvm-command-thread": 15187,
+        "BLOB Server listener at 40891": 8032,
+        "BLOB Server listener at 38001": 6840,
+        "main": 245,
+        "BLOB Server listener at 38771": 59,
+        "BLOB Server listener at 45375": 58,
+        "BLOB Server listener at 39487": 21,
+        "BLOB Server listener at 39735": 21,
+        "BLOB Server listener at 44197": 20,
+        "BLOB Server listener at 35339": 20,
+        "BLOB Server listener at 44389": 20,
+        "BLOB Server listener at 39473": 18,
+        "BLOB Server listener at 46331": 18,
+        "BLOB Server listener at 37469": 18,
+        "BLOB Server listener at 43913": 18,
+        "BLOB Server listener at 37993": 17,
+        "ForkJoinPool.commonPool-worker-2": 17,
+        "BLOB Server listener at 39549": 17,
+        "BLOB Server listener at 45249": 17,
+        "BLOB Server listener at 38743": 17,
+        "BLOB Server listener at 41057": 17,
+        "BLOB Server listener at 38803": 17,
+        "BLOB Server listener at 36109": 17,
+        "BLOB Server listener at 36171": 17,
+        "BLOB Server listener at 36765": 17,
+        "BLOB Server listener at 38229": 17,
+        "BLOB Server listener at 37021": 17,
+        "BLOB Server listener at 44571": 17,
+        "BLOB Server listener at 33989": 17,
+        "BLOB Server listener at 40509": 17,
+        "BLOB Server listener at 33531": 17,
+        "BLOB Server listener at 41813": 16,
+        "BLOB Server listener at 41447": 16,
+        "BLOB Server listener at 41573": 16,
+        "BLOB Server listener at 40741": 16,
+        "BLOB Server listener at 34807": 16,
+        "BLOB Server listener at 41733": 16,
+        "BLOB Server listener at 36037": 16,
+        "BLOB Server listener at 34871": 16
+      },
+      "compilation_events": {
+        "c1": 138941
+      },
+      "compilation_activity_seconds": {
+        "c1": 38.37451855399978
+      },
+      "allocation_sample_weight_bytes": {
+        "[B": 17585031376,
+        "[C": 5983312672,
+        "[Ljava.lang.Object;": 5857617968,
+        "java.util.ArrayList": 2366813944,
+        "java.lang.String": 2277737112,
+        "[I": 1667671120,
+        "java.util.HashMap$Node": 1611034056,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.CommonToken": 1556461640,
+        "java.util.ArrayList$Itr": 1183121472,
+        "java.lang.Integer": 1070855936,
+        "java.util.HashMap": 994359848,
+        "java.lang.StringBuilder": 901377528,
+        "java.nio.HeapCharBuffer": 810806648,
+        "jdk.internal.event.DeserializationEvent": 777517712,
+        "java.util.stream.Collectors$CollectorImpl": 695971856,
+        "[Ljava.util.HashMap$Node;": 672435160,
+        "java.nio.DirectByteBuffer": 500131600,
+        "java.util.stream.ReferencePipeline$Head": 493702392,
+        "[J": 449392328,
+        "java.lang.reflect.Method": 438403984,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.tree.TerminalNodeImpl": 406588176,
+        "java.io.ObjectStreamClass": 384812280,
+        "com.typesafe.config.impl.Path": 378893008,
+        "org.snakeyaml.engine.v2.resolver.ResolverTuple": 350847640,
+        "java.lang.Long": 349703760,
+        "org.apache.flink.calcite.shaded.com.google.common.collect.Iterators$SingletonIterator": 295264232,
+        "org.apache.flink.core.memory.MemorySegment": 288838936,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.misc.Interval": 267532080,
+        "org.snakeyaml.engine.v2.common.ArrayStack": 264620360,
+        "java.util.stream.ReduceOps$3": 262806640,
+        "jdk.internal.ref.Cleaner": 257405872,
+        "org.apache.flink.calcite.shaded.com.google.common.collect.SingletonImmutableList": 255902688,
+        "[Ljava.lang.String;": 215831680,
+        "java.util.regex.Matcher": 213370520,
+        "java.util.stream.ReferencePipeline$3$1": 213012040,
+        "java.util.stream.ReduceOps$3ReducingSink": 208559216,
+        "java.util.LinkedHashMap$Entry": 195609176,
+        "[Z": 192965944,
+        "org.apache.flink.runtime.minicluster.MiniCluster$$Lambda$2760+0x00007f3960cd0000.873287880": 192075064,
+        "[Lscala.collection.immutable.HashMap;": 191216992
+      },
+      "wait_seconds_by_kind": {
+        "jdk.ThreadPark": 40506.16290135069,
+        "jdk.JavaMonitorWait": 6548.268933176999,
+        "jdk.ThreadSleep": 3174.8639840782334
+      },
+      "wait_seconds_by_thread": {
+        "Flink-Metric-View-Updater-thread-1": 1407.8572461970016,
+        "mini-cluster-io-thread-4": 1403.8224193149952,
+        "mini-cluster-io-thread-1": 1403.8203388289978,
+        "mini-cluster-io-thread-2": 1403.5131714050033,
+        "mini-cluster-io-thread-3": 1403.3181682579987,
+        "IOManager writer thread #1": 1393.929935929002,
+        "IOManager reader thread #1": 1393.8997676339993,
+        "Flink-DispatcherRestEndpoint-thread-1": 1377.0801411960026,
+        "flink-scheduler-1": 1341.6607457199307,
+        "flink-metrics-scheduler-1": 1322.4843694639756,
+        "flink-pekko.actor.default-dispatcher-8": 1301.0562180929974,
+        "flink-pekko.actor.default-dispatcher-6": 1089.2670173010042,
+        "flink-pekko.actor.default-dispatcher-7": 989.0550233359986,
+        "flink-pekko.actor.internal-dispatcher-2": 944.8999060940024,
+        "flink-metrics-pekko.actor.internal-dispatcher-3": 919.8987374729999,
+        "flink-metrics-pekko.actor.internal-dispatcher-2": 918.5170028750009,
+        "flink-metrics-pekko.actor.internal-dispatcher-4": 829.2167008059981,
+        "flink-pekko.actor.internal-dispatcher-3": 823.4653714779992,
+        "flink-pekko.actor.default-dispatcher-4": 773.2250436180003,
+        "Common-Cleaner": 738.1745230330008,
+        "surefire-forkedjvm-stream-flusher": 738.0303484029993,
+        "Timer-0": 734.6837618760001,
+        "Timer-1": 734.668123198,
+        "Timer-2": 734.6657492910001,
+        "pool-4-thread-1": 733.7799610530001,
+        "taskmanager_0-main-scheduler-thread-1": 733.6082952189998,
+        "FlinkCompletableFutureDelayScheduler-thread-1": 728.7821938129993,
+        "Cleaner-0": 727.5610436080002,
+        "Finalizer": 727.1001628540005,
+        "Flink-DispatcherRestEndpoint-thread-2": 721.8642414220002,
+        "Flink-DispatcherRestEndpoint-thread-3": 709.8643338530002,
+        "ForkJoinPool.commonPool-worker-1": 700.0806829880011,
+        "ForkJoinPool.commonPool-worker-2": 698.2947196860013,
+        "Flink-DispatcherRestEndpoint-thread-4": 697.8649152830002,
+        "ForkJoinPool.commonPool-worker-3": 697.3592797659993,
+        "flink-pekko.actor.internal-dispatcher-4": 657.0196553710007,
+        "flink-metrics-pekko.actor.supervisor-dispatcher-6": 583.9843552800004,
+        "jobmanager-io-thread-1": 579.1257334029993,
+        "jobmanager-future-thread-1": 578.0781919339992,
+        "jobmanager-future-thread-3": 577.915082369001
+      },
+      "main_wait_seconds_by_stack": {
+        "java.lang.Thread.sleep > org.apache.flink.streaming.api.operators.collect.CollectResultFetcher.sleepBeforeRetry > org.apache.flink.streaming.api.operators.collect.CollectResultFetcher.next > org.apache.flink.streaming.api.operators.collect.CollectResultIterator.nextResultFromFetcher > org.apache.flink.streaming.api.operators.collect.CollectResultIterator.hasNext > org.apache.flink.table.planner.connectors.CollectDynamicSink$CloseableRowIteratorWrapper.hasNext > tech.streamfusion.NativeFailureParity.execute > tech.streamfusion.NativeFailureParity.execute": 510.71886889400076,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.parkNanos > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.timedGet > java.util.concurrent.CompletableFuture.get > org.apache.flink.runtime.testutils.MiniClusterResource.after": 43.1756157759999,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > org.apache.flink.streaming.api.environment.StreamExecutionEnvironment.executeAsync": 0.134169315,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > org.apache.flink.streaming.api.graph.StreamGraph$UserDefinedObjectsHolder.serializeOperatorFactories": 0.043016839,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > org.apache.flink.streaming.api.operators.collect.CollectResultFetcher.sendRequest": 0.026749023,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.parkNanos > java.util.concurrent.locks.AbstractQueuedSynchronizer.acquire > java.util.concurrent.locks.AbstractQueuedSynchronizer.tryAcquireSharedNanos > java.util.concurrent.Semaphore.tryAcquire > org.apache.maven.surefire.booter.ForkedBooter.acquireOnePermit > org.apache.maven.surefire.booter.ForkedBooter.acknowledgedExit > org.apache.maven.surefire.booter.ForkedBooter.execute": 0.012015862,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.parkNanos > java.util.concurrent.locks.AbstractQueuedSynchronizer.acquire > java.util.concurrent.locks.AbstractQueuedSynchronizer.tryAcquireSharedNanos > scala.concurrent.impl.Promise$DefaultPromise.tryAwait > scala.concurrent.impl.Promise$DefaultPromise.ready > scala.concurrent.impl.Promise$DefaultPromise.result > scala.concurrent.Await$.$anonfun$result$1": 0.010288267
+      },
+      "gc_events": {
+        "G1New / G1 Evacuation Pause": 968,
+        "G1Old / G1 Evacuation Pause": 8,
+        "G1Old / Metadata GC Threshold": 6,
+        "G1New / Metadata GC Threshold": 6,
+        "G1Old / G1 Humongous Allocation": 4,
+        "G1New / G1 Humongous Allocation": 4,
+        "G1New / GCLocker Initiated GC": 1,
+        "G1Full / System.gc()": 1
+      },
+      "gc_activity_seconds": {
+        "G1New / G1 Evacuation Pause": 4.577232855000003,
+        "G1Old / G1 Evacuation Pause": 0.602026975,
+        "G1Old / Metadata GC Threshold": 0.133050616,
+        "G1Full / System.gc()": 0.130283705,
+        "G1Old / G1 Humongous Allocation": 0.10278710800000002,
+        "G1New / Metadata GC Threshold": 0.0480484,
+        "G1New / G1 Humongous Allocation": 0.014496807,
+        "G1New / GCLocker Initiated GC": 0.005337035
+      },
+      "gc_heap_used_max_bytes": {
+        "Before GC": 472800928,
+        "After GC": 261157376
+      },
+      "recordings": 2,
+      "limits": "Java execution samples and native-method stack samples are separate. Native samples include blocking I/O and are not CPU attribution. Inclusive counts overlap. Neither sample count is exact CPU time. Native samples do not resolve Rust internals. Compilation durations are activity intervals, not compiler CPU seconds. Allocation weights are sampled estimates. Wait durations exclude unrecorded short waits, overlap across threads and are not CPU time. GC activity is not total stop-the-world pause time; heap summaries are maxima at recorded GC boundaries, not peak RSS. Instrumented elapsed times are not speedup evidence."
+    },
+    "limits": "Phase and wait intervals overlap across the two fresh JVMs. They are summed work/wait, not workflow elapsed time. This workload passed before the later Fluss setup failed."
+  },
+  "recovery": {
+    "source_sha": "a9482ce5e87cf3df1a600c20952df1dddcf467d6",
+    "run": 42531908062,
+    "jdk": 17,
+    "flink": "1.18",
+    "instrumented": true,
+    "trials": [
+      {
+        "heap": "2g",
+        "elapsed_seconds": 95.51884437500001,
+        "cpu_seconds": 123.65393900000001,
+        "outcomes": {
+          "tests": 54,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 28
+        },
+        "validated": true,
+        "recovery_messages": [
+          "[recovery-capture] task=GroupAggregate[92] -> ConstraintEnforcer[93] -> Sink: *anonymous_recovery-results$18*[93] (1/1)#0 rows=831 bytes=165299820 heapUsed=680460248 maxHeap=2147483648",
+          "[recovery-result] job=4242931c4366fec5e8faaf09e51aec61 keys=[streamfusion-recovery-results] rows=831 heapUsed=1367694056 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[103] -> ArrowToRowDataExecNode[104] -> ConstraintEnforcer[105] -> Sink: *anonymous_recovery-results$20*[105] (1/1)#2 rows=831 bytes=165299820 heapUsed=1599524056 maxHeap=2147483648",
+          "[recovery-result] job=f88fd2292faabcbbb9664f4eeb789fd7 keys=[streamfusion-recovery-results] rows=831 heapUsed=1946924912 maxHeap=2147483648",
+          "[recovery-capture] task=GroupAggregate[113] -> ConstraintEnforcer[114] -> Sink: *anonymous_recovery-results$22*[114] (1/1)#0 rows=831 bytes=457692 heapUsed=1979149256 maxHeap=2147483648",
+          "[recovery-result] job=e8238b2bf310d44ed5d6908c424593a5 keys=[streamfusion-recovery-results] rows=831 heapUsed=1935654784 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[124] -> ArrowToRowDataExecNode[125] -> ConstraintEnforcer[126] -> Sink: *anonymous_recovery-results$24*[126] (1/1)#2 rows=831 bytes=457692 heapUsed=1863660464 maxHeap=2147483648",
+          "[recovery-result] job=ec10fc40d5c88dbff7a0cdf6bd1e63c4 keys=[streamfusion-recovery-results] rows=831 heapUsed=1872196152 maxHeap=2147483648",
+          "[recovery-capture] task=GroupAggregate[134] -> ConstraintEnforcer[135] -> Sink: *anonymous_recovery-results$26*[135] (1/1)#0 rows=831 bytes=26040948 heapUsed=1411045488 maxHeap=2147483648",
+          "[recovery-result] job=02e1c00ff34235ee394384c718778ee2 keys=[streamfusion-recovery-results] rows=831 heapUsed=1573748120 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[145] -> ArrowToRowDataExecNode[146] -> ConstraintEnforcer[147] -> Sink: *anonymous_recovery-results$28*[147] (1/1)#2 rows=831 bytes=26040948 heapUsed=995655272 maxHeap=2147483648",
+          "[recovery-result] job=4c3e96ad9bdfa8d94d7d3ed706135194 keys=[streamfusion-recovery-results] rows=831 heapUsed=1098741416 maxHeap=2147483648",
+          "[recovery-capture] task=GroupAggregate[155] -> ConstraintEnforcer[156] -> Sink: *anonymous_recovery-results$30*[156] (1/1)#0 rows=831 bytes=112644 heapUsed=1149426920 maxHeap=2147483648",
+          "[recovery-result] job=d488668d01de5d3d4249c6d548c2d5e3 keys=[streamfusion-recovery-results] rows=831 heapUsed=1155853864 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[166] -> ArrowToRowDataExecNode[167] -> ConstraintEnforcer[168] -> Sink: *anonymous_recovery-results$32*[168] (1/1)#2 rows=831 bytes=112644 heapUsed=1225059880 maxHeap=2147483648",
+          "[recovery-result] job=5d9b499ed969baf6db37882d6cfe9e1b keys=[streamfusion-recovery-results] rows=831 heapUsed=1231807952 maxHeap=2147483648"
+        ],
+        "diagnostic_messages": [],
+        "gc_activity_seconds": {
+          "G1Old / G1 Humongous Allocation": 7.156035321000001,
+          "G1Old / G1 Evacuation Pause": 1.7242328249999999,
+          "G1New / G1 Evacuation Pause": 1.2992326060000003,
+          "G1Full / G1 Compaction Pause": 0.6434730600000002,
+          "G1New / G1 Humongous Allocation": 0.36987862199999993,
+          "G1New / G1 Preventive Collection": 0.10834635399999998,
+          "G1Old / Metadata GC Threshold": 0.086566649,
+          "G1New / Metadata GC Threshold": 0.015134288999999999
+        },
+        "gc_heap_used_max_bytes": {
+          "Before GC": 2098188448,
+          "After GC": 2012616088
+        }
+      },
+      {
+        "heap": "4g",
+        "elapsed_seconds": 88.60298955299999,
+        "cpu_seconds": 109.207199,
+        "outcomes": {
+          "tests": 54,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 28
+        },
+        "validated": true,
+        "recovery_messages": [
+          "[recovery-capture] task=GroupAggregate[92] -> ConstraintEnforcer[93] -> Sink: *anonymous_recovery-results$18*[93] (1/1)#0 rows=831 bytes=165299820 heapUsed=614434800 maxHeap=4294967296",
+          "[recovery-result] job=7792b7c704379c04aeb9b8f9291f024d keys=[streamfusion-recovery-results] rows=831 heapUsed=2138246920 maxHeap=4294967296",
+          "[recovery-capture] task=NativeJvmGroupExecNode[103] -> ArrowToRowDataExecNode[104] -> ConstraintEnforcer[105] -> Sink: *anonymous_recovery-results$20*[105] (1/1)#2 rows=831 bytes=165299820 heapUsed=1697779576 maxHeap=4294967296",
+          "[recovery-result] job=cd88dbf39ab3b55f0d3b3bff567635f0 keys=[streamfusion-recovery-results] rows=831 heapUsed=2778186984 maxHeap=4294967296",
+          "[recovery-capture] task=GroupAggregate[113] -> ConstraintEnforcer[114] -> Sink: *anonymous_recovery-results$22*[114] (1/1)#0 rows=831 bytes=457692 heapUsed=2411442416 maxHeap=4294967296",
+          "[recovery-result] job=0839e11c0a73cb60c2642be254221d9a keys=[streamfusion-recovery-results] rows=831 heapUsed=2422976000 maxHeap=4294967296",
+          "[recovery-capture] task=NativeJvmGroupExecNode[124] -> ArrowToRowDataExecNode[125] -> ConstraintEnforcer[126] -> Sink: *anonymous_recovery-results$24*[126] (1/1)#2 rows=831 bytes=457692 heapUsed=2521542144 maxHeap=4294967296",
+          "[recovery-result] job=46618c52487d75f11aafd55f9d8945b8 keys=[streamfusion-recovery-results] rows=831 heapUsed=2534125056 maxHeap=4294967296",
+          "[recovery-capture] task=GroupAggregate[134] -> ConstraintEnforcer[135] -> Sink: *anonymous_recovery-results$26*[135] (1/1)#0 rows=831 bytes=26040948 heapUsed=2355813568 maxHeap=4294967296",
+          "[recovery-result] job=16859e467bb414bf8b7f49800ceb5bb0 keys=[streamfusion-recovery-results] rows=831 heapUsed=2376831488 maxHeap=4294967296",
+          "[recovery-capture] task=NativeJvmGroupExecNode[145] -> ArrowToRowDataExecNode[146] -> ConstraintEnforcer[147] -> Sink: *anonymous_recovery-results$28*[147] (1/1)#2 rows=831 bytes=26040948 heapUsed=2222426864 maxHeap=4294967296",
+          "[recovery-result] job=7629d5e4208920df707716b34c626562 keys=[streamfusion-recovery-results] rows=831 heapUsed=2555934720 maxHeap=4294967296",
+          "[recovery-capture] task=GroupAggregate[155] -> ConstraintEnforcer[156] -> Sink: *anonymous_recovery-results$30*[156] (1/1)#0 rows=831 bytes=112644 heapUsed=2853167376 maxHeap=4294967296",
+          "[recovery-result] job=d5d94f9744f40b65f2fdcb27de93f488 keys=[streamfusion-recovery-results] rows=831 heapUsed=2862304800 maxHeap=4294967296",
+          "[recovery-capture] task=NativeJvmGroupExecNode[166] -> ArrowToRowDataExecNode[167] -> ConstraintEnforcer[168] -> Sink: *anonymous_recovery-results$32*[168] (1/1)#2 rows=831 bytes=112644 heapUsed=2946190680 maxHeap=4294967296",
+          "[recovery-result] job=0914d738d3c979d40d1f20f4e6ec8c63 keys=[streamfusion-recovery-results] rows=831 heapUsed=2954862208 maxHeap=4294967296"
+        ],
+        "diagnostic_messages": [],
+        "gc_activity_seconds": {
+          "G1Old / G1 Humongous Allocation": 2.260112371,
+          "G1New / G1 Evacuation Pause": 0.9347567509999997,
+          "G1Old / G1 Evacuation Pause": 0.56756923,
+          "G1New / G1 Humongous Allocation": 0.20758281400000003,
+          "G1New / G1 Preventive Collection": 0.116630608,
+          "G1Old / G1 Preventive Collection": 0.097828518,
+          "G1Old / Metadata GC Threshold": 0.054859608,
+          "G1New / Metadata GC Threshold": 0.021866058,
+          "G1New / GCLocker Initiated GC": 0.010574963
+        },
+        "gc_heap_used_max_bytes": {
+          "Before GC": 3421009408,
+          "After GC": 2761218656
+        }
+      },
+      {
+        "heap": "4g",
+        "elapsed_seconds": 88.55170216699997,
+        "cpu_seconds": 109.679708,
+        "outcomes": {
+          "tests": 54,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 28
+        },
+        "validated": true,
+        "recovery_messages": [
+          "[recovery-capture] task=GroupAggregate[92] -> ConstraintEnforcer[93] -> Sink: *anonymous_recovery-results$18*[93] (1/1)#0 rows=831 bytes=165299820 heapUsed=793221000 maxHeap=4294967296",
+          "[recovery-result] job=2abb3dcfcd9bd0c6c1c0b206a37b4b49 keys=[streamfusion-recovery-results] rows=831 heapUsed=1810700008 maxHeap=4294967296",
+          "[recovery-capture] task=NativeJvmGroupExecNode[103] -> ArrowToRowDataExecNode[104] -> ConstraintEnforcer[105] -> Sink: *anonymous_recovery-results$20*[105] (1/1)#2 rows=831 bytes=165299820 heapUsed=1567215928 maxHeap=4294967296",
+          "[recovery-result] job=a88d8a4c618220fa31c1606e593e1e91 keys=[streamfusion-recovery-results] rows=831 heapUsed=1971573656 maxHeap=4294967296",
+          "[recovery-capture] task=GroupAggregate[113] -> ConstraintEnforcer[114] -> Sink: *anonymous_recovery-results$22*[114] (1/1)#0 rows=831 bytes=457692 heapUsed=2364957576 maxHeap=4294967296",
+          "[recovery-result] job=10432288086acd80b19cbaab43bd6a8d keys=[streamfusion-recovery-results] rows=831 heapUsed=2375909520 maxHeap=4294967296",
+          "[recovery-capture] task=NativeJvmGroupExecNode[124] -> ArrowToRowDataExecNode[125] -> ConstraintEnforcer[126] -> Sink: *anonymous_recovery-results$24*[126] (1/1)#2 rows=831 bytes=457692 heapUsed=2474009480 maxHeap=4294967296",
+          "[recovery-result] job=3f2507efe2c8372d625c05d7a202e94d keys=[streamfusion-recovery-results] rows=831 heapUsed=2486592392 maxHeap=4294967296",
+          "[recovery-capture] task=GroupAggregate[134] -> ConstraintEnforcer[135] -> Sink: *anonymous_recovery-results$26*[135] (1/1)#0 rows=831 bytes=26040948 heapUsed=2398906032 maxHeap=4294967296",
+          "[recovery-result] job=2b12aed48a5b539d3842cfa767f3cc6c keys=[streamfusion-recovery-results] rows=831 heapUsed=2766424200 maxHeap=4294967296",
+          "[recovery-capture] task=NativeJvmGroupExecNode[145] -> ArrowToRowDataExecNode[146] -> ConstraintEnforcer[147] -> Sink: *anonymous_recovery-results$28*[147] (1/1)#2 rows=831 bytes=26040948 heapUsed=2315916216 maxHeap=4294967296",
+          "[recovery-result] job=eea85c4098c7e561aaba755293782d8d keys=[streamfusion-recovery-results] rows=831 heapUsed=2676215624 maxHeap=4294967296",
+          "[recovery-capture] task=GroupAggregate[155] -> ConstraintEnforcer[156] -> Sink: *anonymous_recovery-results$30*[156] (1/1)#0 rows=831 bytes=112644 heapUsed=2607148040 maxHeap=4294967296",
+          "[recovery-result] job=18242610240d45a7c7d0f6a87cd68150 keys=[streamfusion-recovery-results] rows=831 heapUsed=2613467168 maxHeap=4294967296",
+          "[recovery-capture] task=NativeJvmGroupExecNode[166] -> ArrowToRowDataExecNode[167] -> ConstraintEnforcer[168] -> Sink: *anonymous_recovery-results$32*[168] (1/1)#2 rows=831 bytes=112644 heapUsed=2687902184 maxHeap=4294967296",
+          "[recovery-result] job=838c2e8de2128d5c495cc6a1ad261139 keys=[streamfusion-recovery-results] rows=831 heapUsed=2694832224 maxHeap=4294967296"
+        ],
+        "diagnostic_messages": [],
+        "gc_activity_seconds": {
+          "G1Old / G1 Humongous Allocation": 1.9327745630000002,
+          "G1New / G1 Evacuation Pause": 0.9593812230000003,
+          "G1Old / G1 Evacuation Pause": 0.760716446,
+          "G1New / G1 Preventive Collection": 0.16996403300000001,
+          "G1New / G1 Humongous Allocation": 0.15817224900000001,
+          "G1Old / G1 Preventive Collection": 0.108326675,
+          "G1Old / Metadata GC Threshold": 0.099987149,
+          "G1New / Metadata GC Threshold": 0.020057895000000003
+        },
+        "gc_heap_used_max_bytes": {
+          "Before GC": 3542674944,
+          "After GC": 2992443568
+        }
+      },
+      {
+        "heap": "2g",
+        "elapsed_seconds": 91.69480019599996,
+        "cpu_seconds": 121.89220000000003,
+        "outcomes": {
+          "tests": 54,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 28
+        },
+        "validated": true,
+        "recovery_messages": [
+          "[recovery-capture] task=GroupAggregate[92] -> ConstraintEnforcer[93] -> Sink: *anonymous_recovery-results$18*[93] (1/1)#0 rows=831 bytes=165299820 heapUsed=682977184 maxHeap=2147483648",
+          "[recovery-result] job=c0025e9a392581a8edfec9723e94837f keys=[streamfusion-recovery-results] rows=831 heapUsed=1537959144 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[103] -> ArrowToRowDataExecNode[104] -> ConstraintEnforcer[105] -> Sink: *anonymous_recovery-results$20*[105] (1/1)#2 rows=831 bytes=165299820 heapUsed=1495927600 maxHeap=2147483648",
+          "[recovery-result] job=1b8c8f03d53654915189624a4c7a779c keys=[streamfusion-recovery-results] rows=831 heapUsed=1757368056 maxHeap=2147483648",
+          "[recovery-capture] task=GroupAggregate[113] -> ConstraintEnforcer[114] -> Sink: *anonymous_recovery-results$22*[114] (1/1)#0 rows=831 bytes=457692 heapUsed=2003796632 maxHeap=2147483648",
+          "[recovery-result] job=fe85d4ae6b4b142a9db6cf4f6fff2ab4 keys=[streamfusion-recovery-results] rows=831 heapUsed=2015330128 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[124] -> ArrowToRowDataExecNode[125] -> ConstraintEnforcer[126] -> Sink: *anonymous_recovery-results$24*[126] (1/1)#2 rows=831 bytes=457692 heapUsed=1993850536 maxHeap=2147483648",
+          "[recovery-result] job=97daf8f18b1084cb32e701768d236389 keys=[streamfusion-recovery-results] rows=831 heapUsed=2003964776 maxHeap=2147483648",
+          "[recovery-capture] task=GroupAggregate[134] -> ConstraintEnforcer[135] -> Sink: *anonymous_recovery-results$26*[135] (1/1)#0 rows=831 bytes=26040948 heapUsed=1293738504 maxHeap=2147483648",
+          "[recovery-result] job=314a7de066751ee76c9c9d044d72257a keys=[streamfusion-recovery-results] rows=831 heapUsed=889174768 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[145] -> ArrowToRowDataExecNode[146] -> ConstraintEnforcer[147] -> Sink: *anonymous_recovery-results$28*[147] (1/1)#2 rows=831 bytes=26040948 heapUsed=1291867680 maxHeap=2147483648",
+          "[recovery-result] job=38f422c7f6c0ad57ee3a6b0cfc9f2233 keys=[streamfusion-recovery-results] rows=831 heapUsed=1021565904 maxHeap=2147483648",
+          "[recovery-capture] task=GroupAggregate[155] -> ConstraintEnforcer[156] -> Sink: *anonymous_recovery-results$30*[156] (1/1)#0 rows=831 bytes=112644 heapUsed=1164065336 maxHeap=2147483648",
+          "[recovery-result] job=976d57f6873320f14a392109101f3f35 keys=[streamfusion-recovery-results] rows=831 heapUsed=1170356824 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[166] -> ArrowToRowDataExecNode[167] -> ConstraintEnforcer[168] -> Sink: *anonymous_recovery-results$32*[168] (1/1)#2 rows=831 bytes=112644 heapUsed=1248475920 maxHeap=2147483648",
+          "[recovery-result] job=be1ef81b17134617a1f2fee984b9c42f keys=[streamfusion-recovery-results] rows=831 heapUsed=1255082872 maxHeap=2147483648"
+        ],
+        "diagnostic_messages": [],
+        "gc_activity_seconds": {
+          "G1Old / G1 Humongous Allocation": 7.3070236930000005,
+          "G1Old / G1 Evacuation Pause": 2.293955858999999,
+          "G1New / G1 Evacuation Pause": 1.4407919390000001,
+          "G1New / G1 Humongous Allocation": 0.34858194300000006,
+          "G1Full / G1 Compaction Pause": 0.34158082399999995,
+          "G1Old / G1 Preventive Collection": 0.19921808400000002,
+          "G1New / G1 Preventive Collection": 0.085613072,
+          "G1Old / Metadata GC Threshold": 0.080939979,
+          "G1New / Metadata GC Threshold": 0.016209849
+        },
+        "gc_heap_used_max_bytes": {
+          "Before GC": 2102691184,
+          "After GC": 2042899872
+        }
+      }
+    ],
+    "limits": "All four complete-class trials passed with existing skips, and no accumulator-serialization warnings were observed. Near-capacity GC heap samples establish pressure, not the cause of the original missing-accumulator failure. These instrumented trials are not a controlled speedup comparison."
+  },
+  "fluss": {
+    "source_sha": "f2dfbd1ff",
+    "run": 42533160048,
+    "jdk": 17,
+    "flink": "2.2",
+    "instrumented": true,
+    "initial_attempt": {
+      "run": 42531639118,
+      "outcomes": {
+        "tests": 1,
+        "errors": 1
+      },
+      "observed": "Diagnostic setup could not load the newly added timing helper from a stale standalone dependency. No Fluss test execution attribution was obtained. The replacement uses the current complete Maven reactor."
+    },
+    "elapsed_seconds": 361.154099608,
+    "cpu_seconds": 77.004313,
+    "outcomes": {
+      "tests": 29,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "classes": {
+      "tech.streamfusion.FlussSqlTest": {
+        "tests": 29,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "seconds": 324.927
+      }
+    },
+    "fixture_timings": [
+      {
+        "name": "fluss.catalog-close",
+        "calls": 29,
+        "seconds": 116.195296968
+      },
+      {
+        "name": "fluss.cluster-close",
+        "calls": 1,
+        "seconds": 0.441966197
+      },
+      {
+        "name": "fluss.ddl",
+        "calls": 71,
+        "seconds": 2.475408384
+      },
+      {
+        "name": "fluss.environment",
+        "calls": 58,
+        "seconds": 2.230449343
+      },
+      {
+        "name": "fluss.explain",
+        "calls": 116,
+        "seconds": 3.919327057
+      },
+      {
+        "name": "fluss.insert",
+        "calls": 22,
+        "seconds": 48.59249892
+      },
+      {
+        "name": "fluss.native.collect",
+        "calls": 40,
+        "seconds": 13.141343674
+      },
+      {
+        "name": "fluss.native.submit",
+        "calls": 40,
+        "seconds": 0.936774455
+      },
+      {
+        "name": "fluss.start.coordinator",
+        "calls": 1,
+        "seconds": 9.832794553
+      },
+      {
+        "name": "fluss.start.registration",
+        "calls": 1,
+        "seconds": 0.175000418
+      },
+      {
+        "name": "fluss.start.tablet",
+        "calls": 1,
+        "seconds": 1.678651831
+      },
+      {
+        "name": "fluss.start.zookeeper",
+        "calls": 1,
+        "seconds": 7.659546898
+      },
+      {
+        "name": "fluss.stock.collect",
+        "calls": 48,
+        "seconds": 103.158306299
+      },
+      {
+        "name": "fluss.stock.submit",
+        "calls": 48,
+        "seconds": 1.184486129
+      }
+    ],
+    "jfr": {
+      "events": {
+        "jdk.ThreadSleep": 79781,
+        "jdk.NativeMethodSample": 32165,
+        "jdk.Compilation": 21596,
+        "jdk.ThreadPark": 21279,
+        "jdk.JavaMonitorWait": 3456,
+        "jdk.ObjectAllocationSample": 2806,
+        "jdk.ExecutionSample": 219,
+        "jdk.GCHeapSummary": 150,
+        "jdk.GarbageCollection": 75
+      },
+      "java_leaf_frames": {
+        "java.util.zip.ZipFile$Source.getEntryPos": 19,
+        "org.apache.fluss.shaded.netty4.io.netty.util.collection.IntObjectHashMap$PrimitiveIterator.scanNext": 4,
+        "java.util.zip.ZipFile.getEntry": 4,
+        "java.util.jar.JarFile.getJarEntry": 3,
+        "org.apache.flink.streaming.runtime.tasks.SystemProcessingTimeService$ScheduledTaskExecutor.terminated": 3,
+        "java.lang.StringUTF16.checkIndex": 3,
+        "jdk.internal.loader.URLClassPath.getLoader": 2,
+        "jdk.internal.util.Preconditions.checkIndex": 2,
+        "java.lang.StringLatin1.hashCode": 2,
+        "sun.security.provider.SHA2.implCompress0": 2,
+        "org.apache.fluss.client.write.RecordAccumulator.ready": 2,
+        "scala.collection.TraversableOnce.addString$": 2,
+        "java.lang.StringBuilder.<init>": 2,
+        "org.apache.flink.runtime.checkpoint.PendingCheckpoint.<init>": 2,
+        "org.apache.maven.surefire.api.util.TestsToRun.fromClass": 1,
+        "jdk.internal.loader.BuiltinClassLoader.definePackage": 1,
+        "java.util.stream.AbstractPipeline.copyInto": 1,
+        "sun.util.locale.provider.LocaleResources.getNumberPatterns": 1,
+        "org.apache.logging.log4j.util.PropertySource$Util.tokenize": 1,
+        "java.lang.invoke.InvokerBytecodeGenerator.isStaticallyInvocable": 1,
+        "org.apache.flink.util.TimeUtils.<clinit>": 1,
+        "java.security.BasicPermission.<init>": 1,
+        "scala.collection.MapLike.isEmpty$": 1,
+        "jdk.internal.org.objectweb.asm.ClassWriter.<init>": 1,
+        "org.apache.pekko.actor.Actor.aroundReceive$": 1,
+        "java.lang.StringLatin1.equals": 1,
+        "sun.util.locale.provider.TimeZoneNameUtility.retrieveDisplayNamesImpl": 1,
+        "java.lang.invoke.LambdaForm.methodType": 1,
+        "org.apache.flink.runtime.rpc.pekko.PekkoRpcService.resolveActorAddress": 1,
+        "scala.collection.immutable.StringOps.<init>": 1,
+        "java.util.concurrent.ConcurrentHashMap.clear": 1,
+        "org.testcontainers.shaded.com.fasterxml.jackson.core.json.UTF8StreamJsonParser._finishAndReturnString": 1,
+        "org.testcontainers.shaded.com.fasterxml.jackson.databind.deser.std.BaseNodeDeserializer.deserializeObject": 1,
+        "org.testcontainers.shaded.com.fasterxml.jackson.databind.MappingIterator.nextValue": 1,
+        "com.github.dockerjava.zerodep.shaded.org.apache.hc.client5.http.protocol.HttpClientContext.getRedirectLocations": 1,
+        "java.util.concurrent.LinkedBlockingDeque.linkLast": 1,
+        "org.testcontainers.shaded.com.fasterxml.jackson.databind.node.NodeCursor$ObjectCursor.nextToken": 1,
+        "java.lang.invoke.StringConcatFactory.makeConcatWithConstants": 1,
+        "org.snakeyaml.engine.v2.emitter.Emitter.analyzeScalar": 1,
+        "org.apache.flink.shaded.guava33.com.google.common.collect.Iterators.addAll": 1
+      },
+      "java_inclusive_frames": {
+        "java.lang.Thread.run": 70,
+        "jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke": 43,
+        "java.lang.reflect.Method.invoke": 41,
+        "jdk.internal.reflect.NativeMethodAccessorImpl.invoke0": 38,
+        "jdk.internal.reflect.NativeMethodAccessorImpl.invoke": 37,
+        "jdk.internal.loader.URLClassPath$JarLoader.getResource": 33,
+        "java.util.concurrent.ThreadPoolExecutor$Worker.run": 31,
+        "java.util.jar.JarFile.getJarEntry": 30,
+        "java.util.concurrent.ThreadPoolExecutor.runWorker": 30,
+        "org.junit.platform.commons.util.ReflectionUtils.invokeMethod": 30,
+        "java.util.jar.JarFile.getEntry": 27,
+        "org.junit.jupiter.engine.execution.MethodInvocation.proceed": 27,
+        "java.util.zip.ZipFile.getEntry": 26,
+        "jdk.internal.loader.BuiltinClassLoader.loadClassOrNull": 25,
+        "jdk.internal.loader.BuiltinClassLoader.findClassOnClassPathOrNull": 25,
+        "jdk.internal.loader.BuiltinClassLoader.loadClass": 25,
+        "jdk.internal.loader.ClassLoaders$AppClassLoader.loadClass": 25,
+        "java.lang.ClassLoader.loadClass": 25,
+        "org.junit.jupiter.engine.execution.InvocationInterceptorChain$ValidatingInvocation.proceed": 25,
+        "java.util.ServiceLoader$LazyClassPathLookupIterator.hasNextService": 23,
+        "java.util.ServiceLoader$3.hasNext": 23,
+        "java.util.ServiceLoader$LazyClassPathLookupIterator.nextProviderClass": 23,
+        "java.util.ServiceLoader$2.hasNext": 23,
+        "java.util.ServiceLoader$LazyClassPathLookupIterator.hasNext": 23,
+        "org.junit.jupiter.engine.extension.TimeoutExtension.intercept": 22,
+        "org.junit.jupiter.engine.extension.SameThreadTimeoutInvocation.proceed": 22,
+        "org.apache.fluss.shaded.netty4.io.netty.util.concurrent.FastThreadLocalRunnable.run": 22,
+        "org.apache.fluss.shaded.netty4.io.netty.util.internal.ThreadExecutorMap$2.run": 22,
+        "java.util.zip.ZipFile$Source.getEntryPos": 21,
+        "org.apache.fluss.shaded.netty4.io.netty.util.concurrent.SingleThreadEventExecutor$4.run": 21,
+        "org.apache.fluss.shaded.netty4.io.netty.channel.epoll.EpollEventLoop.run": 20,
+        "jdk.internal.loader.URLClassPath.getResource": 19,
+        "scala.collection.Iterator.foreach$": 19,
+        "scala.collection.Iterator.foreach": 19,
+        "scala.collection.AbstractIterator.foreach": 19,
+        "org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestableMethod": 19,
+        "jdk.internal.loader.BuiltinClassLoader$1.hasMoreElements": 18,
+        "java.lang.CompoundEnumeration.hasMoreElements": 18,
+        "jdk.internal.loader.URLClassPath$1.next": 18,
+        "jdk.internal.loader.BuiltinClassLoader$1.hasNext": 18
+      },
+      "java_sampled_threads": {
+        "main": 107,
+        "fluss-write-sender-thread-1": 5,
+        "flink-pekko.actor.default-dispatcher-6": 4,
+        "jobmanager-io-thread-1": 4,
+        "flink-pekko.actor.default-dispatcher-7": 4,
+        "flink-pekko.actor.default-dispatcher-8": 4,
+        "mini-cluster-io-thread-2": 3,
+        "mini-cluster-io-thread-3": 3,
+        "flink-pekko.actor.default-dispatcher-4": 3,
+        "ChangelogNormalize[376] -> ConstraintEnforcer[377] -> Sink: Collect table sink (1/1)#0": 3,
+        "jobmanager-io-thread-3": 2,
+        "fluss-netty-client(EPOLL)-31-2": 2,
+        "Source: NativeSource(table=[[fluss, sqltests, bucketed_98b3b9005242429a9f796661fb645316]], fields=[a, b, part]) -> ArrowToRowDataExecNode[219] -> ConstraintEnforcer[220] -> Sink: Collect table sink (1/1)#0": 2,
+        "Checkpoint Timer": 2,
+        "jobmanager-io-thread-2": 2,
+        "flink-metrics-5": 1,
+        "pool-4-thread-1": 1,
+        "docker-java-stream--1207399484": 1,
+        "docker-java-stream-228937109": 1,
+        "docker-java-stream--1447530790": 1,
+        "Source: Values[6] -> RowDataToArrowExecNode[7] -> NativeCalc(select=[CAST(EXPR$0 AS INTEGER) AS a, CAST(EXPR$1 AS BIGINT) AS b, CAST(EXPR$2 AS VARCHAR(2147483647)) AS c], nativeFunctions=[CAST], jvmFunctions=[])[8] -> ArrowToRowDataExecNode[9] -> ConstraintEnforcer[10] (1/1)#0": 1,
+        "fluss-netty-client(EPOLL)-8-1": 1,
+        "Sink(sqltests.table_4c13f61a664b4fd8880cdab795df6a0e): Writer (1/1)#0": 1,
+        "SourceCoordinator-Source: table_4c13f61a664b4fd8880cdab795df6a0e[26]": 1,
+        "fluss-netty-client(EPOLL)-13-3": 1,
+        "fluss-netty-client(EPOLL)-1-3": 1,
+        "fluss-netty-client(EPOLL)-15-1": 1,
+        "fluss-netty-client(EPOLL)-16-1": 1,
+        "Time Trigger for Source: table_d74987f5fc944bb7abf33bad19fce2ea[33] -> Sink(sqltests.table_5dd6114f807545c69a02104909d8a88e): Writer (1/1)#0": 1,
+        "fluss-netty-client(EPOLL)-23-1": 1,
+        "fluss-netty-client(EPOLL)-26-2": 1,
+        "ForkJoinPool.commonPool-worker-3": 1,
+        "fluss-netty-client(EPOLL)-44-1": 1,
+        "Time Trigger for Source: partitioned_f064796137c8429585e59b8dc97f0ce1[70] -> Sink: Collect table sink (1/1)#0": 1,
+        "Source Data Fetcher for Source: partitioned_f064796137c8429585e59b8dc97f0ce1[70] -> Sink: Collect table sink (1/1)#0": 1,
+        "Source: NativeSource(table=[[fluss, sqltests, partitioned_f064796137c8429585e59b8dc97f0ce1]], fields=[a, b, part]) -> ArrowToRowDataExecNode[74] -> Sink: Collect table sink (1/1)#0": 1,
+        "fluss-netty-client(EPOLL)-49-2": 1,
+        "Time Trigger for Source: NativeSource(table=[[fluss, sqltests, partitioned_f064796137c8429585e59b8dc97f0ce1, filter=[=(part, _UTF-16LE'new':VARCHAR(2147483647) CHARACTER SET \"UTF-16LE\")]]], fields=[a, b, part]) -> NativeFilter(select=[a, b], where=[AND(=(part, 'new'), >=(b, 64))], nativeFunctions=[], jvmFunctions=[])[79] -> ArrowToRowDataExecNode[80] -> Sink: Collect table sink (1/1)#0": 1,
+        "Source: NativeSource(table=[[fluss, sqltests, table_08786bfaaace416ca56915e67b5ded1a, filter=[=(b, 1:BIGINT)]]], fields=[a, b], batchFilter=[Equal(b, 1)]) -> NativeFilter(select=[a], where=[=(b, 1)], nativeFunctions=[], jvmFunctions=[])[88] (1/1)#0": 1,
+        "ArrowToRowDataExecNode[92] -> Sink: Collect table sink (1/1)#0": 1
+      },
+      "native_leaf_frames": {
+        "org.apache.fluss.shaded.netty4.io.netty.channel.epoll.Native.epollWait0": 19959,
+        "java.io.FileInputStream.readBytes": 3955,
+        "sun.nio.ch.Net.accept": 3831,
+        "sun.nio.ch.EPoll.wait": 3795,
+        "sun.nio.ch.SocketDispatcher.read0": 554,
+        "sun.nio.ch.Net.poll": 30,
+        "java.util.zip.Inflater.inflateBytesBytes": 24,
+        "java.io.RandomAccessFile.readBytes": 5,
+        "java.lang.ClassLoader.defineClass1": 2,
+        "org.apache.fluss.shaded.netty4.io.netty.channel.unix.Socket.sendAddress": 2,
+        "jdk.internal.loader.NativeLibraries.load": 1,
+        "java.lang.ProcessImpl.forkAndExec": 1,
+        "java.io.UnixFileSystem.getBooleanAttributes0": 1,
+        "sun.nio.ch.Net.setIntOption0": 1,
+        "sun.nio.ch.Net.connect0": 1,
+        "org.apache.fluss.shaded.netty4.io.netty.channel.epoll.Native.eventFdWrite": 1,
+        "jdk.jfr.internal.JVM.emitEvent": 1,
+        "sun.nio.fs.UnixNativeDispatcher.unlink0": 1
+      },
+      "native_inclusive_frames": {
+        "java.lang.Thread.run": 28126,
+        "org.apache.fluss.shaded.netty4.io.netty.util.concurrent.FastThreadLocalRunnable.run": 19961,
+        "org.apache.fluss.shaded.netty4.io.netty.util.concurrent.SingleThreadEventExecutor$4.run": 19961,
+        "org.apache.fluss.shaded.netty4.io.netty.channel.epoll.EpollEventLoop.run": 19961,
+        "org.apache.fluss.shaded.netty4.io.netty.util.internal.ThreadExecutorMap$2.run": 19961,
+        "org.apache.fluss.shaded.netty4.io.netty.channel.epoll.EpollEventLoop.epollWait": 19959,
+        "org.apache.fluss.shaded.netty4.io.netty.channel.epoll.Native.epollWait0": 19959,
+        "org.apache.fluss.shaded.netty4.io.netty.channel.epoll.Native.epollWait": 19959,
+        "java.io.FileInputStream.readBytes": 3955,
+        "java.io.BufferedInputStream.fill": 3955,
+        "org.apache.maven.surefire.api.util.internal.AbstractNoninterruptibleReadableChannel.read": 3955,
+        "java.io.BufferedInputStream.read": 3955,
+        "org.apache.maven.surefire.booter.stream.CommandDecoder.decode": 3955,
+        "org.apache.maven.surefire.booter.spi.CommandChannelDecoder.decode": 3955,
+        "java.io.FileInputStream.read": 3955,
+        "java.io.BufferedInputStream.read1": 3955,
+        "org.apache.maven.surefire.api.util.internal.Channels$3.readImpl": 3955,
+        "org.apache.maven.surefire.api.stream.AbstractStreamDecoder.readMessageType": 3955,
+        "org.apache.maven.surefire.booter.CommandReader$CommandRunnable.run": 3955,
+        "org.apache.maven.surefire.api.stream.AbstractStreamDecoder.read": 3955,
+        "java.net.ServerSocket.implAccept": 3831,
+        "sun.nio.ch.Net.accept": 3831,
+        "java.net.ServerSocket.accept": 3831,
+        "org.apache.flink.util.NetUtils.acceptWithoutTimeout": 3831,
+        "sun.nio.ch.NioSocketImpl.accept": 3831,
+        "java.net.ServerSocket.platformImplAccept": 3831,
+        "org.apache.flink.runtime.blob.BlobServer.run": 3819,
+        "org.apache.flink.shaded.netty4.io.netty.util.internal.ThreadExecutorMap$2.run": 3795,
+        "sun.nio.ch.EPoll.wait": 3795,
+        "org.apache.flink.shaded.netty4.io.netty.util.concurrent.SingleThreadEventExecutor$4.run": 3795,
+        "org.apache.flink.shaded.netty4.io.netty.channel.nio.SelectedSelectionKeySetSelector.select": 3795,
+        "org.apache.flink.shaded.netty4.io.netty.channel.nio.NioEventLoop.run": 3795,
+        "sun.nio.ch.EPollSelectorImpl.doSelect": 3795,
+        "sun.nio.ch.SelectorImpl.select": 3795,
+        "org.apache.flink.shaded.netty4.io.netty.channel.nio.NioEventLoop.select": 3795,
+        "sun.nio.ch.SelectorImpl.lockAndDoSelect": 3795,
+        "sun.nio.ch.SocketDispatcher.read": 554,
+        "sun.nio.ch.SocketDispatcher.read0": 554,
+        "sun.nio.ch.ChannelInputStream.read": 471,
+        "sun.nio.ch.IOUtil.read": 471
+      },
+      "native_sampled_threads": {
+        "surefire-forkedjvm-command-thread": 3955,
+        "BLOB Server listener at 37735": 3819,
+        "flink-rest-server-netty-boss-thread-1": 3795,
+        "fluss-netty-client(EPOLL)-1-1": 3226,
+        "fluss-netty-client(EPOLL)-1-2": 3223,
+        "fluss-netty-client(EPOLL)-1-3": 2959,
+        "docker-java-stream-228937109": 208,
+        "fluss-netty-client(EPOLL)-140-1": 117,
+        "fluss-netty-client(EPOLL)-140-2": 117,
+        "fluss-netty-client(EPOLL)-140-3": 117,
+        "fluss-netty-client(EPOLL)-117-1": 116,
+        "fluss-netty-client(EPOLL)-117-2": 116,
+        "fluss-netty-client(EPOLL)-117-3": 116,
+        "docker-java-stream--1207399484": 114,
+        "fluss-netty-client(EPOLL)-163-1": 114,
+        "fluss-netty-client(EPOLL)-163-2": 114,
+        "fluss-netty-client(EPOLL)-163-3": 114,
+        "fluss-netty-client(EPOLL)-186-1": 113,
+        "fluss-netty-client(EPOLL)-186-2": 113,
+        "fluss-netty-client(EPOLL)-186-3": 113,
+        "fluss-netty-client(EPOLL)-4-1": 94,
+        "fluss-netty-client(EPOLL)-4-2": 93,
+        "fluss-netty-client(EPOLL)-14-1": 89,
+        "fluss-netty-client(EPOLL)-14-2": 89,
+        "fluss-netty-client(EPOLL)-23-1": 88,
+        "fluss-netty-client(EPOLL)-23-2": 88,
+        "fluss-netty-client(EPOLL)-31-1": 88,
+        "fluss-netty-client(EPOLL)-31-2": 88,
+        "fluss-netty-client(EPOLL)-31-3": 87,
+        "fluss-netty-client(EPOLL)-123-1": 85,
+        "fluss-netty-client(EPOLL)-123-2": 85,
+        "fluss-netty-client(EPOLL)-146-1": 85,
+        "fluss-netty-client(EPOLL)-146-2": 84,
+        "fluss-netty-client(EPOLL)-169-1": 84,
+        "fluss-netty-client(EPOLL)-169-2": 84,
+        "fluss-netty-client(EPOLL)-192-1": 83,
+        "fluss-netty-client(EPOLL)-192-2": 82,
+        "fluss-netty-client(EPOLL)-280-1": 74,
+        "fluss-netty-client(EPOLL)-280-2": 74,
+        "fluss-netty-client(EPOLL)-280-3": 74
+      },
+      "compilation_events": {
+        "c1": 21596
+      },
+      "compilation_activity_seconds": {
+        "c1": 5.992821832999996
+      },
+      "allocation_sample_weight_bytes": {
+        "[B": 594733816,
+        "[C": 140710536,
+        "[Ljava.lang.Object;": 136260944,
+        "java.lang.String": 78885688,
+        "[Ljava.util.concurrent.ConcurrentHashMap$Node;": 64820664,
+        "[I": 49172064,
+        "java.nio.HeapCharBuffer": 45518912,
+        "java.util.ArrayList$Itr": 43509616,
+        "java.lang.invoke.LambdaFormEditor": 37283400,
+        "java.util.HashMap$Node": 27266104,
+        "[S": 27142488,
+        "[D": 25808472,
+        "java.util.concurrent.ConcurrentLinkedQueue$Node": 24275008,
+        "org.snakeyaml.engine.v2.emitter.Emitter$ExpectFirstDocumentStart": 22587864,
+        "java.lang.reflect.Method": 20194416,
+        "[Ljava.util.HashMap$Node;": 20184976,
+        "java.util.HashMap": 18365840,
+        "jdk.internal.org.objectweb.asm.SymbolTable$Entry": 17525760,
+        "org.apache.flink.sql.parser.impl.FlinkSqlParserImpl$JJCalls": 16220488,
+        "[Ljava.lang.String;": 15163888,
+        "java.util.LinkedHashMap$Entry": 14868352,
+        "org.apache.flink.calcite.shaded.org.apache.commons.math3.exception.util.LocalizedFormats": 14122952,
+        "org.apache.calcite.util.graph.DefaultDirectedGraph": 12352648,
+        "[J": 12042080,
+        "org.apache.calcite.rex.RexCall": 11404448,
+        "java.lang.StringBuilder": 11306280,
+        "java.util.zip.CRC32": 10827056,
+        "org.apache.calcite.util.Pair": 10775024,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.tree.TerminalNodeImpl": 10770600,
+        "java.util.ArrayList": 10473376,
+        "java.util.HashMap$EntryIterator": 9137872,
+        "java.security.SecureClassLoader$CodeSourceKey": 8840776,
+        "java.util.stream.ReferencePipeline$Head": 8712376,
+        "java.util.stream.ReferencePipeline$2": 8176528,
+        "sun.net.www.protocol.jar.JarURLConnection$JarURLInputStream": 8066792,
+        "java.lang.Object": 7515104,
+        "java.lang.ThreadLocal$ThreadLocalMap$Entry": 7155528,
+        "java.util.zip.ZipFile$InflaterCleanupAction": 6674024,
+        "org.apache.calcite.sql.parser.ImmutableSqlParser$Config$InitShim": 6657544,
+        "org.snakeyaml.engine.v2.events.DocumentEndEvent": 6385032
+      },
+      "wait_seconds_by_kind": {
+        "jdk.ThreadPark": 15714.58462926806,
+        "jdk.JavaMonitorWait": 2814.1629287410015,
+        "jdk.ThreadSleep": 2697.1548256619794
+      },
+      "wait_seconds_by_thread": {
+        "surefire-forkedjvm-stream-flusher": 324.6365451460006,
+        "ForkJoinPool.commonPool-worker-1": 323.45547862399997,
+        "flink-pekko.actor.supervisor-dispatcher-5": 323.4435256469999,
+        "Flink-Metric-View-Updater-thread-1": 323.43526830099995,
+        "Timer-0": 323.225379894,
+        "Timer-1": 323.215857015,
+        "Timer-2": 323.214380675,
+        "IOManager reader thread #1": 323.136882079,
+        "IOManager writer thread #1": 323.136757091,
+        "mini-cluster-io-thread-3": 322.7017096529999,
+        "mini-cluster-io-thread-2": 322.698275034,
+        "Flink-DispatcherRestEndpoint-thread-1": 322.697565016,
+        "mini-cluster-io-thread-4": 322.694122775,
+        "mini-cluster-io-thread-1": 322.6891956950001,
+        "pool-4-thread-1": 322.671288985,
+        "ForkJoinPool.commonPool-worker-2": 322.651567345,
+        "resourcemanager_1-main-scheduler-thread-1": 322.6200907639999,
+        "taskmanager_0-main-scheduler-thread-1": 322.609468913,
+        "ForkJoinPool.commonPool-worker-3": 321.966106063,
+        "testcontainers-ryuk": 320.2863041000001,
+        "flink-metrics-5": 320.03401588300017,
+        "flink-pekko.actor.default-dispatcher-4": 320.0159219420004,
+        "flink-pekko.actor.default-dispatcher-8": 319.3588927579996,
+        "flink-pekko.actor.default-dispatcher-7": 319.25909370200065,
+        "flink-pekko.actor.default-dispatcher-6": 318.87936268699985,
+        "Flink-DispatcherRestEndpoint-thread-2": 316.7094916120001,
+        "Flink-DispatcherRestEndpoint-thread-3": 310.726610111,
+        "main": 308.8899049559999,
+        "Flink-DispatcherRestEndpoint-thread-4": 304.74037233900003,
+        "Common-Cleaner": 303.386981578,
+        "junit-jupiter-timeout-watcher": 302.880152852,
+        "jobmanager-future-thread-4": 300.1045535190001,
+        "jobmanager-future-thread-1": 300.09777703699984,
+        "jobmanager-future-thread-2": 300.0577027960001,
+        "jobmanager-future-thread-3": 300.03760300200014,
+        "pool-3-thread-1": 299.88984709799996,
+        "jobmanager-io-thread-1": 299.5986898419999,
+        "jobmanager-io-thread-2": 299.3624238530001,
+        "jobmanager-io-thread-3": 299.28857686099997,
+        "jobmanager-io-thread-4": 299.0693108840002
+      },
+      "main_wait_seconds_by_stack": {
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.parkNanos > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.timedGet > java.util.concurrent.CompletableFuture.get > org.apache.fluss.rpc.netty.client.NettyClient.close": 117.88486572100003,
+        "java.lang.Thread.sleep > org.apache.flink.streaming.api.operators.collect.CollectResultFetcher.sleepBeforeRetry > org.apache.flink.streaming.api.operators.collect.CollectResultFetcher.next > org.apache.flink.streaming.api.operators.collect.CollectResultIterator.nextResultFromFetcher > org.apache.flink.streaming.api.operators.collect.CollectResultIterator.hasNext > org.apache.flink.table.planner.connectors.CollectDynamicSink$CloseableRowIteratorWrapper.hasNext > java.util.Iterator.forEachRemaining > tech.streamfusion.FlussSqlTest.query": 110.63095251100022,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > org.apache.flink.table.api.internal.TableResultImpl.awaitInternal": 47.794699951000005,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.locks.AbstractQueuedSynchronizer.acquire > java.util.concurrent.locks.AbstractQueuedSynchronizer.acquireSharedInterruptibly > java.util.concurrent.CountDownLatch.await > com.github.dockerjava.api.async.ResultCallbackTemplate.awaitCompletion > org.testcontainers.images.TimeLimitedLoggedPullImageResultCallback.awaitCompletion > org.testcontainers.images.RemoteDockerImage.pullImage": 14.50719745,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > org.apache.flink.streaming.api.operators.collect.CollectResultFetcher.sendRequest": 3.823118498,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.locks.AbstractQueuedSynchronizer.acquire > java.util.concurrent.locks.AbstractQueuedSynchronizer.acquireSharedInterruptibly > java.util.concurrent.CountDownLatch.await > org.apache.fluss.client.write.WriteBatch$RequestFuture.await > org.apache.fluss.client.write.RecordAccumulator.awaitFlushCompletion > org.apache.fluss.client.write.WriterClient.flush": 2.837713075,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.parkNanos > java.util.concurrent.FutureTask.awaitDone > java.util.concurrent.FutureTask.get > tech.streamfusion.FlussSqlTest.runningSourceDiscoversNewPartitionsAndBucketCounts > jdk.internal.reflect.NativeMethodAccessorImpl.invoke0 > jdk.internal.reflect.NativeMethodAccessorImpl.invoke > jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke": 2.435748412,
+        "java.lang.Thread.sleep > org.apache.flink.streaming.api.operators.collect.CollectResultFetcher.sleepBeforeRetry > org.apache.flink.streaming.api.operators.collect.CollectResultFetcher.next > org.apache.flink.streaming.api.operators.collect.CollectResultIterator.nextResultFromFetcher > org.apache.flink.streaming.api.operators.collect.CollectResultIterator.hasNext > org.apache.flink.table.planner.connectors.CollectDynamicSink$CloseableRowIteratorWrapper.hasNext > java.util.Iterator.forEachRemaining > tech.streamfusion.FlussSqlTest.streamingBatchFilterKeepsResidualAndProjectedColumnsCorrect": 2.2964549659999998,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.parkNanos > java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject.awaitNanos > java.util.concurrent.LinkedBlockingDeque.pollLast > org.testcontainers.containers.output.WaitingConsumer.waitUntil > org.testcontainers.containers.output.WaitingConsumer.waitUntil > org.testcontainers.containers.wait.strategy.LogMessageWaitStrategy.waitUntilReady > org.testcontainers.containers.wait.strategy.AbstractWaitStrategy.waitUntilReady": 2.1483074660000003,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > tech.streamfusion.FlussSqlTest.primaryKeyLogProjectionPreservesUpdatesAndDeletes": 0.828078686,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > org.apache.fluss.flink.catalog.FlinkCatalog.createTable": 0.7170989749999999,
+        "java.lang.Thread.sleep > org.testcontainers.containers.output.WaitingConsumer.waitUntil > org.testcontainers.containers.output.WaitingConsumer.waitUntil > org.testcontainers.containers.wait.strategy.LogMessageWaitStrategy.waitUntilReady > org.testcontainers.containers.wait.strategy.AbstractWaitStrategy.waitUntilReady > org.testcontainers.containers.GenericContainer.waitUntilContainerStarted > org.testcontainers.containers.GenericContainer.tryStart > org.testcontainers.containers.GenericContainer.lambda$doStart$0": 0.6487140739999999,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > tech.streamfusion.FlussSqlTest.partitionedPrimaryKeyLogPreservesProjectedChangelog": 0.623227891,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.parkNanos > java.util.concurrent.FutureTask.awaitDone > java.util.concurrent.FutureTask.get > java.util.concurrent.AbstractExecutorService.invokeAll > org.testcontainers.containers.wait.strategy.HostPortWaitStrategy.waitUntilReady > org.testcontainers.containers.wait.strategy.AbstractWaitStrategy.waitUntilReady > org.testcontainers.containers.GenericContainer.waitUntilContainerStarted": 0.615718297,
+        "java.lang.Thread.sleep > org.apache.flink.streaming.api.operators.collect.CollectResultFetcher.sleepBeforeRetry > org.apache.flink.streaming.api.operators.collect.CollectResultFetcher.next > org.apache.flink.streaming.api.operators.collect.CollectResultIterator.nextResultFromFetcher > org.apache.flink.streaming.api.operators.collect.CollectResultIterator.hasNext > org.apache.flink.table.planner.connectors.CollectDynamicSink$CloseableRowIteratorWrapper.hasNext > java.util.Iterator.forEachRemaining > tech.streamfusion.FlussSqlTest.partitionedAppendAndMixedBucketCountsStayColumnar": 0.39937808,
+        "java.lang.Thread.sleep > org.apache.flink.streaming.api.operators.collect.CollectResultFetcher.sleepBeforeRetry > org.apache.flink.streaming.api.operators.collect.CollectResultFetcher.next > org.apache.flink.streaming.api.operators.collect.CollectResultIterator.nextResultFromFetcher > org.apache.flink.streaming.api.operators.collect.CollectResultIterator.hasNext > org.apache.flink.table.planner.connectors.CollectDynamicSink$CloseableRowIteratorWrapper.hasNext > java.util.Iterator.forEachRemaining > tech.streamfusion.FlussSqlTest.differentBatchPredicatesDoNotShareTheirPrunedSource": 0.19968176999999998,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.parkNanos > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.timedGet > java.util.concurrent.CompletableFuture.get > org.apache.fluss.client.utils.MetadataUtils.sendMetadataRequestAndRebuildCluster": 0.139216917,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > org.apache.fluss.flink.catalog.FlinkCatalog.createPartition": 0.07001027700000001,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.parkNanos > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.timedGet > java.util.concurrent.CompletableFuture.get > org.apache.flink.runtime.testutils.MiniClusterResource.after": 0.055371129,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > org.apache.fluss.flink.catalog.FlinkCatalog.getTable": 0.043268812999999996,
+        "java.lang.Thread.sleep > org.testcontainers.containers.output.WaitingConsumer.waitUntil > org.testcontainers.containers.output.WaitingConsumer.waitUntil > org.testcontainers.containers.wait.strategy.LogMessageWaitStrategy.waitUntilReady > org.testcontainers.containers.wait.strategy.AbstractWaitStrategy.waitUntilReady > tech.streamfusion.fluss.FlussTestCluster.start > tech.streamfusion.FlussSqlTest.start > jdk.internal.reflect.NativeMethodAccessorImpl.invoke0": 0.040981057,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > org.apache.flink.streaming.api.graph.StreamGraph$UserDefinedObjectsHolder.serializeOperatorFactories": 0.036874082,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > org.apache.flink.streaming.api.environment.StreamExecutionEnvironment.executeAsync": 0.0298143,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > org.apache.fluss.flink.catalog.FlinkCatalog.databaseExists": 0.028914107,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > org.apache.fluss.flink.catalog.FlinkCatalog.alterTable": 0.02670473,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > tech.streamfusion.FlussSqlTest.start": 0.016864945,
+        "jdk.internal.misc.Unsafe.park > java.util.concurrent.locks.LockSupport.park > java.util.concurrent.CompletableFuture$Signaller.block > java.util.concurrent.ForkJoinPool.unmanagedBlock > java.util.concurrent.ForkJoinPool.managedBlock > java.util.concurrent.CompletableFuture.waitingGet > java.util.concurrent.CompletableFuture.get > tech.streamfusion.FlussSqlTest.partitionedAppendAndMixedBucketCountsStayColumnar": 0.010928776
+      },
+      "gc_events": {
+        "G1New / G1 Evacuation Pause": 49,
+        "G1Old / G1 Evacuation Pause": 16,
+        "G1Old / Metadata GC Threshold": 3,
+        "G1New / Metadata GC Threshold": 3,
+        "G1Old / G1 Humongous Allocation": 2,
+        "G1New / G1 Humongous Allocation": 2
+      },
+      "gc_activity_seconds": {
+        "G1Old / G1 Evacuation Pause": 1.5103728420000002,
+        "G1New / G1 Evacuation Pause": 0.22934184500000002,
+        "G1Old / G1 Humongous Allocation": 0.078926711,
+        "G1Old / Metadata GC Threshold": 0.07084132500000001,
+        "G1New / Metadata GC Threshold": 0.020221143,
+        "G1New / G1 Humongous Allocation": 0.013688016
+      },
+      "gc_heap_used_max_bytes": {
+        "Before GC": 232400384,
+        "After GC": 169154048
+      },
+      "recordings": 1,
+      "limits": "Java execution samples and native-method stack samples are separate. Native samples include blocking I/O and are not CPU attribution. Inclusive counts overlap. Neither sample count is exact CPU time. Native samples do not resolve Rust internals. Compilation durations are activity intervals, not compiler CPU seconds. Allocation weights are sampled estimates. Wait durations exclude unrecorded short waits, overlap across threads and are not CPU time. GC activity is not total stop-the-world pause time; heap summaries are maxima at recorded GC boundaries, not peak RSS. Instrumented elapsed times are not speedup evidence."
+    },
+    "limits": "Elapsed and child CPU include the complete current Maven reactor; child CPU excludes external broker containers. The 29-case instrumented pass is attribution, not speedup evidence. Every test closes two independent catalogs sequentially in the baseline."
+  },
+  "recovery_transport": {
+    "run": 42533378477,
+    "source_sha": "ec72bb4f053828c6d74932e7af93eca5daa08b08",
+    "jdk": 17,
+    "flink": "1.18",
+    "method": "Two alternating pairs, fresh JVMs, fixed 2 GiB heap, first-tier compilation, ordinary NOP logging, no JFR or phase timers. All original class assertions and individual outcomes retained. Encoded-size and point-in-time heap messages retained in both modes.",
+    "trials": [
+      {
+        "suite": "recovery",
+        "line": "1.18",
+        "heap": "2g",
+        "forks": 4,
+        "instrumented": false,
+        "await_small_results": false,
+        "compressed_recovery_results": false,
+        "elapsed_seconds": 85.723894527,
+        "cpu_seconds": 108.572779,
+        "exit_code": 0,
+        "validated": true,
+        "outcomes": {
+          "tests": 54,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 28
+        },
+        "classes": {
+          "tech.streamfusion.FlinkBinaryCollectionSqlHarnessTest": {
+            "tests": 54,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 28,
+            "seconds": 81.428
+          }
+        },
+        "diagnostic_messages": [],
+        "recovery_messages": [
+          "[recovery-capture] task=GroupAggregate[92] -> ConstraintEnforcer[93] -> Sink: *anonymous_recovery-results$18*[93] (1/1)#0 rows=831 bytes=165299820 heapUsed=685793528 maxHeap=2147483648",
+          "[recovery-result] job=163ae68a95c8ac675bcddc2c492267e9 keys=[streamfusion-recovery-results] rows=831 heapUsed=1354972840 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[103] -> ArrowToRowDataExecNode[104] -> ConstraintEnforcer[105] -> Sink: *anonymous_recovery-results$20*[105] (1/1)#2 rows=831 bytes=165299820 heapUsed=1457340208 maxHeap=2147483648",
+          "[recovery-result] job=46ef234e10667395a8a759bf7d694f34 keys=[streamfusion-recovery-results] rows=831 heapUsed=1948153064 maxHeap=2147483648",
+          "[recovery-capture] task=GroupAggregate[113] -> ConstraintEnforcer[114] -> Sink: *anonymous_recovery-results$22*[114] (1/1)#0 rows=831 bytes=457692 heapUsed=1999292656 maxHeap=2147483648",
+          "[recovery-result] job=3ef47ccae4ad1f88fd9eca2bfd0a9179 keys=[streamfusion-recovery-results] rows=831 heapUsed=1938469312 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[124] -> ArrowToRowDataExecNode[125] -> ConstraintEnforcer[126] -> Sink: *anonymous_recovery-results$24*[126] (1/1)#2 rows=831 bytes=457692 heapUsed=1870447272 maxHeap=2147483648",
+          "[recovery-result] job=76c019c90f1e5a0f0d3903d7c508b3db keys=[streamfusion-recovery-results] rows=831 heapUsed=1878700512 maxHeap=2147483648",
+          "[recovery-capture] task=GroupAggregate[134] -> ConstraintEnforcer[135] -> Sink: *anonymous_recovery-results$26*[135] (1/1)#0 rows=831 bytes=26040948 heapUsed=1407777816 maxHeap=2147483648",
+          "[recovery-result] job=a7063e65f2141d33d0209b4a5668b4fe keys=[streamfusion-recovery-results] rows=831 heapUsed=1466134328 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[145] -> ArrowToRowDataExecNode[146] -> ConstraintEnforcer[147] -> Sink: *anonymous_recovery-results$28*[147] (1/1)#2 rows=831 bytes=26040948 heapUsed=1664468368 maxHeap=2147483648",
+          "[recovery-result] job=45d7d1d0dc9256ed1e977fbb1c7776b4 keys=[streamfusion-recovery-results] rows=831 heapUsed=1128309592 maxHeap=2147483648",
+          "[recovery-capture] task=GroupAggregate[155] -> ConstraintEnforcer[156] -> Sink: *anonymous_recovery-results$30*[156] (1/1)#0 rows=831 bytes=112644 heapUsed=1031922264 maxHeap=2147483648",
+          "[recovery-result] job=eff5ba654fb348ce59ab510a761d425a keys=[streamfusion-recovery-results] rows=831 heapUsed=1036273664 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[166] -> ArrowToRowDataExecNode[167] -> ConstraintEnforcer[168] -> Sink: *anonymous_recovery-results$32*[168] (1/1)#2 rows=831 bytes=112644 heapUsed=968764192 maxHeap=2147483648",
+          "[recovery-result] job=b94a6acc2e7e073e35c7ccc4fd75984d keys=[streamfusion-recovery-results] rows=831 heapUsed=975294072 maxHeap=2147483648"
+        ],
+        "fixture_timings": []
+      },
+      {
+        "suite": "recovery",
+        "line": "1.18",
+        "heap": "2g",
+        "forks": 4,
+        "instrumented": false,
+        "await_small_results": false,
+        "compressed_recovery_results": true,
+        "elapsed_seconds": 84.15676712800001,
+        "cpu_seconds": 104.710275,
+        "exit_code": 0,
+        "validated": true,
+        "outcomes": {
+          "tests": 54,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 28
+        },
+        "classes": {
+          "tech.streamfusion.FlinkBinaryCollectionSqlHarnessTest": {
+            "tests": 54,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 28,
+            "seconds": 80.061
+          }
+        },
+        "diagnostic_messages": [],
+        "recovery_messages": [
+          "[recovery-capture] task=GroupAggregate[92] -> ConstraintEnforcer[93] -> Sink: *anonymous_recovery-results$18*[93] (1/1)#0 rows=831 bytes=1594945 heapUsed=713152904 maxHeap=2147483648",
+          "[recovery-result] job=ba8837d6b7638061b56ba07c8bc9b068 keys=[streamfusion-recovery-results] rows=831 heapUsed=511734920 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[103] -> ArrowToRowDataExecNode[104] -> ConstraintEnforcer[105] -> Sink: *anonymous_recovery-results$20*[105] (1/1)#2 rows=831 bytes=1698140 heapUsed=1058946768 maxHeap=2147483648",
+          "[recovery-result] job=c30d46f7d6929f78b02e6a4c89ce15b0 keys=[streamfusion-recovery-results] rows=831 heapUsed=865512904 maxHeap=2147483648",
+          "[recovery-capture] task=GroupAggregate[113] -> ConstraintEnforcer[114] -> Sink: *anonymous_recovery-results$22*[114] (1/1)#0 rows=831 bytes=139186 heapUsed=1252198752 maxHeap=2147483648",
+          "[recovery-result] job=368e18b7f0fa37d6c72f61a0582d82e1 keys=[streamfusion-recovery-results] rows=831 heapUsed=1028629904 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[124] -> ArrowToRowDataExecNode[125] -> ConstraintEnforcer[126] -> Sink: *anonymous_recovery-results$24*[126] (1/1)#2 rows=831 bytes=140098 heapUsed=1098884496 maxHeap=2147483648",
+          "[recovery-result] job=b70ecb5a4d08986521a31ffe9bf037a5 keys=[streamfusion-recovery-results] rows=831 heapUsed=1104127376 maxHeap=2147483648",
+          "[recovery-capture] task=GroupAggregate[134] -> ConstraintEnforcer[135] -> Sink: *anonymous_recovery-results$26*[135] (1/1)#0 rows=831 bytes=416710 heapUsed=1194310512 maxHeap=2147483648",
+          "[recovery-result] job=b5b57476ea52ae83deea5e9bee2bc347 keys=[streamfusion-recovery-results] rows=831 heapUsed=1245846648 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[145] -> ArrowToRowDataExecNode[146] -> ConstraintEnforcer[147] -> Sink: *anonymous_recovery-results$28*[147] (1/1)#2 rows=831 bytes=416041 heapUsed=1244090552 maxHeap=2147483648",
+          "[recovery-result] job=d0358c4c53827a5173dabe2a0522ee5b keys=[streamfusion-recovery-results] rows=831 heapUsed=1194587136 maxHeap=2147483648",
+          "[recovery-capture] task=GroupAggregate[155] -> ConstraintEnforcer[156] -> Sink: *anonymous_recovery-results$30*[156] (1/1)#0 rows=831 bytes=56828 heapUsed=1255344984 maxHeap=2147483648",
+          "[recovery-result] job=17bafa1445add7d4399f909a1ad9fd71 keys=[streamfusion-recovery-results] rows=831 heapUsed=1260242344 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[166] -> ArrowToRowDataExecNode[167] -> ConstraintEnforcer[168] -> Sink: *anonymous_recovery-results$32*[168] (1/1)#2 rows=831 bytes=56799 heapUsed=1230829056 maxHeap=2147483648",
+          "[recovery-result] job=b4ee49e1249f2d960774021103232b17 keys=[streamfusion-recovery-results] rows=831 heapUsed=1235144704 maxHeap=2147483648"
+        ],
+        "fixture_timings": []
+      },
+      {
+        "suite": "recovery",
+        "line": "1.18",
+        "heap": "2g",
+        "forks": 4,
+        "instrumented": false,
+        "await_small_results": false,
+        "compressed_recovery_results": true,
+        "elapsed_seconds": 83.347266988,
+        "cpu_seconds": 103.63436999999999,
+        "exit_code": 0,
+        "validated": true,
+        "outcomes": {
+          "tests": 54,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 28
+        },
+        "classes": {
+          "tech.streamfusion.FlinkBinaryCollectionSqlHarnessTest": {
+            "tests": 54,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 28,
+            "seconds": 79.293
+          }
+        },
+        "diagnostic_messages": [],
+        "recovery_messages": [
+          "[recovery-capture] task=GroupAggregate[92] -> ConstraintEnforcer[93] -> Sink: *anonymous_recovery-results$18*[93] (1/1)#0 rows=831 bytes=1616366 heapUsed=598433344 maxHeap=2147483648",
+          "[recovery-result] job=128e6ae722994026e9630bd1aa7b2c47 keys=[streamfusion-recovery-results] rows=831 heapUsed=559000056 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[103] -> ArrowToRowDataExecNode[104] -> ConstraintEnforcer[105] -> Sink: *anonymous_recovery-results$20*[105] (1/1)#2 rows=831 bytes=1633181 heapUsed=768862648 maxHeap=2147483648",
+          "[recovery-result] job=5ecb8268cedd7d0384d9dd45b638c6c4 keys=[streamfusion-recovery-results] rows=831 heapUsed=971020144 maxHeap=2147483648",
+          "[recovery-capture] task=GroupAggregate[113] -> ConstraintEnforcer[114] -> Sink: *anonymous_recovery-results$22*[114] (1/1)#0 rows=831 bytes=139720 heapUsed=1084951816 maxHeap=2147483648",
+          "[recovery-result] job=458ba800d134c4b611320b76df27b7da keys=[streamfusion-recovery-results] rows=831 heapUsed=1089739840 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[124] -> ArrowToRowDataExecNode[125] -> ConstraintEnforcer[126] -> Sink: *anonymous_recovery-results$24*[126] (1/1)#2 rows=831 bytes=139901 heapUsed=1103074256 maxHeap=2147483648",
+          "[recovery-result] job=659dd39d574c766d4ea4c99a7db14874 keys=[streamfusion-recovery-results] rows=831 heapUsed=1060625024 maxHeap=2147483648",
+          "[recovery-capture] task=GroupAggregate[134] -> ConstraintEnforcer[135] -> Sink: *anonymous_recovery-results$26*[135] (1/1)#0 rows=831 bytes=417017 heapUsed=607275520 maxHeap=2147483648",
+          "[recovery-result] job=9353c52814b4528feebbf539f43008ee keys=[streamfusion-recovery-results] rows=831 heapUsed=659704320 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[145] -> ArrowToRowDataExecNode[146] -> ConstraintEnforcer[147] -> Sink: *anonymous_recovery-results$28*[147] (1/1)#2 rows=831 bytes=417726 heapUsed=903901040 maxHeap=2147483648",
+          "[recovery-result] job=4438a854ef90814c424c6eb18992bef3 keys=[streamfusion-recovery-results] rows=831 heapUsed=729651704 maxHeap=2147483648",
+          "[recovery-capture] task=GroupAggregate[155] -> ConstraintEnforcer[156] -> Sink: *anonymous_recovery-results$30*[156] (1/1)#0 rows=831 bytes=56828 heapUsed=780141448 maxHeap=2147483648",
+          "[recovery-result] job=8297965af2c716cbfc46331c2232653e keys=[streamfusion-recovery-results] rows=831 heapUsed=784627704 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[166] -> ArrowToRowDataExecNode[167] -> ConstraintEnforcer[168] -> Sink: *anonymous_recovery-results$32*[168] (1/1)#2 rows=831 bytes=56854 heapUsed=844774744 maxHeap=2147483648",
+          "[recovery-result] job=d0e86239141b62409b7a7b55e88a1eb3 keys=[streamfusion-recovery-results] rows=831 heapUsed=848968440 maxHeap=2147483648"
+        ],
+        "fixture_timings": []
+      },
+      {
+        "suite": "recovery",
+        "line": "1.18",
+        "heap": "2g",
+        "forks": 4,
+        "instrumented": false,
+        "await_small_results": false,
+        "compressed_recovery_results": false,
+        "elapsed_seconds": 83.77909613100002,
+        "cpu_seconds": 107.33278000000001,
+        "exit_code": 0,
+        "validated": true,
+        "outcomes": {
+          "tests": 54,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 28
+        },
+        "classes": {
+          "tech.streamfusion.FlinkBinaryCollectionSqlHarnessTest": {
+            "tests": 54,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 28,
+            "seconds": 79.688
+          }
+        },
+        "diagnostic_messages": [],
+        "recovery_messages": [
+          "[recovery-capture] task=GroupAggregate[92] -> ConstraintEnforcer[93] -> Sink: *anonymous_recovery-results$18*[93] (1/1)#0 rows=831 bytes=165299820 heapUsed=670982376 maxHeap=2147483648",
+          "[recovery-result] job=4a141ade808d9b0ead3ba43c29aa368a keys=[streamfusion-recovery-results] rows=831 heapUsed=1488510488 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[103] -> ArrowToRowDataExecNode[104] -> ConstraintEnforcer[105] -> Sink: *anonymous_recovery-results$20*[105] (1/1)#2 rows=831 bytes=165299820 heapUsed=1462066192 maxHeap=2147483648",
+          "[recovery-result] job=5cab342ae204ae2a0590f64f923fac77 keys=[streamfusion-recovery-results] rows=831 heapUsed=1951197880 maxHeap=2147483648",
+          "[recovery-capture] task=GroupAggregate[113] -> ConstraintEnforcer[114] -> Sink: *anonymous_recovery-results$22*[114] (1/1)#0 rows=831 bytes=457692 heapUsed=2013849768 maxHeap=2147483648",
+          "[recovery-result] job=becb2730d3734dad6e211328a4ece658 keys=[streamfusion-recovery-results] rows=831 heapUsed=1952746912 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[124] -> ArrowToRowDataExecNode[125] -> ConstraintEnforcer[126] -> Sink: *anonymous_recovery-results$24*[126] (1/1)#2 rows=831 bytes=457692 heapUsed=2019237128 maxHeap=2147483648",
+          "[recovery-result] job=c261159564b33cdf821b0130152826fe keys=[streamfusion-recovery-results] rows=831 heapUsed=1966511472 maxHeap=2147483648",
+          "[recovery-capture] task=GroupAggregate[134] -> ConstraintEnforcer[135] -> Sink: *anonymous_recovery-results$26*[135] (1/1)#0 rows=831 bytes=26040948 heapUsed=1879775576 maxHeap=2147483648",
+          "[recovery-result] job=b4ba520c334db66f48eab45ad4f72f85 keys=[streamfusion-recovery-results] rows=831 heapUsed=1631304392 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[145] -> ArrowToRowDataExecNode[146] -> ConstraintEnforcer[147] -> Sink: *anonymous_recovery-results$28*[147] (1/1)#2 rows=831 bytes=26040948 heapUsed=1658259152 maxHeap=2147483648",
+          "[recovery-result] job=5d519b9fafe860f1484c605ced2c1516 keys=[streamfusion-recovery-results] rows=831 heapUsed=1100239288 maxHeap=2147483648",
+          "[recovery-capture] task=GroupAggregate[155] -> ConstraintEnforcer[156] -> Sink: *anonymous_recovery-results$30*[156] (1/1)#0 rows=831 bytes=112644 heapUsed=963408240 maxHeap=2147483648",
+          "[recovery-result] job=bd72ba1a326e2796adbb27485d3ed160 keys=[streamfusion-recovery-results] rows=831 heapUsed=970748304 maxHeap=2147483648",
+          "[recovery-capture] task=NativeJvmGroupExecNode[166] -> ArrowToRowDataExecNode[167] -> ConstraintEnforcer[168] -> Sink: *anonymous_recovery-results$32*[168] (1/1)#2 rows=831 bytes=112644 heapUsed=1048342896 maxHeap=2147483648",
+          "[recovery-result] job=cd823e11b2d343f6275f99f4affda9b1 keys=[streamfusion-recovery-results] rows=831 heapUsed=1056207336 maxHeap=2147483648"
+        ],
+        "fixture_timings": []
+      }
+    ],
+    "medians": {
+      "elapsed_seconds": {
+        "reference_median": 84.75149532900001,
+        "compressed_median": 83.752017058,
+        "reduction_percent": 1.1793045858602127
+      },
+      "cpu_seconds": {
+        "reference_median": 107.9527795,
+        "compressed_median": 104.17232249999999,
+        "reduction_percent": 3.501954296600591
+      }
+    },
+    "limits": "Elapsed ranges overlap and median reduction is only 1.18%; this does not establish a material timing improvement. Encoded result size is reduced from 165,299,820 bytes to about 1.6 MB without dropping rows. Reported heap usages are sampled at capture/decode, not peaks. The original missing-accumulator failure did not reproduce and its cause remains unconfirmed."
+  },
+  "recursive_completion": {
+    "run": 42533157858,
+    "source_sha": "f2dfbd1ff3601ce71264321a5f428fbbb7a0ced4",
+    "method": "Two alternating pairs on the same JDK17/Flink2.2 runner, C1 fixed, four 2GiB forks configured, no JFR, no phase timers, ordinary NOP logging. The two selected complete classes create two fresh test JVMs per trial. Case identity and outcome multisets are identical across all four trials.",
+    "trials": [
+      {
+        "suite": "recursive",
+        "line": "2.2",
+        "heap": "2g",
+        "forks": 4,
+        "instrumented": false,
+        "await_small_results": false,
+        "elapsed_seconds": 465.87185743599997,
+        "cpu_seconds": 615.093575,
+        "exit_code": 0,
+        "validated": true,
+        "outcomes": {
+          "tests": 1817,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.FlinkRecursiveScalarSqlHarnessTest": {
+            "tests": 1134,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 407.212
+          },
+          "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest": {
+            "tests": 683,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 461.081
+          }
+        },
+        "diagnostic_messages": [],
+        "recovery_messages": [],
+        "fixture_timings": []
+      },
+      {
+        "suite": "recursive",
+        "line": "2.2",
+        "heap": "2g",
+        "forks": 4,
+        "instrumented": false,
+        "await_small_results": true,
+        "elapsed_seconds": 345.06866181300006,
+        "cpu_seconds": 639.0164139999998,
+        "exit_code": 0,
+        "validated": true,
+        "outcomes": {
+          "tests": 1817,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.FlinkRecursiveScalarSqlHarnessTest": {
+            "tests": 1134,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 295.234
+          },
+          "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest": {
+            "tests": 683,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 340.446
+          }
+        },
+        "diagnostic_messages": [],
+        "recovery_messages": [],
+        "fixture_timings": []
+      },
+      {
+        "suite": "recursive",
+        "line": "2.2",
+        "heap": "2g",
+        "forks": 4,
+        "instrumented": false,
+        "await_small_results": true,
+        "elapsed_seconds": 339.583053437,
+        "cpu_seconds": 617.4289990000001,
+        "exit_code": 0,
+        "validated": true,
+        "outcomes": {
+          "tests": 1817,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest": {
+            "tests": 683,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 334.528
+          },
+          "tech.streamfusion.FlinkRecursiveScalarSqlHarnessTest": {
+            "tests": 1134,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 286.065
+          }
+        },
+        "diagnostic_messages": [],
+        "recovery_messages": [],
+        "fixture_timings": []
+      },
+      {
+        "suite": "recursive",
+        "line": "2.2",
+        "heap": "2g",
+        "forks": 4,
+        "instrumented": false,
+        "await_small_results": false,
+        "elapsed_seconds": 457.00348691599993,
+        "cpu_seconds": 595.8753479999998,
+        "exit_code": 0,
+        "validated": true,
+        "outcomes": {
+          "tests": 1817,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest": {
+            "tests": 683,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 452.336
+          },
+          "tech.streamfusion.FlinkRecursiveScalarSqlHarnessTest": {
+            "tests": 1134,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 397.658
+          }
+        },
+        "diagnostic_messages": [],
+        "recovery_messages": [],
+        "fixture_timings": []
+      }
+    ],
+    "medians": {
+      "elapsed_seconds": {
+        "reference_median": 461.437672176,
+        "completion_wait_median": 342.325857625,
+        "reduction_percent": 25.8131968266277
+      },
+      "cpu_seconds": {
+        "reference_median": 605.4844615,
+        "completion_wait_median": 628.2227065,
+        "reduction_percent": -3.755380434316894
+      }
+    },
+    "limits": "7,268 invocations passed without skips. This establishes improvement for the measured recursive workload, not full runtime CI under four simultaneously busy forks. CPU increases 3.76%; complete required CI must qualify the combined change and both Flink/JDK lines."
+  },
+  "fluss_catalog_close": {
+    "run": 42534186998,
+    "source_sha": "5657b6fd8c68ec7c95f766c020d697e036a71b97",
+    "jdk": 17,
+    "flink": "2.2",
+    "method": "Two alternating pairs with fresh test JVMs and containers on the same runner, C1 and four configured 2GiB forks fixed. Only one class is selected, so one test JVM runs in each trial. No JFR or phase timers. The complete current Maven reactor is included in each elapsed measurement. Individual case identity/outcomes are identical across all four trials.",
+    "docker_image_preparation_seconds": 18,
+    "trials": [
+      {
+        "suite": "fluss",
+        "line": "2.2",
+        "heap": "2g",
+        "forks": 4,
+        "instrumented": false,
+        "await_small_results": false,
+        "compressed_recovery_results": false,
+        "parallel_catalog_close": false,
+        "elapsed_seconds": 322.342463349,
+        "cpu_seconds": 48.582564,
+        "exit_code": 0,
+        "validated": true,
+        "outcomes": {
+          "tests": 29,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.FlussSqlTest": {
+            "tests": 29,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 296.115
+          }
+        },
+        "diagnostic_messages": [],
+        "recovery_messages": [],
+        "fixture_timings": []
+      },
+      {
+        "suite": "fluss",
+        "line": "2.2",
+        "heap": "2g",
+        "forks": 4,
+        "instrumented": false,
+        "await_small_results": false,
+        "compressed_recovery_results": false,
+        "parallel_catalog_close": true,
+        "elapsed_seconds": 268.68904716099996,
+        "cpu_seconds": 50.020113,
+        "exit_code": 0,
+        "validated": true,
+        "outcomes": {
+          "tests": 29,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.FlussSqlTest": {
+            "tests": 29,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 239.793
+          }
+        },
+        "diagnostic_messages": [],
+        "recovery_messages": [],
+        "fixture_timings": []
+      },
+      {
+        "suite": "fluss",
+        "line": "2.2",
+        "heap": "2g",
+        "forks": 4,
+        "instrumented": false,
+        "await_small_results": false,
+        "compressed_recovery_results": false,
+        "parallel_catalog_close": true,
+        "elapsed_seconds": 265.56394068399993,
+        "cpu_seconds": 47.69288199999999,
+        "exit_code": 0,
+        "validated": true,
+        "outcomes": {
+          "tests": 29,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.FlussSqlTest": {
+            "tests": 29,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 238.322
+          }
+        },
+        "diagnostic_messages": [],
+        "recovery_messages": [],
+        "fixture_timings": []
+      },
+      {
+        "suite": "fluss",
+        "line": "2.2",
+        "heap": "2g",
+        "forks": 4,
+        "instrumented": false,
+        "await_small_results": false,
+        "compressed_recovery_results": false,
+        "parallel_catalog_close": false,
+        "elapsed_seconds": 326.183378922,
+        "cpu_seconds": 48.07889900000001,
+        "exit_code": 0,
+        "validated": true,
+        "outcomes": {
+          "tests": 29,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.FlussSqlTest": {
+            "tests": 29,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 298.671
+          }
+        },
+        "diagnostic_messages": [],
+        "recovery_messages": [],
+        "fixture_timings": []
+      }
+    ],
+    "medians": {
+      "elapsed_seconds": {
+        "serial_median": 324.2629211355,
+        "parallel_median": 267.12649392249995,
+        "reduction_percent": 17.620401066184314
+      },
+      "cpu_seconds": {
+        "serial_median": 48.3307315,
+        "parallel_median": 48.856497499999996,
+        "reduction_percent": -1.0878502842440887
+      }
+    },
+    "limits": "116 invocations passed without skips. Child CPU excludes external broker containers. Image preparation is separate and full CI includes cold setup. This is a selected-workload comparison, not whole-CI performance or a product of separate savings. Full source qualification remains required."
+  },
+  "focused_regressions": {
+    "run": 42538138089,
+    "source_sha": "d19522a18b57344d1034b4e73f5a380e87fd7e95",
+    "jdk": 17,
+    "flink": "2.2",
+    "trials": [
+      {
+        "suite": "regressions",
+        "line": "2.2",
+        "heap": "2g",
+        "forks": 4,
+        "instrumented": false,
+        "await_small_results": true,
+        "compressed_recovery_results": true,
+        "parallel_catalog_close": false,
+        "elapsed_seconds": 10.75704923500001,
+        "cpu_seconds": 18.48123,
+        "exit_code": 0,
+        "validated": true,
+        "outcomes": {
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.RecoveryResultEncodingTest": {
+            "tests": 3,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 1.973
+          },
+          "tech.streamfusion.SmallBoundedCollectionTest": {
+            "tests": 1,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 5.779
+          }
+        },
+        "diagnostic_messages": [],
+        "recovery_messages": [],
+        "fixture_timings": []
+      }
+    ],
+    "coverage": "The 8MiB collected output exceeds released Flink's 4MiB buffer; the test drains all 64 rows on both engines, asserts parity and positive native records consumed. Encoding tests retain nested bytes/nulls/counts/changelog kinds and reject corrupt input."
+  }
+}

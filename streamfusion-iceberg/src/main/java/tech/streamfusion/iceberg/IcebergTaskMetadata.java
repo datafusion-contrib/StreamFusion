@@ -51,7 +51,7 @@ final class IcebergTaskMetadata {
     for (var filter : filters) predicate = Expressions.and(predicate, filter);
     var bound = Binder.bind(schema.asStruct(), Expressions.rewriteNot(predicate), caseSensitive);
     if (bound.op() != Expression.Operation.TRUE) {
-      var translated = ExpressionVisitors.visit(bound, new Visitor(mapper));
+      var translated = ExpressionVisitors.visit(bound, new Visitor(mapper, schema));
       if (translated == null)
         throw new IllegalArgumentException("Unverified native Iceberg expression");
       return translated;
@@ -61,9 +61,14 @@ final class IcebergTaskMetadata {
 
   private static final class Visitor extends ExpressionVisitors.ExpressionVisitor<JsonNode> {
     private final ObjectMapper mapper;
+    private final java.util.Set<Integer> rootFields;
 
-    private Visitor(ObjectMapper mapper) {
+    private Visitor(ObjectMapper mapper, Schema schema) {
       this.mapper = mapper;
+      this.rootFields =
+          schema.columns().stream()
+              .map(f -> f.fieldId())
+              .collect(java.util.stream.Collectors.toSet());
     }
 
     private ObjectNode operation(String op) {
@@ -108,6 +113,8 @@ final class IcebergTaskMetadata {
 
     @Override
     public <T> JsonNode predicate(BoundPredicate<T> predicate) {
+      if (!rootFields.contains(predicate.ref().fieldId()) || predicate.ref().type().isNestedType())
+        throw new IllegalArgumentException("Nested predicate pushdown retains stock readers");
       if (!(predicate.term() instanceof BoundReference)) {
         throw new IllegalArgumentException("Native predicate transforms are not admitted");
       }

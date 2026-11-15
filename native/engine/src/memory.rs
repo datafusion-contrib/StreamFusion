@@ -3,28 +3,70 @@ use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
 /// DataFusion memory pool backed by the TaskManager-wide JVM reservation authority.
-struct FlinkTaskOffHeapPool {
+pub(crate) struct FlinkTaskOffHeapPool {
     owner_id: i64,
     used: AtomicUsize,
+    authority: jni::objects::GlobalRef,
+    owns_registration: bool,
+    spill_headroom: AtomicUsize,
 }
 
 impl FlinkTaskOffHeapPool {
-    fn new(owner_id: i64) -> Self {
-        Self {
-            owner_id,
-            used: AtomicUsize::new(0),
-        }
-    }
-
-    fn reserve(&self, bytes: usize) -> Result<bool, DataFusionError> {
+    fn new(owner_id: i64) -> Result<Self, DataFusionError> {
         let vm = crate::bridge::JVM.get().ok_or_else(|| {
             DataFusionError::Execution("JVM memory authority is unavailable".into())
         })?;
         let mut env = vm
             .attach_current_thread()
             .map_err(|e| DataFusionError::Execution(e.to_string()))?;
+        let class = env
+            .find_class("tech/streamfusion/operator/TaskOffHeapMemory")
+            .map_err(|e| DataFusionError::Execution(e.to_string()))?;
+        let authority = env
+            .new_global_ref(class)
+            .map_err(|e| DataFusionError::Execution(e.to_string()))?;
+        Ok(Self {
+            owner_id,
+            used: AtomicUsize::new(0),
+            authority,
+            owns_registration: false,
+            spill_headroom: AtomicUsize::new(0),
+        })
+    }
+
+    pub(crate) fn preserve_spill_headroom(&self, bytes: usize) {
+        self.spill_headroom.fetch_max(bytes, Relaxed);
+    }
+
+    fn reserve(&self, bytes: usize, can_spill: bool) -> Result<bool, DataFusionError> {
+        let vm = crate::bridge::JVM.get().ok_or_else(|| {
+            DataFusionError::Execution("JVM memory authority is unavailable".into())
+        })?;
+        let mut env = vm
+            .attach_current_thread()
+            .map_err(|e| DataFusionError::Execution(e.to_string()))?;
+        let headroom = if can_spill {
+            self.spill_headroom.load(Relaxed)
+        } else {
+            0
+        };
+        if headroom != 0 {
+            return env
+                .call_static_method(
+                    <&jni::objects::JClass>::from(self.authority.as_obj()),
+                    "tryReserveWithHeadroom",
+                    "(JJJ)Z",
+                    &[
+                        jni::objects::JValue::Long(self.owner_id),
+                        jni::objects::JValue::Long(bytes as i64),
+                        jni::objects::JValue::Long(headroom as i64),
+                    ],
+                )
+                .and_then(|value| value.z())
+                .map_err(|e| DataFusionError::Execution(e.to_string()));
+        }
         env.call_static_method(
-            "tech/streamfusion/operator/TaskOffHeapMemory",
+            <&jni::objects::JClass>::from(self.authority.as_obj()),
             "tryReserve",
             "(JJ)Z",
             &[
@@ -44,7 +86,7 @@ impl FlinkTaskOffHeapPool {
             .attach_current_thread()
             .map_err(|e| DataFusionError::Execution(e.to_string()))?;
         env.call_static_method(
-            "tech/streamfusion/operator/TaskOffHeapMemory",
+            <&jni::objects::JClass>::from(self.authority.as_obj()),
             "release",
             "(JJ)V",
             &[
@@ -55,6 +97,65 @@ impl FlinkTaskOffHeapPool {
         .map(|_| ())
         .map_err(|e| DataFusionError::Execution(format!("release task off-heap memory: {e}")))
     }
+}
+
+impl Drop for FlinkTaskOffHeapPool {
+    fn drop(&mut self) {
+        if !self.owns_registration {
+            return;
+        }
+        // Reservations and DataFusion worker contexts retain the pool. Closing the owner here
+        // keeps async cancellation charged until its final worker releases memory.
+        let result = (|| {
+            let vm = crate::bridge::JVM.get().ok_or_else(|| {
+                DataFusionError::Execution("JVM memory authority is unavailable".into())
+            })?;
+            let mut env = vm
+                .attach_current_thread()
+                .map_err(|e| DataFusionError::Execution(e.to_string()))?;
+            env.call_static_method(
+                <&jni::objects::JClass>::from(self.authority.as_obj()),
+                "closeOwner",
+                "(J)V",
+                &[jni::objects::JValue::Long(self.owner_id)],
+            )
+            .map_err(|e| DataFusionError::Execution(e.to_string()))?;
+            Ok::<(), DataFusionError>(())
+        })();
+        if let Err(error) = result {
+            log::error!("close native task memory owner {}: {error}", self.owner_id);
+        }
+    }
+}
+
+/// The native bounded task owns this registration through the pool's last reference, including
+/// worker tasks cancelled asynchronously by DataFusion.
+pub(crate) fn owned_task_memory_pool(name: &str) -> Result<Arc<dyn MemoryPool>, DataFusionError> {
+    let mut pool = FlinkTaskOffHeapPool::new(0)?;
+    let vm = crate::bridge::JVM.get().unwrap();
+    let mut env = vm
+        .attach_current_thread()
+        .map_err(|e| DataFusionError::Execution(e.to_string()))?;
+    let category = env
+        .new_string("batch")
+        .map_err(|e| DataFusionError::Execution(e.to_string()))?;
+    let name = env
+        .new_string(name)
+        .map_err(|e| DataFusionError::Execution(e.to_string()))?;
+    pool.owner_id = env
+        .call_static_method(
+            <&jni::objects::JClass>::from(pool.authority.as_obj()),
+            "registerOwner",
+            "(Ljava/lang/String;Ljava/lang/String;)J",
+            &[
+                jni::objects::JValue::Object(&category),
+                jni::objects::JValue::Object(&name),
+            ],
+        )
+        .and_then(|value| value.j())
+        .map_err(|e| DataFusionError::Execution(e.to_string()))?;
+    pool.owns_registration = true;
+    Ok(Arc::new(pool))
 }
 
 impl Debug for FlinkTaskOffHeapPool {
@@ -93,13 +194,13 @@ impl MemoryPool for FlinkTaskOffHeapPool {
 
     fn try_grow(
         &self,
-        _reservation: &MemoryReservation,
+        reservation: &MemoryReservation,
         additional: usize,
     ) -> Result<(), DataFusionError> {
         if additional == 0 {
             return Ok(());
         }
-        if !self.reserve(additional)? {
+        if !self.reserve(additional, reservation.consumer().can_spill())? {
             return Err(DataFusionError::ResourcesExhausted(format!(
                 "TaskManager task off-heap pool denied {additional} bytes for owner {}",
                 self.owner_id
@@ -123,6 +224,7 @@ impl MemoryPool for FlinkTaskOffHeapPool {
 pub(crate) struct OperatorMemory {
     reservation: Option<MemoryReservation>,
     pub(crate) state_bytes: usize,
+    state_owners: Vec<Arc<AtomicUsize>>,
     // A TaskContext sharing the bounded pool, for fragments the operator delegates to DataFusion's
     // execution (the joins' HashJoinExec) — their transient working memory then draws on the same
     // budget as the operator's state.
@@ -134,6 +236,7 @@ impl OperatorMemory {
         OperatorMemory {
             reservation: None,
             state_bytes: 0,
+            state_owners: Vec::new(),
             task_ctx: None,
         }
     }
@@ -150,7 +253,7 @@ impl OperatorMemory {
             return Ok(());
         }
         let pool: Arc<dyn MemoryPool> = if budget_bytes < -1 {
-            Arc::new(FlinkTaskOffHeapPool::new(-budget_bytes - 1))
+            Arc::new(FlinkTaskOffHeapPool::new(-budget_bytes - 1)?)
         } else {
             Arc::new(GreedyMemoryPool::new(budget_bytes as usize))
         };
@@ -187,6 +290,23 @@ impl OperatorMemory {
     /// attached, a plain default (unbounded, as before accounting) otherwise.
     pub(crate) fn task_ctx(&self) -> Arc<TaskContext> {
         self.task_ctx.clone().unwrap_or_default()
+    }
+
+    pub(crate) fn state_memory(&mut self) -> StateMemory {
+        let reservation = self.temporary_reservation();
+        let bytes = Arc::new(AtomicUsize::new(0));
+        if reservation.is_some() {
+            self.state_owners.push(Arc::clone(&bytes));
+        }
+        StateMemory { reservation, bytes }
+    }
+
+    pub(crate) fn state_bytes(&self) -> usize {
+        self.state_owners
+            .iter()
+            .fold(self.state_bytes, |bytes, owner| {
+                bytes.saturating_add(owner.load(Relaxed))
+            })
     }
 
     /// Folds a touched entry's footprint change into the tracked total.
@@ -226,4 +346,37 @@ impl OperatorMemory {
 /// Total Arrow buffer footprint of a set of buffered batches.
 pub(crate) fn buffered_batches_bytes(batches: &[RecordBatch]) -> usize {
     batches.iter().map(RecordBatch::get_array_memory_size).sum()
+}
+
+/// Reservations follow the decoded state's owner, independently of operator staging.
+pub(crate) struct StateMemory {
+    reservation: Option<MemoryReservation>,
+    bytes: Arc<AtomicUsize>,
+}
+
+impl StateMemory {
+    pub(crate) fn tracking(&self) -> bool {
+        self.reservation.is_some()
+    }
+
+    pub(crate) fn try_resize(&self, bytes: usize) -> Result<(), DataFusionError> {
+        if let Some(reservation) = &self.reservation {
+            reservation.try_resize(bytes)?;
+            self.bytes.store(bytes, Relaxed);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn temporary_reservation(&self) -> Option<MemoryReservation> {
+        self.reservation.as_ref().map(MemoryReservation::new_empty)
+    }
+}
+
+impl Drop for StateMemory {
+    fn drop(&mut self) {
+        if let Some(reservation) = &self.reservation {
+            reservation.free();
+        }
+        self.bytes.store(0, Relaxed);
+    }
 }

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use arrow::array::ArrayRef;
-use arrow::datatypes::{DataType, Float32Type, Float64Type, Int32Type, Int64Type};
+use arrow::array::{Array, ArrayRef, Decimal128Array};
+use arrow::datatypes::{DataType, Decimal128Type, Float32Type, Float64Type, Int32Type, Int64Type};
 use datafusion::common::{cast::as_primitive_array, exec_err, Result, ScalarValue};
 use datafusion::logical_expr::{
     ColumnarValue, ScalarFunctionArgs, ScalarUDF, ScalarUDFImpl, Signature, Volatility,
@@ -9,16 +9,7 @@ use datafusion::logical_expr::{
 
 pub(super) fn function() -> ScalarUDF {
     ScalarUDF::new_from_impl(FlinkSign {
-        signature: Signature::uniform(
-            1,
-            vec![
-                DataType::Float64,
-                DataType::Float32,
-                DataType::Int32,
-                DataType::Int64,
-            ],
-            Volatility::Immutable,
-        ),
+        signature: Signature::user_defined(Volatility::Immutable),
     })
 }
 
@@ -34,12 +25,19 @@ impl ScalarUDFImpl for FlinkSign {
     fn signature(&self) -> &Signature {
         &self.signature
     }
+    fn coerce_types(&self, types: &[DataType]) -> Result<Vec<DataType>> {
+        self.return_type(types)?;
+        Ok(types.to_vec())
+    }
     fn return_type(&self, types: &[DataType]) -> Result<DataType> {
         match types {
             [t @ (DataType::Int32 | DataType::Int64 | DataType::Float32 | DataType::Float64)] => {
                 Ok(t.clone())
             }
-            _ => exec_err!("SIGN requires one signed integer or floating operand"),
+            [t @ DataType::Decimal128(p, s)] if native_decimal(*p, *s) => Ok(t.clone()),
+            _ => {
+                exec_err!("SIGN requires one verified signed integer, floating or DECIMAL operand")
+            }
         }
     }
     fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
@@ -53,7 +51,10 @@ fn invoke(args: &[ColumnarValue]) -> Result<ColumnarValue> {
     };
     match input {
         ColumnarValue::Array(array)
-            if matches!(array.data_type(), DataType::Int32 | DataType::Int64) =>
+            if matches!(
+                array.data_type(),
+                DataType::Int32 | DataType::Int64 | DataType::Decimal128(_, _)
+            ) =>
         {
             Ok(ColumnarValue::Array(sign(std::slice::from_ref(array))?))
         }
@@ -63,8 +64,25 @@ fn invoke(args: &[ColumnarValue]) -> Result<ColumnarValue> {
         ColumnarValue::Scalar(ScalarValue::Int64(v)) => Ok(ColumnarValue::Scalar(
             ScalarValue::Int64(v.map(i64::signum)),
         )),
+        ColumnarValue::Scalar(ScalarValue::Decimal128(value, p, s)) if native_decimal(*p, *s) => {
+            let value = if *p as i8 == *s {
+                value.filter(|v| *v == 0)
+            } else {
+                value.map(|v| v.signum() * 10i128.pow(*s as u32))
+            };
+            Ok(ColumnarValue::Scalar(ScalarValue::Decimal128(
+                value, *p, *s,
+            )))
+        }
         _ => datafusion::functions::utils::make_scalar_function(sign, vec![])(args),
     }
+}
+
+fn native_decimal(precision: u8, scale: i8) -> bool {
+    (1..=38).contains(&precision)
+        && scale >= 0
+        && scale <= precision as i8
+        && (scale < precision as i8 || precision > 18)
 }
 
 fn sign(args: &[ArrayRef]) -> Result<ArrayRef> {
@@ -89,7 +107,18 @@ fn sign(args: &[ArrayRef]) -> Result<ArrayRef> {
         DataType::Float64 => sign!(Float64Type),
         DataType::Int32 => integer!(Int32Type),
         DataType::Int64 => integer!(Int64Type),
-        other => return exec_err!("SIGN expected signed integer or floating input, got {other}"),
+        DataType::Decimal128(p, s) if native_decimal(*p, *s) => {
+            let input = as_primitive_array::<Decimal128Type>(&args[0])?;
+            let output = if *p as i8 == *s {
+                // Flink's noncompact DecimalData rejects +/-1 at DECIMAL(p,p).
+                Decimal128Array::from_iter(input.iter().map(|v| v.filter(|v| *v == 0)))
+            } else {
+                let unit = 10i128.pow(*s as u32);
+                input.unary::<_, Decimal128Type>(|v| v.signum() * unit)
+            };
+            Arc::new(output.with_data_type(input.data_type().clone()))
+        }
+        other => return exec_err!("SIGN expected a verified numeric input, got {other}"),
     })
 }
 
@@ -158,12 +187,91 @@ mod tests {
     }
 
     #[test]
+    fn decimal_values_metadata_nulls_and_slices_match_flink() {
+        let f = function();
+        for p in 1..=38 {
+            let max = 10i128.pow(u32::from(p)) - 1;
+            for s in 0..=p as i8 {
+                let ty = DataType::Decimal128(p, s);
+                if p <= 18 && s == p as i8 {
+                    assert!(f.return_type(std::slice::from_ref(&ty)).is_err());
+                    continue;
+                }
+                assert_eq!(
+                    f.coerce_types(std::slice::from_ref(&ty)).unwrap(),
+                    vec![ty.clone()]
+                );
+                let expected = |v: i128| {
+                    if s == p as i8 && v != 0 {
+                        None
+                    } else {
+                        Some(v.signum() * 10i128.pow(s as u32))
+                    }
+                };
+                let input = Decimal128Array::from(vec![
+                    Some(0),
+                    Some(-max),
+                    Some(-1),
+                    None,
+                    Some(0),
+                    Some(1),
+                    Some(max),
+                    Some(0),
+                ])
+                .with_data_type(ty.clone())
+                .slice(1, 6);
+                let output = sign(&[Arc::new(input.clone())]).unwrap();
+                let output = as_primitive_array::<Decimal128Type>(&output).unwrap();
+                assert_eq!(output.data_type(), &ty);
+                assert_eq!(
+                    output.iter().collect::<Vec<_>>(),
+                    vec![
+                        expected(-max),
+                        expected(-1),
+                        None,
+                        expected(0),
+                        expected(1),
+                        expected(max)
+                    ]
+                );
+                assert_eq!(input.value(0), -max);
+                for empty in [
+                    input.slice(2, 0),
+                    Decimal128Array::from(vec![None; 3]).with_data_type(ty.clone()),
+                ] {
+                    let output = sign(&[Arc::new(empty.clone())]).unwrap();
+                    assert_eq!(output.data_type(), &ty);
+                    assert_eq!(output.len(), empty.len());
+                    assert_eq!(output.null_count(), empty.null_count());
+                }
+                for value in [Some(-max), Some(-1), Some(0), Some(1), Some(max), None] {
+                    let output =
+                        invoke(&[ColumnarValue::Scalar(ScalarValue::Decimal128(value, p, s))])
+                            .unwrap();
+                    let ColumnarValue::Scalar(output) = output else {
+                        panic!("Scalar decimal SIGN returned an array");
+                    };
+                    assert_eq!(
+                        output,
+                        ScalarValue::Decimal128(value.and_then(expected), p, s)
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn rejects_unsupported_types_and_arities() {
         let f = function();
         for types in [
             vec![],
             vec![DataType::UInt32],
-            vec![DataType::Decimal128(18, 3)],
+            vec![DataType::Decimal128(18, 18)],
+            vec![DataType::Decimal128(0, 0)],
+            vec![DataType::Decimal128(39, 0)],
+            vec![DataType::Decimal128(18, -1)],
+            vec![DataType::Decimal128(18, 19)],
+            vec![DataType::Decimal256(38, 3)],
             vec![DataType::Int32, DataType::Int64],
         ] {
             assert!(f.return_type(&types).is_err());

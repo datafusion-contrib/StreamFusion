@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.operator.stream.MiniBatchBoundary;
 
 class MiniBatchBoundaryTest {
 

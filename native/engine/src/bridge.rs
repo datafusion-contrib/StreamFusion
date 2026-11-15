@@ -7,6 +7,7 @@ pub(crate) fn emit_record_batch(
     receiver: &jni::objects::JObject,
     batch: RecordBatch,
 ) -> Result<(), DataFusionError> {
+    crate::state::canonical_context::check_cancelled()?;
     if batch.num_rows() == 0 {
         return Ok(());
     }
@@ -95,7 +96,7 @@ macro_rules! state_bytes_getter {
             handle: jlong,
         ) -> jlong {
             let operator = unsafe { &*(handle as *const $ty) };
-            operator.memory.state_bytes as jlong
+            operator.memory.state_bytes() as jlong
         }
     };
 }

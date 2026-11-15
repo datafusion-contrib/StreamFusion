@@ -68,14 +68,14 @@ pub(super) fn pad(args: &[ArrayRef], left: bool) -> Result<ArrayRef> {
     Ok(Arc::new(output.finish()))
 }
 
-struct Utf16Prefix<'a> {
-    text: &'a str,
-    units: usize,
-    split_surrogate: bool,
+pub(super) struct Utf16Prefix<'a> {
+    pub(super) text: &'a str,
+    pub(super) units: usize,
+    pub(super) split_surrogate: bool,
 }
 
 impl<'a> Utf16Prefix<'a> {
-    fn new(value: &'a str, limit: usize) -> Self {
+    pub(super) fn new(value: &'a str, limit: usize) -> Self {
         if value.is_ascii() {
             let units = value.len().min(limit);
             return Self {
@@ -113,7 +113,7 @@ impl<'a> Utf16Prefix<'a> {
         self.text.len() + usize::from(self.split_surrogate)
     }
 
-    fn append_to(&self, output: &mut StringBuilder) -> Result<()> {
+    pub(super) fn append_to(&self, output: &mut StringBuilder) -> Result<()> {
         output.write_str(self.text)?;
         // A UTF-16 prefix cut can leave a high surrogate; JDK UTF-8 encodes it as '?'.
         // The next intact UTF-8 span cannot start with a lone low surrogate.

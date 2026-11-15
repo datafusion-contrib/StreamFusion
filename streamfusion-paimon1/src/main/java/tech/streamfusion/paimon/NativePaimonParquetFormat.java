@@ -18,21 +18,23 @@ import org.apache.paimon.statistics.SimpleColStatsCollector;
 import org.apache.paimon.types.RowType;
 
 /**
- * Paimon's Parquet format with only the data-file writer replaced. Reads, schema validation, and
- * footer statistics stay with Paimon's own implementation; native floating bounds are omitted
- * because this release cannot accept writer metadata that includes NaN. The writer factory it hands
- * out writes Arrow bundles through the native encoder and delegates every row-fed file (compaction
- * rewrites, batch inserts, foreign bundles) to the stock writer, so no table ever mixes writer
- * behaviour by accident.
+ * Paimon's Parquet format with native file encoding. Readers, schema validation, IO and footer
+ * statistics retain the released Java implementation. Borrowed Arrow bundles use the native encoder
+ * directly; a job-local bounded-table marker also admits Java rows finalized by Paimon's overwrite,
+ * mutation and clustering writers. Other row-fed files retain the stock encoder.
  */
 public final class NativePaimonParquetFormat extends FileFormat implements NativePaimonFileFormat {
 
+  public static final String BATCH_ROW_ENCODING = "streamfusion.parquet.batch-row-encoding";
+
+  private final boolean batchRowEncoding;
   private final ParquetFileFormat delegate;
   private final Options parquetOptions;
   private final String fileCompression;
 
   public NativePaimonParquetFormat(FormatContext context) {
     super(NativePaimonParquetFormatFactory.IDENTIFIER);
+    this.batchRowEncoding = Boolean.parseBoolean(context.options().get(BATCH_ROW_ENCODING));
     this.delegate = new ParquetFileFormat(context);
     this.parquetOptions = parquetOptions(context);
     this.fileCompression = context.options().get(CoreOptions.FILE_COMPRESSION);
@@ -80,7 +82,7 @@ public final class NativePaimonParquetFormat extends FileFormat implements Nativ
         || PaimonArrowFields.unsupportedWriterTypeReason(type) != null) {
       return stock;
     }
-    return new NativePaimonParquetWriterFactory(type, parquetOptions, stock);
+    return new NativePaimonParquetWriterFactory(type, parquetOptions, stock, batchRowEncoding);
   }
 
   @Override

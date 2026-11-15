@@ -1,0 +1,673 @@
+{
+  "date": "2026-11-09",
+  "scope": "Final admission: signed-key sorted limits compose with an existing qualifying operation. Four unchanged upstream signed-key methods require performance fallback, two STRING-key methods require key-type fallback.",
+  "nativeRowsPerLine": {
+    "testOrderByWithOffsetAndFetch": 56,
+    "testOrderByLimit": 104,
+    "testOrderByLessThanOffset": 42,
+    "testOrderByRepeatedFields": 26
+  },
+  "controls": {
+    "boundedNativeTests": 43,
+    "sortedLimitSqlTestsPerLine": 3,
+    "boundedTopk": "262144 rows under 2MiB, retains16 candidates, offset3, output2 rows/batch; no spill, no Java Arrow input retained after ingest",
+    "emptyRanges": "empty input, zero limit, offset beyond input, offsets crossing output-batch boundaries",
+    "agent": "Private overloads excluded from invocation advice; 58 executed agent controls passed,60 canonical controls skipped by their profile",
+    "finalJavaTestsPerLine": 66,
+    "finalJavaSelection": "13 planner,6 stateless batch,5 full sort SQL,3 sorted-limit SQL,16 transpose,10 bounded sorter,7 shared memory,6 unchanged upstream SortLimit",
+    "oversizedTopk": "Fails through the shared authority under2MiB and releases its input; verified on both lines",
+    "admittedNativeSqlWitness": {
+      "lines": [
+        "2.2",
+        "1.18"
+      ],
+      "rows": 4099,
+      "minimumNativeSortInputPerQuery": 4099,
+      "queries": 4,
+      "condition": "SHA2(CAST(id AS STRING),256) <> ''",
+      "verification": "Every query asserts native local/global plan shape, positive sort input, unchained native tasks, and exact ordered stock/native parity."
+    },
+    "packagedLoaderTestsPerLine": 2,
+    "packagedLoaderCoverage": "Unrestricted multi-batch sort and admitted SHA2/sorted-limit composition with1023-row offset/1025-row fetch, unchained p2 source, isolated shaded core on both lines."
+  },
+  "candidateUpstream": [
+    {
+      "line": "2.2",
+      "test": "testOrderByWithOffsetAndFetch()",
+      "junitStatus": "SUCCESSFUL",
+      "nativeWork": {
+        "NativeBatchSortOperator": 56
+      },
+      "fallbackReasons": [],
+      "jobs": [
+        {
+          "id": "e26b455bbce95adbe33019f7f87d3332",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 28
+          }
+        },
+        {
+          "id": "36ade56b8cefb7cd135e0aa9695dddfa",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 28
+          }
+        }
+      ],
+      "operatorClasses": [
+        "SourceConversion$generated",
+        "org.apache.flink.streaming.api.operators.StreamSource",
+        "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+        "tech.streamfusion.operator.ArrowToRowDataOperator",
+        "tech.streamfusion.operator.NativeBatchSortOperator",
+        "tech.streamfusion.operator.RowDataToArrowOperator"
+      ]
+    },
+    {
+      "line": "2.2",
+      "test": "testOrderByLessThanOffset()",
+      "junitStatus": "SUCCESSFUL",
+      "nativeWork": {
+        "NativeBatchSortOperator": 42
+      },
+      "fallbackReasons": [],
+      "jobs": [
+        {
+          "id": "6a3ec6dccde4a7715db9676abf566510",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 42
+          }
+        }
+      ],
+      "operatorClasses": [
+        "SourceConversion$generated",
+        "org.apache.flink.streaming.api.operators.StreamSource",
+        "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+        "tech.streamfusion.operator.ArrowToRowDataOperator",
+        "tech.streamfusion.operator.NativeBatchSortOperator",
+        "tech.streamfusion.operator.RowDataToArrowOperator"
+      ]
+    },
+    {
+      "line": "2.2",
+      "test": "testOrderByLimit()",
+      "junitStatus": "SUCCESSFUL",
+      "nativeWork": {
+        "NativeBatchSortOperator": 104
+      },
+      "fallbackReasons": [],
+      "jobs": [
+        {
+          "id": "146a6fe7eea9c0ff6294b842a8009f85",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 26
+          }
+        },
+        {
+          "id": "ba9c0a4daaaa815e7a947c0a5549d126",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 26
+          }
+        },
+        {
+          "id": "2409bae945470a0a8fba8e9a90f8a12c",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 26
+          }
+        },
+        {
+          "id": "87e3720e713c7f536e0ade53ba107e24",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 26
+          }
+        }
+      ],
+      "operatorClasses": [
+        "SourceConversion$generated",
+        "org.apache.flink.streaming.api.operators.StreamSource",
+        "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+        "tech.streamfusion.operator.ArrowToRowDataOperator",
+        "tech.streamfusion.operator.NativeBatchSortOperator",
+        "tech.streamfusion.operator.RowDataToArrowOperator"
+      ]
+    },
+    {
+      "line": "2.2",
+      "test": "testOrderBehindField()",
+      "junitStatus": "SUCCESSFUL",
+      "nativeWork": {},
+      "fallbackReasons": [
+        "batch sort: only signed integer keys are verified"
+      ],
+      "jobs": [
+        {
+          "id": "da34804910ed87f60e2b87c340b5cdae",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {}
+        }
+      ],
+      "operatorClasses": [
+        "SourceConversion$generated",
+        "org.apache.flink.streaming.api.operators.StreamSource",
+        "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+        "org.apache.flink.table.runtime.operators.sort.SortOperator"
+      ]
+    },
+    {
+      "line": "2.2",
+      "test": "testOrderByLimitBehindField()",
+      "junitStatus": "SUCCESSFUL",
+      "nativeWork": {},
+      "fallbackReasons": [
+        "batch sort: only signed integer keys are verified"
+      ],
+      "jobs": [
+        {
+          "id": "7ef001543ac1abd7b44e16187680d7ea",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {}
+        }
+      ],
+      "operatorClasses": [
+        "SourceConversion$generated",
+        "org.apache.flink.streaming.api.operators.StreamSource",
+        "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+        "org.apache.flink.table.runtime.operators.sort.SortLimitOperator"
+      ]
+    },
+    {
+      "line": "2.2",
+      "test": "testOrderByRepeatedFields()",
+      "junitStatus": "SUCCESSFUL",
+      "nativeWork": {
+        "NativeBatchSortOperator": 26
+      },
+      "fallbackReasons": [],
+      "jobs": [
+        {
+          "id": "07560b242bb31d6c69128d8387aa1e9c",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 26
+          }
+        }
+      ],
+      "operatorClasses": [
+        "SourceConversion$generated",
+        "org.apache.flink.streaming.api.operators.StreamSource",
+        "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+        "tech.streamfusion.operator.ArrowToRowDataOperator",
+        "tech.streamfusion.operator.NativeBatchSortOperator",
+        "tech.streamfusion.operator.RowDataToArrowOperator"
+      ]
+    },
+    {
+      "line": "1.18",
+      "test": "testOrderByWithOffsetAndFetch()",
+      "junitStatus": "SUCCESSFUL",
+      "nativeWork": {
+        "NativeBatchSortOperator": 56
+      },
+      "fallbackReasons": [],
+      "jobs": [
+        {
+          "id": "e2397bb125b86bff7f62a15e39c8f675",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 28
+          }
+        },
+        {
+          "id": "c4feb2a44564dcb27f8836157a99bbf9",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 28
+          }
+        }
+      ],
+      "operatorClasses": [
+        "SourceConversion$generated",
+        "org.apache.flink.streaming.api.operators.StreamSource",
+        "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+        "tech.streamfusion.operator.ArrowToRowDataOperator",
+        "tech.streamfusion.operator.NativeBatchSortOperator",
+        "tech.streamfusion.operator.RowDataToArrowOperator"
+      ]
+    },
+    {
+      "line": "1.18",
+      "test": "testOrderByLimit()",
+      "junitStatus": "SUCCESSFUL",
+      "nativeWork": {
+        "NativeBatchSortOperator": 104
+      },
+      "fallbackReasons": [],
+      "jobs": [
+        {
+          "id": "f9b5908379c37d5dde5b6c3daaf4fd20",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 26
+          }
+        },
+        {
+          "id": "1a0fa16d2acc58e92ee42541c211b0e8",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 26
+          }
+        },
+        {
+          "id": "7d3b833ff4901b9e3497eb5ae8bda793",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 26
+          }
+        },
+        {
+          "id": "b5e3752059c3d68d64977123a7cefc4c",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 26
+          }
+        }
+      ],
+      "operatorClasses": [
+        "SourceConversion$generated",
+        "org.apache.flink.streaming.api.operators.StreamSource",
+        "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+        "tech.streamfusion.operator.ArrowToRowDataOperator",
+        "tech.streamfusion.operator.NativeBatchSortOperator",
+        "tech.streamfusion.operator.RowDataToArrowOperator"
+      ]
+    },
+    {
+      "line": "1.18",
+      "test": "testOrderByLessThanOffset()",
+      "junitStatus": "SUCCESSFUL",
+      "nativeWork": {
+        "NativeBatchSortOperator": 42
+      },
+      "fallbackReasons": [],
+      "jobs": [
+        {
+          "id": "e52f5d77476983476960410664c03be5",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 42
+          }
+        }
+      ],
+      "operatorClasses": [
+        "SourceConversion$generated",
+        "org.apache.flink.streaming.api.operators.StreamSource",
+        "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+        "tech.streamfusion.operator.ArrowToRowDataOperator",
+        "tech.streamfusion.operator.NativeBatchSortOperator",
+        "tech.streamfusion.operator.RowDataToArrowOperator"
+      ]
+    },
+    {
+      "line": "1.18",
+      "test": "testOrderByRepeatedFields()",
+      "junitStatus": "SUCCESSFUL",
+      "nativeWork": {
+        "NativeBatchSortOperator": 26
+      },
+      "fallbackReasons": [],
+      "jobs": [
+        {
+          "id": "4d02e0a45607563294d99bf973696f30",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {
+            "NativeBatchSortOperator": 26
+          }
+        }
+      ],
+      "operatorClasses": [
+        "SourceConversion$generated",
+        "org.apache.flink.streaming.api.operators.StreamSource",
+        "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+        "tech.streamfusion.operator.ArrowToRowDataOperator",
+        "tech.streamfusion.operator.NativeBatchSortOperator",
+        "tech.streamfusion.operator.RowDataToArrowOperator"
+      ]
+    },
+    {
+      "line": "1.18",
+      "test": "testOrderBehindField()",
+      "junitStatus": "SUCCESSFUL",
+      "nativeWork": {},
+      "fallbackReasons": [
+        "batch sort: only signed integer keys are verified"
+      ],
+      "jobs": [
+        {
+          "id": "9913e3080cdc668057d7e2063714fde8",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {}
+        }
+      ],
+      "operatorClasses": [
+        "SourceConversion$generated",
+        "org.apache.flink.streaming.api.operators.StreamSource",
+        "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+        "org.apache.flink.table.runtime.operators.sort.SortOperator"
+      ]
+    },
+    {
+      "line": "1.18",
+      "test": "testOrderByLimitBehindField()",
+      "junitStatus": "SUCCESSFUL",
+      "nativeWork": {},
+      "fallbackReasons": [
+        "batch sort: only signed integer keys are verified"
+      ],
+      "jobs": [
+        {
+          "id": "febe5b7731cc11f42bf6e93ec6d04533",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {}
+        }
+      ],
+      "operatorClasses": [
+        "SourceConversion$generated",
+        "org.apache.flink.streaming.api.operators.StreamSource",
+        "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+        "org.apache.flink.table.runtime.operators.sort.SortLimitOperator"
+      ]
+    }
+  ],
+  "candidateScope": "Native upstream witnesses predate the standalone complete-job performance gate; they prove runtime parity, not current standalone admission.",
+  "upstream": [
+    {
+      "line": "2.2",
+      "test": "testOrderByLimitBehindField()",
+      "junitStatus": "SUCCESSFUL",
+      "nativeWork": {},
+      "fallbackReasons": [
+        "batch sort: only signed integer keys are verified"
+      ],
+      "jobs": [
+        {
+          "id": "fb997e1e83af84903ecb14d9b0b2ad72",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {}
+        }
+      ]
+    },
+    {
+      "line": "2.2",
+      "test": "testOrderBehindField()",
+      "junitStatus": "SUCCESSFUL",
+      "nativeWork": {},
+      "fallbackReasons": [
+        "batch sort: only signed integer keys are verified"
+      ],
+      "jobs": [
+        {
+          "id": "702e13222abc725802adc56d308531e3",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {}
+        }
+      ]
+    },
+    {
+      "line": "2.2",
+      "test": "testOrderByWithOffsetAndFetch()",
+      "junitStatus": "SUCCESSFUL",
+      "nativeWork": {},
+      "fallbackReasons": [
+        "batch sort limit: standalone pipeline has no verified speedup"
+      ],
+      "jobs": [
+        {
+          "id": "2782273d2c7213f5cde95b1c7d7f26aa",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "334c44f255add5c4ed92a77221c28c67",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {}
+        }
+      ]
+    },
+    {
+      "line": "2.2",
+      "test": "testOrderByLessThanOffset()",
+      "junitStatus": "SUCCESSFUL",
+      "nativeWork": {},
+      "fallbackReasons": [
+        "batch sort limit: standalone pipeline has no verified speedup"
+      ],
+      "jobs": [
+        {
+          "id": "ef4cecba312a7bf84a42a60e2b6eb939",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {}
+        }
+      ]
+    },
+    {
+      "line": "2.2",
+      "test": "testOrderByRepeatedFields()",
+      "junitStatus": "SUCCESSFUL",
+      "nativeWork": {},
+      "fallbackReasons": [
+        "batch sort limit: standalone pipeline has no verified speedup"
+      ],
+      "jobs": [
+        {
+          "id": "c6dda757a58b0f076000d8750b3056bb",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {}
+        }
+      ]
+    },
+    {
+      "line": "2.2",
+      "test": "testOrderByLimit()",
+      "junitStatus": "SUCCESSFUL",
+      "nativeWork": {},
+      "fallbackReasons": [
+        "batch sort limit: standalone pipeline has no verified speedup"
+      ],
+      "jobs": [
+        {
+          "id": "2762c5bd3a0ce23a2ece30b982e73c9d",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "1ec480db4be2b5f00f187f9495c03473",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "68022ae6f1f76e4a643b62c97d164156",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "16e549a90cd1dc260e0990c0d36bc800",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {}
+        }
+      ]
+    },
+    {
+      "line": "1.18",
+      "test": "testOrderByLimitBehindField()",
+      "junitStatus": "SUCCESSFUL",
+      "nativeWork": {},
+      "fallbackReasons": [
+        "batch sort: only signed integer keys are verified"
+      ],
+      "jobs": [
+        {
+          "id": "15cc7d219e0ab3e91a1fb16b628bc106",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {}
+        }
+      ]
+    },
+    {
+      "line": "1.18",
+      "test": "testOrderByLessThanOffset()",
+      "junitStatus": "SUCCESSFUL",
+      "nativeWork": {},
+      "fallbackReasons": [
+        "batch sort limit: standalone pipeline has no verified speedup"
+      ],
+      "jobs": [
+        {
+          "id": "ab42b9758c47a84bc6291be6635d7611",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {}
+        }
+      ]
+    },
+    {
+      "line": "1.18",
+      "test": "testOrderByRepeatedFields()",
+      "junitStatus": "SUCCESSFUL",
+      "nativeWork": {},
+      "fallbackReasons": [
+        "batch sort limit: standalone pipeline has no verified speedup"
+      ],
+      "jobs": [
+        {
+          "id": "9c347d5837513b6152d533dc0c0ec9ef",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {}
+        }
+      ]
+    },
+    {
+      "line": "1.18",
+      "test": "testOrderByWithOffsetAndFetch()",
+      "junitStatus": "SUCCESSFUL",
+      "nativeWork": {},
+      "fallbackReasons": [
+        "batch sort limit: standalone pipeline has no verified speedup"
+      ],
+      "jobs": [
+        {
+          "id": "269a5ce5665ecc647f00f5f0fe5b14d8",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "bc99a8f1de16163e59044ef676c010ab",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {}
+        }
+      ]
+    },
+    {
+      "line": "1.18",
+      "test": "testOrderByLimit()",
+      "junitStatus": "SUCCESSFUL",
+      "nativeWork": {},
+      "fallbackReasons": [
+        "batch sort limit: standalone pipeline has no verified speedup"
+      ],
+      "jobs": [
+        {
+          "id": "c7303fd58285b356237ff93c5a26feae",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "790289972f0e8d8a0f208e1638d35748",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "c7454dae22b8ab7d11d7e4aacc5abfd5",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {}
+        },
+        {
+          "id": "89bcdae07aa238a57633777060572dbf",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {}
+        }
+      ]
+    },
+    {
+      "line": "1.18",
+      "test": "testOrderBehindField()",
+      "junitStatus": "SUCCESSFUL",
+      "nativeWork": {},
+      "fallbackReasons": [
+        "batch sort: only signed integer keys are verified"
+      ],
+      "jobs": [
+        {
+          "id": "09d7dd2d0700ccb494d159551cd412bc",
+          "status": "SUCCEEDED",
+          "type": "BATCH",
+          "nativeWork": {}
+        }
+      ]
+    }
+  ],
+  "candidateFingerprints": {
+    "native/engine/src/bounded_sort.rs": "85dd35ff60c6ff2cf2c02f5689bbb77f4d841efddc9c353c5fd7154204c8474c",
+    "src/main/java/tech/streamfusion/planner/BatchPlanScan.java": "e6e4466020d557c0d3c00c78fc671a8da029d6fe56244cd0d57cdd572a678d6b",
+    "src/main/java/tech/streamfusion/operator/NativeBatchSortOperator.java": "b95795d2d2d312cd5022babf6c82dedeb46e1b6eb0333e42996d54a1cec32cbc"
+  },
+  "finalFingerprints": {
+    "native/engine/src/bounded_sort.rs": "85dd35ff60c6ff2cf2c02f5689bbb77f4d841efddc9c353c5fd7154204c8474c",
+    "src/main/java/tech/streamfusion/planner/BatchPlanScan.java": "15d7b27f52c19ed9ad4495552ef3aaddbd43c4320235f9a06ed79fc0ca4cc336",
+    "src/main/java/tech/streamfusion/operator/NativeBatchSortOperator.java": "b95795d2d2d312cd5022babf6c82dedeb46e1b6eb0333e42996d54a1cec32cbc",
+    "src/test/java/tech/streamfusion/BatchSortedLimitSqlTest.java": "12e4d513cc827cad3817cd0c5af0e5b45247973936a7611eb940d20476555227"
+  }
+}

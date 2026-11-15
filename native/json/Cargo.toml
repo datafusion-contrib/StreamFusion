@@ -9,6 +9,8 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+memchr.workspace = true
+base64.workspace = true
 streamfusion-bridge = { path = "../bridge" }
 streamfusion-format-support = { path = "../format-support" }
 arrow = { workspace = true, features = ["json"] }

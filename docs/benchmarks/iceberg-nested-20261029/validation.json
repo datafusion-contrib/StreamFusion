@@ -1,0 +1,31 @@
+{
+  "rust_unit_tests": 9,
+  "rust_all_targets": "passed",
+  "native_package_boundaries": "passed",
+  "iceberg_jni_exports": 22,
+  "docs_strict": "passed",
+  "full_local_iceberg_selection": {
+    "total": 464,
+    "passed": 449,
+    "skipped": 15,
+    "note": "Before the upstream-profile JUnit alignment. Explicit selection also includes two disabled performance fixtures."
+  },
+  "ported_rewrites": {
+    "total": 326,
+    "passed": 146,
+    "skipped": 180,
+    "note": "19 streaming cases per engine, plus 288 SQL invocations (108 executed, 180 upstream assumptions)."
+  },
+  "final_framework_and_failure_witness_selection": {
+    "total": 46,
+    "passed": 33,
+    "skipped": 13
+  },
+  "selections_overlap": true,
+  "positive_evidence": "Native SQL plans exclude payload transposes; source task counters, Rust Parquet footers, V3 lineage, checkpoint/rescaling readback and handle/Arrow/off-heap cleanup are asserted.",
+  "final_nested_and_predicate_admission_selection": {
+    "total": 34,
+    "passed": 34,
+    "skipped": 0
+  }
+}

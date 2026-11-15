@@ -46,7 +46,13 @@ class IntegralRoundingPipelineBenchmark {
         table.createTemporaryView(
             "inputs", source, Schema.newBuilder().column("v", DataTypes.INT()).build());
         table.executeSql("CREATE TABLE output_rows(v INT) WITH ('connector'='blackhole')");
-        String sql = "INSERT INTO output_rows SELECT " + function + "(v) FROM inputs";
+        Integer position = Integer.getInteger("rounding.pipeline.position");
+        String sql =
+            "INSERT INTO output_rows SELECT "
+                + function
+                + "(v"
+                + (position == null ? "" : "," + position)
+                + ") FROM inputs";
         if (nativeRun) {
           var scan = NativePlanner.install(table);
           table.explainSql(sql);

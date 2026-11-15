@@ -19,15 +19,15 @@ import org.testcontainers.utility.DockerImageName;
 /**
  * End-to-end tests for the CDC native-decode path (Phase 3): a {@code CREATE TABLE ...
  * 'connector'='kafka', 'format'='<cdc-json>'} either routes through the planner to {@link
- * tech.streamfusion.planner.StreamPhysicalNativeKafkaDecode} — Flink's own KafkaSource
- * consumes the raw bytes and the native {@code MessageDecoder} turns each envelope into physical rows
- * carrying their {@code RowKind} on {@code $row_kind$} — or, where we can't reproduce Flink exactly,
- * cleanly falls back to Flink's own decoder.
+ * tech.streamfusion.planner.stream.StreamPhysicalNativeKafkaDecode} — Flink's own KafkaSource
+ * consumes the raw bytes and the native {@code MessageDecoder} turns each envelope into physical
+ * rows carrying their {@code RowKind} on {@code $row_kind$} — or, where we can't reproduce Flink
+ * exactly, cleanly falls back to Flink's own decoder.
  *
  * <ul>
  *   <li><b>Debezium / OGG</b> (full pre/post images): route natively. {@link
- *       NativeParity#assertChangelogParity} runs the query on stock Flink and on the native decode and
- *       asserts the collapsed changelogs match — exact CDC-semantics parity.
+ *       NativeParity#assertChangelogParity} runs the query on stock Flink and on the native decode
+ *       and asserts the collapsed changelogs match — exact CDC-semantics parity.
  *   <li><b>Maxwell / Canal</b> (post-image + partial {@code old}): route natively too. Their
  *       UPDATE_BEFORE follows Flink's findValue KEY-presence rule — an explicit null in {@code old}
  *       stays null, an absent key copies {@code data} — reproduced by a native per-message key scan
@@ -35,9 +35,9 @@ import org.testcontainers.utility.DockerImageName;
  *       by the container-free {@code CdcDecodeParityTest}).
  * </ul>
  *
- * <p>Each input sequence collapses to the same materialized result — only id=1 (name "a2") survives.
- * Opt-in via {@code SF_BENCHMARK=true} (Docker for Testcontainers Kafka); bounded ({@code latest-offset})
- * scans so the runs terminate.
+ * <p>Each input sequence collapses to the same materialized result — only id=1 (name "a2")
+ * survives. Opt-in via {@code SF_BENCHMARK=true} (Docker for Testcontainers Kafka); bounded ({@code
+ * latest-offset}) scans so the runs terminate.
  */
 @EnabledIfEnvironmentVariable(named = "SF_BENCHMARK", matches = "true")
 class NativeCdcDecodeSqlHarnessTest {

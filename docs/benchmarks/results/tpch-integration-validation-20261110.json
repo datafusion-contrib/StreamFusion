@@ -1,0 +1,3660 @@
+{
+  "scope": "Local bounded TPC-H integration validation after Cartesian elimination and retained-view sharing",
+  "nativeControls": {
+    "passed": 53,
+    "selection": "cargo test --lib bounded_",
+    "profile": "debug, mimalloc, no default features"
+  },
+  "routeClassifierControls": {
+    "passed": 44
+  },
+  "agentControls": {
+    "executed": 59,
+    "skipped": 60,
+    "failures": 0
+  },
+  "packagedLoader": {
+    "2.2": {
+      "passed": 2,
+      "controls": [
+        "grouped blocking Arrow partitions",
+        "two-input blocking Arrow join"
+      ]
+    },
+    "1.18": {
+      "passed": 2,
+      "controls": [
+        "grouped blocking Arrow partitions",
+        "two-input blocking Arrow join"
+      ]
+    }
+  },
+  "upstreamJoinAudits": {
+    "2.2": {
+      "execution_evidence": [
+        {
+          "case_index": 0,
+          "contract_satisfied": true,
+          "evidence_file": "00ba06b4-c17f-4fac-9cb6-c08e6ec74ff5.tsv",
+          "expected_contract": "NativeBatchJoinOperator",
+          "fallback_reasons": [],
+          "invocation_id": "824a8519-5ec7-4a9e-b996-f4ed90450228",
+          "native_canonical_import_rows": {},
+          "native_input_rows": {
+            "NativeBatchAggregateOperator": 19,
+            "NativeBatchJoinOperator": 20,
+            "NativeCalcOperator": 24
+          },
+          "observed_route": "native",
+          "report": "TEST-OuterJoinITCase.xml",
+          "stock_state_owner_rows": {},
+          "submitted_graph_evidence": null,
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+          "variant": "*"
+        },
+        {
+          "case_index": 3,
+          "contract_satisfied": true,
+          "evidence_file": "77c3194a-a3b2-4e07-b4a6-37c3a252c26e.tsv",
+          "expected_contract": "NativeBatchJoinOperator",
+          "fallback_reasons": [],
+          "invocation_id": "ce3e94ff-5026-4da5-9847-220ee57d143c",
+          "native_canonical_import_rows": {},
+          "native_input_rows": {
+            "NativeBatchAggregateOperator": 19,
+            "NativeBatchJoinOperator": 20,
+            "NativeCalcOperator": 24
+          },
+          "observed_route": "native",
+          "report": "TEST-OuterJoinITCase.xml",
+          "stock_state_owner_rows": {},
+          "submitted_graph_evidence": null,
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+          "variant": "*"
+        },
+        {
+          "case_index": 1,
+          "contract_satisfied": true,
+          "evidence_file": "96292dae-6ff5-4ce6-8bc1-a0540cc2af6e.tsv",
+          "expected_contract": "NativeBatchJoinOperator",
+          "fallback_reasons": [],
+          "invocation_id": "15386a8e-cf4f-4a0b-a0c1-77bbd737083b",
+          "native_canonical_import_rows": {},
+          "native_input_rows": {
+            "NativeBatchAggregateOperator": 14,
+            "NativeBatchJoinOperator": 20,
+            "NativeCalcOperator": 24
+          },
+          "observed_route": "native",
+          "report": "TEST-OuterJoinITCase.xml",
+          "stock_state_owner_rows": {},
+          "submitted_graph_evidence": null,
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+          "variant": "*"
+        },
+        {
+          "case_index": 2,
+          "contract_satisfied": true,
+          "evidence_file": "b2df8be7-fd8c-4a28-93e9-4b716368fe21.tsv",
+          "expected_contract": "NativeBatchJoinOperator",
+          "fallback_reasons": [],
+          "invocation_id": "318e7e52-6e41-4acc-9bd3-afb432d2ced4",
+          "native_canonical_import_rows": {},
+          "native_input_rows": {
+            "NativeBatchAggregateOperator": 14,
+            "NativeBatchJoinOperator": 20,
+            "NativeBatchSortOperator": 6,
+            "NativeCalcOperator": 24
+          },
+          "observed_route": "native",
+          "report": "TEST-OuterJoinITCase.xml",
+          "stock_state_owner_rows": {},
+          "submitted_graph_evidence": null,
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+          "variant": "*"
+        }
+      ],
+      "schema_version": 1,
+      "scope": {
+        "contract_source": "dev/flink-suite/agent/src/main/resources/native-execution.tsv",
+        "evidence_granularity": "exact_junit_invocation",
+        "outside_contract_scope": "unclassified",
+        "required_runtime_route_prefixes": [],
+        "runtime_route_scope": {
+          "flink_line": "2.2",
+          "requirements": [
+            {
+              "count": 1,
+              "display_name": "expectedJoinType=BroadcastHashJoin",
+              "route": "native",
+              "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg"
+            },
+            {
+              "count": 1,
+              "display_name": "expectedJoinType=HashJoin",
+              "route": "native",
+              "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg"
+            },
+            {
+              "count": 1,
+              "display_name": "expectedJoinType=SortMergeJoin",
+              "route": "native",
+              "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg"
+            },
+            {
+              "count": 1,
+              "display_name": "expectedJoinType=NestedLoopJoin",
+              "route": "native",
+              "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg"
+            }
+          ],
+          "selected_cases": [
+            {
+              "case_index": 0,
+              "display_name": "expectedJoinType=BroadcastHashJoin",
+              "execution_contract_variant": "*",
+              "invocation_id": "824a8519-5ec7-4a9e-b996-f4ed90450228",
+              "report": "TEST-OuterJoinITCase.xml",
+              "runtime_route": "native",
+              "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg"
+            },
+            {
+              "case_index": 1,
+              "display_name": "expectedJoinType=HashJoin",
+              "execution_contract_variant": "*",
+              "invocation_id": "15386a8e-cf4f-4a0b-a0c1-77bbd737083b",
+              "report": "TEST-OuterJoinITCase.xml",
+              "runtime_route": "native",
+              "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg"
+            },
+            {
+              "case_index": 2,
+              "display_name": "expectedJoinType=SortMergeJoin",
+              "execution_contract_variant": "*",
+              "invocation_id": "318e7e52-6e41-4acc-9bd3-afb432d2ced4",
+              "report": "TEST-OuterJoinITCase.xml",
+              "runtime_route": "native",
+              "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg"
+            },
+            {
+              "case_index": 3,
+              "display_name": "expectedJoinType=NestedLoopJoin",
+              "execution_contract_variant": "*",
+              "invocation_id": "ce3e94ff-5026-4da5-9847-220ee57d143c",
+              "report": "TEST-OuterJoinITCase.xml",
+              "runtime_route": "native",
+              "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg"
+            }
+          ]
+        }
+      },
+      "status": "passed",
+      "summary": {
+        "contracted_executed": 4,
+        "errors": 0,
+        "evidence_records": 4,
+        "executed": 4,
+        "expected_failures": 0,
+        "failures": 0,
+        "passed": 4,
+        "process_exit": 0,
+        "reports_found": 1,
+        "reports_parsed": 1,
+        "result_exit": 0,
+        "satisfied_evidence_records_by_route": {
+          "native": 4
+        },
+        "skipped": 0,
+        "testcases_by_runtime_route": {
+          "native": 4
+        },
+        "tests": 4,
+        "unclassified_outside_contract_scope": 0
+      },
+      "testcases": [
+        {
+          "case_index": 0,
+          "contract_test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+          "contracted": true,
+          "display_name": "expectedJoinType=BroadcastHashJoin",
+          "execution_contract_variant": "*",
+          "expected_failure": false,
+          "invocation_id": "824a8519-5ec7-4a9e-b996-f4ed90450228",
+          "jobs": {
+            "9d7a51d074c8ac4a0e832973b025b772": {
+              "application_statuses": [
+                "SUCCEEDED"
+              ],
+              "graph": {
+                "job_type": "BATCH",
+                "nodes": [
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 1,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 3,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 27,
+                    "inputs": [
+                      1
+                    ],
+                    "name": "SourceConversion[19]",
+                    "operator_class": "SourceConversion$3",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 29,
+                    "inputs": [
+                      27
+                    ],
+                    "name": "RowDataToArrowExecNode[20]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 30,
+                    "inputs": [
+                      29
+                    ],
+                    "name": "NativeCalc(select=[N], nativeFunctions=[], jvmFunctions=[])[22]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 31,
+                    "inputs": [
+                      3
+                    ],
+                    "name": "SourceConversion[24]",
+                    "operator_class": "SourceConversion$2",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 33,
+                    "inputs": [
+                      31
+                    ],
+                    "name": "RowDataToArrowExecNode[25]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 35,
+                    "inputs": [
+                      30,
+                      33
+                    ],
+                    "name": "NativeJoin(joinType=[LeftOuterJoin], where=[=(N, a)], select=[N, a], isBroadcast=[true], build=[right])[28]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchJoinOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 36,
+                    "inputs": [
+                      35
+                    ],
+                    "name": "NativeCalc(select=[a], nativeFunctions=[], jvmFunctions=[])[29]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 37,
+                    "inputs": [
+                      36
+                    ],
+                    "name": "NativeAggregate(groupBy=[a], select=[a, Partial_COUNT(*) AS count1$0])[31]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchAggregateOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 38,
+                    "inputs": [
+                      37
+                    ],
+                    "name": "BatchHashExchangeExecNode[32]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 40,
+                    "inputs": [
+                      38
+                    ],
+                    "name": "NativeAggregate(isMerge=[true], groupBy=[a], select=[a, Final_COUNT(count1$0) AS EXPR$1])[33]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchAggregateOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 41,
+                    "inputs": [
+                      40
+                    ],
+                    "name": "ArrowToRowDataExecNode[34]",
+                    "operator_class": "tech.streamfusion.operator.ArrowToRowDataOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 42,
+                    "inputs": [
+                      41
+                    ],
+                    "name": "ConstraintEnforcer[36]",
+                    "operator_class": "org.apache.flink.table.runtime.operators.sink.constraint.ConstraintEnforcer",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperatorFactory",
+                    "id": 43,
+                    "inputs": [
+                      42
+                    ],
+                    "name": "Sink: Collect table sink",
+                    "operator_class": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+                    "parallelism": 1
+                  }
+                ],
+                "sql_translation_complete": true,
+                "sql_translation_ids": [
+                  1
+                ]
+              },
+              "job_status": "FINISHED",
+              "native_work": {
+                "NativeBatchAggregateOperator": 7,
+                "NativeBatchJoinOperator": 10,
+                "NativeCalcOperator": 12
+              },
+              "status": "SUCCEEDED"
+            },
+            "e4803a8b5cc492d679ba795051d88d71": {
+              "application_statuses": [
+                "SUCCEEDED"
+              ],
+              "graph": {
+                "job_type": "BATCH",
+                "nodes": [
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 1,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 3,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 6,
+                    "inputs": [
+                      1
+                    ],
+                    "name": "SourceConversion[1]",
+                    "operator_class": "SourceConversion$3",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 8,
+                    "inputs": [
+                      6
+                    ],
+                    "name": "RowDataToArrowExecNode[2]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 9,
+                    "inputs": [
+                      8
+                    ],
+                    "name": "NativeCalc(select=[N], nativeFunctions=[], jvmFunctions=[])[4]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 10,
+                    "inputs": [
+                      3
+                    ],
+                    "name": "SourceConversion[6]",
+                    "operator_class": "SourceConversion$2",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 12,
+                    "inputs": [
+                      10
+                    ],
+                    "name": "RowDataToArrowExecNode[7]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 14,
+                    "inputs": [
+                      9,
+                      12
+                    ],
+                    "name": "NativeJoin(joinType=[LeftOuterJoin], where=[=(N, a)], select=[N, a], isBroadcast=[true], build=[right])[10]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchJoinOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 15,
+                    "inputs": [
+                      14
+                    ],
+                    "name": "NativeCalc(select=[N], nativeFunctions=[], jvmFunctions=[])[11]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 16,
+                    "inputs": [
+                      15
+                    ],
+                    "name": "NativeAggregate(groupBy=[N], select=[N, Partial_COUNT(*) AS count1$0])[13]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchAggregateOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 17,
+                    "inputs": [
+                      16
+                    ],
+                    "name": "BatchHashExchangeExecNode[14]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 19,
+                    "inputs": [
+                      17
+                    ],
+                    "name": "NativeAggregate(isMerge=[true], groupBy=[N], select=[N, Final_COUNT(count1$0) AS EXPR$1])[15]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchAggregateOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 20,
+                    "inputs": [
+                      19
+                    ],
+                    "name": "ArrowToRowDataExecNode[16]",
+                    "operator_class": "tech.streamfusion.operator.ArrowToRowDataOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 21,
+                    "inputs": [
+                      20
+                    ],
+                    "name": "ConstraintEnforcer[18]",
+                    "operator_class": "org.apache.flink.table.runtime.operators.sink.constraint.ConstraintEnforcer",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperatorFactory",
+                    "id": 22,
+                    "inputs": [
+                      21
+                    ],
+                    "name": "Sink: Collect table sink",
+                    "operator_class": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+                    "parallelism": 1
+                  }
+                ],
+                "sql_translation_complete": true,
+                "sql_translation_ids": [
+                  0
+                ]
+              },
+              "job_status": "FINISHED",
+              "native_work": {
+                "NativeBatchAggregateOperator": 12,
+                "NativeBatchJoinOperator": 10,
+                "NativeCalcOperator": 12
+              },
+              "status": "SUCCEEDED"
+            }
+          },
+          "junit_id": "[engine:junit-jupiter]/[class:org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase]/[test-template:testLeftUpperAndLowerWithAgg()]/[test-template-invocation:#1]",
+          "native_input_rows": {
+            "NativeBatchAggregateOperator": 19,
+            "NativeBatchJoinOperator": 20,
+            "NativeCalcOperator": 24
+          },
+          "outcome": "passed",
+          "report": "TEST-OuterJoinITCase.xml",
+          "runtime_fallback_reasons": {},
+          "runtime_route": "native",
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+          "translation_details": [
+            {
+              "id": 0,
+              "plan_indices": [
+                0
+              ],
+              "planner": "tech.streamfusion.planner.NativeBatchPlanner",
+              "planner_configuration": {
+                "mode": "BATCH",
+                "unmodified": false
+              },
+              "root_count": 1,
+              "status": "TRANSLATED"
+            },
+            {
+              "id": 1,
+              "plan_indices": [
+                1
+              ],
+              "planner": "tech.streamfusion.planner.NativeBatchPlanner",
+              "planner_configuration": {
+                "mode": "BATCH",
+                "unmodified": false
+              },
+              "root_count": 1,
+              "status": "TRANSLATED"
+            }
+          ],
+          "unattributed_native_work": {},
+          "unmatched_job_results": {},
+          "unmatched_native_jobs": {}
+        },
+        {
+          "case_index": 1,
+          "contract_test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+          "contracted": true,
+          "display_name": "expectedJoinType=HashJoin",
+          "execution_contract_variant": "*",
+          "expected_failure": false,
+          "invocation_id": "15386a8e-cf4f-4a0b-a0c1-77bbd737083b",
+          "jobs": {
+            "9a580344441d1264e37544a47f9a2357": {
+              "application_statuses": [
+                "SUCCEEDED"
+              ],
+              "graph": {
+                "job_type": "BATCH",
+                "nodes": [
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 48,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 50,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 53,
+                    "inputs": [
+                      48
+                    ],
+                    "name": "SourceConversion[37]",
+                    "operator_class": "SourceConversion$3",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 55,
+                    "inputs": [
+                      53
+                    ],
+                    "name": "RowDataToArrowExecNode[38]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 56,
+                    "inputs": [
+                      55
+                    ],
+                    "name": "NativeCalc(select=[N], nativeFunctions=[], jvmFunctions=[])[40]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 57,
+                    "inputs": [
+                      56
+                    ],
+                    "name": "BatchHashExchangeExecNode[42]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 59,
+                    "inputs": [
+                      50
+                    ],
+                    "name": "SourceConversion[43]",
+                    "operator_class": "SourceConversion$2",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 61,
+                    "inputs": [
+                      59
+                    ],
+                    "name": "RowDataToArrowExecNode[44]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 62,
+                    "inputs": [
+                      61
+                    ],
+                    "name": "BatchHashExchangeExecNode[46]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 64,
+                    "inputs": [
+                      57,
+                      62
+                    ],
+                    "name": "NativeJoin(joinType=[LeftOuterJoin], where=[=(N, a)], select=[N, a], build=[left])[47]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchJoinOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 65,
+                    "inputs": [
+                      64
+                    ],
+                    "name": "NativeCalc(select=[N], nativeFunctions=[], jvmFunctions=[])[48]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 66,
+                    "inputs": [
+                      65
+                    ],
+                    "name": "BatchHashExchangeExecNode[50]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 68,
+                    "inputs": [
+                      66
+                    ],
+                    "name": "NativeAggregate(isMerge=[false], groupBy=[N], select=[N, COUNT(*) AS EXPR$1])[51]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchAggregateOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 69,
+                    "inputs": [
+                      68
+                    ],
+                    "name": "ArrowToRowDataExecNode[52]",
+                    "operator_class": "tech.streamfusion.operator.ArrowToRowDataOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 70,
+                    "inputs": [
+                      69
+                    ],
+                    "name": "ConstraintEnforcer[54]",
+                    "operator_class": "org.apache.flink.table.runtime.operators.sink.constraint.ConstraintEnforcer",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperatorFactory",
+                    "id": 71,
+                    "inputs": [
+                      70
+                    ],
+                    "name": "Sink: Collect table sink",
+                    "operator_class": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+                    "parallelism": 1
+                  }
+                ],
+                "sql_translation_complete": true,
+                "sql_translation_ids": [
+                  0
+                ]
+              },
+              "job_status": "FINISHED",
+              "native_work": {
+                "NativeBatchAggregateOperator": 6,
+                "NativeBatchJoinOperator": 10,
+                "NativeCalcOperator": 12
+              },
+              "status": "SUCCEEDED"
+            },
+            "e600d5687b7f4d6739623f3972eb7d46": {
+              "application_statuses": [
+                "SUCCEEDED"
+              ],
+              "graph": {
+                "job_type": "BATCH",
+                "nodes": [
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 48,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 50,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 77,
+                    "inputs": [
+                      48
+                    ],
+                    "name": "SourceConversion[55]",
+                    "operator_class": "SourceConversion$3",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 79,
+                    "inputs": [
+                      77
+                    ],
+                    "name": "RowDataToArrowExecNode[56]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 80,
+                    "inputs": [
+                      79
+                    ],
+                    "name": "NativeCalc(select=[N], nativeFunctions=[], jvmFunctions=[])[58]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 81,
+                    "inputs": [
+                      80
+                    ],
+                    "name": "BatchHashExchangeExecNode[60]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 83,
+                    "inputs": [
+                      50
+                    ],
+                    "name": "SourceConversion[61]",
+                    "operator_class": "SourceConversion$2",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 85,
+                    "inputs": [
+                      83
+                    ],
+                    "name": "RowDataToArrowExecNode[62]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 86,
+                    "inputs": [
+                      85
+                    ],
+                    "name": "BatchHashExchangeExecNode[64]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 88,
+                    "inputs": [
+                      81,
+                      86
+                    ],
+                    "name": "NativeJoin(joinType=[LeftOuterJoin], where=[=(N, a)], select=[N, a], build=[left])[65]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchJoinOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 89,
+                    "inputs": [
+                      88
+                    ],
+                    "name": "NativeCalc(select=[a], nativeFunctions=[], jvmFunctions=[])[66]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 90,
+                    "inputs": [
+                      89
+                    ],
+                    "name": "NativeAggregate(groupBy=[a], select=[a, Partial_COUNT(*) AS count1$0])[68]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchAggregateOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 91,
+                    "inputs": [
+                      90
+                    ],
+                    "name": "BatchHashExchangeExecNode[69]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 93,
+                    "inputs": [
+                      91
+                    ],
+                    "name": "NativeAggregate(isMerge=[true], groupBy=[a], select=[a, Final_COUNT(count1$0) AS EXPR$1])[70]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchAggregateOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 94,
+                    "inputs": [
+                      93
+                    ],
+                    "name": "ArrowToRowDataExecNode[71]",
+                    "operator_class": "tech.streamfusion.operator.ArrowToRowDataOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 95,
+                    "inputs": [
+                      94
+                    ],
+                    "name": "ConstraintEnforcer[73]",
+                    "operator_class": "org.apache.flink.table.runtime.operators.sink.constraint.ConstraintEnforcer",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperatorFactory",
+                    "id": 96,
+                    "inputs": [
+                      95
+                    ],
+                    "name": "Sink: Collect table sink",
+                    "operator_class": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+                    "parallelism": 1
+                  }
+                ],
+                "sql_translation_complete": true,
+                "sql_translation_ids": [
+                  1
+                ]
+              },
+              "job_status": "FINISHED",
+              "native_work": {
+                "NativeBatchAggregateOperator": 8,
+                "NativeBatchJoinOperator": 10,
+                "NativeCalcOperator": 12
+              },
+              "status": "SUCCEEDED"
+            }
+          },
+          "junit_id": "[engine:junit-jupiter]/[class:org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase]/[test-template:testLeftUpperAndLowerWithAgg()]/[test-template-invocation:#2]",
+          "native_input_rows": {
+            "NativeBatchAggregateOperator": 14,
+            "NativeBatchJoinOperator": 20,
+            "NativeCalcOperator": 24
+          },
+          "outcome": "passed",
+          "report": "TEST-OuterJoinITCase.xml",
+          "runtime_fallback_reasons": {},
+          "runtime_route": "native",
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+          "translation_details": [
+            {
+              "id": 0,
+              "plan_indices": [
+                0
+              ],
+              "planner": "tech.streamfusion.planner.NativeBatchPlanner",
+              "planner_configuration": {
+                "mode": "BATCH",
+                "unmodified": false
+              },
+              "root_count": 1,
+              "status": "TRANSLATED"
+            },
+            {
+              "id": 1,
+              "plan_indices": [
+                1
+              ],
+              "planner": "tech.streamfusion.planner.NativeBatchPlanner",
+              "planner_configuration": {
+                "mode": "BATCH",
+                "unmodified": false
+              },
+              "root_count": 1,
+              "status": "TRANSLATED"
+            }
+          ],
+          "unattributed_native_work": {},
+          "unmatched_job_results": {},
+          "unmatched_native_jobs": {}
+        },
+        {
+          "case_index": 2,
+          "contract_test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+          "contracted": true,
+          "display_name": "expectedJoinType=SortMergeJoin",
+          "execution_contract_variant": "*",
+          "expected_failure": false,
+          "invocation_id": "318e7e52-6e41-4acc-9bd3-afb432d2ced4",
+          "jobs": {
+            "7d2b56e6a91ee9ffc19beeccdb290cfb": {
+              "application_statuses": [
+                "SUCCEEDED"
+              ],
+              "graph": {
+                "job_type": "BATCH",
+                "nodes": [
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 102,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 104,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 132,
+                    "inputs": [
+                      102
+                    ],
+                    "name": "SourceConversion[92]",
+                    "operator_class": "SourceConversion$3",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 134,
+                    "inputs": [
+                      132
+                    ],
+                    "name": "RowDataToArrowExecNode[93]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 135,
+                    "inputs": [
+                      134
+                    ],
+                    "name": "NativeCalc(select=[N], nativeFunctions=[], jvmFunctions=[])[95]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 136,
+                    "inputs": [
+                      135
+                    ],
+                    "name": "BatchHashExchangeExecNode[97]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 138,
+                    "inputs": [
+                      104
+                    ],
+                    "name": "SourceConversion[98]",
+                    "operator_class": "SourceConversion$2",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 140,
+                    "inputs": [
+                      138
+                    ],
+                    "name": "RowDataToArrowExecNode[99]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 141,
+                    "inputs": [
+                      140
+                    ],
+                    "name": "BatchHashExchangeExecNode[101]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 143,
+                    "inputs": [
+                      136,
+                      141
+                    ],
+                    "name": "NativeJoin(joinType=[LeftOuterJoin], where=[=(N, a)], select=[N, a])[102]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchJoinOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 144,
+                    "inputs": [
+                      143
+                    ],
+                    "name": "NativeCalc(select=[a], nativeFunctions=[], jvmFunctions=[])[103]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 145,
+                    "inputs": [
+                      144
+                    ],
+                    "name": "NativeAggregate(groupBy=[a], select=[a, Partial_COUNT(*) AS count1$0])[105]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchAggregateOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 146,
+                    "inputs": [
+                      145
+                    ],
+                    "name": "BatchHashExchangeExecNode[106]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 148,
+                    "inputs": [
+                      146
+                    ],
+                    "name": "NativeAggregate(isMerge=[true], groupBy=[a], select=[a, Final_COUNT(count1$0) AS EXPR$1])[107]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchAggregateOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 149,
+                    "inputs": [
+                      148
+                    ],
+                    "name": "ArrowToRowDataExecNode[108]",
+                    "operator_class": "tech.streamfusion.operator.ArrowToRowDataOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 150,
+                    "inputs": [
+                      149
+                    ],
+                    "name": "ConstraintEnforcer[110]",
+                    "operator_class": "org.apache.flink.table.runtime.operators.sink.constraint.ConstraintEnforcer",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperatorFactory",
+                    "id": 151,
+                    "inputs": [
+                      150
+                    ],
+                    "name": "Sink: Collect table sink",
+                    "operator_class": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+                    "parallelism": 1
+                  }
+                ],
+                "sql_translation_complete": true,
+                "sql_translation_ids": [
+                  1
+                ]
+              },
+              "job_status": "FINISHED",
+              "native_work": {
+                "NativeBatchAggregateOperator": 8,
+                "NativeBatchJoinOperator": 10,
+                "NativeCalcOperator": 12
+              },
+              "status": "SUCCEEDED"
+            },
+            "e23764d970a7daf55554180eb163e006": {
+              "application_statuses": [
+                "SUCCEEDED"
+              ],
+              "graph": {
+                "job_type": "BATCH",
+                "nodes": [
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 102,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 104,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 107,
+                    "inputs": [
+                      102
+                    ],
+                    "name": "SourceConversion[74]",
+                    "operator_class": "SourceConversion$3",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 109,
+                    "inputs": [
+                      107
+                    ],
+                    "name": "RowDataToArrowExecNode[75]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 110,
+                    "inputs": [
+                      109
+                    ],
+                    "name": "NativeCalc(select=[N], nativeFunctions=[], jvmFunctions=[])[77]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 111,
+                    "inputs": [
+                      110
+                    ],
+                    "name": "BatchHashExchangeExecNode[79]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 113,
+                    "inputs": [
+                      104
+                    ],
+                    "name": "SourceConversion[80]",
+                    "operator_class": "SourceConversion$2",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 115,
+                    "inputs": [
+                      113
+                    ],
+                    "name": "RowDataToArrowExecNode[81]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 116,
+                    "inputs": [
+                      115
+                    ],
+                    "name": "BatchHashExchangeExecNode[83]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 118,
+                    "inputs": [
+                      111,
+                      116
+                    ],
+                    "name": "NativeJoin(joinType=[LeftOuterJoin], where=[=(N, a)], select=[N, a])[84]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchJoinOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 119,
+                    "inputs": [
+                      118
+                    ],
+                    "name": "NativeCalc(select=[N], nativeFunctions=[], jvmFunctions=[])[85]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 120,
+                    "inputs": [
+                      119
+                    ],
+                    "name": "BatchHashExchangeExecNode[87]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 122,
+                    "inputs": [
+                      120
+                    ],
+                    "name": "NativeAggregate(isMerge=[false], groupBy=[N], select=[N, COUNT(*) AS EXPR$1])[88]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchAggregateOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 123,
+                    "inputs": [
+                      122
+                    ],
+                    "name": "NativeAggregate(isMerge=[false], groupBy=[N], select=[N, COUNT(*) AS EXPR$1])[88]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchSortOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 124,
+                    "inputs": [
+                      123
+                    ],
+                    "name": "ArrowToRowDataExecNode[89]",
+                    "operator_class": "tech.streamfusion.operator.ArrowToRowDataOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 125,
+                    "inputs": [
+                      124
+                    ],
+                    "name": "ConstraintEnforcer[91]",
+                    "operator_class": "org.apache.flink.table.runtime.operators.sink.constraint.ConstraintEnforcer",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperatorFactory",
+                    "id": 126,
+                    "inputs": [
+                      125
+                    ],
+                    "name": "Sink: Collect table sink",
+                    "operator_class": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+                    "parallelism": 1
+                  }
+                ],
+                "sql_translation_complete": true,
+                "sql_translation_ids": [
+                  0
+                ]
+              },
+              "job_status": "FINISHED",
+              "native_work": {
+                "NativeBatchAggregateOperator": 6,
+                "NativeBatchJoinOperator": 10,
+                "NativeBatchSortOperator": 6,
+                "NativeCalcOperator": 12
+              },
+              "status": "SUCCEEDED"
+            }
+          },
+          "junit_id": "[engine:junit-jupiter]/[class:org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase]/[test-template:testLeftUpperAndLowerWithAgg()]/[test-template-invocation:#3]",
+          "native_input_rows": {
+            "NativeBatchAggregateOperator": 14,
+            "NativeBatchJoinOperator": 20,
+            "NativeBatchSortOperator": 6,
+            "NativeCalcOperator": 24
+          },
+          "outcome": "passed",
+          "report": "TEST-OuterJoinITCase.xml",
+          "runtime_fallback_reasons": {},
+          "runtime_route": "native",
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+          "translation_details": [
+            {
+              "id": 0,
+              "plan_indices": [
+                0
+              ],
+              "planner": "tech.streamfusion.planner.NativeBatchPlanner",
+              "planner_configuration": {
+                "mode": "BATCH",
+                "unmodified": false
+              },
+              "root_count": 1,
+              "status": "TRANSLATED"
+            },
+            {
+              "id": 1,
+              "plan_indices": [
+                1
+              ],
+              "planner": "tech.streamfusion.planner.NativeBatchPlanner",
+              "planner_configuration": {
+                "mode": "BATCH",
+                "unmodified": false
+              },
+              "root_count": 1,
+              "status": "TRANSLATED"
+            }
+          ],
+          "unattributed_native_work": {},
+          "unmatched_job_results": {},
+          "unmatched_native_jobs": {}
+        },
+        {
+          "case_index": 3,
+          "contract_test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+          "contracted": true,
+          "display_name": "expectedJoinType=NestedLoopJoin",
+          "execution_contract_variant": "*",
+          "expected_failure": false,
+          "invocation_id": "ce3e94ff-5026-4da5-9847-220ee57d143c",
+          "jobs": {
+            "97cea2fb7331d20bf6ddf33e87ce7177": {
+              "application_statuses": [
+                "SUCCEEDED"
+              ],
+              "graph": {
+                "job_type": "BATCH",
+                "nodes": [
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 157,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 159,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 162,
+                    "inputs": [
+                      157
+                    ],
+                    "name": "SourceConversion[111]",
+                    "operator_class": "SourceConversion$3",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 164,
+                    "inputs": [
+                      162
+                    ],
+                    "name": "RowDataToArrowExecNode[112]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 165,
+                    "inputs": [
+                      164
+                    ],
+                    "name": "NativeCalc(select=[N], nativeFunctions=[], jvmFunctions=[])[114]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 166,
+                    "inputs": [
+                      159
+                    ],
+                    "name": "SourceConversion[116]",
+                    "operator_class": "SourceConversion$2",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 168,
+                    "inputs": [
+                      166
+                    ],
+                    "name": "RowDataToArrowExecNode[117]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 170,
+                    "inputs": [
+                      165,
+                      168
+                    ],
+                    "name": "NativeJoin(joinType=[LeftOuterJoin], where=[=(N, a)], select=[N, a], build=[right])[120]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchJoinOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 171,
+                    "inputs": [
+                      170
+                    ],
+                    "name": "NativeCalc(select=[N], nativeFunctions=[], jvmFunctions=[])[121]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 172,
+                    "inputs": [
+                      171
+                    ],
+                    "name": "NativeAggregate(groupBy=[N], select=[N, Partial_COUNT(*) AS count1$0])[123]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchAggregateOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 173,
+                    "inputs": [
+                      172
+                    ],
+                    "name": "BatchHashExchangeExecNode[124]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 175,
+                    "inputs": [
+                      173
+                    ],
+                    "name": "NativeAggregate(isMerge=[true], groupBy=[N], select=[N, Final_COUNT(count1$0) AS EXPR$1])[125]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchAggregateOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 176,
+                    "inputs": [
+                      175
+                    ],
+                    "name": "ArrowToRowDataExecNode[126]",
+                    "operator_class": "tech.streamfusion.operator.ArrowToRowDataOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 177,
+                    "inputs": [
+                      176
+                    ],
+                    "name": "ConstraintEnforcer[128]",
+                    "operator_class": "org.apache.flink.table.runtime.operators.sink.constraint.ConstraintEnforcer",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperatorFactory",
+                    "id": 178,
+                    "inputs": [
+                      177
+                    ],
+                    "name": "Sink: Collect table sink",
+                    "operator_class": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+                    "parallelism": 1
+                  }
+                ],
+                "sql_translation_complete": true,
+                "sql_translation_ids": [
+                  0
+                ]
+              },
+              "job_status": "FINISHED",
+              "native_work": {
+                "NativeBatchAggregateOperator": 12,
+                "NativeBatchJoinOperator": 10,
+                "NativeCalcOperator": 12
+              },
+              "status": "SUCCEEDED"
+            },
+            "de26a2f2239506def37066cc0b353d31": {
+              "application_statuses": [
+                "SUCCEEDED"
+              ],
+              "graph": {
+                "job_type": "BATCH",
+                "nodes": [
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 157,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 159,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 183,
+                    "inputs": [
+                      157
+                    ],
+                    "name": "SourceConversion[129]",
+                    "operator_class": "SourceConversion$3",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 185,
+                    "inputs": [
+                      183
+                    ],
+                    "name": "RowDataToArrowExecNode[130]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 186,
+                    "inputs": [
+                      185
+                    ],
+                    "name": "NativeCalc(select=[N], nativeFunctions=[], jvmFunctions=[])[132]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 187,
+                    "inputs": [
+                      159
+                    ],
+                    "name": "SourceConversion[134]",
+                    "operator_class": "SourceConversion$2",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 189,
+                    "inputs": [
+                      187
+                    ],
+                    "name": "RowDataToArrowExecNode[135]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 191,
+                    "inputs": [
+                      186,
+                      189
+                    ],
+                    "name": "NativeJoin(joinType=[LeftOuterJoin], where=[=(N, a)], select=[N, a], build=[right])[138]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchJoinOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 192,
+                    "inputs": [
+                      191
+                    ],
+                    "name": "NativeCalc(select=[a], nativeFunctions=[], jvmFunctions=[])[139]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 193,
+                    "inputs": [
+                      192
+                    ],
+                    "name": "NativeAggregate(groupBy=[a], select=[a, Partial_COUNT(*) AS count1$0])[141]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchAggregateOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 194,
+                    "inputs": [
+                      193
+                    ],
+                    "name": "BatchHashExchangeExecNode[142]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 196,
+                    "inputs": [
+                      194
+                    ],
+                    "name": "NativeAggregate(isMerge=[true], groupBy=[a], select=[a, Final_COUNT(count1$0) AS EXPR$1])[143]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchAggregateOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 197,
+                    "inputs": [
+                      196
+                    ],
+                    "name": "ArrowToRowDataExecNode[144]",
+                    "operator_class": "tech.streamfusion.operator.ArrowToRowDataOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 198,
+                    "inputs": [
+                      197
+                    ],
+                    "name": "ConstraintEnforcer[146]",
+                    "operator_class": "org.apache.flink.table.runtime.operators.sink.constraint.ConstraintEnforcer",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperatorFactory",
+                    "id": 199,
+                    "inputs": [
+                      198
+                    ],
+                    "name": "Sink: Collect table sink",
+                    "operator_class": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+                    "parallelism": 1
+                  }
+                ],
+                "sql_translation_complete": true,
+                "sql_translation_ids": [
+                  1
+                ]
+              },
+              "job_status": "FINISHED",
+              "native_work": {
+                "NativeBatchAggregateOperator": 7,
+                "NativeBatchJoinOperator": 10,
+                "NativeCalcOperator": 12
+              },
+              "status": "SUCCEEDED"
+            }
+          },
+          "junit_id": "[engine:junit-jupiter]/[class:org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase]/[test-template:testLeftUpperAndLowerWithAgg()]/[test-template-invocation:#4]",
+          "native_input_rows": {
+            "NativeBatchAggregateOperator": 19,
+            "NativeBatchJoinOperator": 20,
+            "NativeCalcOperator": 24
+          },
+          "outcome": "passed",
+          "report": "TEST-OuterJoinITCase.xml",
+          "runtime_fallback_reasons": {},
+          "runtime_route": "native",
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+          "translation_details": [
+            {
+              "id": 0,
+              "plan_indices": [
+                0
+              ],
+              "planner": "tech.streamfusion.planner.NativeBatchPlanner",
+              "planner_configuration": {
+                "mode": "BATCH",
+                "unmodified": false
+              },
+              "root_count": 1,
+              "status": "TRANSLATED"
+            },
+            {
+              "id": 1,
+              "plan_indices": [
+                1
+              ],
+              "planner": "tech.streamfusion.planner.NativeBatchPlanner",
+              "planner_configuration": {
+                "mode": "BATCH",
+                "unmodified": false
+              },
+              "root_count": 1,
+              "status": "TRANSLATED"
+            }
+          ],
+          "unattributed_native_work": {},
+          "unmatched_job_results": {},
+          "unmatched_native_jobs": {}
+        }
+      ],
+      "validation_problems": []
+    },
+    "1.18": {
+      "execution_evidence": [
+        {
+          "case_index": 3,
+          "contract_satisfied": true,
+          "evidence_file": "13cb1f8a-582b-4c9d-ab8e-5ec431c6a2d9.tsv",
+          "expected_contract": "NativeBatchJoinOperator",
+          "fallback_reasons": [],
+          "invocation_id": "a0de974b-edd5-4b83-b377-c97421ca79cd",
+          "native_canonical_import_rows": {},
+          "native_input_rows": {
+            "NativeBatchAggregateOperator": 19,
+            "NativeBatchJoinOperator": 20,
+            "NativeCalcOperator": 24
+          },
+          "observed_route": "native",
+          "report": "TEST-OuterJoinITCase.xml",
+          "stock_state_owner_rows": {},
+          "submitted_graph_evidence": null,
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+          "variant": "*"
+        },
+        {
+          "case_index": 0,
+          "contract_satisfied": true,
+          "evidence_file": "81917970-68db-431c-b766-64ebfdca58f5.tsv",
+          "expected_contract": "NativeBatchJoinOperator",
+          "fallback_reasons": [],
+          "invocation_id": "081cb308-015c-4d84-b7be-2a43680f9259",
+          "native_canonical_import_rows": {},
+          "native_input_rows": {
+            "NativeBatchAggregateOperator": 19,
+            "NativeBatchJoinOperator": 20,
+            "NativeCalcOperator": 24
+          },
+          "observed_route": "native",
+          "report": "TEST-OuterJoinITCase.xml",
+          "stock_state_owner_rows": {},
+          "submitted_graph_evidence": null,
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+          "variant": "*"
+        },
+        {
+          "case_index": 2,
+          "contract_satisfied": true,
+          "evidence_file": "f71e274d-ab14-4d59-b1be-95e6b9dc6d59.tsv",
+          "expected_contract": "NativeBatchJoinOperator",
+          "fallback_reasons": [],
+          "invocation_id": "b8bd42ca-940e-4efd-a17b-4e20f2dfb263",
+          "native_canonical_import_rows": {},
+          "native_input_rows": {
+            "NativeBatchAggregateOperator": 14,
+            "NativeBatchJoinOperator": 20,
+            "NativeBatchSortOperator": 6,
+            "NativeCalcOperator": 24
+          },
+          "observed_route": "native",
+          "report": "TEST-OuterJoinITCase.xml",
+          "stock_state_owner_rows": {},
+          "submitted_graph_evidence": null,
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+          "variant": "*"
+        },
+        {
+          "case_index": 1,
+          "contract_satisfied": true,
+          "evidence_file": "fc14d6b4-9ce4-41d5-89d2-ca1543d92fef.tsv",
+          "expected_contract": "NativeBatchJoinOperator",
+          "fallback_reasons": [],
+          "invocation_id": "8a52b403-12e6-4d12-93f7-b0f82eeb5c40",
+          "native_canonical_import_rows": {},
+          "native_input_rows": {
+            "NativeBatchAggregateOperator": 14,
+            "NativeBatchJoinOperator": 20,
+            "NativeCalcOperator": 24
+          },
+          "observed_route": "native",
+          "report": "TEST-OuterJoinITCase.xml",
+          "stock_state_owner_rows": {},
+          "submitted_graph_evidence": null,
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+          "variant": "*"
+        }
+      ],
+      "schema_version": 1,
+      "scope": {
+        "contract_source": "dev/flink-suite/agent/src/main/resources/native-execution.tsv",
+        "evidence_granularity": "exact_junit_invocation",
+        "outside_contract_scope": "unclassified",
+        "required_runtime_route_prefixes": [],
+        "runtime_route_scope": {
+          "flink_line": "1.18",
+          "requirements": [
+            {
+              "count": 1,
+              "display_name": "expectedJoinType=BroadcastHashJoin",
+              "route": "native",
+              "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg"
+            },
+            {
+              "count": 1,
+              "display_name": "expectedJoinType=HashJoin",
+              "route": "native",
+              "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg"
+            },
+            {
+              "count": 1,
+              "display_name": "expectedJoinType=SortMergeJoin",
+              "route": "native",
+              "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg"
+            },
+            {
+              "count": 1,
+              "display_name": "expectedJoinType=NestedLoopJoin",
+              "route": "native",
+              "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg"
+            }
+          ],
+          "selected_cases": [
+            {
+              "case_index": 0,
+              "display_name": "expectedJoinType=BroadcastHashJoin",
+              "execution_contract_variant": "*",
+              "invocation_id": "081cb308-015c-4d84-b7be-2a43680f9259",
+              "report": "TEST-OuterJoinITCase.xml",
+              "runtime_route": "native",
+              "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg"
+            },
+            {
+              "case_index": 1,
+              "display_name": "expectedJoinType=HashJoin",
+              "execution_contract_variant": "*",
+              "invocation_id": "8a52b403-12e6-4d12-93f7-b0f82eeb5c40",
+              "report": "TEST-OuterJoinITCase.xml",
+              "runtime_route": "native",
+              "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg"
+            },
+            {
+              "case_index": 2,
+              "display_name": "expectedJoinType=SortMergeJoin",
+              "execution_contract_variant": "*",
+              "invocation_id": "b8bd42ca-940e-4efd-a17b-4e20f2dfb263",
+              "report": "TEST-OuterJoinITCase.xml",
+              "runtime_route": "native",
+              "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg"
+            },
+            {
+              "case_index": 3,
+              "display_name": "expectedJoinType=NestedLoopJoin",
+              "execution_contract_variant": "*",
+              "invocation_id": "a0de974b-edd5-4b83-b377-c97421ca79cd",
+              "report": "TEST-OuterJoinITCase.xml",
+              "runtime_route": "native",
+              "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg"
+            }
+          ]
+        }
+      },
+      "status": "passed",
+      "summary": {
+        "contracted_executed": 4,
+        "errors": 0,
+        "evidence_records": 4,
+        "executed": 4,
+        "expected_failures": 0,
+        "failures": 0,
+        "passed": 4,
+        "process_exit": 0,
+        "reports_found": 1,
+        "reports_parsed": 1,
+        "result_exit": 0,
+        "satisfied_evidence_records_by_route": {
+          "native": 4
+        },
+        "skipped": 0,
+        "testcases_by_runtime_route": {
+          "native": 4
+        },
+        "tests": 4,
+        "unclassified_outside_contract_scope": 0
+      },
+      "testcases": [
+        {
+          "case_index": 0,
+          "contract_test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+          "contracted": true,
+          "display_name": "expectedJoinType=BroadcastHashJoin",
+          "execution_contract_variant": "*",
+          "expected_failure": false,
+          "invocation_id": "081cb308-015c-4d84-b7be-2a43680f9259",
+          "jobs": {
+            "205201ae429846078ccfbbd9702cbaa5": {
+              "application_statuses": [
+                "SUCCEEDED"
+              ],
+              "graph": {
+                "job_type": "BATCH",
+                "nodes": [
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 1,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 3,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 27,
+                    "inputs": [
+                      1
+                    ],
+                    "name": "SourceConversion[19]",
+                    "operator_class": "SourceConversion$13",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 29,
+                    "inputs": [
+                      27
+                    ],
+                    "name": "RowDataToArrowExecNode[20]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 30,
+                    "inputs": [
+                      29
+                    ],
+                    "name": "NativeCalc(select=[N], nativeFunctions=[], jvmFunctions=[])[22]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 31,
+                    "inputs": [
+                      3
+                    ],
+                    "name": "SourceConversion[24]",
+                    "operator_class": "SourceConversion$16",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 33,
+                    "inputs": [
+                      31
+                    ],
+                    "name": "RowDataToArrowExecNode[25]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 35,
+                    "inputs": [
+                      30,
+                      33
+                    ],
+                    "name": "NativeJoin(joinType=[LeftOuterJoin], where=[=(N, a)], select=[N, a], isBroadcast=[true], build=[right])[28]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchJoinOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 36,
+                    "inputs": [
+                      35
+                    ],
+                    "name": "NativeCalc(select=[a], nativeFunctions=[], jvmFunctions=[])[29]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 37,
+                    "inputs": [
+                      36
+                    ],
+                    "name": "NativeAggregate(groupBy=[a], select=[a, Partial_COUNT(*) AS count1$0])[31]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchAggregateOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 38,
+                    "inputs": [
+                      37
+                    ],
+                    "name": "BatchHashExchangeExecNode[32]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 40,
+                    "inputs": [
+                      38
+                    ],
+                    "name": "NativeAggregate(isMerge=[true], groupBy=[a], select=[a, Final_COUNT(count1$0) AS EXPR$1])[33]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchAggregateOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 41,
+                    "inputs": [
+                      40
+                    ],
+                    "name": "ArrowToRowDataExecNode[34]",
+                    "operator_class": "tech.streamfusion.operator.ArrowToRowDataOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 42,
+                    "inputs": [
+                      41
+                    ],
+                    "name": "ConstraintEnforcer[36]",
+                    "operator_class": "org.apache.flink.table.runtime.operators.sink.ConstraintEnforcer",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperatorFactory",
+                    "id": 43,
+                    "inputs": [
+                      42
+                    ],
+                    "name": "Sink: Collect table sink",
+                    "operator_class": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+                    "parallelism": 1
+                  }
+                ],
+                "sql_translation_complete": true,
+                "sql_translation_ids": [
+                  1
+                ]
+              },
+              "job_status_error": "java.util.concurrent.CompletionException: java.lang.reflect.InvocationTargetException",
+              "native_work": {
+                "NativeBatchAggregateOperator": 7,
+                "NativeBatchJoinOperator": 10,
+                "NativeCalcOperator": 12
+              },
+              "status": "SUCCEEDED"
+            },
+            "8f77179274b824189240e6400a0d5e7c": {
+              "application_statuses": [
+                "SUCCEEDED"
+              ],
+              "graph": {
+                "job_type": "BATCH",
+                "nodes": [
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 1,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 3,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 6,
+                    "inputs": [
+                      1
+                    ],
+                    "name": "SourceConversion[1]",
+                    "operator_class": "SourceConversion$3",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 8,
+                    "inputs": [
+                      6
+                    ],
+                    "name": "RowDataToArrowExecNode[2]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 9,
+                    "inputs": [
+                      8
+                    ],
+                    "name": "NativeCalc(select=[N], nativeFunctions=[], jvmFunctions=[])[4]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 10,
+                    "inputs": [
+                      3
+                    ],
+                    "name": "SourceConversion[6]",
+                    "operator_class": "SourceConversion$6",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 12,
+                    "inputs": [
+                      10
+                    ],
+                    "name": "RowDataToArrowExecNode[7]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 14,
+                    "inputs": [
+                      9,
+                      12
+                    ],
+                    "name": "NativeJoin(joinType=[LeftOuterJoin], where=[=(N, a)], select=[N, a], isBroadcast=[true], build=[right])[10]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchJoinOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 15,
+                    "inputs": [
+                      14
+                    ],
+                    "name": "NativeCalc(select=[N], nativeFunctions=[], jvmFunctions=[])[11]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 16,
+                    "inputs": [
+                      15
+                    ],
+                    "name": "NativeAggregate(groupBy=[N], select=[N, Partial_COUNT(*) AS count1$0])[13]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchAggregateOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 17,
+                    "inputs": [
+                      16
+                    ],
+                    "name": "BatchHashExchangeExecNode[14]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 19,
+                    "inputs": [
+                      17
+                    ],
+                    "name": "NativeAggregate(isMerge=[true], groupBy=[N], select=[N, Final_COUNT(count1$0) AS EXPR$1])[15]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchAggregateOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 20,
+                    "inputs": [
+                      19
+                    ],
+                    "name": "ArrowToRowDataExecNode[16]",
+                    "operator_class": "tech.streamfusion.operator.ArrowToRowDataOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 21,
+                    "inputs": [
+                      20
+                    ],
+                    "name": "ConstraintEnforcer[18]",
+                    "operator_class": "org.apache.flink.table.runtime.operators.sink.ConstraintEnforcer",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperatorFactory",
+                    "id": 22,
+                    "inputs": [
+                      21
+                    ],
+                    "name": "Sink: Collect table sink",
+                    "operator_class": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+                    "parallelism": 1
+                  }
+                ],
+                "sql_translation_complete": true,
+                "sql_translation_ids": [
+                  0
+                ]
+              },
+              "job_status_error": "java.util.concurrent.CompletionException: java.lang.reflect.InvocationTargetException",
+              "native_work": {
+                "NativeBatchAggregateOperator": 12,
+                "NativeBatchJoinOperator": 10,
+                "NativeCalcOperator": 12
+              },
+              "status": "SUCCEEDED"
+            }
+          },
+          "junit_id": "[engine:junit-jupiter]/[class:org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase]/[test-template:testLeftUpperAndLowerWithAgg()]/[test-template-invocation:#1]",
+          "native_input_rows": {
+            "NativeBatchAggregateOperator": 19,
+            "NativeBatchJoinOperator": 20,
+            "NativeCalcOperator": 24
+          },
+          "outcome": "passed",
+          "report": "TEST-OuterJoinITCase.xml",
+          "runtime_fallback_reasons": {},
+          "runtime_route": "native",
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+          "translation_details": [
+            {
+              "id": 0,
+              "plan_indices": [
+                0
+              ],
+              "planner": "tech.streamfusion.planner.NativeBatchPlanner",
+              "planner_configuration": {
+                "mode": "BATCH",
+                "unmodified": false
+              },
+              "root_count": 1,
+              "status": "TRANSLATED"
+            },
+            {
+              "id": 1,
+              "plan_indices": [
+                1
+              ],
+              "planner": "tech.streamfusion.planner.NativeBatchPlanner",
+              "planner_configuration": {
+                "mode": "BATCH",
+                "unmodified": false
+              },
+              "root_count": 1,
+              "status": "TRANSLATED"
+            }
+          ],
+          "unattributed_native_work": {},
+          "unmatched_job_results": {},
+          "unmatched_native_jobs": {}
+        },
+        {
+          "case_index": 1,
+          "contract_test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+          "contracted": true,
+          "display_name": "expectedJoinType=HashJoin",
+          "execution_contract_variant": "*",
+          "expected_failure": false,
+          "invocation_id": "8a52b403-12e6-4d12-93f7-b0f82eeb5c40",
+          "jobs": {
+            "ec006e9413c2f04e891857f4b0b25321": {
+              "application_statuses": [
+                "SUCCEEDED"
+              ],
+              "graph": {
+                "job_type": "BATCH",
+                "nodes": [
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 48,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 50,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 53,
+                    "inputs": [
+                      48
+                    ],
+                    "name": "SourceConversion[37]",
+                    "operator_class": "SourceConversion$23",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 55,
+                    "inputs": [
+                      53
+                    ],
+                    "name": "RowDataToArrowExecNode[38]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 56,
+                    "inputs": [
+                      55
+                    ],
+                    "name": "NativeCalc(select=[N], nativeFunctions=[], jvmFunctions=[])[40]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 57,
+                    "inputs": [
+                      56
+                    ],
+                    "name": "BatchHashExchangeExecNode[42]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 59,
+                    "inputs": [
+                      50
+                    ],
+                    "name": "SourceConversion[43]",
+                    "operator_class": "SourceConversion$26",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 61,
+                    "inputs": [
+                      59
+                    ],
+                    "name": "RowDataToArrowExecNode[44]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 62,
+                    "inputs": [
+                      61
+                    ],
+                    "name": "BatchHashExchangeExecNode[46]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 64,
+                    "inputs": [
+                      57,
+                      62
+                    ],
+                    "name": "NativeJoin(joinType=[LeftOuterJoin], where=[=(N, a)], select=[N, a], build=[right])[47]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchJoinOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 65,
+                    "inputs": [
+                      64
+                    ],
+                    "name": "NativeCalc(select=[N], nativeFunctions=[], jvmFunctions=[])[48]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 66,
+                    "inputs": [
+                      65
+                    ],
+                    "name": "BatchHashExchangeExecNode[50]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 68,
+                    "inputs": [
+                      66
+                    ],
+                    "name": "NativeAggregate(isMerge=[false], groupBy=[N], select=[N, COUNT(*) AS EXPR$1])[51]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchAggregateOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 69,
+                    "inputs": [
+                      68
+                    ],
+                    "name": "ArrowToRowDataExecNode[52]",
+                    "operator_class": "tech.streamfusion.operator.ArrowToRowDataOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 70,
+                    "inputs": [
+                      69
+                    ],
+                    "name": "ConstraintEnforcer[54]",
+                    "operator_class": "org.apache.flink.table.runtime.operators.sink.ConstraintEnforcer",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperatorFactory",
+                    "id": 71,
+                    "inputs": [
+                      70
+                    ],
+                    "name": "Sink: Collect table sink",
+                    "operator_class": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+                    "parallelism": 1
+                  }
+                ],
+                "sql_translation_complete": true,
+                "sql_translation_ids": [
+                  0
+                ]
+              },
+              "job_status_error": "java.util.concurrent.CompletionException: java.lang.reflect.InvocationTargetException",
+              "native_work": {
+                "NativeBatchAggregateOperator": 6,
+                "NativeBatchJoinOperator": 10,
+                "NativeCalcOperator": 12
+              },
+              "status": "SUCCEEDED"
+            },
+            "fa6ac03c4b96fb01d93999dfa354e72e": {
+              "application_statuses": [
+                "SUCCEEDED"
+              ],
+              "graph": {
+                "job_type": "BATCH",
+                "nodes": [
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 48,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 50,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 77,
+                    "inputs": [
+                      48
+                    ],
+                    "name": "SourceConversion[55]",
+                    "operator_class": "SourceConversion$33",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 79,
+                    "inputs": [
+                      77
+                    ],
+                    "name": "RowDataToArrowExecNode[56]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 80,
+                    "inputs": [
+                      79
+                    ],
+                    "name": "NativeCalc(select=[N], nativeFunctions=[], jvmFunctions=[])[58]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 81,
+                    "inputs": [
+                      80
+                    ],
+                    "name": "BatchHashExchangeExecNode[60]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 83,
+                    "inputs": [
+                      50
+                    ],
+                    "name": "SourceConversion[61]",
+                    "operator_class": "SourceConversion$36",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 85,
+                    "inputs": [
+                      83
+                    ],
+                    "name": "RowDataToArrowExecNode[62]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 86,
+                    "inputs": [
+                      85
+                    ],
+                    "name": "BatchHashExchangeExecNode[64]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 88,
+                    "inputs": [
+                      81,
+                      86
+                    ],
+                    "name": "NativeJoin(joinType=[LeftOuterJoin], where=[=(N, a)], select=[N, a], build=[right])[65]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchJoinOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 89,
+                    "inputs": [
+                      88
+                    ],
+                    "name": "NativeCalc(select=[a], nativeFunctions=[], jvmFunctions=[])[66]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 90,
+                    "inputs": [
+                      89
+                    ],
+                    "name": "NativeAggregate(groupBy=[a], select=[a, Partial_COUNT(*) AS count1$0])[68]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchAggregateOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 91,
+                    "inputs": [
+                      90
+                    ],
+                    "name": "BatchHashExchangeExecNode[69]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 93,
+                    "inputs": [
+                      91
+                    ],
+                    "name": "NativeAggregate(isMerge=[true], groupBy=[a], select=[a, Final_COUNT(count1$0) AS EXPR$1])[70]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchAggregateOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 94,
+                    "inputs": [
+                      93
+                    ],
+                    "name": "ArrowToRowDataExecNode[71]",
+                    "operator_class": "tech.streamfusion.operator.ArrowToRowDataOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 95,
+                    "inputs": [
+                      94
+                    ],
+                    "name": "ConstraintEnforcer[73]",
+                    "operator_class": "org.apache.flink.table.runtime.operators.sink.ConstraintEnforcer",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperatorFactory",
+                    "id": 96,
+                    "inputs": [
+                      95
+                    ],
+                    "name": "Sink: Collect table sink",
+                    "operator_class": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+                    "parallelism": 1
+                  }
+                ],
+                "sql_translation_complete": true,
+                "sql_translation_ids": [
+                  1
+                ]
+              },
+              "job_status_error": "java.util.concurrent.CompletionException: java.lang.reflect.InvocationTargetException",
+              "native_work": {
+                "NativeBatchAggregateOperator": 8,
+                "NativeBatchJoinOperator": 10,
+                "NativeCalcOperator": 12
+              },
+              "status": "SUCCEEDED"
+            }
+          },
+          "junit_id": "[engine:junit-jupiter]/[class:org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase]/[test-template:testLeftUpperAndLowerWithAgg()]/[test-template-invocation:#2]",
+          "native_input_rows": {
+            "NativeBatchAggregateOperator": 14,
+            "NativeBatchJoinOperator": 20,
+            "NativeCalcOperator": 24
+          },
+          "outcome": "passed",
+          "report": "TEST-OuterJoinITCase.xml",
+          "runtime_fallback_reasons": {},
+          "runtime_route": "native",
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+          "translation_details": [
+            {
+              "id": 0,
+              "plan_indices": [
+                0
+              ],
+              "planner": "tech.streamfusion.planner.NativeBatchPlanner",
+              "planner_configuration": {
+                "mode": "BATCH",
+                "unmodified": false
+              },
+              "root_count": 1,
+              "status": "TRANSLATED"
+            },
+            {
+              "id": 1,
+              "plan_indices": [
+                1
+              ],
+              "planner": "tech.streamfusion.planner.NativeBatchPlanner",
+              "planner_configuration": {
+                "mode": "BATCH",
+                "unmodified": false
+              },
+              "root_count": 1,
+              "status": "TRANSLATED"
+            }
+          ],
+          "unattributed_native_work": {},
+          "unmatched_job_results": {},
+          "unmatched_native_jobs": {}
+        },
+        {
+          "case_index": 2,
+          "contract_test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+          "contracted": true,
+          "display_name": "expectedJoinType=SortMergeJoin",
+          "execution_contract_variant": "*",
+          "expected_failure": false,
+          "invocation_id": "b8bd42ca-940e-4efd-a17b-4e20f2dfb263",
+          "jobs": {
+            "721fdcd2280ec9301e47022b7cecff54": {
+              "application_statuses": [
+                "SUCCEEDED"
+              ],
+              "graph": {
+                "job_type": "BATCH",
+                "nodes": [
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 102,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 104,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 132,
+                    "inputs": [
+                      102
+                    ],
+                    "name": "SourceConversion[92]",
+                    "operator_class": "SourceConversion$53",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 134,
+                    "inputs": [
+                      132
+                    ],
+                    "name": "RowDataToArrowExecNode[93]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 135,
+                    "inputs": [
+                      134
+                    ],
+                    "name": "NativeCalc(select=[N], nativeFunctions=[], jvmFunctions=[])[95]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 136,
+                    "inputs": [
+                      135
+                    ],
+                    "name": "BatchHashExchangeExecNode[97]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 138,
+                    "inputs": [
+                      104
+                    ],
+                    "name": "SourceConversion[98]",
+                    "operator_class": "SourceConversion$56",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 140,
+                    "inputs": [
+                      138
+                    ],
+                    "name": "RowDataToArrowExecNode[99]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 141,
+                    "inputs": [
+                      140
+                    ],
+                    "name": "BatchHashExchangeExecNode[101]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 143,
+                    "inputs": [
+                      136,
+                      141
+                    ],
+                    "name": "NativeJoin(joinType=[LeftOuterJoin], where=[=(N, a)], select=[N, a])[102]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchJoinOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 144,
+                    "inputs": [
+                      143
+                    ],
+                    "name": "NativeCalc(select=[a], nativeFunctions=[], jvmFunctions=[])[103]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 145,
+                    "inputs": [
+                      144
+                    ],
+                    "name": "NativeAggregate(groupBy=[a], select=[a, Partial_COUNT(*) AS count1$0])[105]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchAggregateOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 146,
+                    "inputs": [
+                      145
+                    ],
+                    "name": "BatchHashExchangeExecNode[106]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 148,
+                    "inputs": [
+                      146
+                    ],
+                    "name": "NativeAggregate(isMerge=[true], groupBy=[a], select=[a, Final_COUNT(count1$0) AS EXPR$1])[107]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchAggregateOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 149,
+                    "inputs": [
+                      148
+                    ],
+                    "name": "ArrowToRowDataExecNode[108]",
+                    "operator_class": "tech.streamfusion.operator.ArrowToRowDataOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 150,
+                    "inputs": [
+                      149
+                    ],
+                    "name": "ConstraintEnforcer[110]",
+                    "operator_class": "org.apache.flink.table.runtime.operators.sink.ConstraintEnforcer",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperatorFactory",
+                    "id": 151,
+                    "inputs": [
+                      150
+                    ],
+                    "name": "Sink: Collect table sink",
+                    "operator_class": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+                    "parallelism": 1
+                  }
+                ],
+                "sql_translation_complete": true,
+                "sql_translation_ids": [
+                  1
+                ]
+              },
+              "job_status_error": "java.util.concurrent.CompletionException: java.lang.reflect.InvocationTargetException",
+              "native_work": {
+                "NativeBatchAggregateOperator": 8,
+                "NativeBatchJoinOperator": 10,
+                "NativeCalcOperator": 12
+              },
+              "status": "SUCCEEDED"
+            },
+            "89438cd1f1d42d9237268e8b948a1d5c": {
+              "application_statuses": [
+                "SUCCEEDED"
+              ],
+              "graph": {
+                "job_type": "BATCH",
+                "nodes": [
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 102,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 104,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 107,
+                    "inputs": [
+                      102
+                    ],
+                    "name": "SourceConversion[74]",
+                    "operator_class": "SourceConversion$43",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 109,
+                    "inputs": [
+                      107
+                    ],
+                    "name": "RowDataToArrowExecNode[75]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 110,
+                    "inputs": [
+                      109
+                    ],
+                    "name": "NativeCalc(select=[N], nativeFunctions=[], jvmFunctions=[])[77]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 111,
+                    "inputs": [
+                      110
+                    ],
+                    "name": "BatchHashExchangeExecNode[79]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 113,
+                    "inputs": [
+                      104
+                    ],
+                    "name": "SourceConversion[80]",
+                    "operator_class": "SourceConversion$46",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 115,
+                    "inputs": [
+                      113
+                    ],
+                    "name": "RowDataToArrowExecNode[81]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 116,
+                    "inputs": [
+                      115
+                    ],
+                    "name": "BatchHashExchangeExecNode[83]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 118,
+                    "inputs": [
+                      111,
+                      116
+                    ],
+                    "name": "NativeJoin(joinType=[LeftOuterJoin], where=[=(N, a)], select=[N, a])[84]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchJoinOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 119,
+                    "inputs": [
+                      118
+                    ],
+                    "name": "NativeCalc(select=[N], nativeFunctions=[], jvmFunctions=[])[85]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 120,
+                    "inputs": [
+                      119
+                    ],
+                    "name": "BatchHashExchangeExecNode[87]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 122,
+                    "inputs": [
+                      120
+                    ],
+                    "name": "NativeAggregate(isMerge=[false], groupBy=[N], select=[N, COUNT(*) AS EXPR$1])[88]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchAggregateOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 123,
+                    "inputs": [
+                      122
+                    ],
+                    "name": "NativeAggregate(isMerge=[false], groupBy=[N], select=[N, COUNT(*) AS EXPR$1])[88]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchSortOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 124,
+                    "inputs": [
+                      123
+                    ],
+                    "name": "ArrowToRowDataExecNode[89]",
+                    "operator_class": "tech.streamfusion.operator.ArrowToRowDataOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 125,
+                    "inputs": [
+                      124
+                    ],
+                    "name": "ConstraintEnforcer[91]",
+                    "operator_class": "org.apache.flink.table.runtime.operators.sink.ConstraintEnforcer",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperatorFactory",
+                    "id": 126,
+                    "inputs": [
+                      125
+                    ],
+                    "name": "Sink: Collect table sink",
+                    "operator_class": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+                    "parallelism": 1
+                  }
+                ],
+                "sql_translation_complete": true,
+                "sql_translation_ids": [
+                  0
+                ]
+              },
+              "job_status_error": "java.util.concurrent.CompletionException: java.lang.reflect.InvocationTargetException",
+              "native_work": {
+                "NativeBatchAggregateOperator": 6,
+                "NativeBatchJoinOperator": 10,
+                "NativeBatchSortOperator": 6,
+                "NativeCalcOperator": 12
+              },
+              "status": "SUCCEEDED"
+            }
+          },
+          "junit_id": "[engine:junit-jupiter]/[class:org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase]/[test-template:testLeftUpperAndLowerWithAgg()]/[test-template-invocation:#3]",
+          "native_input_rows": {
+            "NativeBatchAggregateOperator": 14,
+            "NativeBatchJoinOperator": 20,
+            "NativeBatchSortOperator": 6,
+            "NativeCalcOperator": 24
+          },
+          "outcome": "passed",
+          "report": "TEST-OuterJoinITCase.xml",
+          "runtime_fallback_reasons": {},
+          "runtime_route": "native",
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+          "translation_details": [
+            {
+              "id": 0,
+              "plan_indices": [
+                0
+              ],
+              "planner": "tech.streamfusion.planner.NativeBatchPlanner",
+              "planner_configuration": {
+                "mode": "BATCH",
+                "unmodified": false
+              },
+              "root_count": 1,
+              "status": "TRANSLATED"
+            },
+            {
+              "id": 1,
+              "plan_indices": [
+                1
+              ],
+              "planner": "tech.streamfusion.planner.NativeBatchPlanner",
+              "planner_configuration": {
+                "mode": "BATCH",
+                "unmodified": false
+              },
+              "root_count": 1,
+              "status": "TRANSLATED"
+            }
+          ],
+          "unattributed_native_work": {},
+          "unmatched_job_results": {},
+          "unmatched_native_jobs": {}
+        },
+        {
+          "case_index": 3,
+          "contract_test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+          "contracted": true,
+          "display_name": "expectedJoinType=NestedLoopJoin",
+          "execution_contract_variant": "*",
+          "expected_failure": false,
+          "invocation_id": "a0de974b-edd5-4b83-b377-c97421ca79cd",
+          "jobs": {
+            "65f28cef4b1f0b0b6bb247007c63802d": {
+              "application_statuses": [
+                "SUCCEEDED"
+              ],
+              "graph": {
+                "job_type": "BATCH",
+                "nodes": [
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 157,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 159,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 183,
+                    "inputs": [
+                      157
+                    ],
+                    "name": "SourceConversion[129]",
+                    "operator_class": "SourceConversion$73",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 185,
+                    "inputs": [
+                      183
+                    ],
+                    "name": "RowDataToArrowExecNode[130]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 186,
+                    "inputs": [
+                      185
+                    ],
+                    "name": "NativeCalc(select=[N], nativeFunctions=[], jvmFunctions=[])[132]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 187,
+                    "inputs": [
+                      159
+                    ],
+                    "name": "SourceConversion[134]",
+                    "operator_class": "SourceConversion$76",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 189,
+                    "inputs": [
+                      187
+                    ],
+                    "name": "RowDataToArrowExecNode[135]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 191,
+                    "inputs": [
+                      186,
+                      189
+                    ],
+                    "name": "NativeJoin(joinType=[LeftOuterJoin], where=[=(N, a)], select=[N, a], build=[right])[138]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchJoinOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 192,
+                    "inputs": [
+                      191
+                    ],
+                    "name": "NativeCalc(select=[a], nativeFunctions=[], jvmFunctions=[])[139]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 193,
+                    "inputs": [
+                      192
+                    ],
+                    "name": "NativeAggregate(groupBy=[a], select=[a, Partial_COUNT(*) AS count1$0])[141]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchAggregateOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 194,
+                    "inputs": [
+                      193
+                    ],
+                    "name": "BatchHashExchangeExecNode[142]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 196,
+                    "inputs": [
+                      194
+                    ],
+                    "name": "NativeAggregate(isMerge=[true], groupBy=[a], select=[a, Final_COUNT(count1$0) AS EXPR$1])[143]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchAggregateOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 197,
+                    "inputs": [
+                      196
+                    ],
+                    "name": "ArrowToRowDataExecNode[144]",
+                    "operator_class": "tech.streamfusion.operator.ArrowToRowDataOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 198,
+                    "inputs": [
+                      197
+                    ],
+                    "name": "ConstraintEnforcer[146]",
+                    "operator_class": "org.apache.flink.table.runtime.operators.sink.ConstraintEnforcer",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperatorFactory",
+                    "id": 199,
+                    "inputs": [
+                      198
+                    ],
+                    "name": "Sink: Collect table sink",
+                    "operator_class": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+                    "parallelism": 1
+                  }
+                ],
+                "sql_translation_complete": true,
+                "sql_translation_ids": [
+                  1
+                ]
+              },
+              "job_status_error": "java.util.concurrent.CompletionException: java.lang.reflect.InvocationTargetException",
+              "native_work": {
+                "NativeBatchAggregateOperator": 7,
+                "NativeBatchJoinOperator": 10,
+                "NativeCalcOperator": 12
+              },
+              "status": "SUCCEEDED"
+            },
+            "fff9f3127801e3628c0740daa8293642": {
+              "application_statuses": [
+                "SUCCEEDED"
+              ],
+              "graph": {
+                "job_type": "BATCH",
+                "nodes": [
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 157,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                    "id": 159,
+                    "inputs": [],
+                    "name": "Source: Custom Source",
+                    "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 162,
+                    "inputs": [
+                      157
+                    ],
+                    "name": "SourceConversion[111]",
+                    "operator_class": "SourceConversion$63",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 164,
+                    "inputs": [
+                      162
+                    ],
+                    "name": "RowDataToArrowExecNode[112]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 165,
+                    "inputs": [
+                      164
+                    ],
+                    "name": "NativeCalc(select=[N], nativeFunctions=[], jvmFunctions=[])[114]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                    "id": 166,
+                    "inputs": [
+                      159
+                    ],
+                    "name": "SourceConversion[116]",
+                    "operator_class": "SourceConversion$66",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 168,
+                    "inputs": [
+                      166
+                    ],
+                    "name": "RowDataToArrowExecNode[117]",
+                    "operator_class": "tech.streamfusion.operator.RowDataToArrowOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 170,
+                    "inputs": [
+                      165,
+                      168
+                    ],
+                    "name": "NativeJoin(joinType=[LeftOuterJoin], where=[=(N, a)], select=[N, a], build=[right])[120]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchJoinOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 171,
+                    "inputs": [
+                      170
+                    ],
+                    "name": "NativeCalc(select=[N], nativeFunctions=[], jvmFunctions=[])[121]",
+                    "operator_class": "tech.streamfusion.operator.NativeCalcOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 172,
+                    "inputs": [
+                      171
+                    ],
+                    "name": "NativeAggregate(groupBy=[N], select=[N, Partial_COUNT(*) AS count1$0])[123]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchAggregateOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 173,
+                    "inputs": [
+                      172
+                    ],
+                    "name": "BatchHashExchangeExecNode[124]",
+                    "operator_class": "tech.streamfusion.operator.SplitByKeyGroupOperator",
+                    "parallelism": 1
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 175,
+                    "inputs": [
+                      173
+                    ],
+                    "name": "NativeAggregate(isMerge=[true], groupBy=[N], select=[N, Final_COUNT(count1$0) AS EXPR$1])[125]",
+                    "operator_class": "tech.streamfusion.operator.NativeBatchAggregateOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 176,
+                    "inputs": [
+                      175
+                    ],
+                    "name": "ArrowToRowDataExecNode[126]",
+                    "operator_class": "tech.streamfusion.operator.ArrowToRowDataOperator",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.SimpleOperatorFactory",
+                    "id": 177,
+                    "inputs": [
+                      176
+                    ],
+                    "name": "ConstraintEnforcer[128]",
+                    "operator_class": "org.apache.flink.table.runtime.operators.sink.ConstraintEnforcer",
+                    "parallelism": 3
+                  },
+                  {
+                    "factory": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperatorFactory",
+                    "id": 178,
+                    "inputs": [
+                      177
+                    ],
+                    "name": "Sink: Collect table sink",
+                    "operator_class": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+                    "parallelism": 1
+                  }
+                ],
+                "sql_translation_complete": true,
+                "sql_translation_ids": [
+                  0
+                ]
+              },
+              "job_status_error": "java.util.concurrent.CompletionException: java.lang.reflect.InvocationTargetException",
+              "native_work": {
+                "NativeBatchAggregateOperator": 12,
+                "NativeBatchJoinOperator": 10,
+                "NativeCalcOperator": 12
+              },
+              "status": "SUCCEEDED"
+            }
+          },
+          "junit_id": "[engine:junit-jupiter]/[class:org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase]/[test-template:testLeftUpperAndLowerWithAgg()]/[test-template-invocation:#4]",
+          "native_input_rows": {
+            "NativeBatchAggregateOperator": 19,
+            "NativeBatchJoinOperator": 20,
+            "NativeCalcOperator": 24
+          },
+          "outcome": "passed",
+          "report": "TEST-OuterJoinITCase.xml",
+          "runtime_fallback_reasons": {},
+          "runtime_route": "native",
+          "test": "org.apache.flink.table.planner.runtime.batch.sql.join.OuterJoinITCase#testLeftUpperAndLowerWithAgg",
+          "translation_details": [
+            {
+              "id": 0,
+              "plan_indices": [
+                0
+              ],
+              "planner": "tech.streamfusion.planner.NativeBatchPlanner",
+              "planner_configuration": {
+                "mode": "BATCH",
+                "unmodified": false
+              },
+              "root_count": 1,
+              "status": "TRANSLATED"
+            },
+            {
+              "id": 1,
+              "plan_indices": [
+                1
+              ],
+              "planner": "tech.streamfusion.planner.NativeBatchPlanner",
+              "planner_configuration": {
+                "mode": "BATCH",
+                "unmodified": false
+              },
+              "root_count": 1,
+              "status": "TRANSLATED"
+            }
+          ],
+          "unattributed_native_work": {},
+          "unmatched_job_results": {},
+          "unmatched_native_jobs": {}
+        }
+      ],
+      "validation_problems": []
+    }
+  }
+}

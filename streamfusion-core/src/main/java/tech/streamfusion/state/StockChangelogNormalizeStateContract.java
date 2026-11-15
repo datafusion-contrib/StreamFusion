@@ -1,0 +1,267 @@
+package tech.streamfusion.state;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import org.apache.arrow.c.ArrowArray;
+import org.apache.arrow.c.ArrowSchema;
+import org.apache.arrow.c.Data;
+import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.flink.api.common.state.StateDescriptor;
+import org.apache.flink.api.common.typeutils.TypeSerializer;
+import org.apache.flink.core.memory.MemorySegmentFactory;
+import org.apache.flink.runtime.state.CheckpointableKeyedStateBackend;
+import org.apache.flink.runtime.state.VoidNamespace;
+import org.apache.flink.table.data.GenericRowData;
+import org.apache.flink.table.data.RowData;
+import org.apache.flink.table.data.binary.BinaryRowData;
+import org.apache.flink.table.data.binary.BinarySegmentUtils;
+import org.apache.flink.table.runtime.typeutils.RowDataSerializer;
+import org.apache.flink.table.types.logical.BigIntType;
+import org.apache.flink.table.types.logical.RowType;
+import org.apache.flink.table.types.logical.TinyIntType;
+import org.apache.flink.table.types.logical.VarBinaryType;
+import tech.streamfusion.Native;
+import tech.streamfusion.arrow.ArrowConversion;
+import tech.streamfusion.operator.NativeAllocator;
+
+/** The released normalizer's full last row and original write age. */
+public final class StockChangelogNormalizeStateContract implements StockStateContract {
+  private static final long serialVersionUID = 1L;
+  private static final int CHUNK_ROWS = 1024;
+  private static final String STATE = "deduplicate-state";
+  private final TypeSerializer<RowData> keySerializer;
+  private final RowType keyType;
+  private final RowType rowType;
+  private final RowType bridgeType;
+  private final boolean ttl;
+
+  public StockChangelogNormalizeStateContract(
+      TypeSerializer<RowData> keySerializer, RowType keyType, RowType rowType, boolean ttl) {
+    this.keySerializer = keySerializer;
+    this.keyType = keyType;
+    this.rowType = rowType;
+    this.ttl = ttl;
+    var fields = new ArrayList<>(rowType.getFields());
+    add(fields, "binary_key", new VarBinaryType(false, VarBinaryType.MAX_LENGTH));
+    add(fields, "__rowtime__", new BigIntType(false));
+    add(fields, "__ttl_ts__", new BigIntType(false));
+    add(fields, "__stored_kind__", new TinyIntType(false));
+    bridgeType = new RowType(fields);
+  }
+
+  private static void add(
+      List<RowType.RowField> fields,
+      String name,
+      org.apache.flink.table.types.logical.LogicalType type) {
+    var names =
+        fields.stream().map(RowType.RowField::getName).collect(java.util.stream.Collectors.toSet());
+    while (names.contains(name)) name = "$" + name;
+    fields.add(new RowType.RowField(name, type));
+  }
+
+  @Override
+  public Map<String, StateDescriptor.Type> stateDescriptors() {
+    return Map.of(STATE, StateDescriptor.Type.VALUE);
+  }
+
+  @Override
+  public TypeSerializer<RowData> keySerializer() {
+    return keySerializer.duplicate();
+  }
+
+  private StockValueState<RowData> state(CheckpointableKeyedStateBackend<RowData> backend)
+      throws Exception {
+    return new StockValueState<>(backend, STATE, new RowDataSerializer(rowType), ttl);
+  }
+
+  private org.apache.arrow.vector.types.pojo.Schema arrowSchema(RowType type) {
+    return StockKeyedRowSchema.schema(type, keyType);
+  }
+
+  private VectorSchemaRoot writeRows(List<RowData> rows) {
+    return StockKeyedRowSchema.write(rows, bridgeType, keyType);
+  }
+
+  @Override
+  public void configureNativeState(long handle, boolean persistent) {
+    Native.configureChangelogNormalizerComparison(
+        handle, persistent, tech.streamfusion.compat.StateCompat.normalizerComparesRowKind());
+  }
+
+  private void exportNative(long handle, boolean persistent, Native.BatchReceiver receiver) {
+    configureNativeState(handle, persistent);
+    withNativeSchema(
+        schema -> {
+          Native.exportChangelogNormalizerCanonical(handle, persistent, schema, receiver);
+          return null;
+        });
+  }
+
+  private <T> T withNativeSchema(java.util.function.LongFunction<T> action) {
+    try (ArrowSchema schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
+      try {
+        Data.exportSchema(
+            NativeAllocator.SHARED, arrowSchema(rowType), NativeAllocator.DICTIONARIES, schema);
+        return action.apply(schema.memoryAddress());
+      } finally {
+        if (schema.snapshot().release != 0) schema.release();
+      }
+    }
+  }
+
+  @Override
+  public org.apache.flink.runtime.state.SavepointResources<RowData> snapshot(
+      StockSnapshotContext context, long handle, boolean persistent) throws Exception {
+    if (persistent)
+      return context.nativeValue(
+          STATE,
+          new RowDataSerializer(rowType),
+          ttl,
+          () ->
+              withNativeSchema(
+                  schema -> Native.captureChangelogNormalizerCanonicalSnapshot(handle, schema)),
+          bridgeType,
+          decoder());
+    return null;
+  }
+
+  @Override
+  public void exportState(
+      CheckpointableKeyedStateBackend<RowData> backend, long handle, boolean persistent)
+      throws Exception {
+    clear(backend);
+    var state = state(backend);
+    visit(
+        handle,
+        persistent,
+        (key, value, written) -> {
+          backend.setCurrentKey(key);
+          state.update(value, written);
+        });
+  }
+
+  private void visit(
+      long handle, boolean persistent, StockNativeValueSnapshot.Entry<RowData> receiver)
+      throws Exception {
+    var decode = decoder();
+    exportNative(
+        handle,
+        persistent,
+        (arrayAddress, schemaAddress) -> {
+          try (ArrowArray array = ArrowArray.wrap(arrayAddress);
+              ArrowSchema schema = ArrowSchema.wrap(schemaAddress);
+              VectorSchemaRoot root =
+                  Data.importVectorSchemaRoot(
+                      NativeAllocator.SHARED, array, schema, NativeAllocator.DICTIONARIES)) {
+            var reader = ArrowConversion.createArrowReader(root, bridgeType);
+            for (int index = 0; index < root.getRowCount(); index++) {
+              decode.decode(reader.read(index), receiver);
+            }
+          } catch (Exception failure) {
+            throw new IllegalStateException("Cannot project stock normalizer rows", failure);
+          }
+        });
+  }
+
+  private StockNativeValueSnapshot.Decoder<RowData> decoder() {
+    int arity = rowType.getFieldCount();
+    var serializer = new RowDataSerializer(rowType);
+    var fields = getters();
+    return (row, receiver) -> {
+      byte[] encoded = row.getBinary(arity);
+      var key = new BinaryRowData(keyType.getFieldCount());
+      key.pointTo(MemorySegmentFactory.wrap(encoded), 0, encoded.length);
+      var payload = new GenericRowData(arity);
+      for (int field = 0; field < arity; field++)
+        payload.setField(field, fields[field].getFieldOrNull(row));
+      receiver.write(key, serializer.copy(payload), row.getLong(arity + 2));
+    };
+  }
+
+  @Override
+  public void importState(
+      CheckpointableKeyedStateBackend<RowData> backend, long handle, boolean persistent)
+      throws Exception {
+    exportNative(
+        handle,
+        persistent,
+        (arrayAddress, schemaAddress) -> {
+          try (ArrowArray array = ArrowArray.wrap(arrayAddress);
+              ArrowSchema schema = ArrowSchema.wrap(schemaAddress);
+              VectorSchemaRoot root =
+                  Data.importVectorSchemaRoot(
+                      NativeAllocator.SHARED, array, schema, NativeAllocator.DICTIONARIES)) {
+            if (root.getRowCount() != 0)
+              throw new IllegalStateException(
+                  "Normalizer canonical restore requires an empty native target");
+          }
+        });
+    visit(backend, handle, persistent, true);
+    visit(backend, handle, persistent, false);
+  }
+
+  private RowData.FieldGetter[] getters() {
+    var getters = new RowData.FieldGetter[rowType.getFieldCount()];
+    for (int field = 0; field < getters.length; field++)
+      getters[field] = RowData.createFieldGetter(rowType.getTypeAt(field), field);
+    return getters;
+  }
+
+  private void visit(
+      CheckpointableKeyedStateBackend<RowData> backend,
+      long handle,
+      boolean persistent,
+      boolean validateOnly)
+      throws Exception {
+    var state = state(backend);
+    var keyRows = new RowDataSerializer(keyType);
+    var rowSerializer = new RowDataSerializer(rowType);
+    var getters = getters();
+    int arity = rowType.getFieldCount();
+    var rows = new ArrayList<RowData>(CHUNK_ROWS);
+    try (var stream = backend.getKeys(STATE, VoidNamespace.INSTANCE)) {
+      var keys = stream.iterator();
+      while (keys.hasNext()) {
+        var key = keys.next();
+        backend.setCurrentKey(key);
+        var stored = state.value();
+        if (stored == null || stored.getUserValue() == null) continue;
+        RowData value = rowSerializer.copy(stored.getUserValue());
+        var row = new GenericRowData(arity + 4);
+        for (int field = 0; field < arity; field++)
+          row.setField(field, getters[field].getFieldOrNull(value));
+        var binary = keyRows.toBinaryRow(key);
+        row.setField(
+            arity,
+            BinarySegmentUtils.copyToBytes(
+                binary.getSegments(), binary.getOffset(), binary.getSizeInBytes()));
+        row.setField(arity + 1, 0L);
+        row.setField(arity + 2, stored.getLastAccessTimestamp());
+        row.setField(arity + 3, value.getRowKind().toByteValue());
+        rows.add(row);
+        if (rows.size() == CHUNK_ROWS) {
+          importBatch(handle, persistent, rows, validateOnly);
+          rows.clear();
+        }
+      }
+    }
+    if (!rows.isEmpty()) importBatch(handle, persistent, rows, validateOnly);
+  }
+
+  private void importBatch(
+      long handle, boolean persistent, List<RowData> rows, boolean validateOnly) {
+    try (VectorSchemaRoot root = writeRows(rows);
+        ArrowArray array = ArrowArray.allocateNew(NativeAllocator.SHARED);
+        ArrowSchema schema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
+      Data.exportVectorSchemaRoot(
+          NativeAllocator.SHARED, root, NativeAllocator.DICTIONARIES, array, schema);
+      if (validateOnly)
+        Native.validateChangelogNormalizerCanonical(
+            handle, persistent, array.memoryAddress(), schema.memoryAddress());
+      else
+        Native.importChangelogNormalizerCanonical(
+            handle, persistent, array.memoryAddress(), schema.memoryAddress());
+    }
+  }
+}

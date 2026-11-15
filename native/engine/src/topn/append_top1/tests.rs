@@ -281,3 +281,48 @@ fn rejected_top1_rows_do_not_encode_or_write_persistent_state() {
         assert_eq!(writes.load(Ordering::Relaxed), 0);
     }
 }
+
+#[test]
+fn selected_before_image_policy_survives_top1_specialization() {
+    let input = RecordBatch::try_from_iter(vec![
+        ("key", Arc::new(Int64Array::from(vec![1, 1, 1])) as ArrayRef),
+        (
+            "sort",
+            Arc::new(Int64Array::from(vec![Some(10), Some(5), None])) as ArrayRef,
+        ),
+    ])
+    .unwrap();
+    for before in [false, true] {
+        let mut expected = vec![0];
+        for _ in 0..2 {
+            if before {
+                expected.push(1);
+            }
+            expected.push(2);
+        }
+        for fast in [false, true] {
+            for rank in [false, true] {
+                let mut ranker = TopNRanker::new(
+                    vec![0],
+                    vec![SortColumn {
+                        index: 1,
+                        ascending: true,
+                        nulls_first: true,
+                    }],
+                    1,
+                    rank,
+                    false,
+                )
+                .with_top1_fast(fast)
+                .with_generate_update_before(before);
+                let output = ranker.push(&input, 0).unwrap();
+                let kinds = output
+                    .column(output.num_columns() - 1)
+                    .as_any()
+                    .downcast_ref::<Int8Array>()
+                    .unwrap();
+                assert_eq!(kinds.values().as_ref(), expected.as_slice());
+            }
+        }
+    }
+}

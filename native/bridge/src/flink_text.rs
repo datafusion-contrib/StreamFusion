@@ -5,7 +5,7 @@
 //! temporals. These functions reproduce those envelopes — what parses, what fails, and the produced
 //! value — so a native decode accepts and rejects exactly the strings the host would. Deliberate
 //! residual leniencies (a trailing 'Z' accepted on any timestamp column, Java-only exotica like hex
-//! float literals and expanded ISO years rejected) are documented in
+//! float literals and expanded ISO years inside a timestamp rejected) are documented in
 //! `divergences/21-ingest-text-envelope.md`.
 
 /// `Boolean.parseBoolean`: case-insensitive "true" is true, anything else — including numbers and
@@ -103,25 +103,65 @@ fn parse_java_float_body<T: JavaFloat>(t: &str) -> Option<T> {
     t.parse::<T>().ok()
 }
 
-/// `DateTimeFormatter.ISO_LOCAL_DATE` (strict): exactly `yyyy-MM-dd`, zero-padded, a real calendar
-/// date. Returns days since the epoch. (Java's expanded years beyond 4 digits are not reproduced.)
+/// `DateTimeFormatter.ISO_LOCAL_DATE` (strict): a four-digit year, or a signed one per
+/// `EXCEEDS_PAD` — `+` with 5–10 digits, `-` with 4–10 digits that are not all zero — within
+/// ±999,999,999, then a zero-padded `-MM-dd` forming a real proleptic-Gregorian date. Returns
+/// the epoch day narrowed the way Flink's `(int) date.toEpochDay()` narrows it.
 pub fn parse_iso_local_date(s: &str) -> Option<i32> {
     let b = s.as_bytes();
-    if b.len() != 10 || b[4] != b'-' || b[7] != b'-' {
+    let sign = b.first().copied().filter(|c| matches!(c, b'+' | b'-'));
+    let unsigned = &b[usize::from(sign.is_some())..];
+    let (year_digits, month_day) = unsigned.split_at(unsigned.len().checked_sub(6)?);
+    let year_width = match sign {
+        None => 4..=4,
+        Some(b'+') => 5..=10,
+        Some(_) => 4..=10,
+    };
+    if !year_width.contains(&year_digits.len()) || month_day[0] != b'-' || month_day[3] != b'-' {
         return None;
     }
-    let digits = |r: std::ops::Range<usize>| -> Option<u32> {
-        let mut v = 0u32;
-        for &c in &b[r] {
-            if !c.is_ascii_digit() {
-                return None;
-            }
-            v = v * 10 + (c - b'0') as u32;
-        }
-        Some(v)
+    let digits = |d: &[u8]| -> Option<i64> {
+        d.iter().try_fold(0i64, |v, &c| {
+            c.is_ascii_digit().then(|| v * 10 + i64::from(c - b'0'))
+        })
     };
-    let (y, m, d) = (digits(0..4)?, digits(5..7)?, digits(8..10)?);
-    days_from_epoch(y as i32, m, d, false)
+    let magnitude = digits(year_digits)?;
+    let negative = sign == Some(b'-');
+    if magnitude > 999_999_999 || (negative && magnitude == 0) {
+        return None;
+    }
+    let year = if negative { -magnitude } else { magnitude };
+    let (month, day) = (digits(&month_day[1..3])?, digits(&month_day[4..6])?);
+    let month_length = match month {
+        2 if is_leap_year(year) => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        1..=12 => 31,
+        _ => return None,
+    };
+    if !(1..=month_length).contains(&day) {
+        return None;
+    }
+    Some(epoch_day(year, month, day) as i32)
+}
+
+/// `LocalDate.toEpochDay` for a valid proleptic-Gregorian date, over java.time's full year range.
+fn epoch_day(year: i64, month: i64, day: i64) -> i64 {
+    let mut total = 365 * year;
+    if year >= 0 {
+        total += (year + 3) / 4 - (year + 99) / 100 + (year + 399) / 400;
+    } else {
+        total -= year / -4 - year / -100 + year / -400;
+    }
+    total += (367 * month - 362) / 12 + day - 1;
+    if month > 2 {
+        total -= if is_leap_year(year) { 1 } else { 2 };
+    }
+    total - 719_528
+}
+
+fn is_leap_year(year: i64) -> bool {
+    year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
 }
 
 /// `java.sql.Date.valueOf` + `toLocalDate` (Flink's CSV DATE parse): `yyyy-[m]m-[d]d` with each
@@ -140,19 +180,8 @@ pub fn parse_java_sql_date(s: &str) -> Option<i32> {
     if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
         return None;
     }
-    days_from_epoch(year, month, day, true)
-}
-
-/// Days since 1970-01-01 for a calendar date. `lenient` normalizes a day past the month's end into
-/// the following month(s) (the legacy `java.util.Date` behavior `Date.valueOf` inherits); strict
-/// rejects it (the ISO resolver).
-fn days_from_epoch(year: i32, month: u32, day: u32, lenient: bool) -> Option<i32> {
-    let date = if lenient {
-        chrono::NaiveDate::from_ymd_opt(year, month, 1)?
-            .checked_add_days(chrono::Days::new(day as u64 - 1))?
-    } else {
-        chrono::NaiveDate::from_ymd_opt(year, month, day)?
-    };
+    let date = chrono::NaiveDate::from_ymd_opt(year, month, 1)?
+        .checked_add_days(chrono::Days::new(day as u64 - 1))?;
     let epoch = chrono::NaiveDate::from_ymd_opt(1970, 1, 1).expect("epoch");
     i32::try_from(date.signed_duration_since(epoch).num_days()).ok()
 }
@@ -518,6 +547,42 @@ mod tests {
         assert_eq!(parse_iso_local_date("2020-02-30"), None);
         assert_eq!(parse_iso_local_date("2020-01-01 "), None);
         assert_eq!(parse_iso_local_date("2020-01-01T00:00:00"), None);
+        assert_eq!(parse_iso_local_date("2020-+1-01"), None);
+        assert_eq!(parse_iso_local_date("2020-00-01"), None);
+        assert_eq!(parse_iso_local_date("2020-13-01"), None);
+        assert_eq!(parse_iso_local_date("2020-01-00"), None);
+        assert_eq!(parse_iso_local_date(""), None);
+        assert_eq!(parse_iso_local_date("-01-01"), None);
+    }
+
+    #[test]
+    fn iso_local_date_reads_signed_years_like_exceeds_pad() {
+        // Expected epoch days from java.time's ISO_LOCAL_DATE and LocalDate.toEpochDay.
+        assert_eq!(parse_iso_local_date("-0001-01-01"), Some(-719_893));
+        assert_eq!(parse_iso_local_date("+10000-01-01"), Some(2_932_897));
+        assert_eq!(parse_iso_local_date("+00000-01-01"), Some(-719_528));
+        assert_eq!(parse_iso_local_date("0000-01-01"), Some(-719_528));
+        assert_eq!(parse_iso_local_date("+0000000001-01-01"), Some(-719_162));
+        assert_eq!(parse_iso_local_date("-2024-02-29"), Some(-1_458_720));
+        assert_eq!(parse_iso_local_date("-0004-02-29"), Some(-720_930));
+        assert_eq!(parse_iso_local_date("-0400-02-29"), Some(-865_566));
+        assert_eq!(parse_iso_local_date("+10400-02-29"), Some(3_079_053));
+        // A sign is required past four digits and forbidden at four; minus zero is rejected.
+        assert_eq!(parse_iso_local_date("12024-01-05"), None);
+        assert_eq!(parse_iso_local_date("+2024-01-05"), None);
+        assert_eq!(parse_iso_local_date("-0000-01-01"), None);
+        assert_eq!(parse_iso_local_date("-00000-01-01"), None);
+        assert_eq!(parse_iso_local_date("-999-01-01"), None);
+        assert_eq!(parse_iso_local_date("+12345678901-01-01"), None);
+        assert_eq!(parse_iso_local_date("+1000000000-01-01"), None);
+        assert_eq!(parse_iso_local_date("-1000000000-01-01"), None);
+        assert_eq!(parse_iso_local_date("-2023-02-29"), None);
+        assert_eq!(parse_iso_local_date("-0100-02-29"), None);
+        // The epoch day narrows to an int the way Java's (int) cast does.
+        assert_eq!(parse_iso_local_date("+999999999-12-31"), Some(169_560_311));
+        assert_eq!(parse_iso_local_date("+999999999-01-01"), Some(169_559_947));
+        assert_eq!(parse_iso_local_date("-999999999-01-01"), Some(-170_999_002));
+        assert_eq!(parse_iso_local_date("-999999999-12-31"), Some(-170_998_638));
     }
 
     #[test]

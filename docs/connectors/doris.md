@@ -67,7 +67,9 @@ parallelism and Flink's primary-key shuffle policy are preserved. Top-level NOT 
 materialization. The general policies reuse Flink's released constraint executor over Arrow-backed
 row views; unchanged columns retain their buffers. Generated arrays, maps and rows can also reach
 the Arrow writer: its declared collection capability canonicalizes the core's representation
-metadata for Doris, including when an upsert materializer precedes the writer.
+metadata for Doris, including when an upsert materializer precedes the writer. The planner
+uses this same declared capability when checking generated collection boundaries, so
+constructed ARRAY/ROW/MAP values retain the verified Arrow writer route.
 
 Sinks requiring upsert materialization use the shared
 [native sink materializer](../operators/sink-upsert-materialize.md). Candidate rows remain ordered
@@ -134,6 +136,14 @@ The upstream checkout is pinned to commit `3a4cae3a56afd5b9a8cbf901aeff129d73a57
 must be clean. SQL, test methods and assertions are preserved. One prepared source copy changes
 the Guava `Cache` import to the connector's published shaded package; a hash manifest records
 both versions. Existing upstream ignores remain visible in Surefire reports.
+
+The suite also runs the released timestamp-projection and table-overwrite methods
+without the StreamFusion agent, retaining both parameter variants in `stock-baseline`
+and `stock-baseline.log`. This distinguishes connector/server failures from native
+execution failures. Only the existing exact timestamp discrepancy can qualify for
+the stock-matched expected-failure rule; an overwrite result mismatch still fails
+the suite. An overwrite job that reports FINISHED but exposes zero of three expected
+rows must retain its assertions and execution graph while the stock control is checked.
 
 The CI Doris job runs the same script and retains server logs, SQL plans, Surefire assertions
 and the agent's SQL inventory. An upstream run without StreamFusion activation fails the job. Each upstream streaming SQL source

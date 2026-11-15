@@ -9,6 +9,17 @@ import subprocess
 import sys
 
 
+# Iceberg maintenance uses DataFusion's existing external SortExec inside its own DSO.
+# Keep the SQL planner, session and StreamFusion engine outside that connector.
+ICEBERG_SORT_DEPENDENCIES = {
+    "datafusion-common", "datafusion-common-runtime", "datafusion-doc",
+    "datafusion-execution", "datafusion-expr", "datafusion-expr-common",
+    "datafusion-functions", "datafusion-functions-aggregate-common",
+    "datafusion-functions-window-common", "datafusion-macros",
+    "datafusion-physical-expr", "datafusion-physical-expr-common", "datafusion-physical-plan",
+}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--libraries", type=Path, help="Cargo output directory containing the DSOs")
@@ -39,6 +50,16 @@ def main():
         name = package["name"]
         cdylibs = [target for target in package["targets"] if "cdylib" in target["crate_types"]]
         assert bool(cdylibs) == (name in owners), f"unexpected library target for {name}"
+        if name in {"streamfusion-kafka", "streamfusion-format-support"}:
+            codecs = {"arrow-avro", "prost", "prost-types", "prost-reflect", "simd-json", "csv-core"}
+            normal = [dep for dep in package["dependencies"] if dep["kind"] is None]
+            assert not (codecs & {dep["name"] for dep in normal}), (
+                f"{name} links format implementations instead of their owning optional library"
+            )
+            if name == "streamfusion-kafka":
+                assert all("json" not in dep["features"] for dep in normal if dep["name"] == "arrow"), (
+                    "Kafka must not enable Arrow's JSON encoder"
+                )
         if name in owners and name != "streamfusion":
             pending = [package_id]
             seen = set()
@@ -48,7 +69,10 @@ def main():
                     continue
                 seen.add(dependency)
                 dep_name = packages[dependency]["name"]
-                assert dep_name != "streamfusion" and not dep_name.startswith("datafusion"), (
+                sort_dependency = name == "streamfusion-iceberg" and dep_name in ICEBERG_SORT_DEPENDENCIES
+                assert dep_name != "streamfusion" and (
+                    not dep_name.startswith("datafusion") or sort_dependency
+                ), (
                     f"{name} reaches engine dependency {dep_name}"
                 )
                 if dependency != package_id and dep_name in owners:

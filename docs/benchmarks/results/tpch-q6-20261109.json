@@ -1,0 +1,651 @@
+{
+  "mode": "compare",
+  "scale": 1.0,
+  "javaVersion": "17.0.17",
+  "javaVm": "OpenJDK 64-Bit Server VM",
+  "os": "Mac OS X aarch64",
+  "maxHeapBytes": 8589934592,
+  "generator": "io.airlift.tpch:tpch:0.10",
+  "schema": "TPC-H identifiers BIGINT, integer INT, numeric DECIMAL(15,2), date DATE, text STRING",
+  "parallelism": 2,
+  "nativeBytes": 536870912,
+  "warmups": 3,
+  "trials": 7,
+  "tables": {
+    "customer": {
+      "bytes": 24196144,
+      "sha256": "a035a33a703d3a043ecf97746b4e3a7988316c1c04923fda63231a59d5e46092",
+      "rows": 150000
+    },
+    "orders": {
+      "bytes": 170452161,
+      "sha256": "3f111871419ea6f319fcc51c235d199b3edf16754c5e100be92927527e5f6c97",
+      "rows": 1500000
+    },
+    "lineitem": {
+      "bytes": 753862072,
+      "sha256": "4feb529dfa255799bbf0243d2f2c5028375dfb684e592eb94775345602aa2728",
+      "rows": 6001215
+    },
+    "part": {
+      "bytes": 23935125,
+      "sha256": "cecd01146ae002aebe47e6b58bd81644df1d51d9c14da3425aea2b4976e02d60",
+      "rows": 200000
+    },
+    "partsupp": {
+      "bytes": 118184616,
+      "sha256": "3a68b7b7757cd3aacccb39c4bc092dc3edf3b7e0e7609a259c39238cae0be41e",
+      "rows": 800000
+    },
+    "supplier": {
+      "bytes": 1399184,
+      "sha256": "f5699b5df22724f41bee9b8521798d8fc0cecd5beb0bd3bca96547ac58095547",
+      "rows": 10000
+    },
+    "nation": {
+      "bytes": 2199,
+      "sha256": "7d47bc9397da331054fa92b8fb92e4c074004bad72dcbb893012093218dccf6c",
+      "rows": 25
+    },
+    "region": {
+      "bytes": 384,
+      "sha256": "5a7c2fe9718db00ff5e5bc82a9ebfa8abc492cc75260d3c0ffb411974f235ab0",
+      "rows": 5
+    }
+  },
+  "date": "2026-11-09",
+  "flink": "2.2.1",
+  "phase": "first_admitted_query_not_full_workload_completion",
+  "librarySha256": "93c0581f6e4a3cf6e25394ce14cb46dda89804183c1e657df77e7229560bcf01",
+  "boundary": "Before executeSql through row result consumption and completed JobExecutionResult. Identical stock CSV filesystem scans, schemas, collecting sinks, resources and SQL; native perimeter conversions and blocking Arrow IPC retained.",
+  "queries": [
+    {
+      "query": 6,
+      "sqlSha256": "9a0f373ae3a61ce5596f4b77647988f09b3f8261661853a11db1930708771c21",
+      "sql": "-- database: presto; groups: tpch; tables: lineitem\nSELECT sum(l_extendedprice * l_discount) AS revenue\nFROM\n  lineitem\nWHERE\n  l_shipdate >= DATE '1994-01-01'\n  AND l_shipdate < DATE '1994-01-01' + INTERVAL '1' YEAR\n-- AND l_discount BETWEEN decimal '0.06' - decimal '0.01' AND decimal '0.06' + decimal '0.01'\n-- we don't support the above feature\nAND l_discount BETWEEN 0.06 - 0.01 AND 0.06 + 0.01\nAND l_quantity < 24\n",
+      "nativePlanned": true,
+      "runs": [
+        {
+          "engine": "streamfusion",
+          "trial": -3,
+          "jobId": "f7bf650eb54968e159ccd10377b187a7",
+          "nativeWork": [
+            {
+              "jobId": "f7bf650eb54968e159ccd10377b187a7",
+              "recordsIn": 0,
+              "operator": "NativeAggregate(select=[Partial_SUM($f0) AS sum$0])[27]",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0"
+            },
+            {
+              "jobId": "f7bf650eb54968e159ccd10377b187a7",
+              "recordsIn": 0,
+              "operator": "NativeCalc(select=[*(l_extendedprice, l_discount) AS $f0], where=[AND(SEARCH(l_s",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0"
+            },
+            {
+              "jobId": "f7bf650eb54968e159ccd10377b187a7",
+              "recordsIn": 1,
+              "operator": "NativeAggregate(isMerge=[true], select=[Final_SUM(sum$0) AS revenue])[29]",
+              "recordsOut": 1,
+              "subtask": "0",
+              "attempt": "0"
+            },
+            {
+              "jobId": "f7bf650eb54968e159ccd10377b187a7",
+              "recordsIn": 114160,
+              "operator": "NativeAggregate(select=[Partial_SUM($f0) AS sum$0])[27]",
+              "recordsOut": 1,
+              "subtask": "1",
+              "attempt": "0"
+            },
+            {
+              "jobId": "f7bf650eb54968e159ccd10377b187a7",
+              "recordsIn": 6001215,
+              "operator": "NativeCalc(select=[*(l_extendedprice, l_discount) AS $f0], where=[AND(SEARCH(l_s",
+              "recordsOut": 114160,
+              "subtask": "1",
+              "attempt": "0"
+            }
+          ]
+        },
+        {
+          "engine": "stock",
+          "trial": -3,
+          "jobId": "a985c7fcea463c9493c45116a53366d9",
+          "nativeWork": []
+        },
+        {
+          "engine": "stock",
+          "trial": -2,
+          "jobId": "d4cb71aed260818971a4cfa7bd95b57a",
+          "nativeWork": []
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -2,
+          "jobId": "888945d1e4bce13f9ad73af5f20fcd1d",
+          "nativeWork": [
+            {
+              "jobId": "888945d1e4bce13f9ad73af5f20fcd1d",
+              "recordsIn": 0,
+              "operator": "NativeAggregate(select=[Partial_SUM($f0) AS sum$0])[50]",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0"
+            },
+            {
+              "jobId": "888945d1e4bce13f9ad73af5f20fcd1d",
+              "recordsIn": 0,
+              "operator": "NativeCalc(select=[*(l_extendedprice, l_discount) AS $f0], where=[AND(SEARCH(l_s",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0"
+            },
+            {
+              "jobId": "888945d1e4bce13f9ad73af5f20fcd1d",
+              "recordsIn": 1,
+              "operator": "NativeAggregate(isMerge=[true], select=[Final_SUM(sum$0) AS revenue])[52]",
+              "recordsOut": 1,
+              "subtask": "0",
+              "attempt": "0"
+            },
+            {
+              "jobId": "888945d1e4bce13f9ad73af5f20fcd1d",
+              "recordsIn": 114160,
+              "operator": "NativeAggregate(select=[Partial_SUM($f0) AS sum$0])[50]",
+              "recordsOut": 1,
+              "subtask": "1",
+              "attempt": "0"
+            },
+            {
+              "jobId": "888945d1e4bce13f9ad73af5f20fcd1d",
+              "recordsIn": 6001215,
+              "operator": "NativeCalc(select=[*(l_extendedprice, l_discount) AS $f0], where=[AND(SEARCH(l_s",
+              "recordsOut": 114160,
+              "subtask": "1",
+              "attempt": "0"
+            }
+          ]
+        },
+        {
+          "engine": "streamfusion",
+          "trial": -1,
+          "jobId": "20aad7ee671e9ed5bc735667e91a058e",
+          "nativeWork": [
+            {
+              "jobId": "20aad7ee671e9ed5bc735667e91a058e",
+              "recordsIn": 0,
+              "operator": "NativeAggregate(select=[Partial_SUM($f0) AS sum$0])[61]",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0"
+            },
+            {
+              "jobId": "20aad7ee671e9ed5bc735667e91a058e",
+              "recordsIn": 0,
+              "operator": "NativeCalc(select=[*(l_extendedprice, l_discount) AS $f0], where=[AND(SEARCH(l_s",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0"
+            },
+            {
+              "jobId": "20aad7ee671e9ed5bc735667e91a058e",
+              "recordsIn": 1,
+              "operator": "NativeAggregate(isMerge=[true], select=[Final_SUM(sum$0) AS revenue])[63]",
+              "recordsOut": 1,
+              "subtask": "0",
+              "attempt": "0"
+            },
+            {
+              "jobId": "20aad7ee671e9ed5bc735667e91a058e",
+              "recordsIn": 114160,
+              "operator": "NativeAggregate(select=[Partial_SUM($f0) AS sum$0])[61]",
+              "recordsOut": 1,
+              "subtask": "1",
+              "attempt": "0"
+            },
+            {
+              "jobId": "20aad7ee671e9ed5bc735667e91a058e",
+              "recordsIn": 6001215,
+              "operator": "NativeCalc(select=[*(l_extendedprice, l_discount) AS $f0], where=[AND(SEARCH(l_s",
+              "recordsOut": 114160,
+              "subtask": "1",
+              "attempt": "0"
+            }
+          ]
+        },
+        {
+          "engine": "stock",
+          "trial": -1,
+          "jobId": "c3adfd7bd727267891957eded183f8b8",
+          "nativeWork": []
+        },
+        {
+          "engine": "stock",
+          "trial": 0,
+          "jobId": "0bcf944c96f560be5aedfa9223868196",
+          "nativeWork": []
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 0,
+          "jobId": "a5f9f79c93625cb58d05829f07cac072",
+          "nativeWork": [
+            {
+              "jobId": "a5f9f79c93625cb58d05829f07cac072",
+              "recordsIn": 0,
+              "operator": "NativeAggregate(select=[Partial_SUM($f0) AS sum$0])[84]",
+              "recordsOut": 0,
+              "subtask": "1",
+              "attempt": "0"
+            },
+            {
+              "jobId": "a5f9f79c93625cb58d05829f07cac072",
+              "recordsIn": 0,
+              "operator": "NativeCalc(select=[*(l_extendedprice, l_discount) AS $f0], where=[AND(SEARCH(l_s",
+              "recordsOut": 0,
+              "subtask": "1",
+              "attempt": "0"
+            },
+            {
+              "jobId": "a5f9f79c93625cb58d05829f07cac072",
+              "recordsIn": 1,
+              "operator": "NativeAggregate(isMerge=[true], select=[Final_SUM(sum$0) AS revenue])[86]",
+              "recordsOut": 1,
+              "subtask": "0",
+              "attempt": "0"
+            },
+            {
+              "jobId": "a5f9f79c93625cb58d05829f07cac072",
+              "recordsIn": 114160,
+              "operator": "NativeAggregate(select=[Partial_SUM($f0) AS sum$0])[84]",
+              "recordsOut": 1,
+              "subtask": "0",
+              "attempt": "0"
+            },
+            {
+              "jobId": "a5f9f79c93625cb58d05829f07cac072",
+              "recordsIn": 6001215,
+              "operator": "NativeCalc(select=[*(l_extendedprice, l_discount) AS $f0], where=[AND(SEARCH(l_s",
+              "recordsOut": 114160,
+              "subtask": "0",
+              "attempt": "0"
+            }
+          ]
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 1,
+          "jobId": "d3ebde9dd9fede66e329b6855ca377b4",
+          "nativeWork": [
+            {
+              "jobId": "d3ebde9dd9fede66e329b6855ca377b4",
+              "recordsIn": 0,
+              "operator": "NativeAggregate(select=[Partial_SUM($f0) AS sum$0])[95]",
+              "recordsOut": 0,
+              "subtask": "1",
+              "attempt": "0"
+            },
+            {
+              "jobId": "d3ebde9dd9fede66e329b6855ca377b4",
+              "recordsIn": 0,
+              "operator": "NativeCalc(select=[*(l_extendedprice, l_discount) AS $f0], where=[AND(SEARCH(l_s",
+              "recordsOut": 0,
+              "subtask": "1",
+              "attempt": "0"
+            },
+            {
+              "jobId": "d3ebde9dd9fede66e329b6855ca377b4",
+              "recordsIn": 1,
+              "operator": "NativeAggregate(isMerge=[true], select=[Final_SUM(sum$0) AS revenue])[97]",
+              "recordsOut": 1,
+              "subtask": "0",
+              "attempt": "0"
+            },
+            {
+              "jobId": "d3ebde9dd9fede66e329b6855ca377b4",
+              "recordsIn": 114160,
+              "operator": "NativeAggregate(select=[Partial_SUM($f0) AS sum$0])[95]",
+              "recordsOut": 1,
+              "subtask": "0",
+              "attempt": "0"
+            },
+            {
+              "jobId": "d3ebde9dd9fede66e329b6855ca377b4",
+              "recordsIn": 6001215,
+              "operator": "NativeCalc(select=[*(l_extendedprice, l_discount) AS $f0], where=[AND(SEARCH(l_s",
+              "recordsOut": 114160,
+              "subtask": "0",
+              "attempt": "0"
+            }
+          ]
+        },
+        {
+          "engine": "stock",
+          "trial": 1,
+          "jobId": "7817c14d55fc286b028c9dc0616c0166",
+          "nativeWork": []
+        },
+        {
+          "engine": "stock",
+          "trial": 2,
+          "jobId": "ef9822368e52321f97ebfe1cffc93556",
+          "nativeWork": []
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 2,
+          "jobId": "77a2753fb4d6953b8e369d220c20d72d",
+          "nativeWork": [
+            {
+              "jobId": "77a2753fb4d6953b8e369d220c20d72d",
+              "recordsIn": 0,
+              "operator": "NativeAggregate(select=[Partial_SUM($f0) AS sum$0])[118]",
+              "recordsOut": 0,
+              "subtask": "1",
+              "attempt": "0"
+            },
+            {
+              "jobId": "77a2753fb4d6953b8e369d220c20d72d",
+              "recordsIn": 0,
+              "operator": "NativeCalc(select=[*(l_extendedprice, l_discount) AS $f0], where=[AND(SEARCH(l_s",
+              "recordsOut": 0,
+              "subtask": "1",
+              "attempt": "0"
+            },
+            {
+              "jobId": "77a2753fb4d6953b8e369d220c20d72d",
+              "recordsIn": 1,
+              "operator": "NativeAggregate(isMerge=[true], select=[Final_SUM(sum$0) AS revenue])[120]",
+              "recordsOut": 1,
+              "subtask": "0",
+              "attempt": "0"
+            },
+            {
+              "jobId": "77a2753fb4d6953b8e369d220c20d72d",
+              "recordsIn": 114160,
+              "operator": "NativeAggregate(select=[Partial_SUM($f0) AS sum$0])[118]",
+              "recordsOut": 1,
+              "subtask": "0",
+              "attempt": "0"
+            },
+            {
+              "jobId": "77a2753fb4d6953b8e369d220c20d72d",
+              "recordsIn": 6001215,
+              "operator": "NativeCalc(select=[*(l_extendedprice, l_discount) AS $f0], where=[AND(SEARCH(l_s",
+              "recordsOut": 114160,
+              "subtask": "0",
+              "attempt": "0"
+            }
+          ]
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 3,
+          "jobId": "1b26e08b3a5bb947e981594bfef56ec7",
+          "nativeWork": [
+            {
+              "jobId": "1b26e08b3a5bb947e981594bfef56ec7",
+              "recordsIn": 0,
+              "operator": "NativeAggregate(select=[Partial_SUM($f0) AS sum$0])[129]",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0"
+            },
+            {
+              "jobId": "1b26e08b3a5bb947e981594bfef56ec7",
+              "recordsIn": 0,
+              "operator": "NativeCalc(select=[*(l_extendedprice, l_discount) AS $f0], where=[AND(SEARCH(l_s",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0"
+            },
+            {
+              "jobId": "1b26e08b3a5bb947e981594bfef56ec7",
+              "recordsIn": 1,
+              "operator": "NativeAggregate(isMerge=[true], select=[Final_SUM(sum$0) AS revenue])[131]",
+              "recordsOut": 1,
+              "subtask": "0",
+              "attempt": "0"
+            },
+            {
+              "jobId": "1b26e08b3a5bb947e981594bfef56ec7",
+              "recordsIn": 114160,
+              "operator": "NativeAggregate(select=[Partial_SUM($f0) AS sum$0])[129]",
+              "recordsOut": 1,
+              "subtask": "1",
+              "attempt": "0"
+            },
+            {
+              "jobId": "1b26e08b3a5bb947e981594bfef56ec7",
+              "recordsIn": 6001215,
+              "operator": "NativeCalc(select=[*(l_extendedprice, l_discount) AS $f0], where=[AND(SEARCH(l_s",
+              "recordsOut": 114160,
+              "subtask": "1",
+              "attempt": "0"
+            }
+          ]
+        },
+        {
+          "engine": "stock",
+          "trial": 3,
+          "jobId": "2addb556c5fed28d3a11b9590619fd2c",
+          "nativeWork": []
+        },
+        {
+          "engine": "stock",
+          "trial": 4,
+          "jobId": "04dc49ae73b6deb411f4a268c400afa2",
+          "nativeWork": []
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 4,
+          "jobId": "9c92176a27187a7737af40cdcbe16bee",
+          "nativeWork": [
+            {
+              "jobId": "9c92176a27187a7737af40cdcbe16bee",
+              "recordsIn": 0,
+              "operator": "NativeAggregate(select=[Partial_SUM($f0) AS sum$0])[152]",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0"
+            },
+            {
+              "jobId": "9c92176a27187a7737af40cdcbe16bee",
+              "recordsIn": 0,
+              "operator": "NativeCalc(select=[*(l_extendedprice, l_discount) AS $f0], where=[AND(SEARCH(l_s",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0"
+            },
+            {
+              "jobId": "9c92176a27187a7737af40cdcbe16bee",
+              "recordsIn": 1,
+              "operator": "NativeAggregate(isMerge=[true], select=[Final_SUM(sum$0) AS revenue])[154]",
+              "recordsOut": 1,
+              "subtask": "0",
+              "attempt": "0"
+            },
+            {
+              "jobId": "9c92176a27187a7737af40cdcbe16bee",
+              "recordsIn": 114160,
+              "operator": "NativeAggregate(select=[Partial_SUM($f0) AS sum$0])[152]",
+              "recordsOut": 1,
+              "subtask": "1",
+              "attempt": "0"
+            },
+            {
+              "jobId": "9c92176a27187a7737af40cdcbe16bee",
+              "recordsIn": 6001215,
+              "operator": "NativeCalc(select=[*(l_extendedprice, l_discount) AS $f0], where=[AND(SEARCH(l_s",
+              "recordsOut": 114160,
+              "subtask": "1",
+              "attempt": "0"
+            }
+          ]
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 5,
+          "jobId": "a337eb3cb7c766604446ae389f0465df",
+          "nativeWork": [
+            {
+              "jobId": "a337eb3cb7c766604446ae389f0465df",
+              "recordsIn": 0,
+              "operator": "NativeAggregate(select=[Partial_SUM($f0) AS sum$0])[163]",
+              "recordsOut": 0,
+              "subtask": "1",
+              "attempt": "0"
+            },
+            {
+              "jobId": "a337eb3cb7c766604446ae389f0465df",
+              "recordsIn": 0,
+              "operator": "NativeCalc(select=[*(l_extendedprice, l_discount) AS $f0], where=[AND(SEARCH(l_s",
+              "recordsOut": 0,
+              "subtask": "1",
+              "attempt": "0"
+            },
+            {
+              "jobId": "a337eb3cb7c766604446ae389f0465df",
+              "recordsIn": 1,
+              "operator": "NativeAggregate(isMerge=[true], select=[Final_SUM(sum$0) AS revenue])[165]",
+              "recordsOut": 1,
+              "subtask": "0",
+              "attempt": "0"
+            },
+            {
+              "jobId": "a337eb3cb7c766604446ae389f0465df",
+              "recordsIn": 114160,
+              "operator": "NativeAggregate(select=[Partial_SUM($f0) AS sum$0])[163]",
+              "recordsOut": 1,
+              "subtask": "0",
+              "attempt": "0"
+            },
+            {
+              "jobId": "a337eb3cb7c766604446ae389f0465df",
+              "recordsIn": 6001215,
+              "operator": "NativeCalc(select=[*(l_extendedprice, l_discount) AS $f0], where=[AND(SEARCH(l_s",
+              "recordsOut": 114160,
+              "subtask": "0",
+              "attempt": "0"
+            }
+          ]
+        },
+        {
+          "engine": "stock",
+          "trial": 5,
+          "jobId": "5a865e71916563d61c44deaae895cc2c",
+          "nativeWork": []
+        },
+        {
+          "engine": "stock",
+          "trial": 6,
+          "jobId": "25da0c2ac73b7dc91e2a816ac9c17d59",
+          "nativeWork": []
+        },
+        {
+          "engine": "streamfusion",
+          "trial": 6,
+          "jobId": "3b09a13c2620f627c638de11929f68aa",
+          "nativeWork": [
+            {
+              "jobId": "3b09a13c2620f627c638de11929f68aa",
+              "recordsIn": 0,
+              "operator": "NativeAggregate(select=[Partial_SUM($f0) AS sum$0])[186]",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0"
+            },
+            {
+              "jobId": "3b09a13c2620f627c638de11929f68aa",
+              "recordsIn": 0,
+              "operator": "NativeCalc(select=[*(l_extendedprice, l_discount) AS $f0], where=[AND(SEARCH(l_s",
+              "recordsOut": 0,
+              "subtask": "0",
+              "attempt": "0"
+            },
+            {
+              "jobId": "3b09a13c2620f627c638de11929f68aa",
+              "recordsIn": 1,
+              "operator": "NativeAggregate(isMerge=[true], select=[Final_SUM(sum$0) AS revenue])[188]",
+              "recordsOut": 1,
+              "subtask": "0",
+              "attempt": "0"
+            },
+            {
+              "jobId": "3b09a13c2620f627c638de11929f68aa",
+              "recordsIn": 114160,
+              "operator": "NativeAggregate(select=[Partial_SUM($f0) AS sum$0])[186]",
+              "recordsOut": 1,
+              "subtask": "1",
+              "attempt": "0"
+            },
+            {
+              "jobId": "3b09a13c2620f627c638de11929f68aa",
+              "recordsIn": 6001215,
+              "operator": "NativeCalc(select=[*(l_extendedprice, l_discount) AS $f0], where=[AND(SEARCH(l_s",
+              "recordsOut": 114160,
+              "subtask": "1",
+              "attempt": "0"
+            }
+          ]
+        }
+      ],
+      "resultType": "ROW<`revenue` DECIMAL(38, 4)> NOT NULL",
+      "rows": 1,
+      "resultSha256": "3b7d6014c113dcbe7abf123c80dfb895bfa79c896008fedd40cd7660be86ddec",
+      "stockNanos": [
+        4831104458,
+        4836585708,
+        4838592333,
+        4831504333,
+        5034561958,
+        4928430666,
+        4941704291
+      ],
+      "nativeNanos": [
+        4831751917,
+        4826510750,
+        4831286709,
+        4825532625,
+        4941408625,
+        4946132375,
+        4933791541
+      ],
+      "stockRuntimeMs": [
+        4765,
+        4775,
+        4759,
+        4758,
+        4967,
+        4813,
+        4837
+      ],
+      "nativeRuntimeMs": [
+        4724,
+        4770,
+        4806,
+        4738,
+        4817,
+        4830,
+        4884
+      ],
+      "status": "passed",
+      "stockMedianMs": 4838.592333,
+      "nativeMedianMs": 4831.751917,
+      "stockOverNative": 1.0014157216921533
+    }
+  ],
+  "status": "exact_results_and_native_work_verified_no_demonstrated_complete_job_speedup",
+  "sourceSha256": {
+    "native/engine/src/bounded_aggregate.rs": "32ff00a90c0ac45ffa57e63bd579da51771ccd58b1d25405e69f7057e5b859da",
+    "native/engine/src/aggregates.rs": "cb1839d7cf39cedd96ba87671462860d234315fa09b43a1aca1a57ff2f1c353a",
+    "native/engine/src/bounded_task.rs": "b17da522f8221e8408eb318c05180389e891abbdf3e8986ccdf8d703fa549e80",
+    "src/main/java/tech/streamfusion/planner/BatchAggregateSpec.java": "29de655fd871b3ccf7846081c711ad4d6b64921c3c6465da01c555b84d4cd59d"
+  }
+}

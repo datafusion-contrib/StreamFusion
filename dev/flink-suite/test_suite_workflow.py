@@ -89,7 +89,7 @@ class SuiteWorkflowTest(unittest.TestCase):
                     report.write_text(saved)
 
     def test_final_gate_rejects_failed_cancelled_and_unexpected_skipped_jobs(self):
-        dependencies = ("upstream-line", "legacy-delta-audit")
+        dependencies = ("plan", "upstream-line", "legacy-delta-audit")
         for inventory in (False, True):
             for dependency in dependencies:
                 for state in ("success", "failure", "cancelled", "skipped"):
@@ -98,7 +98,8 @@ class SuiteWorkflowTest(unittest.TestCase):
                                    for name in dependencies}
                         result = subprocess.run(["bash", "-e", "-c", command("Require every upstream suite to succeed")],
                                                 env={**os.environ, "NEEDS_JSON": json.dumps(results),
-                                                     "INVENTORY": str(inventory).lower()}, capture_output=True)
+                                                     "INVENTORY": str(inventory).lower(),
+                                                     "DOCS_ONLY": "false"}, capture_output=True)
                         accepted = state == "success" or (inventory and dependency == "legacy-delta-audit" and state == "skipped")
                         self.assertEqual(accepted, result.returncode == 0, result.stderr)
 

@@ -11,49 +11,95 @@ import org.apache.flink.table.api.Schema;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.types.Row;
 import org.apache.flink.types.RowKind;
-import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import tech.streamfusion.planner.NativePlanner;
 
+@TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class FlinkCollectionLegacyConsumerSqlHarnessTest {
-  private static final RecoveryExecutionMetrics METRICS = new RecoveryExecutionMetrics();
+  private final RecoveryExecutionMetrics metrics = new RecoveryExecutionMetrics();
 
-  @AfterAll
-  static void closeCluster() {
-    METRICS.close();
+  @AfterEach
+  void closeCluster() {
+    metrics.close();
   }
 
-  private static StreamTableEnvironment environment(int parallelism) {
-    var env = METRICS.environment(new Configuration(), parallelism, 0);
+  private StreamTableEnvironment environment(int parallelism, String type) {
+    var env = metrics.environment(new Configuration(), parallelism, 0);
     env.getConfig().enableObjectReuse();
     var table = StreamTableEnvironment.create(env);
     table.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
     table.getConfig().set("streamfusion.transpose.batchRows", "3");
+    var rows =
+        new ArrayList<>(
+            List.of(
+                Row.of("", -128L),
+                Row.of("", -128L),
+                Row.of("", null),
+                Row.of(null, 32767L),
+                Row.of("é🙂", null),
+                Row.of("?", Long.MIN_VALUE),
+                Row.of("\ud800", Long.MAX_VALUE),
+                Row.ofKind(RowKind.UPDATE_BEFORE, "", -128L),
+                Row.ofKind(RowKind.UPDATE_AFTER, "", 127L),
+                Row.ofKind(RowKind.DELETE, "", -128L),
+                Row.ofKind(RowKind.DELETE, "é🙂", null),
+                Row.of("é🙂", 7L)));
+    for (Row row : rows) {
+      Long value = (Long) row.getField(1);
+      if (value == null) continue;
+      if (type.equals("DATE"))
+        row.setField(1, java.time.LocalDate.ofEpochDay(Math.floorMod(value, 730000) - 365000));
+      if (type.equals("TIME"))
+        row.setField(
+            1, java.time.LocalTime.ofNanoOfDay(Math.floorMod(value, 86400000) * 1_000_000L));
+    }
+    boolean timestamp = type.startsWith("TIMESTAMP");
+    boolean yearMonth =
+        type.startsWith("INTERVAL") && (type.contains("YEAR") || type.contains("MONTH"));
+    boolean interval = type.startsWith("INTERVAL");
+    if (timestamp) table.getConfig().setLocalTimeZone(java.time.ZoneOffset.UTC);
+    for (Row row : rows) {
+      if (row.getField(1) == null) continue;
+      if (timestamp) {
+        long value = (Long) row.getField(1);
+        var date =
+            java.time.LocalDateTime.of(value < 0 ? 1 : 9999, 1, 1, 0, 0, 0, 123456789)
+                .plusSeconds(Math.floorMod(value, 86400));
+        row.setField(
+            1, type.startsWith("TIMESTAMP_LTZ") ? date.toInstant(java.time.ZoneOffset.UTC) : date);
+      } else if (yearMonth)
+        row.setField(1, Integer.valueOf((int) ((Long) row.getField(1)).longValue()));
+    }
+    var logicalValueType = DataTypes.of(type.equals("TIME") ? "TIME(3)" : type);
+    if (interval)
+      logicalValueType = logicalValueType.bridgedTo(yearMonth ? Integer.class : Long.class);
     var input =
         tech.streamfusion.compat.FlinkTestSources.fromData(
             env,
-            Types.ROW_NAMED(new String[] {"k", "v"}, Types.STRING, Types.LONG),
-            Row.of("", -128L),
-            Row.of("", -128L),
-            Row.of("", null),
-            Row.of(null, 32767L),
-            Row.of("é🙂", null),
-            Row.of("?", Long.MIN_VALUE),
-            Row.of("\ud800", Long.MAX_VALUE),
-            Row.ofKind(RowKind.UPDATE_BEFORE, "", -128L),
-            Row.ofKind(RowKind.UPDATE_AFTER, "", 127L),
-            Row.ofKind(RowKind.DELETE, "", -128L),
-            Row.ofKind(RowKind.DELETE, "é🙂", null),
-            Row.of("é🙂", 7L));
+            rows,
+            Types.ROW_NAMED(
+                new String[] {"k", "v"},
+                Types.STRING,
+                type.startsWith("TIMESTAMP_LTZ")
+                    ? Types.INSTANT
+                    : timestamp
+                        ? Types.LOCAL_DATE_TIME
+                        : yearMonth
+                            ? Types.INT
+                            : type.equals("DATE")
+                                ? Types.LOCAL_DATE
+                                : type.equals("TIME") ? Types.LOCAL_TIME : Types.LONG));
     table.createTemporaryView(
         "src",
         table.fromChangelogStream(
             input,
             Schema.newBuilder()
                 .column("k", DataTypes.STRING())
-                .column("v", DataTypes.BIGINT())
+                .column("v", logicalValueType)
                 .build()));
     return table;
   }
@@ -69,7 +115,17 @@ class FlinkCollectionLegacyConsumerSqlHarnessTest {
     "ARRAY_AGG,SMALLINT",
     "ARRAY_AGG,INT",
     "ARRAY_AGG,BIGINT",
-    "ARRAY_AGG,BOOLEAN"
+    "ARRAY_AGG,BOOLEAN",
+    "COLLECT,FLOAT",
+    "COLLECT,DOUBLE",
+    "COLLECT,'DECIMAL(8,2)'",
+    "COLLECT,'DECIMAL(20,4)'",
+    "COLLECT,'DECIMAL(38,18)'",
+    "ARRAY_AGG,FLOAT",
+    "ARRAY_AGG,DOUBLE",
+    "ARRAY_AGG,'DECIMAL(8,2)'",
+    "ARRAY_AGG,'DECIMAL(20,4)'",
+    "ARRAY_AGG,'DECIMAL(38,18)'"
   })
   void legacyExternalRowsKeepOrderedChangesAndValues(String function, String type)
       throws Exception {
@@ -98,6 +154,42 @@ class FlinkCollectionLegacyConsumerSqlHarnessTest {
           perKey(collect(sql, parallelism, false, false)),
           perKey(collect(sql, parallelism, true, true)));
     }
+  }
+
+  @ParameterizedTest
+  @CsvSource({"COLLECT,DATE", "COLLECT,TIME", "ARRAY_AGG,DATE", "ARRAY_AGG,TIME"})
+  void temporalCollectionsRetainLegacyRowsAcrossExchanges(String function, String type)
+      throws Exception {
+    tech.streamfusion.compat.FlinkTestCapabilities.requireSqlFunction(function);
+    String sql =
+        "SELECT k," + function + "(v)," + function + "(DISTINCT v),COUNT(*) FROM src GROUP BY k";
+    for (int parallelism : new int[] {1, 3})
+      assertEquals(
+          perKey(collect(type, sql, parallelism, false, false)),
+          perKey(collect(type, sql, parallelism, true, true)));
+  }
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.MethodSource("temporalCollectionProfiles")
+  void timestampAndIntervalCollectionsKeepLegacyRows(String function, String type)
+      throws Exception {
+    tech.streamfusion.compat.FlinkTestCapabilities.requireSqlFunction(function);
+    String sql =
+        "SELECT k," + function + "(v)," + function + "(DISTINCT v),COUNT(*) FROM src GROUP BY k";
+    for (int parallelism : new int[] {1, 3})
+      assertEquals(
+          perKey(collect(type, sql, parallelism, false, false)),
+          perKey(collect(type, sql, parallelism, true, true)));
+  }
+
+  static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments>
+      temporalCollectionProfiles() {
+    return FlinkPrimitiveCollectionSqlHarnessTest.collectionSignatures()
+        .filter(
+            args -> {
+              String type = (String) args.get()[1];
+              return type.startsWith("TIMESTAMP") || type.startsWith("INTERVAL");
+            });
   }
 
   @ParameterizedTest
@@ -133,14 +225,25 @@ class FlinkCollectionLegacyConsumerSqlHarnessTest {
     }
   }
 
-  private static List<List<Object>> collect(
+  private List<List<Object>> collect(
       String sql, int parallelism, boolean nativeEnabled, boolean expectNative, String... consumed)
       throws Exception {
+    return collect("BIGINT", sql, parallelism, nativeEnabled, expectNative, consumed);
+  }
+
+  private List<List<Object>> collect(
+      String type,
+      String sql,
+      int parallelism,
+      boolean nativeEnabled,
+      boolean expectNative,
+      String... consumed)
+      throws Exception {
     var previous =
-        METRICS.nativeOperators().stream()
+        metrics.nativeOperators().stream()
             .map(row -> row.get("jobId"))
             .collect(java.util.stream.Collectors.toSet());
-    var table = environment(parallelism);
+    var table = environment(parallelism, type);
     var scan = nativeEnabled ? NativePlanner.install(table) : null;
     var result = new ArrayList<List<Object>>();
     var query = table.sqlQuery(sql);
@@ -155,7 +258,7 @@ class FlinkCollectionLegacyConsumerSqlHarnessTest {
       }
     }
     var work =
-        METRICS.nativeOperators().stream()
+        metrics.nativeOperators().stream()
             .filter(row -> !previous.contains(row.get("jobId")))
             .collect(java.util.stream.Collectors.toList());
     if (expectNative) {

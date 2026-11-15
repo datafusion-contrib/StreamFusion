@@ -22,7 +22,9 @@ class ColumnarShuffleOutputTest {
     var operator =
         new SplitByKeyGroupOperator(
             singleton ? new int[0] : new int[] {0},
-            singleton ? new int[0] : new int[] {-1}, 128, recoverable);
+            singleton ? new int[0] : new int[] {-1},
+            128,
+            recoverable);
     try (var harness = new OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch>(operator)) {
       var partitioner =
           singleton
@@ -30,7 +32,10 @@ class ColumnarShuffleOutputTest {
               : ColumnarKeyGroupPartitioner.singleton(128, recoverable);
       var output = ColumnarShuffleTestOutput.output(1, 128, partitioner);
       ColumnarShuffleTestOutput.configure(
-          harness, List.of(output), List.of(output), List.of(ColumnarShuffleTestOutput.writer(1, 128)));
+          harness,
+          List.of(output),
+          List.of(output),
+          List.of(ColumnarShuffleTestOutput.writer(1, 128)));
       harness.setup(new ArrowBatchSerializer());
       var error =
           assertThrows(
@@ -43,19 +48,54 @@ class ColumnarShuffleOutputTest {
   @ParameterizedTest
   @CsvSource({"false,128", "false,256", "true,128", "true,256"})
   void singletonKeepsItsStateNamespace(boolean recoverable, int maxParallelism) throws Exception {
-    var operator =
-        new SplitByKeyGroupOperator(new int[0], new int[0], maxParallelism, recoverable);
+    var operator = new SplitByKeyGroupOperator(new int[0], new int[0], maxParallelism, recoverable);
     try (var harness = new OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch>(operator)) {
       var output =
           ColumnarShuffleTestOutput.output(
-              1, maxParallelism, ColumnarKeyGroupPartitioner.singleton(maxParallelism, recoverable));
+              1,
+              maxParallelism,
+              ColumnarKeyGroupPartitioner.singleton(maxParallelism, recoverable));
       ColumnarShuffleTestOutput.configure(
           harness,
           List.of(output),
           List.of(output),
           List.of(ColumnarShuffleTestOutput.writer(1, maxParallelism)));
       harness.setup(new ArrowBatchSerializer());
-      assertEquals(1, ColumnarShuffleOutput.parallelism(operator, maxParallelism, recoverable, true));
+      assertEquals(
+          1, ColumnarShuffleOutput.parallelism(operator, maxParallelism, recoverable, true));
+    }
+  }
+
+  @ParameterizedTest
+  @CsvSource({"4,16", "256,256"})
+  void batchRoutingBindsToTheDeployedWriterRatherThanStreamingStateGroups(int channels, int groups) throws Exception {
+    var operator =
+        new SplitByKeyGroupOperator(
+            new int[] {0}, new int[] {-1}, 128, false, new int[0], true, true);
+    try (var harness = new OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch>(operator)) {
+      var output =
+          new org.apache.flink.streaming.api.graph.NonChainedOutput(
+              true,
+              1,
+              -1,
+              128,
+              0,
+              false,
+              new org.apache.flink.runtime.jobgraph.IntermediateDataSetID(),
+              null,
+              new ColumnarKeyGroupPartitioner(128),
+              org.apache.flink.runtime.io.network.partition.ResultPartitionType.BLOCKING);
+      ColumnarShuffleTestOutput.configure(
+          harness,
+          List.of(output),
+          List.of(output),
+          List.of(ColumnarShuffleTestOutput.writer(channels, groups)));
+      harness.setup(new ArrowBatchSerializer());
+      org.junit.jupiter.api.Assertions.assertArrayEquals(
+          new int[] {channels, groups}, ColumnarShuffleOutput.layout(operator, 128, false, false, true));
+      assertThrows(
+          IllegalStateException.class,
+          () -> ColumnarShuffleOutput.parallelism(operator, 128, false, false));
     }
   }
 

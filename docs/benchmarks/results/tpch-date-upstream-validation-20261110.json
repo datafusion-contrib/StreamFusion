@@ -1,0 +1,582 @@
+{
+  "1.18": {
+    "execution_evidence": [
+      {
+        "case_index": 0,
+        "contract_satisfied": true,
+        "evidence_file": "37f4053f-884a-4e5f-a796-408df035b1ae.tsv",
+        "expected_contract": "!batch Calc: standalone scalar pipeline has no verified speedup",
+        "fallback_reasons": [
+          "batch Calc: standalone scalar pipeline has no verified speedup"
+        ],
+        "invocation_id": "fad40000-f265-4474-81cb-0a149e366662",
+        "native_canonical_import_rows": {},
+        "native_input_rows": {},
+        "observed_route": "full_fallback",
+        "report": "TEST-CalcITCase.xml",
+        "stock_state_owner_rows": {},
+        "submitted_graph_evidence": null,
+        "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateCompareWithDateString",
+        "variant": "*"
+      },
+      {
+        "case_index": 1,
+        "contract_satisfied": true,
+        "evidence_file": "d588ff81-0da5-427b-b9c6-6257a16021cd.tsv",
+        "expected_contract": "!batch Calc: standalone scalar pipeline has no verified speedup",
+        "fallback_reasons": [
+          "batch Calc: standalone scalar pipeline has no verified speedup"
+        ],
+        "invocation_id": "5f14ba78-b225-4fe4-92b9-ba14000d028b",
+        "native_canonical_import_rows": {},
+        "native_input_rows": {},
+        "observed_route": "full_fallback",
+        "report": "TEST-CalcITCase.xml",
+        "stock_state_owner_rows": {},
+        "submitted_graph_evidence": null,
+        "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateEqualsWithDateString",
+        "variant": "*"
+      }
+    ],
+    "schema_version": 1,
+    "scope": {
+      "contract_source": "dev/flink-suite/agent/src/main/resources/native-execution.tsv",
+      "evidence_granularity": "exact_junit_invocation",
+      "outside_contract_scope": "unclassified",
+      "required_runtime_route_prefixes": [],
+      "runtime_route_scope": {
+        "flink_line": "1.18",
+        "requirements": [
+          {
+            "count": 1,
+            "display_name": "testDateCompareWithDateString()",
+            "route": "batch_host_only",
+            "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateCompareWithDateString"
+          },
+          {
+            "count": 1,
+            "display_name": "testDateEqualsWithDateString()",
+            "route": "batch_host_only",
+            "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateEqualsWithDateString"
+          }
+        ],
+        "selected_cases": [
+          {
+            "case_index": 0,
+            "display_name": "testDateCompareWithDateString()",
+            "execution_contract_variant": "*",
+            "invocation_id": "fad40000-f265-4474-81cb-0a149e366662",
+            "report": "TEST-CalcITCase.xml",
+            "runtime_route": "batch_host_only",
+            "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateCompareWithDateString"
+          },
+          {
+            "case_index": 1,
+            "display_name": "testDateEqualsWithDateString()",
+            "execution_contract_variant": "*",
+            "invocation_id": "5f14ba78-b225-4fe4-92b9-ba14000d028b",
+            "report": "TEST-CalcITCase.xml",
+            "runtime_route": "batch_host_only",
+            "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateEqualsWithDateString"
+          }
+        ]
+      }
+    },
+    "status": "passed",
+    "summary": {
+      "contracted_executed": 2,
+      "errors": 0,
+      "evidence_records": 2,
+      "executed": 2,
+      "expected_failures": 0,
+      "failures": 0,
+      "passed": 2,
+      "process_exit": 0,
+      "reports_found": 1,
+      "reports_parsed": 1,
+      "result_exit": 0,
+      "satisfied_evidence_records_by_route": {
+        "full_fallback": 2
+      },
+      "skipped": 0,
+      "testcases_by_runtime_route": {
+        "batch_host_only": 2
+      },
+      "tests": 2,
+      "unclassified_outside_contract_scope": 0
+    },
+    "testcases": [
+      {
+        "case_index": 0,
+        "contract_test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateCompareWithDateString",
+        "contracted": true,
+        "display_name": "testDateCompareWithDateString()",
+        "execution_contract_variant": "*",
+        "expected_failure": false,
+        "invocation_id": "fad40000-f265-4474-81cb-0a149e366662",
+        "jobs": {
+          "10cc4abb68561fc56514122ff5058ce7": {
+            "application_statuses": [
+              "SUCCEEDED"
+            ],
+            "graph": {
+              "job_type": "BATCH",
+              "nodes": [
+                {
+                  "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                  "id": 4016,
+                  "inputs": [],
+                  "name": "Source: Custom Source",
+                  "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                  "parallelism": 1
+                },
+                {
+                  "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                  "id": 4017,
+                  "inputs": [
+                    4016
+                  ],
+                  "name": "SourceConversion[3402]",
+                  "operator_class": "SourceConversion$14174",
+                  "parallelism": 1
+                },
+                {
+                  "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                  "id": 4018,
+                  "inputs": [
+                    4017
+                  ],
+                  "name": "Calc[3403]",
+                  "operator_class": "BatchExecCalc$14178",
+                  "parallelism": 1
+                },
+                {
+                  "factory": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperatorFactory",
+                  "id": 4019,
+                  "inputs": [
+                    4018
+                  ],
+                  "name": "Sink: Collect table sink",
+                  "operator_class": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+                  "parallelism": 1
+                }
+              ],
+              "sql_translation_complete": true,
+              "sql_translation_ids": [
+                0
+              ]
+            },
+            "job_status_error": "java.util.concurrent.CompletionException: java.lang.reflect.InvocationTargetException",
+            "status": "SUCCEEDED"
+          }
+        },
+        "junit_id": "[engine:junit-jupiter]/[class:org.apache.flink.table.planner.runtime.batch.sql.CalcITCase]/[method:testDateCompareWithDateString()]",
+        "native_input_rows": {},
+        "outcome": "passed",
+        "report": "TEST-CalcITCase.xml",
+        "runtime_fallback_reasons": {},
+        "runtime_route": "batch_host_only",
+        "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateCompareWithDateString",
+        "translation_details": [
+          {
+            "id": 0,
+            "plan_indices": [
+              0
+            ],
+            "planner": "tech.streamfusion.planner.NativeBatchPlanner",
+            "planner_configuration": {
+              "mode": "BATCH",
+              "unmodified": false
+            },
+            "root_count": 1,
+            "status": "TRANSLATED"
+          }
+        ],
+        "unattributed_native_work": {},
+        "unmatched_job_results": {},
+        "unmatched_native_jobs": {}
+      },
+      {
+        "case_index": 1,
+        "contract_test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateEqualsWithDateString",
+        "contracted": true,
+        "display_name": "testDateEqualsWithDateString()",
+        "execution_contract_variant": "*",
+        "expected_failure": false,
+        "invocation_id": "5f14ba78-b225-4fe4-92b9-ba14000d028b",
+        "jobs": {
+          "ebad3b9a7ca8993b76f7590cd287fa3e": {
+            "application_statuses": [
+              "SUCCEEDED"
+            ],
+            "graph": {
+              "job_type": "BATCH",
+              "nodes": [
+                {
+                  "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                  "id": 4023,
+                  "inputs": [],
+                  "name": "Source: Custom Source",
+                  "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                  "parallelism": 1
+                },
+                {
+                  "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                  "id": 4024,
+                  "inputs": [
+                    4023
+                  ],
+                  "name": "SourceConversion[3405]",
+                  "operator_class": "SourceConversion$14205",
+                  "parallelism": 1
+                },
+                {
+                  "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                  "id": 4025,
+                  "inputs": [
+                    4024
+                  ],
+                  "name": "Calc[3406]",
+                  "operator_class": "BatchExecCalc$14213",
+                  "parallelism": 1
+                },
+                {
+                  "factory": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperatorFactory",
+                  "id": 4026,
+                  "inputs": [
+                    4025
+                  ],
+                  "name": "Sink: Collect table sink",
+                  "operator_class": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+                  "parallelism": 1
+                }
+              ],
+              "sql_translation_complete": true,
+              "sql_translation_ids": [
+                0
+              ]
+            },
+            "job_status_error": "java.util.concurrent.CompletionException: java.lang.reflect.InvocationTargetException",
+            "status": "SUCCEEDED"
+          }
+        },
+        "junit_id": "[engine:junit-jupiter]/[class:org.apache.flink.table.planner.runtime.batch.sql.CalcITCase]/[method:testDateEqualsWithDateString()]",
+        "native_input_rows": {},
+        "outcome": "passed",
+        "report": "TEST-CalcITCase.xml",
+        "runtime_fallback_reasons": {},
+        "runtime_route": "batch_host_only",
+        "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateEqualsWithDateString",
+        "translation_details": [
+          {
+            "id": 0,
+            "plan_indices": [
+              0
+            ],
+            "planner": "tech.streamfusion.planner.NativeBatchPlanner",
+            "planner_configuration": {
+              "mode": "BATCH",
+              "unmodified": false
+            },
+            "root_count": 1,
+            "status": "TRANSLATED"
+          }
+        ],
+        "unattributed_native_work": {},
+        "unmatched_job_results": {},
+        "unmatched_native_jobs": {}
+      }
+    ],
+    "validation_problems": []
+  },
+  "2.2": {
+    "execution_evidence": [
+      {
+        "case_index": 0,
+        "contract_satisfied": true,
+        "evidence_file": "6f721155-cfcc-4ca5-9dd3-b28f2cf25f9c.tsv",
+        "expected_contract": "!batch Calc: standalone scalar pipeline has no verified speedup",
+        "fallback_reasons": [
+          "batch Calc: standalone scalar pipeline has no verified speedup"
+        ],
+        "invocation_id": "e2dfee7f-9782-4a77-9bfe-e712c7d4670b",
+        "native_canonical_import_rows": {},
+        "native_input_rows": {},
+        "observed_route": "full_fallback",
+        "report": "TEST-CalcITCase.xml",
+        "stock_state_owner_rows": {},
+        "submitted_graph_evidence": null,
+        "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateCompareWithDateString",
+        "variant": "*"
+      },
+      {
+        "case_index": 1,
+        "contract_satisfied": true,
+        "evidence_file": "ddf70e58-bcc0-4953-839e-2fcf3ff9d080.tsv",
+        "expected_contract": "!batch Calc: standalone scalar pipeline has no verified speedup",
+        "fallback_reasons": [
+          "batch Calc: standalone scalar pipeline has no verified speedup"
+        ],
+        "invocation_id": "09a1e640-a171-49cc-83c6-17af2e47b710",
+        "native_canonical_import_rows": {},
+        "native_input_rows": {},
+        "observed_route": "full_fallback",
+        "report": "TEST-CalcITCase.xml",
+        "stock_state_owner_rows": {},
+        "submitted_graph_evidence": null,
+        "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateEqualsWithDateString",
+        "variant": "*"
+      }
+    ],
+    "schema_version": 1,
+    "scope": {
+      "contract_source": "dev/flink-suite/agent/src/main/resources/native-execution.tsv",
+      "evidence_granularity": "exact_junit_invocation",
+      "outside_contract_scope": "unclassified",
+      "required_runtime_route_prefixes": [],
+      "runtime_route_scope": {
+        "flink_line": "2.2",
+        "requirements": [
+          {
+            "count": 1,
+            "display_name": "testDateCompareWithDateString()",
+            "route": "batch_host_only",
+            "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateCompareWithDateString"
+          },
+          {
+            "count": 1,
+            "display_name": "testDateEqualsWithDateString()",
+            "route": "batch_host_only",
+            "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateEqualsWithDateString"
+          }
+        ],
+        "selected_cases": [
+          {
+            "case_index": 0,
+            "display_name": "testDateCompareWithDateString()",
+            "execution_contract_variant": "*",
+            "invocation_id": "e2dfee7f-9782-4a77-9bfe-e712c7d4670b",
+            "report": "TEST-CalcITCase.xml",
+            "runtime_route": "batch_host_only",
+            "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateCompareWithDateString"
+          },
+          {
+            "case_index": 1,
+            "display_name": "testDateEqualsWithDateString()",
+            "execution_contract_variant": "*",
+            "invocation_id": "09a1e640-a171-49cc-83c6-17af2e47b710",
+            "report": "TEST-CalcITCase.xml",
+            "runtime_route": "batch_host_only",
+            "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateEqualsWithDateString"
+          }
+        ]
+      }
+    },
+    "status": "passed",
+    "summary": {
+      "contracted_executed": 2,
+      "errors": 0,
+      "evidence_records": 2,
+      "executed": 2,
+      "expected_failures": 0,
+      "failures": 0,
+      "passed": 2,
+      "process_exit": 0,
+      "reports_found": 1,
+      "reports_parsed": 1,
+      "result_exit": 0,
+      "satisfied_evidence_records_by_route": {
+        "full_fallback": 2
+      },
+      "skipped": 0,
+      "testcases_by_runtime_route": {
+        "batch_host_only": 2
+      },
+      "tests": 2,
+      "unclassified_outside_contract_scope": 0
+    },
+    "testcases": [
+      {
+        "case_index": 0,
+        "contract_test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateCompareWithDateString",
+        "contracted": true,
+        "display_name": "testDateCompareWithDateString()",
+        "execution_contract_variant": "*",
+        "expected_failure": false,
+        "invocation_id": "e2dfee7f-9782-4a77-9bfe-e712c7d4670b",
+        "jobs": {
+          "add11eeb056ea70d9d576d4a28f58525": {
+            "application_statuses": [
+              "SUCCEEDED"
+            ],
+            "graph": {
+              "job_type": "BATCH",
+              "nodes": [
+                {
+                  "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                  "id": 4016,
+                  "inputs": [],
+                  "name": "Source: Custom Source",
+                  "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                  "parallelism": 1
+                },
+                {
+                  "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                  "id": 4017,
+                  "inputs": [
+                    4016
+                  ],
+                  "name": "SourceConversion[3402]",
+                  "operator_class": "SourceConversion$11",
+                  "parallelism": 1
+                },
+                {
+                  "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                  "id": 4018,
+                  "inputs": [
+                    4017
+                  ],
+                  "name": "Calc[3403]",
+                  "operator_class": "BatchExecCalc$3",
+                  "parallelism": 1
+                },
+                {
+                  "factory": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperatorFactory",
+                  "id": 4019,
+                  "inputs": [
+                    4018
+                  ],
+                  "name": "Sink: Collect table sink",
+                  "operator_class": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+                  "parallelism": 1
+                }
+              ],
+              "sql_translation_complete": true,
+              "sql_translation_ids": [
+                0
+              ]
+            },
+            "job_status": "FINISHED",
+            "status": "SUCCEEDED"
+          }
+        },
+        "junit_id": "[engine:junit-jupiter]/[class:org.apache.flink.table.planner.runtime.batch.sql.CalcITCase]/[method:testDateCompareWithDateString()]",
+        "native_input_rows": {},
+        "outcome": "passed",
+        "report": "TEST-CalcITCase.xml",
+        "runtime_fallback_reasons": {},
+        "runtime_route": "batch_host_only",
+        "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateCompareWithDateString",
+        "translation_details": [
+          {
+            "id": 0,
+            "plan_indices": [
+              0
+            ],
+            "planner": "tech.streamfusion.planner.NativeBatchPlanner",
+            "planner_configuration": {
+              "mode": "BATCH",
+              "unmodified": false
+            },
+            "root_count": 1,
+            "status": "TRANSLATED"
+          }
+        ],
+        "unattributed_native_work": {},
+        "unmatched_job_results": {},
+        "unmatched_native_jobs": {}
+      },
+      {
+        "case_index": 1,
+        "contract_test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateEqualsWithDateString",
+        "contracted": true,
+        "display_name": "testDateEqualsWithDateString()",
+        "execution_contract_variant": "*",
+        "expected_failure": false,
+        "invocation_id": "09a1e640-a171-49cc-83c6-17af2e47b710",
+        "jobs": {
+          "730691237217d20dd26f3f10c4f247a0": {
+            "application_statuses": [
+              "SUCCEEDED"
+            ],
+            "graph": {
+              "job_type": "BATCH",
+              "nodes": [
+                {
+                  "factory": "org.apache.flink.streaming.api.operators.SimpleInputFormatOperatorFactory",
+                  "id": 4023,
+                  "inputs": [],
+                  "name": "Source: Custom Source",
+                  "operator_class": "org.apache.flink.streaming.api.operators.StreamSource",
+                  "parallelism": 1
+                },
+                {
+                  "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                  "id": 4024,
+                  "inputs": [
+                    4023
+                  ],
+                  "name": "SourceConversion[3405]",
+                  "operator_class": "SourceConversion$11",
+                  "parallelism": 1
+                },
+                {
+                  "factory": "org.apache.flink.table.runtime.operators.CodeGenOperatorFactory",
+                  "id": 4025,
+                  "inputs": [
+                    4024
+                  ],
+                  "name": "Calc[3406]",
+                  "operator_class": "BatchExecCalc$7",
+                  "parallelism": 1
+                },
+                {
+                  "factory": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperatorFactory",
+                  "id": 4026,
+                  "inputs": [
+                    4025
+                  ],
+                  "name": "Sink: Collect table sink",
+                  "operator_class": "org.apache.flink.streaming.api.operators.collect.CollectSinkOperator",
+                  "parallelism": 1
+                }
+              ],
+              "sql_translation_complete": true,
+              "sql_translation_ids": [
+                0
+              ]
+            },
+            "job_status": "FINISHED",
+            "status": "SUCCEEDED"
+          }
+        },
+        "junit_id": "[engine:junit-jupiter]/[class:org.apache.flink.table.planner.runtime.batch.sql.CalcITCase]/[method:testDateEqualsWithDateString()]",
+        "native_input_rows": {},
+        "outcome": "passed",
+        "report": "TEST-CalcITCase.xml",
+        "runtime_fallback_reasons": {},
+        "runtime_route": "batch_host_only",
+        "test": "org.apache.flink.table.planner.runtime.batch.sql.CalcITCase#testDateEqualsWithDateString",
+        "translation_details": [
+          {
+            "id": 0,
+            "plan_indices": [
+              0
+            ],
+            "planner": "tech.streamfusion.planner.NativeBatchPlanner",
+            "planner_configuration": {
+              "mode": "BATCH",
+              "unmodified": false
+            },
+            "root_count": 1,
+            "status": "TRANSLATED"
+          }
+        ],
+        "unattributed_native_work": {},
+        "unmatched_job_results": {},
+        "unmatched_native_jobs": {}
+      }
+    ],
+    "validation_problems": []
+  }
+}

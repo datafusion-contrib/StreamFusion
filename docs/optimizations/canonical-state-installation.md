@@ -42,3 +42,14 @@ caller-buffer mutation, replacing a large partition with a small one, and restor
 This follows the existing Flink-managed ownership contract. Arroyo persists Arrow state through
 asynchronous table writers; StreamFusion keeps Flink's checkpoint container and managed chunk
 format for backend migration and rescaling. No native handoff or snapshot format changes.
+
+## Clear consumed stock maps once per owner
+
+After a validated stock-to-native import, cleanup scans the immutable released snapshot and
+clears each selected state/owner/namespace once. Consecutive MapState entries share that owner
+prefix; clearing the whole map for every member repeats the same backend scan and tombstone
+work. Retaining only the preceding serialized prefix removes that repetition without collecting
+all owners or changing which real state is consumed. Other descriptors remain untouched.
+Large retained-frame and raw-state continuation controls exercise the actual cleanup path.
+Benchmarking this resumed canonical work remains deferred under issue #569, so no throughput
+or end-to-end speedup is claimed.

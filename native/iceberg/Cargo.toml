@@ -13,7 +13,7 @@ streamfusion-bridge = { path = "../bridge" }
 arrow.workspace = true
 parquet.workspace = true
 jni.workspace = true
-iceberg = "=0.10.1"
+iceberg = "=0.11.0"
 async-trait = "0.1"
 bytes.workspace = true
 futures.workspace = true
@@ -21,6 +21,11 @@ serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 typetag = "0.2"
+datafusion-common = "54.0.0"
+datafusion-execution = "54.0.0"
+datafusion-functions = { version = "54.0.0", default-features = false }
+datafusion-physical-expr = "54.0.0"
+datafusion-physical-plan = "54.0.0"
 
 [dependencies.libmimalloc-sys]
 workspace = true

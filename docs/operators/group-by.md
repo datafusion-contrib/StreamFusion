@@ -8,15 +8,25 @@ back](#still-falls-back).
 Flink picks between the two plan shapes itself, based on `table.exec.mini-batch.enabled`; this page
 covers both, since a query only accelerates when whichever shape Flink chose is fully native.
 
-Integer/BOOLEAN COLLECT uses Rust counted multiset state behind Arrow batch boundaries;
+Verified integer, BOOLEAN, DATE/TIME and [floating/decimal](#shared-native-collection-elements)
+COLLECT use Rust counted multiset state behind Arrow batch boundaries;
 see [Integer COLLECT](#integer-collect) for its narrow type and representation gates.
-Integer/BOOLEAN ARRAY_AGG additionally uses Rust sequence state on
+These element families additionally use Rust sequence state for ARRAY_AGG on
 Flink 2.2 as [described below](#integer-array_agg); richer collection results remain pending.
 
 When the selected aggregate uses a mini-batch trigger, translation uses the released host's
 size validation. Unset/default `-1`, zero and negative `table.exec.mini-batch.size` values
 fail during planning with the same exception and message as Flink, for single-phase and
 local/global plans. Mini-batch-disabled aggregation does not validate an unused size.
+
+Ordinary graphs containing an updating or general retracting Top-N can rebuild through the captured stock template
+when a native state owner lacks a qualified canonical binding. That route keeps unqualified grouped
+aggregation on stock Flink and binds the supported rank state automatically. This preserves stock
+accumulators and identities; see [updating canonical coverage](top-n.md#updating-canonical-state-partial)
+and [retracting canonical coverage](top-n.md#retracting-canonical-state-partial).
+The qualified arithmetic contract below can bind its original grouped state automatically;
+broader aggregate bindings remain open in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 
 ## Single-phase
 
@@ -835,7 +845,9 @@ route on both supported JDKs, and check helpful JVM null-dereference text when i
 ## Type support
 
 The separate [integer COLLECT](#integer-collect) and [integer ARRAY_AGG](#integer-array_agg) routes
-admit BOOLEAN and TINYINT/SMALLINT/INT/BIGINT through Rust collection state. The table below describes the arithmetic native accumulators.
+admit BOOLEAN and TINYINT/SMALLINT/INT/BIGINT through Rust collection state;
+[DATE/TIME](#date-and-time-collection-elements) extend the verified element types.
+The table below describes the arithmetic native accumulators.
 
 The matcher only accelerates `(aggregate, value-type)` pairs where DataFusion's native arithmetic
 agrees byte-for-byte with Flink's — this table is that guardrail; anything marked ✗ falls back.
@@ -894,7 +906,7 @@ JVM aggregate functions now default enabled under the accepted UDF performance e
 remaining coverage is tracked by [#237](https://github.com/datafusion-contrib/StreamFusion/issues/237).
 The system property `streamfusion.experimental.jvmGroupAggregates` defaults to true and admits
 released Flink bridging aggregate functions and its exact legacy Table API aggregate wrapper
-in the synchronous single-phase plan when every
+in synchronous ordinary, single-phase mini-batch and two-phase local/global plans when every
 input and output field is a verified scalar: CHAR/VARCHAR, BOOLEAN, signed integers,
 FLOAT/DOUBLE, DECIMAL, BINARY/VARBINARY, DATE, TIME, TIMESTAMP/TIMESTAMP_LTZ or intervals.
 Fixed BINARY requires the existing variable-byte transport (enabled by default).
@@ -911,8 +923,8 @@ retain the ranges and startup/JIT limits without an acceleration claim.
 ARRAY/MAP/ROW fields at the operator boundary retain fallback; managed accumulator fields and
 DataViews still use Flink's own declared serializers and converters. It retains Flink's generated function,
 accumulate/retract logic, managed accumulator/DataView state and lifecycle inside an
-Arrow-batch input/output operator. It preserves each emitted changelog row; input coalescing
-does not reduce user function invocations or intermediate results. The operator disable switch
+Arrow-batch input/output operator. Ordinary execution preserves each emitted changelog row;
+input coalescing does not reduce user function invocations or intermediate results. The operator disable switch
 `streamfusion.operator.jvmGroupAggregate.enabled=false` retains whole-island fallback.
 
 The opt-in harness passes 44 checks on each released Flink line with JDK 17, at both
@@ -941,8 +953,9 @@ retaining the mixed UDAF/COUNT/managed-ListView workload. It verifies the same v
 source offsets, stable operator identities, complete key-group ownership, consumed native work
 and cleanup. Both lines also pass the existing checkpoint controls through the shared harness.
 [Savepoint evidence](../benchmarks/results/jvm-aggregate-savepoint-2026-10-16.json)
-records every stage. Cross-version migration, stock/native state-layout migration and
-two-phase merge/reset remain pending.
+records every stage. Cross-version migration remains pending.
+Released Flink 2.2.1 stock/native one-phase state-layout migration is qualified separately in
+[captured managed UDF canonical state](#captured-managed-udf-canonical-state-partial).
 
 DISTINCT and FILTER use the released generated handlers, including shared membership state,
 NULL handling, retractions and managed DataViews. Released Flink still rejects DISTINCT on
@@ -953,13 +966,101 @@ coalescing so each row reads and updates expiring state on Flink's clock. Expira
 emit a delete; later input observes the same empty-state behavior as stock Flink, including
 ignored expired retractions and unsuppressed no-op updates.
 
-For non-compact DECIMAL grouping keys, the Java grouped operator projects keys through the
+For non-compact DECIMAL grouping keys in ordinary execution, the Java grouped operator projects keys through the
 released RowData serializer, matching the native exchange's existing BinaryRow layout.
 Flink's generated key projection reserves extra bytes for a NULL non-compact decimal, whereas
 its serializer omits them. Mixing those layouts gives different hashes and can route NULL
 keys into the wrong subtask. The selected keys own their bytes and always have INSERT kind,
 independent of the input changelog kind; other key types retain the generated selector.
 This does not establish stock/native savepoint-layout migration.
+
+### Single-phase JVM mini-batching
+
+With `table.exec.mini-batch.enabled=true` and the single-phase plan, verified scalar JVM
+aggregate input/output fields use the released `MiniBatchGroupAggFunction`, generated
+handlers and count trigger. The operator owns buffered keys and copies input rows before
+their Arrow batch closes. Count thresholds, watermarks, pre-checkpoint barriers and bounded
+completion finish the same logical bundles as Flink; physical Arrow batch boundaries do not.
+The `jvmMiniBatchRows` and `jvmMiniBatchBundles` counters establish actual bundle work.
+The ordinary accumulator cache and input coalescer are bypassed.
+
+Bundle membership depends on task assignment. This route uses Flink's generated BinaryRow
+key layout in both the columnar exchange and managed-state selector, including the reserved
+variable slots for NULL wide decimals and non-compact timestamps. Ordinary/native state
+continues using its existing serializer layout. This does not establish state migration
+between ordinary and mini-batch plans.
+
+Released Flink copies rows in `addInput` and evaluates each key's list during `finishBundle`.
+Its managed state, DataViews, retractions, NULLs, DISTINCT/FILTER and TTL rules remain in
+that implementation. Lifecycle follows the released bundle operator: it opens the function,
+but its closing helper only closes rich functions, so it does not invoke the aggregate
+handler's close hook. Open/evaluation failures retain their original cause and owned Arrow
+buffers are released on failure.
+
+ARRAY/MAP/ROW operator fields and async state retain fallback. Two-phase scalar bundles use the separate local/global route below.
+The UDF performance exception applies; mini-batch execution is coverage without a speedup
+claim. Collection aggregate mini-batching remains outside this scalar admission.
+The [release complete-job comparisons](../benchmarks/jvm-aggregates.md#single-phase-jvm-mini-batches-2026-11-01)
+retain stock and preceding-fallback controls, including the slower three-task STRING cases.
+
+The initial focused release selection passes 184 checks on Flink 2.2.1 and 181 with three
+release-specific exclusions on 1.18.1 (STATE_TTL hints). It covers 17 scalar argument/result
+families with append/retract input, count thresholds 1/3/17/1000, parallelism 1/3, nullable
+wide/colliding keys, shared DISTINCT/FILTER, managed ListViews, lifecycle failures and
+positive bundle counters. Operator controls compare raw updates at explicit checkpoint
+barriers, controlled TTL clocks and watermarks, with and without restore, and mutate
+borrowed input after handover. Heap/native-RocksDB jobs also pass two successive restores
+and checkpoint/canonical-savepoint rescaling through parallelisms 1 → 3 → 2 with verified
+source offsets, key-group ownership, stable operator identities and released memory.
+Three additional phase-selection controls cover an overloaded aggregate without a merge
+method. Released Flink keeps its physical plan single-phase for ordinary execution and for
+both ONE_PHASE and TWO_PHASE mini-batch requests; these cases require consumed JVM group
+input and matching raw changes/types. Merge-capable JVM functions use the local/global route below when released Flink chooses that physical plan.
+
+### Two-phase JVM mini-batching
+
+Merge-capable synchronous JVM aggregate definitions also run inside the native columnar island
+when released Flink selects a local/global plan. This route covers the same verified scalar
+input, key and result types as single-phase JVM mini-batching. Flink still chooses a single
+phase for a function without a merge method, even under a TWO_PHASE request. General
+ARRAY/MAP/ROW operator fields, collection aggregate mini-batching, specialization, approximate
+or ordered calls and asynchronous state retain fallback.
+
+The local phase uses released Flink accumulation/retraction and local bundle state. The global
+phase uses its local-combine and managed-state merge handlers, including shared DISTINCT/FILTER
+membership, managed DataViews, result comparison, TTL and changelog generation. Both phases
+retain the original released aggregate-info lists, including monotonic MIN/MAX retraction
+elision and the associated partial layout; metadata is captured before rewriting children. Count triggers,
+watermarks, checkpoint barriers and bounded completion drain logical bundles independently of
+physical Arrow batches. Local keys and buffered accumulator fields own their data after the input batch closes.
+Both phases retain released map-bundle lifecycle, including the rich-function-only close helper.
+
+Scalar accumulator fields cross the exchange as typed Arrow columns. Complex internal
+accumulator fields use their released Flink internal serializers in binary Arrow columns;
+the global phase decodes them before merging. These internal partials do not admit general
+nested UDAF inputs/results or introduce a new persistent-state codec. The exchange retains
+Flink's generated BinaryRow key layout, including NULL wide DECIMAL and timestamp slots.
+The local operator has no keyed state; the global operator owns the real logical key and
+Flink managed accumulator/DataView snapshots. Cross-version, stock/native and cross-plan
+state migration remain unverified.
+
+Focused comparisons cover append and retracting scalar values, nullable wide/colliding keys,
+keyless and nonleading grouping, shared DISTINCT/FILTER calls, legacy POJO accumulators,
+ListViews/MapViews and callback failures. Controlled-clock checks compare global bundle
+updates at TTL expiry, checkpoint barriers, watermarks and finish against the released
+runtime, with and without restore. Heap/native-RocksDB jobs verify two successive restores
+with shared DISTINCT/FILTER and both DataView families; checkpoint and canonical-savepoint
+jobs additionally rescale managed DISTINCT/MapView state through parallelisms 1 → 3 → 2.
+These preserve source offsets, operator identities, key-group ownership and released memory.
+Multi-aggregate chains compare materialized results because the preceding Rust builtin can
+emit different intermediate bundle updates; controlled bundle checks retain exact raw changes.
+
+Execution evidence distinguishes `NativeColumnarJvmLocalGroupOperator` and
+`NativeColumnarJvmGlobalGroupOperator`; each must consume input. Both expose the existing
+`jvmMiniBatchRows` and `jvmMiniBatchBundles` counters. This is UDF coverage under the accepted
+performance exception. [Release comparisons](../benchmarks/jvm-aggregates.md#two-phase-scalar-jvm-aggregates-2026-11-02) retain stock, preceding-runtime and candidate costs, including slower high-cardinality cases.
+
+### Ordinary state and validation
 
 The typed and modifier regressions compare complete values, declared types and per-key raw
 changelogs on both supported lines. Precision-38 decimals, nanosecond/wide-date timestamps,
@@ -972,8 +1073,8 @@ The unchanged upstream DISTINCT UDAF/DataView fixtures require positive native o
 [Complete-job diagnostics](../benchmarks/jvm-aggregates.md#scalar-types-distinctfilter-and-idle-retention-2026-10-23)
 retain stock, prior-fallback and native costs, including regressions under the accepted UDF exception.
 
-Mini-batching, asynchronous state, specialized functions, approximate aggregates and ordered
-calls are excluded from this boundary. Two-phase merge/reset, OVER functions and the remaining nested/table-function
+Asynchronous state, specialized functions, approximate aggregates and ordered calls remain excluded.
+OVER functions and the remaining nested/table-function
 type gaps stay tracked in [#237](https://github.com/datafusion-contrib/StreamFusion/issues/237).
 Verified [nested scalar results](calc-filter.md#nested-java-scalar-results) and
 [scalar table-function types](unnest-correlate.md#jvm-table-functions) are already enabled
@@ -1153,7 +1254,7 @@ improve, but medium STRING and distinct BIGINT still regress on 1.18. Distinct S
 beats its current stock control but remains slightly slower than the previous-runtime median.
 Separate-JVM control drift and all ranges are retained. Both native-library caches hit and all
 historical runtime queries verify zero native operators. This completes that measurement gap,
-not performance admission or the remaining merge/reset/OVER/type contracts in #237.
+not performance admission or the remaining OVER/type contracts in #237.
 
 The [encoding follow-up matrix](../benchmarks/results/jvm-encoding-isolated-2026-10-16.json)
 retains a further 18 aggregate cases plus both historical-runtime controls and eight mixed
@@ -1182,7 +1283,9 @@ query back via the [all-or-nothing island](index.md#the-all-or-nothing-island) r
   (`COUNT(DISTINCT x)` keeps a per-key
   value set; `SUM(DISTINCT x)` adds a running sum folded as values enter/leave it; `MIN`/`MAX
   (DISTINCT)` run as their plain, multiplicity-blind forms.)
-- COLLECT/ARRAY_AGG with unverified element types, non-scalar inputs or character aggregate results; ARRAY_AGG on Flink 1.18.
+- COLLECT/ARRAY_AGG with unverified element types or input schemas outside the scalar and
+  [verified array-input](#collection-aggregate-array-inputs) boundary, or unverified character scalar coresults;
+  ARRAY_AGG on Flink 1.18.
 - An approximate aggregate.
 - FIRST_VALUE/LAST_VALUE/SINGLE_VALUE over a value type outside the single-phase list above,
   or with more than one argument.
@@ -2246,6 +2349,12 @@ Other collection boundary restrictions remain in force. Runtime coverage compare
 resolved schemas and consumed native local/global work for ARRAY of INT, FLOAT, DOUBLE,
 STRING, DECIMAL, ROW and ARRAY, plus year-month/day-time intervals. Recovery covers memory
 and native RocksDB state with two successive restores, with retention enabled and disabled.
+Checkpoint drains can split local/global mini-batches differently from an uninterrupted
+job, producing different valid intermediate updates. The recovery fixture compares each
+engine's materialized changelog against an explicit nonempty table containing duplicate,
+filtered and NULL inputs. It also checks resolved types, both completed restores and
+positive consumed work in both native aggregate stages. This avoids treating batch
+boundaries as SQL result semantics or allowing two empty final tables to pass by cancellation.
 
 Released Flink's `AggregateUtil.createDistinctKeyType` rejects single-argument DISTINCT
 BINARY, VARBINARY, MAP, ROW and MULTISET keys on both supported lines. These retain the
@@ -2496,10 +2605,13 @@ properties to `false` and `true` respectively.
 
 COLLECT over TINYINT/SMALLINT/INT/BIGINT and BOOLEAN uses the columnar Rust group aggregate.
 A counted multiset preserves Flink's signed 32-bit counts and Java map iteration behavior,
-including the fresh result-map materialization used by the released MapView. Input fields remain scalar, and aggregate result fields cannot
-contain character values. STRING/VARCHAR and CHAR grouping keys use the verified serialized-key
-boundary [described below](#character-grouping-keys). Other COLLECT
-value types and nested results retain fallback. ARRAY_AGG over the same types additionally runs on Flink 2.2;
+including the fresh result-map materialization used by the released MapView. Input fields may be scalar or use the verified
+[numeric/temporal array input boundary](#collection-aggregate-array-inputs), and character collection results use the [verified string boundary](#string-collection-elements).
+Character scalar coresults retain their existing guards. STRING/VARCHAR and CHAR grouping keys use the verified serialized-key
+boundary [described below](#character-grouping-keys). DATE and TIME use the
+[verified temporal extension](#date-and-time-collection-elements). FLOAT, DOUBLE and DECIMAL
+use the [same typed native state](#shared-native-collection-elements). Other COLLECT value types
+and nested results retain fallback. ARRAY_AGG over the same types additionally runs on Flink 2.2;
 it is absent from released Flink 1.18.1.
 
 NULL values do not contribute; repeated values keep their multiplicities. Retractions retain
@@ -2518,9 +2630,11 @@ formats; automatic migration is not supported. Groups containing functions outsi
 aggregate matcher retain their verified JVM route. These switches do not broaden admission. Mini-batching, async state, approximate/ordered calls and unverified function
 specialization retain fallback. A COLLECT result may reach a final row sink or a verified
 collection-preserving Calc. Unverified state, ordering, exchange and native-writer boundaries
-retain the existing collection guards. Direct COLLECT with SUM/MIN/MAX/COUNT or AVG is native;
-when the host shares SUM/AVG/COUNT through an outer arithmetic projection that cannot preserve
-the MULTISET representation, the existing whole-plan fallback remains on both state routes.
+retain the existing collection guards. Direct COLLECT with SUM/MIN/MAX/COUNT or AVG is native.
+A shared AVG arithmetic projection also preserves the numeric COLLECT result on both the
+managed JVM and Rust collection routes: the transition pass upgrades any transpose already
+inserted by pruning to the consumer's preserving layout. The original COLLECT harness checks
+resolved types, per-key ordered changelogs and consumed group/projection work for this case.
 Updating retained MAP/MULTISET payloads remain deferred
 in [#437](https://github.com/datafusion-contrib/StreamFusion/issues/437).
 
@@ -2532,9 +2646,13 @@ The optimization investigation is limited to two profiling/optimization passes p
 
 On released Flink 2.2.1, ARRAY_AGG over TINYINT/SMALLINT/INT/BIGINT and BOOLEAN uses the same
 single-phase Rust group aggregate with sequence state. Only the exact builtin operator is recognized; user-defined functions with that name
-retain their existing signature gates. Scalar inputs and non-character aggregate result fields
-are required. Character grouping keys use the verified serialized-key boundary below. Other
-element types and nested collection results retain fallback. ARRAY_AGG is
+retain their existing signature gates. Inputs follow the scalar or native
+[array-input boundary](#collection-aggregate-array-inputs); character collection outputs use the
+[verified string boundary](#string-collection-elements), while character scalar coresults remain guarded.
+Character grouping keys use the verified serialized-key boundary below. Other
+element types outside the [DATE/TIME](#date-and-time-collection-elements) and
+[floating/decimal](#shared-native-collection-elements) families, and nested collection results
+retain fallback. ARRAY_AGG is
 explicitly N/A on released Flink 1.18.1. Mini-batch, async-state, approximate, ordered and specialized forms keep their
 existing restrictions.
 
@@ -2548,9 +2666,10 @@ The versioned native snapshot retains the sequence, pending retractions and DIST
 ARRAY_AGG shares the explicit JVM-savepoint route described above.
 
 Nullable primitive-array results can feed the verified native updating Top-N and UNNEST paths,
-with consumed work in both the producer and consumer. Sensitive output forms, including
-NOT NULL-element arrays, retain the existing final row-sink/preserving-consumer guards.
-Unverified state/writer shapes retain fallback. This does not enable updating MAP/MULTISET
+with consumed work in both the producer and consumer. NOT NULL-element scalar arrays feed the
+[verified generated consumer](#scalar-array-results-through-generated-unnest); other sensitive
+output forms retain final row-sink/preserving-consumer guards. Unverified state/writer shapes
+retain fallback. This does not enable updating MAP/MULTISET
 payload support deferred in [#437](https://github.com/datafusion-contrib/StreamFusion/issues/437).
 
 [Release comparisons](../benchmarks/collection-aggregates.md#integer-array_agg) retain array
@@ -2561,7 +2680,8 @@ stops after two profiling/optimization passes; slower results use the accepted c
 
 Verified COLLECT and, on Flink 2.2, ARRAY_AGG admit STRING/VARCHAR and CHAR grouping keys.
 The character-field check applies to aggregate results rather than serialized grouping fields;
-character aggregate values/co-results and richer nested results retain fallback. Existing
+character collection values use the [verified extension](#string-collection-elements);
+character scalar coresults and richer nested results retain fallback. Existing
 synchronous/single-phase and representation-consumer guards still apply.
 
 Grouping retains the released BinaryRow key encoding with native keyed state. Key serialization fixes
@@ -2583,7 +2703,7 @@ in [#437](https://github.com/datafusion-contrib/StreamFusion/issues/437) stays d
 TINYINT and SMALLINT join INT/BIGINT in the verified COLLECT and Flink 2.2 ARRAY_AGG
 boundary. Rust collection state retains typed byte/short values and existing Arrow batch
 input/output. The key codec and Arrow ownership boundary are shared with the other native aggregates. All
-scalar-input, non-character aggregate-result and representation-consumer gates above remain.
+input, verified collection result, scalar coresult and representation-consumer gates above remain.
 ARRAY_AGG stays explicitly N/A on released Flink 1.18.1.
 
 Direct typed runtime sources verify both signed limits, duplicates, NULL/all-NULL groups,
@@ -2602,7 +2722,7 @@ passes; slower results use the accepted collection tradeoff without an accelerat
 Verified integer/BOOLEAN COLLECT and Flink 2.2 ARRAY_AGG results can leave a direct single-phase
 group through a legacy row sink, including the Java `toRetractStream` API. The 2.2 adapter
 qualifies only direct groups accepted by the existing scalar-input, verified-element and
-non-character aggregate-result gates. A final Calc, unverified represented consumer or
+verified collection result and scalar coresult gates. A final Calc, unverified represented consumer or
 unsupported aggregate shape keeps its existing fallback. Flink 1.18 retains its prepared
 legacy sink path; ARRAY_AGG remains N/A there.
 
@@ -2628,7 +2748,8 @@ external row conversion/collection, state and both transposes, with at most two 
 
 BOOLEAN joins the verified integer elements for COLLECT on both supported releases and
 ARRAY_AGG on Flink 2.2. Rust collection state retains true/false values, NULLs,
-multiplicities and array arrival order through the existing JNI/Arrow boundary. Scalar inputs, non-character aggregate results and the existing represented
+multiplicities and array arrival order through the existing JNI/Arrow boundary. Verified scalar/array inputs,
+verified collection outputs, non-character scalar coresults and the existing represented
 consumer gates still apply. ARRAY_AGG remains N/A on Flink 1.18.
 
 Direct BOOLEAN sources exercise duplicates, all-NULL groups, DISTINCT/FILTER, NOT NULL
@@ -2647,7 +2768,7 @@ acceleration claim.
 ## Rust collection state validation
 
 The focused runtime-source matrix passes 112 checks on Flink 2.2.1 and 57 checks with 55
-version skips on 1.18.1. The Rust group-state tests pass 104 cases, including typed collection
+version skips on 1.18.1. The Rust group-state tests pass 105 cases, including typed collection
 snapshots, signed-count overflow, first-match retractions and bounded map-order reinsertion.
 The SQL tests require consumed work from the Rust group itself; empty filtered projections
 require the filter/Calc witness instead. Separate tests cover shared DISTINCT/COUNT filters,
@@ -2659,3 +2780,1294 @@ under the suite agent. The two synchronous backend variants require consumed Rus
 work; every other variant retains its exact fallback contract. The focused execution uses
 canonical released Maven test artifacts without changing upstream source or configuration.
 See [the optimization](../optimizations/native-collection-state.md) for the native state boundary.
+
+
+## DATE and TIME collection elements
+
+DATE and TIME COLLECT use the existing Rust counted multiset on both supported Flink lines.
+DATE/TIME ARRAY_AGG uses Rust arrival-order state on Flink 2.2; ARRAY_AGG remains N/A
+on released 1.18.1. Values retain epoch days and millisecond-of-day units. Dedicated snapshot
+and DISTINCT membership tags keep DATE, TIME and INT state incompatible even though all three
+use 32-bit payloads. No additional operator, JNI call or ownership protocol is introduced.
+
+Runtime sources cover years 0001–9999, the epoch, 1900/2000 leap boundaries, midnight and
+subsecond TIME values, NULL/all-NULL groups, duplicates, all four RowKinds, DISTINCT/FILTER,
+empty grouped/global results and string formatting. Heap and native RocksDB tests restore
+twice across nonempty accumulation/retraction prefixes and require consumed native group work.
+Nullable arrays also feed native Top-N and UNNEST; legacy external-row consumers exercise
+STRING grouping keys and parallelism one/three. Rust tests cover sliced input buffers, typed
+DISTINCT membership, snapshot compatibility and output ownership. The unchanged upstream
+COLLECT fixture additionally passes all seven/six variants with its existing execution contracts.
+NOT NULL source hints also cover parallelism three, key-only
+filters and two successive nonempty restores on both native state backends.
+
+Nullable and NOT NULL DATE/TIME arguments are admitted, including COALESCE-derived
+arguments and real NULL source slots beneath a NOT NULL hint. Arrow import widens an
+inconsistent physical field's nullability without changing its buffers or the SQL logical
+type. This keeps batch coalescing and parallel native exchange consistent with Flink; it does
+not suppress a downstream NOT NULL sink constraint failure.
+
+An input Calc that reads a NOT NULL collection-element hint in its predicate or materializes it in a
+non-identity projection keeps the collection query on Flink. Its unchecked primitive getter can
+expose a source-specific payload beneath a NULL slot; Arrow validity cannot reconstruct that
+payload. Tests retain the stock DATE values and TIME conversion failure for those contexts.
+Nullable-input COALESCE expressions and identity projections with key-only filters remain verified.
+
+NOT NULL-element arrays retain their generic copy-category marker through native projections
+and generated JVM argument batches. Mixed primitive arrays, aliases, repeated consumers,
+formatting, reverse/distinct/slice, CASE and retained/shared Java callbacks are verified.
+The explicit legacy JVM aggregate handler uses the same represented array boundary. Verified
+scalar arrays feed the released generated UNNEST boundary as described below. Unverified
+stateful/order and native-writer consumers still retain planning-time fallback. Existing input/result admission, synchronous single-phase, representation-consumer and
+native-writer gates remain. This does not extend
+updating retained
+MAP/MULTISET payloads deferred in [#437](https://github.com/datafusion-contrib/StreamFusion/issues/437).
+
+[Release comparisons](../benchmarks/collection-aggregates.md#date-and-time-elements) retain
+stock and previous-code controls, both perimeter conversions and the two-pass profiling limit.
+
+
+## Shared native collection elements
+
+COLLECT and Flink 2.2 ARRAY_AGG additionally admit FLOAT, DOUBLE and DECIMAL with matching
+result-element precision/scale. All verified element families share one native state algorithm
+for signed counts, arrival-order values, first-match retractions, unmatched retractions,
+DISTINCT transitions, retention, Java map-copy order, output ownership and snapshot/restore.
+Element codecs provide typed Arrow readers/builders and the released boxed comparison/hash
+rules. The integer/BOOLEAN/DATE/TIME codec and its version-one snapshot bytes remain compatible;
+six checkpoints emitted by the preceding implementation are retained as restore fixtures.
+
+Floating membership canonicalizes NaNs while retaining the first stored key's original bits;
+signed zeros remain distinct. Plain arrays retain each input payload and retraction removes the
+first boxed-equal element. Decimal values retain their full unscaled i128 and declared precision
+and scale. Map ordering reuses the existing Java floating comparison and BigDecimal hash model.
+The implementation downcasts inputs once per batch and does not allocate ScalarValue objects
+for each numeric input row or call back into Java to update collection state.
+
+The shared SQL matrix covers the primitive controls and floating/compact/wide decimal families,
+all four RowKinds, duplicate removals, NULL/all-NULL groups, negative/zero multiplicities,
+COALESCE, DISTINCT/FILTER and resolved types. Native tests separately inspect NaN payload bits,
+signed zeros, sliced arrays, ownership, incompatible decimal scales/widths and previous checkpoints.
+Heap and native RocksDB each exercise two nonempty restores. ARRAY_AGG remains explicitly N/A
+on released Flink 1.18.1.
+
+The input-materialization contract is checked before rewriting the island for every collection
+aggregate: predicates or non-identity projections reading NOT NULL supported scalar hints retain
+Flink execution when an unchecked source getter's hidden NULL-slot payload cannot be represented.
+Direct input hints, nullable-input COALESCE and key-only identity filters retain their verified
+routes. Stateful/order consumers of nullable primitive arrays retain their existing boundary;
+NOT NULL-element scalar arrays use the verified generated UNNEST boundary below; unverified
+stateful/order and native-writer consumers, and other sensitive results, retain their guards.
+Character aggregate-result fields, input schemas outside the verified scalar/array boundary, asynchronous/mini-batch or multi-phase
+collection aggregation, unverified element families and nested collection results remain fallback.
+The updating MAP/MULTISET extension in [#437](https://github.com/datafusion-contrib/StreamFusion/issues/437)
+remains deferred.
+
+
+[Release measurements](../benchmarks/collection-aggregates.md#shared-typed-collection-state)
+retain stock and previous-code comparisons, native BIGINT controls, variability and the two-profile
+limit. The complete regression set executes 349 checks on 2.2 and 196 with 153 capability skips
+on 1.18, including the legacy row API at parallelism one/three. The unchanged released upstream
+COLLECT fixture passes all seven/six variants with its exact runtime contracts. Slower collection
+profiles remain documented groundwork, not a universal acceleration claim.
+
+
+## Scalar array results through generated UNNEST
+
+On Flink 2.2, NOT NULL-element ARRAY_AGG results over every verified scalar element family
+can feed the existing Arrow-input/Arrow-output generated UNNEST operator. The same structural
+producer check covers native collection state and the explicit legacy JVM aggregate handler:
+all input fields must be verified scalars or scalar arrays without ROW/MAP/MULTISET payloads.
+Character fields use the preserved boundary linked below. It adds no per-type list and retains
+the aggregate's generic array-copy
+metadata through the existing generated argument frame. Nullable arrays retain ordinary Arrow
+UNNEST; mixed nullable/NOT NULL scalar arrays use the preserving consumer when necessary.
+
+CROSS/LEFT expansion, NULL-check predicates, selected original arrays, ordinality, parallelism
+one/three and per-key changelog order are verified across integer/BOOLEAN, DATE/TIME,
+FLOAT/DOUBLE and compact/wide DECIMAL. Real NULL slots under NOT NULL source hints retain the
+released success or getter/conversion failure, including IGNORE NULLS. Temporal LEFT ordering
+predicates that fail during released collect-sink submission still fail before substitution;
+EXPLAIN alone does not reproduce that assertion. Heap/native RocksDB tests restore twice over
+nonempty prefixes and require consumed group and generated-expansion work.
+
+This reuses the released Java correlate generator inside the columnar operator. Collection
+state remains native; expansion is JVM work and is not described as a Rust UNNEST kernel.
+ARRAY_AGG is N/A on 1.18. Character keys and scalar string arrays now use the
+[preserved expansion boundary](unnest-correlate.md#preserved-scalar-array-expansion).
+Nested character arrays, MAP/MULTISET-bearing input rows and unverified stateful/order and
+writer consumers retain fallback. This does not extend #437.
+
+
+The focused consolidated set passes 180 checks on Flink 2.2.1. Flink 1.18.1 passes 174 with
+224 capability skips, including its existing collection and UNNEST routes; new ARRAY_AGG
+cases are N/A. Floating element payload bits are observed through the real scalar callback
+after expansion. Four unchanged released upstream UNNEST cases pass per line as result
+regressions; the matrix and benchmark counters provide positive execution evidence.
+[Complete-job comparisons](../benchmarks/collection-aggregates.md#scalar-array-expansion-boundary)
+retain all 120 jobs and ranges. At 64 keys, BIGINT/DOUBLE/wide DECIMAL pipelines take
+1.002/0.999/2.048 s versus paired stock's 5.773/7.178/14.798 s. Shorter 4096-key cases also
+improve medians but have overlapping ranges; no universal sustained-throughput claim is made.
+
+
+## Timestamp and interval collection elements
+
+The same native collection state also admits TIMESTAMP and TIMESTAMP_LTZ, plus year-month and
+day-time interval qualifiers. Timestamp elements use the existing full-range millisecond plus
+nanosecond-remainder reader and retain owned i128 keys. Equality/order and Java TimestampData
+hashing share the counted/sequence algorithm. Output builders use the declared element type,
+preserving component metadata. Intervals reuse the existing I32 month and I64 millisecond codecs;
+the planner supplies those physical codes instead of the generic retained-value placeholder.
+No per-type accumulation, DISTINCT, retraction, TTL or recovery algorithm is added.
+
+Timestamp precisions 0/3/9, YEAR(4), MONTH, YEAR(4) TO MONTH, DAY(2), DAY(2) TO SECOND(3) and
+HOUR TO SECOND(3) extend the shared matrix. Native and released SQL checks include year 1/9999,
+pre-epoch fractions, exact nanosecond payloads, all four changelog kinds, NULL/all-NULL groups,
+shared COUNT DISTINCT, formatting and two nonempty heap/native RocksDB restores. Real NOT NULL
+source hints, nullable-array Top-N, generated NOT NULL-array UNNEST and the explicit legacy state
+route retain their existing verified contexts. Legacy row APIs also cover character grouping keys
+and parallelism one/three. ARRAY_AGG remains N/A on Flink 1.18.
+
+Direct DAY(4) and DAY(4) TO SECOND(3) aggregates also run natively. Their COALESCE/CAST forms
+retain the released planning error `DAY_INTERVAL_TYPES precision is not supported: 4` on both
+lines, before native substitution. Comparisons in the shared matrix explicitly cast thresholds
+to the input timestamp kind; the existing installed-planner mixed timestamp compatibility on
+1.18 remains [documented with Calc](calc-filter.md#flink-118-mixed-timestamp-comparison-compatibility).
+
+Compact timestamp payloads cross a verified native exchange copy boundary: Flink's row-shuffle
+serializer clears the sub-millisecond remainder for precision at most three. The native exchange
+performs the same operation on top-level timestamp fields before either its single-channel fast
+path or partitioning. Milliseconds and parent validity remain intact; component buffers retain
+owned Arrow references. The change also preserves COLLECT's map-copy/formatting order, whose hash
+would otherwise observe hidden fractional bits. Precisions above three retain both components.
+Existing array/ROW/MAP representation and writer gates remain in force. The source-hint Calc
+materialization gate covers timestamp and interval families as well. This does not extend #437.
+
+
+The final release library passes 660 consolidated checks on 2.2 and 253 with 407 capability
+skips on 1.18, plus 124 native checks and the unchanged upstream COLLECT variants with exact
+native/fallback contracts. [Release comparisons and the closed timebox](../benchmarks/collection-aggregates.md#timestamp-and-interval-element-families)
+retain all 1,080 jobs and 420 native grouped witnesses. Timestamp COLLECT remains slower than
+stock; measured 64-key timestamp/interval arrays improve paired stock medians. Historical
+compact payload/checkpoint upgrade limits are [specified at the exchange boundary](../optimizations/native-columnar-exchange.md#compact-timestamp-payload-copy-semantics).
+
+## Collection aggregate array inputs
+
+Native collection groups also admit input ARRAY fields whose nullable elements are BOOLEAN,
+TINYINT/SMALLINT/INT/BIGINT, FLOAT/DOUBLE, DECIMAL, DATE or TIME. These arrays may be nested,
+with nullable elements at each level. They can be grouping keys or feed COUNT/COUNT DISTINCT
+beside a verified scalar COLLECT/ARRAY_AGG. This does not admit arrays as collection aggregate
+elements or nested collection aggregate results.
+
+The planner shares aggregate-form and execution checks between native collection state and
+the legacy JVM handler, while validating each runtime's input representation separately. The
+native route uses the existing recursive binary key encoding, columnar exchange and keyed
+aggregate state. Floating array keys canonicalize NaN payloads and distinguish signed zero as
+Flink's binary arrays do. No new operator, JNI boundary or checkpoint format is introduced.
+Setting `streamfusion.experimental.rustCollectionAggregates=false` retains the JVM handler's
+scalar-input restriction, so array-input collection queries fall back to Flink.
+
+Character-bearing arrays, arrays with NOT NULL elements, timestamp/interval/binary arrays and
+ROW/MAP/MULTISET input fields remain outside this extension. Existing collection result/scalar coresult, execution, input-hint materialization and
+consumer/writer gates still apply. Deferred
+updating MAP/MULTISET payloads in [#437](https://github.com/datafusion-contrib/StreamFusion/issues/437)
+remain guarded. A planner may simplify a constructed ROW grouping expression into admitted
+array keys; the restriction concerns the actual input schema of the physical aggregate.
+
+Runtime-source checks compare resolved types and per-key ordered RowKinds, including nullable,
+empty and wide keys in small batches, duplicates, DISTINCT/FILTER, retractions and reinsertion.
+Heap and native RocksDB recover across two nonempty prefixes for floating and nested keys.
+The existing character-key collection suite and a released JVM UDAF lifecycle regression also
+retain their routes on both supported Flink lines.
+The array-input suite passes 46 checks on 2.2 and 22 with 24 capability skips on 1.18. Four
+2.2 checks additionally retain nested array keys through ordinary nullable-array UNNEST and
+the preserving NOT NULL-element consumer, with ordinality at parallelism one/three and consumed
+group/expansion work. The 12 character-key and one JVM lifecycle checks pass on 2.2; 1.18 passes
+six/one with six ARRAY_AGG skips. [Complete-job measurements](../benchmarks/collection-aggregates.md#collection-aggregate-array-inputs)
+retain both stock and actual previous fallback controls, including slower COLLECT results.
+
+
+## String collection elements
+
+STRING/VARCHAR and CHAR elements use the same single-phase collection admission and result
+preservation as numeric collections. On Flink 2.2, ARRAY_AGG stores owned UTF-8 values in the
+shared Rust collection state. Its arrival order, first-equal retraction, unmatched retractions,
+DISTINCT membership, FILTER, NULL policies and declared ARRAY element type follow the released
+handler. Flink 1.18 has no builtin ARRAY_AGG.
+
+Character COLLECT uses the existing generated JVM aggregate inside the columnar group on both
+supported lines. BinaryStringData is not a self-comparable HashMap key, so collision-tree order
+can depend on JVM object identities. A Rust lexical comparator would not reproduce that contract.
+This route retains Flink's signed counts, MapViews and fresh result copies; it is not Rust COLLECT.
+Mixed groups containing character COLLECT use this verified JVM route. Inputs may also include
+the verified nested collection elements described below.
+Character scalar coresults, aggregate elements outside the documented gates, unverified state/order/native-writer
+consumers and updating retained MULTISET payloads remain guarded. Character arrays can feed the
+[preserved UNNEST boundary](unnest-correlate.md#preserved-scalar-array-expansion).
+
+Native ARRAY_AGG snapshots include the owned string payload and typed versioned envelope in the
+existing heap/RocksDB state store. Already emitted arrays own their buffers. Set
+`streamfusion.experimental.rustCollectionAggregates=false` to select the verified managed JVM
+ARRAY_AGG state when restoring a JVM savepoint; automatic state migration is not provided.
+Output preservation does not force an extended string representation on scalar aggregate inputs:
+the transition pass distinguishes input requirements from collection output requirements. Thus
+nullable-source COALESCE remains a plain scalar expression before accumulation. Materializing
+an inconsistent source NOT NULL hint retains the existing whole-plan host boundary.
+
+The original COLLECT and ARRAY_AGG SQL harnesses also require native execution for
+character elements. They compare resolved types and per-key changelogs and require
+consumed work in the JVM COLLECT or Rust ARRAY_AGG handler, while retaining explicit
+fallback checks for unsupported coresults and disabled group execution.
+
+`FlinkStringCollectionSqlHarnessTest` compares values, resolved types and per-key ordered
+changelogs, and requires consumed work in the intended group operator. It covers STRING/CHAR,
+NULL/empty/wide/UTF-8 and malformed Java surrogate inputs, all RowKinds, DISTINCT/FILTER,
+global and empty inputs, parallelism 1/3, formatting, explicit JVM state, inconsistent NOT NULL
+hints and two nonempty checkpoint recoveries with heap and native RocksDB state. Empty aggregate
+inputs require a native plan and matching results without claiming consumed aggregate work.
+Release measurements and the bounded profiling record are retained in
+[collection benchmarks](../benchmarks/collection-aggregates.md#owned-string-collections).
+
+## Binary collection elements
+
+BINARY and VARBINARY elements use the released generated collection handler inside
+an Arrow-input/Arrow-output JVM group. This covers COLLECT on both supported Flink
+lines and ARRAY_AGG on 2.2. It does not route binary collections through the Rust
+value-equality codec: byte arrays use Java reference equality, and managed map state
+can distinguish equal payloads according to its backend. Duplicate byte-array keys,
+signed counts, NULL policies, retractions and state restore retain that handler.
+Fixed BINARY padding/truncation remains part of the resolved input type.
+
+The verified boundary includes scalar grouping keys (including binary keys), scalar
+numeric coresults, global/keyed groups, empty inputs, FILTER, parallelism one/three,
+object reuse, literal/reused byte arrays and repeated heap/native RocksDB recovery.
+Direct multiset comparisons retain every duplicate byte-array entry rather than
+collapsing keys by their normalized contents. ARRAY_AGG formatting and cardinality
+use the verified scalar consumer boundary. ARRAY_AGG is absent from Flink 1.18.
+Released binary DISTINCT aggregates and binary MIN/MAX keep their planning errors;
+CARDINALITY(MULTISET) retains the released generator error.
+
+COLLECT-to-character formatting, including nested binary multiset formatting, stays
+with the whole stock plan: byte-array identity affects HashMap iteration order, so
+an Arrow round trip cannot promise its character ordering. Inconsistent NOT NULL
+source materialization keeps the existing host boundary. Unverified retained state,
+ordering and writer consumers remain guarded; this does not extend #437.
+
+A pure native Calc can pass verified collection columns through by reference beside
+unrelated numeric expressions. It retains direct-column metadata and owned Arrow
+buffers, with no condition and no JVM calls; it does not construct or inspect the
+collection. This shared structural contract also applies to primitive and character
+collection results. Value-observing and generated consumers retain their existing
+representation requirements.
+
+`FlinkBinaryCollectionSqlHarnessTest` and the shared character projection regression
+require both released-result parity and consumed work in the intended operators.
+Release comparisons and the closed profiling timebox are recorded with the
+[collection aggregate measurements](../benchmarks/collection-aggregates.md#binary-collection-elements).
+
+
+## Nested collection elements
+
+COLLECT over MAP and MULTISET elements uses the released Flink generated handler
+inside the existing Arrow-input/Arrow-output JVM group on both supported lines.
+ARRAY_AGG admits the same elements on Flink 2.2; it is absent from 1.18. This reuses
+the recursive generated-container bridge and released serializers, rather than
+introducing separate native accumulators per container. Child types keep the existing
+generated-container gates, including version-specific fixed BINARY exclusions.
+
+The input transpose and exchange retain the preserving schema, including transposes
+created before the group consumer was selected; collection outputs
+use the same representation on exit. Verified contexts include NULL parents,
+NULL map keys/values, multiset counts, malformed strings, direct generic/binary maps,
+object reuse, three-row batches, FILTER, scalar numeric coresults, global/keyed and
+empty groups, parallelism one/three and two nonempty checkpoint recoveries with
+managed heap/native RocksDB state. Grouping keys and user aggregate arguments retain
+the previous JVM handler's scalar gate. Existing Rust array grouping keys are unchanged.
+
+ARRAY, ROW and STRUCTURED aggregate elements remain stock. The prototype lost the
+binary/generic distinction for primitive arrays across recovery; its per-element
+carrier cannot record an empty array's copy class. External STRUCTURED COLLECT also
+differed after heap recovery on 1.18, including against a recovered stock control.
+Computed ROW COLLECT on 1.18 exposes a released planner type-inference assertion.
+These experiments do not establish a general row/array aggregate state contract.
+A shared container representation is required before those gates broaden.
+COLLECT-to-character formatting over nested elements stays with the whole stock
+plan because Java key order is observable. Retained Top-N/LIMIT, join and writer
+boundaries remain guarded; this does not extend deferred #437.
+
+`FlinkNestedCollectionSqlHarnessTest` requires released values, resolved types,
+per-key ordered changes and consumed JVM group work. Its recovery cases inject two
+failures after nonempty checkpoint prefixes. Release comparisons and the profiling
+timebox are recorded in [nested collection measurements](../benchmarks/collection-aggregates.md#nested-collection-elements).
+
+The generated-collection boundary check retains the existing verified Rust
+COUNT(DISTINCT ARRAY) input contract, including local/global groups and their verified
+UNION, minibatch, exchange and changelog/watermark carriers. Input representation requirements are checked separately from collection
+results, so scalar-result aggregates do not accidentally reject their represented inputs.
+
+Representation classification uses each aggregate's base kind independently of its
+DISTINCT retention/append flags. Retained DISTINCT-array inputs and DISTINCT COLLECT
+outputs keep the same verified layout contracts as their unflagged forms.
+
+A scalar-only group may ignore unused represented collection columns. The boundary
+check inspects the group's actual key and value references, so COUNT(*) can consume
+a nested table-function stream without retaining or interpreting its complex values.
+This does not admit an aggregate that reads an unverified complex argument.
+
+The columnar input capability also covers aggregates that inspect only a represented
+argument's parent NULL bit, such as COUNT(v). The shared check uses actual group/value
+references and aggregate kinds; aggregates that interpret complex values still require
+their existing verified representation contract.
+
+
+## Stock arithmetic accumulator projection (partial)
+
+Canonical planner/state machinery is shared with Flink 1.18.1. Arithmetic and typed scalar
+accumulators without shared DISTINCT views can stream from a pinned native RocksDB snapshot into
+Flink's asynchronous canonical writer. Memory captures copy mutable native accumulator/view state
+and convert through an independent stock backend asynchronously. This capture visits resident state
+and can retain an additional copy; broader qualification of the new capture path is ongoing.
+Focused same-line operator restore controls pass; the wider complete-job matrix remains separate.
+DISTINCT views, managed UDFs and other layouts still use the disk-backed stock projection.
+
+A direct Flink 2.2.1 adapter now projects the qualified generated scalar `accState` value.
+It copies COUNT, SUM0, nullable SUM, append-only BIGINT MIN/MAX and raw AVG sums/counts, the independent input-record counter
+and the original TTL write age. A separate structured adapter preserves retracting BIGINT MIN/MAX
+headers and their state-backed frequency maps. It does not infer an accumulator from its displayed result.
+A NULL SUM accumulator differs from a non-null zero after cancellation, even when both display
+NULL. The existing native nullable accumulator already preserves this distinction; its state
+format is unchanged. Record and non-null counters wrap like released Java long counters when a
+restored maximum/minimum value is advanced or retracted, including in debug native builds. Restored
+integer AVG also wraps `Long.MIN_VALUE / -1` like Java, preserving the raw sum/count and avoiding
+a native overflow panic when an imported count has wrapped negative.
+
+The field map follows the actual generated accumulator schema. An optimizer can share COUNT(v)
+and SUM0(v) to implement SQL SUM/AVG, while another plan retains separate nullable SUM and AVG
+buffers plus a hidden COUNT(*). Extra descriptors, unmapped fields, incompatible kinds/types,
+non-null violations, duplicate native groups and pending unflushed input are rejected. Import
+validates the complete source and empty target before applying data, consuming source state only
+after success. A resource-denied destination must be closed before retrying on a fresh target.
+
+Persistent arithmetic and typed scalar header imports retain the 1,024-row transfer format,
+but install at most 64 rows per internal working set. All keys in an incoming frame are checked
+before the first set is written, so an existing key in a later set still rejects without partial
+installation. Each set reserves decoded state and encoding overlap through its commit, then
+releases both before proceeding. Imported persistent groups are charged only to their live
+store owner; memory imports continue to retain and charge the complete destination state.
+
+Export visits live memory or raw native RocksDB state in bounded Arrow callbacks, preserving
+actual binary keys. It never writes an intermediate native checkpoint. Decoded persistent state
+and output buffers reserve the task's memory budget. TTL-disabled export emits no write age even
+when native checkpoint restoration has installed a migration clock. Canonical snapshot guards
+and actual operator restore tests distinguish direct projection from the native snapshot path.
+
+The current qualification is single-phase, per-record BIGINT scalar aggregation with one nullable INT or
+BIGINT grouping key, or a keyless global group. It covers COUNT(*), COUNT(v), SUM/AVG with hidden counts, append-only/retracting MIN/MAX, shared COUNT/SUM0
+layouts, both before-image policies, both native stores and both initial engine orders. Native
+checkpoints and canonical savepoints remain distinct paths. Broader state types, composite
+keys, filters, mini-batch/two-phase contracts and other data views still require their own qualification
+under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+Automatic binding covers released single-phase `GroupAggFunction` arithmetic for append-only and
+retracting input, plus append-only/retracting BIGINT MIN/MAX. Other physical input fields and aggregate outputs remain BIGINT; SUM/AVG/MIN/MAX
+arguments must be BIGINT. The captured key serializer and native stock-key encoding retain each
+key type, including NULL and signed INT extremes. Ordinary SQL and portable compiled plans capture
+the original physical aggregate calls, accumulator types, field offsets, hidden counter, key
+serializer, before-image policy, TTL and maximum parallelism. COUNT(*) uses Flink's unconditional
+Count1 semantics, while COUNT(v) preserves NULL filtering. Filtered aggregates, other views, wider
+schemas/keys and other phases remain outside this binding. An unqualified native ordinary graph
+retains its existing snapshot behavior; it has no new stock interchange guarantee. Unqualified
+upstream owners in the rank-template path remain stock-owned. Compiled grouping without any actual
+aggregate calls also retains its stock owner; the interchange adapter adds no synthetic aggregate.
+
+Global aggregates retain the original zero-field RowData key serializer and its eight-byte empty
+BinaryRow key. Their operator parallelism and maximum parallelism remain one, including when the
+job default is larger. Their physical input and aggregate output fields must be BIGINT. SUM/AVG
+receive Flink's projected value column; COUNT(*) can retain both unused source columns. The captured
+physical layout, rather than an assumed projection, determines the operator contract. Re-exporting
+an initially empty global savepoint creates neither an accumulator nor a SQL result.
+
+Append-only accumulators can omit both the input-row counter and SUM's non-null counter. MIN/MAX
+each retain one nullable BIGINT scalar. Native execution retains group existence and nullable
+SUM/MIN/MAX initialization as presence markers; it never fabricates
+an exact input count. These markers are absent from the exported Flink row. Actual COUNT and AVG
+counts remain independent and wrap like Java, including through zero. A live append group with a
+zero aggregate count remains present. The append contract rejects retraction batches before
+mutation. Native checkpoints keep their format and initialization reapplies the captured liveness
+mode on fresh, raw-checkpoint and canonical restores.
+
+Append-only MIN/MAX can share a generated row with COUNT(*), COUNT(v), SUM and AVG. The projection
+preserves the optimizer's actual shared COUNT/SUM0 slots and nullable extrema independently.
+An all-NULL group remains present with NULL extrema. Retracting MIN/MAX use a separate structured
+adapter: each header retains its raw cached selection, independent map size and a present RAW placeholder serialized by Flink's NullSerializer.
+The placeholder payload is one zero byte, rather than a NULL field. Each frequency entry retains
+its signed count and original write age. Export preserves a cached selection even when a zero map
+size hides it from the SQL result, and preserves maps when TTL has already removed their header.
+An absent header stays absent on an immediate return; a subsequent input follows stock semantics.
+
+The planner captures the actual generated MapView IDs and key/value serializers, including their
+ExternalSerializer snapshots. Matching value bytes alone is insufficient for stock restore.
+Import reads raw state in a fresh projection backend without applying a TTL API wrapper, validates
+the entire source before applying it, and clears source state only after success. Export visits
+live headers and map entries directly in bounded batches, including maps larger than a batch.
+Qualified per-record mapped extrema use the direct per-key RocksDB aggregate: fixed-size
+accumulator headers and timestamped companion map records. A canonical savepoint pins native
+RocksDB state and converts bounded frames on the asynchronous writer, including orphan maps.
+Mini-batch mapped execution retains memory aggregation with raw RocksDB snapshot backing.
+Legacy raw checkpoints remain readable; default and append-only layouts retain their format.
+
+The state/lifecycle qualification covers 420 Flink 2.2.1 cases: 32 independent generated-layout
+controls; 72 retracting, 92 append-only and 128 INT-key lifecycle/overflow/recovery cases; twenty
+validation/receiver/resource-failure cases; eight additional retracting native-checkpoint recovery
+cases; four retracting AVG signed-division boundaries; and 64 initially-empty handoffs. They compare
+complete stock accumulator bytes and write ages, retain the source on failed imports, and guard
+canonical export against intermediate native snapshots. Another 66 existing Java aggregate
+processing/SQL checks pass, including two-phase aggregation. The complete native suite passes
+1,295 tests with two pre-existing ignores. Another 176 global state cases cover 128 repeated
+handoff combinations, 32 initially-empty states and sixteen native-checkpoint recovery combinations,
+with the actual generated input schemas and empty stock key.
+
+Automatic binding has 96 physical-map/identity/TTL/UID planner cases for both input modes and key
+types, another 64 global singleton/identity/TTL/UID planner cases, nine unsupported compiled-layout
+controls and eight distinct TTL-hint overrides. The
+64 isolated process scenarios cover 28 retracting jobs, 28 append-only jobs and eight additional
+INT-key rescaling jobs. They retain custom source/sink state and both transposes, with ordinary SQL
+and compiled plans, both stores and initial engine orders, no-input re-export, native checkpoint
+recovery and rescaling 1→3→2. They compare the complete committed changelog with uninterrupted stock
+Flink, check final tables and verify actual native work/storage. Stock processes exclude StreamFusion
+JARs and exported metadata contains no StreamFusion classes. These are arithmetic cases, not a
+qualification of other connector transaction or failure combinations.
+
+The 56 isolated global scenarios cover append-only/retracting input, both submission forms, stores
+and initial engine orders, no-input re-export and native checkpoint recovery. They retain a
+singleton aggregate and committing sink. Source state
+rescales through one, three and two tasks, with the actual execution topology checked at every
+stock and native stage. Keeping the sink at one task preserves the order used to materialize the
+committed changelog. Sink rescaling remains in the broader connector matrix.
+
+The append-only BIGINT MIN/MAX addition has 136 state/lifecycle cases covering BIGINT/INT/global
+keys, NULL initialization, signed extremes, repeated switches, initially-empty states and native
+checkpoint recovery. Sixteen independent released-layout controls pin both scalar extrema and
+shared COUNT/SUM0/MIN/MAX rows. Twenty-two additional controls cover whole-source validation beyond
+a transfer chunk, foreign descriptors, invalid row kinds, memory denial with a fresh retry,
+receiver failures and original write ages. Another 48 planner cases cover both submission forms,
+all three key shapes, TTL settings and UID policies.
+
+Fifty-six additional isolated append-only MIN/MAX jobs cover 28 grouped and 28 global scenarios:
+both submission forms, stores and initial engine orders; no-input return; native checkpoint
+recovery; and rescaling through one, three and two tasks. They retain custom source/committer state
+and both transposes, compare every committed changelog and the final table, and keep StreamFusion
+off stock worker classpaths and out of exported metadata. Global operators and the committing sink
+remain singleton while their source rescales. A single 1,315-case run passes all these new cases
+alongside the existing state, planner, rank/identity and aggregate SQL controls, without failures,
+errors, skips or smoke filters. The earlier 120 arithmetic job scenarios remain separately
+qualified and are excluded from this run's count.
+
+The nine unchanged released Flink `GroupAggregateRestoreTest` programs also pass as stock-only
+controls. Their mixed schemas, filtered AVG, typed MIN and data-view/UDF program combinations remain outside
+this native qualification; no native pass is claimed for those programs. Broader complete-job,
+connector/delivery and cross-version matrices remain open. Benchmarking is explicitly deferred.
+
+The retracting BIGINT MIN/MAX addition covers 96 actual generated-operator lifecycle cases,
+48 automatic planner cases, 116 boundary/recovery cases, 64 invalid-source/resource/receiver cases
+and four generic raw map-state controls. Boundary cases preserve orphaned views, invisible cached
+selections and independent TTL ages across immediate returns and native checkpoints; large maps
+cross transfer chunks. Failed imports retain all source entries for a fresh retry, and receiver
+exceptions preserve native state and the original exception. Fifty-six isolated retracting MIN/MAX
+jobs cover both engine orders, submission forms and stores, both transposes, custom source and
+committing-sink state, no-input returns, native checkpoints and rescaling. Global source state
+rescales while its aggregate and sink remain singleton. These qualifications do not cover all
+aggregate schemas, connector transactions or the complete 15-family acceptance matrix.
+
+A further 144 generated-state/planner controls cover SUM/AVG with independent hidden count fields
+beside MIN/MAX, for append-only and retracting input. They distinguish original aggregate IDs
+from physical field offsets: hidden count slots shift the structured headers without renaming
+the corresponding MapViews. Both before-image policies, key shapes, TTL settings, engine orders,
+stores, submission forms and UID policies are covered where applicable. The broad 1,587-case
+non-job regression run and these 144 additional controls are separate passing cohorts.
+
+Sixteen isolated mixed SUM/AVG/MIN/MAX jobs additionally qualify grouped/global continuation
+with hidden count slots and MapViews in the same generated row, both submission forms, stores
+and initial engine orders. They compare full committed changelogs and final tables while retaining
+custom source/committer state and both transposes. The 56 extrema-only jobs and these sixteen
+mixed-layout jobs are separate passing cohorts; checkpoint/rescaling claims for the 56-case matrix
+do not extend to the additional mixed-layout jobs.
+
+
+## Typed scalar and shared DISTINCT canonical binding (partial)
+
+Canonical RocksDB header scans share the pinned row/byte-bounded reader, while companion visits
+also limit bytes and observe cancellation within a single owner. Conversion preserves signed
+membership counts and original TTL ages; it does not hydrate every owner's companion tables.
+Capture flushes pending metadata with an empty checkpoint path before pinning the database. That
+flush creates no native checkpoint files. Stock serializers and the qualified state layouts below
+remain unchanged. The released scalar/DISTINCT restore programs pass two stock and two native
+invocations, with audited native import and continued input and no expected fallback.
+
+A second Flink 2.2.1 binding extends the preceding BIGINT contract. Normal SQL and portable stock
+compiled plans capture the actual generated single-phase accumulator, original aggregate calls,
+key serializer, operator identities and maximum parallelism. Composite and variable-width keys
+retain their stock BinaryRow encoding. Derived physical calls can remove DISTINCT/filter flags;
+policy therefore comes from the original call while physical offsets/types come from the generated
+aggregate information. COUNT DISTINCT on a NOT NULL argument still reads that argument even when
+the generated inner count uses Count1.
+
+The scalar projection accepts TINYINT, SMALLINT, INT, BIGINT, FLOAT and DOUBLE accumulator fields
+for the supported built-in COUNT/SUM0/SUM/AVG and append-only MIN/MAX layouts. Input-record and
+intermediate counts must be BIGINT. Retraction-capable MIN/MAX use the independent structured header/MapView contract;
+its additional integral, date, time and boolean binding is described below. Decimal accumulator rows, UDF views, other DISTINCT aggregates,
+mini-batch/two-phase owners, asynchronous/unaligned state and DISTINCT with entry TTL are outside
+this new binding. Unsupported compiled contracts retain stock owners. An unbound ordinary native
+plan can retain its StreamFusion envelope and has no stock-interchange qualification.
+
+Shared COUNT DISTINCT views preserve the original state IDs and actual key/counter serializers.
+Append-only views retain shared membership bits; retracting views retain independent signed long
+counters, including zero and overflowed values. Stock transitions increment the visible count only
+on a counter becoming one and decrement it only on becoming zero. The visible scalar is independent
+of membership and survives native checkpoints without recomputation. NULL members retain the
+released separate null-marker state without contributing to COUNT. Generated RAW view placeholders
+retain the non-null one-byte NullSerializer payload.
+
+Memory and typed RocksDB transfer headers and companion entries directly through bounded frames.
+Canonical export does not first write a native snapshot. All scalar, view and null-marker validation
+precedes installation; malformed shared counters, orphan views/markers and missing append-only
+membership fail without consuming source entries. Source state is cleared only after successful
+import. Persistent input probes include COUNT DISTINCT null markers so a restored counter continues
+from its saved value rather than from zero.
+
+Qualification remains partial under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+The corrected-source 28-process cohort covers nonempty INT SUM/STRING COUNT DISTINCT handoffs,
+no-input returns, native checkpoints and 64-key rescaling through one, three and two tasks. It
+retains both submission forms, stores and switch orders, transposes, custom stock source/committer
+state, clean stock classpaths and independent committed-effect checks. Its split is eight continued-input,
+eight no-input, four native-checkpoint and eight rescale cases. Source and sink remain singleton;
+this matrix does not qualify every admitted type or connector protocol.
+The corrected source passes 170 checks: 48 repeated-switch lifecycle cases, 24 native-checkpoint
+recoveries, 34 whole-source validation cases and 64 automatic planner bindings. The lifecycle
+matrix covers all six numeric types, nullable independent STRING/TIMESTAMP keys, shared filtered
+views, both stores and initial engine orders, exact raw stock state and per-record output bytes.
+The full native suite passes 1,313 tests with two existing ignores. Shared Flink 1.18 processing,
+checkpoint and SQL regressions pass 130 cases with two existing STATE_TTL-hint capability skips;
+these do not establish canonical interchange on 1.18. Another 372 Flink 2.2.1 global-state/planner
+and shared processing/SQL checks pass. The complete 1,345-check grouped-state regression selection
+also passes with zero failures, errors or skips, including the 170 controls above. Its admission
+checks require typed stock contracts for the newly supported layouts and retain stock owners for
+unsupported layouts. These cohorts overlap and are not cumulative coverage.
+The existing wider connector, failure, version, type and aggregation-phase matrices remain open;
+benchmarking remains deferred.
+
+## Canonical date, time and boolean extrema (partial)
+
+Normal SQL and portable stock plans additionally bind append-only MIN/MAX with DATE, TIME and
+BOOLEAN scalar state. The existing native fold already retains these values as typed scalars;
+the stock contract now accepts their actual accumulator types without allowing them as SUM, AVG
+or COUNT fields. Stock identities, key/namespace serializers, field positions and generated
+accumulator schemas still come from the released Flink 2.2.1 owner. TIME uses Flink's physical
+millisecond integer and the resolved stock logical type. Released Flink 2.2.1's planner
+normalizes SQL TIME precision to zero, including declarations of TIME(3); the adapter preserves
+that actual contract.
+
+Both memory and direct RocksDB state use the existing bounded live transfer. No new native
+snapshot, JNI representation or value-reconstruction step is introduced. NULL extrema, false
+BOOLEAN values and independent COUNT/shared filtered COUNT DISTINCT state remain distinct.
+Retraction-capable extrema still require their multiset/view contract and receive no new
+qualification from this append-only addition.
+
+The 194-check cohort passes 24 new DATE/TIME(0)/TIME(3)/BOOLEAN state scenarios plus the existing
+170 typed controls. Sixteen new cases cover repeated switches, no-input re-export, exact raw stock
+state and per-record serialized output on both stores and in both starting orders; eight cover
+ordinary native-checkpoint recovery before canonical return and continued input. The fixture's
+canonical export guards reject any intermediate native snapshot. Another 32 negative controls
+reject other scalar aggregate layouts and retraction bookkeeping, and inspect real released
+retracting plans to prevent assigning them this append contract.
+
+A separate 32 complete-job cohort passes eight continued-input cases per value type, across SQL
+and compiled plans, memory/RocksDB and both starting orders. Composite STRING/TIMESTAMP keys,
+NULL values, actual native execution, row/Arrow boundaries, custom source/committing-sink state,
+clean stock worker classpaths and exact external changelogs remain checked. The source carries
+BIGINT values that stock SQL converts to the target type; a separate Java oracle computes the
+expected counts and extrema. TIME job inputs use whole seconds, while the state controls cover
+millisecond values and DATE extremes. Shared Flink 1.18 compilation/processing regressions pass
+34 checks; they do not qualify canonical interchange there. Cohorts overlap and are not summed.
+
+Other TIME declarations, decimal accumulators, retracting extrema outside the structured
+contract below, additional views/phases, TTL combinations and the wider job/rescale/failure/version
+matrix remain unfinished under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking remains deferred.
+
+
+## Typed retracting canonical extrema (partial)
+
+Ordinary SQL and portable stock plans bind single-phase retracting MIN/MAX for BIGINT, INT,
+SMALLINT, TINYINT, DATE, TIME and BOOLEAN. The historical grouping cohort used one INT/BIGINT
+key or a global singleton; additional fixed-width scalar/composite keys are authored below and
+await qualification. Actual generated accumulator fields, hidden record counts, MapView IDs,
+serializers, TTL policy, stock identities and maximum parallelism come from the released owner.
+The captured TIME schema uses the released planner's resolved precision zero; declared TIME(0)
+and TIME(3) queries are tested separately. Arithmetic slots sharing this contract remain BIGINT.
+Constructed grouping keys, other value schemas, DISTINCT/views, aggregate phases and
+asynchronous/unaligned owners remain outside this structured binding.
+
+Each cached selection and map-size counter remains independent of the retained value-to-signed-
+count map. Negative and zero counts, independently written map entries, a cached selection hidden
+by a zero map size, and orphan views whose accumulator expired are preserved directly. Import does
+not derive one piece from another or replay input. Grouped extrema imports spool the union of
+accumulator and orphan-view owners into the shared temporary disk index, then stream that union
+for complete validation and apply passes. Scratch state closes and deletes on failure; individual
+stock values remain working-set limits. The generated RAW placeholder retains its
+non-null one-byte NullSerializer payload.
+
+Both native memory and direct keyed RocksDB use the bounded header/entry transfer. An
+internal signed-long carrier holds integral values, epoch days, millisecond times or BOOLEAN 0/1
+losslessly; it is not the savepoint's value type. The writer converts each carrier back to the
+actual boxed Flink value and uses the captured stock serializer. Native import rejects out-of-
+range narrow integers and invalid BOOLEAN carriers before mutation. Existing native checkpoint
+formats remain readable; C Data ownership and the stock canonical container are unchanged.
+Direct RocksDB export streams a pinned view of headers and companion records without rebuilding
+execution maps. Continued live writes and closing the original owner preserve that frozen view.
+
+The direct RocksDB change passes four new native storage controls within the 1,514-test native
+suite (two existing ignores), plus memory-only compilation. Java qualification passes 1,265
+aggregate/snapshot checks and a separate 24-check cohort on Flink 2.2, and 734 selected checks
+on Flink 1.18. Both lines run all sixteen type/TTL cases that complete two pinned captures on a
+writer thread after live writes and native-owner close. Four compiled complete jobs per line
+cover BIGINT/BOOLEAN continuation on both native stores and require direct RocksDB execution
+when requested. The newer local pairwise selector reduces legacy cohort repetition; these
+selections do not establish exhaustive release-line or all-operator qualification.
+
+The consolidated 1,232-check cohort passes 128 repeated-switch cases with and without visible
+COUNT(value), sixteen native-checkpoint returns, 144 independent-cache/orphan-view cases, 384
+typed planner cases, 256 corruption/resource/callback cases and 304 existing BIGINT regressions.
+The lifecycle matrix covers eight SQL type declarations, both native stores and starting orders,
+TTL on/off, no-input canonical re-export, complete raw stock state bytes and exact per-record
+changelogs. Visible COUNT(value) and the hidden record count retain separate null/bookkeeping
+semantics. The export guards reject native snapshot/checkpoint calls. Planner checks cover both
+submission forms, BIGINT/INT/global keys, both UID policies and TTL on/off. The new native library
+passes all 1,317 native tests with two existing ignores, including checked carrier ranges, typed
+checkpoint continuation and cross-chunk duplicate rejection. Earlier overlapping cohorts are not
+added to these totals.
+
+Seven isolated complete-job cases pass, one each for INT/SMALLINT/TINYINT/DATE/TIME(0)/TIME(3)/BOOLEAN.
+These initial cases use compiled plans, native memory and stock-first repeated switches. They
+retain actual native processing, both transposes, custom source/committing-sink state, clean stock
+workers and exact external changelogs against stock plus an independent logical multiset oracle.
+Their BIGINT CSV inputs are converted by stock SQL to the actual typed accumulator/view values;
+output projection to BIGINT only serves the unchanged custom sink fixture. The full 196-job matrix additionally passes all 28 modes for each of the seven types:
+SQL/compiled submission, both stores and engine orders, no-input returns, ordinary native
+checkpoint recovery and 64-key rescaling through 1 → 3 → 2 tasks at maximum parallelism 128.
+These results use the independently built typed-extrema library; later string-library builds do
+not automatically requalify this cohort. These scenarios overlap the initial smoke cases and are
+not added cumulatively. The shared disk-inventory cohort passes 24 selected lifecycle/recovery
+checks, 96 initialization checks and 320 malformed-state checks on Flink 1.18. It exercises the
+same stock accumulator/view contracts on that line, without qualifying the full 196-job matrix.
+
+The preceding typed-extrema baseline passed all nine released stock GROUP BY controls but
+failed all nine native execution audits because the aggregates stayed stock-owned. The unchanged
+committed baseline reproduced those failures. The subsequent string-extrema addition below
+qualifies the simple and TTL-hint programs with actual state import and resumed native input;
+the later scalar and DISTINCT mini-batch extensions below qualify three more programs.
+Four UDF programs remain unqualified. Native Calc activity receives no aggregate-import credit.
+
+Wider retained types, keys, views/phases, connector delivery/failure and cross-version migrations
+remain open under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking remains deferred.
+
+
+## Canonical string extrema (partial)
+
+Append-only, single-phase MIN/MAX over STRING, VARCHAR and CHAR inputs binds the released
+VARCHAR accumulator in ordinary SQL and portable stock compiled plans. Other aggregate kinds
+cannot use a string scalar, and retracting string extrema still require their separate structured
+contract. The existing generated key, accumulator and view serializers, identity and maximum
+parallelism remain authoritative. Memory and direct RocksDB export live state through the same
+bounded stock-schema writer; canonical export never takes an intermediate native snapshot.
+
+Released Flink 2.2.1 compares two Java-backed BinaryStringData values using Java UTF-16 order,
+and otherwise compares their UTF-8 bytes. Those orders differ for some valid Unicode strings.
+The Arrow boundary therefore preserves each input's optional Java UTF-16 representation, and
+native running extrema retain the winning representation. Changelog before/after images carry
+the corresponding companion values, including changes between Java strings whose encoded UTF-8
+bytes coincide. Owned UTF-8/UTF-16 payloads count against the native state budget.
+
+The captured stock input graph remains in place upstream of these string extrema until native
+expression producers preserve the same representations. The native aggregate still consumes and
+produces Arrow batches through its native exchange. This preserves input semantics without
+crediting retained stock producers as native execution. Unqualified retracting ordinary native
+routes retain their existing behavior.
+
+Stock RocksDB deserializes its accumulator for every input record, so native persistent state
+clears transient Java caches between records even within one physical Arrow batch. A canonical
+savepoint, or an ordinary stock checkpoint restore, also removes those caches. Six stock-only
+characterization cases demonstrate that stock heap execution itself can choose a different
+future string extreme after restore than uninterrupted stock execution. String continuation
+controls use an independently restored stock operator at the same checkpoint/savepoint cuts;
+they preserve exact serialized state and output assertions. The cache is transient execution
+metadata and is not exported as a StreamFusion-dependent serializer or state field.
+
+The final 296-check cohort passes 30 repeated-switch/native-checkpoint scenarios, twelve
+singleton/multirow representation cases, six stock normalization controls, twelve admission
+guards, 24 SQL/compiled-plan bindings and eighteen malformed-state/retry controls, plus 194
+previous typed aggregate controls. State scenarios include both engine orders, both stores and
+heap/RocksDB backend changes. The unchanged-state export guards, exact raw stock bytes and
+per-record changelogs remain checked. The independently built native suite passes 1,325 tests
+with two existing ignores. The full earlier 1,232-case typed retracting state/planner/failure
+selection also passes against this final string library, as do all 32 prior temporal/boolean
+admission guards. These are separate regressions, not new string variants. Earlier passing and
+failing cohorts are retained separately, not added cumulatively. The unchanged released GROUP BY selection passes all nine stock invocations. Two native
+programs, `group-aggregate-simple` and `agg-with-state-ttl-hint`, additionally pass strict
+canonical-resume contracts: each imports two stock groups into the actual opened native handle
+and consumes three new native input rows. Their original queries, fixtures and sink assertions
+are unchanged. The later scalar and DISTINCT extensions below qualify three more programs;
+four UDF programs still fail their native execution gates and the full upstream suite remains red. Applied header batches count only after successful import, excluding
+validation-only passes, and unknown program IDs cannot inherit the simple-program contract.
+The witness controls pass 143 cases and the independent Python report audit passes 49.
+Shared Flink 1.18 processing/accounting/ownership checks pass 34 cases without qualifying canonical
+interchange on that line.
+
+Twenty-eight isolated complete-job scenarios also pass: eight continued-input switches, eight
+no-input returns, four ordinary native-checkpoint recoveries and eight rescale cases. They cover
+SQL and compiled-plan submission, both native stores and initial engine orders, native grouped
+input, both transposes, unchanged custom sources/committing sinks, stock workers without
+StreamFusion and exact external committed changelogs. Rescale redistributes 64 group keys through
+1 → 3 → 2 tasks at maximum parallelism 128; source and sink writers stay singleton. These jobs
+cast BIGINT source values to strings and back only for the fixed custom sink schema. Their
+independent ASCII string oracle distinguishes lexical from numeric extrema, including 12 versus
+2. Unicode representation semantics are checked by operator/transport controls, not claimed as
+complete-job Unicode qualification. Broader string views, retractions, phases, TTL, Unicode
+complete-job scenarios and the full connector,
+failure and version matrices remain in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking remains deferred.
+
+
+## Canonical scalar mini-batches (partial)
+
+Append-only scalar one-phase and local/global mini-batches bind the released stock
+accumulator contract during SQL and compiled-plan submission. The global stage retains
+`accState` under the original operator identity, key serializer and maximum parallelism.
+Its native configuration is rebound before canonical or ordinary native-checkpoint restore;
+no StreamFusion serializer or additional persistent state descriptor enters the savepoint.
+Local/global retracting DISTINCT mini-batches remain outside this typed adapter. The newly added
+scalar local/global binding below awaits qualification. Captured managed UDF
+contracts have their own scope below.
+
+The resumed #569 implementation additionally binds one-phase retracting scalar bundles and
+COUNT DISTINCT through the existing typed header/view contract. Hidden record counts retain
+group liveness independently of filtered SUM/AVG counts and DISTINCT multiplicities. A barrier
+drains the existing native bundle before direct canonical projection; no input replay or new
+state encoding is added. SUM DISTINCT and retracting MIN/MAX views retain their existing gates,
+and DISTINCT with entry TTL still requires a separate timestamp contract.
+New planner and repeated-switch controls cover nullable/duplicate members, orphan retracts,
+temporary zero counts, group deletion/recreation, both native stores and native-checkpoint
+recovery. Full jobs retain ordinary SQL/compiled submission, both engine orders, stock reference
+jobs stopped at the same bundle cuts, and rescaling. These tests await complete qualification; selected local results are recorded in the
+[canonical inventory](../backends/canonical-state.md#resumed-scope-local-qualification), separately from historical evidence below.
+
+The local stage produces stock partial fields directly. AVG carries its widened sum and
+independent BIGINT count, with the actual released accumulator type defining the sum carrier.
+The global bundle first combines incoming partials independently, then merges that result into
+retained state once, matching stock rounding and representation-sensitive string comparisons.
+Local partials and before/after output images preserve the existing optional Java-string
+companions. RocksDB clears the transient accumulator string cache once per logical bundle,
+matching the stock mini-batch function's state read boundary. Immediate aggregation retains
+its per-record boundary.
+
+Local and global buffers drain at savepoint barriers. Canonical capture then visits the
+consistent live accumulator directly through the stock writer; it never serializes a native
+snapshot first. An empty barrier before the first local input is valid. The private native
+local/exchange/global chain stays Arrow-based; perimeter transposes remain where stock producers
+or consumers require rows. The portable stock plan remains unchanged.
+
+The unchanged released `group-aggregate-simple-mini-batch` restore fixture passes with its
+original query and sink assertions. Its strict witness records two applied stock groups in
+the opened native global owner, two new global rows and three local input rows. The full
+released GROUP BY selection at this scalar-library milestone passed all nine stock programs
+and three native programs. Later DISTINCT extensions below qualify two more programs. This
+milestone's witness controls passed 152 Java cases and 51 independent Python audit cases. The independently built native suite
+passes 1,332 tests with two existing ignores.
+
+The expanded 390-case cohort passes 104 SQL/compiled planner checks, 208 repeated canonical
+round trips, 52 ordinary native-checkpoint recoveries and 26 exact stock/native local-partial
+comparisons. Thirteen SQL type declarations cover strings, six numeric types, DATE, TIME(0),
+TIME(3) and BOOLEAN. Numeric declarations also drive filtered SUM/AVG inputs; the other
+MIN/MAX declarations share INT arithmetic. State cases cover both phases, stores, initial
+engine orders and heap/RocksDB backend changes, with immediate re-export and exact stock
+accumulator/output bytes. Local cases split physical Arrow batches independently of the logical
+bundle and exercise an empty barrier before first input. A separate 40-case negative cohort rejects malformed counts, row kinds and foreign state across
+both phases/stores and STRING/DOUBLE fixtures. Corruption after 1,024 keys leaves every source
+entry intact and the native destination empty. Repaired sources remain retryable, reproduce exact
+exported bytes and continue with the stock changelog. The final library also passes all 1,560
+previous typed/string/negative aggregate regressions and 34 shared Flink 1.18 processing checks;
+the latter do not qualify canonical interchange on 1.18. Cohorts overlap earlier milestones and
+are not added cumulatively. These controls do not establish every TTL, key, floating-point edge
+or complete-job schema combination.
+
+Complete-job mini-batch controls compare external committed changelogs with a separate stock
+job stopped at the same checkpoint/savepoint cuts. Those barriers flush bundles and can change
+emission timing even in stock-to-stock execution; an uninterrupted stock changelog is therefore
+not an equivalent mini-batch boundary oracle. Independent final-table assertions remain in place. Stock-bound
+native bundles preserve released Flink's projected BinaryRow HashMap order and retain its table
+capacity across drains. This matters when a downstream rank consumes changes from competing
+aggregate keys: first-touch order can change its intermediate changelog while preserving the
+final table. Four exact ordered-output controls compare three successive drains on both stores
+and whole/split Arrow batches, including NULL keys. The 290-case state/local/checkpoint cohort
+passes alongside eight isolated SQL/compiled mini-batch rank handoffs with all original full
+changelog assertions retained. These tests add no state descriptors or snapshot formats.
+All 56 distinct complete-job scenarios pass across one-phase and local/global plans: sixteen
+continued-input cases, sixteen no-input returns, eight ordinary native-checkpoint recoveries and
+sixteen rescalings. They cover SQL/compiled submission, both native stores and initial engine
+orders, custom sources/committing sinks, clean stock workers without StreamFusion and both
+perimeter transposes. Rescale redistributes 64 actual keys through 1 → 3 → 2 global tasks at
+maximum parallelism 128; local stages and source/sink writers remain singleton. Global-task
+witnesses require positive input in every global task, independently of positive local input.
+The original full run passed 48 cases and failed eight two-phase rescale witness checks because
+they counted the local stage alongside global owners. A corrected eight-case run passes without
+changing production code, state comparisons or sink assertions. The original failed run remains
+part of the evidence; smoke cases overlap and are not added. These jobs use the independent
+ASCII lexical-extrema oracle, not a complete-job Unicode/TTL/schema matrix. Wider retractions,
+views, keys, TTL, connector/failure and version matrices remain open under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.
+
+
+## Canonical shared SUM DISTINCT (partial)
+
+Append-only SUM DISTINCT over TINYINT, SMALLINT, INT, BIGINT, FLOAT and DOUBLE binds the
+released nullable raw sum and shared DISTINCT views during ordinary SQL and stock compiled-plan
+submission. Immediate and one-phase mini-batch owners are covered; append local/global
+DISTINCT is qualified separately below. Retracting SUM DISTINCT, decimal sums and independently
+expiring DISTINCT entries remain unqualified; their state cannot be inferred from this scalar contract.
+
+Each aggregate retains its own membership/filter bit even when COUNT and SUM share one stock
+MapView. Canonical export combines those native memberships into the released Long/long-array
+layout, retaining NULL markers separately without adding NULL to a scalar. The original key,
+accumulator and view serializers remain authoritative. Raw SUM state transfers independently
+from view contents; it is never recomputed from memberships or emitted result rows. COUNT's
+append cardinality consistency check remains active for COUNT slots, while SUM uses its own
+nullable scalar contract.
+
+Native memory and RocksDB visitors transfer the raw sum and initialization presence directly.
+Ordinary native checkpoints preserve those values and membership policy in the existing native
+format. Stock canonical capture visits live drained state without an intermediate native
+snapshot. Canonical import validates the complete source before mutation and keeps the actual
+stock operator identity and maximum parallelism.
+
+The focused qualification passes 124 cases: 96 repeated canonical switches, 24 ordinary native
+checkpoint returns and four controlled released-stock probes whose raw sums intentionally differ
+from membership totals. The latter preserve raw sums 999/777 through handoff and continue against
+the actual stock operator. Cases cover both stores/orders, heap/RocksDB changes, NULLs, filters,
+seven-row physical batches crossing five-row bundles, integer overflow, NaN payloads, signed
+zero and infinities. Per-key changelog order and every serialized stock state entry remain
+checked; only cross-key bundle output order is ignored. Another 52 planner/admission cases pass
+SQL/compiled submission, both UID policies, maximum parallelism 257 and rejection of unqualified
+contracts. All 34 existing COUNT corruption controls still pass.
+
+Six native tests cover both stores' direct transfers, independent scalars/NULL membership,
+wrapping arithmetic, bit-preserving floating values, ordinary recovery and invalid-state
+rejection. The full native suite passes 1,338 tests with two existing ignores. The unchanged
+released DISTINCT fixture now also passes: three stock accumulator groups are applied to the
+opened native owner, which consumes seven new native rows. The full released GROUP BY selection
+at this single-phase SUM-library milestone passed all nine stock programs and four native
+programs. The local/global extension below qualifies the fifth native program; four UDF
+programs remain failing. This milestone's canonical witness controls passed 153 cases.
+
+All 56 immediate and one-phase mini-batch complete-job scenarios pass: sixteen continued-input
+cases, sixteen no-input returns, eight ordinary native-checkpoint recoveries and sixteen
+rescalings across SQL/compiled submission, both stores and initial engine orders. They retain
+custom sources/committing sinks, both transposes, clean stock workers and an independent
+set-based SUM/COUNT oracle. Rescaling redistributes 64 keys through 1 → 3 → 2 tasks at maximum
+parallelism 128. Mini-batch changelogs use a stock reference stopped at identical cuts. The two
+initial smoke cases overlap this matrix and are not additional coverage. These complete jobs
+use BIGINT values; floating-point edges and shared filtered views are covered by operator tests,
+not by this complete-job matrix.
+
+All 1,990 distinct prior aggregate regression scenarios are qualified across 1,983 positive
+results from the original run and a corrected 44-case run, with 37 overlapping scenarios. The
+original run had seven test-fixture reflection errors after an existing private helper overload
+was removed; restoring that delegating overload makes all 44 affected-class controls pass.
+The original failed run remains recorded rather than being called successful. Shared Flink 1.18
+processing/accounting checks pass 34 cases on the new library; this does not qualify canonical
+restore on that release. All broader #569 requirements remain open and benchmarking is deferred.
+
+
+## Canonical local/global DISTINCT mini-batches (partial)
+
+Append local/global COUNT DISTINCT and numeric SUM DISTINCT bind the original stock global
+accumulator and shared view contracts during ordinary SQL and stock compiled-plan submission.
+Six numeric types are qualified at the operator boundary. The native local stage keeps NULL
+membership and one presence bit per argument/filter pair; private Arrow lists carry those views
+through the native exchange. The portable stock plan is unchanged. The global stage unions the
+incoming memberships in its transient bundle, then folds only memberships absent from retained
+state. It never adds a local DISTINCT scalar to the retained sum. Non-DISTINCT scalar partials,
+including AVG's separate sum/count, retain their independent precombine-and-merge path.
+
+Floating DISTINCT bundles retain Java map iteration order, including shared-filter alignment and
+NULL markers. The focused regressions include FLOAT/DOUBLE inputs where input-order folding or
+adding a local sum would produce a different result; a separate JDK map reference confirms the
+expected values. Stock global export retains raw accumulators independently of the views and
+uses the existing direct stock canonical writer after both bundles drain. Ordinary native
+checkpoint formats are unchanged; restore rebinds the merge and local membership policies.
+
+Qualification passes 96 repeated canonical-switch cases and 24 native-checkpoint returns across
+six numeric types, both stores, both initial engine orders, backend changes, and single-row or
+seven-row physical batches crossing five-row local bundles. Cases include filtered shared views,
+duplicates, NULL-only groups, NULL keys and string memberships. Every serialized stock state
+entry, immediate re-export before input and per-key continued changelog remain checked. These
+cases use ordinary finite arithmetic; the broader single-phase floating edge suite remains a
+separate scope. Twenty-four new planner checks cover SQL/compiled submission and both UID
+policies at maximum parallelism 257; 156 prior planning controls also pass. Five focused native
+tests and the full 1,343-test native suite pass, with two existing ignores.
+
+The unchanged released DISTINCT mini-batch fixture applies three stock accumulator groups to
+its opened native global owner, then processes seven local input rows and five global input
+rows with the original sink assertions. The complete released GROUP BY selection passes all
+nine stock programs and five strict native resumes; four UDF programs remain failing and the
+whole selection remains red. Audit controls pass 162 Java cases and 51 Python cases.
+
+All 28 BIGINT complete-job scenarios pass: eight continued-input switches, eight no-input
+returns, four ordinary native-checkpoint recoveries and eight rescalings. They cover SQL/compiled
+submission, both native stores and initial engine orders, custom source/committer state, both
+transposes, clean stock workers and independent external effects. Rescaling redistributes 64
+keys through 1 → 3 → 2 global tasks at maximum parallelism 128; separate witnesses require local
+input and positive input in every global task. Mini-batch changelogs use a stock reference at
+identical cuts. The initial smoke case overlaps this matrix and is not additional coverage.
+
+The new library also passes all 2,166 prior aggregate state, planner, corruption and recovery
+controls in one run. This selection includes older scalar/SUM planning cases and is not additive
+coverage. Shared Flink 1.18 processing/accounting/ownership checks pass 34 cases; canonical
+interchange on that line remains unqualified. Wider retractions, decimal/view/TTL semantics,
+schemas, connector delivery, failures and versions remain open under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.
+
+
+## Native companion-table index admission
+
+Native grouped multiset tables use a one-byte table identifier: zero holds the main group row,
+and aggregate positions 0 through 254 use companion identifiers 1 through 255. Canonical DISTINCT
+bindings reject negative, duplicate or larger aggregate positions before native initialization.
+Ordinary SQL and compiled plans retain the captured stock aggregate when a DISTINCT binding
+cannot fit this encoding. The RocksDB codec independently rejects an unencodable multiset layout
+before creating its database and uses checked identifier conversion. Scalar-only wide accumulators
+do not consume companion identifiers and are not rejected by this limit.
+
+Boundary controls qualify real RocksDB writes/reads and canonical header/view visits at the last
+valid position, plus rejection before database creation. Four released-planner cases cover the
+254/255 boundary in both submission forms; nine constructor checks cover invalid/duplicate/empty
+views and valid endpoints. The native suite passes 1,348 tests with two existing ignores, and
+193 planner/constructor plus 167 state/recovery/corruption/admission controls pass. The latter
+include the previous 120-case local/global DISTINCT state matrix; these cohorts overlap.
+The strengthened four-case fallback check verifies the actual released stock aggregate owner,
+not only its displayed name. One compiled, stock-first heap continuation job also passes on this
+library with custom source/committer state, both transposes and a clean stock worker; this smoke
+case overlaps the earlier complete-job matrix and does not requalify all 28 scenarios.
+This is validation of the current encoding, not arbitrary-width canonical interchange. Wider
+companion layouts remain required under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking remains deferred.
+
+
+## Captured managed UDF canonical state (partial)
+
+On Flink 2.2.1, one-phase synchronous user aggregates can retain the captured released
+`GroupAggFunction`, key selector, accumulator types and generated handler while consuming and
+emitting Arrow batches. This preserves the stock managed `accState` and original data-view
+descriptors/serializers, including user accumulator fields, rather than rebuilding them from the
+SQL result. Canonical restore uses normal Flink managed-state initialization; canonical export
+uses its stock writer directly. Normal user-function dependencies remain required by stock Flink;
+StreamFusion classes and libraries are excluded from the qualified stock worker.
+
+Both ordinary SQL and portable stock compiled plans keep the captured identities and maximum
+parallelism. Admitted keys and Arrow-visible inputs/results follow the existing typed row
+contract; unsupported RAW boundary fields, async state and unaligned exchange retain stock
+owners. The optional JVM accumulator cache is active only without retention and drains before
+savepoint barriers. It does not change durable state or its serializers.
+
+The recorded immediate-UDF qualification passes nine stock and seven native programs. Both one-phase UDF programs enumerate three restored managed groups and process seven
+new rows in the same opened Arrow UDF owner; unrelated Calc activity cannot satisfy this witness.
+The 180 Java audit controls include missing state/input, wrong owner/state, failed backend
+inspection and duplicate-event cases. Two mini-batch UDF programs remain failing in this selection.
+
+Sixteen planner cases cover SQL/compiled submission, append/retract input, enabled/disabled UIDs
+and cache settings. Uncached/cached compiled stock-first heap continuation smoke jobs pass with
+a user accumulator retaining raw fields, MapView and ListView, retractions and NULLs, custom
+source/committer state, both transposes, clean stock workers and an independent final-state oracle.
+All 56 immediate-UDF complete-job cases pass: 16 continued-input, 16 no-input returns,
+eight ordinary checkpoint recoveries and 16 rescalings across cached/uncached execution,
+SQL/compiled submission, both engine orders and both stores. Rescaling redistributes 64 keys
+through parallelism 1→3→2 with maximum parallelism 128 and exercises the bounded cache's eviction.
+The smoke cases overlap this matrix. Each job keeps the custom source/committer state, both
+transposes, clean stock workers and external output verification. This does not qualify the
+separate mini-batch UDF variants or the complete TTL/failure/version matrix.
+Wider UDF types, phases, TTL/failure/version and connector delivery combinations remain required
+by [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking is deferred.
+
+
+## Captured one-phase UDF mini-batches (partial)
+
+The one-phase mini-batch path keeps the actual released `MiniBatchGroupAggFunction`, count
+trigger, key selector, accumulator schema and stock managed data views behind Arrow input/output.
+It preserves stock bundle accumulation and changelog emission, finishing pending work before
+watermarks, end-of-input and savepoint barriers. Accumulator caching remains disabled for TTL;
+otherwise cached writes drain before the cut. Cache-hit assertions require repeated completed
+bundles, because a group is looked up once within a single bundle.
+
+All 56 uncached/cached one-phase mini-batch complete jobs pass: SQL/compiled submission, both
+stores and engine orders, sixteen continued-input and sixteen no-input returns, eight ordinary
+checkpoint recoveries and sixteen 64-key rescalings through 1→3→2 at maximum parallelism 128.
+They retain positive partial-bundle barrier witnesses, custom source/committer state, both
+transposes, clean stock workers, independent final-state assertions and a stock reference stopped
+at identical savepoint cuts. The two initial job smokes overlap this matrix.
+
+The 88 state controls cover 64 repeated switches across immediate/mini execution, stores, backend
+changes, engine orders, cache settings and single-row/seven-row batches crossing five-row bundles;
+sixteen controlled TTL age/expiry cases; and eight UDF failure/cancellation/recovery cases.
+They compare every canonical KV byte, including accumulator, MapView and ListView state, and
+require immediate re-export before new input. TTL handoffs preserve original write timestamps.
+Failed-task cleanup bypasses graceful finish, matching cancellation rather than replaying the
+failed bundle. Thirty-two planner controls pass for schemas, portable plans, IDs and cache modes.
+
+The unchanged released aggregate suite passes nine stock programs and eight strict native
+resumes, with 189 canonical audit controls. The without-merge mini UDF restores three groups
+and consumes seven new rows in the same opened owner. The two-stage UDF fixture still fails
+in this one-phase revision; local/global transport and its wider job/state/TTL/failure matrix
+remain separate work in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+The exact one-phase source also passes 36 shared Flink 1.18 processing, allocator, ownership
+and TTL/checkpoint controls; canonical interchange on that release remains unqualified.
+Broader type/key/view and connector delivery/version combinations remain partial. Benchmarking
+is explicitly deferred.
+
+
+## Captured local/global UDF canonical handoffs (partial)
+
+Two-stage UDF lowering keeps the actual released local and global MapBundleFunctions, their
+triggers and the local partial serializer. Local Arrow bundles have no retained keyed state and
+drain before barriers. Their complex user accumulators travel as original stock serialized
+partials in a private Arrow binary column beside typed exchange keys. The global Arrow owner
+checks payload framing and key equality, then calls the original merge handler. Retained global
+accumulators, TTL wrappers and data views remain stock managed state with their original
+serializers and identities. Private partials do not become a canonical state format or an
+intermediate native snapshot. Unsupported execution contracts retain their stock owners.
+
+The unchanged released aggregate restore suite passes all nine stock and all nine native
+programs with zero failures, errors or skips. The two-stage UDF imports three global groups,
+consumes seven local rows and five global partial rows in the matching owners; an unrelated
+Calc cannot satisfy the strict global-import-and-both-stage contract. All 199 canonical Java
+audit controls and 51 Python summary controls pass. The original upstream assertions remain.
+
+Qualification also passes 16 new global planner cases, the preceding 32 immediate/one-phase
+planner cases, 12 private partial codec controls and uncached/cached compiled stock-first heap
+continuation smokes. Codec controls retain RAW serializers, NULL/Unicode values, empty and
+multiple key prefixes and row kinds, rejecting trailing, truncated or rekeyed payloads. The job
+fixture supports signed local deltas with independent raw fields, MapView counts and structured
+ListView entries, retaining retractions, custom source/committer state, both transposes, clean
+stock workers, positive pending-bundle witnesses and an independent external result oracle.
+
+The full 2,471-check aggregate/UDF regression selection passes on this candidate. It includes
+the earlier aggregate state/planner/corruption/recovery cases and current UDF and companion-index
+controls; overlapping cohorts are not cumulative coverage. A separate 119-case existing UDF suite passes typed arguments, results and accumulators,
+lifecycle, DISTINCT/FILTER, cache and repeated-recovery checks. Its earlier targeted 26-key/TTL
+selection overlaps and is not additive coverage. Sixty shared Flink 1.18 processing, native
+checkpoint and ownership checks pass; that is not canonical qualification on 1.18.
+
+All 144 state cases pass, adding 56 two-stage cases to the earlier 88 controls: 32 repeated
+switch/backend/cache/batch-shape cases, eight TTL age/expiry cases, eight checkpoint returns
+and eight local/global UDF fault recoveries. They compare every retained canonical KV byte,
+including structured ListView entries and MapView counts, before new input and after immediate
+re-export. A standalone user fixture injects failures without changing the normal job fixture.
+
+All 56 two-stage complete-job scenarios pass: cached/uncached execution, SQL/compiled submission,
+both stores and initial engine orders, sixteen continuation and sixteen no-input returns,
+eight native checkpoint recoveries and sixteen 64-key rescalings through 1→3→2 at fixed maximum
+parallelism 128. Both native stages must consume input; partial bundles must reach the canonical
+barrier and drain. Custom source/coordinator and committer state, both transposes, clean stock
+workers, exact external changelogs at identical cuts and an independent final-state oracle remain
+checked. The initial smokes overlap. This qualifies the nullable BIGINT key/value fixtures and
+their user accumulator contracts, not arbitrary user serializers or all key/type combinations.
+Wider key/type/view/TTL/failure, connector delivery and version combinations remain in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking remains explicitly deferred.
+
+
+## Captured managed UDF key layouts (partial)
+
+Captured managed UDF owners retain the released key selector, key type and serializer. Their
+admission does not inherit the scalar native-state adapter's DECIMAL(18) / millisecond timestamp
+restriction. The columnar exchange uses the existing recursive stock projection and original
+precision. Independent native state adapters retain their existing admission checks, and these
+key kinds keep the existing accumulator-cache bypass.
+
+Focused qualification covers 36 key layouts: DECIMAL precisions 19..38 at scale 2,
+TIMESTAMP/TIMESTAMP_LTZ precisions 4..9, composite/nested decimal-timestamp keys, a nullable
+wide-decimal array and binary keys. It includes negative epochs, timestamp distinctions within
+one millisecond, NULL parents/elements and zero/non-ASCII binary bytes. Three-stage state controls
+compare every stock canonical key/value byte for accumulators, MapView and ListView entries,
+including backend changes, no-input returns and original TTL ages/expiry. Native projection
+controls compare actual binary keys, stock hashes and owners at 1, 3 and 2 tasks/maxP128.
+
+Ordinary SQL retains the first captured stock execution graph as its identity anchor. Building
+another equivalent graph changes generated UIDs, including expanded source/writer/committer roles.
+Reusing the original graph preserves complete stock identities without manual mapping or changing
+production node counters. The 108 identity cases cover three key types, three aggregate phases,
+three UID policies, SQL/compiled submission and Calc boundaries.
+
+The combined released Flink 2.2.1 component passes all 1,190 checks: 420 planner/identity, 720 state,
+38 projection/routing and twelve partial-codec cases. All nine unchanged released aggregate
+restore programs pass on stock and strict native execution, retaining matching-owner state-import
+and new-input assertions; 199 Java audit controls pass. Earlier component cohorts overlap this
+selection and are not added cumulatively. No native serializer or persisted format is introduced.
+
+All 168 isolated full-job cases pass on the same combined source/library. Eight boundary/structured
+key fixtures each cover immediate, one-phase mini-batch and local/global UDFs: 96 continuation,
+24 no-input re-export, 24 ordinary native-checkpoint handoffs and 24 rescale cases. The selection
+covers SQL/compiled submission, both engine orders and heap/RocksDB with generated UIDs ALWAYS;
+it does not run every Cartesian combination. Rescaling moves 64 keys through 1→3→2/maxP128.
+The jobs retain the actual user accumulator/MapView/ListView, checkpointed custom source and
+coordinator, transactional committer, both transposes, positive native work, clean stock workers,
+a same-cut stock changelog reference and an independent final-state oracle. Intermediate precision
+checks are state/planner/routing tests, not full jobs for every precision or decimal scale.
+
+### Preserve generated nested ROW key bytes
+
+A generated nested binary ROW can reserve variable slots for NULL wide decimals and timestamps.
+Reconstructing its logical fields can shorten a 64-byte all-NULL key to 40 bytes and lose a later
+key deletion after restore. The managed boundary therefore carries the original owned binary
+payload through Arrow entry, exchange and local/global partials. Canonical state still uses the
+original Flink serializers; this payload is transient input representation.
+
+Two focused regressions compare 65 actual stock projections each, including that all-NULL key;
+with eight existing routing controls all ten pass. The corrected structured shard passes all
+42 complete jobs, including the 21 formerly failing nested-row cases, within the 168-case matrix.
+The earlier failed shard and full external changelogs are retained as regression evidence; its
+passing cases are not added to the current counts.
+
+Broader user serializer contracts, key/value schemas, view/phase/TTL/failure combinations,
+connector delivery and cross-version qualification remain in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Every family remains partial.
+Benchmarking remains explicitly deferred.
+
+## Additional canonical bindings awaiting qualification
+
+Typed scalar/shared DISTINCT owners now retain binary ROW-bearing grouping keys at the actual
+stock input boundary. Existing eager, one-phase and append-only two-phase execution uses the
+same raw-key protocol for live input and canonical state. New nested-key state/planner/job
+controls include NULLs, original padding, checkpoint recovery and rescaling on both Flink lines.
+
+Two-phase retracting COUNT/SUM/AVG additionally binds signed arithmetic counts and the hidden
+input-row counter. Raw SUM partials survive a zero net non-null count; bundle precombination
+retains released Flink's merge order before one retained-state merge. Existing native execution
+and private checkpoint encodings are reused. Retracting global DISTINCT remains excluded.
+These additions await complete qualification; selected local results are recorded in the
+[canonical inventory](../backends/canonical-state.md#resumed-scope-local-qualification);
+historical passing cohorts above do not qualify this wider scope.
+
+### One-phase decimal accumulator projection awaiting qualification
+
+Existing decimal SUM and AVG now have typed canonical bindings for eager and one-phase bundled
+execution. The projection distinguishes an unseen append SUM from native zero, retains the
+nullable raw accumulator and signed count for retracting SUM, and permits AVG's overflowed NULL
+raw sum with its independent count. Existing shared COUNT DISTINCT views continue through their
+own stock descriptors. New compact/wide-scale controls compare raw stock bytes, post-overflow
+continuation, native checkpoint recovery and full-job effects. Both released Flink lines remain
+awaiting qualification; decimal global partials and extrema are still outside this adapter.
+
+Local bundles with the stock projection descriptor and represented ROW keys now group by the
+stock binary key encoder. Optional owned-byte/string transport children no longer split one
+stock key into multiple local partials. Scalar and ordinary Arrow-row key paths retain their
+existing selection. A floating-sum regression mixes logical and owned ROW representations in
+single-row and whole-batch input, across repeated flushes; one stock key must keep one fold in
+arrival order. Execution of this new control remains deferred to the qualification window.
+
+
+## Additional COUNT arguments awaiting canonical qualification
+
+Canonical scalar and local/global binding now admits non-DISTINCT COUNT arguments wherever the
+existing Arrow input reader supports them, including binary, interval, ROW, ARRAY, MAP and
+MULTISET values. COUNT uses only argument validity and retains the same BIGINT accumulator;
+no value view, input-row replay or native state format is added. Grouping keys and all other
+aggregate arguments retain their existing type and view gates. Decimal COUNT likewise uses
+its validity reader independently of decimal SUM/AVG accumulator restrictions.
+
+New planner controls cover eager, one-phase and two-phase execution, append/retract input and
+ordinary/portable submissions. Raw-state controls include signed retractions, filters, NULLs,
+empty group removal, repeated switches and native recovery on both stores. Clean-worker jobs
+also cover hidden liveness counts, partial bundle barriers and rescaling with a separate final
+COUNT oracle. All additions await both-release execution in the local testing window; no new
+passing cohort or performance result is claimed.
+
+
+The existing retracting MIN/MAX map-view contract additionally binds drained one-phase
+mini-batches for its integral/date/time/boolean values. Capture uses the actual released
+MiniBatchGroupAggFunction, retention and count trigger, preserving stock view serializers and
+hidden input-row counters. Local/global extrema and filtered extrema remain gated. No native
+state format or new aggregate algorithm is introduced.
+
+New raw-state/changelog controls include duplicate minima, unmatched removal debts, empty-group
+recreation, both engine orders and native checkpoint recovery; ordinary/portable planner controls
+capture the original trigger and retention. Clean-worker jobs add no-input returns and rescaling
+with a separate MIN/MAX oracle. These additions await both-release execution, and earlier eager
+extrema results do not qualify the new mini-batch scope.
+
+## Scalar and composite retracting extrema keys awaiting qualification
+
+The existing header/map transfer now admits scalar grouping codecs and composites, including
+arbitrary key counts: integer widths, FLOAT/DOUBLE, BOOLEAN, DATE/TIME, intervals, CHAR/VARCHAR,
+binary values, compact/wide DECIMAL and TIMESTAMP/LTZ including nanosecond precision. The native
+transfer validates the complete BinaryRow key's minimum fixed prefix and eight-byte alignment,
+matching the typed group adapter; variable bytes stay opaque and retain their original encoding.
+The binding retains released selectors, serializer metadata, owner IDs and maximum parallelism.
+This widens key admission for existing eager and one-phase mini-batch retracting MIN/MAX without
+changing signed value carriers, independent headers/map entries, TTL or native state format.
+Constructed ROW/ARRAY/MAP/MULTISET keys remain outside this extension.
+
+Authored actual-stock controls cover complete raw state, opposite signed-zero and NaN keys,
+nullable composite components, a 65-column key crossing a null-bitmap boundary, both engine
+orders/stores, no-input returns, retractions, TTL expiry and native checkpoint recovery. Ordinary
+and portable planner controls require the actual scalar key schema and reject constructed
+schemas. Clean-stock jobs use independent SMALLINT/compact-DECIMAL or non-inline VARCHAR/wide-DECIMAL
+physical key columns, check both fields on the bound extrema contract in every native worker and
+retain independent final-value oracles through eager/mini-batch handoffs and rescaling. Native
+controls additionally preserve long UTF-8 keys and reject unaligned frames without mutation. These controls
+await Flink 1.18/2.2 qualification; historical counts above do not qualify them.
+The optional local pairwise selector also applies to grouped complete-job providers; default/CI
+execution retains every original invocation. No performance claim is added.
+
+The global ROW-key rescale fixture retains input beyond both fixed savepoint cuts, then checks
+new aggregate values after the final restore. Its six-round rescale oracle stays separate from
+the four-round continued-input oracle.
+Rescale execution evidence counts every native owner in the executed graph at its actual
+parallelism, including separate local and global grouped stages; both stages are required.
+
+Variable-key extrema export also bounds resident header and companion batches by 256 records
+and four MiB of payload estimates, plus one oversized record. This prevents a hot large key from
+being copied across an entire entry chunk. Both stores reserve conversion capacity before Arrow
+allocation, then retain the same reservation through the synchronous C Data receiver, avoiding a
+duplicate charge. Failure and denial release temporary charges and retain source state. Existing
+RocksDB raw-reader bounds and per-record working sets remain separate. Authored native controls
+cover a two-MiB hot key, denial before allocation, receiver failure/retry and reservation release;
+Java and clean-worker qualification remains pending. The 256-record export quantum keeps the
+pre-allocation conversion allowance within the existing 128-KiB small-pool control; imported
+frames retain their 1,024-record protocol limit. Drained mini-batches use the same retracting
+view contract, while pending bundles still fail direct export. Logical schema fixtures use the
+released Table API for interval columns that SQL DDL cannot declare.
+
+Bound one-phase retracting mini-batches follow the released 1.18/2.2 whole-bundle early return
+when a key has only unmatched retractions and no live accumulator. Their buffered Arrow rows
+are grouped in the released binary-key HashMap order before applying state changes; later keys
+remain untouched after that return. A later insertion for the same key in the bundle prevents
+the early return. The existing deferred-input buffers and task reservation cover this work,
+including TTL reads at bundle drainage. Two-phase merges retain their independent contract.
+
+Ordinary grouped owners with non-compact DECIMAL or precise TIMESTAMP grouping fields likewise
+use the captured stock template when direct ordinary binding cannot retain that key layout.
+Canonical qualification remains scoped to the existing supported aggregate/state contracts.
+
+Bound, drained one-phase MIN/MAX bundles also use the existing direct RocksDB group store,
+with independent header/view expiry. The canonical component matrix requires that actual
+persistent path; a raw-keyed snapshot fallback does not qualify it.
+
+Integer AVG finalization shares the same signed-count, wrapping-division and narrowing kernel
+as window accumulators and native OVER. Storage layouts and update/merge loops remain
+specialized; shared contract cases cover NULLs, changelog retractions and partial-state restore.
+See [the integer AVG decision](https://github.com/datafusion-contrib/StreamFusion/blob/main/divergences/01-integer-truncating-avg.md) in the repository.
+
+Composite-key mini-batch extrema interchange compares committed changelogs with a stock
+reference stopped at the same savepoint cuts. Those cuts flush pending bundles, so an
+uninterrupted reference can emit different intermediate updates despite equal final tables.
+The independent final MIN/MAX oracle remains required.

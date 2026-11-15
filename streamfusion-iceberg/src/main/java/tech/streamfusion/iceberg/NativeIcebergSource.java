@@ -47,7 +47,7 @@ public final class NativeIcebergSource {
     var function =
         new IcebergArrowReaderFunction(
             table.schema(),
-            projection.columns().stream().map(f -> f.fieldId()).toList(),
+            projection,
             table.io(),
             batchRows,
             filters,

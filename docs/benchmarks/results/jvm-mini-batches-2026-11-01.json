@@ -1,0 +1,4446 @@
+{
+  "date": "2026-11-01",
+  "kind": "complete-job UDF coverage diagnostic; no general acceleration claim",
+  "candidate": {
+    "base_revision": "2a613b07429d6d7404c121c43277c38e97160b9f",
+    "source_sha256": {
+      "native/engine/src/exchange.rs": "dbe4a79b39f91c14e1448952f17ad4901ed43078997811ac3babed228972f362",
+      "native/engine/src/flink_key.rs": "cbbf63621613cb416334d5edc3efb528385b63d155ca61102a86360f3ec39f33",
+      "src/main/java-flink1.18/tech/streamfusion/compat/JvmAggregateCompat.java": "db55c7dadad5635b7aa70498d65a1f4fcac86d4a66d78cbd7a283541dc59913d",
+      "src/main/java-flink2.2/tech/streamfusion/compat/JvmAggregateCompat.java": "858581588f571acaca99b526f4354fbfa575d10cd1bcbb66d92cdb4e566231ea",
+      "src/main/java/tech/streamfusion/Native.java": "d5075829100babf11ec730d0b8e8c576a771591c3511a14e5f9d757d7fcce98b",
+      "src/main/java/tech/streamfusion/operator/JvmMiniBatchGroup.java": "df2c436e104cf5b4259cf2bf578ba72f5b863c438ca556ed763b517749f58f6a",
+      "src/main/java/tech/streamfusion/operator/NativeColumnarJvmGroupOperator.java": "5f29002f53605bd311668dc5cee95889e6c93842a59f0b543544c6b5c0a829bb",
+      "src/main/java/tech/streamfusion/operator/SplitByKeyGroupOperator.java": "fc46e97d9dfdb7299bd0aad20da608f24357ce6298952e3a3c8c16465ca3f87d",
+      "src/main/java/tech/streamfusion/planner/JvmGroupAggregateMatcher.java": "a9fa5a870dc2f3c141ff9d9f9de6577a5f438ae342882bd8a3914f1a9201427f",
+      "src/main/java/tech/streamfusion/planner/NativeColumnarExchangeExecNode.java": "36e0e481b832970905383d3e79b2eaadcf7f6d283e3cdf082c39035f1ce2dd19",
+      "src/main/java/tech/streamfusion/planner/NativeJvmGroupExecNode.java": "5cb079f3c7e6d26a257648fd8217ae20b172e0d66bdc72bba21d2d4c403c0e2e",
+      "src/main/java/tech/streamfusion/planner/PlanContext.java": "506e56df31060e8b7c4d6ec5db56318656786dc15de777be5e7c83b7264686de",
+      "src/main/java/tech/streamfusion/planner/StreamPhysicalNativeColumnarExchange.java": "781afb30aaf3a25b6ec61f7c98bf98fd1c532a1bea106f9a43abb723bb244134",
+      "src/test/java/tech/streamfusion/FlinkJvmAggregateSqlHarnessTest.java": "69ebad09c3ce82bcc4fddae576b38b831bcfc0acc447e6fa6458a15516d2781e",
+      "src/test/java/tech/streamfusion/FlinkJvmMiniBatchSqlHarnessTest.java": "61dcc61ec093e52a373d8b0582321e83fb5b2850f18ef2cee48fb882e141ef63",
+      "src/test/java/tech/streamfusion/JvmAggregateBenchmark.java": "a16940d7983a64ee981f5daba7ba43fa1af2230e36666b7a8210a12beb84cde3",
+      "src/test/java/tech/streamfusion/StatefulSqlRescaleTest.java": "9aec8143a30f5b340148b747487809d59baf81f67240d8e08cdda26a8e8287f2",
+      "src/test/java/tech/streamfusion/operator/NativeJvmAggregateTtlTest.java": "cdf262d5005fe3777c789b76f04872363ddecec00094af2571190166d9628104",
+      "src/test/java/tech/streamfusion/operator/NativeJvmMiniBatchCheckpointTest.java": "26acc7d3fa3ff017545750acddb82d7e7a3f6b377c1b6c0e26f753ffca7ee903",
+      "src/test/java/tech/streamfusion/operator/SplitByKeyGroupOperatorTest.java": "44905dbea335b232f61937495087bdddc384ff84aaef03cfb58430c22df8272d"
+    },
+    "native_sha256": "f1098d58d12acd9421bec50a6cfc9e49aa29eabaf3113773e656380e9dda6a2b"
+  },
+  "previous": {
+    "revision": "2a613b07429d6d7404c121c43277c38e97160b9f",
+    "production_unmodified": true,
+    "fixture": "Copy candidate src/test/java/tech/streamfusion/JvmAggregateBenchmark.java only.",
+    "fixture_sha256": "a16940d7983a64ee981f5daba7ba43fa1af2230e36666b7a8210a12beb84cde3",
+    "native_sha256": "d1e7b4611e6d52f569b355e0aa255174da220462b8225c7fb6a1d91be9df5acb",
+    "route": "whole-query host fallback"
+  },
+  "build": {
+    "java": "Temurin 17.0.17",
+    "rust": "1.95.0",
+    "native": "release with mimalloc",
+    "os": "Darwin",
+    "architecture": "arm64",
+    "logical_cpus": 10,
+    "memory_bytes": 17179869184
+  },
+  "method": {
+    "query": "SELECT k,test_aggregate(v) FROM src GROUP BY k",
+    "function": "PortableSqlFixtures.Sum",
+    "value_type": "nullable BIGINT; NULL on row % 8 == 7",
+    "string_key_prefix_chars": 16,
+    "mini_batch_rows": 1024,
+    "allow_latency": "1 h",
+    "phase": "ONE_PHASE",
+    "state": "heap",
+    "heap": "3 GiB",
+    "warmups_per_engine": 2,
+    "measured_runs_per_engine": 5,
+    "order": "Alternating stock/native engine order in each JVM; candidate and preceding revision measured serially.",
+    "timing": "Submission through completion after symmetric EXPLAIN preflight; Java runtime source, both row/Arrow transposes, production JNI/state/UDF conversion, output conversion and blackhole sink retained.",
+    "evidence": "Candidate requires consumed NativeJvmGroup input, exactly all rows in jvmMiniBatchRows and positive jvmMiniBatchBundles in every job. Previous requires no native operators.",
+    "interference": "No other local build/test/benchmark ran during measured jobs. Host process snapshots collected every 10 seconds.",
+    "limits": "Short local jobs include startup; stock drift across separate JVMs limits before/after attribution. Full warmups, all trials and unfavorable ranges retained."
+  },
+  "validation": {
+    "flink_2_2": {
+      "tests": 184,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "flink_1_18": {
+      "tests": 184,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 3,
+      "reason": "STATE_TTL hints unavailable on this released line"
+    },
+    "execution_contract_python_tests": 37
+  },
+  "cases": [
+    {
+      "flink_line": "2.2",
+      "case": "int-small",
+      "rows": 262144,
+      "keys": 64,
+      "key_type": "int",
+      "parallelism": 1,
+      "engines": {
+        "candidate": {
+          "stock_seconds": [
+            0.121831292,
+            0.124611208,
+            0.121815625,
+            0.127566833,
+            0.123509125
+          ],
+          "streamfusion_seconds": [
+            0.111226833,
+            0.105990583,
+            0.111727167,
+            0.108468583,
+            0.1117135
+          ],
+          "stock_median_seconds": 0.123509125,
+          "streamfusion_median_seconds": 0.111226833,
+          "stock_range_seconds": [
+            0.121815625,
+            0.127566833
+          ],
+          "streamfusion_range_seconds": [
+            0.105990583,
+            0.111727167
+          ],
+          "trial_events": [
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "0",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555455026",
+              "seconds": "0.440261"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "0",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555455639",
+              "seconds": "0.254669"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "1",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555455955",
+              "seconds": "0.134355"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "1",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555456149",
+              "seconds": "0.130880"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "2",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555456346",
+              "seconds": "0.121831"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "2",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555456523",
+              "seconds": "0.111227"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "3",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555456698",
+              "seconds": "0.105991"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "3",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555456859",
+              "seconds": "0.124611"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "4",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555457032",
+              "seconds": "0.121816"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "4",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555457209",
+              "seconds": "0.111727"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "5",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555457375",
+              "seconds": "0.108469"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "5",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555457530",
+              "seconds": "0.127567"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "6",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555457708",
+              "seconds": "0.123509"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "6",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555457881",
+              "seconds": "0.111714"
+            }
+          ],
+          "native_input_evidence": [
+            {
+              "shape": "udaf",
+              "trial": "0",
+              "operator": "NativeJvmGroupExecNode[22]",
+              "records_in": "262144",
+              "records_out": "14344"
+            },
+            {
+              "shape": "udaf",
+              "trial": "0",
+              "operator": "NativeColumnarExchangeExecNode[21]",
+              "records_in": "262144",
+              "records_out": "262144"
+            },
+            {
+              "shape": "udaf",
+              "trial": "0",
+              "operator": "NativeMiniBatchAssignerExecNode[20]",
+              "records_in": "262144",
+              "records_out": "262144"
+            },
+            {
+              "shape": "udaf",
+              "trial": "1",
+              "operator": "NativeJvmGroupExecNode[36]",
+              "records_in": "262144",
+              "records_out": "14344"
+            },
+            {
+              "shape": "udaf",
+              "trial": "1",
+              "operator": "NativeColumnarExchangeExecNode[35]",
+              "records_in": "262144",
+              "records_out": "262144"
+            },
+            {
+              "shape": "udaf",
+              "trial": "1",
+              "operator": "NativeMiniBatchAssignerExecNode[34]",
+              "records_in": "262144",
+              "records_out": "262144"
+            },
+            {
+              "shape": "udaf",
+              "trial": "2",
+              "operator": "NativeJvmGroupExecNode[70]",
+              "records_in": "262144",
+              "records_out": "14344"
+            },
+            {
+              "shape": "udaf",
+              "trial": "2",
+              "operator": "NativeColumnarExchangeExecNode[69]",
+              "records_in": "262144",
+              "records_out": "262144"
+            },
+            {
+              "shape": "udaf",
+              "trial": "2",
+              "operator": "NativeMiniBatchAssignerExecNode[68]",
+              "records_in": "262144",
+              "records_out": "262144"
+            },
+            {
+              "shape": "udaf",
+              "trial": "3",
+              "operator": "NativeJvmGroupExecNode[84]",
+              "records_in": "262144",
+              "records_out": "14344"
+            },
+            {
+              "shape": "udaf",
+              "trial": "3",
+              "operator": "NativeColumnarExchangeExecNode[83]",
+              "records_in": "262144",
+              "records_out": "262144"
+            },
+            {
+              "shape": "udaf",
+              "trial": "3",
+              "operator": "NativeMiniBatchAssignerExecNode[82]",
+              "records_in": "262144",
+              "records_out": "262144"
+            },
+            {
+              "shape": "udaf",
+              "trial": "4",
+              "operator": "NativeJvmGroupExecNode[118]",
+              "records_in": "262144",
+              "records_out": "14344"
+            },
+            {
+              "shape": "udaf",
+              "trial": "4",
+              "operator": "NativeColumnarExchangeExecNode[117]",
+              "records_in": "262144",
+              "records_out": "262144"
+            },
+            {
+              "shape": "udaf",
+              "trial": "4",
+              "operator": "NativeMiniBatchAssignerExecNode[116]",
+              "records_in": "262144",
+              "records_out": "262144"
+            },
+            {
+              "shape": "udaf",
+              "trial": "5",
+              "operator": "NativeJvmGroupExecNode[132]",
+              "records_in": "262144",
+              "records_out": "14344"
+            },
+            {
+              "shape": "udaf",
+              "trial": "5",
+              "operator": "NativeColumnarExchangeExecNode[131]",
+              "records_in": "262144",
+              "records_out": "262144"
+            },
+            {
+              "shape": "udaf",
+              "trial": "5",
+              "operator": "NativeMiniBatchAssignerExecNode[130]",
+              "records_in": "262144",
+              "records_out": "262144"
+            },
+            {
+              "shape": "udaf",
+              "trial": "6",
+              "operator": "NativeJvmGroupExecNode[166]",
+              "records_in": "262144",
+              "records_out": "14344"
+            },
+            {
+              "shape": "udaf",
+              "trial": "6",
+              "operator": "NativeColumnarExchangeExecNode[165]",
+              "records_in": "262144",
+              "records_out": "262144"
+            },
+            {
+              "shape": "udaf",
+              "trial": "6",
+              "operator": "NativeMiniBatchAssignerExecNode[164]",
+              "records_in": "262144",
+              "records_out": "262144"
+            }
+          ],
+          "successful_native_bundle_assertions": true
+        },
+        "previous": {
+          "stock_seconds": [
+            0.115897458,
+            0.120752416,
+            0.117617625,
+            0.109702334,
+            0.113945166
+          ],
+          "streamfusion_seconds": [
+            0.109236084,
+            0.111499959,
+            0.117675375,
+            0.111883041,
+            0.11334425
+          ],
+          "stock_median_seconds": 0.115897458,
+          "streamfusion_median_seconds": 0.111883041,
+          "stock_range_seconds": [
+            0.109702334,
+            0.120752416
+          ],
+          "streamfusion_range_seconds": [
+            0.109236084,
+            0.117675375
+          ],
+          "trial_events": [
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "0",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555461018",
+              "seconds": "0.441382"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "0",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555461563",
+              "seconds": "0.186871"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "1",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555461822",
+              "seconds": "0.126484"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "1",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555462009",
+              "seconds": "0.110927"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "2",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555462183",
+              "seconds": "0.115897"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "2",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555462361",
+              "seconds": "0.109236"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "3",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555462523",
+              "seconds": "0.111500"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "3",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555462686",
+              "seconds": "0.120752"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "4",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555462849",
+              "seconds": "0.117618"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "4",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555463013",
+              "seconds": "0.117675"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "5",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555463178",
+              "seconds": "0.111883"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "5",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555463344",
+              "seconds": "0.109702"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "6",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555463504",
+              "seconds": "0.113945"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "6",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555463668",
+              "seconds": "0.113344"
+            }
+          ],
+          "native_input_evidence": [],
+          "successful_native_bundle_assertions": false
+        }
+      }
+    },
+    {
+      "flink_line": "2.2",
+      "case": "int-large",
+      "rows": 1048576,
+      "keys": 64,
+      "key_type": "int",
+      "parallelism": 1,
+      "engines": {
+        "candidate": {
+          "stock_seconds": [
+            0.298541042,
+            0.301648084,
+            0.300226458,
+            0.307176584,
+            0.300714209
+          ],
+          "streamfusion_seconds": [
+            0.234483458,
+            0.226693916,
+            0.22493925,
+            0.226552166,
+            0.22385125
+          ],
+          "stock_median_seconds": 0.300714209,
+          "streamfusion_median_seconds": 0.226552166,
+          "stock_range_seconds": [
+            0.298541042,
+            0.307176584
+          ],
+          "streamfusion_range_seconds": [
+            0.22385125,
+            0.234483458
+          ],
+          "trial_events": [
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "0",
+              "warmup": "true",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555467445",
+              "seconds": "0.616905"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "0",
+              "warmup": "true",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555468221",
+              "seconds": "0.413930"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "1",
+              "warmup": "true",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555468701",
+              "seconds": "0.251363"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "1",
+              "warmup": "true",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555469014",
+              "seconds": "0.302996"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "2",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555469378",
+              "seconds": "0.298541"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "2",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555469735",
+              "seconds": "0.234483"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "3",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555470029",
+              "seconds": "0.226694"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "3",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555470312",
+              "seconds": "0.301648"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "4",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555470668",
+              "seconds": "0.300226"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "4",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555471019",
+              "seconds": "0.224939"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "5",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555471291",
+              "seconds": "0.226552"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "5",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555471567",
+              "seconds": "0.307177"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "6",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555471924",
+              "seconds": "0.300714"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "6",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555472265",
+              "seconds": "0.223851"
+            }
+          ],
+          "native_input_evidence": [
+            {
+              "shape": "udaf",
+              "trial": "0",
+              "operator": "NativeColumnarExchangeExecNode[21]",
+              "records_in": "1048576",
+              "records_out": "1048576"
+            },
+            {
+              "shape": "udaf",
+              "trial": "0",
+              "operator": "NativeJvmGroupExecNode[22]",
+              "records_in": "1048576",
+              "records_out": "57352"
+            },
+            {
+              "shape": "udaf",
+              "trial": "0",
+              "operator": "NativeMiniBatchAssignerExecNode[20]",
+              "records_in": "1048576",
+              "records_out": "1048576"
+            },
+            {
+              "shape": "udaf",
+              "trial": "1",
+              "operator": "NativeColumnarExchangeExecNode[35]",
+              "records_in": "1048576",
+              "records_out": "1048576"
+            },
+            {
+              "shape": "udaf",
+              "trial": "1",
+              "operator": "NativeJvmGroupExecNode[36]",
+              "records_in": "1048576",
+              "records_out": "57352"
+            },
+            {
+              "shape": "udaf",
+              "trial": "1",
+              "operator": "NativeMiniBatchAssignerExecNode[34]",
+              "records_in": "1048576",
+              "records_out": "1048576"
+            },
+            {
+              "shape": "udaf",
+              "trial": "2",
+              "operator": "NativeColumnarExchangeExecNode[69]",
+              "records_in": "1048576",
+              "records_out": "1048576"
+            },
+            {
+              "shape": "udaf",
+              "trial": "2",
+              "operator": "NativeJvmGroupExecNode[70]",
+              "records_in": "1048576",
+              "records_out": "57352"
+            },
+            {
+              "shape": "udaf",
+              "trial": "2",
+              "operator": "NativeMiniBatchAssignerExecNode[68]",
+              "records_in": "1048576",
+              "records_out": "1048576"
+            },
+            {
+              "shape": "udaf",
+              "trial": "3",
+              "operator": "NativeColumnarExchangeExecNode[83]",
+              "records_in": "1048576",
+              "records_out": "1048576"
+            },
+            {
+              "shape": "udaf",
+              "trial": "3",
+              "operator": "NativeJvmGroupExecNode[84]",
+              "records_in": "1048576",
+              "records_out": "57352"
+            },
+            {
+              "shape": "udaf",
+              "trial": "3",
+              "operator": "NativeMiniBatchAssignerExecNode[82]",
+              "records_in": "1048576",
+              "records_out": "1048576"
+            },
+            {
+              "shape": "udaf",
+              "trial": "4",
+              "operator": "NativeColumnarExchangeExecNode[117]",
+              "records_in": "1048576",
+              "records_out": "1048576"
+            },
+            {
+              "shape": "udaf",
+              "trial": "4",
+              "operator": "NativeJvmGroupExecNode[118]",
+              "records_in": "1048576",
+              "records_out": "57352"
+            },
+            {
+              "shape": "udaf",
+              "trial": "4",
+              "operator": "NativeMiniBatchAssignerExecNode[116]",
+              "records_in": "1048576",
+              "records_out": "1048576"
+            },
+            {
+              "shape": "udaf",
+              "trial": "5",
+              "operator": "NativeColumnarExchangeExecNode[131]",
+              "records_in": "1048576",
+              "records_out": "1048576"
+            },
+            {
+              "shape": "udaf",
+              "trial": "5",
+              "operator": "NativeJvmGroupExecNode[132]",
+              "records_in": "1048576",
+              "records_out": "57352"
+            },
+            {
+              "shape": "udaf",
+              "trial": "5",
+              "operator": "NativeMiniBatchAssignerExecNode[130]",
+              "records_in": "1048576",
+              "records_out": "1048576"
+            },
+            {
+              "shape": "udaf",
+              "trial": "6",
+              "operator": "NativeColumnarExchangeExecNode[165]",
+              "records_in": "1048576",
+              "records_out": "1048576"
+            },
+            {
+              "shape": "udaf",
+              "trial": "6",
+              "operator": "NativeJvmGroupExecNode[166]",
+              "records_in": "1048576",
+              "records_out": "57352"
+            },
+            {
+              "shape": "udaf",
+              "trial": "6",
+              "operator": "NativeMiniBatchAssignerExecNode[164]",
+              "records_in": "1048576",
+              "records_out": "1048576"
+            }
+          ],
+          "successful_native_bundle_assertions": true
+        },
+        "previous": {
+          "stock_seconds": [
+            0.34822625,
+            0.292724792,
+            0.28566125,
+            0.250920583,
+            0.246073958
+          ],
+          "streamfusion_seconds": [
+            0.312043042,
+            0.321537833,
+            0.276371334,
+            0.260572209,
+            0.252690209
+          ],
+          "stock_median_seconds": 0.28566125,
+          "streamfusion_median_seconds": 0.276371334,
+          "stock_range_seconds": [
+            0.246073958,
+            0.34822625
+          ],
+          "streamfusion_range_seconds": [
+            0.252690209,
+            0.321537833
+          ],
+          "trial_events": [
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "0",
+              "warmup": "true",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555475573",
+              "seconds": "0.630004"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "0",
+              "warmup": "true",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555476324",
+              "seconds": "0.387234"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "1",
+              "warmup": "true",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555476791",
+              "seconds": "0.364772"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "1",
+              "warmup": "true",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555477224",
+              "seconds": "0.349901"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "2",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555477641",
+              "seconds": "0.348226"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "2",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555478059",
+              "seconds": "0.312043"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "3",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555478427",
+              "seconds": "0.321538"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "3",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555478811",
+              "seconds": "0.292725"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "4",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555479156",
+              "seconds": "0.285661"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "4",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555479493",
+              "seconds": "0.276371"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "5",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555479824",
+              "seconds": "0.260572"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "5",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555480143",
+              "seconds": "0.250921"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "6",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555480433",
+              "seconds": "0.246074"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "6",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555480729",
+              "seconds": "0.252690"
+            }
+          ],
+          "native_input_evidence": [],
+          "successful_native_bundle_assertions": false
+        }
+      }
+    },
+    {
+      "flink_line": "2.2",
+      "case": "string-many",
+      "rows": 262144,
+      "keys": 65536,
+      "key_type": "string",
+      "parallelism": 3,
+      "engines": {
+        "candidate": {
+          "stock_seconds": [
+            0.175539375,
+            0.162908833,
+            0.155810708,
+            0.179261042,
+            0.162713334
+          ],
+          "streamfusion_seconds": [
+            0.227375083,
+            0.179886875,
+            0.17386825,
+            0.244198,
+            0.162020708
+          ],
+          "stock_median_seconds": 0.162908833,
+          "streamfusion_median_seconds": 0.179886875,
+          "stock_range_seconds": [
+            0.155810708,
+            0.179261042
+          ],
+          "streamfusion_range_seconds": [
+            0.162020708,
+            0.244198
+          ],
+          "trial_events": [
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "Flink",
+              "trial": "0",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555484446",
+              "seconds": "0.665345"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "StreamFusion",
+              "trial": "0",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555485353",
+              "seconds": "0.592371"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "StreamFusion",
+              "trial": "1",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555486044",
+              "seconds": "0.341834"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "Flink",
+              "trial": "1",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555486470",
+              "seconds": "0.316557"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "Flink",
+              "trial": "2",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555486871",
+              "seconds": "0.175539"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "StreamFusion",
+              "trial": "2",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555487114",
+              "seconds": "0.227375"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "StreamFusion",
+              "trial": "3",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555487414",
+              "seconds": "0.179887"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "Flink",
+              "trial": "3",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555487661",
+              "seconds": "0.162909"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "Flink",
+              "trial": "4",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555487886",
+              "seconds": "0.155811"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "StreamFusion",
+              "trial": "4",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555488103",
+              "seconds": "0.173868"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "StreamFusion",
+              "trial": "5",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555488357",
+              "seconds": "0.244198"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "Flink",
+              "trial": "5",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555488672",
+              "seconds": "0.179261"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "Flink",
+              "trial": "6",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555488909",
+              "seconds": "0.162713"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "StreamFusion",
+              "trial": "6",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555489140",
+              "seconds": "0.162021"
+            }
+          ],
+          "native_input_evidence": [
+            {
+              "shape": "udaf",
+              "trial": "0",
+              "operator": "NativeJvmGroupExecNode[22]",
+              "records_in": "86316",
+              "records_out": "78300"
+            },
+            {
+              "shape": "udaf",
+              "trial": "0",
+              "operator": "NativeColumnarExchangeExecNode[21]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "0",
+              "operator": "NativeMiniBatchAssignerExecNode[20]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "0",
+              "operator": "NativeColumnarExchangeExecNode[21]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "0",
+              "operator": "NativeMiniBatchAssignerExecNode[20]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "0",
+              "operator": "NativeColumnarExchangeExecNode[21]",
+              "records_in": "87382",
+              "records_out": "87382"
+            },
+            {
+              "shape": "udaf",
+              "trial": "0",
+              "operator": "NativeMiniBatchAssignerExecNode[20]",
+              "records_in": "87382",
+              "records_out": "87382"
+            },
+            {
+              "shape": "udaf",
+              "trial": "0",
+              "operator": "NativeJvmGroupExecNode[22]",
+              "records_in": "87792",
+              "records_out": "79569"
+            },
+            {
+              "shape": "udaf",
+              "trial": "0",
+              "operator": "NativeJvmGroupExecNode[22]",
+              "records_in": "88036",
+              "records_out": "79699"
+            },
+            {
+              "shape": "udaf",
+              "trial": "1",
+              "operator": "NativeJvmGroupExecNode[36]",
+              "records_in": "86316",
+              "records_out": "78300"
+            },
+            {
+              "shape": "udaf",
+              "trial": "1",
+              "operator": "NativeColumnarExchangeExecNode[35]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "1",
+              "operator": "NativeMiniBatchAssignerExecNode[34]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "1",
+              "operator": "NativeColumnarExchangeExecNode[35]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "1",
+              "operator": "NativeMiniBatchAssignerExecNode[34]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "1",
+              "operator": "NativeColumnarExchangeExecNode[35]",
+              "records_in": "87382",
+              "records_out": "87382"
+            },
+            {
+              "shape": "udaf",
+              "trial": "1",
+              "operator": "NativeMiniBatchAssignerExecNode[34]",
+              "records_in": "87382",
+              "records_out": "87382"
+            },
+            {
+              "shape": "udaf",
+              "trial": "1",
+              "operator": "NativeJvmGroupExecNode[36]",
+              "records_in": "87792",
+              "records_out": "79569"
+            },
+            {
+              "shape": "udaf",
+              "trial": "1",
+              "operator": "NativeJvmGroupExecNode[36]",
+              "records_in": "88036",
+              "records_out": "79699"
+            },
+            {
+              "shape": "udaf",
+              "trial": "2",
+              "operator": "NativeJvmGroupExecNode[70]",
+              "records_in": "86316",
+              "records_out": "78300"
+            },
+            {
+              "shape": "udaf",
+              "trial": "2",
+              "operator": "NativeColumnarExchangeExecNode[69]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "2",
+              "operator": "NativeMiniBatchAssignerExecNode[68]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "2",
+              "operator": "NativeColumnarExchangeExecNode[69]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "2",
+              "operator": "NativeMiniBatchAssignerExecNode[68]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "2",
+              "operator": "NativeColumnarExchangeExecNode[69]",
+              "records_in": "87382",
+              "records_out": "87382"
+            },
+            {
+              "shape": "udaf",
+              "trial": "2",
+              "operator": "NativeMiniBatchAssignerExecNode[68]",
+              "records_in": "87382",
+              "records_out": "87382"
+            },
+            {
+              "shape": "udaf",
+              "trial": "2",
+              "operator": "NativeJvmGroupExecNode[70]",
+              "records_in": "87792",
+              "records_out": "79569"
+            },
+            {
+              "shape": "udaf",
+              "trial": "2",
+              "operator": "NativeJvmGroupExecNode[70]",
+              "records_in": "88036",
+              "records_out": "79699"
+            },
+            {
+              "shape": "udaf",
+              "trial": "3",
+              "operator": "NativeJvmGroupExecNode[84]",
+              "records_in": "86316",
+              "records_out": "78300"
+            },
+            {
+              "shape": "udaf",
+              "trial": "3",
+              "operator": "NativeColumnarExchangeExecNode[83]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "3",
+              "operator": "NativeMiniBatchAssignerExecNode[82]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "3",
+              "operator": "NativeColumnarExchangeExecNode[83]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "3",
+              "operator": "NativeMiniBatchAssignerExecNode[82]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "3",
+              "operator": "NativeColumnarExchangeExecNode[83]",
+              "records_in": "87382",
+              "records_out": "87382"
+            },
+            {
+              "shape": "udaf",
+              "trial": "3",
+              "operator": "NativeMiniBatchAssignerExecNode[82]",
+              "records_in": "87382",
+              "records_out": "87382"
+            },
+            {
+              "shape": "udaf",
+              "trial": "3",
+              "operator": "NativeJvmGroupExecNode[84]",
+              "records_in": "87792",
+              "records_out": "79569"
+            },
+            {
+              "shape": "udaf",
+              "trial": "3",
+              "operator": "NativeJvmGroupExecNode[84]",
+              "records_in": "88036",
+              "records_out": "79699"
+            },
+            {
+              "shape": "udaf",
+              "trial": "4",
+              "operator": "NativeJvmGroupExecNode[118]",
+              "records_in": "86316",
+              "records_out": "78300"
+            },
+            {
+              "shape": "udaf",
+              "trial": "4",
+              "operator": "NativeColumnarExchangeExecNode[117]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "4",
+              "operator": "NativeMiniBatchAssignerExecNode[116]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "4",
+              "operator": "NativeColumnarExchangeExecNode[117]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "4",
+              "operator": "NativeMiniBatchAssignerExecNode[116]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "4",
+              "operator": "NativeColumnarExchangeExecNode[117]",
+              "records_in": "87382",
+              "records_out": "87382"
+            },
+            {
+              "shape": "udaf",
+              "trial": "4",
+              "operator": "NativeMiniBatchAssignerExecNode[116]",
+              "records_in": "87382",
+              "records_out": "87382"
+            },
+            {
+              "shape": "udaf",
+              "trial": "4",
+              "operator": "NativeJvmGroupExecNode[118]",
+              "records_in": "87792",
+              "records_out": "79569"
+            },
+            {
+              "shape": "udaf",
+              "trial": "4",
+              "operator": "NativeJvmGroupExecNode[118]",
+              "records_in": "88036",
+              "records_out": "79699"
+            },
+            {
+              "shape": "udaf",
+              "trial": "5",
+              "operator": "NativeJvmGroupExecNode[132]",
+              "records_in": "86316",
+              "records_out": "78300"
+            },
+            {
+              "shape": "udaf",
+              "trial": "5",
+              "operator": "NativeColumnarExchangeExecNode[131]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "5",
+              "operator": "NativeMiniBatchAssignerExecNode[130]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "5",
+              "operator": "NativeColumnarExchangeExecNode[131]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "5",
+              "operator": "NativeMiniBatchAssignerExecNode[130]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "5",
+              "operator": "NativeColumnarExchangeExecNode[131]",
+              "records_in": "87382",
+              "records_out": "87382"
+            },
+            {
+              "shape": "udaf",
+              "trial": "5",
+              "operator": "NativeMiniBatchAssignerExecNode[130]",
+              "records_in": "87382",
+              "records_out": "87382"
+            },
+            {
+              "shape": "udaf",
+              "trial": "5",
+              "operator": "NativeJvmGroupExecNode[132]",
+              "records_in": "87792",
+              "records_out": "79569"
+            },
+            {
+              "shape": "udaf",
+              "trial": "5",
+              "operator": "NativeJvmGroupExecNode[132]",
+              "records_in": "88036",
+              "records_out": "79699"
+            },
+            {
+              "shape": "udaf",
+              "trial": "6",
+              "operator": "NativeJvmGroupExecNode[166]",
+              "records_in": "86316",
+              "records_out": "78300"
+            },
+            {
+              "shape": "udaf",
+              "trial": "6",
+              "operator": "NativeColumnarExchangeExecNode[165]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "6",
+              "operator": "NativeMiniBatchAssignerExecNode[164]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "6",
+              "operator": "NativeColumnarExchangeExecNode[165]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "6",
+              "operator": "NativeMiniBatchAssignerExecNode[164]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "6",
+              "operator": "NativeColumnarExchangeExecNode[165]",
+              "records_in": "87382",
+              "records_out": "87382"
+            },
+            {
+              "shape": "udaf",
+              "trial": "6",
+              "operator": "NativeMiniBatchAssignerExecNode[164]",
+              "records_in": "87382",
+              "records_out": "87382"
+            },
+            {
+              "shape": "udaf",
+              "trial": "6",
+              "operator": "NativeJvmGroupExecNode[166]",
+              "records_in": "87792",
+              "records_out": "79569"
+            },
+            {
+              "shape": "udaf",
+              "trial": "6",
+              "operator": "NativeJvmGroupExecNode[166]",
+              "records_in": "88036",
+              "records_out": "79699"
+            }
+          ],
+          "successful_native_bundle_assertions": true
+        },
+        "previous": {
+          "stock_seconds": [
+            0.15905275,
+            0.162104292,
+            0.158120791,
+            0.153654416,
+            0.176375833
+          ],
+          "streamfusion_seconds": [
+            0.18067625,
+            0.158821042,
+            0.170822292,
+            0.163815084,
+            0.158890209
+          ],
+          "stock_median_seconds": 0.15905275,
+          "streamfusion_median_seconds": 0.163815084,
+          "stock_range_seconds": [
+            0.153654416,
+            0.176375833
+          ],
+          "streamfusion_range_seconds": [
+            0.158821042,
+            0.18067625
+          ],
+          "trial_events": [
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "Flink",
+              "trial": "0",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555492936",
+              "seconds": "0.706693"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "StreamFusion",
+              "trial": "0",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555493794",
+              "seconds": "0.337828"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "StreamFusion",
+              "trial": "1",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555494226",
+              "seconds": "0.291558"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "Flink",
+              "trial": "1",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555494606",
+              "seconds": "0.172752"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "Flink",
+              "trial": "2",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555494858",
+              "seconds": "0.159053"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "StreamFusion",
+              "trial": "2",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555495093",
+              "seconds": "0.180676"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "StreamFusion",
+              "trial": "3",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555495357",
+              "seconds": "0.158821"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "Flink",
+              "trial": "3",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555495584",
+              "seconds": "0.162104"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "Flink",
+              "trial": "4",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555495809",
+              "seconds": "0.158121"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "StreamFusion",
+              "trial": "4",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555496026",
+              "seconds": "0.170822"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "StreamFusion",
+              "trial": "5",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555496256",
+              "seconds": "0.163815"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "Flink",
+              "trial": "5",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555496483",
+              "seconds": "0.153654"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "Flink",
+              "trial": "6",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555496697",
+              "seconds": "0.176376"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "StreamFusion",
+              "trial": "6",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555496936",
+              "seconds": "0.158890"
+            }
+          ],
+          "native_input_evidence": [],
+          "successful_native_bundle_assertions": false
+        }
+      }
+    },
+    {
+      "flink_line": "1.18",
+      "case": "int-small",
+      "rows": 262144,
+      "keys": 64,
+      "key_type": "int",
+      "parallelism": 1,
+      "engines": {
+        "candidate": {
+          "stock_seconds": [
+            0.166899417,
+            0.152258417,
+            0.1552935,
+            0.147105458,
+            0.146452
+          ],
+          "streamfusion_seconds": [
+            0.171472417,
+            0.2031645,
+            0.132383125,
+            0.141107125,
+            0.126831208
+          ],
+          "stock_median_seconds": 0.152258417,
+          "streamfusion_median_seconds": 0.141107125,
+          "stock_range_seconds": [
+            0.146452,
+            0.166899417
+          ],
+          "streamfusion_range_seconds": [
+            0.126831208,
+            0.2031645
+          ],
+          "trial_events": [
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "0",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555533510",
+              "seconds": "0.636531"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "0",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555534495",
+              "seconds": "0.364841"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "1",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555535012",
+              "seconds": "0.265216"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "1",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555535399",
+              "seconds": "0.239633"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "2",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555535743",
+              "seconds": "0.166899"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "2",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555536019",
+              "seconds": "0.171472"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "3",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555536304",
+              "seconds": "0.203165"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "3",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555536616",
+              "seconds": "0.152258"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "4",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555536864",
+              "seconds": "0.155294"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "4",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555537112",
+              "seconds": "0.132383"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "5",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555537332",
+              "seconds": "0.141107"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "5",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555537574",
+              "seconds": "0.147105"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "6",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555537811",
+              "seconds": "0.146452"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "6",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555538046",
+              "seconds": "0.126831"
+            }
+          ],
+          "native_input_evidence": [
+            {
+              "shape": "udaf",
+              "trial": "0",
+              "operator": "NativeJvmGroupExecNode[22]",
+              "records_in": "262144",
+              "records_out": "14344"
+            },
+            {
+              "shape": "udaf",
+              "trial": "0",
+              "operator": "NativeColumnarExchangeExecNode[21]",
+              "records_in": "262144",
+              "records_out": "262144"
+            },
+            {
+              "shape": "udaf",
+              "trial": "0",
+              "operator": "NativeMiniBatchAssignerExecNode[20]",
+              "records_in": "262144",
+              "records_out": "262144"
+            },
+            {
+              "shape": "udaf",
+              "trial": "1",
+              "operator": "NativeJvmGroupExecNode[36]",
+              "records_in": "262144",
+              "records_out": "14344"
+            },
+            {
+              "shape": "udaf",
+              "trial": "1",
+              "operator": "NativeColumnarExchangeExecNode[35]",
+              "records_in": "262144",
+              "records_out": "262144"
+            },
+            {
+              "shape": "udaf",
+              "trial": "1",
+              "operator": "NativeMiniBatchAssignerExecNode[34]",
+              "records_in": "262144",
+              "records_out": "262144"
+            },
+            {
+              "shape": "udaf",
+              "trial": "2",
+              "operator": "NativeJvmGroupExecNode[70]",
+              "records_in": "262144",
+              "records_out": "14344"
+            },
+            {
+              "shape": "udaf",
+              "trial": "2",
+              "operator": "NativeColumnarExchangeExecNode[69]",
+              "records_in": "262144",
+              "records_out": "262144"
+            },
+            {
+              "shape": "udaf",
+              "trial": "2",
+              "operator": "NativeMiniBatchAssignerExecNode[68]",
+              "records_in": "262144",
+              "records_out": "262144"
+            },
+            {
+              "shape": "udaf",
+              "trial": "3",
+              "operator": "NativeJvmGroupExecNode[84]",
+              "records_in": "262144",
+              "records_out": "14344"
+            },
+            {
+              "shape": "udaf",
+              "trial": "3",
+              "operator": "NativeColumnarExchangeExecNode[83]",
+              "records_in": "262144",
+              "records_out": "262144"
+            },
+            {
+              "shape": "udaf",
+              "trial": "3",
+              "operator": "NativeMiniBatchAssignerExecNode[82]",
+              "records_in": "262144",
+              "records_out": "262144"
+            },
+            {
+              "shape": "udaf",
+              "trial": "4",
+              "operator": "NativeJvmGroupExecNode[118]",
+              "records_in": "262144",
+              "records_out": "14344"
+            },
+            {
+              "shape": "udaf",
+              "trial": "4",
+              "operator": "NativeColumnarExchangeExecNode[117]",
+              "records_in": "262144",
+              "records_out": "262144"
+            },
+            {
+              "shape": "udaf",
+              "trial": "4",
+              "operator": "NativeMiniBatchAssignerExecNode[116]",
+              "records_in": "262144",
+              "records_out": "262144"
+            },
+            {
+              "shape": "udaf",
+              "trial": "5",
+              "operator": "NativeJvmGroupExecNode[132]",
+              "records_in": "262144",
+              "records_out": "14344"
+            },
+            {
+              "shape": "udaf",
+              "trial": "5",
+              "operator": "NativeColumnarExchangeExecNode[131]",
+              "records_in": "262144",
+              "records_out": "262144"
+            },
+            {
+              "shape": "udaf",
+              "trial": "5",
+              "operator": "NativeMiniBatchAssignerExecNode[130]",
+              "records_in": "262144",
+              "records_out": "262144"
+            },
+            {
+              "shape": "udaf",
+              "trial": "6",
+              "operator": "NativeJvmGroupExecNode[166]",
+              "records_in": "262144",
+              "records_out": "14344"
+            },
+            {
+              "shape": "udaf",
+              "trial": "6",
+              "operator": "NativeColumnarExchangeExecNode[165]",
+              "records_in": "262144",
+              "records_out": "262144"
+            },
+            {
+              "shape": "udaf",
+              "trial": "6",
+              "operator": "NativeMiniBatchAssignerExecNode[164]",
+              "records_in": "262144",
+              "records_out": "262144"
+            }
+          ],
+          "successful_native_bundle_assertions": true
+        },
+        "previous": {
+          "stock_seconds": [
+            0.154922709,
+            0.152879542,
+            0.148776,
+            0.141104041,
+            0.153889125
+          ],
+          "streamfusion_seconds": [
+            0.168688125,
+            0.154708167,
+            0.1557715,
+            0.156340791,
+            0.155292125
+          ],
+          "stock_median_seconds": 0.152879542,
+          "streamfusion_median_seconds": 0.1557715,
+          "stock_range_seconds": [
+            0.141104041,
+            0.154922709
+          ],
+          "streamfusion_range_seconds": [
+            0.154708167,
+            0.168688125
+          ],
+          "trial_events": [
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "0",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555543014",
+              "seconds": "0.664922"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "0",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555543886",
+              "seconds": "0.274886"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "1",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555544289",
+              "seconds": "0.225348"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "1",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555544632",
+              "seconds": "0.232288"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "2",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555544980",
+              "seconds": "0.154923"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "2",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555545251",
+              "seconds": "0.168688"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "3",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555545523",
+              "seconds": "0.154708"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "3",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555545777",
+              "seconds": "0.152880"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "4",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555546027",
+              "seconds": "0.148776"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "4",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555546272",
+              "seconds": "0.155772"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "5",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555546524",
+              "seconds": "0.156341"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "5",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555546778",
+              "seconds": "0.141104"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "6",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555547010",
+              "seconds": "0.153889"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "6",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555547258",
+              "seconds": "0.155292"
+            }
+          ],
+          "native_input_evidence": [],
+          "successful_native_bundle_assertions": false
+        }
+      }
+    },
+    {
+      "flink_line": "1.18",
+      "case": "int-large",
+      "rows": 1048576,
+      "keys": 64,
+      "key_type": "int",
+      "parallelism": 1,
+      "engines": {
+        "candidate": {
+          "stock_seconds": [
+            0.464087959,
+            0.444934,
+            0.426068334,
+            0.46334175,
+            0.416375583
+          ],
+          "streamfusion_seconds": [
+            0.373235334,
+            0.359162709,
+            0.323325375,
+            0.372457791,
+            0.318170209
+          ],
+          "stock_median_seconds": 0.444934,
+          "streamfusion_median_seconds": 0.359162709,
+          "stock_range_seconds": [
+            0.416375583,
+            0.464087959
+          ],
+          "streamfusion_range_seconds": [
+            0.318170209,
+            0.373235334
+          ],
+          "trial_events": [
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "0",
+              "warmup": "true",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555552416",
+              "seconds": "1.081112"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "0",
+              "warmup": "true",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555553846",
+              "seconds": "0.835369"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "1",
+              "warmup": "true",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555554835",
+              "seconds": "0.474261"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "1",
+              "warmup": "true",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555555445",
+              "seconds": "0.567580"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "2",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555556116",
+              "seconds": "0.464088"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "2",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555556687",
+              "seconds": "0.373235"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "3",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555557176",
+              "seconds": "0.359163"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "3",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555557649",
+              "seconds": "0.444934"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "4",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555558185",
+              "seconds": "0.426068"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "4",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555558697",
+              "seconds": "0.323325"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "5",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555559114",
+              "seconds": "0.372458"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "5",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555559593",
+              "seconds": "0.463342"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "6",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555560146",
+              "seconds": "0.416376"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "6",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555560646",
+              "seconds": "0.318170"
+            }
+          ],
+          "native_input_evidence": [
+            {
+              "shape": "udaf",
+              "trial": "0",
+              "operator": "NativeColumnarExchangeExecNode[21]",
+              "records_in": "1048576",
+              "records_out": "1048576"
+            },
+            {
+              "shape": "udaf",
+              "trial": "0",
+              "operator": "NativeJvmGroupExecNode[22]",
+              "records_in": "1048576",
+              "records_out": "57352"
+            },
+            {
+              "shape": "udaf",
+              "trial": "0",
+              "operator": "NativeMiniBatchAssignerExecNode[20]",
+              "records_in": "1048576",
+              "records_out": "1048576"
+            },
+            {
+              "shape": "udaf",
+              "trial": "1",
+              "operator": "NativeColumnarExchangeExecNode[35]",
+              "records_in": "1048576",
+              "records_out": "1048576"
+            },
+            {
+              "shape": "udaf",
+              "trial": "1",
+              "operator": "NativeJvmGroupExecNode[36]",
+              "records_in": "1048576",
+              "records_out": "57352"
+            },
+            {
+              "shape": "udaf",
+              "trial": "1",
+              "operator": "NativeMiniBatchAssignerExecNode[34]",
+              "records_in": "1048576",
+              "records_out": "1048576"
+            },
+            {
+              "shape": "udaf",
+              "trial": "2",
+              "operator": "NativeColumnarExchangeExecNode[69]",
+              "records_in": "1048576",
+              "records_out": "1048576"
+            },
+            {
+              "shape": "udaf",
+              "trial": "2",
+              "operator": "NativeJvmGroupExecNode[70]",
+              "records_in": "1048576",
+              "records_out": "57352"
+            },
+            {
+              "shape": "udaf",
+              "trial": "2",
+              "operator": "NativeMiniBatchAssignerExecNode[68]",
+              "records_in": "1048576",
+              "records_out": "1048576"
+            },
+            {
+              "shape": "udaf",
+              "trial": "3",
+              "operator": "NativeColumnarExchangeExecNode[83]",
+              "records_in": "1048576",
+              "records_out": "1048576"
+            },
+            {
+              "shape": "udaf",
+              "trial": "3",
+              "operator": "NativeJvmGroupExecNode[84]",
+              "records_in": "1048576",
+              "records_out": "57352"
+            },
+            {
+              "shape": "udaf",
+              "trial": "3",
+              "operator": "NativeMiniBatchAssignerExecNode[82]",
+              "records_in": "1048576",
+              "records_out": "1048576"
+            },
+            {
+              "shape": "udaf",
+              "trial": "4",
+              "operator": "NativeColumnarExchangeExecNode[117]",
+              "records_in": "1048576",
+              "records_out": "1048576"
+            },
+            {
+              "shape": "udaf",
+              "trial": "4",
+              "operator": "NativeJvmGroupExecNode[118]",
+              "records_in": "1048576",
+              "records_out": "57352"
+            },
+            {
+              "shape": "udaf",
+              "trial": "4",
+              "operator": "NativeMiniBatchAssignerExecNode[116]",
+              "records_in": "1048576",
+              "records_out": "1048576"
+            },
+            {
+              "shape": "udaf",
+              "trial": "5",
+              "operator": "NativeColumnarExchangeExecNode[131]",
+              "records_in": "1048576",
+              "records_out": "1048576"
+            },
+            {
+              "shape": "udaf",
+              "trial": "5",
+              "operator": "NativeJvmGroupExecNode[132]",
+              "records_in": "1048576",
+              "records_out": "57352"
+            },
+            {
+              "shape": "udaf",
+              "trial": "5",
+              "operator": "NativeMiniBatchAssignerExecNode[130]",
+              "records_in": "1048576",
+              "records_out": "1048576"
+            },
+            {
+              "shape": "udaf",
+              "trial": "6",
+              "operator": "NativeColumnarExchangeExecNode[165]",
+              "records_in": "1048576",
+              "records_out": "1048576"
+            },
+            {
+              "shape": "udaf",
+              "trial": "6",
+              "operator": "NativeJvmGroupExecNode[166]",
+              "records_in": "1048576",
+              "records_out": "57352"
+            },
+            {
+              "shape": "udaf",
+              "trial": "6",
+              "operator": "NativeMiniBatchAssignerExecNode[164]",
+              "records_in": "1048576",
+              "records_out": "1048576"
+            }
+          ],
+          "successful_native_bundle_assertions": true
+        },
+        "previous": {
+          "stock_seconds": [
+            0.443726792,
+            0.439463917,
+            0.411595584,
+            0.416207625,
+            0.420426542
+          ],
+          "streamfusion_seconds": [
+            0.476697792,
+            0.437274958,
+            0.389904166,
+            0.423209333,
+            0.410163416
+          ],
+          "stock_median_seconds": 0.420426542,
+          "streamfusion_median_seconds": 0.423209333,
+          "stock_range_seconds": [
+            0.411595584,
+            0.443726792
+          ],
+          "streamfusion_range_seconds": [
+            0.389904166,
+            0.476697792
+          ],
+          "trial_events": [
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "0",
+              "warmup": "true",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555567569",
+              "seconds": "1.064347"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "0",
+              "warmup": "true",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555568856",
+              "seconds": "0.557677"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "1",
+              "warmup": "true",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555569556",
+              "seconds": "0.534735"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "1",
+              "warmup": "true",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555570201",
+              "seconds": "0.500615"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "2",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555570813",
+              "seconds": "0.443727"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "2",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555571355",
+              "seconds": "0.476698"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "3",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555571932",
+              "seconds": "0.437275"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "3",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555572464",
+              "seconds": "0.439464"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "4",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555572995",
+              "seconds": "0.411596"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "4",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555573494",
+              "seconds": "0.389904"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "5",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555573966",
+              "seconds": "0.423209"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "5",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555574483",
+              "seconds": "0.416208"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "Flink",
+              "trial": "6",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555574989",
+              "seconds": "0.420427"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "int",
+              "engine": "StreamFusion",
+              "trial": "6",
+              "warmup": "false",
+              "rows": "1048576",
+              "keys": "64",
+              "not_null": "false",
+              "start_ms": "1793555575493",
+              "seconds": "0.410163"
+            }
+          ],
+          "native_input_evidence": [],
+          "successful_native_bundle_assertions": false
+        }
+      }
+    },
+    {
+      "flink_line": "1.18",
+      "case": "string-many",
+      "rows": 262144,
+      "keys": 65536,
+      "key_type": "string",
+      "parallelism": 3,
+      "engines": {
+        "candidate": {
+          "stock_seconds": [
+            0.290207792,
+            0.2681635,
+            0.296089666,
+            0.2246355,
+            0.200717167
+          ],
+          "streamfusion_seconds": [
+            0.33080075,
+            0.325424125,
+            0.283843334,
+            0.315859,
+            0.231755542
+          ],
+          "stock_median_seconds": 0.2681635,
+          "streamfusion_median_seconds": 0.315859,
+          "stock_range_seconds": [
+            0.200717167,
+            0.296089666
+          ],
+          "streamfusion_range_seconds": [
+            0.231755542,
+            0.33080075
+          ],
+          "trial_events": [
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "Flink",
+              "trial": "0",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555581659",
+              "seconds": "0.907782"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "StreamFusion",
+              "trial": "0",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555583009",
+              "seconds": "0.965853"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "StreamFusion",
+              "trial": "1",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555584146",
+              "seconds": "0.466392"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "Flink",
+              "trial": "1",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555584757",
+              "seconds": "0.445178"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "Flink",
+              "trial": "2",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555585354",
+              "seconds": "0.290208"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "StreamFusion",
+              "trial": "2",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555585775",
+              "seconds": "0.330801"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "StreamFusion",
+              "trial": "3",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555586263",
+              "seconds": "0.325424"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "Flink",
+              "trial": "3",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555586721",
+              "seconds": "0.268164"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "Flink",
+              "trial": "4",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555587104",
+              "seconds": "0.296090"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "StreamFusion",
+              "trial": "4",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555587511",
+              "seconds": "0.283843"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "StreamFusion",
+              "trial": "5",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555587909",
+              "seconds": "0.315859"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "Flink",
+              "trial": "5",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555588333",
+              "seconds": "0.224636"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "Flink",
+              "trial": "6",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555588681",
+              "seconds": "0.200717"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "StreamFusion",
+              "trial": "6",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555588990",
+              "seconds": "0.231756"
+            }
+          ],
+          "native_input_evidence": [
+            {
+              "shape": "udaf",
+              "trial": "0",
+              "operator": "NativeJvmGroupExecNode[22]",
+              "records_in": "86316",
+              "records_out": "78300"
+            },
+            {
+              "shape": "udaf",
+              "trial": "0",
+              "operator": "NativeColumnarExchangeExecNode[21]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "0",
+              "operator": "NativeColumnarExchangeExecNode[21]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "0",
+              "operator": "NativeMiniBatchAssignerExecNode[20]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "0",
+              "operator": "NativeMiniBatchAssignerExecNode[20]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "0",
+              "operator": "NativeColumnarExchangeExecNode[21]",
+              "records_in": "87382",
+              "records_out": "87382"
+            },
+            {
+              "shape": "udaf",
+              "trial": "0",
+              "operator": "NativeMiniBatchAssignerExecNode[20]",
+              "records_in": "87382",
+              "records_out": "87382"
+            },
+            {
+              "shape": "udaf",
+              "trial": "0",
+              "operator": "NativeJvmGroupExecNode[22]",
+              "records_in": "87792",
+              "records_out": "79569"
+            },
+            {
+              "shape": "udaf",
+              "trial": "0",
+              "operator": "NativeJvmGroupExecNode[22]",
+              "records_in": "88036",
+              "records_out": "79699"
+            },
+            {
+              "shape": "udaf",
+              "trial": "1",
+              "operator": "NativeJvmGroupExecNode[36]",
+              "records_in": "86316",
+              "records_out": "78300"
+            },
+            {
+              "shape": "udaf",
+              "trial": "1",
+              "operator": "NativeColumnarExchangeExecNode[35]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "1",
+              "operator": "NativeColumnarExchangeExecNode[35]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "1",
+              "operator": "NativeMiniBatchAssignerExecNode[34]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "1",
+              "operator": "NativeMiniBatchAssignerExecNode[34]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "1",
+              "operator": "NativeColumnarExchangeExecNode[35]",
+              "records_in": "87382",
+              "records_out": "87382"
+            },
+            {
+              "shape": "udaf",
+              "trial": "1",
+              "operator": "NativeMiniBatchAssignerExecNode[34]",
+              "records_in": "87382",
+              "records_out": "87382"
+            },
+            {
+              "shape": "udaf",
+              "trial": "1",
+              "operator": "NativeJvmGroupExecNode[36]",
+              "records_in": "87792",
+              "records_out": "79569"
+            },
+            {
+              "shape": "udaf",
+              "trial": "1",
+              "operator": "NativeJvmGroupExecNode[36]",
+              "records_in": "88036",
+              "records_out": "79699"
+            },
+            {
+              "shape": "udaf",
+              "trial": "2",
+              "operator": "NativeJvmGroupExecNode[70]",
+              "records_in": "86316",
+              "records_out": "78300"
+            },
+            {
+              "shape": "udaf",
+              "trial": "2",
+              "operator": "NativeColumnarExchangeExecNode[69]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "2",
+              "operator": "NativeColumnarExchangeExecNode[69]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "2",
+              "operator": "NativeMiniBatchAssignerExecNode[68]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "2",
+              "operator": "NativeMiniBatchAssignerExecNode[68]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "2",
+              "operator": "NativeColumnarExchangeExecNode[69]",
+              "records_in": "87382",
+              "records_out": "87382"
+            },
+            {
+              "shape": "udaf",
+              "trial": "2",
+              "operator": "NativeMiniBatchAssignerExecNode[68]",
+              "records_in": "87382",
+              "records_out": "87382"
+            },
+            {
+              "shape": "udaf",
+              "trial": "2",
+              "operator": "NativeJvmGroupExecNode[70]",
+              "records_in": "87792",
+              "records_out": "79569"
+            },
+            {
+              "shape": "udaf",
+              "trial": "2",
+              "operator": "NativeJvmGroupExecNode[70]",
+              "records_in": "88036",
+              "records_out": "79699"
+            },
+            {
+              "shape": "udaf",
+              "trial": "3",
+              "operator": "NativeJvmGroupExecNode[84]",
+              "records_in": "86316",
+              "records_out": "78300"
+            },
+            {
+              "shape": "udaf",
+              "trial": "3",
+              "operator": "NativeColumnarExchangeExecNode[83]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "3",
+              "operator": "NativeColumnarExchangeExecNode[83]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "3",
+              "operator": "NativeMiniBatchAssignerExecNode[82]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "3",
+              "operator": "NativeMiniBatchAssignerExecNode[82]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "3",
+              "operator": "NativeColumnarExchangeExecNode[83]",
+              "records_in": "87382",
+              "records_out": "87382"
+            },
+            {
+              "shape": "udaf",
+              "trial": "3",
+              "operator": "NativeMiniBatchAssignerExecNode[82]",
+              "records_in": "87382",
+              "records_out": "87382"
+            },
+            {
+              "shape": "udaf",
+              "trial": "3",
+              "operator": "NativeJvmGroupExecNode[84]",
+              "records_in": "87792",
+              "records_out": "79569"
+            },
+            {
+              "shape": "udaf",
+              "trial": "3",
+              "operator": "NativeJvmGroupExecNode[84]",
+              "records_in": "88036",
+              "records_out": "79699"
+            },
+            {
+              "shape": "udaf",
+              "trial": "4",
+              "operator": "NativeJvmGroupExecNode[118]",
+              "records_in": "86316",
+              "records_out": "78300"
+            },
+            {
+              "shape": "udaf",
+              "trial": "4",
+              "operator": "NativeColumnarExchangeExecNode[117]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "4",
+              "operator": "NativeColumnarExchangeExecNode[117]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "4",
+              "operator": "NativeMiniBatchAssignerExecNode[116]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "4",
+              "operator": "NativeMiniBatchAssignerExecNode[116]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "4",
+              "operator": "NativeColumnarExchangeExecNode[117]",
+              "records_in": "87382",
+              "records_out": "87382"
+            },
+            {
+              "shape": "udaf",
+              "trial": "4",
+              "operator": "NativeMiniBatchAssignerExecNode[116]",
+              "records_in": "87382",
+              "records_out": "87382"
+            },
+            {
+              "shape": "udaf",
+              "trial": "4",
+              "operator": "NativeJvmGroupExecNode[118]",
+              "records_in": "87792",
+              "records_out": "79569"
+            },
+            {
+              "shape": "udaf",
+              "trial": "4",
+              "operator": "NativeJvmGroupExecNode[118]",
+              "records_in": "88036",
+              "records_out": "79699"
+            },
+            {
+              "shape": "udaf",
+              "trial": "5",
+              "operator": "NativeJvmGroupExecNode[132]",
+              "records_in": "86316",
+              "records_out": "78300"
+            },
+            {
+              "shape": "udaf",
+              "trial": "5",
+              "operator": "NativeColumnarExchangeExecNode[131]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "5",
+              "operator": "NativeColumnarExchangeExecNode[131]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "5",
+              "operator": "NativeMiniBatchAssignerExecNode[130]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "5",
+              "operator": "NativeMiniBatchAssignerExecNode[130]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "5",
+              "operator": "NativeColumnarExchangeExecNode[131]",
+              "records_in": "87382",
+              "records_out": "87382"
+            },
+            {
+              "shape": "udaf",
+              "trial": "5",
+              "operator": "NativeMiniBatchAssignerExecNode[130]",
+              "records_in": "87382",
+              "records_out": "87382"
+            },
+            {
+              "shape": "udaf",
+              "trial": "5",
+              "operator": "NativeJvmGroupExecNode[132]",
+              "records_in": "87792",
+              "records_out": "79569"
+            },
+            {
+              "shape": "udaf",
+              "trial": "5",
+              "operator": "NativeJvmGroupExecNode[132]",
+              "records_in": "88036",
+              "records_out": "79699"
+            },
+            {
+              "shape": "udaf",
+              "trial": "6",
+              "operator": "NativeJvmGroupExecNode[166]",
+              "records_in": "86316",
+              "records_out": "78300"
+            },
+            {
+              "shape": "udaf",
+              "trial": "6",
+              "operator": "NativeColumnarExchangeExecNode[165]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "6",
+              "operator": "NativeColumnarExchangeExecNode[165]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "6",
+              "operator": "NativeMiniBatchAssignerExecNode[164]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "6",
+              "operator": "NativeMiniBatchAssignerExecNode[164]",
+              "records_in": "87381",
+              "records_out": "87381"
+            },
+            {
+              "shape": "udaf",
+              "trial": "6",
+              "operator": "NativeColumnarExchangeExecNode[165]",
+              "records_in": "87382",
+              "records_out": "87382"
+            },
+            {
+              "shape": "udaf",
+              "trial": "6",
+              "operator": "NativeMiniBatchAssignerExecNode[164]",
+              "records_in": "87382",
+              "records_out": "87382"
+            },
+            {
+              "shape": "udaf",
+              "trial": "6",
+              "operator": "NativeJvmGroupExecNode[166]",
+              "records_in": "87792",
+              "records_out": "79569"
+            },
+            {
+              "shape": "udaf",
+              "trial": "6",
+              "operator": "NativeJvmGroupExecNode[166]",
+              "records_in": "88036",
+              "records_out": "79699"
+            }
+          ],
+          "successful_native_bundle_assertions": true
+        },
+        "previous": {
+          "stock_seconds": [
+            0.515972541,
+            0.410575292,
+            0.470720459,
+            0.413125333,
+            0.34901875
+          ],
+          "streamfusion_seconds": [
+            0.502557834,
+            0.438353458,
+            0.445980209,
+            0.538201833,
+            0.427480208
+          ],
+          "stock_median_seconds": 0.413125333,
+          "streamfusion_median_seconds": 0.445980209,
+          "stock_range_seconds": [
+            0.34901875,
+            0.515972541
+          ],
+          "streamfusion_range_seconds": [
+            0.427480208,
+            0.538201833
+          ],
+          "trial_events": [
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "Flink",
+              "trial": "0",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555594833",
+              "seconds": "1.442292"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "StreamFusion",
+              "trial": "0",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555596755",
+              "seconds": "0.844861"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "StreamFusion",
+              "trial": "1",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555597864",
+              "seconds": "0.724524"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "Flink",
+              "trial": "1",
+              "warmup": "true",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555598798",
+              "seconds": "0.515084"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "Flink",
+              "trial": "2",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555599522",
+              "seconds": "0.515973"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "StreamFusion",
+              "trial": "2",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555600231",
+              "seconds": "0.502558"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "StreamFusion",
+              "trial": "3",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555601026",
+              "seconds": "0.438353"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "Flink",
+              "trial": "3",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555601654",
+              "seconds": "0.410575"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "Flink",
+              "trial": "4",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555602224",
+              "seconds": "0.470720"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "StreamFusion",
+              "trial": "4",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555602860",
+              "seconds": "0.445980"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "StreamFusion",
+              "trial": "5",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555603475",
+              "seconds": "0.538202"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "Flink",
+              "trial": "5",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555604161",
+              "seconds": "0.413125"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "Flink",
+              "trial": "6",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555604722",
+              "seconds": "0.349019"
+            },
+            {
+              "shape": "udaf",
+              "key_type": "string",
+              "engine": "StreamFusion",
+              "trial": "6",
+              "warmup": "false",
+              "rows": "262144",
+              "keys": "65536",
+              "not_null": "false",
+              "start_ms": "1793555605216",
+              "seconds": "0.427480"
+            }
+          ],
+          "native_input_evidence": [],
+          "successful_native_bundle_assertions": false
+        }
+      }
+    }
+  ],
+  "commands": [
+    {
+      "label": "candidate-prepare-2.2",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=${CANDIDATE_NATIVE_DIR}",
+        "-Dmaven.javadoc.skip=true",
+        "-DskipTests",
+        "clean",
+        "test-compile"
+      ],
+      "start_utc": "2026-11-01T17:50:30Z",
+      "exit_code": 0,
+      "end_utc": "2026-11-01T17:50:41Z"
+    },
+    {
+      "label": "previous-prepare-2.2",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=${PREVIOUS_NATIVE_DIR}",
+        "-Dmaven.javadoc.skip=true",
+        "-DskipTests",
+        "clean",
+        "test-compile"
+      ],
+      "start_utc": "2026-11-01T17:50:41Z",
+      "exit_code": 0,
+      "end_utc": "2026-11-01T17:50:52Z"
+    },
+    {
+      "label": "candidate-2.2-int-small",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench",
+        "-Dnative.build.skip=true",
+        "-Dtest=JvmAggregateBenchmark",
+        "-Dsf.testForks=1",
+        "-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=${CANDIDATE_NATIVE_DIR}",
+        "-Djvmagg.cases=udaf",
+        "-Djvmagg.miniBatchRows=1024",
+        "-Djvmagg.parallelism=1",
+        "-Djvmagg.rows=262144",
+        "-Djvmagg.keys=64",
+        "-Djvmagg.keyType=int",
+        "-Djvmagg.warmup=2",
+        "-Djvmagg.runs=5",
+        "-Djvmagg.expectNative=true",
+        "surefire:test@default-test"
+      ],
+      "start_utc": "2026-11-01T17:50:52Z",
+      "exit_code": 0,
+      "end_utc": "2026-11-01T17:50:58Z"
+    },
+    {
+      "label": "previous-2.2-int-small",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench",
+        "-Dnative.build.skip=true",
+        "-Dtest=JvmAggregateBenchmark",
+        "-Dsf.testForks=1",
+        "-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=${PREVIOUS_NATIVE_DIR}",
+        "-Djvmagg.cases=udaf",
+        "-Djvmagg.miniBatchRows=1024",
+        "-Djvmagg.parallelism=1",
+        "-Djvmagg.rows=262144",
+        "-Djvmagg.keys=64",
+        "-Djvmagg.keyType=int",
+        "-Djvmagg.warmup=2",
+        "-Djvmagg.runs=5",
+        "-Djvmagg.expectNative=false",
+        "surefire:test@default-test"
+      ],
+      "start_utc": "2026-11-01T17:50:58Z",
+      "exit_code": 0,
+      "end_utc": "2026-11-01T17:51:04Z"
+    },
+    {
+      "label": "candidate-2.2-int-large",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench",
+        "-Dnative.build.skip=true",
+        "-Dtest=JvmAggregateBenchmark",
+        "-Dsf.testForks=1",
+        "-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=${CANDIDATE_NATIVE_DIR}",
+        "-Djvmagg.cases=udaf",
+        "-Djvmagg.miniBatchRows=1024",
+        "-Djvmagg.parallelism=1",
+        "-Djvmagg.rows=1048576",
+        "-Djvmagg.keys=64",
+        "-Djvmagg.keyType=int",
+        "-Djvmagg.warmup=2",
+        "-Djvmagg.runs=5",
+        "-Djvmagg.expectNative=true",
+        "surefire:test@default-test"
+      ],
+      "start_utc": "2026-11-01T17:51:04Z",
+      "exit_code": 0,
+      "end_utc": "2026-11-01T17:51:12Z"
+    },
+    {
+      "label": "previous-2.2-int-large",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench",
+        "-Dnative.build.skip=true",
+        "-Dtest=JvmAggregateBenchmark",
+        "-Dsf.testForks=1",
+        "-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=${PREVIOUS_NATIVE_DIR}",
+        "-Djvmagg.cases=udaf",
+        "-Djvmagg.miniBatchRows=1024",
+        "-Djvmagg.parallelism=1",
+        "-Djvmagg.rows=1048576",
+        "-Djvmagg.keys=64",
+        "-Djvmagg.keyType=int",
+        "-Djvmagg.warmup=2",
+        "-Djvmagg.runs=5",
+        "-Djvmagg.expectNative=false",
+        "surefire:test@default-test"
+      ],
+      "start_utc": "2026-11-01T17:51:12Z",
+      "exit_code": 0,
+      "end_utc": "2026-11-01T17:51:21Z"
+    },
+    {
+      "label": "candidate-2.2-string-many",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench",
+        "-Dnative.build.skip=true",
+        "-Dtest=JvmAggregateBenchmark",
+        "-Dsf.testForks=1",
+        "-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=${CANDIDATE_NATIVE_DIR}",
+        "-Djvmagg.cases=udaf",
+        "-Djvmagg.miniBatchRows=1024",
+        "-Djvmagg.parallelism=3",
+        "-Djvmagg.rows=262144",
+        "-Djvmagg.keys=65536",
+        "-Djvmagg.keyType=string",
+        "-Djvmagg.warmup=2",
+        "-Djvmagg.runs=5",
+        "-Djvmagg.expectNative=true",
+        "surefire:test@default-test"
+      ],
+      "start_utc": "2026-11-01T17:51:21Z",
+      "exit_code": 0,
+      "end_utc": "2026-11-01T17:51:29Z"
+    },
+    {
+      "label": "previous-2.2-string-many",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench",
+        "-Dnative.build.skip=true",
+        "-Dtest=JvmAggregateBenchmark",
+        "-Dsf.testForks=1",
+        "-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=${PREVIOUS_NATIVE_DIR}",
+        "-Djvmagg.cases=udaf",
+        "-Djvmagg.miniBatchRows=1024",
+        "-Djvmagg.parallelism=3",
+        "-Djvmagg.rows=262144",
+        "-Djvmagg.keys=65536",
+        "-Djvmagg.keyType=string",
+        "-Djvmagg.warmup=2",
+        "-Djvmagg.runs=5",
+        "-Djvmagg.expectNative=false",
+        "surefire:test@default-test"
+      ],
+      "start_utc": "2026-11-01T17:51:29Z",
+      "exit_code": 0,
+      "end_utc": "2026-11-01T17:51:37Z"
+    },
+    {
+      "label": "candidate-prepare-1.18",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench,flink-1.18",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=${CANDIDATE_NATIVE_DIR}",
+        "-Dmaven.javadoc.skip=true",
+        "-DskipTests",
+        "clean",
+        "test-compile"
+      ],
+      "start_utc": "2026-11-01T17:51:37Z",
+      "exit_code": 0,
+      "end_utc": "2026-11-01T17:51:52Z"
+    },
+    {
+      "label": "previous-prepare-1.18",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench,flink-1.18",
+        "-Dnative.build.skip=true",
+        "-Dnative.resource.directory=${PREVIOUS_NATIVE_DIR}",
+        "-Dmaven.javadoc.skip=true",
+        "-DskipTests",
+        "clean",
+        "test-compile"
+      ],
+      "start_utc": "2026-11-01T17:51:52Z",
+      "exit_code": 0,
+      "end_utc": "2026-11-01T17:52:09Z"
+    },
+    {
+      "label": "candidate-1.18-int-small",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench,flink-1.18",
+        "-Dnative.build.skip=true",
+        "-Dtest=JvmAggregateBenchmark",
+        "-Dsf.testForks=1",
+        "-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=${CANDIDATE_NATIVE_DIR}",
+        "-Djvmagg.cases=udaf",
+        "-Djvmagg.miniBatchRows=1024",
+        "-Djvmagg.parallelism=1",
+        "-Djvmagg.rows=262144",
+        "-Djvmagg.keys=64",
+        "-Djvmagg.keyType=int",
+        "-Djvmagg.warmup=2",
+        "-Djvmagg.runs=5",
+        "-Djvmagg.expectNative=true",
+        "surefire:test@default-test"
+      ],
+      "start_utc": "2026-11-01T17:52:09Z",
+      "exit_code": 0,
+      "end_utc": "2026-11-01T17:52:18Z"
+    },
+    {
+      "label": "previous-1.18-int-small",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench,flink-1.18",
+        "-Dnative.build.skip=true",
+        "-Dtest=JvmAggregateBenchmark",
+        "-Dsf.testForks=1",
+        "-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=${PREVIOUS_NATIVE_DIR}",
+        "-Djvmagg.cases=udaf",
+        "-Djvmagg.miniBatchRows=1024",
+        "-Djvmagg.parallelism=1",
+        "-Djvmagg.rows=262144",
+        "-Djvmagg.keys=64",
+        "-Djvmagg.keyType=int",
+        "-Djvmagg.warmup=2",
+        "-Djvmagg.runs=5",
+        "-Djvmagg.expectNative=false",
+        "surefire:test@default-test"
+      ],
+      "start_utc": "2026-11-01T17:52:18Z",
+      "exit_code": 0,
+      "end_utc": "2026-11-01T17:52:27Z"
+    },
+    {
+      "label": "candidate-1.18-int-large",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench,flink-1.18",
+        "-Dnative.build.skip=true",
+        "-Dtest=JvmAggregateBenchmark",
+        "-Dsf.testForks=1",
+        "-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=${CANDIDATE_NATIVE_DIR}",
+        "-Djvmagg.cases=udaf",
+        "-Djvmagg.miniBatchRows=1024",
+        "-Djvmagg.parallelism=1",
+        "-Djvmagg.rows=1048576",
+        "-Djvmagg.keys=64",
+        "-Djvmagg.keyType=int",
+        "-Djvmagg.warmup=2",
+        "-Djvmagg.runs=5",
+        "-Djvmagg.expectNative=true",
+        "surefire:test@default-test"
+      ],
+      "start_utc": "2026-11-01T17:52:27Z",
+      "exit_code": 0,
+      "end_utc": "2026-11-01T17:52:41Z"
+    },
+    {
+      "label": "previous-1.18-int-large",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench,flink-1.18",
+        "-Dnative.build.skip=true",
+        "-Dtest=JvmAggregateBenchmark",
+        "-Dsf.testForks=1",
+        "-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=${PREVIOUS_NATIVE_DIR}",
+        "-Djvmagg.cases=udaf",
+        "-Djvmagg.miniBatchRows=1024",
+        "-Djvmagg.parallelism=1",
+        "-Djvmagg.rows=1048576",
+        "-Djvmagg.keys=64",
+        "-Djvmagg.keyType=int",
+        "-Djvmagg.warmup=2",
+        "-Djvmagg.runs=5",
+        "-Djvmagg.expectNative=false",
+        "surefire:test@default-test"
+      ],
+      "start_utc": "2026-11-01T17:52:41Z",
+      "exit_code": 0,
+      "end_utc": "2026-11-01T17:52:56Z"
+    },
+    {
+      "label": "candidate-1.18-string-many",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench,flink-1.18",
+        "-Dnative.build.skip=true",
+        "-Dtest=JvmAggregateBenchmark",
+        "-Dsf.testForks=1",
+        "-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=${CANDIDATE_NATIVE_DIR}",
+        "-Djvmagg.cases=udaf",
+        "-Djvmagg.miniBatchRows=1024",
+        "-Djvmagg.parallelism=3",
+        "-Djvmagg.rows=262144",
+        "-Djvmagg.keys=65536",
+        "-Djvmagg.keyType=string",
+        "-Djvmagg.warmup=2",
+        "-Djvmagg.runs=5",
+        "-Djvmagg.expectNative=true",
+        "surefire:test@default-test"
+      ],
+      "start_utc": "2026-11-01T17:52:56Z",
+      "exit_code": 0,
+      "end_utc": "2026-11-01T17:53:09Z"
+    },
+    {
+      "label": "previous-1.18-string-many",
+      "command": [
+        "mvn",
+        "-B",
+        "-ntp",
+        "-pl",
+        "streamfusion-runtime",
+        "-Pbench,flink-1.18",
+        "-Dnative.build.skip=true",
+        "-Dtest=JvmAggregateBenchmark",
+        "-Dsf.testForks=1",
+        "-Dsf.benchmarkJvmArgs=-Xmx3g -Dstreamfusion.exchange.zeroCopyLocal=false",
+        "-Dsf.extraJvmArgs=-Djava.library.path=${PREVIOUS_NATIVE_DIR}",
+        "-Djvmagg.cases=udaf",
+        "-Djvmagg.miniBatchRows=1024",
+        "-Djvmagg.parallelism=3",
+        "-Djvmagg.rows=262144",
+        "-Djvmagg.keys=65536",
+        "-Djvmagg.keyType=string",
+        "-Djvmagg.warmup=2",
+        "-Djvmagg.runs=5",
+        "-Djvmagg.expectNative=false",
+        "surefire:test@default-test"
+      ],
+      "start_utc": "2026-11-01T17:53:09Z",
+      "exit_code": 0,
+      "end_utc": "2026-11-01T17:53:25Z"
+    }
+  ],
+  "post_benchmark_validation": {
+    "note": "Three additional controls verify actual single-phase planning for an overloaded aggregate without merge under ordinary, ONE_PHASE mini-batch and TWO_PHASE mini-batch requests. Expanded upstream selectors/scopes cover every released fixture parameter and include the 1.18 state inventory. Production and timed benchmark source bodies are unchanged.",
+    "new_phase_controls": {
+      "flink_1_18": {
+        "passed": 3,
+        "failed": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "flink_2_2": {
+        "passed": 3,
+        "failed": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    "execution_contract_python_tests": 38,
+    "extended_test_source_sha256": {
+      "src/test/java/tech/streamfusion/FlinkJvmMiniBatchSqlHarnessTest.java": "0d857bb77e5b6fac44b37ae6f930b39980728a4e9e49bf8734268dfd1f98ed74"
+    }
+  }
+}

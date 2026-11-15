@@ -10,6 +10,7 @@ import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.flink.runtime.memory.MemoryManager;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.paimon.CoreOptions;
 import org.apache.paimon.data.BinaryRow;
@@ -81,6 +82,8 @@ public final class NativeAppendSinkWrite implements StoreSinkWrite, AutoCloseabl
   private int nextId;
 
   NativeAppendSinkWrite(FileStoreTable table, StoreSinkWrite delegate, String[] directories) {
+    if (!PaimonAppendSequence.supported())
+      throw new IllegalStateException("Paimon append sequence contract unavailable");
     this.delegate = delegate;
     this.directories = directories;
     this.rowType = LogicalTypeConversion.toLogicalType(table.rowType());
@@ -88,7 +91,7 @@ public final class NativeAppendSinkWrite implements StoreSinkWrite, AutoCloseabl
     this.memory = new PaimonBufferMemory(options.writeBufferSize());
   }
 
-  void managedMemory(org.apache.flink.runtime.memory.MemoryManager manager, long budget) {
+  void managedMemory(MemoryManager manager, long budget) {
     memory.close();
     memory = new PaimonBufferMemory(budget, manager);
   }
@@ -183,9 +186,13 @@ public final class NativeAppendSinkWrite implements StoreSinkWrite, AutoCloseabl
 
   private void writeDirect(BinaryRow partition, int bucket, VectorSchemaRoot root)
       throws Exception {
-    ((StoreSinkWriteImpl) delegate)
-        .getWrite()
-        .writeBundle(partition, bucket, new ArrowBatchBundle(root, rowType));
+    if (delegate instanceof NativePaimonStoreSinkWrite)
+      ((NativePaimonStoreSinkWrite) delegate).beforeBucket(partition, bucket);
+    var bundle = new ArrowBatchBundle(root, rowType);
+    PaimonAppendSequence.write(
+        PaimonAppendSequence.counter(fileWrite(), partition, bucket),
+        bundle.rowCount(),
+        () -> ((StoreSinkWriteImpl) delegate).getWrite().writeBundle(partition, bucket, bundle));
   }
 
   private void flush(Bucket key) throws Exception {

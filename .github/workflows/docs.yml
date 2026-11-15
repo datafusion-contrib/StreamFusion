@@ -1,15 +1,16 @@
 name: docs
 
 on:
-  pull_request:
-    paths:
-      - "docs/**"
-      - "mkdocs.yml"
-      - ".github/workflows/docs.yml"
   push:
-    branches: [main]
+    branches: ['main', 'ci/**']
     paths:
       - "docs/**"
+      - "dev/docs/**"
+      - "dev/benchmark_artifacts.py"
+      - "dev/test_benchmark_artifacts.py"
+      - "dev/flink-suite/render_sql_inventory.py"
+      - "dev/flink-suite/sql_inventory.py"
+      - "dev/flink-suite/test_render_sql_inventory.py"
       - "mkdocs.yml"
       - ".github/workflows/docs.yml"
   workflow_dispatch: {}
@@ -19,27 +20,30 @@ permissions:
 
 concurrency:
   group: pages-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.repository != 'datafusion-contrib/StreamFusion' }}
 
 jobs:
   build:
+    if: ${{ github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install mkdocs-material
+      - run: pip install 'mkdocs>=1.6,<2' mkdocs-material
+      - run: python3 -m unittest discover -s dev/flink-suite -p test_render_sql_inventory.py
+      - run: python3 -m unittest discover -s dev -p test_benchmark_artifacts.py
       - run: mkdocs build --strict
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/upload-pages-artifact@v3
-        if: github.event_name != 'pull_request'
+        if: github.repository == 'datafusion-contrib/StreamFusion' && github.ref == 'refs/heads/main'
         with:
           path: site
 
   deploy:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.repository == 'datafusion-contrib/StreamFusion' && github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     permissions:

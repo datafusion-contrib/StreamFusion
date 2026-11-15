@@ -26,6 +26,9 @@ hosts, connectors, backends, exact SQL and explicitly labelled expression varian
 
 | Workload | Report | Scope |
 | --- | --- | --- |
+| Paimon to Paimon TPC-DS | [Complete SF1 suite](tpcds.md) | All 103 unchanged variants, exact committed results, matched stock/Java-decoder/JNI-decoder comparison and separate historical profiling controls |
+| Paimon batch writes | [Mutation and clustering comparison](paimon-batch.md) | Java-owned IO and mutation semantics with native Parquet encoding; stock and previous-encoder controls across released adapters |
+| Batch scalar SQL | [Batch scalar comparisons](batch-scalars.md) | Complete row-fed batch jobs, admitted SHA-256 gain, rejected arithmetic/regex candidates and accepted UDF cost |
 | Kafka Nexmark headline | [Benchmark table and reproduction](../benchmarks.md#nexmark-parallelism-4) | Historical headline and its sampling convention |
 | Iceberg to Iceberg | [After boundary optimization](iceberg-optimized-20261017/README.md) | Complete repeated matrix, with [previous-matrix comparison](iceberg-optimized-20261017/previous-comparison.md) |
 | Earlier Iceberg matrix | [Before boundary optimization](iceberg-final-20261017/README.md) | Earlier complete cohort; its [previous I/O comparison](iceberg-io-baseline-20261017/README.md) is separate from the stock-Flink matrix |
@@ -77,6 +80,50 @@ repository's `.claude/wontdos/` directory.
 | Primitive and binary boundary experiments | [Criterion diagnostics](native-criterion.md#narrow-primitive-exit-rejection) and [scalar BINARY exit experiments](scalar-functions.md#rejected-manual-binary-exit-projection) retain their unfavorable results |
 
 ## Maintaining the evidence
+
+### Source repository and archived run outputs
+
+Keep maintained inputs in Git: benchmark SQL and harnesses, reproduction settings,
+reports, structured trial observations, compatibility fixtures and design decisions.
+Historical execution logs, full plan/report archives and profiler dumps belong in
+durable public artifact storage. A `.gz` suffix alone does not distinguish a test
+fixture or canonical data source from a disposable generated export.
+
+The [artifact manifest](artifacts.json) records the original paths, source revision,
+byte sizes and SHA-256 hashes of 1,426 historical files migrated from `87d6edbf0`.
+Their exact bytes are retained in the
+[versioned evidence release](https://github.com/datafusion-contrib/StreamFusion/releases/tag/benchmark-evidence-2026-11-10-87d6edbf0),
+including superseded runs and failed experiments. This is an evidence archive,
+not a runtime release or a measurement of current main.
+
+From the repository root, restore a particular report's evidence before inspecting it:
+
+```sh
+python3 dev/benchmark_artifacts.py docs/benchmarks/kafka-paimon-final-20261017
+```
+
+With no path argument, the command restores all manifest entries. Downloads are
+cached under `target/benchmark-artifacts`; restored run outputs are ignored by Git.
+The tool checks the bundle and individual file hashes, rejects unsafe archive paths,
+and refuses to replace conflicting local evidence. Historical verifiers and log
+summarizers retrieve their required evidence automatically. The first retrieval
+downloads the shared archive (about 147 MiB); subsequent retrievals reuse its verified
+cache, including offline. It never executes the archived SQL or contacts its sources.
+
+MkDocs retrieves the same evidence into `target/docs-generated/evidence` and publishes
+the original download paths. Report links use the published downloads so they also
+work when reading Markdown on GitHub. It also generates the SQL inventory HTML/CSV from the
+retained compressed snapshots. A documentation build fails if required evidence is
+unavailable or corrupt; it does not publish an incomplete report. Ordinary source
+builds and runtime tests do not download historical benchmark evidence.
+
+For future migrations, publish a new versioned archive and a complete path/hash
+manifest, independently download and verify it, then update the checked-in manifest
+and retrieval consumers before removing source-tree copies. Do not overwrite an
+existing evidence release's assets. Preserve the human-readable conclusion and
+structured observations, including regressions and rejected approaches.
+
+### Recording and moving evidence
 
 - Link a new report from its topic page or this index, and link each cohort's
   human-readable result from its parent report. Global navigation contains the

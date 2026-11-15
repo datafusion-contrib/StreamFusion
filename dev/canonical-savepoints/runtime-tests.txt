@@ -1,0 +1,7 @@
+org.apache.flink.test.checkpointing.SavepointFormatITCase
+org.apache.flink.test.checkpointing.SavepointITCase
+org.apache.flink.test.checkpointing.TimersSavepointITCase
+org.apache.flink.test.state.HeapSavepointStateBackendSwitchTest
+org.apache.flink.test.state.RocksSavepointStateBackendSwitchTest
+org.apache.flink.runtime.operators.lifecycle.StopWithSavepointITCase
+org.apache.flink.runtime.jobmaster.JobMasterTriggerSavepointITCase

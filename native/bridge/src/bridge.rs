@@ -276,10 +276,15 @@ pub fn import_record_batch(array_address: jlong, schema_address: jlong) -> Recor
             FFI_ArrowSchema::empty(),
         )
     };
+    let metadata = ffi_schema
+        .metadata()
+        .expect("failed to import Arrow schema metadata");
     let mut data =
         unsafe { from_ffi(ffi_array, &ffi_schema) }.expect("failed to import Arrow batch");
     data.align_buffers();
-    RecordBatch::from(StructArray::from(data))
+    let mut batch = RecordBatch::from(StructArray::from(data));
+    *batch.schema_metadata_mut() = metadata;
+    preserve_actual_nulls(batch)
 }
 
 /// Takes ownership of a batch whose schema was imported on an earlier call. Arrow's C Data array
@@ -304,7 +309,40 @@ pub fn import_record_batch_with_schema(array_address: jlong, schema: &SchemaRef)
             )
         });
     data.align_buffers();
-    RecordBatch::from(StructArray::from(data))
+    let mut batch = RecordBatch::from(StructArray::from(data));
+    *batch.schema_metadata_mut() = schema.metadata().clone();
+    preserve_actual_nulls(batch)
+}
+
+// Flink source nullability is a logical hint; actual NULL slots still reach its operators.
+// Widen only physical fields that contain NULLs, retaining every buffer and logical type.
+fn preserve_actual_nulls(batch: RecordBatch) -> RecordBatch {
+    let schema = batch.schema();
+    if !schema
+        .fields()
+        .iter()
+        .zip(batch.columns())
+        .any(|(field, column)| !field.is_nullable() && column.null_count() != 0)
+    {
+        return batch;
+    }
+    let fields: Vec<Field> = schema
+        .fields()
+        .iter()
+        .zip(batch.columns())
+        .map(|(field, column)| {
+            field
+                .as_ref()
+                .clone()
+                .with_nullable(field.is_nullable() || column.null_count() != 0)
+        })
+        .collect();
+    batch
+        .with_schema(Arc::new(Schema::new_with_metadata(
+            fields,
+            schema.metadata().clone(),
+        )))
+        .expect("actual NULL fields widen the imported physical schema")
 }
 
 /// Reads only the top-level child count from a still JVM-owned C Data array. Callers use this to
@@ -394,6 +432,109 @@ fn rebase_boolean_slices(data: &ArrayData) -> Option<ArrayData> {
 #[cfg(test)]
 mod cached_schema_tests {
     use super::*;
+
+    #[test]
+    fn imported_null_slots_override_only_physical_hints_and_keep_owned_buffers() {
+        let fields = vec![
+            Field::new("date", DataType::Date32, false)
+                .with_metadata([("origin".into(), "flink-hint".into())].into()),
+            Field::new(
+                "time",
+                DataType::Time32(arrow::datatypes::TimeUnit::Millisecond),
+                false,
+            ),
+            Field::new("key", DataType::Int32, false),
+        ];
+        let declared = Arc::new(Schema::new_with_metadata(
+            fields.clone(),
+            [("source".into(), "nonnull".into())].into(),
+        ));
+        let columns: Vec<ArrayRef> = vec![
+            Arc::new(arrow::array::Date32Array::from(vec![
+                Some(-1),
+                None,
+                Some(1),
+            ])),
+            Arc::new(arrow::array::Time32MillisecondArray::from(vec![
+                Some(1),
+                None,
+                Some(86_399_999),
+            ])),
+            Arc::new(Int32Array::from(vec![0, 1, 2])),
+        ];
+        let valid = RecordBatch::try_new(
+            Arc::new(Schema::new(
+                fields
+                    .into_iter()
+                    .map(|field| field.with_nullable(true))
+                    .collect::<Vec<_>>(),
+            )),
+            columns,
+        )
+        .unwrap();
+        let mut retained = Vec::new();
+        for cached in [false, true] {
+            let mut array = FFI_ArrowArray::empty();
+            export_record_batch(valid.clone(), &mut array as *mut _ as jlong, 0);
+            let mut schema = FFI_ArrowSchema::try_from(declared.as_ref()).unwrap();
+            let output = if cached {
+                import_record_batch_with_schema(&mut array as *mut _ as jlong, &declared)
+            } else {
+                import_record_batch(
+                    &mut array as *mut _ as jlong,
+                    &mut schema as *mut _ as jlong,
+                )
+            };
+            assert!(output.schema().field(0).is_nullable());
+            assert!(output.schema().field(1).is_nullable());
+            assert!(!output.schema().field(2).is_nullable());
+            assert_eq!(output.schema().metadata(), declared.metadata());
+            assert_eq!(
+                output.schema().field(0).metadata(),
+                declared.field(0).metadata()
+            );
+            for column in 0..3 {
+                assert_eq!(
+                    output.column(column).to_data().buffers()[0].as_ptr(),
+                    valid.column(column).to_data().buffers()[0].as_ptr()
+                );
+            }
+            // The normalized batch must satisfy the checks used by shuffle, concat and IPC.
+            RecordBatch::try_new(output.schema(), output.columns().to_vec()).unwrap();
+            retained.push(output);
+        }
+        assert!(
+            !declared.field(0).is_nullable(),
+            "cached logical hints stay immutable"
+        );
+        drop(valid);
+        for output in retained {
+            assert_eq!(output.num_rows(), 3);
+            assert_eq!(output.column(0).null_count(), 1);
+            assert_eq!(output.column(1).null_count(), 1);
+            assert_eq!(
+                output
+                    .column(0)
+                    .as_any()
+                    .downcast_ref::<arrow::array::Date32Array>()
+                    .unwrap()
+                    .value(0),
+                -1
+            );
+        }
+    }
+
+    #[test]
+    fn imports_without_actual_nulls_retain_the_declared_schema() {
+        let schema = Arc::new(Schema::new(vec![Field::new("v", DataType::Int32, false)]));
+        let batch =
+            RecordBatch::try_new(schema.clone(), vec![Arc::new(Int32Array::from(vec![7, 9]))])
+                .unwrap();
+        let mut array = FFI_ArrowArray::empty();
+        export_record_batch(batch, &mut array as *mut _ as jlong, 0);
+        let output = import_record_batch_with_schema(&mut array as *mut _ as jlong, &schema);
+        assert_eq!(output.schema(), schema);
+    }
 
     #[test]
     fn boolean_exports_rebase_bits_and_preserve_other_buffers() {

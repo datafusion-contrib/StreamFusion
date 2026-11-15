@@ -2,9 +2,12 @@
 
 Planner settings use Flink's normal configuration surface and can be supplied in `flink-conf.yaml`,
 the SQL client, or `TableConfig` (for example, `SET 'streamfusion.native.enabled' = 'false'`). A
-same-named `-Dstreamfusion.*` system property remains a compatibility fallback. Task-runtime tuning
-settings are still JVM properties before 1.0; they are called out below and will become
-serialized operator configuration rather than process-global state before a stable release.
+same-named `-Dstreamfusion.*` system property remains a compatibility fallback. Native operator
+coalescing, transpose latency, direct Calc evaluation, temporal aliasing, asynchronous memory
+snapshots and Arrow representation settings are resolved while planning and serialized with each
+operator. Worker JVM properties do not override those captured values. Operators serialized before
+this configuration carrier retain their legacy worker-JVM defaults. Deployment and connector
+transport properties remain process settings where explicitly identified below.
 
 ## Acceleration control
 
@@ -16,6 +19,10 @@ serialized operator configuration rather than process-global state before a stab
   controls the stateless changelog filter. All default on.
   Optional connector operators only activate once the matching connector extension and format JAR
   are installed; otherwise the plan falls back to Flink's own path.
+  Batch grouping sets, unordered limits, analytic windows and bounded ranks use `expand`,
+  `limit`, `overAggregate` and `rank` respectively. `paimonBatchEncoding` independently
+  controls native Parquet encoding beneath Java-owned batch overwrite, mutation and
+  clustering operations; see [Paimon](connectors/paimon.md#bounded-batch-source-and-sink).
 - **`streamfusion.experimental.jvmGroupAggregates`** (system property, default true) — enable
   verified synchronous single-phase JVM UDAFs with VARCHAR/INT/BIGINT inputs/results. Set false
   for the preceding host fallback. Cache and borrowed-exit performance experiments retain their
@@ -26,12 +33,13 @@ serialized operator configuration rather than process-global state before a stab
   savepoints; automatic JVM/native collection-state migration is not supported. The existing
   `jvmGroupAggregates` switch and collection-consumer guards still apply. See
   [collection state](operators/group-by.md#integer-collect).
-- **`streamfusion.experimental.nestedScalarUdfs`** (system property, default true) — enable
+- **`streamfusion.experimental.nestedScalarUdfs`** (default true) — enable
   verified external Java Row and Map callbacks and the matching nested RowKind/raw BINARY
   transport. MAP callbacks use Flink-generated whole-Calc evaluation; computed collection outputs
   retain representation guards before unverified state/exchange boundaries.
-  Configure the same value in planner and task JVMs; false restores the preceding transport and
-  nested-signature fallback. See [Calc/filter](operators/calc-filter.md).
+  The resolved representation is captured for native operator schemas and generated-function
+  callbacks; false restores the preceding transport and nested-signature fallback.
+  See [Calc/filter](operators/calc-filter.md).
 - **`streamfusion.dropUpdateBefore.standalone.enabled`** (default true) — enable a lone
   changelog filter after verified Rust-side Arrow admission. Explicit `false` retains stock
   for the standalone shape. Complete row-source jobs can still lose because of perimeter costs.
@@ -46,12 +54,12 @@ serialized operator configuration rather than process-global state before a stab
   Explicit `false` forces those UDFs to stock. Correctness/type/lifecycle gates remain in force;
   slower UDF execution alone does not block coverage. See
   [temporal UDF coverage](operators/calc-filter.md#temporal-scalar-functions).
-- **`streamfusion.experimental.directTemporalCalc`** (system property, default true) — evaluate
+- **`streamfusion.experimental.directTemporalCalc`** (default true) — evaluate
   complete JVM Calcs with timestamp inputs and optional BOOLEAN, TINYINT, SMALLINT, INT, BIGINT,
   FLOAT or DOUBLE columns directly on Arrow batches. Explicit false
   restores the previous JNI callback; changelog input and represented output schemas always use
   that callback. This does not change temporal UDF type coverage.
-- **`streamfusion.experimental.temporalAliases`** (system property, default true) — share
+- **`streamfusion.experimental.temporalAliases`** (default true) — share
   unchanged timestamp output buffers for unconditional, timestamp-only direct projections of
   matching width and a common allocator root. Every function still executes. Explicit false uses
   ordinary output writers.
@@ -77,9 +85,10 @@ serialized operator configuration rather than process-global state before a stab
   [Operators](operators/index.md) for exactly which functions this affects and how they can diverge.
 - **`-Dstreamfusion.plan.shareSources=false`** — disable the substitution pass's own source-sharing
   (two branches scanning the same native source normally collapse into one read); restores one
-  source per branch. Flink's `table.optimizer.reuse-source-enabled=false` and
+  source per branch. It also disables retained-view sharing of unary batch aggregate
+  subplans. Flink's `table.optimizer.reuse-source-enabled=false` and
   `table.optimizer.reuse-sub-plan-enabled=false` also disable native source sharing.
-- **`streamfusion.transpose.batchRows`** (default 1024; proctime complex COUNT input islands prefer 4096) — maximum rows buffered by each
+- **`streamfusion.transpose.batchRows`** (streaming default 1024; bounded batch pipelines prefer 8192; proctime complex COUNT input islands prefer 4096) — maximum rows buffered by each
   row-to-Arrow boundary. Must be positive. Read from the job's Flink configuration at planning
   time and serialized into the operator; the same-named JVM property is a fallback. Explicit
   table/JVM settings override the preferred batch size. Watermarks,
@@ -91,9 +100,23 @@ serialized operator configuration rather than process-global state before a stab
 - **`-Dstreamfusion.exchange.zeroCopyLocal=...`** — vouch for a single-TaskManager deployment so the
   columnar exchange can hand off batches by ownership transfer instead of Arrow IPC on a same-process
   edge. See [Zero-copy local shuffle](optimizations/zero-copy-local-shuffle.md).
+
+- **`streamfusion.shuffle.nativeLz4.enabled`** (default true, TaskManager configuration)
+  — use the bounds-checked JNI LZ4 decoder on StreamFusion tasks' existing shuffle
+  input gates. A JVM `-Dstreamfusion.shuffle.nativeLz4.enabled=false` override retains
+  Flink's decoder. This setting does not alter stock tasks, compression selection,
+  block framing or shuffle IO. See [native LZ4 shuffle decoding](optimizations/native-lz4-shuffle.md).
 - **`-Dstreamfusion.exchange.coalesceRows`** (default 4096) / **`-Dstreamfusion.exchange.coalesceLatencyMs`**
   (default 50) — re-assemble processing-sized batches after the keyed exchange fragments them across
-  parallel subtasks. See [Post-exchange batch coalescing](optimizations/post-exchange-coalescing.md).
+  parallel subtasks. These also accept per-job Flink configuration and are captured before
+  submission. See [Post-exchange batch coalescing](optimizations/post-exchange-coalescing.md).
+
+`streamfusion.transpose.flushLatencyMs` defaults to 50 milliseconds and bounds the wait for a partial
+row-to-Arrow batch on unbounded input; zero or less disables its latency timer. Bounded pipelines
+do not arm that timer. `streamfusion.state.asyncMemorySnapshots.enabled` defaults to true and
+controls the existing asynchronous memory-state snapshot route. Both settings are captured per
+operator. `streamfusion.experimental.jvmAccumulatorCacheEntries` retains its default of zero and
+is resolved from the job configuration before the JVM aggregate operator is serialized.
 
 ## Memory
 
@@ -107,6 +130,31 @@ exhaustion behavior, sizing, and metrics.
 - **`state.backend.rocksdb.memory.*`** — Flink's normal RocksDB memory-control options size the
   native stores' shared block cache and write-buffer manager under the RocksDB backend; there are
   no StreamFusion-specific state memory settings. See [RocksDB backend](backends/rocksdb.md).
+
+### Arrow Java access checks
+
+StreamFusion applies the following defaults before Arrow schema conversion, runtime allocation,
+or native library initialization. These are Arrow JVM settings, not Flink table options:
+
+| JVM property | StreamFusion default | Effect |
+| --- | --- | --- |
+| `arrow.enable_unsafe_memory_access` | `true` | Skip per-access buffer bounds and liveness checks. |
+| `arrow.enable_null_check_for_get` | `false` | Skip primitive-getter NULL checks; callers still check validity. |
+
+Explicit system properties take precedence over environment variables. For unsafe access, Arrow's
+legacy `drill.enable_unsafe_memory_access` property takes precedence over
+`ARROW_ENABLE_UNSAFE_MEMORY_ACCESS` when the current property is absent. The NULL-check environment
+variable is `ARROW_ENABLE_NULL_CHECK_FOR_GET`. StreamFusion leaves these explicit settings intact,
+including Arrow's case-sensitive interpretation of `true` and `false`.
+
+To diagnose invalid accesses, set `-Darrow.enable_unsafe_memory_access=false` and
+`-Darrow.enable_null_check_for_get=true` at JVM startup. No StreamFusion-specific switch is needed.
+The properties are process-wide and may affect other Arrow users in the same JVM; each Arrow
+classloader fixes its effective values at class initialization. StreamFusion logs the effective
+checks and warns if earlier Arrow initialization prevents the requested settings from taking effect.
+Later SQL or system-property changes do not reconfigure initialized classes. Memory budgeting,
+reference-counted ownership, NULL bitmaps and safe vector growth remain unchanged. See
+[Arrow access optimization](optimizations/arrow-unsafe-memory-checks.md).
 
 ### Off-heap sizing
 
@@ -154,13 +202,16 @@ remain separate evidence, including retained slower wide-overlap jobs.
 
 ## Diagnostics
 
-- **`-Dstreamfusion.logFallbackReasons=true`** — substitution is silent by default; this logs each
-  plan node that stayed on Flink and why, plus the final function-engine assignment for every
-  admitted Calc/filter. The assignment lists distinct SQL function and UDF calls under `native` and
-  `jvm`; casts are retained because their type and failure semantics can select JVM evaluation,
-  while arithmetic, comparison and boolean operators are omitted. A JVM assignment also records why
-  a host-exact upcall or whole-Calc generated evaluator was selected. The always-on summary counts
-  both operator fallbacks and Calc/filter nodes containing JVM functions.
+Completed planning passes log recorded fallback reasons and final function-engine assignments
+at **INFO** by default, including stock compiled-plan lowering. Repeated messages within a pass
+include an occurrence count. The former `streamfusion.logFallbackReasons` flag is no longer read;
+use the normal logger configuration to control verbosity.
+
+Assignments list distinct SQL function and UDF calls under `native` and `jvm`; casts are retained
+because their type and failure semantics can select JVM evaluation, while arithmetic, comparison
+and boolean operators are omitted. A JVM assignment also records why a host-exact upcall or
+whole-Calc generated evaluator was selected. The planning summary counts both operator fallbacks
+and Calc/filter nodes containing JVM functions. Logging does not change execution admission.
 
 Ordinary SQL `EXPLAIN` and submitted operator descriptions retain the original Flink details:
 native sources and sinks keep table identifiers, fields and source/sink abilities; Calc/filter
@@ -179,7 +230,8 @@ See [Benchmarks](benchmarks.md) for how to reproduce the throughput numbers, and
 
 ## Binary selection
 
-The JVM system property `streamfusion.experimental.binaryElt` defaults to `true`. Verified
+The per-job option `streamfusion.experimental.binaryElt` defaults to `true`, with the same-named JVM
+property as a planning-time fallback. Verified
 INTEGER-indexed binary `ELT` expressions run without an opt-in. Explicit `false` retains
 stock execution; use the same setting in planner and task JVMs. This also transports SQL `BINARY(n)` values through length-delimited
 Arrow Binary vectors, preserving raw payload lengths without changing their SQL types.
@@ -191,3 +243,8 @@ Legacy variable-length cast guards and nested scalar admission rules are unchang
 Default admission follows the Rust/Arrow versus Java/RowData functionality gate. The
 [historical binary measurements](operators/calc-filter.md#binary-casts-and-fixed-width-generated-expressions)
 retain slower conversion-inclusive standalone results; they are separate from this gate.
+
+The optional bounded native Parquet source honors
+`streamfusion.operator.fileSource.enabled` (default true for admitted paths).
+It requires fixed batch parallelism and its documented [source admission](connectors/parquet.md#source);
+unsupported tables retain Flink's reader and the ordinary transpose.

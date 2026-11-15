@@ -1,0 +1,2844 @@
+{
+  "source_sha": "73748717bd7b1a0bdf340b33f0ea1fc83d4479a9",
+  "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42511164171",
+  "native_source_run": 42499556204,
+  "purpose": "Attribution of five measured slow classes under the current first-tier and worker settings; instrumented times are not speedup comparisons.",
+  "jdk17": {
+    "mode": "current",
+    "pair": 1,
+    "line": "2.2",
+    "forks": 4,
+    "heap": "2g",
+    "instrumented": true,
+    "elapsed_seconds": 952.746699825,
+    "cpu_seconds": 2321.641704,
+    "outcomes": {
+      "tests": 2759,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "classes": {
+      "tech.streamfusion.FlinkRecursiveScalarSqlHarnessTest": {
+        "tests": 1134,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "seconds": 557.082
+      },
+      "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest": {
+        "tests": 683,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "seconds": 428.059
+      },
+      "tech.streamfusion.planner.CanonicalManagedUdfKeyPrecisionTest": {
+        "tests": 532,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "seconds": 516.299
+      },
+      "tech.streamfusion.planner.CanonicalGroupDistinctMergeTest": {
+        "tests": 120,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "seconds": 692.414
+      },
+      "tech.streamfusion.planner.CanonicalMiniBatchGroupStateTest": {
+        "tests": 290,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "seconds": 590.257
+      }
+    },
+    "jfr": {
+      "events": {
+        "jdk.Compilation": 267615,
+        "jdk.NativeMethodSample": 264796,
+        "jdk.ExecutionSample": 64850,
+        "jdk.ObjectAllocationSample": 64255
+      },
+      "java_leaf_frames": {
+        "java.util.zip.ZipFile$Source.getEntryPos": 4457,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.atn.LexerATNSimulator.execATN": 3722,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.misc.IntervalSet.contains": 1896,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.CodePointCharStream$CodePoint8BitCharStream.LA": 1691,
+        "jdk.internal.util.Preconditions.outOfBoundsCheckIndex": 1565,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.atn.ParserATNSimulator.execATN": 1470,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.atn.LexerATNSimulator.consume": 1467,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.BufferedTokenStream.LA": 1183,
+        "java.lang.StringBuilder.toString": 1144,
+        "java.lang.StringLatin1.inflate": 1092,
+        "java.util.ArrayList.add": 1033,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.CommonTokenStream.LT": 902,
+        "java.lang.StringUTF16.checkIndex": 899,
+        "java.util.ArrayList.grow": 813,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.Lexer.nextToken": 785,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.BufferedTokenStream.nextTokenOnChannel": 773,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.CommonTokenFactory.create": 731,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.BufferedTokenStream.fetch": 664,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.atn.ParserATNSimulator.adaptivePredict": 639,
+        "java.lang.AbstractStringBuilder.ensureCapacityInternal": 632,
+        "java.lang.AbstractStringBuilder.append": 625,
+        "java.util.zip.ZipFile.getEntry": 607,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.BufferedTokenStream.sync": 593,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.atn.LexerATNSimulator.match": 580,
+        "org.apache.calcite.tools.RelBuilder.peek": 579,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.BufferedTokenStream.size": 570,
+        "org.apache.flink.table.codesplit.JavaParser.expression": 489,
+        "java.util.HashMap.getNode": 481,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.BufferedTokenStream.previousTokenOnChannel": 474,
+        "scala.collection.immutable.StringLike$$anon$1.next": 469,
+        "java.util.zip.ZipFile.ensureOpen": 468,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.CommonToken.<init>": 455,
+        "java.lang.StringLatin1.hashCode": 453,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.DefaultErrorStrategy.sync": 447,
+        "java.lang.StringLatin1.equals": 439,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.BufferedTokenStream.setup": 419,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.ParserRuleContext.addAnyChild": 412,
+        "java.lang.String.equals": 398,
+        "java.lang.StringBuilder.<init>": 391,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.Parser.exitRule": 377
+      },
+      "java_inclusive_frames": {
+        "org.apache.flink.table.codesplit.JavaCodeSplitter.splitImpl": 27686,
+        "org.apache.flink.table.codesplit.JavaCodeSplitter.split": 26997,
+        "org.apache.flink.table.runtime.generated.GeneratedClass.<init>": 26233,
+        "org.apache.flink.table.codesplit.JavaParser.classBodyDeclaration": 25608,
+        "org.apache.flink.table.codesplit.JavaParser.classBody": 25575,
+        "org.apache.flink.table.codesplit.JavaParser.classDeclaration": 25551,
+        "org.apache.flink.table.codesplit.JavaParser.typeDeclaration": 25394,
+        "org.apache.flink.table.codesplit.JavaParser.compilationUnit": 25157,
+        "org.apache.flink.table.codesplit.JavaParser.memberDeclaration": 25015,
+        "org.apache.flink.table.planner.plan.nodes.exec.ExecNodeBase.translateToPlan": 23454,
+        "org.apache.flink.table.planner.codegen.agg.AggsHandlerCodeGenerator.generateAggsHandler": 23425,
+        "org.apache.flink.table.codesplit.JavaParser.block": 22528,
+        "org.apache.flink.table.runtime.generated.GeneratedAggsHandleFunction.<init>": 22426,
+        "org.apache.flink.table.codesplit.JavaParser.methodDeclaration": 22076,
+        "org.apache.flink.table.codesplit.JavaParser.blockStatement": 21990,
+        "org.apache.flink.table.planner.plan.nodes.exec.ExecEdge.translateToPlan": 21418,
+        "org.apache.flink.table.codesplit.JavaParser.methodBody": 21220,
+        "org.apache.flink.table.codesplit.JavaParser.statement": 19786,
+        "org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecGlobalGroupAggregate.translateToPlanInternal": 16521,
+        "java.util.Optional.map": 16297,
+        "org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecSink.translateToPlanInternal": 15623,
+        "scala.collection.TraversableLike.$anonfun$map$1": 13579,
+        "org.apache.flink.table.planner.delegation.StreamPlanner.$anonfun$translateToPlan$1": 13414,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.BufferedTokenStream.consume": 12957,
+        "org.apache.flink.table.codesplit.JavaParser.expression": 11944,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.BufferedTokenStream.sync": 11938,
+        "scala.collection.Iterator.foreach": 11914,
+        "org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecGlobalGroupAggregate.generateAggsHandler": 11413,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.BufferedTokenStream.fetch": 11333,
+        "scala.collection.Iterator.foreach$": 10898,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.Parser.consume": 10385,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.Lexer.nextToken": 10218,
+        "scala.collection.AbstractIterator.foreach": 9851,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.Parser.match": 9307,
+        "org.apache.flink.table.codesplit.FunctionSplitter.rewrite": 8561,
+        "org.apache.flink.table.codesplit.JavaCodeSplitter.lambda$splitImpl$1": 8380,
+        "scala.collection.IterableLike.foreach": 8217,
+        "org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecLocalGroupAggregate.translateToPlanInternal": 8104,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.atn.LexerATNSimulator.match": 8049,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.atn.ParserATNSimulator.adaptivePredict": 7617
+      },
+      "java_sampled_threads": {
+        "main": 61954,
+        "flink-operator-serialization-io-thread-1": 231,
+        "flink-operator-serialization-io-thread-4": 164,
+        "flink-operator-serialization-io-thread-3": 125,
+        "flink-pekko.actor.default-dispatcher-8": 100,
+        "jobmanager-io-thread-2": 99,
+        "flink-pekko.actor.default-dispatcher-9": 87,
+        "jobmanager-io-thread-1": 86,
+        "flink-pekko.actor.default-dispatcher-7": 83,
+        "flink-operator-serialization-io-thread-2": 80,
+        "flink-pekko.actor.default-dispatcher-5": 62,
+        "flink-pekko.actor.default-dispatcher-6": 47,
+        "flink-pekko.actor.default-dispatcher-10": 41,
+        "surefire-forkedjvm-stream-flusher": 25,
+        "jobmanager-future-thread-1": 24,
+        "flink-metrics-5": 23,
+        "flink-scheduler-1": 21,
+        "flink-metrics-scheduler-1": 20,
+        "flink-pekko.actor.default-dispatcher-4": 20,
+        "flink-pekko.actor.internal-dispatcher-2": 20,
+        "SourceCoordinator-Source: Sequence Source": 19,
+        "flink-rest-server-netty-boss-thread-1": 19,
+        "mini-cluster-io-thread-4": 19,
+        "flink-metrics-pekko.actor.internal-dispatcher-2": 18,
+        "jobmanager-future-thread-4": 18,
+        "flink-pekko.actor.internal-dispatcher-3": 17,
+        "channel-state-unspilling-thread-1": 17,
+        "jobmanager-future-thread-2": 17,
+        "mini-cluster-io-thread-1": 17,
+        "jobmanager-future-thread-3": 16,
+        "ForkJoinPool.commonPool-worker-1": 16,
+        "ForkJoinPool.commonPool-worker-2": 15,
+        "flink-pekko.actor.supervisor-dispatcher-6": 13,
+        "mini-cluster-io-thread-3": 13,
+        "ForkJoinPool.commonPool-worker-3": 13,
+        "collect-sink-operator-coordinator-executor-thread-pool-thread-1": 13,
+        "RpcService-Supervisor-Termination-Future-Executor-thread-1": 11,
+        "flink-metrics-pekko.actor.internal-dispatcher-4": 11,
+        "flink-pekko.actor.internal-dispatcher-4": 8,
+        "flink-pekko.actor.supervisor-dispatcher-7": 7
+      },
+      "native_leaf_frames": {
+        "sun.nio.ch.Net.accept": 93169,
+        "sun.nio.ch.EPoll.wait": 90635,
+        "java.io.FileInputStream.readBytes": 75745,
+        "org.rocksdb.RocksDB.open": 1043,
+        "org.rocksdb.RocksDB.createColumnFamily": 911,
+        "java.io.UnixFileSystem.getBooleanAttributes0": 854,
+        "java.util.zip.Inflater.inflateBytesBytes": 233,
+        "sun.nio.ch.SocketDispatcher.read0": 197,
+        "tech.streamfusion.Native.inferCalcOutputSchema": 159,
+        "tech.streamfusion.Native.createRocksDBGroupAggregatorWithTtlEmission": 134,
+        "java.io.FileDescriptor.close0": 118,
+        "java.io.UnixFileSystem.createDirectory": 98,
+        "sun.nio.fs.UnixNativeDispatcher.unlink0": 95,
+        "java.lang.Class.forName0": 87,
+        "sun.nio.fs.UnixNativeDispatcher.stat0": 87,
+        "java.io.FileInputStream.open0": 74,
+        "java.io.RandomAccessFile.readBytes": 71,
+        "java.io.RandomAccessFile.seek0": 66,
+        "tech.streamfusion.Native.calcExpressionWithCachedSchemasAtWatermark": 56,
+        "sun.nio.fs.UnixNativeDispatcher.rmdir0": 51,
+        "java.lang.ClassLoader.defineClass1": 50,
+        "tech.streamfusion.Native.closeRocksDBGroupAggregator": 50,
+        "java.io.UnixFileSystem.list": 48,
+        "org.rocksdb.RocksDB.closeDatabase": 45,
+        "sun.nio.fs.UnixNativeDispatcher.open0": 41,
+        "tech.streamfusion.Native.exportGroupTypedCanonical": 39,
+        "tech.streamfusion.Native.calcExpressionAtWatermark": 29,
+        "jdk.internal.misc.Unsafe.allocateInstance": 27,
+        "java.io.FileOutputStream.writeBytes": 26,
+        "sun.nio.ch.FileDispatcherImpl.write0": 22,
+        "tech.streamfusion.Native.updateRocksDBGroupAggregator": 21,
+        "java.lang.String.intern": 21,
+        "java.lang.ClassLoader.findBootstrapClass": 21,
+        "sun.nio.fs.UnixNativeDispatcher.stat1": 19,
+        "java.io.FileInputStream.available0": 19,
+        "java.io.UnixFileSystem.delete0": 19,
+        "java.util.zip.Inflater.init": 18,
+        "java.lang.Object.clone": 16,
+        "java.lang.reflect.Array.newArray": 16,
+        "tech.streamfusion.Native.flushRocksDBGroupAggregator": 15
+      },
+      "native_inclusive_frames": {
+        "java.lang.Thread.run": 166366,
+        "sun.nio.ch.NioSocketImpl.accept": 93169,
+        "sun.nio.ch.Net.accept": 93169,
+        "org.apache.flink.util.NetUtils.acceptWithoutTimeout": 93169,
+        "java.net.ServerSocket.platformImplAccept": 93169,
+        "java.net.ServerSocket.implAccept": 93169,
+        "java.net.ServerSocket.accept": 93169,
+        "org.apache.flink.runtime.blob.BlobServer.run": 92344,
+        "org.apache.flink.shaded.netty4.io.netty.util.internal.ThreadExecutorMap$2.run": 90639,
+        "org.apache.flink.shaded.netty4.io.netty.util.concurrent.SingleThreadEventExecutor$4.run": 90639,
+        "org.apache.flink.shaded.netty4.io.netty.channel.nio.NioEventLoop.run": 90636,
+        "sun.nio.ch.EPoll.wait": 90635,
+        "sun.nio.ch.EPollSelectorImpl.doSelect": 90635,
+        "sun.nio.ch.SelectorImpl.lockAndDoSelect": 90635,
+        "org.apache.flink.shaded.netty4.io.netty.channel.nio.NioEventLoop.select": 90634,
+        "org.apache.flink.shaded.netty4.io.netty.channel.nio.SelectedSelectionKeySetSelector.select": 90634,
+        "sun.nio.ch.SelectorImpl.select": 90634,
+        "java.io.FileInputStream.readBytes": 75745,
+        "java.io.FileInputStream.read": 75745,
+        "java.io.BufferedInputStream.read": 75735,
+        "java.io.BufferedInputStream.read1": 75729,
+        "java.io.BufferedInputStream.fill": 75701,
+        "org.apache.maven.surefire.api.util.internal.Channels$3.readImpl": 75684,
+        "org.apache.maven.surefire.api.util.internal.AbstractNoninterruptibleReadableChannel.read": 75684,
+        "org.apache.maven.surefire.api.stream.AbstractStreamDecoder.readMessageType": 75684,
+        "org.apache.maven.surefire.booter.spi.CommandChannelDecoder.decode": 75684,
+        "org.apache.maven.surefire.booter.stream.CommandDecoder.decode": 75684,
+        "org.apache.maven.surefire.booter.CommandReader$CommandRunnable.run": 75684,
+        "org.apache.maven.surefire.api.stream.AbstractStreamDecoder.read": 75684,
+        "jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke": 3077,
+        "java.lang.reflect.Method.invoke": 2976,
+        "org.junit.platform.commons.util.ReflectionUtils.invokeMethod": 2911,
+        "org.junit.jupiter.engine.execution.MethodInvocation.proceed": 2863,
+        "org.junit.jupiter.engine.execution.InvocationInterceptorChain$ValidatingInvocation.proceed": 2833,
+        "org.junit.jupiter.engine.extension.TimeoutExtension.intercept": 2808,
+        "org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestableMethod": 2723,
+        "org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestTemplateMethod": 2455,
+        "org.apache.flink.streaming.util.AbstractStreamOperatorTestHarness.initializeState": 1948,
+        "org.apache.flink.streaming.api.operators.AbstractStreamOperator.initializeState": 1948,
+        "org.apache.flink.streaming.api.operators.StreamTaskStateInitializerImpl.lambda$keyedStatedBackend$3": 1798
+      },
+      "native_sampled_threads": {
+        "flink-rest-server-netty-boss-thread-1": 90635,
+        "surefire-forkedjvm-command-thread": 75684,
+        "BLOB Server listener at 33737": 21409,
+        "BLOB Server listener at 34367": 18133,
+        "BLOB Server listener at 36053": 15450,
+        "BLOB Server listener at 40363": 10890,
+        "BLOB Server listener at 34099": 8680,
+        "main": 4849,
+        "BLOB Server listener at 36015": 107,
+        "BLOB Server listener at 42815": 87,
+        "BLOB Server listener at 43763": 33,
+        "BLOB Server listener at 40907": 30,
+        "BLOB Server listener at 45525": 28,
+        "BLOB Server listener at 39955": 28,
+        "BLOB Server listener at 38867": 27,
+        "BLOB Server listener at 43551": 27,
+        "BLOB Server listener at 46533": 27,
+        "BLOB Server listener at 41679": 26,
+        "BLOB Server listener at 39809": 26,
+        "BLOB Server listener at 34705": 26,
+        "BLOB Server listener at 37911": 25,
+        "BLOB Server listener at 39639": 25,
+        "BLOB Server listener at 45385": 24,
+        "BLOB Server listener at 34433": 24,
+        "BLOB Server listener at 41023": 24,
+        "BLOB Server listener at 42949": 24,
+        "BLOB Server listener at 43869": 23,
+        "BLOB Server listener at 37705": 23,
+        "BLOB Server listener at 32935": 23,
+        "BLOB Server listener at 45589": 23,
+        "BLOB Server listener at 42641": 23,
+        "BLOB Server listener at 37227": 23,
+        "BLOB Server listener at 38967": 23,
+        "BLOB Server listener at 33581": 23,
+        "BLOB Server listener at 46813": 23,
+        "BLOB Server listener at 38591": 22,
+        "BLOB Server listener at 38643": 22,
+        "BLOB Server listener at 44645": 22,
+        "BLOB Server listener at 37649": 22,
+        "BLOB Server listener at 34047": 22
+      },
+      "compilation_events": {
+        "c1": 267615
+      },
+      "compilation_activity_seconds": {
+        "c1": 119.13257439800081
+      },
+      "allocation_sample_weight_bytes": {
+        "[B": 145323787496,
+        "[Ljava.lang.Object;": 57880792128,
+        "java.lang.String": 49472686248,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.CommonToken": 31790167160,
+        "java.util.ArrayList": 25042693240,
+        "[C": 17131636416,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.tree.TerminalNodeImpl": 14895751056,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.misc.Interval": 12947756640,
+        "java.lang.reflect.Method": 12248940328,
+        "java.lang.Integer": 12121077088,
+        "java.lang.StringBuilder": 10568022344,
+        "[Ljava.lang.String;": 10516928376,
+        "java.util.HashMap$Node": 10000743864,
+        "[I": 9227515080,
+        "java.util.ArrayList$Itr": 8699229072,
+        "[Lorg.codehaus.janino.util.ClassFile$StackMapTableAttribute$VerificationTypeInfo;": 7842506808,
+        "[J": 6556650136,
+        "org.codehaus.janino.Token": 5598069128,
+        "org.codehaus.janino.ReflectionIClass$ReflectionIMethod": 5487647144,
+        "org.apache.flink.table.codesplit.JavaParser$ExpressionContext": 5437456512,
+        "[Ljava.util.HashMap$Node;": 5361802552,
+        "java.util.stream.ReferencePipeline$Head": 4334780072,
+        "java.util.HashMap": 4150382152,
+        "[Lorg.codehaus.janino.IClass$IMethod;": 2881532992,
+        "org.apache.flink.table.codesplit.JavaParser$PrimaryContext": 2785561464,
+        "java.util.stream.ReferencePipeline$3": 2610358432,
+        "org.apache.flink.table.codesplit.JavaParser$StatementContext": 2307037448,
+        "java.nio.HeapCharBuffer": 2260733168,
+        "org.apache.flink.table.codesplit.JavaParser$BlockStatementContext": 2253169184,
+        "org.apache.flink.calcite.shaded.com.google.common.collect.Iterators$SingletonIterator": 1754342528,
+        "java.util.stream.Collectors$CollectorImpl": 1689079568,
+        "[S": 1543797800,
+        "org.codehaus.janino.StackMap": 1493738432,
+        "org.snakeyaml.engine.v2.resolver.ResolverTuple": 1490764576,
+        "[Lorg.apache.flink.runtime.state.heap.CopyOnWriteStateMap$StateMapEntry;": 1471403864,
+        "java.util.BitSet": 1467370928,
+        "org.apache.flink.calcite.shaded.com.google.common.collect.Iterators$ArrayItr": 1463958816,
+        "java.util.stream.ReduceOps$3ReducingSink": 1200983720,
+        "java.util.ArrayList$ArrayListSpliterator": 1176528376,
+        "org.codehaus.janino.util.ClassFile$ConstantUtf8Info": 1133353536
+      },
+      "recordings": 5,
+      "limits": "Java execution samples and native-method stack samples are separate. Native samples include blocking I/O and are not CPU attribution. Inclusive counts overlap. Neither sample count is exact CPU time. Native samples do not resolve Rust internals. Compilation durations are activity intervals, not compiler CPU seconds. Allocation weights are sampled estimates. Instrumented elapsed times are not speedup evidence."
+    },
+    "fixture_timings": [
+      {
+        "name": "minibatch.native-plan",
+        "calls": 2634,
+        "seconds": 271.389773567
+      },
+      {
+        "name": "minibatch.stock-plan",
+        "calls": 2634,
+        "seconds": 224.269902968
+      },
+      {
+        "name": "recovery-metrics.cluster-close",
+        "calls": 1366,
+        "seconds": 25.72249899
+      },
+      {
+        "name": "recovery-metrics.cluster-start",
+        "calls": 1366,
+        "seconds": 31.463317756
+      },
+      {
+        "name": "recovery-metrics.cluster-close",
+        "calls": 1134,
+        "seconds": 37.44911547
+      },
+      {
+        "name": "recovery-metrics.cluster-start",
+        "calls": 1134,
+        "seconds": 54.069640825
+      },
+      {
+        "name": "managed-udf.plan",
+        "calls": 2688,
+        "seconds": 147.050050088
+      },
+      {
+        "name": "minibatch.native-plan",
+        "calls": 1200,
+        "seconds": 339.7907771
+      },
+      {
+        "name": "minibatch.stock-plan",
+        "calls": 1200,
+        "seconds": 262.603183198
+      }
+    ]
+  },
+  "jdk11": {
+    "classes": {
+      "tech.streamfusion.planner.CanonicalGroupDistinctMergeTest": {
+        "tests": 120,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "time": 677.331
+      },
+      "tech.streamfusion.planner.CanonicalManagedUdfKeyPrecisionTest": {
+        "tests": 532,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "time": 498.584
+      },
+      "tech.streamfusion.FlinkRecursiveScalarSqlHarnessTest": {
+        "tests": 1134,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "time": 400.568
+      },
+      "tech.streamfusion.planner.CanonicalMiniBatchGroupStateTest": {
+        "tests": 290,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "time": 517.597
+      },
+      "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest": {
+        "tests": 683,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "time": 433.202
+      }
+    },
+    "jfr": {
+      "events": {
+        "jdk.NativeMethodSample": 246663,
+        "jdk.Compilation": 136183,
+        "jdk.ExecutionSample": 55320
+      },
+      "java_leaf_frames": {
+        "java.util.zip.ZipFile$Source.getEntryPos": 4651,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.atn.LexerATNSimulator.execATN": 1984,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.misc.IntervalSet.contains": 1588,
+        "java.lang.StringUTF16.checkIndex": 1210,
+        "jdk.internal.util.Preconditions.outOfBoundsCheckIndex": 1203,
+        "java.lang.StringLatin1.newString": 1056,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.DefaultErrorStrategy.sync": 1007,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.CodePointCharStream$CodePoint8BitCharStream.LA": 914,
+        "java.util.zip.ZipFile$Source.hashN": 896,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.BufferedTokenStream.nextTokenOnChannel": 744,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.atn.ParserATNSimulator.execATN": 733,
+        "java.util.ArrayList.add": 718,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.atn.ParserATNSimulator.adaptivePredict": 706,
+        "java.lang.StringCoding.encodeUTF8": 705,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.Lexer.nextToken": 656,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.CommonTokenStream.LT": 643,
+        "java.util.Arrays.copyOf": 635,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.atn.LexerATNSimulator.captureSimState": 623,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.CommonTokenFactory.create": 606,
+        "java.lang.AbstractStringBuilder.ensureCapacityInternal": 573,
+        "java.lang.AbstractStringBuilder.append": 559,
+        "java.lang.StringCoding.hasNegatives": 555,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.atn.LexerATNSimulator.match": 526,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.BufferedTokenStream.sync": 500,
+        "org.apache.calcite.tools.RelBuilder.peek": 484,
+        "java.util.zip.ZipFile.getEntry": 479,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.BufferedTokenStream.fetch": 479,
+        "jdk.internal.util.Preconditions.checkIndex": 478,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.ParserRuleContext.addAnyChild": 464,
+        "java.util.ArrayList.grow": 461,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.CommonToken.<init>": 451,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.CodePointBuffer$Builder.appendArrayByte": 436,
+        "java.nio.Buffer.nextPutIndex": 432,
+        "java.lang.StringLatin1.inflate": 429,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.atn.ParserATNSimulator.getExistingTargetState": 417,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.BufferedTokenStream.previousTokenOnChannel": 392,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.atn.LexerATNSimulator.consume": 388,
+        "org.apache.flink.table.codesplit.JavaParser.expression": 377,
+        "scala.collection.immutable.StringLike$$anon$1.next": 372,
+        "java.util.HashMap.getNode": 363
+      },
+      "java_inclusive_frames": {
+        "org.apache.flink.table.codesplit.JavaCodeSplitter.splitImpl": 22485,
+        "org.apache.flink.table.codesplit.JavaCodeSplitter.split": 21968,
+        "org.apache.flink.table.runtime.generated.GeneratedClass.<init>": 21368,
+        "org.apache.flink.table.planner.plan.nodes.exec.ExecNodeBase.translateToPlan": 19923,
+        "org.apache.flink.table.codesplit.JavaParser.classBodyDeclaration": 19490,
+        "org.apache.flink.table.codesplit.JavaParser.classBody": 19468,
+        "org.apache.flink.table.codesplit.JavaParser.classDeclaration": 19455,
+        "org.apache.flink.table.codesplit.JavaParser.typeDeclaration": 19324,
+        "org.apache.flink.table.codesplit.JavaParser.compilationUnit": 19128,
+        "org.apache.flink.table.planner.codegen.agg.AggsHandlerCodeGenerator.generateAggsHandler": 19104,
+        "org.apache.flink.table.codesplit.JavaParser.memberDeclaration": 19003,
+        "org.apache.flink.table.planner.plan.nodes.exec.ExecEdge.translateToPlan": 18194,
+        "org.apache.flink.table.runtime.generated.GeneratedAggsHandleFunction.<init>": 18138,
+        "org.apache.flink.table.codesplit.JavaParser.block": 17081,
+        "org.apache.flink.table.codesplit.JavaParser.methodDeclaration": 16746,
+        "org.apache.flink.table.codesplit.JavaParser.blockStatement": 16676,
+        "org.apache.flink.table.codesplit.JavaParser.methodBody": 16061,
+        "org.apache.flink.table.codesplit.JavaParser.statement": 14892,
+        "org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecGlobalGroupAggregate.translateToPlanInternal": 14144,
+        "org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecSink.translateToPlanInternal": 13688,
+        "java.util.Optional.map": 13222,
+        "scala.collection.TraversableLike.$anonfun$map$1": 12753,
+        "org.apache.flink.table.planner.delegation.StreamPlanner.$anonfun$translateToPlan$1": 12057,
+        "scala.collection.Iterator.foreach": 11486,
+        "scala.collection.Iterator.foreach$": 10567,
+        "scala.collection.AbstractIterator.foreach": 9697,
+        "org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecGlobalGroupAggregate.generateAggsHandler": 9469,
+        "org.apache.flink.table.codesplit.JavaParser.expression": 9424,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.BufferedTokenStream.consume": 9137,
+        "jdk.internal.loader.URLClassPath$JarLoader.getResource": 8519,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.BufferedTokenStream.sync": 8378,
+        "java.util.jar.JarFile.getJarEntry": 8292,
+        "java.util.jar.JarFile.getEntry": 8152,
+        "scala.collection.IterableLike.foreach": 7945,
+        "org.apache.flink.table.shaded.org.antlr.v4.runtime.BufferedTokenStream.fetch": 7846,
+        "java.util.jar.JarFile.getEntry0": 7757,
+        "java.util.zip.ZipFile$1.getEntry": 7755,
+        "java.util.zip.ZipFile.getEntry": 7686,
+        "java.lang.ClassLoader.loadClass": 7674,
+        "jdk.internal.loader.BuiltinClassLoader.loadClass": 7654
+      },
+      "java_sampled_threads": {
+        "main": 52184,
+        "flink-operator-serialization-io-thread-1": 205,
+        "flink-operator-serialization-io-thread-2": 199,
+        "flink-pekko.actor.default-dispatcher-8": 178,
+        "flink-pekko.actor.default-dispatcher-6": 165,
+        "flink-pekko.actor.default-dispatcher-9": 164,
+        "flink-pekko.actor.default-dispatcher-10": 149,
+        "jobmanager-io-thread-1": 122,
+        "jobmanager-io-thread-2": 114,
+        "flink-operator-serialization-io-thread-4": 107,
+        "flink-operator-serialization-io-thread-3": 98,
+        "ForkJoinPool.commonPool-worker-3": 39,
+        "mini-cluster-io-thread-4": 37,
+        "flink-metrics-6": 30,
+        "flink-rest-server-netty-boss-thread-1": 30,
+        "ForkJoinPool.commonPool-worker-7": 25,
+        "SourceCoordinator-Source: Sequence Source": 24,
+        "RpcService-Supervisor-Termination-Future-Executor-thread-1": 23,
+        "ForkJoinPool.commonPool-worker-5": 22,
+        "flink-pekko.actor.supervisor-dispatcher-7": 22,
+        "mini-cluster-io-thread-2": 21,
+        "mini-cluster-io-thread-1": 18,
+        "jobmanager-future-thread-1": 17,
+        "flink-scheduler-1": 16,
+        "jobmanager-future-thread-3": 15,
+        "jobmanager-future-thread-4": 13,
+        "flink-metrics-pekko.actor.internal-dispatcher-5": 13,
+        "mini-cluster-io-thread-3": 13,
+        "flink-pekko.actor.internal-dispatcher-5": 12,
+        "flink-metrics-pekko.actor.supervisor-dispatcher-7": 12,
+        "CloseableReaperThread": 12,
+        "jobmanager-future-thread-2": 11,
+        "channel-state-unspilling-thread-1": 11,
+        "flink-pekko.actor.internal-dispatcher-4": 11,
+        "flink-metrics-scheduler-1": 9,
+        "flink-metrics-pekko.actor.internal-dispatcher-2": 9,
+        "flink-taskexecutor-io-thread-2": 9,
+        "IOManager reader thread #1": 8,
+        "flink-metrics-pekko.actor.internal-dispatcher-3": 8,
+        "flink-taskexecutor-io-thread-1": 8
+      },
+      "native_leaf_frames": {
+        "java.net.PlainSocketImpl.socketAccept": 86997,
+        "sun.nio.ch.EPoll.wait": 84809,
+        "java.io.FileInputStream.readBytes": 71454,
+        "org.rocksdb.RocksDB.createColumnFamily": 786,
+        "org.rocksdb.RocksDB.open": 646,
+        "java.io.UnixFileSystem.getBooleanAttributes0": 310,
+        "java.util.zip.Inflater.inflateBytesBytes": 270,
+        "tech.streamfusion.Native.inferCalcOutputSchema": 114,
+        "tech.streamfusion.Native.createRocksDBGroupAggregatorWithTtlEmission": 97,
+        "java.io.FileInputStream.open0": 63,
+        "java.lang.Class.forName0": 61,
+        "sun.nio.fs.UnixNativeDispatcher.unlink0": 58,
+        "java.io.RandomAccessFile.readBytes": 50,
+        "sun.nio.fs.UnixNativeDispatcher.rmdir0": 45,
+        "java.net.SocketInputStream.socketRead0": 44,
+        "java.io.UnixFileSystem.createDirectory": 43,
+        "tech.streamfusion.Native.calcExpressionWithCachedSchemasAtWatermark": 40,
+        "java.lang.ClassLoader.defineClass1": 38,
+        "java.io.UnixFileSystem.list": 37,
+        "org.rocksdb.RocksDB.closeDatabase": 32,
+        "tech.streamfusion.Native.exportGroupTypedCanonical": 31,
+        "tech.streamfusion.Native.closeRocksDBGroupAggregator": 27,
+        "java.io.RandomAccessFile.seek0": 27,
+        "tech.streamfusion.Native.calcExpressionAtWatermark": 24,
+        "tech.streamfusion.Native.updateRocksDBGroupAggregator": 22,
+        "sun.nio.fs.UnixNativeDispatcher.open0": 21,
+        "java.lang.reflect.Array.newArray": 20,
+        "java.lang.Throwable.fillInStackTrace": 20,
+        "sun.nio.fs.UnixNativeDispatcher.stat0": 20,
+        "java.lang.ClassLoader.findBootstrapClass": 19,
+        "java.io.FileDescriptor.close0": 19,
+        "tech.streamfusion.Native.flushRocksDBGroupAggregator": 18,
+        "java.lang.Class.isAssignableFrom": 16,
+        "java.io.FileInputStream.available0": 15,
+        "tech.streamfusion.Native.updateLocalGroupAggregator": 14,
+        "tech.streamfusion.Native.flushLocalGroupAggregator": 14,
+        "java.util.zip.Inflater.init": 14,
+        "sun.nio.fs.UnixNativeDispatcher.lstat0": 14,
+        "tech.streamfusion.Native.transferGroupTypedCanonical": 13,
+        "sun.nio.ch.FileDispatcherImpl.write0": 12
+      },
+      "native_inclusive_frames": {
+        "java.lang.Thread.run": 156293,
+        "java.net.AbstractPlainSocketImpl.accept": 86997,
+        "java.net.ServerSocket.accept": 86997,
+        "java.net.ServerSocket.implAccept": 86997,
+        "org.apache.flink.util.NetUtils.acceptWithoutTimeout": 86997,
+        "java.net.PlainSocketImpl.socketAccept": 86997,
+        "org.apache.flink.runtime.blob.BlobServer.run": 86124,
+        "org.apache.flink.shaded.netty4.io.netty.util.internal.ThreadExecutorMap$2.run": 84824,
+        "org.apache.flink.shaded.netty4.io.netty.util.concurrent.SingleThreadEventExecutor$4.run": 84824,
+        "org.apache.flink.shaded.netty4.io.netty.channel.nio.NioEventLoop.run": 84815,
+        "sun.nio.ch.SelectorImpl.lockAndDoSelect": 84815,
+        "sun.nio.ch.EPollSelectorImpl.doSelect": 84815,
+        "sun.nio.ch.EPoll.wait": 84809,
+        "org.apache.flink.shaded.netty4.io.netty.channel.nio.SelectedSelectionKeySetSelector.select": 84807,
+        "sun.nio.ch.SelectorImpl.select": 84807,
+        "org.apache.flink.shaded.netty4.io.netty.channel.nio.NioEventLoop.select": 84807,
+        "java.io.BufferedInputStream.read": 71455,
+        "java.io.FileInputStream.readBytes": 71454,
+        "java.io.FileInputStream.read": 71454,
+        "java.io.BufferedInputStream.read1": 71451,
+        "java.io.BufferedInputStream.fill": 71445,
+        "org.apache.maven.surefire.booter.spi.CommandChannelDecoder.decode": 71440,
+        "org.apache.maven.surefire.booter.CommandReader$CommandRunnable.run": 71440,
+        "org.apache.maven.surefire.api.stream.AbstractStreamDecoder.read": 71439,
+        "org.apache.maven.surefire.api.stream.AbstractStreamDecoder.readMessageType": 71439,
+        "org.apache.maven.surefire.api.util.internal.Channels$3.readImpl": 71439,
+        "org.apache.maven.surefire.booter.stream.CommandDecoder.decode": 71439,
+        "org.apache.maven.surefire.api.util.internal.AbstractNoninterruptibleReadableChannel.read": 71439,
+        "jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke": 2231,
+        "java.lang.reflect.Method.invoke": 2162,
+        "org.junit.platform.commons.util.ReflectionUtils.invokeMethod": 2124,
+        "org.junit.jupiter.engine.execution.MethodInvocation.proceed": 2101,
+        "org.junit.jupiter.engine.execution.InvocationInterceptorChain$ValidatingInvocation.proceed": 2087,
+        "org.junit.jupiter.engine.extension.TimeoutExtension.intercept": 2071,
+        "org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestableMethod": 2012,
+        "org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestTemplateMethod": 1755,
+        "org.apache.flink.streaming.util.AbstractStreamOperatorTestHarness.initializeState": 1418,
+        "org.apache.flink.streaming.api.operators.AbstractStreamOperator.initializeState": 1418,
+        "org.apache.flink.streaming.api.operators.BackendRestorerProcedure.attemptCreateAndRestore": 1304,
+        "org.apache.flink.streaming.api.operators.StreamTaskStateInitializerImpl.lambda$keyedStatedBackend$3": 1304
+      },
+      "native_sampled_threads": {
+        "flink-rest-server-netty-boss-thread-1": 84806,
+        "surefire-forkedjvm-command-thread": 71440,
+        "BLOB Server listener at 39777": 21607,
+        "BLOB Server listener at 37431": 16527,
+        "BLOB Server listener at 41615": 15608,
+        "BLOB Server listener at 35675": 8712,
+        "BLOB Server listener at 37831": 8055,
+        "main": 3150,
+        "BLOB Server listener at 37445": 90,
+        "BLOB Server listener at 34553": 89,
+        "BLOB Server listener at 43251": 29,
+        "BLOB Server listener at 36787": 27,
+        "ForkJoinPool.commonPool-worker-3": 25,
+        "BLOB Server listener at 44843": 24,
+        "BLOB Server listener at 45745": 23,
+        "BLOB Server listener at 44241": 23,
+        "BLOB Server listener at 35091": 22,
+        "BLOB Server listener at 41731": 21,
+        "BLOB Server listener at 42331": 21,
+        "BLOB Server listener at 34747": 21,
+        "BLOB Server listener at 43685": 21,
+        "BLOB Server listener at 46873": 20,
+        "BLOB Server listener at 46287": 20,
+        "BLOB Server listener at 33215": 20,
+        "BLOB Server listener at 36801": 20,
+        "BLOB Server listener at 35647": 20,
+        "BLOB Server listener at 36861": 20,
+        "BLOB Server listener at 38129": 20,
+        "BLOB Server listener at 42415": 20,
+        "BLOB Server listener at 38119": 20,
+        "BLOB Server listener at 41255": 19,
+        "BLOB Server listener at 37311": 19,
+        "BLOB Server listener at 38107": 19,
+        "BLOB Server listener at 34547": 19,
+        "BLOB Server listener at 41941": 18,
+        "BLOB Server listener at 40147": 18,
+        "BLOB Server listener at 43229": 18,
+        "BLOB Server listener at 38919": 18,
+        "BLOB Server listener at 40133": 18,
+        "BLOB Server listener at 40471": 18
+      },
+      "compilation_events": {
+        "c1": 136183
+      },
+      "compilation_activity_seconds": {
+        "c1": 44.04953731400011
+      },
+      "allocation_sample_weight_bytes": {},
+      "recordings": 5,
+      "limits": "Java execution samples and native-method stack samples are separate. Native samples include blocking I/O and are not CPU attribution. Inclusive counts overlap. Neither sample count is exact CPU time. Native samples do not resolve Rust internals. Compilation durations are activity intervals, not compiler CPU seconds. Allocation weights are sampled estimates. Instrumented elapsed times are not speedup evidence."
+    },
+    "limits": "All 2759 invocations passed without skips. Hosted postprocessing failed on the Java 11 compilation event schema; recordings were reprocessed locally with the corrected reader and 2 GiB reader heap. No test rerun. Fixture/elapsed/CPU summary was not retained before that exporter failure, so those values are not claimed."
+  },
+  "protobuf_recompilation": {
+    "scope": "Actual Maven/protobuf/compiler fixture, Java11, protobuf plugin0.6.1, compiler3.13.0, protoc/protobuf4.32.1; behavior/invalidation check, not a hosted CI timing claim.",
+    "passes": [
+      {
+        "pass": "restore-normal",
+        "staleness_check": false,
+        "proto_changed": false,
+        "generated_source_rewritten": true,
+        "dependent_class_recompiled": true,
+        "javac_source_counts": [
+          2
+        ]
+      },
+      {
+        "pass": "unchanged-default",
+        "staleness_check": false,
+        "proto_changed": false,
+        "generated_source_rewritten": true,
+        "dependent_class_recompiled": true,
+        "javac_source_counts": [
+          2
+        ]
+      },
+      {
+        "pass": "unchanged-staleness",
+        "staleness_check": true,
+        "proto_changed": false,
+        "generated_source_rewritten": false,
+        "dependent_class_recompiled": false,
+        "javac_source_counts": []
+      },
+      {
+        "pass": "changed-proto-normal",
+        "staleness_check": false,
+        "proto_changed": true,
+        "generated_source_rewritten": true,
+        "dependent_class_recompiled": true,
+        "javac_source_counts": [
+          2
+        ]
+      }
+    ],
+    "rejected": "protoc.skip=true drops the generated test-source root and caused a real dependent-source compilation failure; it is not used.",
+    "limits": "The staleness flag is enabled only after a full compile in the same immutable CI checkout/job. Normal initial compilation remains responsible for proto and generator-version changes."
+  },
+  "runtime_slow_mix_workers": {
+    "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42513596995",
+    "sha": "d595281d79335801f4c3ea132d6250ab10ddc863",
+    "conclusion": "success",
+    "config": "Two alternating pairs, first-tier compiler fixed, two fresh 4 GiB vs four fresh 2 GiB forks. No JFR, fixture timers or fixture-plan caching. Same four-CPU runner and total 8 GiB Java heap budget.",
+    "summary": {
+      "startup": {
+        "elapsed_seconds": {
+          "median": 1396.321914227,
+          "min": 1394.2829773199999,
+          "max": 1398.3608511339999
+        },
+        "cpu_seconds": {
+          "median": 2210.2546220000004,
+          "min": 2207.568837,
+          "max": 2212.9404070000005
+        }
+      },
+      "parallel": {
+        "elapsed_seconds": {
+          "median": 1070.2023683135003,
+          "min": 1068.3330763660001,
+          "max": 1072.0716602610003
+        },
+        "cpu_seconds": {
+          "median": 2920.2271850000006,
+          "min": 2907.5823130000003,
+          "max": 2932.8720570000005
+        }
+      }
+    },
+    "elapsed_reduction_percent": 23.35561324295613,
+    "cpu_increase_percent": 32.12175447720884,
+    "trials": [
+      {
+        "mode": "startup",
+        "pair": 1,
+        "line": "2.2",
+        "forks": 2,
+        "heap": "4g",
+        "instrumented": false,
+        "elapsed_seconds": 1394.2829773199999,
+        "cpu_seconds": 2207.568837,
+        "outcomes": {
+          "tests": 2759,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.FlinkRecursiveScalarSqlHarnessTest": {
+            "tests": 1134,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 385.871
+          },
+          "tech.streamfusion.planner.CanonicalGroupDistinctMergeTest": {
+            "tests": 120,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 654.895
+          },
+          "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest": {
+            "tests": 683,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 427.357
+          },
+          "tech.streamfusion.planner.CanonicalManagedUdfKeyPrecisionTest": {
+            "tests": 532,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 473.424
+          },
+          "tech.streamfusion.planner.CanonicalMiniBatchGroupStateTest": {
+            "tests": 290,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 485.452
+          }
+        }
+      },
+      {
+        "mode": "parallel",
+        "pair": 1,
+        "line": "2.2",
+        "forks": 4,
+        "heap": "2g",
+        "instrumented": false,
+        "elapsed_seconds": 1072.0716602610003,
+        "cpu_seconds": 2932.8720570000005,
+        "outcomes": {
+          "tests": 2759,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.planner.CanonicalGroupDistinctMergeTest": {
+            "tests": 120,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 902.805
+          },
+          "tech.streamfusion.planner.CanonicalManagedUdfKeyPrecisionTest": {
+            "tests": 532,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 694.648
+          },
+          "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest": {
+            "tests": 683,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 489.382
+          },
+          "tech.streamfusion.planner.CanonicalMiniBatchGroupStateTest": {
+            "tests": 290,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 759.449
+          },
+          "tech.streamfusion.FlinkRecursiveScalarSqlHarnessTest": {
+            "tests": 1134,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 574.551
+          }
+        }
+      },
+      {
+        "mode": "parallel",
+        "pair": 2,
+        "line": "2.2",
+        "forks": 4,
+        "heap": "2g",
+        "instrumented": false,
+        "elapsed_seconds": 1068.3330763660001,
+        "cpu_seconds": 2907.5823130000003,
+        "outcomes": {
+          "tests": 2759,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.planner.CanonicalMiniBatchGroupStateTest": {
+            "tests": 290,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 751.677
+          },
+          "tech.streamfusion.planner.CanonicalManagedUdfKeyPrecisionTest": {
+            "tests": 532,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 682.649
+          },
+          "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest": {
+            "tests": 683,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 488.456
+          },
+          "tech.streamfusion.planner.CanonicalGroupDistinctMergeTest": {
+            "tests": 120,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 898.563
+          },
+          "tech.streamfusion.FlinkRecursiveScalarSqlHarnessTest": {
+            "tests": 1134,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 571.648
+          }
+        }
+      },
+      {
+        "mode": "startup",
+        "pair": 2,
+        "line": "2.2",
+        "forks": 2,
+        "heap": "4g",
+        "instrumented": false,
+        "elapsed_seconds": 1398.3608511339999,
+        "cpu_seconds": 2212.9404070000005,
+        "outcomes": {
+          "tests": 2759,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classes": {
+          "tech.streamfusion.FlinkRecursiveScalarSqlHarnessTest": {
+            "tests": 1134,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 389.962
+          },
+          "tech.streamfusion.planner.CanonicalMiniBatchGroupStateTest": {
+            "tests": 290,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 493.526
+          },
+          "tech.streamfusion.planner.CanonicalManagedUdfKeyPrecisionTest": {
+            "tests": 532,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 471.951
+          },
+          "tech.streamfusion.planner.CanonicalGroupDistinctMergeTest": {
+            "tests": 120,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 652.523
+          },
+          "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest": {
+            "tests": 683,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "seconds": 424.931
+          }
+        }
+      }
+    ],
+    "limits": "Every individual class slowed under four forks, while additional overlap shortened aggregate completion. Earlier four-class probe was dominated by string-collection time and did not measure this broader worker throughput. Full required matrix must qualify the chosen setting; gains are not multiplied with separate cache probes."
+  },
+  "canonical_workers": {
+    "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42518477689",
+    "config": "Eight complete canonical classes, 64 cases per phase, one separate metadata preparation followed by two alternating two/four-fork pairs. First-tier compilation and existing 1 GiB child engine workers retained; parents use two 2 GiB or four 1 GiB forks; no added required runner jobs.",
+    "combinations": {
+      "jdk17": {
+        "conclusion": "success",
+        "summary": {
+          "cds-two": {
+            "elapsed_seconds": {
+              "median": 563.8095792699999,
+              "min": 560.6142951530001,
+              "max": 567.0048633869997
+            },
+            "cpu_seconds": {
+              "median": 1257.7470924999998,
+              "min": 1248.069683,
+              "max": 1267.4245019999998
+            }
+          },
+          "cds-four": {
+            "elapsed_seconds": {
+              "median": 414.05580511999983,
+              "min": 412.07428248299993,
+              "max": 416.03732775699973
+            },
+            "cpu_seconds": {
+              "median": 1427.045797,
+              "min": 1422.3750369999998,
+              "max": 1431.7165570000002
+            }
+          }
+        },
+        "elapsed_reduction_percent": 26.561055302376335,
+        "cpu_increase_percent": 13.460472738083485,
+        "vmstat": {
+          "samples": 171,
+          "maximum_swap_used_kib": 0,
+          "minimum_free_plus_buffers_cache_kib": 12591184
+        },
+        "trials": [
+          {
+            "mode": "cds-two",
+            "pair": 0,
+            "phase": "preparation",
+            "forks": 2,
+            "heap": "2g",
+            "elapsed_seconds": 601.761134977,
+            "cpu_seconds": 1298.337241,
+            "outcomes": {
+              "tests": 64,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": 180.101,
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": 139.572,
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": 176.49,
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": 137.05,
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": 138.79,
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": 135.077,
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": 139.012,
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": 139.821
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 272994304,
+            "classpath_bytes": 616543936
+          },
+          {
+            "mode": "cds-two",
+            "pair": 1,
+            "phase": "measurement",
+            "forks": 2,
+            "heap": "2g",
+            "elapsed_seconds": 560.6142951530001,
+            "cpu_seconds": 1248.069683,
+            "outcomes": {
+              "tests": 64,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": 136.854,
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": 137.238,
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": 133.868,
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": 139.998,
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": 136.981,
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": 141.75,
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": 135.089,
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": 137.309
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 272994304,
+            "classpath_bytes": 616543936
+          },
+          {
+            "mode": "cds-four",
+            "pair": 1,
+            "phase": "measurement",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 412.07428248299993,
+            "cpu_seconds": 1422.3750369999998,
+            "outcomes": {
+              "tests": 64,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": 191.908,
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": 194.416,
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": 207.778,
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": 189.416,
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": 214.369,
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": 200.333,
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": 191.523,
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": 194.795
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 272994304,
+            "classpath_bytes": 616543936
+          },
+          {
+            "mode": "cds-four",
+            "pair": 2,
+            "phase": "measurement",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 416.03732775699973,
+            "cpu_seconds": 1431.7165570000002,
+            "outcomes": {
+              "tests": 64,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": 200.003,
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": 194.431,
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": 203.352,
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": 197.63,
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": 199.353,
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": 194.838,
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": 215.604,
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": 199.476
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 272994304,
+            "classpath_bytes": 616543936
+          },
+          {
+            "mode": "cds-two",
+            "pair": 2,
+            "phase": "measurement",
+            "forks": 2,
+            "heap": "2g",
+            "elapsed_seconds": 567.0048633869997,
+            "cpu_seconds": 1267.4245019999998,
+            "outcomes": {
+              "tests": 64,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": 140.134,
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": 141.276,
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": 138.29,
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": 137.08,
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": 144.034,
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": 137.587,
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": 138.693,
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": 138.127
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 272994304,
+            "classpath_bytes": 616543936
+          }
+        ]
+      },
+      "jdk11": {
+        "conclusion": "success",
+        "summary": {
+          "cds-two": {
+            "elapsed_seconds": {
+              "median": 665.6887523945,
+              "min": 664.0776844879999,
+              "max": 667.2998203010002
+            },
+            "cpu_seconds": {
+              "median": 1639.1745665000003,
+              "min": 1639.087966,
+              "max": 1639.2611670000006
+            }
+          },
+          "cds-four": {
+            "elapsed_seconds": {
+              "median": 540.4832705485001,
+              "min": 539.5995113240001,
+              "max": 541.367029773
+            },
+            "cpu_seconds": {
+              "median": 1960.3121140000003,
+              "min": 1957.0703070000006,
+              "max": 1963.5539209999997
+            }
+          }
+        },
+        "elapsed_reduction_percent": 18.80841179840167,
+        "cpu_increase_percent": 19.591418392105698,
+        "vmstat": {
+          "samples": 211,
+          "maximum_swap_used_kib": 0,
+          "minimum_free_plus_buffers_cache_kib": 12203408
+        },
+        "trials": [
+          {
+            "mode": "cds-two",
+            "pair": 0,
+            "phase": "preparation",
+            "forks": 2,
+            "heap": "2g",
+            "elapsed_seconds": 739.416401076,
+            "cpu_seconds": 1715.58499,
+            "outcomes": {
+              "tests": 64,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": 240.45,
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": 164.449,
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": 238.921,
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": 163.532,
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": 164.337,
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": 160.16,
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": 162.668,
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": 165.08
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 260157440,
+            "classpath_bytes": 616542090
+          },
+          {
+            "mode": "cds-two",
+            "pair": 1,
+            "phase": "measurement",
+            "forks": 2,
+            "heap": "2g",
+            "elapsed_seconds": 664.0776844879999,
+            "cpu_seconds": 1639.087966,
+            "outcomes": {
+              "tests": 64,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": 161.573,
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": 163.173,
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": 163.862,
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": 170.246,
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": 168.206,
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": 163.073,
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": 161.073,
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": 160.765
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 260157440,
+            "classpath_bytes": 616542090
+          },
+          {
+            "mode": "cds-four",
+            "pair": 1,
+            "phase": "measurement",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 539.5995113240001,
+            "cpu_seconds": 1957.0703070000006,
+            "outcomes": {
+              "tests": 64,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": 261.674,
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": 264.944,
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": 270.765,
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": 271.605,
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": 257.55,
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": 251.479,
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": 258.122,
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": 262.365
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 260157440,
+            "classpath_bytes": 616542090
+          },
+          {
+            "mode": "cds-four",
+            "pair": 2,
+            "phase": "measurement",
+            "forks": 4,
+            "heap": "1g",
+            "elapsed_seconds": 541.367029773,
+            "cpu_seconds": 1963.5539209999997,
+            "outcomes": {
+              "tests": 64,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": 262.017,
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": 246.771,
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": 263.874,
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": 263.732,
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": 260.406,
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": 258.969,
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": 258.347,
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": 276.33
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 260157440,
+            "classpath_bytes": 616542090
+          },
+          {
+            "mode": "cds-two",
+            "pair": 2,
+            "phase": "measurement",
+            "forks": 2,
+            "heap": "2g",
+            "elapsed_seconds": 667.2998203010002,
+            "cpu_seconds": 1639.2611670000006,
+            "outcomes": {
+              "tests": 64,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": 167.75,
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": 163.298,
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": 162.353,
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": 163.064,
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": 165.416,
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": 164.159,
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": 159.055,
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": 165.023
+            },
+            "class_outcomes": {
+              "tech.streamfusion.CanonicalGroupTypedRescaleJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalHiddenExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGlobalHiddenExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTime3ExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupDateExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupArithmeticIntJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupBooleanExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "tech.streamfusion.CanonicalGroupTime0ExtremaJobTest": {
+                "tests": 8,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0
+              }
+            },
+            "exit_code": 0,
+            "archives": 2,
+            "archive_bytes": 260157440,
+            "classpath_bytes": 616542090
+          }
+        ]
+      }
+    },
+    "limits": "Preparation cost is recorded separately; timing comparisons use prepared immutable metadata. Full required matrix must establish cold job setup, complete coverage, memory and whole-workflow costs. CPU increases are reported; sampled memory counters are not peak RSS.",
+    "sha": "6b2297c3f3b66c0041576a655543743bf1cd4716",
+    "conclusion": "success"
+  },
+  "fixture_plan_cache": {
+    "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/42517795512",
+    "sha": "1f6e552612108f3291d7bb1818a1630282e9b1fb",
+    "conclusion": "success",
+    "config": "Two alternating pairs per JDK on 2,759 unchanged cases. First-tier compiler fixed, original reference worker budgets: JDK 11 two 4 GiB forks; JDK 17 four 2 GiB forks. No JFR or fixture timers. Unopened definitions serialized; every scenario deserializes independent operators.",
+    "combinations": {
+      "jdk11": {
+        "summary": {
+          "current": {
+            "elapsed_seconds": {
+              "median": 1042.880922982,
+              "min": 1026.898152908,
+              "max": 1058.863693056
+            },
+            "cpu_seconds": {
+              "median": 1497.4986534999998,
+              "min": 1462.746147,
+              "max": 1532.2511599999998
+            }
+          },
+          "plan-cache": {
+            "elapsed_seconds": {
+              "median": 675.308785444,
+              "min": 668.2966772559998,
+              "max": 682.3208936320001
+            },
+            "cpu_seconds": {
+              "median": 711.21082,
+              "min": 705.0980199999999,
+              "max": 717.32362
+            }
+          }
+        },
+        "elapsed_reduction_percent": 35.24583961963452,
+        "cpu_reduction_percent": 52.50674727902184,
+        "trials": [
+          {
+            "mode": "plan-cache",
+            "pair": 1,
+            "line": "2.2",
+            "forks": 2,
+            "heap": "4g",
+            "instrumented": false,
+            "fixture_plan_cache": true,
+            "elapsed_seconds": 682.3208936320001,
+            "cpu_seconds": 717.32362,
+            "outcomes": {
+              "tests": 2759,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.planner.CanonicalGroupDistinctMergeTest": {
+                "tests": 120,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 49.728
+              },
+              "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest": {
+                "tests": 683,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 395.603
+              },
+              "tech.streamfusion.FlinkRecursiveScalarSqlHarnessTest": {
+                "tests": 1134,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 342.781
+              },
+              "tech.streamfusion.planner.CanonicalMiniBatchGroupStateTest": {
+                "tests": 290,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 40.711
+              },
+              "tech.streamfusion.planner.CanonicalManagedUdfKeyPrecisionTest": {
+                "tests": 532,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 240.64
+              }
+            }
+          },
+          {
+            "mode": "current",
+            "pair": 1,
+            "line": "2.2",
+            "forks": 2,
+            "heap": "4g",
+            "instrumented": false,
+            "fixture_plan_cache": false,
+            "elapsed_seconds": 1058.863693056,
+            "cpu_seconds": 1532.2511599999998,
+            "outcomes": {
+              "tests": 2759,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.FlinkRecursiveScalarSqlHarnessTest": {
+                "tests": 1134,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 343.308
+              },
+              "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest": {
+                "tests": 683,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 391.153
+              },
+              "tech.streamfusion.planner.CanonicalManagedUdfKeyPrecisionTest": {
+                "tests": 532,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 325.295
+              },
+              "tech.streamfusion.planner.CanonicalGroupDistinctMergeTest": {
+                "tests": 120,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 443.172
+              },
+              "tech.streamfusion.planner.CanonicalMiniBatchGroupStateTest": {
+                "tests": 290,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 335.216
+              }
+            }
+          },
+          {
+            "mode": "current",
+            "pair": 2,
+            "line": "2.2",
+            "forks": 2,
+            "heap": "4g",
+            "instrumented": false,
+            "fixture_plan_cache": false,
+            "elapsed_seconds": 1026.898152908,
+            "cpu_seconds": 1462.746147,
+            "outcomes": {
+              "tests": 2759,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest": {
+                "tests": 683,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 387.778
+              },
+              "tech.streamfusion.planner.CanonicalManagedUdfKeyPrecisionTest": {
+                "tests": 532,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 318.293
+              },
+              "tech.streamfusion.FlinkRecursiveScalarSqlHarnessTest": {
+                "tests": 1134,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 341.575
+              },
+              "tech.streamfusion.planner.CanonicalGroupDistinctMergeTest": {
+                "tests": 120,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 420.658
+              },
+              "tech.streamfusion.planner.CanonicalMiniBatchGroupStateTest": {
+                "tests": 290,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 314.506
+              }
+            }
+          },
+          {
+            "mode": "plan-cache",
+            "pair": 2,
+            "line": "2.2",
+            "forks": 2,
+            "heap": "4g",
+            "instrumented": false,
+            "fixture_plan_cache": true,
+            "elapsed_seconds": 668.2966772559998,
+            "cpu_seconds": 705.0980199999999,
+            "outcomes": {
+              "tests": 2759,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.planner.CanonicalManagedUdfKeyPrecisionTest": {
+                "tests": 532,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 236.164
+              },
+              "tech.streamfusion.planner.CanonicalMiniBatchGroupStateTest": {
+                "tests": 290,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 37.492
+              },
+              "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest": {
+                "tests": 683,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 389.349
+              },
+              "tech.streamfusion.planner.CanonicalGroupDistinctMergeTest": {
+                "tests": 120,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 46.033
+              },
+              "tech.streamfusion.FlinkRecursiveScalarSqlHarnessTest": {
+                "tests": 1134,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 342.483
+              }
+            }
+          }
+        ]
+      },
+      "jdk17": {
+        "summary": {
+          "current": {
+            "elapsed_seconds": {
+              "median": 1068.598653459,
+              "min": 1060.591428412,
+              "max": 1076.605878506
+            },
+            "cpu_seconds": {
+              "median": 2828.3735435,
+              "min": 2795.907006,
+              "max": 2860.8400810000003
+            }
+          },
+          "plan-cache": {
+            "elapsed_seconds": {
+              "median": 568.3925082709999,
+              "min": 561.2630494179998,
+              "max": 575.521967124
+            },
+            "cpu_seconds": {
+              "median": 1166.3523824999997,
+              "min": 1144.6254139999996,
+              "max": 1188.079351
+            }
+          }
+        },
+        "elapsed_reduction_percent": 46.80954290639035,
+        "cpu_reduction_percent": 58.76243485658246,
+        "trials": [
+          {
+            "mode": "plan-cache",
+            "pair": 1,
+            "line": "2.2",
+            "forks": 4,
+            "heap": "2g",
+            "instrumented": false,
+            "fixture_plan_cache": true,
+            "elapsed_seconds": 575.521967124,
+            "cpu_seconds": 1188.079351,
+            "outcomes": {
+              "tests": 2759,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.planner.CanonicalGroupDistinctMergeTest": {
+                "tests": 120,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 90.451
+              },
+              "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest": {
+                "tests": 683,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 493.693
+              },
+              "tech.streamfusion.FlinkRecursiveScalarSqlHarnessTest": {
+                "tests": 1134,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 468.223
+              },
+              "tech.streamfusion.planner.CanonicalMiniBatchGroupStateTest": {
+                "tests": 290,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 74.993
+              },
+              "tech.streamfusion.planner.CanonicalManagedUdfKeyPrecisionTest": {
+                "tests": 532,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 395.057
+              }
+            }
+          },
+          {
+            "mode": "current",
+            "pair": 1,
+            "line": "2.2",
+            "forks": 4,
+            "heap": "2g",
+            "instrumented": false,
+            "fixture_plan_cache": false,
+            "elapsed_seconds": 1060.591428412,
+            "cpu_seconds": 2795.907006,
+            "outcomes": {
+              "tests": 2759,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.FlinkRecursiveScalarSqlHarnessTest": {
+                "tests": 1134,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 586.88
+              },
+              "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest": {
+                "tests": 683,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 466.299
+              },
+              "tech.streamfusion.planner.CanonicalManagedUdfKeyPrecisionTest": {
+                "tests": 532,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 608.078
+              },
+              "tech.streamfusion.planner.CanonicalGroupDistinctMergeTest": {
+                "tests": 120,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 846.946
+              },
+              "tech.streamfusion.planner.CanonicalMiniBatchGroupStateTest": {
+                "tests": 290,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 713.742
+              }
+            }
+          },
+          {
+            "mode": "current",
+            "pair": 2,
+            "line": "2.2",
+            "forks": 4,
+            "heap": "2g",
+            "instrumented": false,
+            "fixture_plan_cache": false,
+            "elapsed_seconds": 1076.605878506,
+            "cpu_seconds": 2860.8400810000003,
+            "outcomes": {
+              "tests": 2759,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest": {
+                "tests": 683,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 469.759
+              },
+              "tech.streamfusion.planner.CanonicalManagedUdfKeyPrecisionTest": {
+                "tests": 532,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 640.822
+              },
+              "tech.streamfusion.FlinkRecursiveScalarSqlHarnessTest": {
+                "tests": 1134,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 599.058
+              },
+              "tech.streamfusion.planner.CanonicalGroupDistinctMergeTest": {
+                "tests": 120,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 857.985
+              },
+              "tech.streamfusion.planner.CanonicalMiniBatchGroupStateTest": {
+                "tests": 290,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 730.676
+              }
+            }
+          },
+          {
+            "mode": "plan-cache",
+            "pair": 2,
+            "line": "2.2",
+            "forks": 4,
+            "heap": "2g",
+            "instrumented": false,
+            "fixture_plan_cache": true,
+            "elapsed_seconds": 561.2630494179998,
+            "cpu_seconds": 1144.6254139999996,
+            "outcomes": {
+              "tests": 2759,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0
+            },
+            "classes": {
+              "tech.streamfusion.planner.CanonicalManagedUdfKeyPrecisionTest": {
+                "tests": 532,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 378.954
+              },
+              "tech.streamfusion.planner.CanonicalMiniBatchGroupStateTest": {
+                "tests": 290,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 72.343
+              },
+              "tech.streamfusion.FlinkRecursiveTableFunctionSqlHarnessTest": {
+                "tests": 683,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 482.21
+              },
+              "tech.streamfusion.planner.CanonicalGroupDistinctMergeTest": {
+                "tests": 120,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 86.154
+              },
+              "tech.streamfusion.FlinkRecursiveScalarSqlHarnessTest": {
+                "tests": 1134,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "seconds": 460.401
+              }
+            }
+          }
+        ]
+      }
+    },
+    "limits": "Selected workload comparison under each recorded worker budget; no whole-matrix claim and no multiplication with separate concurrency probes. Full CI must qualify defaults, remaining fixtures, native/recovery assertions and combined settings."
+  },
+  "selected_settings": {
+    "runtime": {
+      "forks": 4,
+      "heap_per_fork_gib": 2,
+      "required_jobs": 12
+    },
+    "canonical": {
+      "parent_forks": 4,
+      "parent_heap_per_fork_gib": 1,
+      "fresh_engine_worker_heap_gib": 1,
+      "required_jobs": 32
+    },
+    "fixture_plan_cache": {
+      "default_enabled": true,
+      "scope": "Two execution-test fixture builders, independent deserialization, bounded128entries32MiB each"
+    },
+    "protobuf_staleness": "Only later lifecycle calls within the same immutable CI job; initial compilation and local defaults regenerate normally.",
+    "recursive_collection": {
+      "default_enabled": true,
+      "scope": "Two measured small bounded recursive test classes; event-driven completion wait limited to 100ms, then normal live draining."
+    },
+    "recovery_transport": {
+      "compressed_accumulator_rows": true,
+      "scope": "Test result transport only; checkpointed rows, comparisons and native assertions retained."
+    },
+    "fluss_catalog_close": {
+      "parallel": true,
+      "scope": "The two independent test catalogs close concurrently; both finishes and errors are awaited before the next case."
+    }
+  },
+  "initial_full_source_qualification": {
+    "run": 42524074274,
+    "source_sha": "2f82b3401d5b1441d2302b37522af01847967054",
+    "status": "Runtime failure; sibling runtime jobs cancelled. No whole-workflow speedup or full coverage qualification.",
+    "failure": {
+      "run": 42524074274,
+      "sha": "2f82b3401d5b1441d2302b37522af01847967054",
+      "job": 128865613418,
+      "flink": "1.18",
+      "jdk": 17,
+      "class": "FlinkBinaryCollectionSqlHarnessTest",
+      "case": "binaryStateRecoversAcrossTwoNonemptyPrefixes[1]",
+      "class_counts": {
+        "tests": 54,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 28
+      },
+      "observed": "Native recovery JobExecutionResult did not provide the recovery-results accumulator; iteration over the null list failed in result decoding. Root cause remains under investigation.",
+      "same_budget_as_passing_pr614": {
+        "forks": 4,
+        "heap_per_fork_gib": 2,
+        "compiler": "first-tier"
+      },
+      "limits": "This failed run cannot establish full coverage or whole-workflow performance. Runtime siblings were cancelled by fail-fast; savepoint and upstream work continue.",
+      "raw_log_bytes": 4244772,
+      "largest_log_line_characters": 165026
+    },
+    "upstream_run": 42524074278,
+    "upstream_conclusion": "success",
+    "strict_docs_run": 42524074281,
+    "strict_docs_conclusion": "success",
+    "canonical_complete_matrix": {
+      "status": "all 32 jobs passed",
+      "coverage": {
+        "11": {
+          "same_class_outcome_multiset": true,
+          "same_partition_inventory": true,
+          "class_reports": 116,
+          "inventory_classes": 118,
+          "tests": 3620,
+          "skipped": 0
+        },
+        "17": {
+          "same_class_outcome_multiset": true,
+          "same_partition_inventory": true,
+          "class_reports": 116,
+          "inventory_classes": 118,
+          "tests": 3620,
+          "skipped": 0
+        }
+      },
+      "comparison": {
+        "42499556204": {
+          "source_sha": "3c727bb1071d04583e6926f4fde8dfdf5ad6d117",
+          "groups": {
+            "11": {
+              "jobs": [
+                {
+                  "job": 128792093991,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 5)",
+                  "elapsed_seconds": 3353.0
+                },
+                {
+                  "job": 128792094033,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 3)",
+                  "elapsed_seconds": 3654.0
+                },
+                {
+                  "job": 128792094037,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 10)",
+                  "elapsed_seconds": 2805.0
+                },
+                {
+                  "job": 128792094052,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 16)",
+                  "elapsed_seconds": 3521.0
+                },
+                {
+                  "job": 128792094053,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 15)",
+                  "elapsed_seconds": 3295.0
+                },
+                {
+                  "job": 128792094065,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 4)",
+                  "elapsed_seconds": 3845.0
+                },
+                {
+                  "job": 128792094069,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 9)",
+                  "elapsed_seconds": 4248.0
+                },
+                {
+                  "job": 128792094079,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 1)",
+                  "elapsed_seconds": 2533.0
+                },
+                {
+                  "job": 128792094087,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 7)",
+                  "elapsed_seconds": 3404.0
+                },
+                {
+                  "job": 128792094090,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 11)",
+                  "elapsed_seconds": 4378.0
+                },
+                {
+                  "job": 128792094096,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 2)",
+                  "elapsed_seconds": 3580.0
+                },
+                {
+                  "job": 128792094111,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 6)",
+                  "elapsed_seconds": 2680.0
+                },
+                {
+                  "job": 128792094112,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 14)",
+                  "elapsed_seconds": 4379.0
+                },
+                {
+                  "job": 128792094125,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 13)",
+                  "elapsed_seconds": 2508.0
+                },
+                {
+                  "job": 128792094126,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 12)",
+                  "elapsed_seconds": 2440.0
+                },
+                {
+                  "job": 128792094136,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 8)",
+                  "elapsed_seconds": 3494.0
+                }
+              ],
+              "runner_seconds": 54117.0,
+              "max_job_seconds": 4379.0
+            },
+            "17": {
+              "jobs": [
+                {
+                  "job": 128792093923,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 6)",
+                  "elapsed_seconds": 2908.0
+                },
+                {
+                  "job": 128792093926,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 2)",
+                  "elapsed_seconds": 1911.0
+                },
+                {
+                  "job": 128792093931,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 16)",
+                  "elapsed_seconds": 2284.0
+                },
+                {
+                  "job": 128792093933,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 4)",
+                  "elapsed_seconds": 1951.0
+                },
+                {
+                  "job": 128792093935,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 3)",
+                  "elapsed_seconds": 2865.0
+                },
+                {
+                  "job": 128792093940,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 9)",
+                  "elapsed_seconds": 3242.0
+                },
+                {
+                  "job": 128792093994,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 14)",
+                  "elapsed_seconds": 2567.0
+                },
+                {
+                  "job": 128792094017,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 12)",
+                  "elapsed_seconds": 2744.0
+                },
+                {
+                  "job": 128792094018,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 10)",
+                  "elapsed_seconds": 2539.0
+                },
+                {
+                  "job": 128792094041,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 1)",
+                  "elapsed_seconds": 1819.0
+                },
+                {
+                  "job": 128792094044,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 5)",
+                  "elapsed_seconds": 2375.0
+                },
+                {
+                  "job": 128792094049,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 11)",
+                  "elapsed_seconds": 2668.0
+                },
+                {
+                  "job": 128792094058,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 13)",
+                  "elapsed_seconds": 2846.0
+                },
+                {
+                  "job": 128792094074,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 7)",
+                  "elapsed_seconds": 2584.0
+                },
+                {
+                  "job": 128792094089,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 15)",
+                  "elapsed_seconds": 3152.0
+                },
+                {
+                  "job": 128792094131,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 8)",
+                  "elapsed_seconds": 2753.0
+                }
+              ],
+              "runner_seconds": 41208.0,
+              "max_job_seconds": 3242.0
+            }
+          },
+          "runner_seconds": 95325.0,
+          "max_job_seconds": 4379.0
+        },
+        "42524074274": {
+          "source_sha": "2f82b3401d5b1441d2302b37522af01847967054",
+          "groups": {
+            "11": {
+              "jobs": [
+                {
+                  "job": 128865613884,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 6)",
+                  "elapsed_seconds": 3530.0
+                },
+                {
+                  "job": 128865613885,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 1)",
+                  "elapsed_seconds": 2027.0
+                },
+                {
+                  "job": 128865613956,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 13)",
+                  "elapsed_seconds": 3281.0
+                },
+                {
+                  "job": 128865613987,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 8)",
+                  "elapsed_seconds": 1973.0
+                },
+                {
+                  "job": 128865613992,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 14)",
+                  "elapsed_seconds": 2685.0
+                },
+                {
+                  "job": 128865613995,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 4)",
+                  "elapsed_seconds": 2613.0
+                },
+                {
+                  "job": 128865614008,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 10)",
+                  "elapsed_seconds": 2724.0
+                },
+                {
+                  "job": 128865614020,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 12)",
+                  "elapsed_seconds": 2184.0
+                },
+                {
+                  "job": 128865614025,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 5)",
+                  "elapsed_seconds": 3200.0
+                },
+                {
+                  "job": 128865614046,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 16)",
+                  "elapsed_seconds": 2440.0
+                },
+                {
+                  "job": 128865614061,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 7)",
+                  "elapsed_seconds": 3210.0
+                },
+                {
+                  "job": 128865614067,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 3)",
+                  "elapsed_seconds": 3217.0
+                },
+                {
+                  "job": 128865614126,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 11)",
+                  "elapsed_seconds": 2229.0
+                },
+                {
+                  "job": 128865614149,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 9)",
+                  "elapsed_seconds": 3421.0
+                },
+                {
+                  "job": 128865614150,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 2)",
+                  "elapsed_seconds": 2433.0
+                },
+                {
+                  "job": 128865614156,
+                  "name": "Canonical savepoint jobs (JDK 11) (shard 15)",
+                  "elapsed_seconds": 3464.0
+                }
+              ],
+              "runner_seconds": 44631.0,
+              "max_job_seconds": 3530.0
+            },
+            "17": {
+              "jobs": [
+                {
+                  "job": 128865613790,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 10)",
+                  "elapsed_seconds": 2170.0
+                },
+                {
+                  "job": 128865613857,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 13)",
+                  "elapsed_seconds": 2366.0
+                },
+                {
+                  "job": 128865613879,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 2)",
+                  "elapsed_seconds": 2258.0
+                },
+                {
+                  "job": 128865613888,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 16)",
+                  "elapsed_seconds": 2176.0
+                },
+                {
+                  "job": 128865613895,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 9)",
+                  "elapsed_seconds": 2470.0
+                },
+                {
+                  "job": 128865613915,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 7)",
+                  "elapsed_seconds": 1796.0
+                },
+                {
+                  "job": 128865613917,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 14)",
+                  "elapsed_seconds": 2928.0
+                },
+                {
+                  "job": 128865613926,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 12)",
+                  "elapsed_seconds": 2396.0
+                },
+                {
+                  "job": 128865613929,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 8)",
+                  "elapsed_seconds": 1720.0
+                },
+                {
+                  "job": 128865613930,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 3)",
+                  "elapsed_seconds": 2253.0
+                },
+                {
+                  "job": 128865613932,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 5)",
+                  "elapsed_seconds": 2326.0
+                },
+                {
+                  "job": 128865613994,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 1)",
+                  "elapsed_seconds": 2211.0
+                },
+                {
+                  "job": 128865614001,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 15)",
+                  "elapsed_seconds": 2457.0
+                },
+                {
+                  "job": 128865614023,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 4)",
+                  "elapsed_seconds": 1919.0
+                },
+                {
+                  "job": 128865614062,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 6)",
+                  "elapsed_seconds": 2503.0
+                },
+                {
+                  "job": 128865614101,
+                  "name": "Canonical savepoint jobs (JDK 17) (shard 11)",
+                  "elapsed_seconds": 1752.0
+                }
+              ],
+              "runner_seconds": 35701.0,
+              "max_job_seconds": 2928.0
+            }
+          },
+          "runner_seconds": 80332.0,
+          "max_job_seconds": 3530.0
+        }
+      },
+      "limits": "Complete canonical/savepoint matrix only, including cold setup. Overall source qualification failed in runtime and sibling runtime jobs were cancelled. Observational cross-run comparison includes runner/cache variability and excludes queue delay. No complete-workflow speedup is established."
+    }
+  },
+  "combined_source_qualification": "Pending complete CI on the combined candidate; final source-qualified matrix evidence is recorded in ci-profile-20261108.json."
+}

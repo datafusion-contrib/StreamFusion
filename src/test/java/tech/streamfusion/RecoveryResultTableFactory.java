@@ -9,8 +9,6 @@ import org.apache.flink.api.common.state.ListState;
 import org.apache.flink.api.common.state.ListStateDescriptor;
 import org.apache.flink.configuration.ConfigOption;
 import org.apache.flink.configuration.ConfigOptions;
-import org.apache.flink.core.memory.DataInputDeserializer;
-import org.apache.flink.core.memory.DataOutputSerializer;
 import org.apache.flink.runtime.state.FunctionInitializationContext;
 import org.apache.flink.runtime.state.FunctionSnapshotContext;
 import org.apache.flink.streaming.api.checkpoint.CheckpointedFunction;
@@ -35,15 +33,33 @@ public final class RecoveryResultTableFactory implements DynamicTableSinkFactory
   private static final ConfigOption<Boolean> DROP_UPDATE_BEFORE =
       ConfigOptions.key("drop-update-before").booleanType().defaultValue(false);
   private static final String RESULTS = "streamfusion-recovery-results";
+  private static final boolean COMPRESS_RESULTS =
+      Boolean.parseBoolean(System.getProperty("sf.recoveryResults.compress", "true"));
 
   static List<List<Object>> results(JobExecutionResult job, DataType type) throws Exception {
     List<byte[]> encoded = job.getAccumulatorResult(RESULTS);
+    if (Boolean.getBoolean("sf.recoveryResults.profile")) {
+      System.out.println(
+          "[recovery-result] job="
+              + job.getJobID()
+              + " keys="
+              + job.getAllAccumulatorResults().keySet()
+              + " rows="
+              + (encoded == null ? -1 : encoded.size())
+              + " heapUsed="
+              + (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory())
+              + " maxHeap="
+              + Runtime.getRuntime().maxMemory());
+    }
     var serializer = new RowDataSerializer((RowType) type.getLogicalType());
     var converter = DataStructureConverters.getConverter(type);
     converter.open(RecoveryResultTableFactory.class.getClassLoader());
     List<List<Object>> result = new ArrayList<>();
     for (byte[] bytes : encoded) {
-      Row row = (Row) converter.toExternal(serializer.deserialize(new DataInputDeserializer(bytes)));
+      Row row =
+          (Row)
+              converter.toExternal(
+                  RecoveryResultEncoding.decode(serializer, bytes, COMPRESS_RESULTS));
       List<Object> fields = new ArrayList<>();
       fields.add(row.getKind().shortString());
       for (int i = 0; i < row.getArity(); i++) {
@@ -55,20 +71,29 @@ public final class RecoveryResultTableFactory implements DynamicTableSinkFactory
   }
 
   @Override
-  public String factoryIdentifier() { return "recovery-results"; }
+  public String factoryIdentifier() {
+    return "recovery-results";
+  }
 
   @Override
-  public Set<ConfigOption<?>> requiredOptions() { return Set.of(); }
+  public Set<ConfigOption<?>> requiredOptions() {
+    return Set.of();
+  }
 
   @Override
-  public Set<ConfigOption<?>> optionalOptions() { return Set.of(DROP_UPDATE_BEFORE); }
+  public Set<ConfigOption<?>> optionalOptions() {
+    return Set.of(DROP_UPDATE_BEFORE);
+  }
 
   @Override
   public DynamicTableSink createDynamicTableSink(Context context) {
     return new CaptureSink(
         context.getPhysicalRowDataType(),
         Boolean.parseBoolean(
-            context.getCatalogTable().getOptions().getOrDefault(DROP_UPDATE_BEFORE.key(), "false")));
+            context
+                .getCatalogTable()
+                .getOptions()
+                .getOrDefault(DROP_UPDATE_BEFORE.key(), "false")));
   }
 
   private static final class CaptureSink implements DynamicTableSink {
@@ -143,8 +168,10 @@ public final class RecoveryResultTableFactory implements DynamicTableSinkFactory
 
     @Override
     public void initializeState(FunctionInitializationContext context) throws Exception {
-      state = context.getOperatorStateStore().getListState(
-          new ListStateDescriptor<>("recovery-results", serializer));
+      state =
+          context
+              .getOperatorStateStore()
+              .getListState(new ListStateDescriptor<>("recovery-results", serializer));
       if (context.isRestored()) {
         for (RowData row : state.get()) rows.add(serializer.copy(row));
       }
@@ -164,11 +191,22 @@ public final class RecoveryResultTableFactory implements DynamicTableSinkFactory
     public void finish() throws Exception {
       var results = new ListAccumulator<byte[]>();
       for (RowData value : rows) {
-        var output = new DataOutputSerializer(64);
-        serializer.serialize(value, output);
-        results.add(output.getCopyOfBuffer());
+        results.add(RecoveryResultEncoding.encode(serializer, value, COMPRESS_RESULTS));
       }
       getRuntimeContext().addAccumulator(RESULTS, results);
+      if (Boolean.getBoolean("sf.recoveryResults.profile")) {
+        System.out.println(
+            "[recovery-capture] task="
+                + Thread.currentThread().getName()
+                + " rows="
+                + rows.size()
+                + " bytes="
+                + results.getLocalValue().stream().mapToLong(value -> value.length).sum()
+                + " heapUsed="
+                + (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory())
+                + " maxHeap="
+                + Runtime.getRuntime().maxMemory());
+      }
     }
   }
 }

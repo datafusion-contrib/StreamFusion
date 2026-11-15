@@ -1,12 +1,78 @@
 # Allocation discipline on the per-row paths
 
 **Applies to:** windowed/session aggregation, [GROUP BY](../operators/group-by.md), [Top-N](../operators/top-n.md),
-the updating join, `OVER`, deduplication, [Calc string encoding](../benchmarks/scalar-functions.md#hex)
+the updating join, `OVER`, deduplication, [Calc string encoding](../benchmarks/scalar-functions.md#hex),
+[Calc integer expressions](../benchmarks/scalar-functions.md#integer-round-over-arithmetic)
 
 Beyond the arrow-row and mini-batch mechanisms covered elsewhere, a series of targeted fixes removed
 allocations and redundant per-row work from specific hot loops: reuse instead of realloc, move
 instead of clone, batch instead of loop, and — where the access pattern actually fits — a columnar
 kernel instead of a row loop at all.
+
+## Same-width integer expression results
+
+The planner retains explicit result casts after narrow integer arithmetic so Java's
+wrapping width survives DataFusion type coercion. A cast whose actual Arrow integer
+type already matches its target now shares the input array directly. It does not widen
+to BIGINT, scan the values and reconstruct an identical array. True narrowing,
+floating/decimal conversions and the previous scalar materialization stay unchanged.
+The fast path retains sliced offsets, validity and owned buffers, including empty arrays.
+This follows Comet's equal-type native cast shortcut; actual narrowing still follows
+Flink's primitive wrapping rules rather than Spark's ANSI overflow policy.
+
+This matters when native ABS consumes an arithmetic tree: the initially correct native
+`ABS((v+1)*(v-1))` still lost to stock Flink on INT because each result cast duplicated
+the work. The benchmark records preserve that initial implementation, independently
+paired stock/main controls and the qualified result after removing those copies. See
+[integer ABS arithmetic](../benchmarks/scalar-functions.md#integer-abs-over-arithmetic)
+for workload, timing boundaries, allocation requests and remaining small-batch costs.
+
+## Proven integer rounding with a NULL position
+
+A literal NULL position makes integer ROUND and INT/BIGINT TRUNCATE return a typed NULL.
+The planner folds this only after its recursive operand proof excludes failures: integer inputs/literals,
+lossless widening, admitted bounded rounding and wrapping addition/subtraction/multiplication.
+The fold avoids evaluating the arithmetic tree and allocating its intermediate arrays.
+Division, remainder, narrowing and unverified producers keep their generated evaluation,
+so a failing argument is not silently discarded. This is a bounded purity proof, not a
+general NULL propagation rule for arbitrary functions or UDFs.
+
+Eight 1,024-row nullable GenericRowData/Arrow diagnostics on released Flink 1.18.1/2.2.1
+retain the rejected eager implementation and the fold. Native medians move from
+2.50-2.72 to 0.62-0.72 ns/row; paired stock/native ratios move from 0.65-0.71x to
+2.48-2.80x. These are separate warmed release/default-feature/mimalloc processes with
+nine measurements and a Rust timer around production Calc and result consumption.
+They measure folded-result handling, not execution of a ROUND kernel. The
+untimed Rust allocation probe drops from 79-99 requests to 16 per batch; it excludes
+JVM/other-thread allocation and does not measure retained memory. The
+[arithmetic benchmark](../benchmarks/scalar-functions.md#integer-round-over-arithmetic)
+retains both probes, raw trials, stock drift and the independent function
+qualification and complete jobs with both transposes. Separate
+[TRUNCATE controls](../benchmarks/scalar-functions.md#integer-truncate-over-arithmetic)
+retain the same fold boundary and explicitly exclude NULL-fold samples from function-work evidence.
+
+## Failure-free numeric classification operands
+
+Numeric `IS_ALPHA` returns FALSE from the released internal argument type, regardless of
+its value or NULL. Numeric `IS_DIGIT` and `IS_DECIMAL` likewise have a type-based result: TRUE for integers
+(including NULL) and FALSE for internal DECIMAL. A native call initially still materialized arithmetic arguments which
+the predicate never reads. Fold a composed integer operand only after the bounded integer
+producer proof excludes failures and state changes. Direct inputs retain the predicate
+kernel; division, remainder, narrowing, UDFs and unverified producers retain the complete
+generated call.
+This is not a general license to discard arguments of constant-result functions.
+
+A nullable 1,024-row INT nested-arithmetic probe moves from 2.352 to 0.381 ns/row;
+paired stock/native moves from 0.882x to 5.815x. Untimed Rust allocation requests drop
+from 96 to 13 per batch (18,560 to 782 requested bytes). These are separate warmed
+release/default-feature/mimalloc processes; JVM/other-thread allocations and retained memory
+are not measured. The [numeric classification record](../benchmarks/scalar-functions.md#numeric-is_alpha)
+keeps the initial/folded probes, stock drift, full type matrix and complete-job controls.
+Folded samples are excluded from executed predicate-kernel qualification.
+The [numeric digit matrix](../benchmarks/scalar-functions.md#numeric-is_digit) applies the
+same proof and keeps its own predicate and fold controls separate.
+The [numeric decimal matrix](../benchmarks/scalar-functions.md#numeric-is_decimal) qualifies
+that overload independently with the same bounded producer proof.
 
 ## Per-row allocation cuts
 
@@ -128,11 +194,39 @@ Output offsets are checked against Arrow Utf8's 32-bit limit before allocating t
 
 ### TO_BASE64
 
-Uses standard padded base64 encoding, computes output offsets with checked sizes, and writes directly into the final Arrow buffer. Unlike Spark's MIME form modeled by Comet, Flink does not wrap lines. Arrow's safe constructor validates the result.
+Uses standard padded base64 encoding, computes output offsets with checked sizes, and writes directly into the final Arrow buffer. Unlike Spark's MIME form modeled by Comet, Flink does not wrap lines.
+
+Binary inputs retain their physical representation. The encoder reads Binary and FixedSizeBinary
+directly through the same byte-access loop, avoiding a preliminary fixed-to-variable cast and its
+per-row byte copies. Fixed logical BINARY expressions therefore need no scalar JVM callback for
+encoding. Legacy casts keep actual byte lengths; width changes belong to the cast, never the encoder.
+
+The released `base64-simd` encoder selects supported CPU instructions at runtime and retains a
+portable fallback. The checked offsets span the initialized output buffer, each exact-size row
+range contains only the encoder's ASCII alphabet/padding, and validity is shared with the same
+input rows. These invariants permit constructing Utf8 without scanning the encoded bytes again;
+regression tests still run Arrow's complete validation and compare against an independent codec.
+FROM_BASE64 uses a separate decoder and preserves Flink's arbitrary-byte STRING contract.
 
 Output offsets are checked against Arrow Utf8's 32-bit limit before allocating the final values buffer. NULL rows consume no bytes and reuse input validity.
 
 [Per-function complete-job results](../benchmarks/scalar-functions.md#to_base64) include both transposes.
+
+### FROM_BASE64
+
+The native final-projection decoder sizes output offsets before allocating and decodes directly
+into the final Arrow Binary buffer. It borrows character input offsets and bytes, and accepts
+Binary and FixedSizeBinary without an input normalization copy. NULL rows reuse validity and
+consume no output bytes. No decoded byte sequence is presented as Arrow Utf8.
+
+Complete groups use the released `base64-simd` runtime CPU dispatch. A short scalar tail accepts
+the JDK basic decoder's missing padding and unused nonzero bits. Invalid input takes a cold Rust
+validation path that constructs the existing typed Flink exception; neither success nor failure
+calls a JVM scalar evaluator. Comet's MIME decoder skips invalid characters, so its alphabet and
+trailing-data policy would change Flink results and is deliberately not adopted.
+
+[Measurements and reproduction](../benchmarks/scalar-functions.md#from_base64) separate prepared
+Arrow/RowData controls from complete jobs retaining both transposes.
 
 ### UNHEX
 

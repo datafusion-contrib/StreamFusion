@@ -1,6 +1,9 @@
 import ast, csv, gzip, math, re, statistics
 from pathlib import Path
 root = Path(__file__).resolve().parent
+import subprocess, sys
+subprocess.run([sys.executable, str(root.parents[2] / 'dev/benchmark_artifacts.py'),
+                'docs/benchmarks/fluss-headline-2026-10-08'], check=True)
 trials, summary = [], []
 expected = {f'q{i}' for i in range(24) if i != 6}
 for backend in ('memory', 'rocksdb'):

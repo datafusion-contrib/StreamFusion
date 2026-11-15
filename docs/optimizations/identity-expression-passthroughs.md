@@ -41,7 +41,7 @@ same-base previous fallback's three-trial medians were 0.998/1.069 s stock/nativ
 was about 7.1% slower than stock. These independent runs have different absolute times, so use
 paired stock ratios rather than treating their absolute durations as a direct before/after claim.
 The initial generated candidate lost to stock; profiling led to native selection and indicator
-fusion, and those losses remain in the [raw results](../benchmarks/results/generated-processing-time-2026-10-14.json).
+fusion, and those losses remain in the [raw results](https://streamfusion.tech/benchmarks/results/generated-processing-time-2026-10-14.json).
 
 The initial profile attributed 1,495 of 2,878 native-evaluation samples to JVM callbacks. After
 native clock selection, a separate filter profile still recorded 521 callback samples among

@@ -42,19 +42,26 @@ import tech.streamfusion.planner.FlinkKeyGroupUtils;
 /**
  * The columnar window operator (Arrow-batch input) produces the same window aggregates the row-fed
  * operator did — proving the columnar input extraction (time nanos→millis, value, keys) and the
- * Arrow-batch emit (the window-result reshape, with the bounds rendered as session-local timestamps)
- * are correct. Output is now an Arrow batch shaped to the output row type; read it back with the
- * boundary converter, as the dedicated transpose operator does.
+ * Arrow-batch emit (the window-result reshape, with the bounds rendered as session-local
+ * timestamps) are correct. Output is now an Arrow batch shaped to the output row type; read it back
+ * with the boundary converter, as the dedicated transpose operator does.
  */
 class NativeColumnarWindowAggregateOperatorTest {
   private static final int MAX_PARALLELISM = 128;
 
   @ParameterizedTest
   @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
-  void processingTimeTimestampExtremaPreserveDigitsAndTimersAfterRestore(boolean rocks) throws Exception {
-    RowType input = RowType.of(new BigIntType(), new TimestampType(9), new LocalZonedTimestampType(3));
-    RowType output = RowType.of(new BigIntType(), new TimestampType(9),
-        new LocalZonedTimestampType(9), new TimestampType(3), new TimestampType(3));
+  void processingTimeTimestampExtremaPreserveDigitsAndTimersAfterRestore(boolean rocks)
+      throws Exception {
+    RowType input =
+        RowType.of(new BigIntType(), new TimestampType(9), new LocalZonedTimestampType(3));
+    RowType output =
+        RowType.of(
+            new BigIntType(),
+            new TimestampType(9),
+            new LocalZonedTimestampType(9),
+            new TimestampType(3),
+            new TimestampType(3));
     TimestampData early = TimestampData.fromEpochMillis(-62135596800000L, 1);
     TimestampData late = TimestampData.fromEpochMillis(253402300799999L, 999999);
     OperatorSubtaskState snapshot;
@@ -63,10 +70,19 @@ class NativeColumnarWindowAggregateOperatorTest {
       before.setup(new ArrowBatchSerializer());
       before.open();
       before.setProcessingTime(500);
-      before.processElement(new StreamRecord<>(new ArrowBatch(RowDataArrowConverter.write(List.of(
-          GenericRowData.of(1L, TimestampData.fromEpochMillis(-1, 999999), TimestampData.fromEpochMillis(9999)),
-          GenericRowData.of(1L, null, TimestampData.fromEpochMillis(9999)),
-          GenericRowData.of(2L, null, TimestampData.fromEpochMillis(9999))), input, allocator))));
+      before.processElement(
+          new StreamRecord<>(
+              new ArrowBatch(
+                  RowDataArrowConverter.write(
+                      List.of(
+                          GenericRowData.of(
+                              1L,
+                              TimestampData.fromEpochMillis(-1, 999999),
+                              TimestampData.fromEpochMillis(9999)),
+                          GenericRowData.of(1L, null, TimestampData.fromEpochMillis(9999)),
+                          GenericRowData.of(2L, null, TimestampData.fromEpochMillis(9999))),
+                      input,
+                      allocator))));
       snapshot = before.snapshot(1, 1);
       assertTrue(before.getOutput().isEmpty());
     }
@@ -76,10 +92,16 @@ class NativeColumnarWindowAggregateOperatorTest {
       restored.initializeState(snapshot);
       restored.open();
       restored.setProcessingTime(800);
-      restored.processElement(new StreamRecord<>(new ArrowBatch(RowDataArrowConverter.write(List.of(
-          GenericRowData.of(1L, early, TimestampData.fromEpochMillis(-9999)),
-          GenericRowData.of(1L, late, TimestampData.fromEpochMillis(-9999)),
-          GenericRowData.of(2L, null, TimestampData.fromEpochMillis(-9999))), input, allocator))));
+      restored.processElement(
+          new StreamRecord<>(
+              new ArrowBatch(
+                  RowDataArrowConverter.write(
+                      List.of(
+                          GenericRowData.of(1L, early, TimestampData.fromEpochMillis(-9999)),
+                          GenericRowData.of(1L, late, TimestampData.fromEpochMillis(-9999)),
+                          GenericRowData.of(2L, null, TimestampData.fromEpochMillis(-9999))),
+                      input,
+                      allocator))));
       restored.setProcessingTime(998);
       assertTrue(restored.getOutput().isEmpty());
       restored.setProcessingTime(999);
@@ -89,53 +111,96 @@ class NativeColumnarWindowAggregateOperatorTest {
         if (event instanceof StreamRecord<?>) {
           try (var root = ((ArrowBatch) ((StreamRecord<?>) event).getValue()).root()) {
             for (RowData row : RowDataArrowConverter.read(root, output)) {
-              rows.add(java.util.Arrays.asList(row.getRowKind(), row.getLong(0),
-                  row.isNullAt(1) ? null : row.getTimestamp(1, 9),
-                  row.isNullAt(2) ? null : row.getTimestamp(2, 9),
-                  row.getTimestamp(3, 3).getMillisecond(), row.getTimestamp(4, 3).getMillisecond()));
+              rows.add(
+                  java.util.Arrays.asList(
+                      row.getRowKind(),
+                      row.getLong(0),
+                      row.isNullAt(1) ? null : row.getTimestamp(1, 9),
+                      row.isNullAt(2) ? null : row.getTimestamp(2, 9),
+                      row.getTimestamp(3, 3).getMillisecond(),
+                      row.getTimestamp(4, 3).getMillisecond()));
             }
           }
         }
       }
       rows.sort(java.util.Comparator.comparingLong(row -> (Long) row.get(1)));
-      assertEquals(List.of(
-          java.util.Arrays.asList(org.apache.flink.types.RowKind.INSERT, 1L, early, late, 0L, 1000L),
-          java.util.Arrays.asList(org.apache.flink.types.RowKind.INSERT, 2L, null, null, 0L, 1000L)), rows);
+      assertEquals(
+          List.of(
+              java.util.Arrays.asList(
+                  org.apache.flink.types.RowKind.INSERT, 1L, early, late, 0L, 1000L),
+              java.util.Arrays.asList(
+                  org.apache.flink.types.RowKind.INSERT, 2L, null, null, 0L, 1000L)),
+          rows);
     }
   }
 
   private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>
       temporalProctimeHarness(RowType output, boolean rocks) throws Exception {
-    var harness = rawHarness(new NativeColumnarWindowAggregateOperator(false, 1000, 1000, 2,
-        new int[] {1, 1}, new int[] {0}, new int[] {0}, new int[] {1009, 1009}, new int[] {1, 2},
-        "UTC", output, true, new int[] {-1}, MAX_PARALLELISM));
-    if (rocks) harness.setStateBackend(new tech.streamfusion.state.RocksDBNativeStateBackendFactory()
-        .createFromConfig(new org.apache.flink.configuration.Configuration(),
-            NativeColumnarWindowAggregateOperatorTest.class.getClassLoader()));
+    var harness =
+        rawHarness(
+            new NativeColumnarWindowAggregateOperator(
+                false,
+                1000,
+                1000,
+                2,
+                new int[] {1, 1},
+                new int[] {0},
+                new int[] {0},
+                new int[] {1009, 1009},
+                new int[] {1, 2},
+                "UTC",
+                output,
+                true,
+                new int[] {-1},
+                MAX_PARALLELISM));
+    if (rocks)
+      harness.setStateBackend(
+          new tech.streamfusion.state.RocksDBNativeStateBackendFactory()
+              .createFromConfig(
+                  new org.apache.flink.configuration.Configuration(),
+                  NativeColumnarWindowAggregateOperatorTest.class.getClassLoader()));
     return harness;
   }
 
   @Test
   void processingTimeStringExtremaUseTheExistingClockWindows() throws Exception {
     RowType input = RowType.of(new VarCharType(), new LocalZonedTimestampType(3));
-    RowType output = RowType.of(new VarCharType(), new VarCharType(),
-        new TimestampType(3), new TimestampType(3));
+    RowType output =
+        RowType.of(
+            new VarCharType(), new VarCharType(), new TimestampType(3), new TimestampType(3));
     for (int shape = 0; shape < 3; shape++) {
       long size = (shape + 1) * 1000L;
-      var operator = new NativeColumnarWindowAggregateOperator(
-          shape == 2, size, 1000, 1, new int[] {0, 0}, new int[0], new int[0],
-          new int[] {3, 3}, new int[] {1, 2}, "UTC", output, true, new int[0], MAX_PARALLELISM);
-      try (BufferAllocator allocator = new RootAllocator(); var harness = rawHarness(operator)) {
+      var operator =
+          new NativeColumnarWindowAggregateOperator(
+              shape == 2,
+              size,
+              1000,
+              1,
+              new int[] {0, 0},
+              new int[0],
+              new int[0],
+              new int[] {3, 3},
+              new int[] {1, 2},
+              "UTC",
+              output,
+              true,
+              new int[0],
+              MAX_PARALLELISM);
+      try (BufferAllocator allocator = new RootAllocator();
+          var harness = rawHarness(operator)) {
         harness.setup(new ArrowBatchSerializer());
         harness.open();
         harness.setProcessingTime(500);
         List<RowData> rows = new ArrayList<>();
         for (String value : new String[] {null, "z", "", "\ud83d\ude00"}) {
-          rows.add(GenericRowData.of(value == null ? null : StringData.fromString(value),
-              TimestampData.fromEpochMillis(0)));
+          rows.add(
+              GenericRowData.of(
+                  value == null ? null : StringData.fromString(value),
+                  TimestampData.fromEpochMillis(0)));
         }
-        harness.processElement(new StreamRecord<>(new ArrowBatch(
-            RowDataArrowConverter.write(rows, input, allocator))));
+        harness.processElement(
+            new StreamRecord<>(
+                new ArrowBatch(RowDataArrowConverter.write(rows, input, allocator))));
         harness.setProcessingTime(999);
         List<List<Object>> actual = new ArrayList<>();
         while (!harness.getOutput().isEmpty()) {
@@ -144,8 +209,12 @@ class NativeColumnarWindowAggregateOperatorTest {
             StreamRecord<?> record = (StreamRecord<?>) event;
             try (VectorSchemaRoot root = ((ArrowBatch) record.getValue()).root()) {
               for (RowData row : RowDataArrowConverter.read(root, output)) {
-                actual.add(List.of(row.getString(0).toString(), row.getString(1).toString(),
-                    row.getTimestamp(2, 3).getMillisecond(), row.getTimestamp(3, 3).getMillisecond()));
+                actual.add(
+                    List.of(
+                        row.getString(0).toString(),
+                        row.getString(1).toString(),
+                        row.getTimestamp(2, 3).getMillisecond(),
+                        row.getTimestamp(3, 3).getMillisecond()));
               }
             }
           }
@@ -155,7 +224,8 @@ class NativeColumnarWindowAggregateOperatorTest {
     }
   }
 
-  // Input schema [value BIGINT, rt TIMESTAMP_LTZ(3)]; output [total BIGINT, window_start, window_end].
+  // Input schema [value BIGINT, rt TIMESTAMP_LTZ(3)]; output [total BIGINT, window_start,
+  // window_end].
   private static final RowType SCHEMA =
       RowType.of(
           new LogicalType[] {new BigIntType(), new LocalZonedTimestampType(3)},
@@ -193,9 +263,7 @@ class NativeColumnarWindowAggregateOperatorTest {
   // [key BIGINT, value BIGINT, rt TIMESTAMP_LTZ(3)] / [key, total, window_start, window_end].
   private static final RowType KEYED_SCHEMA =
       RowType.of(
-          new LogicalType[] {
-            new BigIntType(), new BigIntType(), new LocalZonedTimestampType(3)
-          },
+          new LogicalType[] {new BigIntType(), new BigIntType(), new LocalZonedTimestampType(3)},
           new String[] {"key", "value", "rt"});
 
   private static final RowType KEYED_OUTPUT =
@@ -208,21 +276,35 @@ class NativeColumnarWindowAggregateOperatorTest {
   @ParameterizedTest
   @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
   void processingTimeStringExtremaContinueAfterRestore(boolean rocks) throws Exception {
-    RowType input = RowType.of(
-        new BigIntType(), new VarCharType(VarCharType.MAX_LENGTH), new LocalZonedTimestampType(3));
-    RowType output = RowType.of(
-        new BigIntType(), new VarCharType(VarCharType.MAX_LENGTH),
-        new VarCharType(VarCharType.MAX_LENGTH), new TimestampType(3), new TimestampType(3));
+    RowType input =
+        RowType.of(
+            new BigIntType(),
+            new VarCharType(VarCharType.MAX_LENGTH),
+            new LocalZonedTimestampType(3));
+    RowType output =
+        RowType.of(
+            new BigIntType(),
+            new VarCharType(VarCharType.MAX_LENGTH),
+            new VarCharType(VarCharType.MAX_LENGTH),
+            new TimestampType(3),
+            new TimestampType(3));
     OperatorSubtaskState snapshot;
     try (BufferAllocator allocator = new RootAllocator();
         var before = stringProctimeHarness(output, rocks)) {
       before.setup(new ArrowBatchSerializer());
       before.open();
       before.setProcessingTime(500);
-      before.processElement(new StreamRecord<>(new ArrowBatch(RowDataArrowConverter.write(
-          List.of(GenericRowData.of(1L, StringData.fromString("z"), TimestampData.fromEpochMillis(9999)),
-              GenericRowData.of(1L, null, TimestampData.fromEpochMillis(9999)),
-              GenericRowData.of(2L, null, TimestampData.fromEpochMillis(9999))), input, allocator))));
+      before.processElement(
+          new StreamRecord<>(
+              new ArrowBatch(
+                  RowDataArrowConverter.write(
+                      List.of(
+                          GenericRowData.of(
+                              1L, StringData.fromString("z"), TimestampData.fromEpochMillis(9999)),
+                          GenericRowData.of(1L, null, TimestampData.fromEpochMillis(9999)),
+                          GenericRowData.of(2L, null, TimestampData.fromEpochMillis(9999))),
+                      input,
+                      allocator))));
       snapshot = before.snapshot(1L, 1L);
       assertTrue(before.getOutput().isEmpty());
     }
@@ -233,10 +315,20 @@ class NativeColumnarWindowAggregateOperatorTest {
       restored.initializeState(snapshot);
       restored.open();
       restored.setProcessingTime(800);
-      restored.processElement(new StreamRecord<>(new ArrowBatch(RowDataArrowConverter.write(
-          List.of(GenericRowData.of(1L, StringData.fromString(""), TimestampData.fromEpochMillis(-9999)),
-              GenericRowData.of(1L, StringData.fromString(wide), TimestampData.fromEpochMillis(-9999)),
-              GenericRowData.of(2L, null, TimestampData.fromEpochMillis(-9999))), input, allocator))));
+      restored.processElement(
+          new StreamRecord<>(
+              new ArrowBatch(
+                  RowDataArrowConverter.write(
+                      List.of(
+                          GenericRowData.of(
+                              1L, StringData.fromString(""), TimestampData.fromEpochMillis(-9999)),
+                          GenericRowData.of(
+                              1L,
+                              StringData.fromString(wide),
+                              TimestampData.fromEpochMillis(-9999)),
+                          GenericRowData.of(2L, null, TimestampData.fromEpochMillis(-9999))),
+                      input,
+                      allocator))));
       restored.setProcessingTime(998);
       assertTrue(restored.getOutput().isEmpty());
       restored.setProcessingTime(999);
@@ -246,29 +338,54 @@ class NativeColumnarWindowAggregateOperatorTest {
         if (event instanceof StreamRecord<?>) {
           try (var root = ((ArrowBatch) ((StreamRecord<?>) event).getValue()).root()) {
             for (RowData row : RowDataArrowConverter.read(root, output)) {
-              rows.add(java.util.Arrays.asList(row.getRowKind(), row.getLong(0),
-                  row.isNullAt(1) ? null : row.getString(1).toString(),
-                  row.isNullAt(2) ? null : row.getString(2).toString(),
-                  row.getTimestamp(3, 3).getMillisecond(), row.getTimestamp(4, 3).getMillisecond()));
+              rows.add(
+                  java.util.Arrays.asList(
+                      row.getRowKind(),
+                      row.getLong(0),
+                      row.isNullAt(1) ? null : row.getString(1).toString(),
+                      row.isNullAt(2) ? null : row.getString(2).toString(),
+                      row.getTimestamp(3, 3).getMillisecond(),
+                      row.getTimestamp(4, 3).getMillisecond()));
             }
           }
         }
       }
       rows.sort(java.util.Comparator.comparingLong(row -> (Long) row.get(1)));
-      assertEquals(List.of(
-          java.util.Arrays.asList(org.apache.flink.types.RowKind.INSERT, 1L, "", wide, 0L, 1000L),
-          java.util.Arrays.asList(org.apache.flink.types.RowKind.INSERT, 2L, null, null, 0L, 1000L)), rows);
+      assertEquals(
+          List.of(
+              java.util.Arrays.asList(
+                  org.apache.flink.types.RowKind.INSERT, 1L, "", wide, 0L, 1000L),
+              java.util.Arrays.asList(
+                  org.apache.flink.types.RowKind.INSERT, 2L, null, null, 0L, 1000L)),
+          rows);
     }
   }
 
   private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>
       stringProctimeHarness(RowType output, boolean rocks) throws Exception {
-    var harness = rawHarness(new NativeColumnarWindowAggregateOperator(false, 1000, 1000, 2,
-        new int[] {1, 1}, new int[] {0}, new int[] {0}, new int[] {3, 3}, new int[] {1, 2},
-        "UTC", output, true, new int[] {-1}, MAX_PARALLELISM));
-    if (rocks) harness.setStateBackend(new tech.streamfusion.state.RocksDBNativeStateBackendFactory()
-        .createFromConfig(new org.apache.flink.configuration.Configuration(),
-            NativeColumnarWindowAggregateOperatorTest.class.getClassLoader()));
+    var harness =
+        rawHarness(
+            new NativeColumnarWindowAggregateOperator(
+                false,
+                1000,
+                1000,
+                2,
+                new int[] {1, 1},
+                new int[] {0},
+                new int[] {0},
+                new int[] {3, 3},
+                new int[] {1, 2},
+                "UTC",
+                output,
+                true,
+                new int[] {-1},
+                MAX_PARALLELISM));
+    if (rocks)
+      harness.setStateBackend(
+          new tech.streamfusion.state.RocksDBNativeStateBackendFactory()
+              .createFromConfig(
+                  new org.apache.flink.configuration.Configuration(),
+                  NativeColumnarWindowAggregateOperatorTest.class.getClassLoader()));
     return harness;
   }
 
@@ -456,12 +573,18 @@ class NativeColumnarWindowAggregateOperatorTest {
 
   private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>
       filteredHarness(RowType output, boolean rocks, boolean distinct) throws Exception {
+    return filteredHarness(output, rocks, distinct, false);
+  }
+
+  private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>
+      filteredHarness(RowType output, boolean rocks, boolean distinct, boolean proctime)
+          throws Exception {
     var operator =
         new NativeColumnarWindowAggregateOperator(
             false,
             1000,
             1000,
-            1,
+            proctime ? -1 : 1,
             new int[] {0, 0},
             new int[] {2, 3},
             new int[0],
@@ -472,7 +595,7 @@ class NativeColumnarWindowAggregateOperatorTest {
             true,
             "UTC",
             output,
-            false,
+            proctime,
             new int[0],
             MAX_PARALLELISM);
     var harness = rawHarness(operator);
@@ -485,19 +608,117 @@ class NativeColumnarWindowAggregateOperatorTest {
     return harness;
   }
 
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.CsvSource({
+    "false,false",
+    "true,false",
+    "false,true",
+    "true,true"
+  })
+  void processingTimeFiltersSurviveRecoveryAndPreserveEmptyWindows(boolean rocks, boolean distinct)
+      throws Exception {
+    RowType input =
+        RowType.of(
+            new BigIntType(),
+            new LocalZonedTimestampType(3),
+            new org.apache.flink.table.types.logical.BooleanType(),
+            new org.apache.flink.table.types.logical.BooleanType());
+    RowType output =
+        RowType.of(new BigIntType(), new BigIntType(), new TimestampType(3), new TimestampType(3));
+    OperatorSubtaskState checkpoint;
+    try (BufferAllocator allocator = new RootAllocator();
+        var before = filteredHarness(output, rocks, distinct, true)) {
+      before.setup(new ArrowBatchSerializer());
+      before.open();
+      before.setProcessingTime(500);
+      before.processElement(
+          new StreamRecord<>(
+              new ArrowBatch(
+                  RowDataArrowConverter.write(
+                      List.of(
+                          GenericRowData.of(10L, TimestampData.fromEpochMillis(1), true, false),
+                          GenericRowData.of(20L, TimestampData.fromEpochMillis(1), false, true),
+                          GenericRowData.of(-999L, TimestampData.fromEpochMillis(1), null, null)),
+                      input,
+                      allocator))));
+      checkpoint = before.snapshot(1, 0);
+    }
+    try (BufferAllocator allocator = new RootAllocator();
+        var restored = filteredHarness(output, rocks, distinct, true)) {
+      restored.setup(new ArrowBatchSerializer());
+      restored.initializeState(checkpoint);
+      restored.setProcessingTime(800);
+      restored.open();
+      restored.processElement(
+          new StreamRecord<>(
+              new ArrowBatch(
+                  RowDataArrowConverter.write(
+                      List.of(
+                          GenericRowData.of(5L, TimestampData.fromEpochMillis(1), true, false),
+                          GenericRowData.of(10L, TimestampData.fromEpochMillis(1), true, true),
+                          GenericRowData.of(999L, TimestampData.fromEpochMillis(1), false, null)),
+                      input,
+                      allocator))));
+      restored.setProcessingTime(1000);
+      restored.processElement(
+          new StreamRecord<>(
+              new ArrowBatch(
+                  RowDataArrowConverter.write(
+                      List.of(GenericRowData.of(7L, TimestampData.fromEpochMillis(1), false, null)),
+                      input,
+                      allocator))));
+      restored.setProcessingTime(2000);
+      var rows = new ArrayList<RowData>();
+      while (!restored.getOutput().isEmpty()) {
+        Object event = restored.getOutput().poll();
+        if (event instanceof StreamRecord<?>) {
+          try (var root = ((ArrowBatch) ((StreamRecord<?>) event).getValue()).root()) {
+            rows.addAll(RowDataArrowConverter.read(root, output));
+          }
+        }
+      }
+      rows.sort(java.util.Comparator.comparingLong(row -> row.getTimestamp(2, 3).getMillisecond()));
+      assertEquals(2, rows.size());
+      assertEquals(distinct ? 2L : 5L, rows.get(0).getLong(0));
+      assertEquals(distinct ? 2L : 20L, rows.get(0).getLong(1));
+      assertEquals(0L, rows.get(0).getTimestamp(2, 3).getMillisecond());
+      assertEquals(1000L, rows.get(1).getTimestamp(2, 3).getMillisecond());
+      if (distinct) {
+        assertEquals(0L, rows.get(1).getLong(0));
+        assertEquals(0L, rows.get(1).getLong(1));
+      } else {
+        assertTrue(rows.get(1).isNullAt(0));
+        assertTrue(rows.get(1).isNullAt(1));
+      }
+    }
+  }
+
   @Test
   void emitsWindowAggregatesFromArrowBatches() throws Exception {
     NativeColumnarWindowAggregateOperator operator =
         new NativeColumnarWindowAggregateOperator(
-            false, 1000, 1000, 1, new int[] {0}, new int[0], new int[0], new int[] {0}, new int[] {0},
-            "UTC", OUTPUT, false, new int[0], MAX_PARALLELISM);
+            false,
+            1000,
+            1000,
+            1,
+            new int[] {0},
+            new int[0],
+            new int[0],
+            new int[] {0},
+            new int[] {0},
+            "UTC",
+            OUTPUT,
+            false,
+            new int[0],
+            MAX_PARALLELISM);
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             rawHarness(operator)) {
       harness.setup(new ArrowBatchSerializer());
       harness.open();
 
-      harness.processElement(new StreamRecord<>(batch(allocator, event(1, 0), event(2, 500), event(3, 1000))));
+      harness.processElement(
+          new StreamRecord<>(batch(allocator, event(1, 0), event(2, 500), event(3, 1000))));
       harness.processWatermark(new Watermark(1000));
       assertEquals(List.of(row(3, 0, 1000)), collect(harness));
 
@@ -509,8 +730,7 @@ class NativeColumnarWindowAggregateOperatorTest {
 
   @Test
   void emitsLegacyEventTimeProperties() throws Exception {
-    NativeColumnarWindowAggregateOperator operator =
-        operator(LEGACY_EVENT_OUTPUT, false);
+    NativeColumnarWindowAggregateOperator operator = operator(LEGACY_EVENT_OUTPUT, false);
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             rawHarness(operator)) {
@@ -611,8 +831,7 @@ class NativeColumnarWindowAggregateOperatorTest {
 
   @Test
   void emitsLegacyWindowWithoutProperties() throws Exception {
-    NativeColumnarWindowAggregateOperator operator =
-        operator(LEGACY_NO_PROPERTIES_OUTPUT, false);
+    NativeColumnarWindowAggregateOperator operator = operator(LEGACY_NO_PROPERTIES_OUTPUT, false);
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             rawHarness(operator)) {
@@ -638,8 +857,20 @@ class NativeColumnarWindowAggregateOperatorTest {
   void emitsProctimeWindowsOnTimer() throws Exception {
     NativeColumnarWindowAggregateOperator operator =
         new NativeColumnarWindowAggregateOperator(
-            false, 1000, 1000, 1, new int[] {0}, new int[0], new int[0], new int[] {0}, new int[] {0},
-            "UTC", OUTPUT, true, new int[0], MAX_PARALLELISM);
+            false,
+            1000,
+            1000,
+            1,
+            new int[] {0},
+            new int[0],
+            new int[0],
+            new int[] {0},
+            new int[] {0},
+            "UTC",
+            OUTPUT,
+            true,
+            new int[0],
+            MAX_PARALLELISM);
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             rawHarness(operator)) {
@@ -647,7 +878,8 @@ class NativeColumnarWindowAggregateOperatorTest {
       harness.open();
 
       harness.setProcessingTime(500);
-      harness.processElement(new StreamRecord<>(batch(allocator, event(1, 7000), event(2, 0), event(3, 9000))));
+      harness.processElement(
+          new StreamRecord<>(batch(allocator, event(1, 7000), event(2, 0), event(3, 9000))));
       assertEquals(List.of(), collect(harness)); // window [0,1000) still open at proctime 500
       harness.setProcessingTime(998);
       assertEquals(List.of(), collect(harness));
@@ -707,15 +939,27 @@ class NativeColumnarWindowAggregateOperatorTest {
   /**
    * A proctime hopping window leaves several windows open at once, so the timer chains: each firing
    * closes the earliest-ending open window and schedules the next slide boundary. A single row at
-   * proctime 1300 (slide 500, size 1000) lands in windows [500,1500) and [1000,2000), which close in
-   * order as the clock crosses 1500 then 2000.
+   * proctime 1300 (slide 500, size 1000) lands in windows [500,1500) and [1000,2000), which close
+   * in order as the clock crosses 1500 then 2000.
    */
   @Test
   void emitsProctimeHoppingWindowsOnChainedTimers() throws Exception {
     NativeColumnarWindowAggregateOperator operator =
         new NativeColumnarWindowAggregateOperator(
-            false, 1000, 500, 1, new int[] {0}, new int[0], new int[0], new int[] {0}, new int[] {0},
-            "UTC", OUTPUT, true, new int[0], MAX_PARALLELISM);
+            false,
+            1000,
+            500,
+            1,
+            new int[] {0},
+            new int[0],
+            new int[0],
+            new int[] {0},
+            new int[] {0},
+            "UTC",
+            OUTPUT,
+            true,
+            new int[0],
+            MAX_PARALLELISM);
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             rawHarness(operator)) {
@@ -733,16 +977,28 @@ class NativeColumnarWindowAggregateOperatorTest {
   }
 
   /**
-   * A proctime cumulative window nests several windows sharing a start, all open at once. A single row
-   * at proctime 500 (step 1000, max size 3000) lands in [0,1000), [0,2000) and [0,3000); the chained
-   * timer emits each as the clock crosses its end.
+   * A proctime cumulative window nests several windows sharing a start, all open at once. A single
+   * row at proctime 500 (step 1000, max size 3000) lands in [0,1000), [0,2000) and [0,3000); the
+   * chained timer emits each as the clock crosses its end.
    */
   @Test
   void emitsProctimeCumulativeWindowsOnChainedTimers() throws Exception {
     NativeColumnarWindowAggregateOperator operator =
         new NativeColumnarWindowAggregateOperator(
-            true, 3000, 1000, 1, new int[] {0}, new int[0], new int[0], new int[] {0}, new int[] {0},
-            "UTC", OUTPUT, true, new int[0], MAX_PARALLELISM);
+            true,
+            3000,
+            1000,
+            1,
+            new int[] {0},
+            new int[0],
+            new int[0],
+            new int[] {0},
+            new int[] {0},
+            "UTC",
+            OUTPUT,
+            true,
+            new int[0],
+            MAX_PARALLELISM);
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
             rawHarness(operator)) {
@@ -792,8 +1048,8 @@ class NativeColumnarWindowAggregateOperatorTest {
    * input into native state before serializing, so restoring into a fresh operator resumes the
    * still-open window and combines the pre- and post-restore rows. Pins the synchronous-mailbox
    * guarantee (divergences/04): buffered work survives a checkpoint even though native compute runs
-   * synchronously on the task thread. (Re-added after the row-fed operator carrying the original test
-   * was deleted in the fully-columnar migration.)
+   * synchronously on the task thread. (Re-added after the row-fed operator carrying the original
+   * test was deleted in the fully-columnar migration.)
    */
   @Test
   void bufferedInputSurvivesCheckpointMidStream() throws Exception {
@@ -803,14 +1059,16 @@ class NativeColumnarWindowAggregateOperatorTest {
             rawHarness(eventTimeOperator())) {
       harness.setup(new ArrowBatchSerializer());
       harness.open();
-      // Rows land in window [0,1000); the watermark stays below 1000, so the window is still open and
+      // Rows land in window [0,1000); the watermark stays below 1000, so the window is still open
+      // and
       // its two rows are buffered — not yet emitted — when the checkpoint barrier arrives.
       harness.processElement(new StreamRecord<>(batch(allocator, event(1, 0), event(2, 500))));
       assertEquals(List.of(), collect(harness));
       snapshot = harness.snapshot(1L, 1L);
     }
 
-    // A fresh operator restored from that snapshot must resume the open window: a third row joins the
+    // A fresh operator restored from that snapshot must resume the open window: a third row joins
+    // the
     // two that survived the checkpoint, and closing the window with a watermark emits their sum.
     try (BufferAllocator allocator = new RootAllocator();
         KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> harness =
@@ -848,7 +1106,8 @@ class NativeColumnarWindowAggregateOperatorTest {
       before.setup(new ArrowBatchSerializer());
       before.open();
       before.processElement(
-          new StreamRecord<>(keyedBatch(allocator, keyedEvent(keys[0], 1, 0), keyedEvent(keys[1], 2, 0))));
+          new StreamRecord<>(
+              keyedBatch(allocator, keyedEvent(keys[0], 1, 0), keyedEvent(keys[1], 2, 0))));
       snapshot = before.snapshot(1L, 1L);
       keyedCollect(before);
     }
@@ -884,9 +1143,7 @@ class NativeColumnarWindowAggregateOperatorTest {
       actual.addAll(keyedCollect(restored1));
       actual.sort(java.util.Comparator.comparing(row -> row.get(0)));
       List<List<Long>> expected =
-          new ArrayList<>(
-              List.of(
-                  keyedRow(keys[0], 11, 0, 1000), keyedRow(keys[1], 22, 0, 1000)));
+          new ArrayList<>(List.of(keyedRow(keys[0], 11, 0, 1000), keyedRow(keys[1], 22, 0, 1000)));
       expected.sort(java.util.Comparator.comparing(row -> row.get(0)));
       assertEquals(expected, actual);
     }
@@ -894,15 +1151,39 @@ class NativeColumnarWindowAggregateOperatorTest {
 
   private static NativeColumnarWindowAggregateOperator eventTimeOperator() {
     return new NativeColumnarWindowAggregateOperator(
-        false, 1000, 1000, 1, new int[] {0}, new int[0], new int[0], new int[] {0}, new int[] {0},
-        "UTC", OUTPUT, false, new int[0], MAX_PARALLELISM);
+        false,
+        1000,
+        1000,
+        1,
+        new int[] {0},
+        new int[0],
+        new int[0],
+        new int[] {0},
+        new int[] {0},
+        "UTC",
+        OUTPUT,
+        false,
+        new int[0],
+        MAX_PARALLELISM);
   }
 
   private static NativeColumnarWindowAggregateOperator operator(
       RowType outputType, boolean proctime) {
     return new NativeColumnarWindowAggregateOperator(
-        false, 1000, 1000, 1, new int[] {0}, new int[0], new int[0], new int[] {0}, new int[] {0},
-        "UTC", outputType, proctime, new int[0], MAX_PARALLELISM);
+        false,
+        1000,
+        1000,
+        1,
+        new int[] {0},
+        new int[0],
+        new int[0],
+        new int[] {0},
+        new int[] {0},
+        "UTC",
+        outputType,
+        proctime,
+        new int[0],
+        MAX_PARALLELISM);
   }
 
   private static RowData event(long value, long eventTimeMillis) {
@@ -929,7 +1210,8 @@ class NativeColumnarWindowAggregateOperatorTest {
     return new ArrowBatch(RowDataArrowConverter.write(List.of(rows), KEYED_SCHEMA, allocator));
   }
 
-  private static ArrowBatch keyedBatch(BufferAllocator allocator, int destination, RowData... rows) {
+  private static ArrowBatch keyedBatch(
+      BufferAllocator allocator, int destination, RowData... rows) {
     return new ArrowBatch(
         RowDataArrowConverter.write(List.of(rows), KEYED_SCHEMA, allocator), destination);
   }
@@ -942,8 +1224,8 @@ class NativeColumnarWindowAggregateOperatorTest {
     return List.of(key, total, start, end);
   }
 
-  private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch> keyedHarness(
-      int parallelism, int subtask) throws Exception {
+  private static KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>
+      keyedHarness(int parallelism, int subtask) throws Exception {
     int[] stateKeys = FlinkKeyGroupUtils.stateKeysForSubtasks(MAX_PARALLELISM, parallelism);
     return new KeyedOneInputStreamOperatorTestHarness<>(
         new NativeColumnarWindowAggregateOperator(

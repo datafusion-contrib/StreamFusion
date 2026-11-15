@@ -25,6 +25,145 @@ Event-time parity fixtures keep the watermark behind the entire input timestamp 
 end of input, so file enumeration order cannot introduce accidental late rows. Late-row tests
 control the input order separately.
 
+## Planning and canonical qualification
+
+Ordinary relational planning and portable stock-plan lowering normalize partition columns,
+ascending time order, time-attribute kind and ROWS/RANGE bounds into the same immutable window
+specification. The adapters retain their released bound conventions: relational literals carry a
+preceding magnitude, while the stock execution specification resolves a signed boundary through
+Flink's own helper. Native frame kind and offset come from that normalized specification.
+
+The stock OVER adapter separately qualifies canonical state: at most one BIGINT partition key,
+the existing arithmetic input types, exact released frame-function class and safe stored ROWS
+count. Its zero/CURRENT ROW handling, maximum-parallelism resolution, accumulator layout,
+retention, timer and identity bindings keep their existing constraints. Sharing frame semantics
+does not broaden those state-migration qualifications or change JVM aggregate routing.
+
+## Scalar JVM aggregates
+
+Synchronous JVM `AggregateFunction` calls run behind Arrow input/output boundaries on
+released Flink 2.2.1 and 1.18.1. This includes event-time unbounded ROWS/RANGE, bounded
+ROWS and bounded RANGE, plus processing-time unbounded ROWS/RANGE and bounded ROWS,
+all ending at CURRENT ROW. One ascending time order and one window group are required.
+Partition keys, input fields and results use the verified scalar JVM function types:
+integer widths, FLOAT/DOUBLE, BOOLEAN, CHAR/VARCHAR, binary, DECIMAL, DATE, TIME,
+TIMESTAMP/LTZ and day-time/year-month intervals. Accumulators may contain managed
+ListView/MapView state; they are serialized by Flink rather than carried through Arrow.
+
+The released planner generates the aggregate handler and chooses the released frame
+function, including the configured 2.2 unbounded event-time implementation. The Arrow
+wrapper retains that unopened function, its key selector, managed state and timers. The
+temporary row transformation used to obtain them is discarded and never becomes a runtime
+edge. The runtime graph uses the native columnar exchange and transposes at island edges.
+Owned BinaryRow input copies preserve Flink's compact timestamp layout and let heap frame
+state outlive the input Arrow batch. Output is copied immediately, with Java string-cache
+sidecars retaining UDF-produced UTF-16 values before UTF-8 materialization.
+
+Released handler generation retains DISTINCT membership, constants, multiple arguments,
+shared function instances, accumulate/retract/reset ordering, lifecycle and errors. Frame
+functions retain peer ordering, late-row decisions, watermark timers and applicable idle
+retention. Checkpoint barriers flush pending Arrow output without prematurely evaluating
+buffered frames. Managed state and timers support same-line, same-plan checkpoint restore
+and canonical-savepoint rescaling. This does not establish state migration between stock
+and native plans, Flink versions, or changed queries.
+
+The `jvmOverRows`, `jvmOverEventTimers` and `jvmOverProcessingTimers` counters distinguish
+consumed input and fired timer domains. Opening a handler or seeing a plan label alone is
+not execution evidence. Focused checks cover all 19 scalar input/result and partition types,
+all seven frames, NULLs, owned mutable output, shared calls, DISTINCT, constants, lifecycle
+and callback failures, controlled clocks, positive TTL, late input, repeated heap/native
+RocksDB recovery, and 1→3→2-task checkpoint/savepoint restoration with pending event-time
+frames. Unchanged upstream scalar SQL and admitted Table API OVER methods separately
+require consumed JVM OVER work and their original assertions on both backend routes.
+Builtin-only direct FLOAT AVG controls and unverified collection-output contexts retain their
+precise existing fallback contracts on both lines. Event-time fixtures keep their upstream host time assigner,
+so the complete graph is explicitly mixed; native/mixed graph guards still prohibit a stock
+row OVER operator. See the [upstream witnesses](../upstream-flink-suite.md).
+
+JVM OVER keeps stock fallback for asynchronous state, non-insert-only input, general nested
+operator fields/results, specialized or Python definitions, custom legacy wrappers,
+unverified companion functions, ordinary non-time ordering, multiple groups/orders,
+other bounds and bounded processing-time RANGE. Representation-sensitive collection
+consumers/constructors above OVER retain the existing producer-qualification fallback; this
+does not extend ARRAY/MAP/ROW operator-boundary coverage. Released Flink validation failures
+remain failures. SQL FILTER support remains subject to the released OVER validator. A mixed JVM
+frame may also contain released scalar SUM/SUM0/MIN/MAX/COUNT/AVG/FIRST_VALUE/LAST_VALUE
+or ranking calls; builtin-only frames retain the Rust matcher's coverage below.
+`streamfusion.operator.jvmOver.enabled=false` disables this substitution;
+`streamfusion.operator.over.enabled=false` disables both time-based OVER implementations.
+The grouped-aggregate experimental switch does not control OVER. Remaining JVM definition
+and operator-boundary contracts are tracked in [#237](https://github.com/datafusion-contrib/StreamFusion/issues/237).
+
+The bounded processing-time RANGE fallback regression retains all 96 input rows with
+independent partition keys and keeps the source open until the released aggregate has
+evaluated every row. This lets Flink's next-millisecond timers fire before end of input.
+Both routes must produce the complete expected result while retaining the stock fallback;
+the fixture does not compare clock-dependent peer groups between independent runs.
+
+This is functionality under the accepted UDF performance exception. It preserves the JVM
+callback and state ABI and does not imply a Rust aggregate speedup. See the
+[JVM aggregate architecture decision](https://github.com/datafusion-contrib/StreamFusion/blob/main/divergences/48-jvm-aggregate-managed-state.md).
+
+### Measured whole-job costs
+
+Release+mimalloc measurements use JDK 17, parallelism one, a 2 GiB heap, UTC, 1,024-row Arrow
+batches and NULL every 31st row. BIGINT uses processing-time unbounded ROWS (131,072 rows,
+16 keys); DECIMAL(38,18) uses event-time `3 PRECEDING .. CURRENT ROW` (262,144 rows, 1,024 keys);
+STRING uses event-time 0.3-second PRECEDING RANGE (131,072 rows, 64 keys). Two warmups and
+five measured runs alternate engines, with symmetric full-explain preflight before timing.
+Medians and full measured ranges below are seconds; the previous revision is actual
+`5d628b6a`, with the identical test fixture overlaid and its fallback asserted.
+
+| Flink | Argument / frame | Stock median (range), s | Candidate median (range), s | Previous SF median (range), s |
+| --- | --- | ---: | ---: | ---: |
+| 2.2 | BIGINT / running ROWS | 0.098 (0.094–0.113) | 0.119 (0.117–0.133) | 0.114 (0.097–0.162) |
+| 2.2 | DECIMAL(38,18) / bounded ROWS | 0.945 (0.914–0.990) | 8.228 (8.082–8.271) | 1.232 (1.209–1.270) |
+| 2.2 | STRING / bounded RANGE | 1.199 (1.148–1.529) | 5.175 (5.112–6.067) | 2.204 (1.903–2.454) |
+| 1.18 | BIGINT / running ROWS | 0.107 (0.103–0.128) | 0.125 (0.113–0.145) | 0.095 (0.093–0.100) |
+| 1.18 | DECIMAL(38,18) / bounded ROWS | 1.080 (1.042–1.156) | 8.625 (8.495–8.792) | 1.076 (1.042–1.163) |
+| 1.18 | STRING / bounded RANGE | 0.916 (0.876–0.952) | 4.821 (4.713–4.859) | 1.180 (1.146–1.236) |
+
+These are functionality diagnostics under the accepted UDF exception, not an acceleration
+claim. The short running case is startup-sensitive. Event-time profiles retain inputs until
+the final watermark, so their totals include the watermark-driven drain. Each event timer
+currently flushes its Arrow result batch; many callbacks in these profiles produce one row.
+Owned input copies, managed state, JVM handlers and those small output allocations remain
+inside timing. These complete-job measurements do not isolate their individual contributions.
+
+The [168-job artifact](../benchmarks/results/jvm-over-2026-11-03.json) retains every reported
+warmup/trial, ranges, portable commands, source/library hashes and paired stock controls
+from the preceding-revision JVMs. Cross-JVM stock medians drift; previous/candidate differences
+are descriptive, not isolated attribution. Earlier asymmetric-preflight diagnostics, including
+one run overlapping compilation and a partially interrupted 1.18 run, remain in the artifact
+as excluded preliminary data. No operator optimization pass or speedup is claimed.
+
+### Reproducing JVM OVER measurements
+
+`JvmOverBenchmark` retains the runtime row source, blackhole row sink, managed frame state
+and both perimeter conversions. Stock and native perform the same full explain before
+timing; each complete `executeSql(...).await()` remains timed. Execution order alternates,
+with two warmups and five measured trials per engine. `bench` selects release Rust with
+mimalloc and production Arrow IPC exchange. For example:
+
+```sh
+mvn -Pbench -pl streamfusion-runtime -am -DskipTests test
+SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime \
+  -Dtest=JvmOverBenchmark -Dnative.build.skip=true -Dsf.testForks=1 \
+  '-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC' \
+  '-Djvmover.type=DECIMAL(38,18)' -Djvmover.rows=262144 -Djvmover.keys=1024 \
+  -Djvmover.order=rt '-Djvmover.frame=ROWS BETWEEN 3 PRECEDING AND CURRENT ROW' \
+  surefire:test@default-test
+```
+
+Add `flink-1.18` to the Maven profiles for 1.18.1. `jvmover.type` also accepts BIGINT and
+STRING; `jvmover.order` selects `rt` or `pt`, and `jvmover.frame` supplies the bounds.
+For the actual preceding-production control, use a clean checkout of `5d628b6a`, overlay
+only the identical benchmark fixture, build its release payload, and set
+`-Djvmover.expectNative=false`. That control requires the preceding full-island fallback;
+the candidate requires consumed input in JVM OVER itself. Both retain their paired stock
+runs. The release diagnostics workflow runs the new frame/type/ownership/recovery checks
+on both Flink lines in addition to ordinary CI and unchanged upstream contracts.
+
 ## Ordinary ROW_NUMBER (Flink 2.2)
 
 An unfiltered `ROW_NUMBER() OVER (PARTITION BY ... ORDER BY v ASC)` also runs over an ordinary
@@ -236,9 +375,12 @@ Select these profiles with `NonTimeRowNumberBenchmark` under `-Pbench` and
 ## Frame shapes
 
 Running checkpoints retain raw widened sums and non-null counts for AVG and decimal SUM.
-The evaluated average is never restored as a sum. Bounded decimal SUM/SUM0/AVG and floating
-SUM0 retract expired values before adding arrivals and retain their arithmetic history. This
-preserves decimal overflow and FLOAT/DOUBLE rounding rather than refolding the retained slice. Typed
+The evaluated average is never restored as a sum. Bounded numeric SUM/SUM0/AVG and COUNT
+retain their raw arithmetic state and retract expired values before adding arrivals. Primitive
+SUM includes an independent non-null count, so an empty frame emits NULL without normalizing
+its stored sum. Raw rounding/NaN history can affect a later nonempty frame. AVG keeps its own
+widened sum/count; a FLOAT SUM cannot substitute for its DOUBLE accumulator. Numeric DISTINCT
+reductions preserve arithmetic while reconstructing retained multiplicities. Typed
 extrema/selections retain the input decimal scale or both timestamp components. Precision 0/3
 values normalize to the released serializer's millisecond representation before aggregation;
 precision 6/9 values retain their fractional nanoseconds.
@@ -308,8 +450,20 @@ DECIMAL also admits DISTINCT SUM/SUM0/AVG; other DISTINCT aggregates retain the 
 
 ### Bounded `ROWS BETWEEN n PRECEDING AND CURRENT ROW`
 
-Retains the preceding row slice plus the current row. Decimal SUM/SUM0/AVG, floating SUM0
-and string reductions retract expired membership; other reductions fold the retained slice.
+Retains the preceding row slice plus the current row. Numeric SUM/SUM0/AVG, COUNT and string
+reductions retract expired membership; other reductions fold the retained slice. Non-numeric
+DISTINCT COUNT retains its existing frame recomputation path.
+
+Completed event-time ROWS output follows event-timer timestamp order, retaining arrival order
+within a timestamp even when inputs arrived out of order. At `Long.MAX_VALUE`, the released
+stock bucket search cannot select that timestamp for retraction: it starts at the same sentinel
+and uses a strict comparison. Native execution therefore keeps the terminal bucket's peers and
+raw arithmetic instead of truncating them to the nominal frame width. The bucket can exceed that
+width, matching stock state. Original-row export, native snapshots and memory/RocksDB transfers
+preserve it. Older native writers cannot recover peers they already discarded.
+This ordinary native correction does not complete the stock event-time ROWS canonical contract
+tracked in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking
+remains deferred.
 
 ### Bounded `RANGE BETWEEN INTERVAL n PRECEDING AND CURRENT ROW`
 
@@ -323,25 +477,68 @@ Bounded ROWS and RANGE frames instead compare against that partition's last-fire
 initially zero. Equality is late; an untouched partition can accept a positive timestamp behind
 the global watermark. Rows tied before their timer fires remain admissible together.
 
-The newest retained frame row preserves the last-fired timestamp through memory snapshots,
-RocksDB checkpoints, and backend transitions. A zero-width ROWS frame keeps one marker row,
-which is excluded from the next row's aggregate. RANGE eviction uses each partition's own
-last timestamp. Its event-time cleanup timer clears the whole partition and resets admission:
+ROWS preserves its last-fired timestamp in the newest retained frame row; a zero-width frame
+keeps one marker row, excluded from the next row's aggregate. RANGE separately retains its
+last-fired timestamp and the complete set of registered data and cleanup timestamps. An older
+cleanup timer remains registered when the deadline moves: firing it advances the late cutoff
+even if no input exists at that timestamp. The newest frame row alone cannot represent this.
+RANGE eviction uses each partition's own last processed rowtime. Its current event-time cleanup
+timer clears the whole partition and resets admission:
 Flink's deadline hysteresis registers `timestamp + floor(1.5 * interval) + 1` when the existing
-deadline precedes `timestamp + interval + 1`. Those deadlines are checkpointed alongside frames;
-pending-only partitions reconstruct them from their buffered arrivals on canonical restore.
+deadline precedes `timestamp + interval + 1`. Memory snapshots and RocksDB checkpoints preserve
+the deadline, last-fired timestamp and registered timers together, including pending-only keys
+and backend changes. Timer metadata follows key-group ownership during rescaling. Old native
+snapshots remain readable using their former frame-derived cutoff, but cannot recover discarded
+timer history. The [qualified bounded canonical binding](#automatic-bounded-arithmetic-state-binding-partial)
+uses this retained history; its remaining variants are listed in that scope under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). This native correction
+alone is not a cross-engine qualification. Benchmarking remains deferred.
 
 ## Proctime order
 
-The running and bounded-ROWS frames are native on proctime as well: arrival order, eager emit, no
-wall-clock timer needed.
+The running and bounded-ROWS frames are native on proctime as well, with eager output in arrival
+order. Bounded ROWS follows the released Flink operator's processing-clock buckets, processed-row
+counter and smallest-bucket state. The counter stops increasing at the configured frame width.
+When retracting empties the selected bucket, Flink chooses the next minimum before inserting the
+current input, using `Long.MAX_VALUE` for an empty map. That sentinel can leave an additional row
+in a width-one frame; native execution preserves the resulting accumulator and future evictions.
+If processing clocks regress, the selected bucket can occur in the middle of arrival order.
+The materialized input time field is not used as a substitute for the processing clock.
+
+Memory snapshots and RocksDB file checkpoints retain each row's processing clock and the separate
+counter/minimum state, including when idle-state retention is disabled. Key-group rescaling clips
+this metadata with its frame. Older native checkpoints remain readable using their previous
+retained-frame counter and an internal fallback clock; they cannot recover discarded bucket
+history. With retention enabled, the runtime registers the earliest native cleanup deadline with
+Flink's processing-time service, cancels it when the minimum changes, and silently clears every
+partition due at the callback. It re-arms after native or stock restore from the per-key saved
+deadlines, including `Long.MIN_VALUE`. This preserves idle cleanup before a savepoint and does not
+fire a newly registered past deadline until the host invokes its callback. Processing-time ROWS
+uses the released planner's signed wrapping arithmetic for retention horizons and deadlines.
+Correctness takes priority; benchmarking remains deferred.
+
+Direct processing-time ROWS transfer exports the counter, bucket minimum and cleanup owner
+separately from original retained rows and raw arithmetic. Import installs the frame first, then
+validates its metadata before installing any counters. Immediate re-export preserves the empty-map
+sentinel instead of deriving a minimum from retained rows. Duplicate/unowned keys, missing frames,
+wrong field types and invalid counts fail conversion. Legacy frames lacking exact counter/minimum
+metadata remain readable for ordinary recovery but cannot claim an exact canonical handoff.
+The Flink 2.2.1 stock adapter projects this state into `accState`, processing-clock `inputState`
+buckets, `processedCountState`, `smallestTSState`, and the optional
+`ProcTimeBoundedRowsOverCleanupTime` ValueState and Void processing-timer queue. It reuses the
+arithmetic frame conversion used by event-time RANGE. The hidden all-input count is independent
+of `COUNT(value)` and of the processed counter. Import preserves each bucket's row order and the
+saved raw SUM/AVG arithmetic without replay. The automatic portable-plan path binds plain numeric
+SUM/SUM0/COUNT/AVG bounded ROWS, including width one, while the public compiled plan remains stock.
+Bounded DISTINCT and selection/data-view contracts, event-time ROWS and the remaining full matrix
+are still required under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 
 A **bounded-RANGE frame over proctime** falls back — with processing time materialized as a fixed
 per-batch timestamp, a wall-clock-interval frame has no meaningful definition.
 
 ## Gaps
 
-The matcher declines:
+The builtin-only Rust matcher declines:
 
 - Direct `AVG` outside DECIMAL. Flink can lower some other AVG forms to SUM/COUNT aggregates.
 - A non-numeric value column outside DECIMAL, CHAR/VARCHAR, DATE, TIME, BOOLEAN, TIMESTAMP
@@ -1089,3 +1286,967 @@ or year-month interval arguments using the numeric membership carrier), validity
 typed default-or-NULL value before persistence. The original payload columns remain intact.
 Matching physical types retain the existing raw-column path. Checkpoint encoding is unchanged;
 canonical memory/RocksDB transitions and aligned RocksDB recovery preserve these counts.
+
+
+## Stock canonical state transfer groundwork
+
+Canonical RocksDB capture pins the database at the barrier and creates the reader on Flink's
+asynchronous writer thread on both supported releases. Readers fetch cleanup stamps, processing-
+ROWS counters and RANGE timer metadata from the captured tables without populating maps for every
+key. Fold, pending and cleanup scans share row/byte bounds; processing-ROWS ownership checks use
+streamed partition keys and point reads. Captured RocksDB retained frames stream in chunks within
+each partition. Global positions carry the total retained count, and only the final chunk installs
+raw accumulators and counters. RANGE conversion skips heap-map reordering for the RocksDB stock
+projection, whose encoded-key iteration determines canonical order. Import validation still retains
+its inventories and individual stock list/map values can be large, so fully bounded conversion
+remains unfinished. These changes preserve the existing stock-layout coverage below.
+Native DISTINCT membership visitors likewise bound rows and bytes and observe cancellation within
+one partition; captured readers use the table normalization already performed during live open.
+These are transfer primitives and do not add an automatic stock DISTINCT binding.
+
+
+The raw unbounded-fold transfer interface visits resident or typed-RocksDB accumulators directly
+in batches of at most 1,024 keys, with original retention stamps. It preserves raw floating sums,
+independent AVG counts and nullable extrema; import never reconstructs them by replaying input.
+Frame/window-function state and unbound DISTINCT aggregates are rejected by the fold-only
+interface. Bound DISTINCT aggregates transfer their memberships separately before finalization. Released stock accumulator/input schemas, timer queues
+and planner bindings remain part of [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+This primitive alone does not establish stock OVER savepoint interoperability.
+
+COUNT continues an imported signed-long boundary using wrapping addition/subtraction, matching
+Flink in debug and release builds. A boundary regression covers both directions; the full native
+regression suite retains two existing ignores. Benchmarking remains deferred until
+functional interoperability coverage is complete.
+
+Nullable decimal SUM retains its selected NULL/value state. The existing running sum restarts
+from the next non-NULL input after decimal overflow, matching the released stock nullable sum.
+An unbounded ROWS/RANGE regression covers intervening NULL input and native snapshot/restore
+between overflow and continuation, for processing-time and event-time execution.
+
+Typed RocksDB pending rows accept an optional INSERT RowKind companion. They validate it before
+writing and reconstruct it when the caller requests a tagged payload. The pending bytes retain
+the existing logical-row codec, so earlier untagged checkpoints stay readable. Updating/NULL
+companions and unrelated extra fields are rejected rather than silently discarded. Three native
+controls compare legacy bytes, dual-schema reads and rejection before sequence/state changes.
+
+The OVER operator can rebuild numeric literal arguments and COUNT(*)'s non-NULL one from
+stock-encoded task configuration. It inserts their Arrow columns before hidden RowKind/string
+companions and removes them from output, sharing the original payload buffers. Internal names
+are isolated from user fields; no additional graph operators or savepoint state are needed.
+Configuration contains encoded bytes, and live RowData/schema caches are rebuilt after task
+serialization. The exec node can retain a supplied stock maximum parallelism.
+
+The 66 common controls cover ordinary and native-format canonical snapshots across memory and
+typed RocksDB, ROWS/RANGE, processing/event time, TTL, nullable keys/values, pending rows, UTF-16
+companions, input-buffer sharing and malformed-configuration cleanup. These component controls
+are distinct from stock-savepoint projection and complete portable-plan qualification under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.
+
+
+The native event-time unbounded-fold bridge now transfers buffered INSERT rows and armed
+processing-time cleanup deadlines separately from accumulators. Pending-only and late-only keys
+retain their deadlines without fabricated accumulator state. Both visitors are read-only, bounded
+to 1,024 rows per callback and retryable after a receiver failure; malformed timestamps, RowKind,
+partition types or deadline batches fail before installation.
+
+Ordinary native checkpoints retain every armed cleanup deadline, including keys with no
+accumulator. Memory key-group snapshots carry a separate typed-key deadline footer, with readers
+still accepting earlier snapshots without that footer. RocksDB checkpoints synchronize the same
+metadata into the existing stamp table; current deadline rows override older fold-prefix stamps
+on restore and cleared keys remove both. This also preserves immediate re-checkpoints after a
+canonical import. These are native component contracts; the released Flink event-time `inputState`,
+cleanup ValueState and timer queues still require the stock adapter, planner binding and full-job
+qualification under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking remains deferred.
+
+
+Restored native event-time buffers can accept live batches with different optional INSERT
+RowKind or Java string-cache companions. The logical columns must retain their order and types;
+existing Arrow payload buffers are shared, missing INSERT tags are rebuilt, and missing string
+caches remain cold as after stock row deserialization. Other schema changes fail before the
+existing pending rows or retention bookkeeping are modified. This applies to ordinary native
+checkpoint recovery as well as canonical imports.
+
+
+### Persistent DISTINCT floating identity
+
+Typed RocksDB OVER membership uses Java boxed FLOAT/DOUBLE equality: NaN payloads share
+one membership key, while positive and negative zero remain distinct. Opening an existing
+native store or merging checkpoint shards normalizes old NaN membership identifiers without
+rewriting accumulator values or partition-key bytes. The migration is idempotent and preserves
+finite values and signed zeros. It does not reconstruct historical scalar results from old
+membership sets. Aligned and merged recovery controls cover both floating widths and retain
+the original serialized fold bytes.
+
+
+### Direct native DISTINCT membership transfer
+
+Unbounded DISTINCT folds can bind independent typed membership transfers alongside their raw
+accumulators. Memory and typed RocksDB visitors export at most 1,024 memberships per batch,
+without clearing live state or replaying input. Import validates types, NULLs, partition ownership
+and duplicate elements before installing a batch. Without value TTL, restored COUNT/AVG cardinalities and SUM, SUM0
+and extrema emptiness must agree with their membership sets. Incomplete imports cannot process
+input, export state or checkpoint. JNI releases imported Arrow ownership before propagating an
+error so buffer cleanup cannot swallow validation or memory-limit exceptions.
+
+Processing-time value TTL resets the scalar accumulators while retaining independent DISTINCT
+memberships, matching released stock Flink. Untouched raw accumulator ages survive capture;
+stock membership-only keys import and export without fabricating an accumulator. Scalar counts
+since expiry may be smaller than lifetime membership cardinality. Event-time folds retain their
+existing cleanup deadlines. This native contract is separate from full portable-job, connector
+and version qualification under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking is deferred.
+
+
+### Native checkpoint presence for independent views
+
+Native memory checkpoints use a nullable TTL timestamp to distinguish an absent accumulator
+from its surviving DISTINCT memberships. A present timestamp retains its exact write age; NULL
+means no accumulator and never adopts a fresh restore timestamp. Older non-nullable clocks and
+pre-TTL rows remain readable, including mixed partitions: only pre-TTL rows acquire the restore
+clock. Persistent checkpoints preserve independent membership tables even when their fold row
+is absent. Full membership iteration decodes the existing combined key/value row encoding,
+including variable-width composite keys, rather than relying on fold rows as an index.
+
+On an expired persistent fold touch, deletion reaches the store before hydration. This also
+prevents non-DISTINCT folds from reloading an expired scalar between periodic sweeps. These
+changes preserve the ordinary native checkpoint path; direct stock canonical export still
+visits live state and uses stock serializers without an intermediate native snapshot.
+
+
+Independent lifetime validation still rejects a current DISTINCT COUNT or AVG count larger
+than its retained lifetime membership. A failed finalization leaves execution blocked; supplying
+the missing memberships can finish the same restore without changing its raw accumulators.
+Controlled native checks cover both stores and distinguish this invalid state from a valid
+smaller post-expiry scalar count.
+
+
+### Native bounded-frame input retention
+
+The native bridge can bind original-input retention before a bounded ROWS or event-time RANGE
+operator consumes rows. Retained frames then preserve every original column, including unused
+columns, NULLs, INSERT RowKind and Arrow schema metadata, alongside frame order and the sampled
+processing clock. A COUNT-only ROWS frame retains all `n + 1` current rows when bound, even though
+its ordinary execution path can discard one earlier. These retained inputs feed the qualified
+stock bounded contracts and automatic submission binding described below.
+
+Memory frames own their input buffers, including nested dictionary values and validity. Typed
+RocksDB stores original rows beside its existing aggregate-argument frame table. Original rows
+evict and expire with their frame entries, and key-group clipping redistributes both tables.
+A nonempty older frame without original rows cannot acquire the binding: missing columns cannot
+be reconstructed from aggregate arguments. Ordinary native checkpoints retain captured rows;
+processing-time restore preserves the arrival-counter high-water mark.
+
+Direct frame export visits live retained rows in per-key order and appends frame time, sampled
+clock and position. Metadata column names avoid collisions with original columns. Export leaves
+live state intact, supports retry after receiver failure, and does not create a native snapshot
+as an intermediate. Native checkpoint encoding remains separate from this stock-export path.
+The complete stock bounded accumulator, buffer, counter and timer contract, legacy versions and
+applicable unchanged upstream restore programs remain required under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking remains deferred.
+
+
+### Released bounded processing-time bookkeeping
+
+Released Flink 2.2.1 bounded ROWS state cannot always be reconstructed from the logical frame
+width or its retained row count. For a width-one frame, retracting the first input can leave
+`smallestTSState = Long.MAX_VALUE` before the next clock bucket is inserted. After inputs 1, 2, 3,
+the stock operator can retain the last two rows with SUM 5 and COUNT 2 while `processedCountState`
+remains 1. Replacing that minimum clock or deriving the processed counter from the buffer would
+change subsequent results. The canonical adapter must preserve the actual state protocol.
+
+Eight generated released-operator controls cover width-one and width-three frames, heap and
+RocksDB, repeated and advancing clocks, and stock canonical savepoint continuation. They resolve
+aggregate field order from the actual compiled plan. These are stock protocol controls, not
+bidirectional bounded-OVER qualification; the full contract remains required under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+
+### Bounded arithmetic checkpoint layouts
+
+Native bounded frames now retain primitive SUM/count and AVG/count even when a query has no
+decimal or SUM0 aggregate. Retraction order for floating RANGE sums follows the backing
+MapState order, including heap snapshot reconstruction. Counts reaching zero change evaluated
+NULL results without discarding raw sums, signed zeros or NaN history. This closes the
+information gap that prevented a stock bounded accumulator from being projected directly.
+
+Native memory checkpoints accept the two preceding fold-column layouts. Typed RocksDB writes
+version 2 frame values when the expanded layout differs, and reads unmarked and version 1
+values in the same store. Known raw fields remain independent; older fields that were never
+recorded use explicit missing markers and the ordinary native restore path seeds them from
+the retained inputs. That migration cannot recover arithmetic history an earlier implementation
+discarded, and does not qualify older native checkpoints as exact stock canonical state.
+Forty-four frozen historical fixtures were generated with the independently built library from
+`0dd7e98b`; normal tests read them rather than regenerating an old format with the current writer.
+The generator validates the supplied historical library hash before explicit regeneration.
+
+The stock bounded accumulator/view/buffer/counter/timer adapter and its planner admission still
+remain required under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+This change preserves native arithmetic; it does not claim complete bounded savepoint interchange.
+Benchmarking and tuning remain deferred.
+
+### Direct retained-frame transfer
+
+Arithmetic frames have a direct native import/export bridge. It visits one live partition at a
+time, carrying full original inputs and sampled clocks, explicit positions, raw sums/counts,
+cleanup deadlines and available RANGE timer/cutoff/map-order metadata. The raw fold appears only
+on the final row. Import installs that fold independently of the retained input values; it never
+replays those values into an accumulator. This preserves cancellation, widened AVG arithmetic,
+decimal overflow and NaN history even when the live count is zero. Input metadata names avoid
+collisions with original columns, and imported rows own their buffers after the Java owner closes.
+
+Import validates the complete bridge schema, ordering, INSERT tags, partition identity, raw
+required fields and RANGE protocol before changing frame state. Persistent import also checks
+key-group ownership and rejects duplicate retained partitions. The bridge covers frames in which
+every aggregate has retained raw arithmetic; selections and their views need separate transfer.
+Event-time pending rows use the separate direct pending-input visitor. A pending-only key's
+protocol is represented by the independent direct RANGE protocol bridge described below.
+Frame payload layouts are unchanged; RANGE timer metadata supports absent cleanup deadlines.
+
+The qualified bounded arithmetic contracts below combine this transfer foundation with released
+serializers, counters, timers and automatic job binding. Additional views and the full
+schema/connector/version/failure matrix remain in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.
+
+The typed event-time canonical jobs retain the declared argument and accumulator types,
+including DECIMAL SUM and AVG. Their final projections normalize results to the shared BIGINT
+fixture sink after aggregation, so the sink schema remains valid without changing saved state.
+
+### RANGE callback order and keys without frames
+
+Bounded event-time RANGE emits completed rows in timestamp order, preserving arrival order among
+peers. Cleanup deadlines use the released Flink function's wrapping long arithmetic. When overflow
+places cleanup before data, cleanup discards that key's pending inputs and processed frame before
+later callbacks run. Other keys retain their pending rows. Future registered timestamps remain
+armed after cleanup; their empty callbacks can create a last-trigger timestamp without a frame,
+input rows or a cleanup deadline. This affects which later records the operator admits.
+
+The direct RANGE protocol bridge carries actual typed keys, optional cleanup and last-trigger
+values, all registered event timestamps and input-map membership order independently of frames.
+It covers pending-only keys and these timer-only or last-trigger-only states. Import checks types,
+unique keys, ordered timer sets, deadline ownership and map membership, including persistent
+key-group ownership. Receiver failure leaves live state available for retry. Full original rows
+still use the pending-input and retained-frame bridges; raw arithmetic is installed separately
+without replay. List child field names may differ across Arrow implementations; their timestamp
+types and actual non-NULL values remain checked.
+
+Native RANGE checkpoint timer metadata now permits an absent cleanup deadline for these states;
+frame and aggregate payload layouts are unchanged, and the reader still accepts prior non-NULL
+timer metadata. This native protocol is one part of #569. Stock descriptor binding, complete
+operator coverage and clean-process interchange remain subject to the issue's acceptance matrix.
+Benchmarking remains deferred under the maintainer's functionality-first instruction.
+
+
+### Released arithmetic RANGE canonical contract
+
+The 2.2 integration path can transfer a bounded event-time arithmetic RANGE operator through
+Flink's stock state descriptors. It copies original input buckets and generated raw accumulators,
+including independent SUM/AVG live counts and the hidden all-input count, without folding retained
+rows again. Full queued callback sets and input-map order accompany both processed frames and
+keys without frames. The stock key serializer and ordinary void timer namespace are retained;
+Stock Flink restore does not need a StreamFusion serializer or JAR.
+
+Canonical interchange validates descriptor ownership, key/time/INSERT consistency, required raw
+fields, hidden input counts and timer membership before installing native state. NULL arguments
+still occupy input rows. Retained-frame and pending-input bridges declare their RowKind field
+consistently, so importing one key's pending rows cannot change the schema required by another
+key's processed frame. Internal bound/aggregate constant slots retain argument positions while
+stock `inputState` contains only the original input row.
+
+The focused stock-operator matrix covers BIGINT, FLOAT, DOUBLE and DECIMAL(38,2), nullable and empty
+keys, heap/RocksDB in each engine, pending-only and processed frames, overflow/orphan callbacks and
+malformed state. Complete-job controls use unchanged stock compiled plans and isolated stock
+processes without StreamFusion dependencies, exercise both transposes, switch in both directions,
+re-export before new input and recover an ordinary native checkpoint before returning to stock.
+This is arithmetic RANGE coverage. Processing-time arithmetic ROWS now has its own stock
+counter/bucket/cleanup contract; event-time arithmetic ROWS without processing cleanup now has
+its own counter/cutoff contract. Processing cleanup for event-time ROWS is now implemented and
+awaits qualification, while additional bounded views, unbounded planner consolidation and the
+remaining #569 matrix are still required.
+Benchmarking remains deferred.
+
+
+### Released arithmetic event-time ROWS canonical contract
+
+The bounded event-time ROWS adapter transfers released Flink 2.2.1 `accState`, full timestamp
+buckets in `inputState`, `processedCountState`, `lastTriggeringTsState` and Void event timers.
+It supports SUM, SUM0, COUNT and AVG without DISTINCT or selection views. The previously qualified
+mode disables processing cleanup; the new cleanup extension below awaits testing. Raw accumulator fields transfer directly; retained rows are never replayed to
+reconstruct a sum or average. Pending peers preserve arrival order within each timestamp bucket.
+
+In this mode, the processed counter equals the smaller of the retained input count and frame
+width, and the last-trigger timestamp equals the newest retained processed timestamp. Import
+checks these invariants, the independent hidden input count and exact pending-timer ownership
+before installing native state. A MAX timestamp bucket can exceed the nominal frame width;
+all of its rows and the raw fold remain present. Canonical export derives only this validated
+counter/cutoff bookkeeping from retained frames, not accumulator arithmetic. Pending-only keys
+have input buckets and event timers without fabricated accumulators, counters or cutoffs.
+
+The stock-operator matrix checks nullable/empty keys, both engines' heap/RocksDB stores, width
+one and wider frames, pending-only and mixed states, MAX peers, untouched re-export, resumed
+output and exported state after callbacks. It also rejects missing or inconsistent counters,
+cutoffs, accumulators, input rows and timers, and unowned descriptors. These controls use actual
+released stock operators and serializers.
+
+Normal SQL and portable compiled plans bind this arithmetic mode while retaining the stock
+submission plan and operator identity. The resumed #569 implementation also binds processing
+cleanup: it transfers `RowTimeBoundedRowsOverCleanupTime` and its independently armed processing
+callback through the existing flat callback protocol. Pending input defers cleanup and re-arms
+from the actual clock; idle cleanup clears the frame and per-key admission cutoff, while late-only
+keys retain their cleanup ownership. Ordinary native checkpoints preserve armed and unarmed
+deadlines. New stock/operator/planner/job controls await qualification on both release lines;
+the new full-job cases use an hour-long retention and do not establish exact wall-clock expiry.
+Bounded views and the complete rescale/version/failure matrix remain open under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.
+
+
+### Automatic bounded arithmetic state binding (partial)
+
+TINYINT/SMALLINT/INT values now use their existing native arithmetic codes in the stock binding,
+alongside BIGINT/FLOAT/DOUBLE. Bounded decimal binding also accepts the existing native decimal
+precisions/scales, with new compact and wide-scale controls awaiting qualification. Raw SUM fields retain their
+declared width and wrapping behavior; AVG retains its widened BIGINT sum and independent count.
+The adapter still transfers raw accumulators rather than replaying retained rows. Shared planner,
+operator and typed event-time job controls now include these integral values on both releases.
+This added scope awaits complete qualification; selected local results are recorded in the
+[canonical inventory](../backends/canonical-state.md#resumed-scope-local-qualification), separately from historical counts below.
+
+The resumed #569 implementation also binds existing scalar partition-key carriers in composite
+keys: TINYINT/SMALLINT/INT/BIGINT, BOOLEAN, CHAR/STRING, DECIMAL, DATE, TIME and timestamp types.
+The shared stock key descriptor supplies key-group hashing and timestamp precision to native
+execution and import. Scalar key support is independent of the arithmetic accumulator layout;
+floating-point and nested partition keys remain outside this binding. Retained input columns
+use the existing Arrow boundary admission, including already-supported nested payloads, while
+the order attribute remains millisecond precision. Newly authored planner and both-order
+continuation controls cover these keys across bounded and unbounded frames; INT/STRING event-time
+jobs additionally cover ordinary SQL, compiled plans, rescaling and native-checkpoint recovery.
+Selected local results for this new scope are recorded in the
+[canonical inventory](../backends/canonical-state.md#resumed-scope-local-qualification).
+Historical evidence below does not yet qualify the wider key scope.
+
+Ordinary SQL and stock portable plans capture the released bounded operator's actual accumulator
+schema, physical aggregate calls and widths, hidden input counter, key serializer, time column,
+constant arguments, retention, identity and maximum parallelism. The initial binding covers
+processing-time ROWS, event-time RANGE and event-time ROWS without processing cleanup. Values
+are BIGINT, FLOAT, DOUBLE or DECIMAL(38,2), with one BIGINT partition key or a keyless global owner.
+Retained input columns must be represented scalars or timestamps with precision at most three.
+Qualified aggregates are SUM, SUM0, COUNT and AVG without DISTINCT or additional views.
+
+A bounded ordinary plan can add constant projection helpers that share the original OVER role.
+Its state binding therefore starts from the original stock template, like the qualified rank
+bindings, and supplies constants through the native operator's internal constant columns.
+The displayed and serialized submission plan stays stock Flink; runtime transposes remain ordinary
+boundaries. Unbounded contracts outside the processing-time scalar mode below, selection, DISTINCT/view,
+remaining key/type contracts are outside this binding. The new event-time ROWS cleanup extension
+awaits qualification as described above. Unaligned checkpoints and asynchronous state are
+also excluded. The general native OVER processing coverage above does not establish stock
+canonical interchange for those additional contracts.
+
+The planner matrix covers all three modes, all four value types, keyed/global state, both
+submission forms and UID policies, and applicable TTL settings. Rejection controls retain actual
+stock owners for unqualified contracts. Broad connector transactions, cross-version interoperability,
+all rescaling/failure combinations and the complete acceptance matrix remain in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking remains deferred.
+
+The final Flink 2.2.1 regression cohort passes 1,834 checks in eighteen classes with no failures,
+errors or skips: 942 bounded state controls (including 64 COUNT(*)/literal and zero-bound cases),
+204 OVER planner/admission controls, 176 rank planner regressions, 400 grouped-aggregate controls,
+22 identity/ordinary-SQL controls and 90 existing OVER processing/SQL controls. Scalar headers,
+independent counts, original ages, pending buckets and callback ownership remain separate checks.
+
+A separate 84-case isolated job cohort passes all three bounded modes, both submission forms,
+native stores and initial engine orders. It contains 24 continued-input switches, 24 no-input
+round trips, twelve ordinary native-checkpoint recoveries and 24 rescalings through one, three
+and two native tasks at maximum parallelism 128. Scripted event watermarks place pending rows
+at the first cut and processed/pending state at the second. Every job retains custom stock
+source/committer state and both transposes, requires actual native work/storage, excludes
+StreamFusion from stock classpaths/metadata and compares complete committed changes plus final
+tables against stock and independent arithmetic results. These jobs use BIGINT keys/values;
+typed and global qualification is at the operator/planner level. Sources and the committing sink
+remain singleton during native-key rescaling. Broader writer/connector transaction failures remain
+outside this matrix.
+
+The unchanged released OVER restore suite also passes all eight programs as stock-only controls.
+Its UDF and wider key layouts do not receive native qualification from this arithmetic binding.
+Shared Flink 1.18 processing/native-checkpoint controls pass seventy cases without a stock canonical
+claim. This binding changes Java planning only and uses the previously qualified native library;
+it adds no native snapshot intermediate or ordinary-checkpoint conversion. Earlier cohorts overlap
+these final runs and are not added cumulatively. All fifteen families and the complete acceptance
+matrix remain partial/open under #569.
+
+
+### Automatic unbounded processing-time scalar binding (partial)
+
+Normal SQL and portable stock compiled plans also capture the released
+`ProcTimeUnboundedPrecedingFunction` contract for ROWS and RANGE unbounded preceding. This path
+supports SUM, SUM0, COUNT and AVG on BIGINT, FLOAT and DOUBLE, with one BIGINT partition key or
+an empty global key. It captures the actual generated physical accumulator fields and widths,
+original key serializer, resolved retention, constants, stock identity and maximum parallelism.
+The scalar contract has no retained-input maps, data views or timers. COUNT(*) and literal
+arguments keep the generated physical calls and internal constant columns.
+
+Canonical export streams the live native folds directly into Flink's stock `accState` schema.
+Import reads the raw released TTL envelopes and preserves each original write timestamp. It
+validates the complete descriptor inventory and every source chunk before applying any chunk;
+validation does not install folds, clocks or key types in the target. A populated target is an
+error. Source entries are cleared only after the complete import succeeds. Memory-budget failures
+leave the source available for a fresh target retry. Arrow callbacks retain the original Java
+exception and release their imported buffers on both success and failure.
+
+Decimal SUM/SUM0/AVG binding is now implemented for existing native decimal precisions/scales,
+including compact inputs and precision-38 accumulators; complete qualification remains pending.
+The adapter projects native decimal SUM’s internal presence count into stock’s one nullable sum
+field. Import recreates presence bookkeeping from that field; it transfers AVG’s raw sum and count
+independently. NULL sums after overflow and all-NULL input preserve stock continuation without
+replaying rows, and decimal AVG/SUM0 overflow may retain a NULL raw scalar. Native checkpoint
+formats remain unchanged. New operator, planner and clean-worker job matrices await qualification
+on both release lines; historical numeric evidence below does not qualify decimal interchange.
+DISTINCT, selection/UDF/view accumulators and floating-point/nested keys remain outside this
+scalar binding. Event-time V2 uses the separate contract described below. Native checkpoint
+recovery is checked before a canonical savepoint performs any backend change. Broader connector
+transactions, sink-writer rescaling, failure combinations and cross-version interoperability
+remain in [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+Benchmarking remains deferred.
+
+
+The consolidated Flink 2.2.1 regression run passes 2,377 checks in 25 classes with no failures,
+errors or skips. It retains the earlier 1,834 bounded/regression checks and adds 344 unbounded
+state controls (96 raw handoff/age cases, 72 validation/failure cases, 128 checkpoint/empty-state
+cases and 48 numeric-edge cases), 150 unbounded planner controls and 49 existing native fold
+transfer controls. The numeric cases retain integer wraparound, signed zero, subnormals,
+infinities and NaNs. Corrupt entries beyond the first 1,024-row chunk must leave the native target
+empty and every source byte unchanged; allocation denial permits a fresh-target retry without
+consuming source entries. Receiver failures are checked before and after Arrow import.
+
+The native suite passes 1,299 tests with two existing ignores; the no-RocksDB build also passes.
+A clean released Flink 1.18 build passes seventy shared OVER processing/checkpoint controls,
+including the updated common planner API. This is not Flink 1.18 canonical qualification.
+These cohorts overlap earlier evidence and are not cumulative completion counts.
+
+
+Complete-job qualification passes a separate 112-case arithmetic cohort: 56 keyed and 56 global
+jobs across ROWS/RANGE, ordinary SQL/portable plans, both native stores and both initial engine
+orders. It includes 32 continuation switches, 32 no-input round trips, sixteen native-checkpoint
+recoveries and 32 rescalings. Keyed OVER tasks scale 1→3→2 at maximum parallelism 128; global
+OVER remains one task with maximum parallelism one while the custom source scales 1→3→2. The
+committing sink stays singleton. Each native leg requires actual OVER input and the requested
+storage, both transposes execute, stock workers exclude StreamFusion, and metadata contains no
+StreamFusion types. Complete committed changes and independent SUM/AVG tables match stock.
+These job cases use BIGINT values; FLOAT/DOUBLE qualification remains at operator/planner level.
+
+The COUNT(*)/literal cohort covers 96 keyed/global jobs across both frame/submission forms and
+both stores: sixteen continuation switches, 32 no-input round trips, sixteen native-checkpoint
+recoveries and 32 rescalings. Continuation and checkpoint cases start native; no-input and rescale
+cases start in either engine. NULL-valued input still increments COUNT(*) and the literal sum.
+Rescaling retains all 384 input rows: each of 64 keyed partitions finishes at count 6 and literal
+sum 42, while the singleton global owner finishes at count 384 and sum 2688. A separate 32-job harness
+regression passes 24 bounded OVER continuations and eight global GROUP BY rescalings.
+Native connector transactions, sink-writer rescaling and the wider failure/version matrix remain
+unfinished; the custom fixtures establish their stock connector protocols only.
+
+
+### Event-time pending-state preflight
+
+The event-time transfer interface exposes separate read-only validation for pending input rows
+and processing-time cleanup deadlines. Validation shares the same preparation as import, checks
+rowtime/RowKind/schema/key types and deadline uniqueness, and builds only temporary key codecs.
+It does not install keys, buffers, clocks, retention maps, generated schemas or persistent rows.
+A stock adapter can therefore validate every source chunk before applying the first chunk and
+keep the source available for a fresh-target retry after failure. No serialized native snapshot
+or new durable format is introduced.
+
+The released stock event-time `inputState`, cleanup ValueState, timer queues and automatic
+planner binding still require their complete adapter and full-job qualification under
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). This validation interface
+alone does not qualify event-time unbounded OVER interchange. The full engine suite passes
+1,351 tests with two existing ignores; 61 JNI event-transfer controls pass across both stores,
+keyed/global execution, ROWS/RANGE, valid and malformed input, retry and Arrow ownership checks.
+Imported Arrow resources are released before reporting Java errors, preserving the original
+validation exception. Benchmarking remains deferred.
+
+
+### Event-time cleanup callback component
+
+The #569 candidate can bind actual processing-time callbacks for retained unbounded event-time
+ROWS/RANGE operators. A due callback clears idle accumulators and late-only keys; pending rows
+defer cleanup from the actual current clock. This mode disables the previous lazy cleanup while
+callbacks own deadlines, rebinds on native recovery and preserves the released signed-overflow
+arithmetic. A cleanup VALUE whose timer has fired may remain unarmed when the released hysteresis
+does not register a replacement. Native checkpoint metadata preserves that distinction; historical
+eight-byte persistent stamps remain readable as armed deadlines. Internal Arrow transfer carries
+ownership separately from the deadline; this is not a stock savepoint descriptor or serializer.
+
+The independently built native library passes 1,360 tests with two existing ignores, including
+nine new cleanup/ownership tests. All 206 selected Java checks pass: 59 callback/overflow/native
+recovery cases, 16 comparisons against actual released Flink 2.2.1 V2 callbacks, 61 direct event
+transfer controls, four existing operator controls and 66 constant/ownership recovery controls.
+Overdue harness timers are explicitly drained before testing their fired state. Exact native
+cleanup key-group assignment is checked before cross-store recovery; the ownership field is not
+part of the logical key. These cohorts overlap previous controls and are not summed cumulatively.
+
+This callback foundation's qualification is independent of the stock-schema projection below.
+The full cross-engine job and variant matrices remain required. Benchmarking remains deferred.
+
+
+### Released V2 event-time unbounded scalar binding (partial)
+
+Normal SQL and stock compiled plans can bind unbounded event-time ROWS/RANGE SUM, SUM0, COUNT
+and AVG on BIGINT, FLOAT and DOUBLE with one BIGINT partition key or an empty global key.
+The binding captures the original released V2 accumulator schema, full input-row serializer,
+operator identity and maximum parallelism. Stock canonical state contains plain `accState`,
+`inputState` timestamp-bucket lists, Void event timers and, when retention exceeds one
+millisecond, `RowTimeUnboundedOverCleanupTime` and its independent processing timer queue.
+The cleanup value can legitimately survive without an armed timer; import preserves that state.
+
+Export visits live folds, pending rows and cleanup ownership directly into stock managed state
+and Flink's canonical writer. It does not write a native snapshot first. Import validates the
+complete descriptor/timer inventory, row/key/time/kind agreement and every native transfer chunk
+before applying any chunk. The native target must be empty. Original stock entries and queues
+clear only after the whole import succeeds. COUNT(*) and literal argument columns are appended
+only for native execution and omitted from stock pending input rows. Ordinary native checkpoints
+retain their native state representation and cleanup ownership.
+
+A projected PROCTIME indicator is logically NOT NULL while its retained physical input slot can
+be NULL until downstream materialization. Arrow schemas admit that placeholder on both row-input
+and canonical-transfer paths; the stock logical types and serializers do not change. Required
+ordinary payload fields still reject NULL during import. This also lets the RocksDB pending-row
+visitor reconstruct a valid Arrow batch instead of failing its non-nullability check.
+
+The corrected component passes 896 checks with zero failures, errors or skips: 316 actual released
+state/recovery/rejection cases, 240 planner controls, 318 neighboring unbounded controls and 22
+Arrow/timestamp controls. The new cases include bidirectional physical-placeholder handoffs,
+ordinary native-checkpoint recovery and actual serialized transpose-schema checks under both SQL
+and compiled submission. The 76 focused correction cases overlap this selection.
+
+The merged wider-key/event-time component passes all 2,086 selected checks and all nine unchanged
+released aggregate restore programs on each engine, with 199 execution-audit controls. Its complete
+192-job event-time OVER matrix also passes on that same source and library: 112 keyed and 80 global
+jobs over ROWS/RANGE with cleanup disabled/enabled. These comprise 64 continuation, 64 no-input
+re-export, 32 ordinary native-checkpoint handoffs and 32 keyed rescale cases. Both SQL submission
+forms, both native stores and initial engine orders are covered; checkpoint cases begin natively.
+The complete jobs use BIGINT SUM/AVG, while the controlled state/planner cases cover the additional
+arithmetic types/calls and constant helpers.
+
+The jobs keep custom checkpointed source/coordinator and transactional sink state, both transpose
+boundaries, positive native work and clean stock workers without StreamFusion. Exported metadata
+contains stock dependencies, and committed results match uninterrupted stock and an independent
+oracle. Rescaling redistributes 64 keys through 1→3→2/maxP128; global operators stay singleton.
+The one-hour cleanup configuration in complete jobs does not establish exact wall-clock expiry;
+controlled callback tests qualify idle, overdue, overflow and unarmed-deadline behavior.
+
+Earlier Flink 1.18 validation covered 212 shared callback/checkpoint and Arrow controls,
+including compilation of the common operator/contract code. That run established shared-code
+regression coverage. The V1 canonical qualification below adds actual stock/native handoffs;
+overlapping cohorts are not added cumulatively.
+
+Explicit V1 on Flink 2.2, wider scalar keys/payloads and bounded event-ROWS processing cleanup
+and decimal arithmetic now have authored binding extensions awaiting qualification. DISTINCT/views
+and the wider rescale/version/failure/connector matrix remain unfinished in
+[#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Benchmarking stays deferred.
+
+## Canonical capture on both Flink lines
+
+Canonical-capable OVER operators retain ROW/ARRAY/MAP payload fields in direct native RocksDB
+through the shared retained-row codec. Canonical savepoints pin those rows and convert them on
+the asynchronous writer, including pending input and original bounded-frame inputs. This does
+not widen aggregate-state, partition-key or ordering contracts. Existing snapshot-backed native
+checkpoints migrate one key-group partition at a time; empty accumulator batches do not replace
+the configured key schema when only pending input was saved. Scalar checkpoint row bytes remain
+compatible.
+
+Processing-time unbounded scalar folds on native RocksDB now pin the existing database at the
+savepoint barrier. Flink's asynchronous canonical writer reads bounded frames and serializes them
+with the released stock accumulator/key serializers. Memory folds capture independent native
+counters, frames and retention metadata, then convert through an independent stock backend
+asynchronously. This visits resident state and can retain an additional copy; broader qualification
+of the new capture path is ongoing. Ordinary checkpoints keep their native format. Shared
+Flink 1.18 component controls cover the processing-time fold and the V1 event-time scalar contract
+below. The wider historical complete-job matrices above qualify Flink 2.2 only.
+Benchmarking is deferred.
+
+Compiled-plan admission controls require the released 1.18 V1 ROWS/RANGE owners to carry the
+shared stock event-fold contract, while explicit V1 mode on 2.2 retains stock execution. The
+remaining unsupported type/key/view and async/unaligned cases still require stock owners. These
+are release-aware expectations for existing bindings, not additional admission.
+
+Native RocksDB OVER construction uses the same nullable-key entry-list schema as its actual
+COUNT input batches. This reuses the existing map-list schema helper; retaining the raw Java MAP
+schema would incorrectly reject NULL MULTISET elements during persistent payload encoding.
+Existing repeated-recovery SQL controls cover all frames and both native stores without changing
+logical types, input values or the stock oracle.
+
+### Flink 1.18 unbounded event-time polling timers
+
+Explicit `table.exec.unbounded-over.version=1` on Flink 2.2 now binds the same V1 ROWS/RANGE
+contract. Lowering identifies the released function in the stock transformation and carries that
+version into both native execution and the canonical adapter. This also preserves a portable
+compiled plan's selected owner when the submission environment has a different version default.
+Each operator retains its policy through live processing, native checkpoint recovery and
+asynchronous captured readers; selecting V1 does not change the stock state serializers.
+New planner, operator and complete-job controls cover explicit V1 on both releases, including
+polling-only callbacks, overlapping restored timers, TTL and both native stores. These controls
+are authored but not yet run during the implementation phase of the resumed one-day #569 work.
+The historical qualification counts below predate that extension.
+
+The same BIGINT/FLOAT/DOUBLE scalar layouts and BIGINT/global keys bind the released Flink 1.18
+ROWS/RANGE owners. Their state serializers remain shared with the 2.2 binding, while a narrow
+native policy preserves the V1 physical timer lifecycle. V1 registers a per-key polling callback
+at zero before its first nonnegative watermark, then at the current watermark plus one. A callback
+processes all eligible timestamp buckets, creates a neutral accumulator for future-only input,
+re-arms while input remains, and refreshes processing cleanup even for orphan callbacks.
+
+Canonical import retains these physical timers independently of pending timestamps. A restored
+positive polling timer can coexist with a newly registered zero timer before the first watermark;
+export preserves both. Native RocksDB stores polling updates during input/watermark processing,
+rather than rebuilding that ledger at the savepoint barrier. Captured readers stream the pinned
+ledger and cleanup table with point reads and bounded raw batches; they do not hydrate timer,
+cleanup or pending-key maps. Memory capture and ordinary private checkpoints retain the same
+logical metadata. The private checkpoint's existing optional metadata footer carries the new
+polling columns; older private checkpoints without a ledger re-arm their pending keys at zero.
+This migration cannot reconstruct physical callbacks that older writers did not record. Pending
+input also seeds the restored key codec when no accumulator has fired yet, on both policies.
+
+The shared controlled matrices compare released stock and native outputs, exact managed-state
+bytes and both timer domains across handoffs and ordinary native checkpoints. Dedicated V1 cases
+cover negative watermarks, future-only neutral folds and overlapping restored callbacks; cold
+RocksDB controls retain 2,051 keys through live changes, receiver failure/retry and cancellation.
+Four isolated 1.18 engine-switch jobs pass for ROWS with cleanup and RANGE without cleanup,
+including ordinary native-checkpoint recovery. The earlier metadata foundation native suite
+passes 1,477 tests and the memory-only build. Selected state/restore controls pass 779 checks on
+1.18 and 751 on 2.2, with
+32 V1-specific invocations skipped on 2.2; the four complete jobs per line are included in those
+counts. These selected controls do not qualify the entire historical 192-job matrix on 1.18 or
+cross-release upgrades. Very large individual stock values,
+restore inventories and broader operator/layout coverage remain open. Cleanup, counters and both
+event-time timer policies now share one incremental metadata journal. It persists deduplicated key
+updates in bounded row/byte batches during processing, retains failed writes for retry, and avoids
+full metadata scans or rewrites at normal capture. Native restore reconciles legacy metadata once.
+Controls cover seven OVER variants with 2,051 keys each, asserting no state scan and only the
+reserved watermark/sequence batch at capture, followed by live updates and unchanged pinned reads.
+Polling metadata is tagged within the native table namespace so multiple DISTINCT memberships and
+floating-key normalization remain independent. Earlier scalar polling ledgers migrate in bounded
+batches; this does not extend automatic stock DISTINCT admission. Benchmarking stays deferred.
+
+
+Restore validation uses the shared temporary disk inventory for owner unions, physical callbacks
+and pending timestamp membership on both Flink lines. Event OVER checks timer relationships by
+point reads and scans, then rereads source buckets for separate native validation and apply passes.
+Bounded OVER scans staged timestamps and timer membership, keeping only scalar bucket/row/timer
+counts and cutoff maxima per owner. It does not reconstruct per-owner Java maps or sets. Retained and pending inputs transfer in batches of at most 1,024 rows with a four-MiB
+payload estimate, allowing an oversized individual row and final protocol metadata. Preflight
+checks the complete source and decodes its native frame/pending batches before any apply pass.
+Each encoded stock timestamp value is staged intact, then decoded one row at a time with the
+released row serializer.
+
+The native frame importer accepts contiguous global positions across chunks, preserves original
+input clocks and installs the raw accumulator only on the final row. RocksDB writes each chunk
+directly; heap targets append to their normal retained state. Incomplete or failed imports cannot
+process rows or produce snapshots; failed targets must close while the source stays available
+for a fresh attempt. Temporary decode reservations transfer into retained-state accounting, and
+failed writes keep retained memory charged until close. RANGE final metadata also checks prior
+frame timestamps through a key-only prefix scan on RocksDB.
+
+The native suite passes 1,482 tests with two existing ignores, and the memory-only build passes.
+Chunk controls retain 2,051 rows across all three shapes and both native stores, preserve raw
+floating accumulators, reject broken continuations and missing prior RANGE timestamps, and cover
+memory denial, exact-budget transfer and write failure. RANGE restore now transfers metadata
+through the same flat bridge used by unbounded event-time OVER. Large individual encoded stock
+values remain an intrinsic working set. The shared Flink 1.18 cohort passes 537 checks. The corrected 2.2 cohort
+passes 311 runtime/accounting checks, alongside 229 frame-bridge controls. Twelve 2,051-row
+handoffs per release cover all three bounded shapes and both stock/native stores. These selected
+cohorts overlap and do not replace exhaustive CI. Scratch indexes close and delete on failure;
+stock source entries clear only
+after successful conversion and scratch close. Benchmarking remains deferred.
+
+
+OVER map-list export now stages original rows in the shared scoped disk spool and writes each
+stock timestamp bucket once. Released list/row serializers iterate the staged rows directly into
+the RocksDB projection. This removes repeated full-bucket get/add/put and Java list accumulation
+from both bounded and unbounded event-time export. Arrival order within each bucket, processing
+clocks, raw accumulators and physical timers remain independent. Heap component backends receive
+owned lists before the spool closes. The largest encoded stock KV remains an intrinsic writer
+working set. Restore now stages canonical encoded map values in the same scoped disk storage
+and decodes individual rows with the released serializer. This covers bounded processing ROWS,
+bounded event-time ROWS/RANGE and unbounded event-time pending inputs on both release lines;
+it preserves original per-owner map order and peer order without allocating a complete Java list.
+Pending rows transfer with both row and byte limits. Both bounded ROWS shapes use disk scans and
+scalar inventory summaries even for a hot partition. RANGE restore streams its callbacks and
+map membership separately from frame payloads, without per-owner transfer arrays. V1 polling
+restore streams physical callbacks directly
+from the disk index through bounded flat batches into its normal native timer ledger. Broader
+operator/layout admission remains separate work.
+A four-store-combination control creates 2,051 distinct processing clocks in stock Flink, verifies
+exact canonical bytes after a native round trip and continues output. Stock fixture construction
+avoids thousands of unrelated one-row native RocksDB frame updates in the correctness runner. Shared spool controls cover interleaved owners/timestamps, 8,195 rows, a two-MiB row, multiple
+readers and failure cleanup without changing stock serializer metadata.
+
+
+Canonical OVER callback export uses one flat bridge for cleanup values, RANGE last-trigger
+cutoffs and physical event/processing callbacks. This removes per-owner timer vectors/lists from
+frozen RocksDB conversion and serves resident metadata without cloning its timer lists. A checked
+borrowed iterator preserves the existing encoded ledger, including tagged V1 namespaces. Batches
+use 1,024-record and four-MiB payload-estimate bounds, plus an oversized key. Both raw database
+batches and converted Arrow buffers are charged; denied memory, receiver failure and mid-owner
+cancellation release the work and leave the source available for retry. The largest encoded entry
+remains a working set. The stock projection still uses released value/map/timer serializers.
+Heap component RANGE projection retains the old map-order reconstruction. Unbounded event-time
+restore uses the same flat protocol for V1 physical events and V2 cleanup metadata, with no
+per-owner Java callback array. Validation and apply each retain an active-owner cursor, including
+when a chunk separates cleanup from arming. Validation installs no execution state. The importer
+checks cleanup/arming/event order across chunks,
+reserves decode and timer-vector growth before mutation, and blocks processing, export and
+checkpointing until completion. Failed partial targets must close before retrying on a fresh
+target. Native ledger writes occur only at owner boundaries and final completion, avoiding
+repeated serialization of a growing hot-owner ledger. RANGE restores use bounded payload chunks
+and the same flat metadata transport, keeping each frame owner guarded until its cleanup,
+cutoff, callbacks and timestamp membership complete. Heap targets reconstruct their normal
+execution map incrementally. RocksDB targets require sorted membership and check retained
+timestamps using keys only; peer rows spanning chunks count once. Pending-only and timer-only
+owners share this path. Native checkpoint formats, legacy list-based APIs and operator admission
+do not change. Native metadata writes also reserve encoded keys/values and batch-copy work before
+allocating them, retaining the dirty journal on denial or write failure.
+
+Native controls cover 2,051 callbacks for one owner, keyless records, two-MiB keys, signed timer
+extrema, malformed headers/order, independent pinned versions, empty and mid-owner cancellation,
+denied raw/decoded memory, failure/retry and cold reader caches. Java controls round-trip a hot
+RANGE owner and V1 physical callbacks through both source/target stores, compare exact canonical
+bytes, continue output and check C Data release after a receiver exception.
+
+The RANGE/memory cohort passes 1,499 native tests with two existing ignores, plus the memory-only
+build. Four new RANGE controls cover split frame/metadata completion, 2,051-entry chunks, peer
+rows sharing one timestamp across chunks, omitted membership, denied memory, cancellation,
+failed writes and fresh-target retry. Two metadata controls cover denial before database writes
+and 2,051 owners with a bounded work allowance. Existing Java raw-COUNT corruption checks verify
+that C Data releases before reporting a Java error; cleanup must not clear that error. Selected
+OVER controls pass 572 checks on 1.18 and 540 on a clean 2.2 build, with 36 expected V1-only skips.
+Each release includes six complete-job continued handoffs across three bounded shapes and both
+native stores. These overlap earlier cohorts; exhaustive CI and broader operator/layout
+qualification remain separate.
+
+### Unbounded scalar MIN/MAX awaiting qualification
+
+The stock fold adapter now admits existing unbounded MIN/MAX over integral, FLOAT/DOUBLE, decimal, text,
+boolean, date, time and timestamp values. Each maps directly to the released single nullable
+accumulator field, including the untouched all-NULL state. Existing processing TTL and event
+pending/timer policies are preserved for ROWS/RANGE and both released event-time implementations.
+Native accumulator and checkpoint formats are unchanged. New component controls compare raw
+stock state and continuation through empty returns, TTL and ordinary native recovery; planner
+and clean-worker matrices include ordinary/compiled submission, both engine orders and rescaling.
+These additions await the final local qualification window on both release lines. Floating
+controls retain first-NaN state and each signed-zero arrival order, with complete raw state and
+serialized output comparisons through pending timers, no-input returns and TTL. Released
+handlers and native folds use primitive comparisons rather than boxed DISTINCT equality.
+Bounded extrema and FIRST/LAST_VALUE order metadata are not included.
+
+COUNT over the same scalar argument types uses its existing non-null reader and released
+BIGINT accumulator, allowing mixed MIN/MAX/COUNT folds without a numeric-only argument gate.
+The new typed component fixtures feed both engines the same serialized physical rows so
+timestamp precision and string representation are aligned at the boundary.
+
+Bounded decimal SUM initializes its raw retracting accumulator as NULL, matching released Flink.
+Its independent non-null count still determines the visible result; after a real value is
+evicted, the retained raw zero remains distinct from an unseen sum. The existing nullable
+decimal kernel supplies this initialization for ordinary and DISTINCT bounded folds without
+changing the checkpoint schema. A new stock/raw-state regression covers all-NULL initialization
+and later zero history in processing ROWS, event ROWS and event RANGE on both stores. This
+control awaits execution with the pending decimal canonical matrix.
+
+### COUNT argument bindings awaiting qualification
+
+Ordinary COUNT now admits the existing native validity reader at the canonical boundary for
+VARBINARY, intervals and recursively supported ARRAY/ROW/MAP/MULTISET arguments. Its retained
+accumulator remains the released BIGINT field; binary and nested argument codecs belong to
+pending input and frames rather than aggregate state. This covers the already native bounded
+event ROWS/RANGE, bounded processing ROWS and unbounded event/processing ROWS/RANGE shapes.
+DISTINCT and fixed BINARY admission are unchanged.
+
+New component controls compare complete serialized rows, raw accumulators, TTL ages, pending
+inputs and actual callbacks through both engine orders and stores, including V1/V2 where the
+release supports them and ordinary native recovery. Planner controls use a typed custom source
+so unsupported datagen generators do not mask the state contract. Additional unbounded full
+jobs cover binary/ARRAY/ROW/nested-MAP values, NULL arguments, ordinary/portable submissions,
+empty returns, native checkpoints and keyed rescaling with independent final counts. All new
+controls await execution on Flink 1.18 and 2.2; historical passing cohorts do not qualify them.
+
+
+## Additional unbounded DISTINCT binding awaiting qualification
+
+The Java canonical binding now connects the existing native membership transfer for unbounded
+processing-time COUNT/SUM/SUM0/AVG DISTINCT over TINYINT/SMALLINT/INT/BIGINT/FLOAT/DOUBLE/DECIMAL arguments, with state TTL disabled.
+ROWS and RANGE use the released scalar accumulator plus its actual shared DISTINCT MAP view,
+stock external serializers and null-state descriptor. Memberships and raw counts transfer
+separately without replay. Complete cardinality, wrapping integral sum and membership-bit validation precedes native
+insertion, and failed preflight retains the source state. Memory and RocksDB capture reuse the
+existing live-state readers; no new native checkpoint format is introduced.
+
+Nullable arguments retain a separate NULL-membership marker per aggregate. It does not contribute
+to sums or counts. Memory keeps its presence beside the non-NULL set; persistent state stores a
+typed NULL in the existing membership table. Raw checkpoints retain that NULL in the existing
+nullable membership list, without new record fields. Live NULL input records membership only for
+the bound TTL-disabled processing fold, in bounded temporary memory. Stock export reconstructs
+the original shared null-state bits and the released non-null RAW view placeholder.
+The JNI rejection control uses duplicate NULL markers for one owner; a single NULL marker is
+valid in this binding. Ownership release, partial-restore isolation and retry remain required.
+
+TTL, event-time and bounded DISTINCT, other argument
+types, filtered DISTINCT and DISTINCT extrema retain their existing gates.
+
+New actual-stock controls cover exact raw state, continued duplicate suppression, no-input
+returns, native checkpoint recovery, both stores and keyed/global ownership. Malformed bitsets,
+cardinality/sum mismatches, invalid NULL markers and membership-only orphan keys must reject before mutation;
+a repaired source can retry into the same empty target. Clean-worker jobs add ordinary/portable
+submission, both engine orders and rescaling, with independent counts. These controls await
+Flink 1.18 and 2.2 execution in the final local window. Historical passing counts above do not
+qualify this new binding, and no performance claim is made.
+
+Additional pending planner and clean-worker controls retain two independent DISTINCT views with
+different argument types, including separate nullable-key membership. The complete job consumes
+both decimal-value and key counts, checks the two actual bound MAP views in every native worker,
+and uses independent final-count oracles across continuation, native recovery and rescaling.
+These authored controls have not yet run on either release.
+
+Shared integral SUM/COUNT/AVG views additionally retain the released narrow SUM versus wide AVG
+accumulator fields, including signed overflow. Component controls compare complete raw state and
+duplicate suppression after canonical and native recovery; separate malformed SUM and AVG-sum
+controls require rejection before either table changes. Clean-stock arithmetic jobs use independent
+distinct-set sums/averages through continuation and rescaling. This scope also awaits execution.
+
+Nullable controls additionally include NULL-only owners, repeated NULL input, valid marker-only
+state, invalid bits/orphans and raw native recovery across both stores. Clean-stock COUNT and
+arithmetic jobs retain actual nullable source values with independent non-NULL distinct-set
+oracles. All are pending both-release execution. Historical native checkpoints that never
+recorded NULL membership do not gain that lost information through this same-build extension.
+
+The integral bridge retains Byte/Short/Integer/Long membership serializers and validates wrapping
+SUM fields at their declared width independently from the wider AVG sum. Component overflow and
+planner controls include every integer width and both nullability forms; a clean-stock nullable
+TINYINT arithmetic fixture adds continuation and rescaling. These additions remain pending full qualification.
+
+COUNT DISTINCT also binds existing decimal, BOOLEAN, DATE, TIME and TIMESTAMP/LTZ membership
+codecs. The stock BIGINT cardinality stays independent of typed members and nullable markers;
+decimal precision/scale and temporal fractions are retained. DISTINCT SUM/SUM0/AVG remain
+numeric-only here. New scalar raw-state/native-recovery and planner controls include both
+nullability forms, with separate clean-stock BOOLEAN, wide-decimal and nanosecond timestamp
+COUNT fixtures and independent cardinality oracles. These controls await both-release execution.
+Complex DISTINCT arguments remain outside this binding. Unqualified ordinary
+native contexts keep their existing processing/checkpoint route without canonical interchange
+credit; portable stock plans retain their stock OVER owner for those contexts.
+
+COUNT DISTINCT additionally binds the existing CHAR/VARCHAR UTF-8 membership codec, with the
+same clock, frame and TTL gates. Preflight requires valid UTF-8 and a Java string cache, when
+present, that decodes to exactly those bytes. This keeps membership equality independent of
+cache representation before either fold or membership state mutates. Inconsistent Java caches
+can exist only in heap state; RocksDB has already materialized the serialized bytes. Malformed
+UTF-8 is rejected on either backend with the source retained. New nullable/shared-view,
+overlapping-capture and clean-worker text controls await both-release execution; arithmetic
+DISTINCT retains its numeric whitelist. No native state format changes or performance claims are added.
+
+FLOAT/DOUBLE COUNT DISTINCT also binds the existing boxed-value codec. Native sets and RocksDB
+member keys preserve both signed zeros and canonicalize NaN payloads, matching stock Float/Double
+map-key equality and serializers. FLOAT/DOUBLE SUM/SUM0/AVG DISTINCT now binds the existing raw
+floating accumulators as well. No floating sum is reconstructed from unordered membership:
+addition order and cancellation history remain in the recorded sum, while AVG cardinality is
+checked independently. Empty SUM must be NULL; empty SUM0/AVG raw sums must be positive zero. New direct-store, raw-state, no-input,
+native-recovery, writer and clean-worker count controls include signed zeros, distinct NaN payloads,
+infinities and NULL-only owners. Additional arithmetic controls cover cancellation history,
+corrupt empty/missing sums and a complete DOUBLE arithmetic job with fractional independent
+oracles. Complete OVER job comparisons retain committed record bytes before applying their
+typed independent final-value oracle. These controls await both-release qualification.
+
+DECIMAL SUM/SUM0/AVG DISTINCT also binds existing raw arithmetic fields. The released nullable
+SUM omits its count; its exact native auxiliary count is recovered from non-NULL membership
+bits, independently of whether the sum is NULL. SUM's overflowed NULL can restart on the next
+new value, while AVG/SUM0 retain overflow. No sum is derived from unordered members. Preflight
+checks decimal carrier precision/scale, AVG cardinality and initial empty fields. New complete
+raw-state, no-input, overflow-continuation and native-recovery controls cover both stores and
+engine orders; a clean-worker wide-decimal job uses fractional independent oracles. These are
+pending complete qualification on both release lines. Scale-38 factory restrictions remain unchanged.
+
+Bounded and unbounded scalar, ROW-key and DISTINCT component captures additionally guard the native snapshot
+entry points. They reject raw partition serialization or a nonempty native checkpoint directory
+during canonical capture and verify the call counter again after the asynchronous writer finishes.
+The same fixtures still exercise ordinary native checkpoints. These added guards await execution
+with the pending two-release state matrix.
+
+Pending DISTINCT writer controls also pin two captures, change live folds and nullable membership
+views, close the native handle, then finish the captures in reverse order on a writer thread.
+They compare complete stock accumulator/view bytes and continued outputs independently at each
+cut, including NULL-only owners, scalar/global keys and mixed binary/logical nested ROW keys.
+Both native stores and ROWS/RANGE orders are included; these controls have not yet run.
+
+Represented ROW partition keys normalize the Arrow-only runtime-class bits alongside optional
+string and owned-byte caches. Logical nested row kinds and authoritative binary key bytes remain
+unchanged; GenericRowData, BinaryRowData and NestedRowData therefore address the same stock key
+when their serialized bytes match. New native fixtures emit the actual Java class flags; this
+correction and its pending Java continuation matrix still await execution.
+
+## Unbounded processing ROW partition keys awaiting qualification
+
+The existing unbounded processing ROWS/RANGE fold can now bind ROW partition keys whose
+descendants use the supported scalar/ROW key types. Live input, raw accumulator transfer and
+persistent-store initialization share a selective binary ROW schema: original-byte metadata
+belongs only to ROW partition columns, while other fields keep their existing representation.
+Ordinary SQL rebuilds these qualified folds from the captured stock template even when the
+original OVER stays rowwise inside a graph with native Calc nodes. Thus a field projection above
+OVER cannot bypass the binary ROW boundary or its canonical state owner.
+Native fold keys retain the
+authoritative stock bytes while clearing redundant nested transport caches; optional UTF-16
+list child names are normalized before Arrow row encoding. Original padding and nested row
+kinds still distinguish stock keys. Accumulator serializers and native checkpoint fields are
+unchanged, and original per-value TTL stamps remain intact.
+
+New raw-state controls cover mixed generic/binary input, both stores, native recovery and TTL;
+native controls cross both stores with 2,051 keys. Ordinary/portable full jobs include clean
+stock handoffs and keyed rescaling with nested, padded ROW keys and string extrema. Component
+controls also combine ROW and standalone string partition keys. All controls await both-release
+execution. The same selective key schema now applies to bound DISTINCT membership views,
+including nullable markers and standalone string companion keys. Membership import normalizes
+its leading key columns before comparing with the fold codec. New native controls use 2,051
+mixed generic/binary ROW keys, NULL-only owners and all store pairs; raw-state and clean-stock
+arithmetic jobs add canonical/native recovery and rescaling. These combinations also await both
+release lines. Event/bounded ROW partition keys and collection descendants remain gated.
+Historical native checkpoints with a different physical ROW transport are not qualified
+as an upgrade path by this same-build work.
+
+Native DISTINCT decimal SUM preflight distinguishes its empty initialized raw zero from a
+nonempty sum and an overflowed NULL. An empty initialized zero is valid only with zero
+membership cardinality; stock-facing nullable projection and the native auxiliary count still
+determine SQL NULL output. No arithmetic is replayed from the membership view.
+
+Fold, DISTINCT-view, retained-input and timer projection use the released binary key projection
+for nullable non-compact DECIMAL and precise TIMESTAMP keys. Their reserved NULL variable slots
+remain part of the serialized key and its key-group hash; a generic row serializer would omit
+those slots. Existing binary keys read from stock state retain their original representation.
+
+Bound OVER retained inputs use the existing tagged map-list carriage consistently for live
+input and canonical frame/pending-row import. This preserves nullable multiset elements and
+map entry order through the same Arrow representation at both boundaries. Stock MapData and
+canonical serializers retain their released forms.
+
+Bounded OVER stages timestamp bucket data and timer inventories in disjoint spill sections,
+including when event ROWS has both event callbacks and processing-time cleanup. Import validates
+each relationship before installing native state.
+
+Compact timestamp arguments retain their component representation in the live Arrow batch,
+matching retained rows and canonical pending input. The native timestamp reader consumes
+that representation directly, preserving the full millisecond range and sub-millisecond
+values without a second value buffer.
+
+Pending OVER batches reconcile Arrow’s physical list-child aliases (`element`, `$data$`,
+`items`, and `entries`) without copying value buffers. Logical ROW field names, child
+nullability, dictionary definitions, extension metadata, and scalar types must still match;
+a mismatch rejects the handoff before changing live pending state.
+
+The released Flink 1.18 aggregate factory rejects CHAR MIN/MAX OVER calls. Its positive
+scalar-extrema canonical cohort therefore uses VARCHAR for that family and retains explicit
+stock-rejection controls for CHAR; Flink 2.2 also exercises CHAR handoffs.
+
+Decimal unbounded OVER job controls retain decimal SUM/AVG state and cast only their final
+outputs to the shared BIGINT sink schema, preserving its independent final-value oracle.
+
+The unchanged Flink 2.2.1 `OverAggregateRestoreTest` programs all include the two-argument
+`LTCNT` UDF. They retain the released stock OVER owner: that aggregate has no native execution
+implementation. The JVM audit and evidence validator require the initialized stock accumulator/input state,
+its generated handler, nonempty stock input, the planner fallback reason and native Calc work;
+an unrelated Calc alone cannot qualify an OVER restore. Native OVER interoperability is tested
+separately with the supported built-in aggregates and clean stock continuation workers.

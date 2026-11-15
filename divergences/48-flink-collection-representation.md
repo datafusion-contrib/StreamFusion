@@ -23,6 +23,13 @@ arrays return fresh values. Row headers also retain their generic/binary categor
 keep the existing columnar views. SQL checks include generic, binary and independent proxy arrays,
 repeated string consumers, NULLs in declared NOT NULL elements and every nested row kind.
 
+Native collection aggregates mark NOT NULL DATE/TIME array outputs with the existing generic
+copy category. Direct Calc projections preserve source field metadata under aliases, pruning,
+reordering and repeated references; generated JVM argument batches carry that metadata into
+their readers. DataFusion's projection schema preserves source metadata by the same rule.
+Root schema metadata also survives projection and C Data import. Computed expressions retain
+their own output representation contract rather than inheriting an arbitrary input marker.
+
 Programs containing only nullable primitive collection types keep ordinary layouts and avoid
 serializer snapshots that preserve no additional identity. Represented nested-row vectors reuse
 their reader for the lifetime of the batch. Each returned row owns its fields before that reader

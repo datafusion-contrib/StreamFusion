@@ -30,10 +30,9 @@ class FlinkTrimSqlHarnessTest {
 
   @ParameterizedTest
   @ValueSource(strings = {"BOTH", "LEADING", "TRAILING"})
-  void columnTrimSetsRemainOnFlink(String direction) throws Exception {
-    NativeParity.assertFallbackReasonContains(
+  void columnTrimSetsMatchFlink(String direction) throws Exception {
+    NativeParity.assertParity(
         () -> TextTimeFunctionTestInputs.textRows(" aa ", "bb", null),
-        "SELECT TRIM(" + direction + " s FROM s) FROM inputs",
-        "literal trim set");
+        "SELECT TRIM(" + direction + " s FROM s) FROM inputs");
   }
 }

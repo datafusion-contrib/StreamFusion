@@ -1,10 +1,13 @@
 use super::*;
+mod canonical;
 use rocksdb::{Direction, IteratorMode};
 
 const DESCRIPTOR: &[u8] = b"\xff\xff\xff\xffsink-materializer-v1";
 const VALUE: u8 = 1;
 const NODE: u8 = 2;
 const INDEX: u8 = 3;
+const VALUE_TIME: u8 = 4;
+const NODE_TIME: u8 = 5;
 fn error(e: rocksdb::Error) -> DataFusionError {
     DataFusionError::External(Box::new(e))
 }
@@ -177,12 +180,19 @@ impl RocksCandidates {
             }
             let suffix = &record[prefix.len() + 1..];
             match record[prefix.len()] {
-                VALUE => values.put(codec.candidate(Arc::from(bytes.as_ref()), None, None), None),
+                VALUE => values.put(
+                    codec
+                        .candidate(Arc::from(bytes.as_ref()), None, None)
+                        .with_timestamp(self.timestamp(&Self::time_key(&record, VALUE_TIME))?),
+                    None,
+                ),
                 NODE => {
                     let seq =
                         (u64::from_be_bytes(suffix.try_into().unwrap()) ^ (1u64 << 63)) as i64;
                     let mut node = self.node(&prefix, seq, codec)?.unwrap();
-                    node.row = codec.candidate(node.row.payload.clone(), None, None);
+                    node.row = codec
+                        .candidate(node.row.payload.clone(), None, None)
+                        .with_timestamp(node.row.timestamp);
                     linked.put(node);
                 }
                 INDEX => {
@@ -220,10 +230,10 @@ impl RocksCandidates {
         match &rows.storage {
             Storage::Value(values) => {
                 for (seq, row) in values.rows.iter().enumerate() {
-                    self.table.apply([(
+                    self.table.apply(Self::value_changes(
                         Self::seq(&prefix, VALUE, seq as i64),
-                        Some(row.payload.to_vec()),
-                    )])?;
+                        Some(row),
+                    ))?;
                 }
                 meta.size = values.rows.len() as i64;
                 meta.next = meta.size;
@@ -234,7 +244,7 @@ impl RocksCandidates {
                 meta.high = linked.high;
                 for (&seq, node) in &linked.nodes {
                     self.table
-                        .apply([(Self::seq(&prefix, NODE, seq), Some(Self::encode_node(node)))])?;
+                        .apply(Self::node_changes(&prefix, seq, Some(node)))?;
                 }
                 for entry in linked.index.values().flatten() {
                     let binary = entry
@@ -311,6 +321,48 @@ impl RocksCandidates {
     fn seq(prefix: &[u8], table: u8, seq: i64) -> Vec<u8> {
         Self::key(prefix, table, &((seq as u64) ^ (1u64 << 63)).to_be_bytes())
     }
+    fn time_key(key: &[u8], table: u8) -> Vec<u8> {
+        let mut result = key.to_vec();
+        result[key.len() - 9] = table;
+        result
+    }
+    fn timestamp(&self, key: &[u8]) -> Result<Option<i64>, DataFusionError> {
+        self.get(key)?
+            .map(|bytes| {
+                if bytes.len() != 8 {
+                    return Err(DataFusionError::Execution(
+                        "invalid materializer candidate timestamp".into(),
+                    ));
+                }
+                Ok(integer(&bytes))
+            })
+            .transpose()
+    }
+    fn value_changes(key: Vec<u8>, row: Option<&Candidate>) -> [(Vec<u8>, Option<Vec<u8>>); 2] {
+        let time_key = Self::time_key(&key, VALUE_TIME);
+        [
+            (key, row.map(|row| row.payload.to_vec())),
+            (
+                time_key,
+                row.and_then(|row| row.timestamp)
+                    .map(|time| time.to_le_bytes().to_vec()),
+            ),
+        ]
+    }
+    fn node_changes(
+        prefix: &[u8],
+        seq: i64,
+        node: Option<&Node>,
+    ) -> [(Vec<u8>, Option<Vec<u8>>); 2] {
+        [
+            (Self::seq(prefix, NODE, seq), node.map(Self::encode_node)),
+            (
+                Self::seq(prefix, NODE_TIME, seq),
+                node.and_then(|node| node.row.timestamp)
+                    .map(|time| time.to_le_bytes().to_vec()),
+            ),
+        ]
+    }
     pub(in crate::sink_materializer) fn attach_work(&self, memory: Option<MemoryReservation>) {
         *self.work.borrow_mut() = memory;
     }
@@ -362,20 +414,25 @@ impl RocksCandidates {
         seq: i64,
         _codec: &RowsCodec,
     ) -> Result<Option<Node>, DataFusionError> {
-        Ok(self.get(&Self::seq(prefix, NODE, seq))?.map(|bytes| Node {
-            links: Links {
-                seq,
-                prev: read_option(&bytes),
-                next: read_option(&bytes[9..]),
-                next_for: read_option(&bytes[18..]),
-            },
-            row: Candidate {
-                payload: Arc::from(&bytes[27..]),
-                identity: Identity::Bytes(Arc::from([])),
-                serialized: None,
-                hash: 0,
-            },
-        }))
+        self.get(&Self::seq(prefix, NODE, seq))?
+            .map(|bytes| {
+                Ok(Node {
+                    links: Links {
+                        seq,
+                        prev: read_option(&bytes),
+                        next: read_option(&bytes[9..]),
+                        next_for: read_option(&bytes[18..]),
+                    },
+                    row: Candidate {
+                        payload: Arc::from(&bytes[27..]),
+                        identity: Identity::Bytes(Arc::from([])),
+                        serialized: None,
+                        hash: 0,
+                        timestamp: self.timestamp(&Self::seq(prefix, NODE_TIME, seq))?,
+                    },
+                })
+            })
+            .transpose()
     }
     fn encode_node(node: &Node) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(27 + node.row.payload.len());
@@ -452,11 +509,11 @@ impl RocksCandidates {
         let mut changes = Vec::new();
         for seq in required {
             if !linked.nodes.contains_key(&seq) {
-                changes.push((Self::seq(prefix, NODE, seq), None));
+                changes.extend(Self::node_changes(prefix, seq, None));
             }
         }
         for (seq, node) in linked.nodes {
-            changes.push((Self::seq(prefix, NODE, seq), Some(Self::encode_node(&node))));
+            changes.extend(Self::node_changes(prefix, seq, Some(&node)));
         }
         let entry = linked
             .index
@@ -535,11 +592,11 @@ impl RocksCandidates {
                 Self::seq(prefix, VALUE, seq)
             });
             self.table
-                .apply([(key, Some(candidate.payload.to_vec()))])?;
+                .apply(Self::value_changes(key, Some(&candidate)))?;
             Ok((true, Action::Silent))
         } else if let Some(key) = found {
             let removed_visible = self.last_value(prefix)?.expect("visible candidate").0 == key;
-            self.table.apply([(key, None)])?;
+            self.table.apply(Self::value_changes(key, None))?;
             meta.size -= 1;
             if meta.size == 0 {
                 self.table.clear_prefix(prefix)?;
@@ -572,12 +629,19 @@ impl RocksCandidates {
                 .db
                 .iterator(IteratorMode::From(&start, Direction::Forward))
             {
-                let (key, value) = item.map_err(error)?;
+                let (key, _) = item.map_err(error)?;
                 if !key.starts_with(&start) {
                     break;
                 }
-                self.table
-                    .apply([(Self::seq(prefix, VALUE, count), Some(value[27..].to_vec()))])?;
+                let seq = (u64::from_be_bytes(key[key.len() - 8..].try_into().unwrap())
+                    ^ (1u64 << 63)) as i64;
+                let node = self
+                    .node(prefix, seq, codec)?
+                    .expect("linked migration node");
+                self.table.apply(Self::value_changes(
+                    Self::seq(prefix, VALUE, count),
+                    Some(&node.row),
+                ))?;
                 count += 1;
             }
             meta.size = count;
@@ -596,12 +660,19 @@ impl RocksCandidates {
                 if !key.starts_with(&start) {
                     break;
                 }
-                let row = codec.candidate(Arc::from(value.as_ref()), None, None);
+                let row = codec
+                    .candidate(Arc::from(value.as_ref()), None, None)
+                    .with_timestamp(self.timestamp(&Self::time_key(&key, VALUE_TIME))?);
                 let query = codec.candidate(row.payload.clone(), None, None);
                 self.linked(prefix, meta, &query, Some(row), false, codec)?;
             }
         }
         self.table.clear_prefix(&start)?;
+        self.table.clear_prefix(&Self::key(
+            prefix,
+            if meta.linked { NODE_TIME } else { VALUE_TIME },
+            &[],
+        ))?;
         meta.linked = !meta.linked;
         Ok(())
     }

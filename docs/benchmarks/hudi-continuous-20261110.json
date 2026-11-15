@@ -1,0 +1,114 @@
+{
+  "date": "2026-11-10",
+  "platform": "Apple M4 (10 cores), macOS 15.3.1, Temurin 17",
+  "build": "release, existing engine and Parquet libraries",
+  "resources": {
+    "parallelism": 1,
+    "heap_gib": 8,
+    "task_offheap_gib": 1,
+    "decoder_rows": 4096
+  },
+  "warmups": 2,
+  "measured_trials": 5,
+  "order": "rotating three engines",
+  "query": "SELECT SUM(id), COUNT(name), COUNT(*) FROM h",
+  "table": "Java-written Hudi 1.2.1 COW version 9, unpartitioned, id BIGINT and name STRING (every seventh name NULL)",
+  "streaming": {
+    "start": "Hudi default latest completed commit",
+    "check_interval_seconds": 1,
+    "mini_batch_rows": 4096,
+    "mini_batch_latency_ms": 50
+  },
+  "timer": "executeSql through delivery of the aggregate with all input rows; includes planning/admission, discovery, Java I/O, JNI, intrinsic conversions and result collection. Fixture writes, explain assertions and cancellation/termination after the final observed aggregate are outside timing.",
+  "previous_sf": "native aggregate over stock continuous Hudi source; hudiSource disabled",
+  "validation": "Every trial requires the expected native source/aggregate plan, count, id sum and non-NULL name count.",
+  "measurements": [
+    {
+      "rows": 200000,
+      "trial_ms": {
+        "stock": [
+          718.65975,
+          588.149791,
+          650.931459,
+          640.29275,
+          716.451792
+        ],
+        "previous_sf": [
+          740.338583,
+          697.211125,
+          696.482958,
+          607.265583,
+          813.864625
+        ],
+        "native": [
+          711.914333,
+          635.242667,
+          600.254542,
+          722.232958,
+          666.026667
+        ]
+      },
+      "summary_ms": {
+        "stock": {
+          "median": 650.931459,
+          "minimum": 588.149791,
+          "maximum": 718.65975
+        },
+        "previous_sf": {
+          "median": 697.211125,
+          "minimum": 607.265583,
+          "maximum": 813.864625
+        },
+        "native": {
+          "median": 666.026667,
+          "minimum": 600.254542,
+          "maximum": 722.232958
+        }
+      }
+    },
+    {
+      "rows": 1000000,
+      "trial_ms": {
+        "stock": [
+          867.607875,
+          876.225833,
+          953.673917,
+          704.094417,
+          950.356917
+        ],
+        "previous_sf": [
+          863.670459,
+          980.472583,
+          820.018917,
+          802.097041,
+          715.200583
+        ],
+        "native": [
+          872.09625,
+          770.966791,
+          614.009417,
+          598.174167,
+          599.74275
+        ]
+      },
+      "summary_ms": {
+        "stock": {
+          "median": 876.225833,
+          "minimum": 704.094417,
+          "maximum": 953.673917
+        },
+        "previous_sf": {
+          "median": 820.018917,
+          "minimum": 715.200583,
+          "maximum": 980.472583
+        },
+        "native": {
+          "median": 614.009417,
+          "minimum": 598.174167,
+          "maximum": 872.09625
+        }
+      }
+    }
+  ],
+  "limits": "One completed input commit per trial; this measures catch-up through the continuous source, not steady-state commit latency or delete changelogs. 200k results show no consistent gain."
+}

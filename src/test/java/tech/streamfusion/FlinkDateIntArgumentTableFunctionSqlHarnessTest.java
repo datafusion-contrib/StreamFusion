@@ -182,7 +182,7 @@ class FlinkDateIntArgumentTableFunctionSqlHarnessTest {
   }
 
   @Test
-  void boxedIntegerDateArgumentsRemainOutsideThePrimitiveArgumentGate() {
+  void boxedIntegerDateArgumentsRetainEpochDays() {
     try (var metrics = new RecoveryExecutionMetrics()) {
       var runs =
           NativeFailureParity.run(
@@ -192,8 +192,9 @@ class FlinkDateIntArgumentTableFunctionSqlHarnessTest {
                 return table;
               },
               "SELECT s.x,s.p,t.v,t.epoch_day,t.pos FROM src s" + join("day_rows", false));
-      runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
-      assertUnverifiedConversion(runs);
+      runs.assertSuccess(NativeFailureParity.Route.NATIVE);
+      assertStamps(runs.host().rows());
+      RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeTableFunction");
     }
   }
 
@@ -232,7 +233,7 @@ class FlinkDateIntArgumentTableFunctionSqlHarnessTest {
 
   @ParameterizedTest
   @ValueSource(strings = {"array", "row"})
-  void dateIntegerBridgesInsideContainersRetainFallback(String shape) {
+  void dateIntegerBridgesInsideContainersKeepVerifiedRoutes(String shape) {
     DataType scalar = DataTypes.DATE().notNull();
     DataType sourceType =
         shape.equals("array")
@@ -258,16 +259,10 @@ class FlinkDateIntArgumentTableFunctionSqlHarnessTest {
                 return table;
               },
               "SELECT s.x,s.p,t.v FROM src s,LATERAL TABLE(nested_days(s.x,s.p)) AS t(v)");
-      runs.assertSuccess(NativeFailureParity.Route.FALLBACK);
-      assertUnverifiedConversion(runs);
+      runs.assertSuccess(NativeFailureParity.Route.NATIVE);
+      assertEquals(runs.host().resultTypes(), runs.nativeRun().resultTypes());
+      RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeTableFunction");
     }
-  }
-
-  private static void assertUnverifiedConversion(NativeFailureParity.Comparison runs) {
-    assertTrue(
-        runs.nativeRun().fallbackReasons().stream()
-            .anyMatch(reason -> reason.contains("verified external Java conversions")),
-        runs::toString);
   }
 
   private static String join(String function, boolean left) {

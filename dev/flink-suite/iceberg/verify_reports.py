@@ -74,6 +74,49 @@ def dynamic_control_cases(directory):
     return result
 
 
+def rewrite_cases(directory):
+    reports = Path(directory)
+    inventories = []
+    for engine in ("Stock", "Native"):
+        name = f"org.apache.iceberg.flink.maintenance.api.Iceberg{engine}RewriteDataFilesUpstreamTest"
+        root = ET.parse(reports / f"TEST-{name}.xml").getroot()
+        cases = root.findall("testcase")
+        if len(cases) != 19 or any(
+                case.find("failure") is not None or case.find("error") is not None
+                or case.find("skipped") is not None for case in cases):
+            raise ValueError(f"Expected all 19 published streaming rewrite cases: {engine}")
+        inventories.append(Counter(case.attrib["name"] for case in cases))
+    if inventories[0] != inventories[1]:
+        raise ValueError("Stock/native streaming rewrite invocation inventories differ")
+    name = "org.apache.iceberg.flink.actions.IcebergRewriteSqlUpstreamTest"
+    root = ET.parse(reports / f"TEST-{name}.xml").getroot()
+    cases = root.findall("testcase")
+    if len(cases) != 288:
+        raise ValueError("Expected every SQL rewrite case across stock/native, namespace, format and version")
+    statuses = {}
+    for case in cases:
+        if case.find("failure") is not None or case.find("error") is not None:
+            raise ValueError(f"Failed SQL rewrite assertion: {case.attrib['name']}")
+        match = re.fullmatch(r"(.*)\(\)\[(\d+)\]", case.attrib["name"])
+        if match is None:
+            raise ValueError(f"Missing SQL rewrite invocation index: {case.attrib['name']}")
+        key = (match.group(1), int(match.group(2)))
+        if key in statuses:
+            raise ValueError(f"Duplicate SQL rewrite invocation: {key}")
+        statuses[key] = case.find("skipped") is None
+    methods = {method for method, _ in statuses}
+    if len(methods) != 8 or sum(statuses.values()) != 108:
+        raise ValueError("Expected eight SQL rewrite methods and 108 executed invocations")
+    for method in methods:
+        for index in range(1, 37):
+            if (method, index) not in statuses:
+                raise ValueError(f"Missing SQL rewrite invocation: {method}[{index}]")
+            # Each format has two namespaces; stock/native are adjacent three-version blocks.
+            if (index - 1) % 6 < 3:
+                if statuses[method, index] != statuses[method, index + 3]:
+                    raise ValueError(f"Stock/native SQL rewrite scope differs: {method}[{index}]")
+
+
 def main(stock, native):
     if cases(stock) != cases(native):
         raise ValueError("Stock/native upstream invocation inventories differ")
@@ -83,8 +126,9 @@ def main(stock, native):
         raise ValueError("Stock/native range control inventories differ")
     if dynamic_control_cases(stock) != dynamic_control_cases(native):
         raise ValueError("Stock/native dynamic control inventories differ")
+    rewrite_cases(native)
     reports = Path(native)
-    for name, count in (("IcebergSinkAdapterTest", 1), ("NativeIcebergSinkTest", 8), ("NativeIcebergSqlTest", 14), ("NativeIcebergKeyedTest", 26), ("NativeIcebergReaderTest", 9), ("NativeIcebergTypeTest", 3), ("NativeIcebergPredicateTest", 10), ("NativeIcebergTaskMetadataTest", 4), ("NativeIcebergFloatingPredicateTest", 28), ("NativeIcebergTemporalPredicateTest", 12), ("NativeIcebergRangeTest", 2), ("NativeIcebergRangeSinkTest", 6), ("NativeIcebergSourceTest", 1), ("NativeIcebergSourceSqlTest", 2), ("NativeIcebergSourceRecoveryTest", 4), ("NativeIcebergDynamicSinkTest", 8), ("NativeIcebergCapturedRecoveryTest", 12), ("NativeIcebergEncoderMemoryTest", 2), ("NativeIcebergTaskFallbackTest", 3), ("NativeIcebergEvolutionTest", 2)):
+    for name, count in (("IcebergSinkAdapterTest", 1), ("NativeIcebergSinkTest", 8), ("NativeIcebergSqlTest", 14), ("NativeIcebergKeyedTest", 26), ("NativeIcebergReaderTest", 9), ("NativeIcebergTypeTest", 3), ("NativeIcebergPredicateTest", 10), ("NativeIcebergTaskMetadataTest", 4), ("NativeIcebergFloatingPredicateTest", 28), ("NativeIcebergTemporalPredicateTest", 12), ("NativeIcebergRangeTest", 2), ("NativeIcebergRangeSinkTest", 6), ("NativeIcebergSourceTest", 1), ("NativeIcebergSourceSqlTest", 2), ("NativeIcebergSourceRecoveryTest", 12), ("NativeIcebergNestedTest", 20), ("NativeIcebergNestedSqlTest", 4), ("NativeIcebergDynamicSinkTest", 8), ("NativeIcebergCapturedRecoveryTest", 12), ("NativeIcebergEncoderMemoryTest", 2), ("NativeIcebergTaskFallbackTest", 3), ("NativeIcebergEvolutionTest", 2)):
         root = ET.parse(reports / f"TEST-tech.streamfusion.iceberg.{name}.xml").getroot()
         if any(case.find("failure") is not None or case.find("error") is not None
                for case in root.findall("testcase")):
@@ -93,7 +137,7 @@ def main(stock, native):
                   and case.find("error") is None and case.find("skipped") is None]
         if len(passed) < count:
             raise ValueError(f"Missing native hook/readback witnesses: {name}")
-    print("Iceberg: identical 14 upstream streaming SQL and 127 range/dynamic control cases; native hook, SQL file-encoder, keyed recovery, and readback witnesses passed")
+    print("Iceberg: identical 14 upstream streaming SQL and 127 range/dynamic control cases; native hook, SQL file-encoder, keyed recovery, and readback witnesses passed; 19 paired streaming rewrite cases and 54 executed SQL rewrite pairs")
 
 
 if __name__ == "__main__":

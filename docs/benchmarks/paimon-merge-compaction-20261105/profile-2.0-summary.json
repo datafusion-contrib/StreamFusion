@@ -1,0 +1,55 @@
+{
+  "worker_samples_all_engines": 139,
+  "reader_next_samples": 13,
+  "top_frames": [
+    [
+      "org/apache/paimon/utils/OffsetRow.isNullAt",
+      26
+    ],
+    [
+      "tech/streamfusion/paimon/NativePaimon.readerNext",
+      13
+    ],
+    [
+      "org/apache/paimon/KeyValueSerializer.fromRow",
+      11
+    ],
+    [
+      "org/apache/paimon/mergetree/compact/PartialUpdateMergeFunction.updateNonNullFields",
+      9
+    ],
+    [
+      "org/apache/paimon/codegen/RecordComparator.compare",
+      6
+    ],
+    [
+      "org/apache/paimon/mergetree/compact/LoserTree.popWinner",
+      5
+    ],
+    [
+      "org/apache/paimon/data/columnar/VectorizedColumnBatch.getInt",
+      5
+    ],
+    [
+      "org/apache/paimon/shade/org/apache/orc/impl/writer/IntegerTreeWriter.writeBatch",
+      5
+    ],
+    [
+      "java/util/ArrayList.forEach",
+      5
+    ],
+    [
+      "org/apache/paimon/utils/OffsetRow.getInt",
+      5
+    ],
+    [
+      "org/apache/paimon/mergetree/compact/LoserTree.adjust",
+      5
+    ],
+    [
+      "org/apache/paimon/mergetree/compact/LoserTree.adjustForNextLoop",
+      4
+    ]
+  ],
+  "note": "Instrumented diagnostic only. Early measurements drifted during warmup; final qualification uses three warmups and five uninstrumented measurements, retaining the original run separately."
+}

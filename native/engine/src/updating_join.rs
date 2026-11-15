@@ -1,7 +1,8 @@
 use crate::*;
 
+mod canonical;
 mod store;
-pub(crate) use store::{JoinProbe, JoinRowRef, JoinStateStore};
+pub(crate) use store::{import_bucket_row, JoinProbe, JoinRowRef, JoinStateStore};
 
 pub(crate) struct UpdatingJoiner<S: JoinStateStore = MemoryJoinStore> {
     left_keys: Vec<usize>,
@@ -843,7 +844,6 @@ impl<S: JoinStateStore> UpdatingJoiner<S> {
         now_ms: i64,
         emit: &mut dyn FnMut(RecordBatch) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
-        let arity = data_arity(batch);
         let key_indices: &[usize] = if is_left {
             &self.left_keys
         } else {
@@ -853,7 +853,16 @@ impl<S: JoinStateStore> UpdatingJoiner<S> {
             .iter()
             .map(|&i| batch.column(i).clone())
             .collect();
-        let data_arrays: Vec<ArrayRef> = (0..arity).map(|i| batch.column(i).clone()).collect();
+        let schema = if is_left {
+            &self.left_schema
+        } else {
+            &self.right_schema
+        };
+        let payload_work = self.memory.temporary_reservation();
+        if let Some(reservation) = &payload_work {
+            reservation.try_resize(payload_transport_bytes(batch, schema))?;
+        }
+        let data_arrays = payload_columns(batch, schema);
         let row_kinds = row_kind_column(batch);
         let payloads = if is_left {
             &self.left_payload
@@ -1031,13 +1040,21 @@ impl<S: JoinStateStore> UpdatingJoiner<S> {
             self.memory.account()?;
             return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
         }
-        let arity = data_arity(batch);
         let key_indices: &[usize] = if is_left {
             &self.left_keys
         } else {
             &self.right_keys
         };
-        let data_arrays: Vec<ArrayRef> = (0..arity).map(|i| batch.column(i).clone()).collect();
+        let schema = if is_left {
+            &self.left_schema
+        } else {
+            &self.right_schema
+        };
+        let payload_work = self.memory.temporary_reservation();
+        if let Some(reservation) = &payload_work {
+            reservation.try_resize(payload_transport_bytes(batch, schema))?;
+        }
+        let data_arrays = payload_columns(batch, schema);
         // The first-durable-row capture reads the input side's buckets, so they must be resident.
         if is_left {
             self.left_state
@@ -2194,13 +2211,17 @@ impl<S: JoinStateStore> UpdatingJoiner<S> {
     /// (`[data cols.., __count__, __assoc__]`); kept so existing savepoints keep restoring. They
     /// predate TTL, so rows take the enable-TTL migration stamp.
     fn load_side_decoded(&mut self, is_left: bool, batch: &RecordBatch, restored_at_ms: i64) {
-        let arity = batch.num_columns() - 2;
         let key_indices = if is_left {
             &self.left_keys
         } else {
             &self.right_keys
         };
-        let data_arrays: Vec<ArrayRef> = (0..arity).map(|i| batch.column(i).clone()).collect();
+        let schema = if is_left {
+            &self.left_schema
+        } else {
+            &self.right_schema
+        };
+        let data_arrays = payload_columns(batch, schema);
         let counts = column_i64(batch, "__count__");
         let assocs = column_i32(batch, "__assoc__");
         let mut key_encoder =

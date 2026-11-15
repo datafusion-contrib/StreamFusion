@@ -1,5 +1,5 @@
 use arrow::array::ArrayRef;
-use arrow::datatypes::{DataType, Int16Type, Int32Type, Int64Type, Int8Type};
+use arrow::datatypes::{DataType, Decimal128Type, Int16Type, Int32Type, Int64Type, Int8Type};
 use datafusion::common::{cast::as_primitive_array, exec_err, Result, ScalarValue};
 use datafusion::logical_expr::{
     ColumnarValue, ScalarFunctionArgs, ScalarUDF, ScalarUDFImpl, Signature, Volatility,
@@ -7,19 +7,19 @@ use datafusion::logical_expr::{
 use std::sync::Arc;
 
 pub(super) fn function() -> ScalarUDF {
-    ScalarUDF::new_from_impl(IntegralAbs {
+    ScalarUDF::new_from_impl(FlinkAbs {
         signature: Signature::user_defined(Volatility::Immutable),
     })
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
-struct IntegralAbs {
+struct FlinkAbs {
     signature: Signature,
 }
 
-impl ScalarUDFImpl for IntegralAbs {
+impl ScalarUDFImpl for FlinkAbs {
     fn name(&self) -> &str {
-        "flink_integral_abs"
+        "flink_exact_abs"
     }
 
     fn signature(&self) -> &Signature {
@@ -33,10 +33,12 @@ impl ScalarUDFImpl for IntegralAbs {
 
     fn return_type(&self, types: &[DataType]) -> Result<DataType> {
         match types {
-            [t @ (DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64)] => {
-                Ok(t.clone())
-            }
-            _ => exec_err!("Integral ABS requires one signed integer operand"),
+            [t @ (DataType::Int8
+            | DataType::Int16
+            | DataType::Int32
+            | DataType::Int64
+            | DataType::Decimal128(_, _))] => Ok(t.clone()),
+            _ => exec_err!("Exact ABS requires one signed integer or DECIMAL operand"),
         }
     }
 
@@ -47,7 +49,7 @@ impl ScalarUDFImpl for IntegralAbs {
 
 fn invoke(args: &[ColumnarValue]) -> Result<ColumnarValue> {
     let [input] = args else {
-        return exec_err!("Integral ABS requires one operand");
+        return exec_err!("Exact ABS requires one operand");
     };
     Ok(match input {
         ColumnarValue::Array(input) => ColumnarValue::Array(abs(input)?),
@@ -56,7 +58,10 @@ fn invoke(args: &[ColumnarValue]) -> Result<ColumnarValue> {
             ScalarValue::Int16(v) => ScalarValue::Int16(v.map(i16::wrapping_abs)),
             ScalarValue::Int32(v) => ScalarValue::Int32(v.map(i32::wrapping_abs)),
             ScalarValue::Int64(v) => ScalarValue::Int64(v.map(i64::wrapping_abs)),
-            other => return exec_err!("Unsupported integral ABS input {other:?}"),
+            ScalarValue::Decimal128(v, p, s) => {
+                ScalarValue::Decimal128(v.map(i128::wrapping_abs), *p, *s)
+            }
+            other => return exec_err!("Unsupported exact ABS input {other:?}"),
         }),
     })
 }
@@ -74,14 +79,69 @@ fn abs(input: &ArrayRef) -> Result<ArrayRef> {
         DataType::Int16 => primitive!(Int16Type),
         DataType::Int32 => primitive!(Int32Type),
         DataType::Int64 => primitive!(Int64Type),
-        other => return exec_err!("Unsupported integral ABS input {other}"),
+        DataType::Decimal128(_, _) => Arc::new(
+            as_primitive_array::<Decimal128Type>(input)?
+                .unary::<_, Decimal128Type>(i128::wrapping_abs)
+                .with_data_type(input.data_type().clone()),
+        ),
+        other => return exec_err!("Unsupported exact ABS input {other}"),
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arrow::array::{Array, Int16Array, Int32Array, Int64Array, Int8Array};
+    use arrow::array::{Array, Decimal128Array, Int16Array, Int32Array, Int64Array, Int8Array};
+
+    #[test]
+    fn decimal_precision_scale_scalar_and_sliced_arrays_are_preserved() {
+        for precision in 1..=38 {
+            let max = 10i128.pow(u32::from(precision)) - 1;
+            for scale in 0..=precision as i8 {
+                let ty = DataType::Decimal128(precision, scale);
+                let input = Decimal128Array::from(vec![
+                    Some(42),
+                    Some(-max),
+                    None,
+                    Some(-1),
+                    Some(0),
+                    Some(max),
+                    Some(42),
+                ])
+                .with_data_type(ty.clone())
+                .slice(1, 5);
+                let result = abs(&(Arc::new(input.clone()) as ArrayRef)).unwrap();
+                let result = as_primitive_array::<Decimal128Type>(&result).unwrap();
+                assert_eq!(result.data_type(), &ty);
+                assert_eq!(result.nulls(), input.nulls());
+                assert_eq!(
+                    result.iter().collect::<Vec<_>>(),
+                    vec![Some(max), None, Some(1), Some(0), Some(max)]
+                );
+                assert_eq!(input.value(0), -max);
+                for values in [
+                    input.slice(2, 0),
+                    Decimal128Array::from(vec![None; 3]).with_data_type(ty.clone()),
+                ] {
+                    let result = abs(&(Arc::new(values.clone()) as ArrayRef)).unwrap();
+                    assert_eq!(result.data_type(), &ty);
+                    assert_eq!(result.len(), values.len());
+                    assert_eq!(result.null_count(), values.null_count());
+                }
+                for (input, expected) in [(Some(-max), Some(max)), (Some(0), Some(0)), (None, None)]
+                {
+                    let output = invoke(&[ColumnarValue::Scalar(ScalarValue::Decimal128(
+                        input, precision, scale,
+                    ))])
+                    .unwrap();
+                    let ColumnarValue::Scalar(output) = output else {
+                        panic!("Scalar decimal ABS returned an array");
+                    };
+                    assert_eq!(output, ScalarValue::Decimal128(expected, precision, scale));
+                }
+            }
+        }
+    }
 
     #[test]
     fn widths_minima_nulls_and_sliced_validity() {
@@ -156,7 +216,7 @@ mod tests {
         for types in [
             vec![],
             vec![DataType::Float64],
-            vec![DataType::Decimal128(18, 3)],
+            vec![DataType::Decimal256(38, 3)],
             vec![DataType::Int32, DataType::Int64],
         ] {
             assert!(f.return_type(&types).is_err());

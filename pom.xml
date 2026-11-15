@@ -74,7 +74,8 @@
         <protobuf.version>4.32.1</protobuf.version>
         <iceberg.version>1.12.0</iceberg.version>
         <delta.version>4.4.0</delta.version>
-        <paimon.version>2.0.0</paimon.version>
+        <paimon.version>2.1.0</paimon.version>
+        <paimon.flink.test.module>paimon-flink2-common</paimon.flink.test.module>
         <!-- Native build: debug by default for a fast correctness loop. The `bench` profile flips
              both of these to a release build, which benchmarks must use (debug Rust is far slower). -->
         <native.profile>debug</native.profile>
@@ -92,12 +93,13 @@
         <sf.benchmarkJvmArgs></sf.benchmarkJvmArgs>
         <!-- Failure-parity checks need messages and stack frames even after a throw site gets hot. -->
         <sf.testExceptionJvmArgs>-XX:-OmitStackTraceInFastThrow</sf.testExceptionJvmArgs>
-        <!-- Test JVM forks per core fraction: the suite is ~140 independent test classes run
-             sequentially by default; class-level fork parallelism cuts wall time ~linearly.
+        <!-- Test JVM forks per core fraction: class-level fork parallelism reduces wall time.
              MiniClusters bind random ports, temp dirs come from JUnit/Files.createTempDirectory,
              and the native library loads per fork, so classes are isolated across JVMs. The
              bench profile pins this to 1: timing measurements must not share the machine. -->
         <sf.testForks>0.5C</sf.testForks>
+        <sf.protobuf.checkStaleness>false</sf.protobuf.checkStaleness>
+        <sf.testReuseForks>true</sf.testReuseForks>
     </properties>
 
     <dependencies>
@@ -202,6 +204,8 @@
             <version>${flink.version}</version>
             <scope>provided</scope>
         </dependency>
+        <!-- Optional connector/format dependencies here are parity baselines. Their owning modules
+             declare the provided APIs needed by production compilation and deployment. -->
         <!-- Flink owns Kafka consumption and production; StreamFusion wraps its byte-array source
              and sink with native format operators. The 5.0.0-2.2 release targets Flink 2.2.x and
              is provided at runtime by the deployment. -->
@@ -209,7 +213,7 @@
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-connector-kafka</artifactId>
             <version>${flink.connector.kafka.version}</version>
-            <scope>provided</scope>
+            <scope>test</scope>
         </dependency>
         <!-- The JSON format factory. Flink instantiates the original kafka+json table source during SQL
              validation (the native node replaces it only at physical-plan time), and the shallow
@@ -218,7 +222,7 @@
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-json</artifactId>
             <version>${flink.version}</version>
-            <scope>provided</scope>
+            <scope>test</scope>
         </dependency>
         <!-- Avro format: the Confluent-Avro benchmark's row-materializing baseline
              (AvroRowDataDeserializationSchema) and its AvroSchemaConverter + Avro writer for generating
@@ -227,7 +231,7 @@
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-avro</artifactId>
             <version>${flink.version}</version>
-            <scope>provided</scope>
+            <scope>test</scope>
         </dependency>
         <!-- Confluent-registry Avro format: the host baseline the native avro-confluent decode is
              compared against, and the format factory Flink needs to validate an avro-confluent table
@@ -247,7 +251,7 @@
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-csv</artifactId>
             <version>${flink.version}</version>
-            <scope>provided</scope>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.flink</groupId>
@@ -259,7 +263,7 @@
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-orc</artifactId>
             <version>${flink.version}</version>
-            <scope>provided</scope>
+            <scope>test</scope>
         </dependency>
         <!-- Flink's protobuf format: the host baseline the native protobuf decode is compared against,
              and its protoc (below) generates the message class a protobuf table names. It needs
@@ -282,7 +286,7 @@
             <groupId>org.apache.hadoop</groupId>
             <artifactId>hadoop-common</artifactId>
             <version>3.3.4</version>
-            <scope>provided</scope>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.hadoop</groupId>
@@ -297,7 +301,7 @@
             <groupId>org.apache.kafka</groupId>
             <artifactId>kafka-clients</artifactId>
             <version>${kafka.clients.version}</version>
-            <scope>provided</scope>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
@@ -329,6 +333,11 @@
     </dependencies>
 
     <repositories>
+        <repository>
+            <id>central</id>
+            <url>https://repo.maven.apache.org/maven2</url>
+            <snapshots><enabled>false</enabled></snapshots>
+        </repository>
         <!-- Hosts io.confluent:kafka-schema-registry-client, the transitive of the test-only
              flink-avro-confluent-registry baseline above (the shipped jar doesn't touch it). -->
         <repository>
@@ -340,13 +349,13 @@
     <build>
         <resources>
             <resource>
-                <directory>${project.basedir}/../src/main/resources</directory>
+                <directory>${project.basedir}/src/main/resources</directory>
             </resource>
             <!-- The build stamp: the project version filtered into a classpath resource, compared
                  against the loaded native library's own stamp so a stale library on
                  java.library.path fails loudly instead of silently shadowing the bundled one. -->
             <resource>
-                <directory>${project.basedir}/../src/main/resources-filtered</directory>
+                <directory>${project.basedir}/src/main/resources-filtered</directory>
                 <filtering>true</filtering>
             </resource>
             <!-- The local-development resource. The universal release profile replaces this with
@@ -368,11 +377,8 @@
                 <version>1.7.1</version>
             </extension>
         </extensions>
-        <!-- Releases attach javadoc for every module, and the shared source root lets javadoc see
-             the optional connector sources beside each module's own, so a broken reference or an
-             unresolvable connector class only surfaced at release time. Generating (not packaging)
-             the javadoc in the ordinary test build makes `mvn test` fail the same way the release
-             would; skip it for a quick loop with -Dmaven.javadoc.skip=true. -->
+        <!-- Generate javadoc for each module's owned sources during ordinary tests, so unresolved
+             module references fail before release. Use -Dmaven.javadoc.skip=true for quick loops. -->
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -419,7 +425,7 @@
                         <phase>generate-sources</phase>
                         <goals><goal>add-source</goal></goals>
                         <configuration><sources>
-                            <source>${project.basedir}/../src/main/java-flink${flink.line}</source>
+                            <source>${project.basedir}/src/main/java-flink${flink.line}</source>
                         </sources></configuration>
                     </execution>
 
@@ -444,9 +450,8 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
                 <configuration>
-                    <!-- Each deployment module owns only its explicit includes. Reproducible
-                         dependency JAR timestamps can make javac prefer newer shared sources;
-                         resolve them if needed, but never emit another module's classes. -->
+                    <!-- Resolve project dependencies from their artifacts without implicitly emitting
+                         classes from an added sourcepath into another module. -->
                     <compilerArgs>
                         <arg>-implicit:none</arg>
                     </compilerArgs>
@@ -478,54 +483,6 @@
                 <configuration>
                     <doclint>none</doclint>
                     <quiet>true</quiet>
-                    <!-- Modules document only the sources they compile, but javadoc still
-                         parses the opt-in Fluss, Delta and Paimon sources it finds next to them on the
-                         shared sourcepath, so their connector dependencies must be resolvable. -->
-                    <sourceFileExcludes>
-                        <sourceFileExclude>tech/streamfusion/fluss/**</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/planner/*Fluss*.java</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/delta/**</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/planner/DeltaPlannerExtension.java</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/planner/DeltaSinkMatcher.java</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/planner/NativeDeltaSinkExecNode.java</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/planner/StreamPhysicalNativeDeltaSink.java</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/paimon/**</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/planner/Paimon*.java</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/planner/NativePaimon*.java</sourceFileExclude>
-                        <sourceFileExclude>tech/streamfusion/planner/StreamPhysicalNativePaimon*.java</sourceFileExclude>
-                    </sourceFileExcludes>
-                    <additionalDependencies>
-                        <additionalDependency>
-                            <groupId>org.apache.fluss</groupId>
-                            <artifactId>fluss-flink-${flink.line}</artifactId>
-                            <version>1.0.0</version>
-                        </additionalDependency>
-                        <additionalDependency>
-                            <groupId>io.delta</groupId>
-                            <artifactId>delta-flink_2.2</artifactId>
-                            <version>${delta.version}</version>
-                        </additionalDependency>
-                        <additionalDependency>
-                            <groupId>io.delta</groupId>
-                            <artifactId>delta-kernel-api</artifactId>
-                            <version>${delta.version}</version>
-                        </additionalDependency>
-                        <additionalDependency>
-                            <groupId>org.apache.parquet</groupId>
-                            <artifactId>parquet-hadoop</artifactId>
-                            <version>1.16.0</version>
-                        </additionalDependency>
-                        <additionalDependency>
-                            <groupId>org.apache.hadoop</groupId>
-                            <artifactId>hadoop-common</artifactId>
-                            <version>3.3.4</version>
-                        </additionalDependency>
-                        <additionalDependency>
-                            <groupId>org.apache.paimon</groupId>
-                            <artifactId>paimon-flink-${flink.line}</artifactId>
-                            <version>${paimon.version}</version>
-                        </additionalDependency>
-                    </additionalDependencies>
                 </configuration>
             </plugin>
             <!-- Generates the protobuf message class a `protobuf`-format table names (and that the host
@@ -536,6 +493,7 @@
                 <version>0.6.1</version>
                 <configuration>
                     <protocArtifact>com.google.protobuf:protoc:${protobuf.version}:exe:${os.detected.classifier}</protocArtifact>
+                    <checkStaleness>${sf.protobuf.checkStaleness}</checkStaleness>
                 </configuration>
                 <executions>
                     <execution>
@@ -613,12 +571,12 @@
                 <configuration>
                     <!-- Arrow's off-heap allocator and Flink's runtime both reach into JDK
                          internals that are sealed by default on JDK 17.
-                         arrow.enable_unsafe_memory_access / enable_null_check_for_get turn off
-                         Arrow's per-accessor bounds + refcount checks (Comet/Spark run with these):
-                         profiling the row<->Arrow transpose showed ~1/3 of native CPU was those
-                         checks (ArrowBuf.checkIndex/ensureAccessible/refCnt on every setSafe). -->
+                         Unsafe access skips Arrow's per-accessor bounds/liveness checks; the
+                         getter flag separately skips redundant primitive-getter NULL checks.
+                         Explicit options retain the established test configuration; isolated
+                         ArrowRuntime tests verify StreamFusion defaults without these options. -->
                     <forkCount>${sf.testForks}</forkCount>
-                    <reuseForks>true</reuseForks>
+                    <reuseForks>${sf.testReuseForks}</reuseForks>
                     <argLine>-Xmx8g -Djava.library.path=${project.basedir}/../native/target/${native.profile} -Dstreamfusion.native.development=true -Darrow.enable_unsafe_memory_access=true -Darrow.enable_null_check_for_get=false --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.base/java.net=ALL-UNNAMED --add-opens=java.base/java.util.concurrent=ALL-UNNAMED --add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED ${sf.testExceptionJvmArgs} ${sf.extraJvmArgs} ${sf.benchmarkJvmArgs}</argLine>
                 </configuration>
             </plugin>
@@ -659,6 +617,31 @@
 
     <profiles>
         <profile>
+            <id>ci-precompiled-java</id>
+            <activation><property><name>sf.ci.precompiledJava</name><value>true</value></property></activation>
+            <properties><maven.javadoc.skip>true</maven.javadoc.skip></properties>
+            <build><pluginManagement><plugins><plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration><skipMain>true</skipMain><skip>true</skip></configuration>
+            </plugin></plugins></pluginManagement></build>
+        </profile>
+        <profile>
+            <id>ci-diagnostics</id>
+            <dependencies>
+                <dependency>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-simple</artifactId>
+                    <version>1.7.36</version>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>canonical-savepoints</id>
+            <modules><module>dev/canonical-savepoints</module></modules>
+        </profile>
+        <profile>
             <id>doris</id>
             <modules><module>streamfusion-doris</module></modules>
         </profile>
@@ -667,6 +650,9 @@
             <properties>
                 <flink.version>1.18.1</flink.version>
                 <flink.line>1.18</flink.line>
+                <!-- Paimon 2.1 coordinator overrides a final Flink 1.18 method. -->
+                <paimon.version>2.0.0</paimon.version>
+                <paimon.flink.test.module>paimon-flink1-common</paimon.flink.test.module>
                 <streamfusion.artifact.suffix>-flink1.18</streamfusion.artifact.suffix>
                 <flink.dependency.range>[1.18.0,1.19.0)</flink.dependency.range>
                 <flink.connector.kafka.version>3.2.0-1.18</flink.connector.kafka.version>
@@ -949,6 +935,10 @@
         <profile>
             <id>iceberg</id>
             <modules><module>streamfusion-iceberg</module></modules>
+        </profile>
+        <profile>
+            <id>hudi</id>
+            <modules><module>streamfusion-hudi</module></modules>
         </profile>
         <profile>
             <id>delta</id>

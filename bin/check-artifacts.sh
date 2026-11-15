@@ -125,6 +125,12 @@ for suffix in $modules; do
   fi
 done
 
+runtime_jar="$repo_root/streamfusion-runtime/target/streamfusion-runtime${artifact_suffix}-$version.jar"
+if jar tf "$runtime_jar" | grep -Eq '^tech/streamfusion/.*\.class$'; then
+  echo "streamfusion-runtime recompiles deployable production classes" >&2
+  exit 1
+fi
+
 core_jar="$repo_root/streamfusion-core/target/streamfusion-core${artifact_suffix}-$version-runtime.jar"
 core_main_jar="$repo_root/streamfusion-core/target/streamfusion-core${artifact_suffix}-$version.jar"
 assert_flink_identity "$core_main_jar" "streamfusion-core${artifact_suffix}"
@@ -209,6 +215,11 @@ for module in [*modules.split(), "runtime", "loader"]:
             dep = dependencies.get(("org.apache.arrow", artifact))
             if dep is None or (value(dep, "scope") or "compile") != scope:
                 raise SystemExit(f"{path}: missing inherited {artifact} dependency in {scope} scope")
+    if module == "core":
+        optional = {"flink-connector-kafka", "flink-json", "flink-csv", "flink-avro", "flink-orc", "kafka-clients", "hadoop-common"}
+        for (group, artifact), dep in dependencies.items():
+            if artifact in optional and value(dep, "scope") != "test":
+                raise SystemExit(f"{path}: core inherits optional runtime dependency {artifact}")
     for (group, artifact), dep in dependencies.items():
         dep_version = value(dep, "version")
         if group == "tech.streamfusion" and artifact.startswith("streamfusion-"):
