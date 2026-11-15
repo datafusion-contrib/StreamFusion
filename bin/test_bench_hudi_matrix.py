@@ -1,8 +1,10 @@
 import copy
 import argparse
+import ast
 import importlib.util
 import json
 from pathlib import Path
+import re
 import tempfile
 import unittest
 from unittest import mock
@@ -30,6 +32,28 @@ def complete(backend="memory", mini_batch=False):
 
 
 class HudiMatrixTest(unittest.TestCase):
+    def test_focused_profile_modes_cannot_start_default_native_or_runtime_matrices(self):
+        workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/ci-profile.yml").read_text()
+        suites = ["runtime", "runtime-parallel", "runtime-jfr", "canonical", "native-only",
+                  "runtime-hotspots", "canonical-setup", "lake-setup", "hudi-benchmark",
+                  "hudi-native", "hudi-diagnostic", "future-focused-mode"]
+        for job, expected in [("native", {"runtime", "runtime-parallel", "runtime-jfr", "canonical", "native-only"}),
+                              ("runtime", {"runtime", "runtime-parallel", "runtime-jfr"})]:
+            body = re.search(rf"^  {job}:\n(.*?)(?=^  [a-z-]+:|\Z)", workflow, re.M | re.S)[1]
+            condition = re.search(r"^    if: (.+)$", body, re.M)[1]
+            condition = condition.removeprefix("${{").removesuffix("}}").strip()
+            for suite in suites:
+                expression = condition.replace("inputs.suite", repr(suite))
+                expression = expression.replace("github.repository", repr("owner/fork"))
+                expression = expression.replace("github.ref", repr("refs/heads/feature/hudi"))
+                expression = expression.replace("&&", " and ").replace("||", " or ")
+                tree = ast.parse(expression, mode="eval")
+                allowed = (ast.Expression, ast.BoolOp, ast.And, ast.Or, ast.Compare,
+                           ast.Eq, ast.NotEq, ast.Constant)
+                self.assertTrue(all(isinstance(node, allowed) for node in ast.walk(tree)))
+                actual = eval(compile(tree, "workflow condition", "eval"), {"__builtins__": {}})
+                self.assertEqual(suite in expected, actual, (job, suite))
+
     def test_focused_diagnostic_cannot_satisfy_a_full_configuration(self):
         report = complete("rocksdb", False)
         report["observations"] = [item for item in report["observations"]

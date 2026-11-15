@@ -462,7 +462,7 @@ jobs:
 
   native:
     name: ${{ inputs.suite == 'native-only' && 'Shared debug native libraries' || 'native' }}
-    if: ${{ inputs.suite != 'runtime-hotspots' && inputs.suite != 'canonical-setup' && inputs.suite != 'canonical-reference' && inputs.suite != 'lake-setup' && inputs.suite != 'native-lz4' && inputs.suite != 'failure-regressions' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
+    if: ${{ (inputs.suite == 'runtime' || inputs.suite == 'runtime-parallel' || inputs.suite == 'runtime-jfr' || inputs.suite == 'canonical' || inputs.suite == 'native-only') && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -544,7 +544,7 @@ jobs:
 
   runtime:
     needs: native
-    if: inputs.suite != 'canonical' && inputs.suite != 'native-only' && inputs.suite != 'runtime-hotspots' && inputs.suite != 'canonical-setup' && inputs.suite != 'canonical-reference' && inputs.suite != 'lake-setup' && inputs.suite != 'native-lz4' && inputs.suite != 'failure-regressions'
+    if: inputs.suite == 'runtime' || inputs.suite == 'runtime-parallel' || inputs.suite == 'runtime-jfr'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:

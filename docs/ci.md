@@ -220,6 +220,8 @@ full Hudi configurations and final CI remain separate checks.
 `hudi-diagnostic` reuses one explicitly selected configuration and the verified
 libraries for unchanged focused queries. Its artifacts and successful status are
 labelled diagnostic and cannot satisfy the full Hudi matrix.
+The default debug-native and runtime jobs admit only their named runtime or
+canonical suites. Adding a focused mode cannot implicitly launch those matrices.
 
 The upstream full-suite dispatch is identified as **Full upstream Flink suite
 (merge gate)**. Inventory dispatches have a separate title and cannot satisfy that
