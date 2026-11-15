@@ -131,7 +131,8 @@ public class StreamPlanScan implements FlinkOptimizeProgram<StreamOptimizeContex
         NativeConfig.usePlannerConfig(
             ShortcutUtils.unwrapTableConfig(roots.get(0)).getConfiguration())) {
       List<RelNode> optimized = optimizeConfigured(roots, finalOutput);
-      PlannerDiagnostics.logOccurrences(LOG, "StreamFusion falls back to host: ", fallbackReasons());
+      PlannerDiagnostics.logOccurrences(
+          LOG, "StreamFusion falls back to host: ", fallbackReasons());
       PlannerDiagnostics.logOccurrences(LOG, "", functionExecutions);
       return optimized;
     }
@@ -203,7 +204,8 @@ public class StreamPlanScan implements FlinkOptimizeProgram<StreamOptimizeContex
     }
     Set<RelNode> javaJsonInputs = JsonStringIdentity.finalUnionJsonInputs(root, finalOutput);
     if (javaJsonInputs == null) {
-      recordIslandFallback(root, "JSON string identity requires a final projection or a fused scalar consumer");
+      recordIslandFallback(
+          root, "JSON string identity requires a final projection or a fused scalar consumer");
       return root;
     }
     // Pass 1 substitutes native (columnar) operators.
@@ -257,7 +259,8 @@ public class StreamPlanScan implements FlinkOptimizeProgram<StreamOptimizeContex
         && standaloneDropUpdateBefore(substituted)) {
       substitutions = previousSubstitutions;
       rollbackFunctionExecutions(previousFunctionExecutions, previousJvmFunctionOperators);
-      recordIslandFallback(root, "dropUpdateBefore: standalone row-source filtering is explicitly disabled");
+      recordIslandFallback(
+          root, "dropUpdateBefore: standalone row-source filtering is explicitly disabled");
       return root;
     }
     if (unconsumedColumnarOutput(substituted, false)) {
@@ -326,21 +329,15 @@ public class StreamPlanScan implements FlinkOptimizeProgram<StreamOptimizeContex
     // A non-windowed GROUP BY both emits and consumes a changelog, so it is exempt from the
     // insert-only guard — its input may be insert-only or itself a changelog.
     entries.add(
-        Substitution.of(
+        Substitution.preparing(
                 StreamPhysicalGroupAggregate.class,
                 "groupAggregate",
-                GroupAggregateMatcher::substitute)
+                GroupAggregateMatcher::prepareCollections)
             .shaped(
                 node ->
                     GroupAggregateMatcher.rustCollectionsEnabled()
                         && GroupAggregateMatcher.hasCollections(node))
             .keyedState()
-            .matching(GroupAggregateMatcher::matches)
-            .reason(
-                node ->
-                    JvmGroupAggregateMatcher.matches(node)
-                        ? GroupAggregateMatcher.unsupportedReason(node)
-                        : JvmGroupAggregateMatcher.unsupportedReason(node))
             .changelogSafe());
 
     entries.add(
@@ -355,13 +352,11 @@ public class StreamPlanScan implements FlinkOptimizeProgram<StreamOptimizeContex
             .changelogSafe());
 
     entries.add(
-        Substitution.of(
+        Substitution.preparing(
                 StreamPhysicalGroupAggregate.class,
                 "groupAggregate",
-                GroupAggregateMatcher::substitute)
+                GroupAggregateMatcher::prepare)
             .keyedState()
-            .matching(GroupAggregateMatcher::matches)
-            .reason(GroupAggregateMatcher::unsupportedReason)
             .changelogSafe());
 
     entries.add(

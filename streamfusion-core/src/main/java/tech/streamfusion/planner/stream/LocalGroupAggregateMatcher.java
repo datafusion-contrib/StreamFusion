@@ -56,10 +56,7 @@ final class LocalGroupAggregateMatcher {
     if (kind == org.apache.calcite.sql.SqlKind.JSON_OBJECTAGG) return 42;
     if (kind == org.apache.calcite.sql.SqlKind.LISTAGG)
       return GroupAggregateMatcher.KIND_LISTAGG_APPEND;
-    if (kind == org.apache.calcite.sql.SqlKind.SUM0) return GroupAggregateMatcher.KIND_SUM_ZERO;
-    return kind == org.apache.calcite.sql.SqlKind.SINGLE_VALUE
-        ? 14
-        : WindowAggregateMatcher.aggregateKind(kind);
+    return AggregateCallSpec.scalarKind(kind);
   }
 
   static int jsonObjectKind(AggregateCall call) {
@@ -95,14 +92,7 @@ final class LocalGroupAggregateMatcher {
   }
 
   static int partialWidth(AggregateCall call, boolean retracting) {
-    int kind = aggregateKind(call.getAggregation().getKind());
-    if (kind == GroupAggregateMatcher.KIND_LISTAGG_APPEND && retracting) return 1;
-    return kind == GroupAggregateMatcher.KIND_LISTAGG_APPEND
-            || kind == 14
-            || kind == WindowAggregateMatcher.KIND_AVG
-            || isRetractingSum(call, retracting)
-        ? 2
-        : 1;
+    return AggregateCallSpec.accumulatorWidth(call, retracting);
   }
 
   private static int stateWidth(AggregateCall call, boolean retracting) {
@@ -689,15 +679,7 @@ final class LocalGroupAggregateMatcher {
     Seq<AggregateCall> aggCalls = agg.aggCalls();
     for (int i = 0; i < aggCalls.size(); i++) {
       AggregateCall call = aggCalls.apply(i);
-      int column =
-          call.getArgList().isEmpty()
-              ? -1
-              : call.getArgList()
-                  .get(
-                      call.getAggregation().getKind()
-                              == org.apache.calcite.sql.SqlKind.JSON_OBJECTAGG
-                          ? 1
-                          : 0);
+      int column = AggregateCallSpec.valueColumn(call);
       columns.add(column);
       if (stateWidth(call, needRetraction(agg)) == 2) {
         columns.add(column);
@@ -784,13 +766,7 @@ final class LocalGroupAggregateMatcher {
     var columns = new ArrayList<Integer>();
     for (int i = 0; i < agg.aggCalls().size(); i++) {
       var call = agg.aggCalls().apply(i);
-      columns.add(
-          call.getAggregation().getKind() == org.apache.calcite.sql.SqlKind.JSON_OBJECTAGG
-              ? call.getArgList().get(0)
-              : call.getAggregation().getKind() == org.apache.calcite.sql.SqlKind.LISTAGG
-                      && call.getArgList().size() == 2
-                  ? call.getArgList().get(1)
-                  : -1);
+      columns.add(AggregateCallSpec.auxiliaryColumn(call));
       if (stateWidth(call, needRetraction(agg)) == 2) columns.add(-1);
     }
     if (countStarInserted(agg)) columns.add(-1);

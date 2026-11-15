@@ -9,10 +9,11 @@ import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalGroupAggregate;
 import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
 import scala.collection.Seq;
-import tech.streamfusion.compat.FlinkCompat;
 import tech.streamfusion.operator.RowDataArrowConverter;
 import tech.streamfusion.planner.ExpressionPlanning;
 import tech.streamfusion.planner.JvmFunctionTypes;
+import tech.streamfusion.planner.common.Admission;
+import tech.streamfusion.planner.common.StreamRule.PreparedPlan;
 
 /**
  * Recognizes native single-phase grouped aggregation. Numeric and distinct aggregates retain their
@@ -34,12 +35,32 @@ final class GroupAggregateMatcher {
 
   private GroupAggregateMatcher() {}
 
+  static Admission<PreparedPlan> prepare(StreamPhysicalGroupAggregate agg, PlanContext ctx) {
+    GroupAggregateSpec spec = GroupAggregateSpec.describe(agg);
+    String reason = unsupportedReason(agg, spec);
+    if (reason != null) return Admission.declined(reason);
+    return Admission.accepted(() -> substitute(agg, ctx, spec));
+  }
+
+  static Admission<PreparedPlan> prepareCollections(
+      StreamPhysicalGroupAggregate agg, PlanContext ctx) {
+    var result = prepare(agg, ctx);
+    return result.isAccepted() || JvmGroupAggregateMatcher.matches(agg)
+        ? result
+        : Admission.declined(JvmGroupAggregateMatcher.unsupportedReason(agg));
+  }
+
   static boolean matches(StreamPhysicalGroupAggregate agg) {
     return unsupportedReason(agg) == null;
   }
 
   /** The specific reason this aggregate is not accelerable, or null if it is. */
   static String unsupportedReason(StreamPhysicalGroupAggregate agg) {
+    return unsupportedReason(agg, null);
+  }
+
+  private static String unsupportedReason(
+      StreamPhysicalGroupAggregate agg, GroupAggregateSpec spec) {
     RelDataType inputType = agg.getInput().getRowType();
     // The whole row crosses the boundary in both directions, so every input and output column must
     // be
@@ -90,7 +111,7 @@ final class GroupAggregateMatcher {
           return "GROUP BY: released Flink cannot initialize AVG/SUM0 DECIMAL(38,38)";
         }
       }
-      int kind = aggregateKind(agg, call);
+      int kind = spec == null ? aggregateKind(agg, call) : spec.call(i).baseKind();
       if (kind < 0 && call.getAggregation().getKind() == org.apache.calcite.sql.SqlKind.SUM0) {
         return "GROUP BY: SUM0 requires one supported numeric value";
       }
@@ -260,8 +281,7 @@ final class GroupAggregateMatcher {
   }
 
   private static boolean intervalValueType(SqlTypeName type) {
-    return type.getFamily() == org.apache.calcite.sql.type.SqlTypeFamily.INTERVAL_YEAR_MONTH
-        || type.getFamily() == org.apache.calcite.sql.type.SqlTypeFamily.INTERVAL_DAY_TIME;
+    return AggregateCallSpec.intervalValueType(type);
   }
 
   private static boolean genericOrderedValueType(SqlTypeName type) {
@@ -275,20 +295,12 @@ final class GroupAggregateMatcher {
   }
 
   static boolean isIntegerType(SqlTypeName type) {
-    switch (type) {
-      case TINYINT:
-      case SMALLINT:
-      case INTEGER:
-      case BIGINT:
-        return true;
-      default:
-        return false;
-    }
+    return AggregateCallSpec.isIntegerType(type);
   }
 
   /** Integer sums wrap at the input width; extrema retain that same type. */
   static boolean isRunningType(SqlTypeName type) {
-    return isIntegerType(type) || type == SqlTypeName.FLOAT || type == SqlTypeName.DOUBLE;
+    return AggregateCallSpec.isRunningType(type);
   }
 
   /** The numeric types Flink's AvgAggFunction covers (its result casts back to the input type). */
@@ -302,15 +314,8 @@ final class GroupAggregateMatcher {
         || type == SqlTypeName.DOUBLE;
   }
 
-  /**
-   * Native aggregate kind 7 (COUNT(DISTINCT)); matches the convention in the Rust GroupAggState.
-   */
-  private static final int KIND_COUNT_DISTINCT = GroupAggregateKind.COUNT_DISTINCT;
-
-  /** Native aggregate kind 9 (SUM(DISTINCT)); matches the convention in the Rust GroupAggState. */
-  private static final int KIND_SUM_DISTINCT = GroupAggregateKind.SUM_DISTINCT;
-
   static final int KIND_AVG_DISTINCT = GroupAggregateKind.AVG_DISTINCT;
+
 
   /**
    * Native kinds 10/11: MIN/MAX over an insert-only input. No retraction can ever arrive, so the
@@ -324,10 +329,7 @@ final class GroupAggregateMatcher {
 
   /** Whether an insert-only MIN/MAX over this value type can run as a plain running extreme. */
   static boolean runningExtremeType(SqlTypeName type) {
-    return isRunningType(type)
-        || type == SqlTypeName.DATE
-        || type == SqlTypeName.TIME
-        || type == SqlTypeName.BOOLEAN;
+    return AggregateCallSpec.runningExtremeType(type);
   }
 
   private static final int KIND_MIN = WindowAggregateMatcher.KIND_MIN;
@@ -342,74 +344,8 @@ final class GroupAggregateMatcher {
     return type == SqlTypeName.TIMESTAMP || type == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE;
   }
 
-  static int[] kinds(StreamPhysicalGroupAggregate agg) {
-    Seq<AggregateCall> aggCalls = agg.aggCalls();
-    int[] kinds = new int[aggCalls.size()];
-    Long hint = FlinkCompat.singleStateTtl(agg);
-    long retention =
-        hint == null
-            ? org.apache.flink.table.planner.utils.ShortcutUtils.unwrapTableConfig(agg)
-                .getIdleStateRetention()
-                .toMillis()
-            : hint;
-    for (int i = 0; i < aggCalls.size(); i++) {
-      AggregateCall call = aggCalls.apply(i);
-      int kind = aggregateKind(agg, call);
-      if (call.isDistinct() && kind == WindowAggregateMatcher.KIND_COUNT) {
-        kind = KIND_COUNT_DISTINCT;
-      } else if (call.isDistinct() && kind == WindowAggregateMatcher.KIND_SUM) {
-        kind = KIND_SUM_DISTINCT;
-      } else if (call.isDistinct() && kind == WindowAggregateMatcher.KIND_AVG) {
-        kind = KIND_AVG_DISTINCT;
-      } else if (call.isDistinct() && kind == KIND_SUM_ZERO) {
-        kind = KIND_SUM_ZERO_DISTINCT;
-      }
-      if (call.isDistinct() && kind == KIND_LISTAGG_APPEND) kind = KIND_LISTAGG_DISTINCT_APPEND;
-      if (call.isDistinct() && kind == KIND_LISTAGG_RETRACT) kind = KIND_LISTAGG_DISTINCT_RETRACT;
-      if (call.isDistinct() && (kind == 12 || kind == 15)) kind = 19;
-      if (call.isDistinct() && (kind == 13 || kind == 16)) kind = 20;
-      // MIN/MAX(DISTINCT) stay their plain kinds: the extreme ignores multiplicity either way.
-      // Over an insert-only input a numeric MIN/MAX needs no retractable multiset at all.
-      if ((kind == KIND_MIN || kind == KIND_MAX)
-          && ChangelogPlanUtils.inputInsertOnly(agg)
-          && runningExtremeType(
-              agg.getInput()
-                  .getRowType()
-                  .getFieldList()
-                  .get(call.getArgList().get(0))
-                  .getType()
-                  .getSqlTypeName())) {
-        kind = kind == KIND_MIN ? KIND_MIN_APPEND : KIND_MAX_APPEND;
-      }
-      if (retention > 0
-          && (kind == 7
-              || kind == 9
-              || kind == 17
-              || kind == 18
-              || kind == 19
-              || kind == 20
-              || kind == 34
-              || kind == 49
-              || kind == 51
-              || kind == 53
-              || kind == KIND_LISTAGG_DISTINCT_APPEND
-              || kind == KIND_LISTAGG_DISTINCT_RETRACT)) {
-        kind |= tech.streamfusion.Native.AGGREGATE_DISTINCT_TTL;
-        if (ChangelogPlanUtils.inputInsertOnly(agg))
-          kind |= tech.streamfusion.Native.AGGREGATE_DISTINCT_APPEND;
-      }
-      kinds[i] = kind;
-    }
-    return kinds;
-  }
-
   static int collectionKind(AggregateCall call) {
-    if (call.getAggregation()
-        == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.COLLECT)
-      return call.isDistinct() ? 49 : 48;
-    if (FlinkCompat.isBuiltinArrayAgg(call.getAggregation()))
-      return (call.ignoreNulls() ? 52 : 50) + (call.isDistinct() ? 1 : 0);
-    return -1;
+    return AggregateCallSpec.collectionKind(call);
   }
 
   static boolean rustCollectionsEnabled() {
@@ -424,65 +360,9 @@ final class GroupAggregateMatcher {
   }
 
   private static int aggregateKind(StreamPhysicalGroupAggregate agg, AggregateCall call) {
-    if (collectionKind(call) >= 0) return collectionKind(call);
-    switch (call.getAggregation().getKind()) {
-      case JSON_ARRAYAGG:
-        return ((org.apache.calcite.sql.fun.SqlJsonArrayAggAggFunction) call.getAggregation())
-                    .getNullClause()
-                == org.apache.calcite.sql.SqlJsonConstructorNullClause.ABSENT_ON_NULL
-            ? 26
-            : 27;
-      case JSON_OBJECTAGG:
-        return (tech.streamfusion.compat.JsonRuntimeCompat.LEGACY_SQL_JSON ? 30 : 28)
-            + (((org.apache.calcite.sql.fun.SqlJsonObjectAggAggFunction) call.getAggregation())
-                        .getNullClause()
-                    == org.apache.calcite.sql.SqlJsonConstructorNullClause.ABSENT_ON_NULL
-                ? 0
-                : 1);
-      case LISTAGG:
-        return ChangelogPlanUtils.inputInsertOnly(agg) ? KIND_LISTAGG_APPEND : KIND_LISTAGG_RETRACT;
-      case FIRST_VALUE:
-        {
-          {
-            return ChangelogPlanUtils.inputInsertOnly(agg) ? 12 : 15;
-          }
-        }
-      case LAST_VALUE:
-        {
-          {
-            return ChangelogPlanUtils.inputInsertOnly(agg) ? 13 : 16;
-          }
-        }
-      case SINGLE_VALUE:
-        {
-          {
-            return 14;
-          }
-        }
-      default:
-        {
-          {
-          }
-          break;
-        }
-    }
-    if (call.getAggregation().getKind() != org.apache.calcite.sql.SqlKind.SUM0) {
-      return WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind());
-    }
-    if (call.getArgList().size() != 1) return -1;
-    var value = agg.getInput().getRowType().getFieldList().get(call.getArgList().get(0)).getType();
-    switch (value.getSqlTypeName()) {
-      case FLOAT:
-      case DOUBLE:
-      case TINYINT:
-      case SMALLINT:
-      case INTEGER:
-      case BIGINT:
-      case DECIMAL:
-        return KIND_SUM_ZERO;
-      default:
-        return -1;
-    }
+    return AggregateCallSpec.describe(
+            call, agg.getInput().getRowType(), !ChangelogPlanUtils.inputInsertOnly(agg))
+        .baseKind();
   }
 
   static boolean literalStringColumn(RelNode input, int column) {
@@ -514,111 +394,12 @@ final class GroupAggregateMatcher {
             input.getInput(0), ((org.apache.calcite.rex.RexInputRef) value).getIndex());
   }
 
-  private static int[] auxiliaryColumns(StreamPhysicalGroupAggregate agg) {
-    int[] columns = new int[agg.aggCalls().size()];
-    java.util.Arrays.fill(columns, -1);
-    for (int i = 0; i < columns.length; i++) {
-      var call = agg.aggCalls().apply(i);
-      if (call.getAggregation().getKind() == org.apache.calcite.sql.SqlKind.LISTAGG
-          && call.getArgList().size() == 2) columns[i] = call.getArgList().get(1);
-      if (call.getAggregation().getKind() == org.apache.calcite.sql.SqlKind.JSON_OBJECTAGG
-          && call.getArgList().size() == 2) columns[i] = call.getArgList().get(0);
-    }
-    return java.util.Arrays.stream(columns).anyMatch(column -> column >= 0) ? columns : new int[0];
-  }
-
-  static int[] valueColumns(StreamPhysicalGroupAggregate agg) {
-    int[] columns = WindowAggregateMatcher.valueColumns(agg.aggCalls());
-    for (int i = 0; i < columns.length; i++) {
-      var call = agg.aggCalls().apply(i);
-      if (call.getAggregation().getKind() == org.apache.calcite.sql.SqlKind.JSON_OBJECTAGG)
-        columns[i] = call.getArgList().get(1);
-    }
-    return columns;
-  }
-
-  /**
-   * Native code for a COUNT(DISTINCT) value whose Flink type has no faithful type code (TIME,
-   * BOOLEAN, complex types — the shared mapping's default would report BIGINT). The fold reads the
-   * actual column either way; the explicit code keeps such aggregates off backends that need a
-   * fixed element type, like the per-element RocksDB store.
-   */
-  private static final int OPAQUE_DISTINCT_VALUE_CODE = 100;
-
-  static int[] valueTypeCodes(StreamPhysicalGroupAggregate agg) {
-    RelDataType inputType = agg.getInput().getRowType();
-    int[] codes = WindowAggregateMatcher.valueTypeCodes(agg.aggCalls(), inputType);
-    Seq<AggregateCall> aggCalls = agg.aggCalls();
-    for (int i = 0; i < codes.length; i++) {
-      AggregateCall call = aggCalls.apply(i);
-      boolean retainsValue = collectionKind(call) >= 0;
-      if (!call.getArgList().isEmpty()) {
-        switch (call.getAggregation().getKind()) {
-          case MIN:
-          case MAX:
-          case FIRST_VALUE:
-          case LAST_VALUE:
-          case SINGLE_VALUE:
-            retainsValue = true;
-            break;
-          default:
-            break;
-        }
-      }
-      if (retainsValue) {
-        var value = inputType.getFieldList().get(call.getArgList().get(0)).getType();
-        codes[i] =
-            collectionKind(call) >= 0 && intervalValueType(value.getSqlTypeName())
-                ? value.getSqlTypeName().getFamily()
-                        == org.apache.calcite.sql.type.SqlTypeFamily.INTERVAL_YEAR_MONTH
-                    ? 2
-                    : 0
-                : retainedValueTypeCode(value);
-      }
-      if (call.isDistinct()
-          && !call.getArgList().isEmpty()
-          && WindowAggregateMatcher.aggregateKind(call.getAggregation().getKind())
-              == WindowAggregateMatcher.KIND_COUNT
-          && codes[i] == 0
-          && inputType.getFieldList().get(call.getArgList().get(0)).getType().getSqlTypeName()
-              != SqlTypeName.BIGINT) {
-        codes[i] = OPAQUE_DISTINCT_VALUE_CODE;
-      }
-    }
-    return codes;
-  }
-
   static int retainedValueTypeCode(RelDataType type) {
-    if (intervalValueType(type.getSqlTypeName())) return 100;
-    switch (type.getSqlTypeName()) {
-      case BINARY:
-      case VARBINARY:
-      case ARRAY:
-      case MAP:
-      case ROW:
-      case MULTISET:
-        return 100;
-      case TIME:
-        return 9;
-      case BOOLEAN:
-        return 10;
-      default:
-        return WindowAggregateMatcher.typeCode(type);
-    }
+    return AggregateCallSpec.retainedValueTypeCode(type);
   }
 
   static int[] keyColumns(StreamPhysicalGroupAggregate agg) {
     return WindowAggregateMatcher.keyColumns(agg.grouping());
-  }
-
-  /** The FILTER boolean column index per aggregate (Calcite's {@code filterArg}), or -1 if none. */
-  static int[] filterColumns(StreamPhysicalGroupAggregate agg) {
-    Seq<AggregateCall> aggCalls = agg.aggCalls();
-    int[] filters = new int[aggCalls.size()];
-    for (int i = 0; i < aggCalls.size(); i++) {
-      filters[i] = aggCalls.apply(i).filterArg;
-    }
-    return filters;
   }
 
   /** Whether the host wants UPDATE_BEFORE rows emitted on this node's output edge. */
@@ -626,11 +407,12 @@ final class GroupAggregateMatcher {
     return ChangelogPlanUtils.generateUpdateBefore(agg);
   }
 
-  static RelNode substitute(StreamPhysicalGroupAggregate agg, PlanContext ctx) {
-    int[] keyColumns = GroupAggregateMatcher.keyColumns(agg);
+  private static RelNode substitute(
+      StreamPhysicalGroupAggregate agg, PlanContext ctx, GroupAggregateSpec spec) {
+    int[] keyColumns = spec.keyColumns();
     // A STATE_TTL hint overrides the job-wide retention for this aggregate alone (Flink's
     // StateMetadata precedence); null means no hint, resolved at translate time.
-    Long stateTtlHint = FlinkCompat.singleStateTtl(agg);
+    Long stateTtlHint = spec.stateTtlHint();
     // The aggregate is columnar (Arrow in/out). Keep the keyed shuffle columnar where the input
     // sits on a columnar producer (a native exchange splits the batch by the grouping keys);
     // otherwise the transition pass inserts a transpose at the host exchange boundary. Same key
@@ -640,12 +422,12 @@ final class GroupAggregateMatcher {
         agg.getTraitSet(),
         ctx.columnarInput(agg.getInputs().get(0), keyColumns),
         agg.getRowType(),
-        GroupAggregateMatcher.kinds(agg),
-        GroupAggregateMatcher.valueTypeCodes(agg),
-        GroupAggregateMatcher.valueColumns(agg),
+        spec.kinds(),
+        spec.valueTypes(),
+        spec.valueColumns(),
         keyColumns,
-        GroupAggregateMatcher.filterColumns(agg),
-        auxiliaryColumns(agg), // secondary arguments; numeric merges use this slot for counts
+        spec.filterColumns(),
+        spec.auxiliaryColumns(), // secondary arguments; numeric merges use this slot for counts
         new int[0], // single-phase: distinct values fold per row, no view columns
         -1, // single-phase: liveness counts rows ±1, no count1 partial
         GroupAggregateMatcher.generateUpdateBefore(agg),

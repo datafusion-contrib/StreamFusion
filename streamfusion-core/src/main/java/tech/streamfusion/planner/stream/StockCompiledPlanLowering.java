@@ -68,6 +68,7 @@ import tech.streamfusion.planner.NativeShareExecNode;
 import tech.streamfusion.planner.RowDataToArrowExecNode;
 import tech.streamfusion.planner.common.CalcSpec;
 import tech.streamfusion.planner.common.EncodedExpression;
+import tech.streamfusion.planner.common.GroupAggregateKind;
 import tech.streamfusion.state.CanonicalStateBackend;
 import tech.streamfusion.state.OperatorIdentityProjection;
 import tech.streamfusion.state.StockSlicingWindowStateContract;
@@ -2071,6 +2072,15 @@ final class StockCompiledPlanLowering {
     return exit;
   }
 
+  private static boolean groupRecordCounterMatches(Object function, int recordCount)
+      throws IOException {
+    Object counter = releasedField(function, "recordCounter");
+    return counter.getClass()
+            == org.apache.flink.table.runtime.operators.aggregate.RecordCounter.of(recordCount)
+                .getClass()
+        && (recordCount < 0 || recordCount == (Integer) releasedField(counter, "indexOfCountStar"));
+  }
+
   private ExecNode<?> lowerGroupAggregate(ExecNode<?> stock) throws IOException {
     var arithmetic = lowerArithmeticGroupAggregate(stock);
     if (arithmetic != stock) return arithmetic;
@@ -2176,42 +2186,6 @@ final class StockCompiledPlanLowering {
     return type.getTypeRoot() != LogicalTypeRoot.RAW
         && ArrowRowTypeSupport.supports(type)
         && type.getChildren().stream().allMatch(StockCompiledPlanLowering::typedGroupArrowType);
-  }
-
-  private static int typedGroupValueCode(LogicalType type) {
-    switch (type.getTypeRoot()) {
-      case BIGINT:
-        return 0;
-      case DOUBLE:
-        return 1;
-      case INTEGER:
-        return 2;
-      case CHAR:
-      case VARCHAR:
-        return 3;
-      case SMALLINT:
-        return 4;
-      case TINYINT:
-        return 5;
-      case FLOAT:
-        return 6;
-      case DATE:
-        return 8;
-      case TIME_WITHOUT_TIME_ZONE:
-        return 9;
-      case BOOLEAN:
-        return 10;
-      case TIMESTAMP_WITHOUT_TIME_ZONE:
-      case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
-        return 1000
-            + org.apache.flink.table.types.logical.utils.LogicalTypeChecks.getPrecision(type);
-      case DECIMAL:
-        return 2000
-            + 100 * org.apache.flink.table.types.logical.utils.LogicalTypeChecks.getPrecision(type)
-            + org.apache.flink.table.types.logical.utils.LogicalTypeChecks.getScale(type);
-      default:
-        return -1;
-    }
   }
 
   private ExecNode<?> lowerTypedGroupAggregate(ExecNode<?> stock) throws IOException {
@@ -2456,124 +2430,35 @@ final class StockCompiledPlanLowering {
     var localViewSources = new ArrayList<Integer>();
     var localViewTypes = new ArrayList<LogicalType>();
     LogicalType[] actualTypes = (LogicalType[]) releasedField(function, "accTypes");
-    LogicalType[] derivedTypes =
-        Arrays.stream(infos.getAccTypes())
-            .map(org.apache.flink.table.types.DataType::getLogicalType)
-            .toArray(LogicalType[]::new);
-    int recordCount = infos.getIndexOfCountStar();
-    var counter = releasedField(function, "recordCounter");
-    if (!Arrays.equals(actualTypes, derivedTypes)
-        || retract && recordCount < 0
-        || counter.getClass()
-            != org.apache.flink.table.runtime.operators.aggregate.RecordCounter.of(recordCount)
-                .getClass()
-        || recordCount >= 0 && recordCount != (Integer) releasedField(counter, "indexOfCountStar"))
-      return stock;
-    int size = infos.getActualAggregateInfos().length;
-    if (size == 0) return stock;
-    int[] kinds = new int[size],
-        types = new int[size],
-        columns = new int[size],
-        scalars = new int[size],
-        counts = new int[size],
-        viewColumns = new int[size],
-        filters = new int[size];
-    Arrays.fill(counts, -1);
+    var prepared =
+        StockGroupAggregateSpec.prepare(
+            StockGroupAggregateSpec.State.TYPED,
+            planner.getTypeFactory().buildRelNodeRowType(sourceType),
+            sourceType,
+            calls,
+            infos,
+            actualTypes,
+            retract,
+            global);
+    if (!prepared.isAccepted()) return stock;
+    var spec = prepared.value();
+    int recordCount = spec.recordCount();
+    if (!groupRecordCounterMatches(function, recordCount)) return stock;
+    int[] kinds = spec.kinds(),
+        types = spec.valueTypes(),
+        columns = spec.valueColumns(),
+        scalars = spec.scalarColumns(),
+        counts = spec.countColumns();
+    int[] viewColumns = new int[kinds.length], filters = new int[kinds.length];
     Arrays.fill(viewColumns, -1);
     var nativeIndices = new java.util.HashMap<Integer, Integer>();
-    int position = 0, actual = 0;
-    for (var info : infos.aggInfos()) {
-      int width = info.externalAccTypes().length;
-      if (infos.countStarInserted()
-          && info.aggIndex() == ((Number) infos.indexOfCountStar().get()).intValue()) {
-        if (global) {
-          localKinds.add(3);
-          localTypes.add(0);
-          localColumns.add(-1);
-          localFilters.add(-1);
-        }
-        position += width;
-        continue;
-      }
-      var call = info.aggIndex() < calls.length ? calls[info.aggIndex()] : info.agg();
-      if (call.isApproximate()
-          || !call.getCollation().getFieldCollations().isEmpty()
-          || info.argIndexes().length > 1
-          || info.viewSpecs().length != 0) return stock;
-      Class<?> type = info.function().getClass();
-      boolean countAll =
-          type == org.apache.flink.table.planner.functions.aggfunctions.Count1AggFunction.class;
-      boolean count =
-          countAll
-              || type
-                  == org.apache.flink.table.planner.functions.aggfunctions.CountAggFunction.class
-              || type
-                  == org.apache.flink.table.planner.functions.aggfunctions.Sum0AggFunction
-                      .LongSum0AggFunction.class;
-      int kind, expected;
-      if (call.isDistinct()) {
-        if (info.argIndexes().length != 1) return stock;
-        if (count && call.getAggregation().getKind() == SqlKind.COUNT) kind = 7;
-        else if (!retract
-            && call.getAggregation().getKind() == SqlKind.SUM
-            && type.getEnclosingClass()
-                == org.apache.flink.table.planner.functions.aggfunctions.SumAggFunction.class)
-          kind = 9;
-        else return stock;
-        expected = 1;
-      } else if (count) {
-        kind =
-            type
-                    == org.apache.flink.table.planner.functions.aggfunctions.Sum0AggFunction
-                        .LongSum0AggFunction.class
-                ? 22
-                : 3;
-        expected = 1;
-      } else if (!retract
-          && type.getEnclosingClass()
-              == org.apache.flink.table.planner.functions.aggfunctions.SumAggFunction.class) {
-        kind = 0;
-        expected = 1;
-      } else if (retract
-          && type.getEnclosingClass()
-              == org.apache.flink.table.planner.functions.aggfunctions.SumWithRetractAggFunction
-                  .class) {
-        kind = 0;
-        expected = 2;
-      } else if (type.getEnclosingClass()
-          == org.apache.flink.table.planner.functions.aggfunctions.AvgAggFunction.class) {
-        kind = 4;
-        expected = 2;
-      } else if (!retract
-          && type.getEnclosingClass()
-              == org.apache.flink.table.planner.functions.aggfunctions.MinAggFunction.class) {
-        kind = 10;
-        expected = 1;
-      } else if (!retract
-          && type.getEnclosingClass()
-              == org.apache.flink.table.planner.functions.aggfunctions.MaxAggFunction.class) {
-        kind = 11;
-        expected = 1;
-      } else return stock;
-      if (width != expected) return stock;
-      int value =
-          kind == 7
-              ? call.getArgList().get(0)
-              : countAll || info.argIndexes().length == 0 ? -1 : info.argIndexes()[0];
-      int valueType = value < 0 || kind == 3 ? 0 : typedGroupValueCode(sourceType.getTypeAt(value));
-      if (valueType < 0) return stock;
-      if (valueType >= 2000) {
-        if (kind != 7 && (global || kind != 0 && kind != 4)) return stock;
-        if (kind == 0 && retract) kind = 40;
-      }
-      if (call.filterArg >= 0 && !sourceType.getTypeAt(call.filterArg).is(LogicalTypeRoot.BOOLEAN))
-        return stock;
-      kinds[actual] = kind;
-      types[actual] = valueType;
-      columns[actual] = value;
-      scalars[actual] = position;
-      if (width == 2) counts[actual] = position + 1;
-      filters[actual] = call.filterArg;
+    for (int actual = 0; actual < spec.calls().size(); actual++) {
+      var bound = spec.calls().get(actual);
+      var call = bound.declaration().call();
+      int kind = bound.kind(), value = bound.valueColumn(), valueType = bound.valueType();
+      int width = bound.count() >= 0 ? 2 : 1;
+      filters[actual] = bound.declaration().filterColumn();
+
       if (global) {
         int localPosition = localKinds.size();
         if (call.isDistinct()) {
@@ -2587,28 +2472,44 @@ final class StockCompiledPlanLowering {
           }
           viewColumns[actual] = view;
         }
-        localKinds.add(kind == 4 ? 8 : kind == 0 && retract ? 41 : kind);
-        localTypes.add(kind == 4 ? typedGroupValueCode(actualTypes[position]) : valueType);
+        localKinds.add(
+            kind == GroupAggregateKind.AVG
+                ? GroupAggregateKind.AVG_PARTIAL_SUM
+                : kind == GroupAggregateKind.SUM && retract
+                    ? GroupAggregateKind.RAW_SUM_PARTIAL
+                    : kind);
+        localTypes.add(
+            kind == GroupAggregateKind.AVG
+                ? AggregateCallSpec.canonicalValueCode(actualTypes[bound.scalar()])
+                : valueType);
+
         localColumns.add(value);
         localFilters.add(call.filterArg);
         if (width == 2) {
-          localKinds.add(3);
+          localKinds.add(GroupAggregateKind.COUNT);
           localTypes.add(valueType);
           localColumns.add(value);
           localFilters.add(call.filterArg);
         }
-        columns[actual] = localKeys.length + position;
-        kinds[actual] = kind == 3 ? 22 : kind;
-        if (kind != 4 && kind != 7 && kind != 9)
-          types[actual] = typedGroupValueCode(inputType.getTypeAt(columns[actual]));
+        columns[actual] = localKeys.length + bound.scalar();
+        kinds[actual] = kind == GroupAggregateKind.COUNT ? GroupAggregateKind.SUM_ZERO : kind;
+        if (kind != GroupAggregateKind.AVG
+            && kind != GroupAggregateKind.COUNT_DISTINCT
+            && kind != GroupAggregateKind.SUM_DISTINCT)
+          types[actual] =
+              AggregateCallSpec.canonicalValueCode(inputType.getTypeAt(columns[actual]));
         filters[actual] = -1;
       }
-      nativeIndices.put(info.aggIndex(), actual);
-      actual++;
-      position += width;
+      nativeIndices.put(bound.aggregateIndex(), actual);
     }
-    if (actual != size || position + infos.distinctInfos().length != actualTypes.length)
-      return stock;
+    if (global && infos.countStarInserted()) {
+      // Flink appends this hidden scalar after the user calls; it is absent from spec.calls().
+      if (recordCount != localKinds.size()) return stock;
+      localKinds.add(GroupAggregateKind.COUNT);
+      localTypes.add(0);
+      localColumns.add(-1);
+      localFilters.add(-1);
+    }
     var views = new ArrayList<tech.streamfusion.state.StockGroupDistinctView>();
     for (var distinct : infos.distinctInfos()) {
       if (distinct.excludeAcc() || distinct.dataViewSpec().isEmpty()) return stock;
@@ -2618,7 +2519,8 @@ final class StockCompiledPlanLowering {
         Integer index = nativeIndices.get((Integer) distinct.aggIndexes().apply(i));
         if (index == null
             || !tech.streamfusion.state.StockGroupDistinctView.supportsAggregateIndex(index)
-            || kinds[index] != 7 && kinds[index] != 9) return stock;
+            || kinds[index] != GroupAggregateKind.COUNT_DISTINCT
+                && kinds[index] != GroupAggregateKind.SUM_DISTINCT) return stock;
         slots[i] = index;
       }
       views.add(
@@ -2669,7 +2571,7 @@ final class StockCompiledPlanLowering {
     int maximum = stockMaximum(original);
     boolean stringCaches =
         java.util.stream.IntStream.range(0, kinds.length)
-            .anyMatch(i -> (kinds[i] == 10 || kinds[i] == 11) && types[i] == 3);
+            .anyMatch(i -> (kinds[i] == GroupAggregateKind.MIN_APPEND || kinds[i] == GroupAggregateKind.MAX_APPEND) && types[i] == 3);
     boolean binaryRowKeys = rowKeys(sourceType, localKeys);
     NativeColumnarExchangeExecNode exchange;
     if (global) {
@@ -2868,151 +2770,57 @@ final class StockCompiledPlanLowering {
             retract,
             true,
             true);
-    if (infos.distinctInfos().length != 0) return stock;
     LogicalType[] accumulatorTypes = (LogicalType[]) releasedField(function, "accTypes");
-    LogicalType[] generatedTypes =
-        Arrays.stream(infos.getAccTypes())
-            .map(org.apache.flink.table.types.DataType::getLogicalType)
-            .toArray(LogicalType[]::new);
-    int recordCount = infos.getIndexOfCountStar();
-    var counter = releasedField(function, "recordCounter");
-    if (!Arrays.equals(accumulatorTypes, generatedTypes)
-        || retract && recordCount < 0
-        || counter.getClass()
-            != org.apache.flink.table.runtime.operators.aggregate.RecordCounter.of(recordCount)
-                .getClass()
-        || recordCount >= 0 && recordCount != (Integer) releasedField(counter, "indexOfCountStar"))
-      return stock;
-    int size = infos.getActualAggregateInfos().length;
-    if (size == 0) return stock;
-    int[] kinds = new int[size],
-        valueTypes = new int[size],
-        columns = new int[size],
-        scalars = new int[size],
-        counts = new int[size];
-    String[] mapNames = new String[size];
-    TypeSerializer<?>[] mapKeys = new TypeSerializer<?>[size],
-        mapValues = new TypeSerializer<?>[size];
-    Arrays.fill(counts, -1);
-    int slot = 0, actual = 0;
-    for (var info : infos.aggInfos()) {
-      int width = info.externalAccTypes().length;
-      if (infos.countStarInserted()
-          && info.aggIndex() == ((Number) infos.indexOfCountStar().get()).intValue()) {
-        slot += width;
-        continue;
-      }
-      var call = info.agg();
-      if (call.isDistinct()
-          || call.isApproximate()
-          || call.filterArg >= 0
-          || !call.getCollation().getFieldCollations().isEmpty()
-          || info.argIndexes().length > 1) return stock;
-      Class<?> type = info.function().getClass();
-      int kind, fields;
-      boolean countEveryRow =
-          type == org.apache.flink.table.planner.functions.aggfunctions.Count1AggFunction.class;
-      if (countEveryRow
-          || type == org.apache.flink.table.planner.functions.aggfunctions.CountAggFunction.class) {
-        kind = 3;
-        fields = 1;
-      } else if (type
-          == org.apache.flink.table.planner.functions.aggfunctions.Sum0AggFunction
-              .LongSum0AggFunction.class) {
-        kind = 22;
-        fields = 1;
-      } else if (!retract
-          && type
-              == org.apache.flink.table.planner.functions.aggfunctions.SumAggFunction
-                  .LongSumAggFunction.class) {
-        kind = 0;
-        fields = 1;
-      } else if (!retract
-          && type
-              == org.apache.flink.table.planner.functions.aggfunctions.MinAggFunction
-                  .LongMinAggFunction.class) {
-        kind = 10;
-        fields = 1;
-      } else if (!retract
-          && type
-              == org.apache.flink.table.planner.functions.aggfunctions.MaxAggFunction
-                  .LongMaxAggFunction.class) {
-        kind = 11;
-        fields = 1;
-      } else if (retract
-          && type
-              == org.apache.flink.table.runtime.functions.aggregate.MinWithRetractAggFunction
-                  .class) {
-        kind = 38;
-        fields = 1;
-      } else if (retract
-          && type
-              == org.apache.flink.table.runtime.functions.aggregate.MaxWithRetractAggFunction
-                  .class) {
-        kind = 39;
-        fields = 1;
-      } else if (retract
-          && type
-              == org.apache.flink.table.planner.functions.aggfunctions.SumWithRetractAggFunction
-                  .LongSumWithRetractAggFunction.class) {
-        kind = 0;
-        fields = 2;
-      } else if (type
-          == org.apache.flink.table.planner.functions.aggfunctions.AvgAggFunction.LongAvgAggFunction
-              .class) {
-        kind = 4;
-        fields = 2;
-      } else return stock;
-      if (width != fields
-          || (kind != 3
-              && (info.argIndexes().length != 1
-                  || (kind == 38 || kind == 39
-                      ? !tech.streamfusion.state.StockGroupExtremaStateContract.supportsValueType(
-                          inputType.getTypeAt(info.argIndexes()[0]))
-                      : !inputType.getTypeAt(info.argIndexes()[0]).is(LogicalTypeRoot.BIGINT)))))
-        return stock;
-      if (kind == 38 || kind == 39) {
-        if (info.viewSpecs().length != 1
-            || !(info.viewSpecs()[0]
-                instanceof org.apache.flink.table.runtime.dataview.MapViewSpec)) return stock;
-        var view = (org.apache.flink.table.runtime.dataview.MapViewSpec) info.viewSpecs()[0];
-        if (view.getFieldIndex() != 2
-            || view.containsNullKey()
-            || !view.getKeyDataType()
-                .getLogicalType()
-                .copy(true)
-                .equals(inputType.getTypeAt(info.argIndexes()[0]).copy(true))
-            || !view.getValueDataType().getLogicalType().is(LogicalTypeRoot.BIGINT)) return stock;
-        mapNames[actual] = view.getStateId();
-        mapKeys[actual] =
-            view.getKeySerializer()
-                .orElseGet(
-                    () ->
-                        org.apache.flink.table.runtime.typeutils.ExternalSerializer.of(
-                            view.getKeyDataType()));
-        mapValues[actual] =
-            view.getValueSerializer()
-                .orElseGet(
-                    () ->
-                        org.apache.flink.table.runtime.typeutils.ExternalSerializer.of(
-                            view.getValueDataType()));
-      } else if (info.viewSpecs().length != 0) return stock;
-      kinds[actual] = kind;
-      if (kind == 38 || kind == 39)
-        valueTypes[actual] = typedGroupValueCode(inputType.getTypeAt(info.argIndexes()[0]));
-      columns[actual] = countEveryRow || info.argIndexes().length == 0 ? -1 : info.argIndexes()[0];
-      scalars[actual] = slot;
-      if (fields == 2) counts[actual] = slot + 1;
-      actual++;
-      slot += width;
+    var prepared =
+        StockGroupAggregateSpec.prepare(
+            StockGroupAggregateSpec.State.ARITHMETIC,
+            planner.getTypeFactory().buildRelNodeRowType(inputType),
+            inputType,
+            calls,
+            infos,
+            accumulatorTypes,
+            retract);
+    if (!prepared.isAccepted()) return stock;
+    var spec = prepared.value();
+    int recordCount = spec.recordCount();
+    if (!groupRecordCounterMatches(function, recordCount)) return stock;
+    int[] kinds = spec.kinds(),
+        valueTypes = spec.valueTypes(),
+        columns = spec.valueColumns(),
+        scalars = spec.scalarColumns(),
+        counts = spec.countColumns();
+    String[] mapNames = new String[kinds.length];
+    TypeSerializer<?>[] mapKeys = new TypeSerializer<?>[kinds.length],
+        mapValues = new TypeSerializer<?>[kinds.length];
+    for (int i = 0; i < spec.calls().size(); i++) {
+      var view = spec.calls().get(i).mapView();
+      if (view == null) continue;
+      mapNames[i] = view.getStateId();
+      mapKeys[i] =
+          view.getKeySerializer()
+              .orElseGet(
+                  () ->
+                      org.apache.flink.table.runtime.typeutils.ExternalSerializer.of(
+                          view.getKeyDataType()));
+      mapValues[i] =
+          view.getValueSerializer()
+              .orElseGet(
+                  () ->
+                      org.apache.flink.table.runtime.typeutils.ExternalSerializer.of(
+                          view.getValueDataType()));
     }
-    if (actual != size || slot != accumulatorTypes.length) return stock;
-    if (miniBatch && Arrays.stream(kinds).noneMatch(kind -> kind == 38 || kind == 39)) return stock;
+    if (miniBatch
+        && Arrays.stream(kinds)
+            .noneMatch(
+                kind ->
+                    kind == GroupAggregateKind.MIN_MAPPED_PARTIAL
+                        || kind == GroupAggregateKind.MAX_MAPPED_PARTIAL)) return stock;
     var ttl =
         miniBatch
             ? org.apache.flink.table.runtime.util.StateConfigUtil.createTtlConfig(
                 ((Number) releasedField(function, "stateRetentionTime")).longValue())
             : (org.apache.flink.api.common.state.StateTtlConfig) FlinkPlanCompat.stateTtl(function);
+
     long retention = ttl.isEnabled() ? FlinkPlanCompat.ttlMillis(ttl) : 0;
     config.setString("table.exec.state.ttl", retention + " ms");
     config.setString("table.exec.mini-batch.enabled", Boolean.toString(miniBatch));
@@ -3038,7 +2846,11 @@ final class StockCompiledPlanLowering {
     tech.streamfusion.state.StockStateContract contract;
     try {
       contract =
-          Arrays.stream(kinds).anyMatch(kind -> kind == 38 || kind == 39)
+          Arrays.stream(kinds)
+                  .anyMatch(
+                      kind ->
+                          kind == GroupAggregateKind.MIN_MAPPED_PARTIAL
+                              || kind == GroupAggregateKind.MAX_MAPPED_PARTIAL)
               ? new tech.streamfusion.state.StockGroupExtremaStateContract(
                   serializer,
                   (RowType) selector.getProducedType().toLogicalType(),

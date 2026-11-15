@@ -28,6 +28,27 @@ The qualified arithmetic contract below can bind its original grouped state auto
 broader aggregate bindings remain open in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 
+## Shared planning declarations
+
+Ordinary SQL and stock compiled-plan GROUP BY share immutable call declarations for native kinds,
+value/secondary arguments, FILTER columns, retained value types and retraction-dependent scalar
+widths. Ordinary single-phase admission prepares these declarations once and reuses the accepted
+plan for construction and fallback explanation; runtime operators retain their released fields.
+
+Canonical qualification remains narrower than ordinary native aggregation. A shared released-state
+qualifier verifies the actual Flink aggregate-function class, generated accumulator types, every
+scalar/count slot, inserted COUNT(*), and extrema MapView layout before the typed or arithmetic
+adapter constructs a state owner. Flink's `AggregateUtil` and `AggregateInfoList` remain the authority
+for released layouts; an SQL call alone does not prove a canonical representation. A qualified
+released builtin registered under a SQL alias keeps its implementation's family and field widths.
+Physical retained timestamps and canonical precision-bearing timestamp codes remain distinct,
+as do the append-only
+extrema caches and retracting MapView owners.
+
+Local/global graph wiring, shared distinct views, serializers, TTL, retraction policy, state names,
+UIDs and maximum parallelism remain the responsibility of their existing route adapters. Sharing
+call and layout derivation does not broaden the canonical whitelist or change persisted bytes.
+
 ## Single-phase
 
 Flink's internal `SUM0` admits nullable TINYINT, SMALLINT, INT, BIGINT, FLOAT, DOUBLE and DECIMAL,
