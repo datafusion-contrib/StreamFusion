@@ -26,6 +26,9 @@ existing codec type and changes only LZ4. Repeated installation is idempotent;
 unrelated tasks, decoder instances and other compression codecs are unchanged.
 Flink 1.18 and 2.2 are tested. Missing JNI support or unavailable runtime fields
 retain Flink's decoder with a warning; supported benchmark runs reject fallbacks.
+The union schema and shared-subplan adapters pin their existing Java serialization
+identities, so lifecycle hook changes preserve deployed operator descriptors and
+configuration fields. The unchanged compatibility inventory checks all 73 operators.
 The [bridge decision](https://github.com/datafusion-contrib/StreamFusion/blob/main/divergences/task-local-native-lz4.md) explains why it
 uses task-local runtime fields instead of replacing Flink's shuffle service.
 

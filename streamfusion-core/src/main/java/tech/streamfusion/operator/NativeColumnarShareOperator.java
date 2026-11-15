@@ -15,6 +15,7 @@ import tech.streamfusion.compat.FlinkStreamOperator;
  */
 public class NativeColumnarShareOperator extends FlinkStreamOperator<ArrowBatch>
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
+  private static final long serialVersionUID = -3496659690003591615L;
 
   private final int consumers;
   private transient int deployedConsumers;
