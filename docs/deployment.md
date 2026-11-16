@@ -365,7 +365,9 @@ classes, optional implementations in core and production classes in the runtime 
 
 The parent selects only module-local host source directories. A Maven child-module probe
 also verifies that both supported Flink lines register only the child's own common and
-host source roots, without importing another module's compatibility sources.
+host source roots, without importing another module's compatibility sources. It reads
+individual Maven source-root entries and rejects a third entry, avoiding reflective
+serialization of Maven's internal collection on newer Maven/JDK combinations.
 
 `bin/check-artifacts.sh` additionally compares each optional deployment JAR with the Java
 sources selected for that module and host. It requires all owned production types, rejects

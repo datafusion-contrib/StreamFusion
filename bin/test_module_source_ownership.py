@@ -28,18 +28,35 @@ class ModuleSourceOwnershipTest(unittest.TestCase):
                                     ("relativePath", os.path.relpath(ROOT / "pom.xml", module))]:
                     ET.SubElement(parent, name).text = value
                 ET.SubElement(project, "artifactId").text = "source-boundary-probe"
+                plugin = ET.SubElement(ET.SubElement(ET.SubElement(project, "build"), "plugins"),
+                                       "plugin")
+                for name, value in [("groupId", "org.apache.maven.plugins"),
+                                    ("artifactId", "maven-help-plugin"), ("version", "3.5.2")]:
+                    ET.SubElement(plugin, name).text = value
+                executions = ET.SubElement(plugin, "executions")
+                outputs = [module / f"root-{index}.txt" for index in range(3)]
+                # Read scalar entries: Maven 3.10's LoggingList cannot be serialized by XStream.
+                for index, output in enumerate(outputs):
+                    execution = ET.SubElement(executions, "execution")
+                    ET.SubElement(execution, "id").text = f"root-{index}"
+                    ET.SubElement(execution, "phase").text = "process-sources"
+                    ET.SubElement(ET.SubElement(execution, "goals"), "goal").text = "evaluate"
+                    configuration = ET.SubElement(execution, "configuration")
+                    ET.SubElement(configuration, "expression").text = f"project.compileSourceRoots[{index}]"
+                    ET.SubElement(configuration, "output").text = str(output)
                 ET.ElementTree(project).write(module / "pom.xml", encoding="utf-8")
-                output = module / "roots.xml"
                 profiles = ["-Pflink-1.18"] if line == "1.18" else []
                 result = subprocess.run(
                     ["mvn", "-B", "-ntp", "-N", "-f", str(module / "pom.xml"),
                      f"-Drevision={revision}", "-Denforcer.skip=true", *profiles,
-                     "generate-sources", "help:evaluate", "-Dexpression=project.compileSourceRoots",
-                     f"-Doutput={output}"],
+                     "process-sources"],
                     cwd=ROOT, capture_output=True, text=True, timeout=120,
                 )
                 self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-                roots = {pathlib.Path(node.text).resolve() for node in ET.parse(output).getroot()}
+                values = [output.read_text().strip() for output in outputs]
+                absent = "null object or invalid expression"
+                self.assertEqual(absent, values[2], "A child module must not inherit a third source root")
+                roots = {pathlib.Path(value).resolve() for value in values[:2] if value != absent}
                 owned = {(module / "src/main/java").resolve(),
                          (module / f"src/main/java-flink{line}").resolve()}
                 self.assertIn((module / "src/main/java").resolve(), roots)
