@@ -26,6 +26,54 @@ def run(workflow="ci.yml", *, status="completed", conclusion="success", run_id=1
             "html_url": f"https://github.com/{REPO}/actions/runs/{run_id}"}
 
 
+class AvailabilityReadsTest(unittest.TestCase):
+    def test_read_retries_a_timeout_then_parses_the_successful_response(self):
+        with patch.object(campaign.subprocess, "run", side_effect=[
+                subprocess.TimeoutExpired("gh", 30),
+                subprocess.CompletedProcess([], 0, '{"workflow_runs": []}', '')]) as request, \
+                patch.object(campaign.time, "sleep") as sleep:
+            self.assertEqual({"workflow_runs": []}, campaign.api("runs"))
+            self.assertEqual(2, request.call_count)
+            sleep.assert_called_once_with(1)
+
+    def test_read_retries_only_transient_http_and_transport_errors(self):
+        for error in ("HTTP 503", "HTTP 429", "Could not resolve host: api.github.com"):
+            with self.subTest(error=error), \
+                    patch.object(campaign.subprocess, "run", side_effect=[
+                        subprocess.CompletedProcess([], 1, '', error),
+                        subprocess.CompletedProcess([], 0, '{}', '')]) as request, \
+                    patch.object(campaign.time, "sleep"):
+                self.assertEqual({}, campaign.api("runs"))
+                self.assertEqual(2, request.call_count)
+        with patch.object(campaign.subprocess, "run", return_value=
+                subprocess.CompletedProcess([], 1, '', 'HTTP 403')) as request, \
+                patch.object(campaign.time, "sleep") as sleep:
+            with self.assertRaisesRegex(RuntimeError, "HTTP 403"):
+                campaign.api("runs")
+            self.assertEqual(1, request.call_count)
+            sleep.assert_not_called()
+
+    def test_read_fails_closed_after_three_timeouts(self):
+        with patch.object(campaign.subprocess, "run", side_effect=
+                subprocess.TimeoutExpired("gh", 30)) as request, \
+                patch.object(campaign.time, "sleep") as sleep:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                campaign.api("runs")
+            self.assertEqual(3, request.call_count)
+            self.assertEqual([1, 2], [call.args[0] for call in sleep.call_args_list])
+
+    def test_mutation_is_never_repeated_after_an_ambiguous_timeout_or_http_error(self):
+        for outcome in (subprocess.TimeoutExpired("gh", 30),
+                        subprocess.CompletedProcess([], 1, '', 'HTTP 503')):
+            with self.subTest(outcome=outcome), \
+                    patch.object(campaign.subprocess, "run", side_effect=[outcome]) as request, \
+                    patch.object(campaign.time, "sleep") as sleep:
+                with self.assertRaises((subprocess.TimeoutExpired, RuntimeError)):
+                    campaign.api("dispatches", data={"ref": "feature"})
+                self.assertEqual(1, request.call_count)
+                sleep.assert_not_called()
+
+
 class CampaignTest(unittest.TestCase):
     def test_proof_lookup_does_not_dirty_the_checkout_with_bytecode(self):
         with tempfile.TemporaryDirectory() as directory:

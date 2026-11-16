@@ -8,6 +8,7 @@ import fcntl
 import importlib.util
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 import time
@@ -32,11 +33,24 @@ def api(path, *, data=None):
     args = ["gh", "api", path]
     if data is not None:
         args += ["--method", "POST", "--input", "-"]
-    result = subprocess.run(args, input=None if data is None else json.dumps(data),
-                            capture_output=True, text=True, timeout=30)
-    if result.returncode:
-        raise RuntimeError(result.stderr.strip())
-    return json.loads(result.stdout) if result.stdout.strip() else None
+    attempts = 3 if data is None else 1
+    for attempt in range(attempts):
+        try:
+            result = subprocess.run(args, input=None if data is None else json.dumps(data),
+                                    capture_output=True, text=True, timeout=30)
+        except subprocess.TimeoutExpired:
+            if attempt == attempts - 1:
+                raise
+        else:
+            if result.returncode == 0:
+                return json.loads(result.stdout) if result.stdout.strip() else None
+            transient = re.search(
+                r"HTTP (429|500|502|503|504)|Could not resolve host|"
+                r"Temporary failure in name resolution|connection.*(?:timed out|reset)",
+                result.stderr, re.IGNORECASE)
+            if not transient or attempt == attempts - 1:
+                raise RuntimeError(result.stderr.strip())
+        time.sleep(2 ** attempt)
 
 
 def pages(path, field=None, per_page=100):

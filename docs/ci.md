@@ -1964,6 +1964,12 @@ artifact. Checkpoint payloads and fixture JARs are excluded. The runner removes 
 fixture directory after artifact upload. This preserves the evidence needed to distinguish
 transaction races from missing pending-state assertions without rerunning an entire shard.
 
+The campaign launcher's read-only availability queries retry transient network timeouts,
+DNS failures, throttling and server errors up to three attempts. Exhausted reads still
+block submission: unavailable account state is not evidence of idle capacity. Permission
+failures return immediately, and dispatch/retry mutations are never automatically repeated
+after an ambiguous response, avoiding duplicate campaigns.
+
 Historical JVM aggregate comparisons copy the complete current metric fixture dependencies,
 including the counter-only reporter, into the immutable previous runtime. Omitting that
 helper made the 1.18 previous-source build fail before measurements in run 43655033166.
