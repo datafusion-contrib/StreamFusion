@@ -95,6 +95,8 @@ remain unchanged; this is a planning maintainability change rather than a throug
 Scalar producer selection, certified callback dispatch and shared aggregate call specifications
 reference those generated names directly. Argument counts, type codes and accumulator widths
 remain separate from operation identities.
+Null-safe reference comparisons use these generated operations and append their boolean
+literal through the same buffer owner as other expressions.
 
 Generated expression code is built entirely in the planner. Serialized Calc/filter bindings
 carry only the generated function, runtime types/schema and user-function references; workers

@@ -3205,19 +3205,19 @@ final class RexExpression implements EncodedExpression {
   private boolean emitNullSafeReferences(RexCall call) {
     var left = call.getOperands().get(0);
     var right = call.getOperands().get(1);
-    if (call.getKind() == SqlKind.IS_DISTINCT_FROM) add(KIND_CALL, 22, 1);
+    if (call.getKind() == SqlKind.IS_DISTINCT_FROM) add(KIND_CALL, ScalarOp.NOT, 1);
     // CASE(a IS NULL, b IS NULL, CASE(b IS NULL, false, a=b)); references have no effects.
-    add(KIND_CALL, 40, 3);
-    add(KIND_CALL, 30, 1);
+    add(KIND_CALL, ScalarOp.CASE, 3);
+    add(KIND_CALL, ScalarOp.IS_NULL, 1);
     if (!emit(left)) return false;
-    add(KIND_CALL, 30, 1);
+    add(KIND_CALL, ScalarOp.IS_NULL, 1);
     if (!emit(right)) return false;
-    add(KIND_CALL, 40, 3);
-    add(KIND_CALL, 30, 1);
+    add(KIND_CALL, ScalarOp.CASE, 3);
+    add(KIND_CALL, ScalarOp.IS_NULL, 1);
     if (!emit(right)) return false;
-    add(KIND_LIT_BOOL, longs.size(), 0);
-    longs.add(0L);
-    add(KIND_CALL, 14, 2);
+    add(KIND_LIT_BOOL, writer.longCount(), 0);
+    writer.appendLong(0L);
+    add(KIND_CALL, ScalarOp.EQUAL, 2);
     return emit(left) && emit(right);
   }
 
