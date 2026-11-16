@@ -25,7 +25,7 @@ on:
         type: boolean
         default: false
       kafka_rescale_regression:
-        description: 'Check released committer-state decoding and all Kafka rescale providers'
+        description: 'Check Kafka codec, rescale, task-failure and completed-handoff recovery'
         type: boolean
         default: false
       flink_line:

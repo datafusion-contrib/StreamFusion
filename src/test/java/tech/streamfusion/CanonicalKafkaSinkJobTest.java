@@ -52,6 +52,10 @@ class CanonicalKafkaSinkJobTest {
     return false;
   }
 
+  boolean checkpointFinalTransaction() {
+    return false;
+  }
+
   @BeforeAll
   static void startBroker() {
     kafka =
@@ -121,6 +125,8 @@ class CanonicalKafkaSinkJobTest {
     if (strictBatchBoundaries() || mode.equals("process-failure") || completedRecovery)
       Files.createFile(root.resolve("strict-batch-boundaries"));
     if (ordinary) Files.createFile(root.resolve("ordinary-sql"));
+    if (checkpointFinalTransaction())
+      Files.createFile(root.resolve("suffix-complete-transaction-before-savepoint"));
     if (rescaleReaders()) {
       assertTrue(kafkaInput());
       assertEquals("rescale-uids", mode);
@@ -133,6 +139,7 @@ class CanonicalKafkaSinkJobTest {
       Files.writeString(root.resolve("prefix-parallelism"), "1");
       Files.writeString(root.resolve("middle-parallelism"), "3");
       Files.writeString(root.resolve("suffix-parallelism"), "2");
+      Files.writeString(root.resolve("completed-return-parallelism"), "2");
     }
     if (kafkaInput()) {
       Files.createFile(root.resolve("kafka-input"));
@@ -270,15 +277,24 @@ class CanonicalKafkaSinkJobTest {
         "suffix",
         batchRows);
     assertRows(topic, 13);
+    runner.run(
+        fixture,
+        completedRecovery ? nativeFirst : !nativeFirst,
+        root,
+        13,
+        "suffix",
+        "completed-return",
+        batchRows);
+    assertRows(topic, 13);
     List<String> expectedIds = null;
     for (String stage :
         completedRecovery
-            ? List.of("prefix", "failed", "middle", "suffix")
+            ? List.of("prefix", "failed", "middle", "suffix", "completed-return")
             : mode.equals("checkpoint")
-                ? List.of("canonical", "middle", "suffix")
+                ? List.of("canonical", "middle", "suffix", "completed-return")
                 : mode.equals("no-input")
-                    ? List.of("prefix", "no-input", "return", "middle", "suffix")
-                    : List.of("prefix", "middle", "suffix")) {
+                    ? List.of("prefix", "no-input", "return", "middle", "suffix", "completed-return")
+                    : List.of("prefix", "middle", "suffix", "completed-return")) {
       var inventory =
           Files.readAllLines(root.resolve(stage + "-inventory.tsv")).stream()
               .map(line -> line.split("\\t", -1))
@@ -292,7 +308,9 @@ class CanonicalKafkaSinkJobTest {
       if (expectedIds == null) expectedIds = stateIds;
       else assertEquals(expectedIds, stateIds, "Source/writer/committer IDs must survive switches");
       int limit =
-          stage.equals("middle") || stage.equals("failed") ? 9 : stage.equals("suffix") ? 13 : 5;
+          stage.equals("middle") || stage.equals("failed")
+              ? 9
+              : stage.equals("suffix") || stage.equals("completed-return") ? 13 : 5;
       int incoming = 0;
       if (stage.equals("prefix")) incoming = 5;
       else if (stage.equals("failed")
@@ -328,7 +346,9 @@ class CanonicalKafkaSinkJobTest {
           "Custom source saved offsets must be exact");
       int writers =
           mode.startsWith("rescale")
-              ? stage.equals("middle") ? 3 : stage.equals("suffix") ? 2 : 1
+              ? stage.equals("middle")
+                  ? 3
+                  : stage.equals("suffix") || stage.equals("completed-return") ? 2 : 1
               : 1;
       if (rescaleReaders()) {
         var sources =
@@ -344,7 +364,9 @@ class CanonicalKafkaSinkJobTest {
             128, Integer.parseInt(sources.get(0)[5]), "Source maximum parallelism must stay fixed");
       }
       int owned =
-          naming.equals("pooling") && mode.startsWith("rescale") && stage.equals("suffix")
+          naming.equals("pooling")
+                  && mode.startsWith("rescale")
+                  && (stage.equals("suffix") || stage.equals("completed-return"))
               ? 3
               : writers;
       var writerState =
@@ -373,7 +395,7 @@ class CanonicalKafkaSinkJobTest {
               .toString(),
           writerState.get(0)[6],
           "Saved transaction ownership must match the released rescaling contract");
-      if (incoming > 0)
+      if (incoming > 0 && !stage.equals("suffix"))
         assertTrue(
             inventory.stream().mapToInt(cells -> Integer.parseInt(cells[7])).sum() > 0,
             "The handoff must retain actual precommitted transaction state: stage="
@@ -390,6 +412,11 @@ class CanonicalKafkaSinkJobTest {
                 + Files.readString(root.resolve(stage + "-committed-before-savepoint"))
                 + ", inventory="
                 + Files.readString(root.resolve(stage + "-inventory.tsv")));
+      if (stage.equals("suffix") && checkpointFinalTransaction())
+        assertEquals(
+            0,
+            inventory.stream().mapToInt(cells -> Integer.parseInt(cells[7])).sum(),
+            "The completed transaction regression must restore an empty final transaction set");
       String saved = Files.readString(root.resolve(stage + "-savepoint")).trim();
       String metadata =
           new String(
@@ -400,6 +427,8 @@ class CanonicalKafkaSinkJobTest {
       if (stage.equals("failed") || stage.equals("no-input")) nativeStage = !nativeFirst;
       else if (stage.equals("middle")) nativeStage = completedRecovery ? nativeFirst : !nativeFirst;
       else if (stage.equals("suffix") && completedRecovery) nativeStage = !nativeFirst;
+      else if (stage.equals("completed-return"))
+        nativeStage = completedRecovery ? nativeFirst : !nativeFirst;
       if (nativeStage)
         assertEquals(
             incoming,

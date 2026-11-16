@@ -306,6 +306,17 @@ public final class CanonicalKafkaSinkJobWorker {
       Files.writeString(
           root.resolve(stage + "-committed-before-savepoint"),
           Integer.toString(committedKafkaRows(root, limit)));
+      if (Files.exists(root.resolve(stage + "-complete-transaction-before-savepoint"))) {
+        String completed = cluster.triggerCheckpoint(job.getJobID()).get(90, TimeUnit.SECONDS);
+        long commitDeadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+        while (committedKafkaRows(root, limit) != limit) {
+          if (job.getJobExecutionResult().isDone()) job.getJobExecutionResult().get();
+          if (System.nanoTime() > commitDeadline)
+            throw new AssertionError("Final checkpoint did not commit its Kafka transaction");
+          Thread.sleep(10);
+        }
+        Files.writeString(root.resolve(stage + "-completed-transaction-checkpoint"), completed);
+      }
       if (checkpoint) {
         saved = cluster.triggerCheckpoint(job.getJobID()).get(90, TimeUnit.SECONDS);
         job.cancel().get(30, TimeUnit.SECONDS);

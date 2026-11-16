@@ -888,6 +888,14 @@ completed checkpoint leg. The coordinator's checkpoint future can complete befor
 receives its completion notification. The boundary still requires the exact row count and the
 subsequent engine switches check for loss, duplicates and replay; a missing commit times out.
 
+Kafka sink fixtures also restore their final canonical savepoint in the opposite engine without
+new input. The preceding data-bearing handoffs still require actual precommitted transaction
+state. The final completed snapshot may contain no pending transaction; its recovery must retain
+the exact committed values, source offsets, writer ownership and operator IDs without replaying
+or re-encoding rows. A Flink 2.2 regression completes a checkpoint before the final savepoint to
+force that empty transaction set for both naming strategies, SQL submission styles and engine
+directions. This replaces an unused final-snapshot state assumption with an actual third restore.
+
 Floating DISTINCT local/global fixtures with processing-time mini-batch markers compare the
 materialized changelog, result types and consumed work in both native stages. Independent runs
 can flush at different boundaries and emit different valid intermediate updates. Tests with
@@ -904,9 +912,11 @@ JDK and shard, and selection manifests record the line. The former five-family s
 Each line selects from its own compiled test inventory and duration estimates, preserving every
 method and inherited parameterized invocation. Canonical job fixtures and their typed-state
 bases now live in shared test sources for joins, sort, normalization, deduplication, rank,
-window and grouped aggregates and managed UDFs. Kafka source, partition-discovery and all twelve
-sink/pipeline job classes are shared as well. Both release lines now compile the same 120-class
-canonical job inventory, including two abstract bases without Surefire reports. Narrow fixture adapters inspect each released connector's recovery
+window and grouped aggregates and managed UDFs. Kafka source, partition-discovery and sink/pipeline
+job fixtures are shared as well. Each line selects its complete compiled inventory, including its
+release-specific controls. Abstract bases have no standalone Surefire report; concrete subclasses
+execute their inherited cases. Flink 2.2 additionally checks fully committed final Kafka snapshots.
+Narrow fixture adapters inspect each released connector's recovery
 format: 1.18's legacy writer prefix and committer collector, or 2.2's explicit writer ownership
 and precommitted transactions. The 1.18 connector uses its released incrementing transaction
 scheme; 2.2 retains both incrementing and pooling providers. Local fixture selection can sample
@@ -1107,9 +1117,10 @@ regression uses the actual project ordering against two loopback servers. These 
 and fallback checks; they do not claim a measured full-CI improvement.
 
 The setup probe's `kafka_rescale_regression` input runs the two released-state codec controls and
-all eight Flink2.2 Kafka rescale providers, including ordinary SQL, both engine directions and
-both transaction naming strategies. It requires exactly those ten cases with zero skips/errors/
-failures. This isolates a full-matrix failure without rerunning unrelated jobs. The complete CI
+all eight Flink2.2 providers in each of the Kafka rescale, pipeline task-failure and completed
+final-snapshot recovery classes, including ordinary SQL, both engine directions and both transaction
+naming strategies. It requires exactly those 26 cases with zero skips/errors/failures. This isolates
+full-matrix recovery failures without rerunning unrelated jobs. The complete CI
 still runs every Kafka provider. Flink2.2 inventory reads both writer and committer state with
 the released collector serializer; the previous empty committer inspector could miss real pending
 transactions. The existing assertion requiring actual precommitted state stays in force.
