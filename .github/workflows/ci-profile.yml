@@ -11,7 +11,7 @@ on:
       failure_suite:
         description: 'Failure diagnostic lane to run'
         type: choice
-        options: [all, canonical, iceberg, doris, paimon-policy]
+        options: [all, canonical, kafka, iceberg, doris, paimon-policy]
         default: all
       native_run:
         description: 'Existing native producer for focused diagnostics'
@@ -68,6 +68,7 @@ jobs:
         env:
           SELECTED_SUITE: ${{ inputs.failure_suite || 'all' }}
           SELECTED_LINE: ${{ inputs.flink_line || 'all' }}
+          SELECTED_JDK: ${{ inputs.jdk || '11' }}
         run: |
           python3 - <<'PY'
           import json
@@ -79,6 +80,9 @@ jobs:
               dict(suite='doris', line='2.2', jdk='17', profiles='doris,doris-it,doris-upstream', module='streamfusion-doris'),
               dict(suite='paimon-policy', line='2.2', jdk='17', profiles='paimon,upstream-paimon-compaction', module='streamfusion-paimon'),
           ]
+          if os.environ['SELECTED_SUITE'] == 'kafka':
+              rows = [dict(row, suite='kafka', jdk=os.environ['SELECTED_JDK'])
+                      for row in rows if row['suite'] == 'canonical']
           rows = [row for row in rows
                   if os.environ['SELECTED_SUITE'] in ('all', row['suite'])
                   and os.environ['SELECTED_LINE'] in ('all', row['line'])]
@@ -130,17 +134,21 @@ jobs:
           MODULE: ${{ matrix.module }}
         run: python3 bin/ci-maven-dependencies.py --profile "$PROFILES" --projects "$MODULE" --also-make
       - name: Check canonical timing, physical state and worker cleanup regressions
-        if: matrix.suite == 'canonical'
+        if: matrix.suite == 'canonical' || matrix.suite == 'kafka'
         env:
           SF_CANONICAL_CDS_DIR: ${{ runner.temp }}/canonical-cds
           SF_CANONICAL_REFERENCE_DIR: ${{ runner.temp }}/canonical-references
           PROFILES: ${{ matrix.profiles }}
         run: |
           selection='CanonicalCompositeExtremaMiniBatchJobTest,CanonicalVariableExtremaMiniBatchJobTest,CanonicalRetractingExtremaInitializationTest,CanonicalHiddenExtremaTest,CanonicalGroupArithmeticInitializationTest,CanonicalWorkerProcessTest,SharedFlinkClusterInvocationCleanupTest,SharedFlinkClusterLifecycleTest,FlinkJsonObjectPartialsSqlHarnessTest'
-          mvn -B -ntp -P"$PROFILES" -pl streamfusion-runtime -am test \
-            -Dnative.build.skip=true -Dsf.protobuf.checkStaleness=true \
-            "-Dtest=$selection" -Dsurefire.failIfNoSpecifiedTests=false \
-            -Dsf.testForks=4 -Dsf.testReuseForks=false '-Dsf.extraJvmArgs=-Xmx1g'
+          mkdir -p "$RUNNER_TEMP/canonical-fixtures"
+          if [[ '${{ matrix.suite }}' == 'canonical' ]]; then
+            mvn -B -ntp -P"$PROFILES" -pl streamfusion-runtime -am test \
+              -Dnative.build.skip=true -Dsf.protobuf.checkStaleness=true \
+              "-Dtest=$selection" -Dsurefire.failIfNoSpecifiedTests=false \
+              -Dsf.testForks=4 -Dsf.testReuseForks=false \
+              "-Dsf.extraJvmArgs=-Xmx1g -Djava.io.tmpdir=$RUNNER_TEMP/canonical-fixtures"
+          fi
           if [[ '${{ matrix.line }}' == '2.2' ]]; then
             kafka_selection='CanonicalKafkaCompletedHandoffJobTest,CanonicalKafkaPipelineFailureJobTest'
             kafka_trials=1
@@ -153,7 +161,8 @@ jobs:
               -Dnative.build.skip=true -Dsf.protobuf.checkStaleness=true \
               "-Dtest=$kafka_selection" -Dsf.canonical.kafka.fixture.smoke=false \
               -Dsurefire.failIfNoSpecifiedTests=false \
-              -Dsf.testForks=2 -Dsf.testReuseForks=false '-Dsf.extraJvmArgs=-Xmx1g'
+              -Dsf.testForks=2 -Dsf.testReuseForks=false \
+              "-Dsf.extraJvmArgs=-Xmx1g -Djava.io.tmpdir=$RUNNER_TEMP/canonical-fixtures"
             evidence="$RUNNER_TEMP/failure-regressions/kafka-${{ matrix.line }}-$trial"
             mkdir -p "$evidence"
             cp streamfusion-runtime/target/surefire-reports/TEST-tech.streamfusion.CanonicalKafka*.xml "$evidence/"
@@ -238,6 +247,15 @@ jobs:
             streamfusion-doris/target/doris-sql-plans/
             ${{ runner.temp }}/canonical-cds/*.log
             ${{ runner.temp }}/failure-regressions/
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*.log
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*.tsv
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*.txt
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*.json
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*.sql
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*native-rows
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*native-source-output
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*expected-failure
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*committed-*
           if-no-files-found: error
           retention-days: 7
       - name: Remove diagnostic native libraries and worker caches
@@ -250,6 +268,7 @@ jobs:
           for directory in (Path(os.environ['RUNNER_TEMP']) / 'original-native',
                             Path(os.environ['RUNNER_TEMP']) / 'canonical-cds',
                             Path(os.environ['RUNNER_TEMP']) / 'canonical-references',
+                            Path(os.environ['RUNNER_TEMP']) / 'canonical-fixtures',
                             Path('native/target/debug')):
               if directory.exists():
                   shutil.rmtree(directory)

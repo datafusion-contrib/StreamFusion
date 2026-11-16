@@ -1953,6 +1953,16 @@ Use `failure_suite=canonical` to select only the canonical failure lanes, combin
 `flink_line` when needed. Other choices select Iceberg, Doris or the Paimon policy probe.
 A lightweight selection job rejects empty combinations before any build or test starts;
 focused follow-ups can reuse independent successful diagnostics without repeating them.
+Use `failure_suite=kafka`, `flink_line=1.18` and `jdk=17` for the historical
+task-loss cohort without repeating the 413 already-passing timing/state controls.
+This selection keeps all provider combinations and three legacy repetitions.
+
+Canonical jobs and failure diagnostics place JUnit temporary fixtures in a scoped runner
+directory. Successful invocations remove their fixtures normally; failed Kafka invocations
+retain their worker logs, plans, state inventories and committed-row markers in the result
+artifact. Checkpoint payloads and fixture JARs are excluded. The runner removes the remaining
+fixture directory after artifact upload. This preserves the evidence needed to distinguish
+transaction races from missing pending-state assertions without rerunning an entire shard.
 
 Historical JVM aggregate comparisons copy the complete current metric fixture dependencies,
 including the counter-only reporter, into the immutable previous runtime. Omitting that

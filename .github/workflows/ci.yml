@@ -422,9 +422,11 @@ jobs:
           vmstat -w 30 &
           memory_sampler=$!
           trap 'kill "$memory_sampler" 2>/dev/null || true' EXIT
+          mkdir -p "$RUNNER_TEMP/canonical-fixtures"
           python3 bin/ci_canonical_jobs.py \
             --includes "$RUNNER_TEMP/canonical-job-includes.txt" \
-            --line '${{ matrix.line }}' --profiles '${{ matrix.profiles }}' --workers 4
+            --line '${{ matrix.line }}' --profiles '${{ matrix.profiles }}' --workers 4 \
+            --jvm-args="-Xmx1g -Djava.io.tmpdir=$RUNNER_TEMP/canonical-fixtures"
       - name: Retain canonical job selection and outcomes
         if: always()
         uses: actions/upload-artifact@v4
@@ -434,6 +436,15 @@ jobs:
             ${{ runner.temp }}/canonical-job-includes.*
             streamfusion-runtime/target/surefire-reports/*
             ${{ runner.temp }}/canonical-cds/*.log
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*.log
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*.tsv
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*.txt
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*.json
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*.sql
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*native-rows
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*native-source-output
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*expected-failure
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*committed-*
             **/hs_err_pid*.log
           if-no-files-found: error
           retention-days: 7
@@ -456,7 +467,7 @@ jobs:
           import os
           from pathlib import Path
           import shutil
-          for name in ('canonical-cds', 'canonical-references'):
+          for name in ('canonical-cds', 'canonical-references', 'canonical-fixtures'):
               directory = Path(os.environ['RUNNER_TEMP']) / name
               if directory.exists():
                   shutil.rmtree(directory)
