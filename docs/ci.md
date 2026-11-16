@@ -1970,6 +1970,13 @@ block submission: unavailable account state is not evidence of idle capacity. Pe
 failures return immediately, and dispatch/retry mutations are never automatically repeated
 after an ambiguous response, avoiding duplicate campaigns.
 
+Shared MiniCluster teardown waits for the resource manager to report every slot free,
+after canceling and awaiting any unfinished jobs. A terminal job result can precede
+slot-release notification. The cleanup regression leaves a job occupying every slot,
+then requires a fresh invocation to recover the full pool and complete a bounded query.
+This prevents an unfinished invocation from turning later exception-parity tests into
+resource-allocation failures while retaining their original result and error assertions.
+
 Historical JVM aggregate comparisons copy the complete current metric fixture dependencies,
 including the counter-only reporter, into the immutable previous runtime. Omitting that
 helper made the 1.18 previous-source build fail before measurements in run 43655033166.

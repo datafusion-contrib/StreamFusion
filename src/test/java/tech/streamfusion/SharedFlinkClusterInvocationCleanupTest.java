@@ -4,12 +4,13 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.concurrent.TimeUnit;
 import org.apache.flink.api.common.JobStatus;
+import org.apache.flink.runtime.testutils.CommonTestUtils;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import tech.streamfusion.compat.StreamTestSinks;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
+import tech.streamfusion.compat.StreamTestSinks;
 
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class SharedFlinkClusterInvocationCleanupTest {
@@ -19,17 +20,24 @@ class SharedFlinkClusterInvocationCleanupTest {
   @Order(1)
   void aTestMayLeaveAnUnboundedJobForTheFixtureToClose() throws Exception {
     var env = StreamExecutionEnvironment.getExecutionEnvironment();
-    env.setParallelism(1);
-    StreamTestSinks.discard(env.fromSequence(0, Long.MAX_VALUE));
+    var session = SharedFlinkClusterSession.currentCluster();
+    assertNotNull(session);
+    env.setParallelism(session.getNumberSlots());
+    StreamTestSinks.discard(
+        env.fromSequence(0, Long.MAX_VALUE)
+            .map(value -> {
+              Thread.sleep(10);
+              return value;
+            }));
     previous = env.executeAsync("fixture-cleanup-regression");
-    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-    JobStatus status;
-    do {
-      status = previous.getJobStatus().get(10, TimeUnit.SECONDS);
-      if (status == JobStatus.RUNNING) break;
-      Thread.sleep(20);
-    } while (System.nanoTime() < deadline);
-    assertEquals(JobStatus.RUNNING, status);
+    CommonTestUtils.waitForAllTaskRunning(session.getMiniCluster(), previous.getJobID(), false);
+    assertEquals(
+        0,
+        session.getMiniCluster()
+            .getResourceOverview()
+            .get(10, TimeUnit.SECONDS)
+            .getNumberFreeSlots(),
+        "The unfinished invocation must occupy every slot");
   }
 
   @Test
@@ -37,8 +45,16 @@ class SharedFlinkClusterInvocationCleanupTest {
   void theNextInvocationStartsAfterThePreviousJobReleasedItsSlots() throws Exception {
     assertNotNull(previous);
     assertEquals(JobStatus.CANCELED, previous.getJobStatus().get(10, TimeUnit.SECONDS));
+    var session = SharedFlinkClusterSession.currentCluster();
+    assertNotNull(session);
+    assertEquals(
+        session.getNumberSlots(),
+        session.getMiniCluster()
+            .getResourceOverview()
+            .get(10, TimeUnit.SECONDS)
+            .getNumberFreeSlots());
     var env = StreamExecutionEnvironment.getExecutionEnvironment();
-    env.setParallelism(1);
+    env.setParallelism(session.getNumberSlots());
     try (var rows = env.fromSequence(1, 1).executeAndCollect()) {
       assertTrue(rows.hasNext());
       assertEquals(1L, rows.next());
