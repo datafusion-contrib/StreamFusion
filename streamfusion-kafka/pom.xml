@@ -60,7 +60,7 @@
                     <id>flink-compatibility-sources</id>
                     <phase>generate-sources</phase>
                     <goals><goal>add-source</goal></goals>
-                    <configuration><sources combine.self="override">
+                    <configuration><sources>
                         <source>${project.basedir}/src/main/java-flink${flink.line}</source>
                     </sources></configuration>
                 </execution></executions>

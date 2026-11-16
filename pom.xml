@@ -351,9 +351,8 @@
                 <version>1.7.1</version>
             </extension>
         </extensions>
-        <!-- Validate Javadoc in ordinary builds as well as releases. Some format modules still
-             share the root sourcepath; keep their references checked until they move to module-local
-             sources too. Skip documentation generation for a quick loop with -Dmaven.javadoc.skip=true. -->
+        <!-- Validate module dependencies through Javadoc in ordinary builds as well as releases.
+             Skip documentation generation for a quick loop with -Dmaven.javadoc.skip=true. -->
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -391,22 +390,6 @@
                 </execution></executions>
             </plugin>
             <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>build-helper-maven-plugin</artifactId>
-                <version>3.6.0</version>
-                <executions>
-                    <execution>
-                        <id>flink-compatibility-sources</id>
-                        <phase>generate-sources</phase>
-                        <goals><goal>add-source</goal></goals>
-                        <configuration><sources>
-                            <source>${project.basedir}/../src/main/java-flink${flink.line}</source>
-                        </sources></configuration>
-                    </execution>
-
-                </executions>
-            </plugin>
-            <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-javadoc-plugin</artifactId>
                 <executions>
@@ -420,6 +403,11 @@
         </plugins>
         <pluginManagement>
         <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <version>3.6.0</version>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>

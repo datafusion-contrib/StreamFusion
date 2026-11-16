@@ -16,6 +16,8 @@ The guard also checks each optional module's executable and source JARs against 
 module-local Java sources and SPI files. Source attachments must contain the exact selected
 paths and contents, without another module's sources, another host's adapters, duplicate entries,
 compiled classes or native libraries. Missing source attachments fail release validation.
+Additional source roots are declared by their consumers; the parent manages the helper's
+version without adding root compatibility sources to new modules.
 Iceberg and Doris participate on Flink 2.2; Hudi participates in the Flink 1.18 development
 bundle and remains Java-only, reusing Parquet's native library.
 

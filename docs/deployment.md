@@ -336,11 +336,12 @@ under each module's `src/main/java`, beside its SPI registrations and tests. Pai
 Delta requires Flink 2.2; it and Fluss do not add the root compatibility source tree.
 Paimon 1.0 retains filtered source generation and its legacy overrides, consuming common
 and Flink 1.18 sources from `streamfusion-paimon` rather than the root tree.
-Iceberg, Doris and Hudi also use their local source directories. Common-only Iceberg and
-Doris disable the inherited root host-adapter source execution instead of filtering out
-foreign sources at compilation or publication time. Their source and Javadoc attachments
-therefore follow the same module boundary as their executable JARs; their existing host
-and JDK requirements still apply.
+Iceberg, Doris and Hudi also use their local source directories. The parent manages the
+build-helper plugin version without registering production source roots. Only core/runtime
+explicitly select the remaining root host adapters; Kafka, Avro and Paimon explicitly select
+their module-local adapters. A new module inherits no foreign source roots and needs no
+disabling execution or compiler/publication filters. Source and Javadoc attachments follow
+the same module boundaries as executable JARs; existing host and JDK requirements still apply.
 
 This ownership boundary preserves Java packages, service names, JNI symbols, native
 resources and deployment coordinates. It adds no native libraries. Kafka and the JSON,
@@ -375,7 +376,9 @@ classes from artifact validation. Clean rebuilds remove classes emitted by an ol
 `python3 bin/test_module_source_ownership.py` recreates an old-timestamp dependency JAR and
 newer shared source. Its negative control demonstrates implicit duplication; the configured
 compiler flag preserves only the connector's explicit class. A runtime probe executes the
-connector and verifies its dependency resolves from the core JAR. Image CI runs the regression
+connector and verifies its dependency resolves from the core JAR. A new child-module Maven
+probe also requires exactly its own default source root after `generate-sources` on both
+Flink lines, without any parent compatibility-root injection. Image CI runs these regressions
 before packaging, and the artifact checker verifies ownership in the real bundle.
 
 `bin/check-artifacts.sh` also runs `bin/check-connector-ownership.py` on the actual Kafka,
