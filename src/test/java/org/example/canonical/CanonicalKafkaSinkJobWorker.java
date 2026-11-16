@@ -192,15 +192,7 @@ public final class CanonicalKafkaSinkJobWorker {
       }
       CommonTestUtils.waitForAllTaskRunning(cluster, job.getJobID(), false);
       var actualGraph = cluster.getExecutionGraph(job.getJobID()).get(30, TimeUnit.SECONDS);
-      var checkpointStats = actualGraph.getCheckpointStatsSnapshot();
-      if (checkpointStats != null) {
-        var restored = checkpointStats.getLatestRestoredCheckpoint();
-        Files.write(
-            root.resolve(stage + "-checkpoint-counts.tsv"),
-            List.of(
-                "completed\t" + checkpointStats.getCounts().getNumberOfCompletedCheckpoints(),
-                "restored\t" + (restored == null ? -1 : restored.getCheckpointId())));
-      }
+      saveCheckpointEvidence(root, stage, actualGraph);
       String actualPlan =
           actualGraph.getAllVertices().values().stream()
               .map(vertex -> vertex.getName())
@@ -305,6 +297,15 @@ public final class CanonicalKafkaSinkJobWorker {
         if (job.getJobStatus().get(30, TimeUnit.SECONDS)
             != org.apache.flink.api.common.JobStatus.FAILED)
           throw new AssertionError("Lost task manager did not fail the job");
+        try {
+          saveCheckpointEvidence(
+              root, stage + "-after-fault",
+              cluster.getExecutionGraph(job.getJobID()).get(30, TimeUnit.SECONDS));
+        } catch (Exception diagnosticFailure) {
+          Files.writeString(
+              root.resolve(stage + "-after-fault-checkpoint-error.txt"),
+              diagnosticFailure.toString());
+        }
         Files.writeString(root.resolve(stage + "-native-rows"), Long.toString(Reporter.rows()));
         Files.writeString(
             root.resolve(stage + "-native-source-output"), Long.toString(Reporter.sourceOutput()));
@@ -371,6 +372,23 @@ public final class CanonicalKafkaSinkJobWorker {
     } finally {
       Thread.currentThread().setContextClassLoader(previous);
     }
+  }
+
+  private static void saveCheckpointEvidence(
+      Path root, String stage,
+      org.apache.flink.runtime.executiongraph.AccessExecutionGraph graph)
+      throws java.io.IOException {
+    var configuration = graph.getCheckpointCoordinatorConfiguration();
+    var stats = graph.getCheckpointStatsSnapshot();
+    var restored = stats == null ? null : stats.getLatestRestoredCheckpoint();
+    var completed = stats == null ? null : stats.getHistory().getLatestCompletedCheckpoint();
+    Files.write(
+        root.resolve(stage + "-checkpoint-counts.tsv"),
+        List.of(
+            "interval_ms\t" + (configuration == null ? -1 : configuration.getCheckpointInterval()),
+            "completed\t" + (stats == null ? -1 : stats.getCounts().getNumberOfCompletedCheckpoints()),
+            "restored\t" + (restored == null ? -1 : restored.getCheckpointId()),
+            "latest_completed\t" + (completed == null ? -1 : completed.getCheckpointId())));
   }
 
   private static String stackTrace(Throwable failure) {

@@ -1977,8 +1977,12 @@ then requires a fresh invocation to recover the full pool and complete a bounded
 This prevents an unfinished invocation from turning later exception-parity tests into
 resource-allocation failures while retaining their original result and error assertions.
 
-Kafka failure evidence also records the restored checkpoint ID, completed-checkpoint
-count before injection. Committed-row assertion failures include sampled stable end
+Kafka failure evidence records the effective checkpoint interval, restored checkpoint
+ID, completed count and latest completed checkpoint ID before injection, and again
+after task-manager loss has failed the job. A disabled coordinator is recorded
+explicitly. This distinguishes normal periodic checkpoints and possible final
+checkpoints during termination from the previously restored boundary.
+Committed-row assertion failures include sampled stable end
 offsets, observed record offsets, and broker transaction IDs, producer IDs and states.
 These observations distinguish an unexpected checkpoint or
 transaction commit from a consumer visibility boundary; every original row assertion
