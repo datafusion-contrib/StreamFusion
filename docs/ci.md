@@ -1927,3 +1927,7 @@ The fifth lane repeats the original Paimon full-compaction audit-log method thre
 alternating stock/decorated modes. A prior decorated run returned an extra update before
 the expected delete despite retaining the Java compaction policy. Each invocation keeps
 its JUnit and SQL/compaction inventory; a repeat does not excuse any failed result.
+
+The campaign launcher disables Python bytecode writes while loading its coverage-proof
+helper. A status lookup must leave the checkout clean so the following authorized
+qualification does not reject a cache file produced by that lookup itself.

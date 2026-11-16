@@ -9,8 +9,13 @@ import importlib.util
 import json
 from pathlib import Path
 import subprocess
+import sys
 import time
 from urllib.parse import quote, urlencode
+
+
+# Loading the proof helper must not dirty the clean checkout this launcher requires.
+sys.dont_write_bytecode = True
 
 
 CANONICAL = "datafusion-contrib/StreamFusion"

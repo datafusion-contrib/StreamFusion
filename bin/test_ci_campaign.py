@@ -3,6 +3,8 @@
 import importlib.util
 from pathlib import Path
 import subprocess
+import shutil
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -25,6 +27,25 @@ def run(workflow="ci.yml", *, status="completed", conclusion="success", run_id=1
 
 
 class CampaignTest(unittest.TestCase):
+    def test_proof_lookup_does_not_dirty_the_checkout_with_bytecode(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binary = root / "bin"
+            binary.mkdir()
+            shutil.copy2(Path(campaign.__file__), binary / "ci-campaign.py")
+            (binary / "ci-plan.py").write_text(
+                "def qualified_branch_docs(*args, **kwargs): return None\n")
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            before = subprocess.check_output(["git", "status", "--porcelain"], cwd=root)
+            subprocess.run([sys.executable, "-c",
+                "import runpy; helper = runpy.run_path('bin/ci-campaign.py'); "
+                "helper['qualified_docs_candidate']('owner/fork', 'sha', 'branch')"],
+                cwd=root, check=True)
+            self.assertEqual(before,
+                subprocess.check_output(["git", "status", "--porcelain"], cwd=root))
+            self.assertFalse(list(binary.rglob("*.pyc")))
+
     def test_superseded_same_branch_work_blocks_even_when_capacity_is_idle(self):
         active = {**run(run_id=2, status="in_progress", conclusion=None), "repository_name": REPO}
         with patch.object(campaign, "competitors", return_value=[active]), \
