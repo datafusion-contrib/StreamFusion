@@ -491,6 +491,8 @@ class CanonicalKafkaSinkJobTest {
     properties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
     properties.put(ConsumerConfig.ISOLATION_LEVEL_CONFIG, "read_committed");
     var actual = new ArrayList<String>();
+    var observedOffsets = new ArrayList<String>();
+    var sampledEnds = new java.util.TreeMap<Integer, Long>();
     try (var consumer = new KafkaConsumer<String, String>(properties)) {
       var partitions =
           consumer.partitionsFor(topic).stream()
@@ -499,9 +501,11 @@ class CanonicalKafkaSinkJobTest {
       consumer.assign(partitions);
       consumer.seekToBeginning(partitions);
       var ends = consumer.endOffsets(partitions);
+      ends.forEach((partition, offset) -> sampledEnds.put(partition.partition(), offset));
       long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
       while (true) {
         for (var record : consumer.poll(Duration.ofMillis(100))) {
+          observedOffsets.add(record.partition() + "@" + record.offset());
           var json =
               new org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper()
                   .readTree(record.value());
@@ -523,6 +527,29 @@ class CanonicalKafkaSinkJobTest {
             .sorted()
             .collect(Collectors.toList());
     java.util.Collections.sort(actual);
-    assertEquals(expected, actual, "Committed Kafka effects must have no loss or duplication");
+    assertEquals(
+        expected,
+        actual,
+        () ->
+            "Committed Kafka effects must have no loss or duplication; sampled read_committed ends="
+                + sampledEnds
+                + ", observed partition@offset="
+                + observedOffsets
+                + ", broker transactions="
+                + brokerTransactions(topic));
+  }
+
+  private static List<String> brokerTransactions(String topic) {
+    var properties = new Properties();
+    properties.setProperty("bootstrap.servers", kafka.getBootstrapServers());
+    try (var admin = Admin.create(properties)) {
+      return admin.listTransactions().all().get(10, TimeUnit.SECONDS).stream()
+          .filter(transaction -> transaction.transactionalId().startsWith(topic + "-"))
+          .map(Object::toString)
+          .sorted()
+          .collect(Collectors.toList());
+    } catch (Exception diagnosticFailure) {
+      return List.of("diagnostic-error: " + diagnosticFailure);
+    }
   }
 }

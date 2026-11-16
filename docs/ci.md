@@ -1977,6 +1977,15 @@ then requires a fresh invocation to recover the full pool and complete a bounded
 This prevents an unfinished invocation from turning later exception-parity tests into
 resource-allocation failures while retaining their original result and error assertions.
 
+Kafka failure evidence also records the restored checkpoint ID, completed-checkpoint
+count before injection. Committed-row assertion failures include sampled stable end
+offsets, observed record offsets, and broker transaction IDs, producer IDs and states.
+These observations distinguish an unexpected checkpoint or
+transaction commit from a consumer visibility boundary; every original row assertion
+remains in place. Broker inspection runs only after a row mismatch is established,
+preserving the normal failure-injection and consumer timing. Inspection errors appear
+in the assertion detail without replacing the original external-effect assertion.
+
 Historical JVM aggregate comparisons copy the complete current metric fixture dependencies,
 including the counter-only reporter, into the immutable previous runtime. Omitting that
 helper made the 1.18 previous-source build fail before measurements in run 43655033166.

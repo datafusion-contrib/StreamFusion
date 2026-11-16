@@ -192,6 +192,15 @@ public final class CanonicalKafkaSinkJobWorker {
       }
       CommonTestUtils.waitForAllTaskRunning(cluster, job.getJobID(), false);
       var actualGraph = cluster.getExecutionGraph(job.getJobID()).get(30, TimeUnit.SECONDS);
+      var checkpointStats = actualGraph.getCheckpointStatsSnapshot();
+      if (checkpointStats != null) {
+        var restored = checkpointStats.getLatestRestoredCheckpoint();
+        Files.write(
+            root.resolve(stage + "-checkpoint-counts.tsv"),
+            List.of(
+                "completed\t" + checkpointStats.getCounts().getNumberOfCompletedCheckpoints(),
+                "restored\t" + (restored == null ? -1 : restored.getCheckpointId())));
+      }
       String actualPlan =
           actualGraph.getAllVertices().values().stream()
               .map(vertex -> vertex.getName())
@@ -531,6 +540,9 @@ public final class CanonicalKafkaSinkJobWorker {
       var metadata =
           org.apache.flink.runtime.checkpoint.Checkpoints.loadCheckpointMetadata(
               input, CanonicalKafkaSinkJobWorker.class.getClassLoader(), pointer);
+      Files.writeString(
+          root.resolve(stage + "-checkpoint-id.tsv"),
+          Long.toString(metadata.getCheckpointId()));
       var inventory = new ArrayList<String>();
       var transactions = new ArrayList<String>();
       for (var state : metadata.getOperatorStates()) {
