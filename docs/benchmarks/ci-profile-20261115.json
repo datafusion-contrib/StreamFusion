@@ -924,5 +924,94 @@
     "failures": 0,
     "platform": "macOS arm64 / JDK 17",
     "limits": "Focused local results do not establish that the existing main failures are fixed on hosted Linux."
+  },
+  "jdk17_collector_comparison": {
+    "date": "2026-11-16",
+    "method": "One warmup pair, then three alternating G1/Serial pairs on the same runner per Flink line; four original Kafka failure classes, complete providers, four fresh forks; warmups excluded from timing",
+    "native_build": "Identical debug-native CI libraries from43781239734, artifact14187798649; not a production operator throughput benchmark",
+    "source_candidate": "def0a361258ce2b802d92cfa91ca05e8ea1fb49d",
+    "source_changes": "Only diagnostic workflow/docs differ at715b48581; Java/Rust/test assertions unchanged",
+    "classes": [
+      "CanonicalKafkaPipelineFailureJobTest",
+      "CanonicalKafkaPipelineProcessFailureJobTest",
+      "CanonicalKafkaSinkFailureJobTest",
+      "CanonicalKafkaSinkProcessFailureJobTest"
+    ],
+    "result": {
+      "run": 43904169829,
+      "head": "715b48581fbe50b0493dbeef06052ff7182aa436",
+      "status": "completed",
+      "conclusion": "success",
+      "complete": true,
+      "actual_invocations": 384,
+      "cohorts": {
+        "2.2": {
+          "line": "2.2",
+          "artifact": 14247672144,
+          "zip_sha256": "2ba9dbf27067bc098deebb76658192d20687e301d709dbb546d21642ad2ab4c7",
+          "complete": true,
+          "actual_invocations": 256,
+          "problems": [],
+          "timings": {
+            "wall_seconds": {
+              "G1": [
+                293.981585866,
+                294.200104958,
+                290.932719724
+              ],
+              "Serial": [
+                295.567721401,
+                296.15047948,
+                288.476112308
+              ]
+            },
+            "median_seconds": {
+              "G1": 293.981585866,
+              "Serial": 295.567721401
+            },
+            "paired_reductions_pct": [
+              -0.5395356754497316,
+              -0.6629414772909126,
+              0.8443902144559479
+            ],
+            "median_reduction_pct": -0.5395356754497316
+          }
+        },
+        "1.18": {
+          "line": "1.18",
+          "artifact": 14247280136,
+          "zip_sha256": "9b2db6cef7f45045451fa158067e6f2df5d48c95fa0d586dd658334001ccccd1",
+          "complete": true,
+          "actual_invocations": 128,
+          "problems": [],
+          "timings": {
+            "wall_seconds": {
+              "G1": [
+                156.857868808,
+                163.581164441,
+                160.521612283
+              ],
+              "Serial": [
+                158.090560739,
+                161.617861574,
+                163.767266897
+              ]
+            },
+            "median_seconds": {
+              "G1": 160.521612283,
+              "Serial": 161.617861574
+            },
+            "paired_reductions_pct": [
+              -0.7858655357028121,
+              1.2002010584220568,
+              -2.0219424461535462
+            ],
+            "median_reduction_pct": -0.682929404588406
+          }
+        }
+      },
+      "scope": "Debug-native CI worker profile, not a production operator throughput benchmark; warmups excluded from timings."
+    },
+    "decision": "Retain existing JDK17 collector settings on both Flink lines: no consistent or material Serial speedup. Earlier separate-host lead was refuted."
   }
 }

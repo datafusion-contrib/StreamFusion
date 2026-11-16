@@ -1995,3 +1995,27 @@ including the counter-only reporter, into the immutable previous runtime. Omitti
 helper made the 1.18 previous-source build fail before measurements in run 43655033166.
 Fixture hashes include the reporter; production source and native build inputs remain pinned
 to the selected historical commit.
+
+### Controlled JDK17 collector comparison
+
+A separate-host Kafka diagnostic initially suggested lower class time with Serial
+GC. The controlled [follow-up43904169829](https://github.com/jordepic/StreamFusion-contrib/actions/runs/43904169829)
+compared G1 and Serial on the same runner for each Flink line, using pinned
+Temurin17.0.21+9, identical debug-native libraries, four original Kafka failure
+classes, their complete providers and four fresh test forks. Both collectors had
+one warmup before three alternating measured pairs; all384 invocations including
+warmups passed with unchanged provider identities and zero failures/errors/skips.
+
+| Flink line | G1 median wall | Serial median wall | Decision |
+| --- | ---: | ---: | --- |
+|1.18 |160.522s |161.618s | Keep existing JDK17 settings |
+|2.2 |293.982s |295.568s | Keep existing JDK17 settings |
+
+Pair differences crossed zero on both lines. The earlier separate-host lead did
+not reproduce, so this experiment does not justify a collector change. These are
+CI fixture timings, not production SQL throughput measurements or complete-CI
+savings. The [structured observations](benchmarks/ci-profile-20261115.json)
+retain every measured pair, invocation counts, source references and artifact
+checksums. Existing JDK11 tuning and G1-only metadata archive generation remain
+separate decisions. The [rejected investigation](https://github.com/jordepic/StreamFusion-contrib/blob/perf/ci-reduction-20261115/.claude/wontdos/ci-jdk17-serial-gc.md)
+records when to revisit this question.
