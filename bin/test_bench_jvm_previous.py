@@ -32,7 +32,16 @@ class HistoricalFixturesTest(unittest.TestCase):
                     f"src/test/java-flink{line}/tech/streamfusion/compat/"
                     "FlinkTestContexts.java"
                 )
-                self.assertEqual(expected | {helper}, set(hashes))
+                counter_reporter = (
+                    "src/test/java/org/apache/flink/runtime/testutils/"
+                    "RetainedCounterReporter.java"
+                )
+                self.assertEqual(expected | {helper, counter_reporter}, set(hashes))
+                self.assertIn(
+                    "new org.apache.flink.runtime.testutils.RetainedCounterReporter()",
+                    (worktree / "src/test/java/tech/streamfusion/RecoveryExecutionMetrics.java")
+                    .read_text(),
+                )
                 self.assertIn(
                     "tech.streamfusion.compat.FlinkTestContexts.setForLocalTests(",
                     (worktree / "src/test/java/tech/streamfusion/RecoveryExecutionMetrics.java")
@@ -44,7 +53,7 @@ class HistoricalFixturesTest(unittest.TestCase):
                     self.assertEqual(hashlib.sha256(copied).hexdigest(), checksum)
                 self.assertEqual("historical runtime\n", production.read_text())
                 self.assertEqual(
-                    expected | {helper, "src/main/java/Runtime.java"},
+                    expected | {helper, counter_reporter, "src/main/java/Runtime.java"},
                     {str(path.relative_to(worktree)) for path in worktree.rglob("*.java")},
                 )
 

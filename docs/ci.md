@@ -1953,3 +1953,9 @@ Use `failure_suite=canonical` to select only the canonical failure lanes, combin
 `flink_line` when needed. Other choices select Iceberg, Doris or the Paimon policy probe.
 A lightweight selection job rejects empty combinations before any build or test starts;
 focused follow-ups can reuse independent successful diagnostics without repeating them.
+
+Historical JVM aggregate comparisons copy the complete current metric fixture dependencies,
+including the counter-only reporter, into the immutable previous runtime. Omitting that
+helper made the 1.18 previous-source build fail before measurements in run 43655033166.
+Fixture hashes include the reporter; production source and native build inputs remain pinned
+to the selected historical commit.
