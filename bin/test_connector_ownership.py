@@ -15,6 +15,43 @@ SPEC.loader.exec_module(CHECKER)
 
 
 class ConnectorOwnershipTest(unittest.TestCase):
+    def test_assembly_keeps_every_bundled_module_service(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            format_spi = "META-INF/services/tech.streamfusion.format.NativeFormatProvider"
+            planner_spi = "META-INF/services/tech.streamfusion.planner.NativePlannerExtension"
+            for module, spi, name in [("json", format_spi, "probe.Json\nprobe.JsonVariant"),
+                                      ("csv", format_spi, "probe.Csv"),
+                                      ("kafka", planner_spi, "probe.Kafka"),
+                                      ("uninstalled", planner_spi, "probe.NotInstalled")]:
+                resource = root / f"streamfusion-{module}/src/main/resources" / spi
+                resource.parent.mkdir(parents=True)
+                resource.write_text(name + "\n")
+            valid = {"probe/Json.class": b"", "probe/JsonVariant.class": b"",
+                     "probe/Csv.class": b"", "probe/Kafka.class": b"",
+                     format_spi: b"probe.Json\nprobe.JsonVariant\nprobe.Csv # merged module\n",
+                     planner_spi: b"probe.Kafka\n"}
+            cases = [
+                (valid, None),
+                ({**valid, format_spi: b"probe.Json\n"}, "merged service providers"),
+                ({k: v for k, v in valid.items() if k != planner_spi}, "merged service providers"),
+                ({**valid, planner_spi: b"probe.NotInstalled\n"}, "merged service providers"),
+                ({k: v for k, v in valid.items() if k != "probe/JsonVariant.class"},
+                 "incomplete provider classes"),
+                ({}, "no bundled project service providers"),
+            ]
+            for entries, error in cases:
+                with self.subTest(error=error):
+                    artifact = root / "assembly.jar"
+                    with zipfile.ZipFile(artifact, "w") as jar:
+                        for entry, content in entries.items():
+                            jar.writestr(entry, content)
+                    if error:
+                        with self.assertRaisesRegex(ValueError, error):
+                            CHECKER.check_assembly_services(root, artifact)
+                    else:
+                        self.assertEqual(4, CHECKER.check_assembly_services(root, artifact))
+
     def test_manifest_identity_keeps_the_module_source_directory(self):
         script = Path(__file__).with_name("check-artifacts.sh").read_text()
         start = script.index("assert_flink_identity() {")

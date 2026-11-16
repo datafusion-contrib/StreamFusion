@@ -71,14 +71,47 @@ def check_sources(module, artifact, line):
     return len(expected)
 
 
+def check_assembly_services(root, artifact):
+    def providers(content):
+        return {line.partition("#")[0].strip() for line in content.decode("utf-8").splitlines()
+                if line.partition("#")[0].strip()}
+
+    with zipfile.ZipFile(artifact) as jar:
+        entries = set(unique_entries(jar, artifact))
+        expected = {}
+        for service in root.glob("streamfusion-*/src/main/resources/META-INF/services/tech.streamfusion.*"):
+            declared = providers(service.read_bytes())
+            bundled = {name for name in declared if name.replace(".", "/") + ".class" in entries}
+            if not bundled:
+                continue
+            if bundled != declared:
+                raise ValueError(f"{artifact}: incomplete provider classes for {service}")
+            name = "META-INF/services/" + service.name
+            expected.setdefault(name, set()).update(declared)
+        if not expected:
+            raise ValueError(f"{artifact}: no bundled project service providers")
+        actual = {entry: providers(jar.read(entry)) for entry in entries
+                  if entry.startswith("META-INF/services/tech.streamfusion.")}
+        if actual != expected:
+            raise ValueError(f"{artifact}: merged service providers differ: "
+                             f"expected {expected}; found {actual}")
+    return sum(map(len, expected.values()))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("module", type=Path)
     parser.add_argument("artifact", type=Path)
     parser.add_argument("--flink-line", choices=("1.18", "2.2"), required=True)
     parser.add_argument("--sources-jar", type=Path)
+    parser.add_argument("--assembly", action="store_true",
+                        help="Check merged project SPI files against the bundled module providers")
     args = parser.parse_args()
     try:
+        if args.assembly:
+            count = check_assembly_services(args.module, args.artifact)
+            print(f"{args.artifact}: {count} merged project service providers verified")
+            return
         count = check(args.module, args.artifact, args.flink_line)
         if args.sources_jar is not None:
             check_sources(args.module, args.sources_jar, args.flink_line)

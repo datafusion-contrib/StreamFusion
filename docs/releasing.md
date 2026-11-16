@@ -20,6 +20,11 @@ participate on Flink 2.2; Hudi participates in the Flink 1.18 development bundle
 Java-only, reusing Parquet's native library. The runtime test assembly contains no
 production classes; it consumes the actual deployable module artifacts.
 
+The attached development runtime shaded JAR merges dependency SPI files. Release validation
+also checks these merged project registrations against the bundled modules, including both
+format providers and planner extensions. This assembly does not replace the deployable core
+runtime payload and optional connector/format JARs.
+
 ## One-time GitHub setup
 
 Create a `release` environment in the canonical GitHub repository. It may have required reviewers;

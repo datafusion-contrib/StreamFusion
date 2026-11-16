@@ -384,6 +384,12 @@ module directory names independent of host-qualified artifact IDs. Runtime's mod
 test requires each optional implementation to resolve from its owner with one class
 definition; its providers come from the owning modules instead of duplicate runtime SPI files.
 
+The attached `streamfusion-runtime-*-runtime.jar` is a development shaded assembly, separate
+from the deployable core runtime payload. Its Shade execution merges service registrations
+from dependencies so that every bundled provider remains discoverable. Artifact validation
+requires its project SPI entries to equal the union declared by the bundled modules and
+rejects missing registrations, foreign providers and incomplete provider class sets.
+
 ## Portable plans, ordinary SQL and canonical handoff
 
 The unmerged [#569 work](https://github.com/datafusion-contrib/StreamFusion/issues/569) binds

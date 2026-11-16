@@ -139,6 +139,9 @@ if jar tf "$runtime_jar" | grep -Eq '^tech/streamfusion/.*\.class$'; then
   echo "streamfusion-runtime recompiles deployable production classes" >&2
   exit 1
 fi
+python3 "$script_dir/check-connector-ownership.py" "$repo_root" \
+  "$repo_root/streamfusion-runtime/target/streamfusion-runtime${artifact_suffix}-$version-runtime.jar" \
+  --flink-line "$flink_line" --assembly
 
 core_jar="$repo_root/streamfusion-core/target/streamfusion-core${artifact_suffix}-$version-runtime.jar"
 core_main_jar="$repo_root/streamfusion-core/target/streamfusion-core${artifact_suffix}-$version.jar"
