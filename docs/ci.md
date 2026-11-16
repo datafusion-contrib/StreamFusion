@@ -42,6 +42,12 @@ the required successful checks on its exact PR head before merging.
    stable: unrelated movement on main alone does not require another rebase and matrix. Actual
    conflicts or necessary integration corrections require local validation of the new candidate.
 
+Scheduled full upstream suites run only in the canonical repository. Personal forks retain
+manual qualification and submission-branch checks without spending their runner quota on a
+weekly copy of the default branch. A fork whose default branch predates this guard must remove
+its copied `schedule` triggers (including the canonical-only status reporter) or update its
+default-branch workflow configuration; updating a feature branch alone cannot change cron.
+
 For example, after adding the fork remote:
 
 ```sh

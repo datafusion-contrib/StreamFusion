@@ -91,6 +91,10 @@ and successful checks for that commit. When a push supersedes it, cancel queued 
 for the older commits on that PR. Retry only the failed jobs needed for the current head and
 merge after its required checks pass.
 
+Scheduled full suites belong to the canonical repository; personal forks use explicit
+qualification. Keep fork default-branch workflows free of obsolete copied schedules, since
+GitHub runs cron from the default branch rather than the current development candidate.
+
 Feature-branch pushes do not automatically run the test matrices or release diagnostics.
 When the combined change is ready, explicitly dispatch CI and the full upstream Flink suite
 on its fork branch, plus applicable docs/compatibility checks. Intermediate local commits

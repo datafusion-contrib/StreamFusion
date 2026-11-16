@@ -30,7 +30,7 @@ concurrency:
 
 jobs:
   plan:
-    if: ${{ github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main' }}
+    if: ${{ (github.event_name != 'schedule' || github.repository == 'datafusion-contrib/StreamFusion') && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
     uses: ./.github/workflows/ci-plan.yml
 
   upstream-line:
@@ -81,7 +81,7 @@ jobs:
 
   all-tests:
     name: All upstream integration tests
-    if: ${{ (always() && !cancelled()) && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
+    if: ${{ (always() && !cancelled()) && (github.event_name != 'schedule' || github.repository == 'datafusion-contrib/StreamFusion') && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
     needs: [plan, upstream-line, legacy-delta-audit]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
