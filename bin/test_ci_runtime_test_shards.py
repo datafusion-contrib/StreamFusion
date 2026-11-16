@@ -1,13 +1,17 @@
 """Verify that the real Surefire executions retain every invocation across shards."""
 
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 import copy
+import hashlib
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
+import uuid
 import xml.etree.ElementTree as ET
 
 import ci_runtime_test_shards as shards
@@ -25,6 +29,57 @@ def plain(element):
 
 
 class RuntimeTestShardsTest(unittest.TestCase):
+    def test_worker_lanes_balance_without_pinning_and_ignore_inventory_order(self):
+        pinned = sorted(shards.FIRST_SHARD_CLASSES)[:2]
+        names = [*pinned, "MediumTest", "ShortTest", "NewTest", "ZeroTest"]
+        durations = {pinned[0]: 90, pinned[1]: 80, "MediumTest": 60,
+                     "ShortTest": 30, "ZeroTest": 0}
+        plan = shards.partition_workers(names, 2, durations)
+        self.assertEqual(plan, shards.partition_workers(reversed(names), 2, durations))
+        self.assertEqual(Counter(names), Counter(name for lane in plan for name in lane))
+        self.assertTrue(all(lane == sorted(lane) for lane in plan))
+        self.assertFalse(any(set(pinned) <= set(lane) for lane in plan))
+        self.assertEqual([121, 140], [sum(durations.get(name, 1) for name in lane) for lane in plan])
+
+    def test_worker_lanes_never_emit_an_empty_includes_file(self):
+        for count in (1, 2, 4):
+            with self.subTest(count=count):
+                plan = shards.partition_workers(["OnlyTest"], count, {})
+                self.assertEqual([["OnlyTest"]], plan)
+        self.assertEqual([["ATest"], ["BTest"]],
+                         shards.partition_workers(["BTest", "ATest"], 4, {}))
+
+    def test_worker_lanes_reject_invalid_counts_inventories_and_costs(self):
+        for count in (0, -1, True, 1.5):
+            with self.subTest(count=count), self.assertRaises(ValueError):
+                shards.partition_workers(["ExampleTest"], count, {})
+        for names in ([], ["ExampleTest", "ExampleTest"], [""], [None]):
+            with self.subTest(names=names), self.assertRaises(ValueError):
+                shards.partition_workers(names, 4, {})
+        for value in (-1, float("nan"), float("inf"), "1", True):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                shards.partition_workers(["ExampleTest"], 4, {"OtherTest": value})
+
+    def test_provisional_costs_are_validated_floors_without_replacing_measurements(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "durations.json"
+            recorded = {"seconds": {"GlobalTest": 100},
+                        "seconds_by_line": {"2.2": {"LowTest": 80, "HighTest": 150}},
+                        "provisional_seconds_by_line": {
+                            "2.2": {"LowTest": 120, "HighTest": 120, "NewTest": 90}}}
+            path.write_text(json.dumps(recorded))
+            with patch.object(shards, "DURATIONS", path):
+                self.assertEqual({"GlobalTest": 100, "LowTest": 120, "HighTest": 150, "NewTest": 90},
+                                 shards.load_durations("2.2"))
+                self.assertEqual({"GlobalTest": 100}, shards.load_durations("1.18"))
+                self.assertEqual(80, json.loads(path.read_text())["seconds_by_line"]["2.2"]["LowTest"])
+                for value in (-1, float("nan"), float("inf"), "1", True):
+                    with self.subTest(value=value):
+                        recorded["provisional_seconds_by_line"]["2.2"]["LowTest"] = value
+                        path.write_text(json.dumps(recorded))
+                        with self.assertRaises(ValueError):
+                            shards.load_durations("2.2")
+
     def test_line_costs_change_placement_while_retaining_the_complete_inventory(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -35,6 +90,8 @@ class RuntimeTestShardsTest(unittest.TestCase):
             data.write_text(json.dumps({"seconds": {"LongTest": 90, "MediumTest": 60, "ShortTest": 30},
                                         "seconds_by_line": {"1.18": {"LongTest": 1}}}))
             with patch.object(shards, "DURATIONS", data):
+                self.assertEqual(90, shards.load_durations()["LongTest"])
+                self.assertEqual(1, shards.load_durations("1.18")["LongTest"])
                 default = shards.partition(root, 2, "runtime")
                 legacy = shards.partition(root, 2, "runtime", line="1.18")
                 self.assertNotEqual(default, legacy)
@@ -164,6 +221,155 @@ class RuntimeTestShardsTest(unittest.TestCase):
             if '"sql-audit"' in path.read_text()
         }
         self.assertEqual(producers, shards.AUDIT_CLASSES)
+
+    def test_real_maven_installed_owners_and_concurrent_lanes_retain_every_invocation(self):
+        parent = ET.parse(ROOT / "pom.xml")
+        runtime = ET.parse(ROOT / "streamfusion-runtime/pom.xml")
+        plugin = copy.deepcopy(next(p for p in runtime.findall("m:build/m:plugins/m:plugin", NS)
+                                    if p.findtext("m:artifactId", namespaces=NS) == "maven-surefire-plugin"))
+        ET.SubElement(plugin, "version").text = "3.2.5"
+        config = plugin.find("m:configuration", NS)
+        ET.SubElement(config, "forkCount").text = "${sf.testForks}"
+        ET.SubElement(config, "reuseForks").text = "${sf.testReuseForks}"
+        precompiled = next(p for p in parent.findall("m:profiles/m:profile", NS)
+                           if p.findtext("m:id", namespaces=NS) == "ci-precompiled-java")
+        group = "test.streamfusion.lanes." + uuid.uuid4().hex
+        installed = Path.home() / ".m2/repository" / group.replace(".", "/")
+        self.addCleanup(shutil.rmtree, installed, ignore_errors=True)
+        with tempfile.TemporaryDirectory(prefix="canonical-lanes-") as directory:
+            reactor = Path(directory)
+            owner, consumer = reactor / "owner", reactor / "runtime"
+            owner.mkdir()
+            consumer.mkdir()
+            header = '<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion>'
+            (reactor / "pom.xml").write_text(header + f'''
+<groupId>{group}</groupId><artifactId>reactor</artifactId><version>1</version><packaging>pom</packaging>
+<modules><module>owner</module><module>runtime</module></modules>
+<properties><maven.compiler.release>11</maven.compiler.release><sf.testForks>4</sf.testForks>
+<sf.testReuseForks>false</sf.testReuseForks><sf.runtime.tests.skip>false</sf.runtime.tests.skip>
+<sf.orc.test.groups>streamfusion-orc</sf.orc.test.groups></properties>
+<dependencies><dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId>
+<version>5.10.2</version><scope>test</scope></dependency></dependencies>
+<build><plugins><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId>
+<version>3.13.0</version></plugin><plugin><groupId>org.apache.maven.plugins</groupId>
+<artifactId>maven-surefire-plugin</artifactId><version>3.2.5</version></plugin></plugins></build>
+<profiles>''' + plain(precompiled) + "</profiles></project>")
+            parent_ref = f"<parent><groupId>{group}</groupId><artifactId>reactor</artifactId><version>1</version></parent>"
+            (owner / "pom.xml").write_text(header + parent_ref + '''<artifactId>owner</artifactId>
+<build><plugins><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-jar-plugin</artifactId>
+<version>3.4.1</version><executions><execution><id>default-jar</id><phase>process-classes</phase>
+<goals><goal>jar</goal></goals></execution></executions></plugin></plugins></build></project>''')
+            (consumer / "pom.xml").write_text(header + parent_ref + f'''<artifactId>runtime</artifactId>
+<dependencies><dependency><groupId>{group}</groupId><artifactId>owner</artifactId><version>1</version>
+</dependency></dependencies><build><plugins>''' + plain(plugin) + "</plugins></build>"
+                + plain(runtime.find("m:profiles", NS)) + "</project>")
+            owner_source = owner / "src/main/java/example/Owner.java"
+            owner_source.parent.mkdir(parents=True)
+            owner_source.write_text('''package example;
+public class Owner { public static String value() { return "current-owner"; } }''')
+            resources = owner / "src/main/resources"
+            resources.mkdir(parents=True)
+            (resources / "owner.txt").write_text("current-resource")
+            owner_tests = owner / "src/test/java/example/OwnerTest.java"
+            owner_tests.parent.mkdir(parents=True)
+            owner_tests.write_text('''package example; class OwnerTest {
+@org.junit.jupiter.api.Test void preparedOnce() throws Exception {
+java.nio.file.Files.writeString(java.nio.file.Path.of("target", "owner-ran"), "once",
+java.nio.file.StandardOpenOption.CREATE_NEW); } }''')
+            source = consumer / "src/test/java/tech/streamfusion"
+            source.mkdir(parents=True)
+            (source / "Probe.java").write_text('''package tech.streamfusion; class Probe {
+static void record(String identity) throws Exception {
+org.junit.jupiter.api.Assertions.assertEquals("current-owner", example.Owner.value());
+try (var resource = example.Owner.class.getResourceAsStream("/owner.txt")) {
+org.junit.jupiter.api.Assertions.assertEquals("current-resource", new String(resource.readAllBytes())); }
+var location = java.nio.file.Path.of(example.Owner.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+org.junit.jupiter.api.Assertions.assertTrue(location.toString().endsWith(".jar"));
+if (System.getProperty("fixture.ownerJar") != null)
+org.junit.jupiter.api.Assertions.assertEquals(java.nio.file.Path.of(System.getProperty("fixture.ownerJar")), location);
+java.nio.file.Files.createDirectories(java.nio.file.Path.of("target", "selected"));
+java.nio.file.Files.writeString(java.nio.file.Path.of("target", "selected", identity), "once",
+java.nio.file.StandardOpenOption.CREATE_NEW); } }''')
+            fixtures = {
+                "LaneParameterizedTest": '''@org.junit.jupiter.params.ParameterizedTest
+@org.junit.jupiter.params.provider.ValueSource(ints={1,2})
+void repeated(int value) throws Exception { Probe.record("parameter-" + value); }''',
+                "LaneParentTest": '''@org.junit.jupiter.api.Test
+void inherited() throws Exception { Probe.record(getClass().getSimpleName() + "-inherited"); }''',
+                "LaneChildTest extends LaneParentTest": '''@org.junit.jupiter.api.Test
+void own() throws Exception { Probe.record("child-only"); }''',
+                "LaneNestedTest": '''@org.junit.jupiter.api.Test
+void outside() throws Exception { Probe.record("outer"); }
+@org.junit.jupiter.api.Nested class Context {
+@org.junit.jupiter.api.Test void inside() throws Exception { Probe.record("nested"); } }''',
+                "LaneOrcTest": '''@org.junit.jupiter.api.Tag("streamfusion-orc")
+@org.junit.jupiter.api.Test void orc() throws Exception { Probe.record("orc"); }''',
+                "LaneDisabledTest": '''@org.junit.jupiter.api.Disabled
+@org.junit.jupiter.api.Test void disabled() { throw new AssertionError("disabled invocation ran"); }''',
+            }
+            for declaration, body in fixtures.items():
+                name = declaration.split()[0]
+                (source / (name + ".java")).write_text("package tech.streamfusion; class "
+                                                      + declaration + " { " + body + " }")
+
+            def run(*options):
+                result = subprocess.run(["mvn", "-B", "-ntp", *options], cwd=reactor,
+                                        capture_output=True, text=True, timeout=120)
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+            def reports():
+                cases = Counter()
+                for report in (consumer / "target/surefire-reports").glob("TEST-*.xml"):
+                    for case in ET.parse(report).getroot().findall("testcase"):
+                        cases[(case.attrib["classname"], case.attrib["name"],
+                               case.find("skipped") is not None)] += 1
+                    report.unlink()
+                return cases
+
+            run("-pl", "runtime", "-am", "test")
+            baseline = reports()
+            self.assertEqual(9, sum(baseline.values()))
+            self.assertEqual(1, sum(count for (_, _, skipped), count in baseline.items() if skipped))
+            selected = consumer / "target/selected"
+            expected_markers = {path.name for path in selected.iterdir()}
+            for path in selected.iterdir():
+                path.unlink()
+            (owner / "target/owner-ran").unlink()
+            owner_source.write_text("invalid source: the installed owner must use precompiled classes")
+            (source / "Probe.java").write_text("invalid source: lane execution must not compile")
+            run("-pl", "runtime", "-am", "install", "-Dsf.ci.precompiledJava=true",
+                "-Dsf.runtime.tests.skip=true", "-DskipTests=false")
+            owner_jar = installed / "owner/1/owner-1.jar"
+            self.assertTrue(owner_jar.is_file())
+
+            def artifact_state():
+                paths = [*reactor.rglob("*.jar"), *reactor.rglob("*.class"),
+                         *installed.rglob("*.jar"), owner / "target/owner-ran"]
+                return {path: (path.stat().st_mtime_ns, hashlib.sha256(path.read_bytes()).hexdigest())
+                        for path in paths}
+
+            frozen = artifact_state()
+            candidates = shards.candidates_for_suite(consumer / "target/test-classes", "all")
+            lanes = shards.partition_workers(candidates, 4, {})
+            self.assertEqual(4, len(lanes))
+            inputs = []
+            for index, lane in enumerate(lanes):
+                output = reactor / f"lane-{index}.txt"
+                output.write_text("".join(name + ".java\n" for name in lane))
+                inputs.append(output)
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                futures = [executor.submit(run, "-pl", "runtime", "surefire:test@default-test",
+                                           "surefire:test@orc-tests", "-Dsf.testForks=1",
+                                           "-Dsf.testReuseForks=false", "-Dsf.runtime.tests.skip=false",
+                                           f"-DtempDir=surefire-lane-{index}",
+                                           f"-Dsf.runtime.testIncludesFile={output}",
+                                           f"-Dfixture.ownerJar={owner_jar}")
+                           for index, output in enumerate(inputs)]
+                for future in futures:
+                    future.result()
+            self.assertEqual(baseline, reports())
+            self.assertEqual(expected_markers, {path.name for path in selected.iterdir()})
+            self.assertEqual(frozen, artifact_state())
 
     def test_real_maven_partition_matches_unpartitioned_tags_nested_and_parameterized_tests(self):
         parent = ET.parse(ROOT / "pom.xml")

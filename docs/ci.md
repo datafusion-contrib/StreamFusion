@@ -1853,3 +1853,19 @@ minutes on Flink 2.2 and 209 minutes on Flink 1.18. Those are model outputs, not
 times. The previous 180-minute job budget could stop a successful expanded cohort before it
 finished. The larger job guard accommodates the added cases without multiplying runners or
 changing the four-minute worker and eight-minute invocation failure limits.
+
+### Balance canonical work within the existing runner budget
+
+Each canonical shard now assigns its complete class list to four duration-balanced lanes.
+One serialized Maven installation prepares the exact reactor before the four workers invoke
+both configured Surefire executions, one fresh fork per class. Separate Surefire temporary
+directories prevent workers from removing one another's launcher files. Every lane must pass;
+selection manifests, estimates, logs and all original JUnit reports are retained. The ten
+shards per cohort and four simultaneous test forks stay in place.
+
+The weights include completed class reports from campaign 43693125597 and a labeled
+provisional JDK 11 COUNT cost based on the observed cross-JDK ratio. The new completed Kafka
+handoff regression has an explicit conservative estimate until its first qualification.
+These weights guide scheduling; modeled loads are not measured workflow savings. The
+precompiled Maven profile resolves CI-friendly parent versions when installing prepared
+reactor artifacts, avoiding unresolved literal `${revision}` dependencies in later workers.

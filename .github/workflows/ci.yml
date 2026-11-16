@@ -206,6 +206,7 @@ jobs:
           python3 -m unittest discover -s bin -p 'test_ci_module_groups.py'
           python3 -m unittest discover -s bin -p 'test_ci_lake_tests.py'
           python3 -m unittest discover -s bin -p 'test_ci_runtime_test_shards.py'
+          python3 -m unittest discover -s bin -p 'test_ci_canonical_jobs.py'
           python3 -m unittest discover -s bin -p 'test_ci_java_build.py'
           python3 -m unittest discover -s bin -p 'test_ci_native_source.py'
           python3 -m unittest discover -s bin -p 'test_ci_native_test_artifact.py'
@@ -421,12 +422,9 @@ jobs:
           vmstat -w 30 &
           memory_sampler=$!
           trap 'kill "$memory_sampler" 2>/dev/null || true' EXIT
-          mvn -B -ntp -P${{ matrix.profiles }} -pl streamfusion-runtime -am test \
-            -Dnative.build.skip=true -Dsf.protobuf.checkStaleness=true \
-            -Dsf.ci.precompiledJava=true \
-            -DskipTests=${{ matrix.shard != 1 }} -Dsf.runtime.tests.skip=false \
-            "-Dsf.runtime.testIncludesFile=$RUNNER_TEMP/canonical-job-includes.txt" \
-            -Dsf.testForks=4 -Dsf.testReuseForks=false "-Dsf.extraJvmArgs=-Xmx1g"
+          python3 bin/ci_canonical_jobs.py \
+            --includes "$RUNNER_TEMP/canonical-job-includes.txt" \
+            --line '${{ matrix.line }}' --profiles '${{ matrix.profiles }}' --workers 4
       - name: Retain canonical job selection and outcomes
         if: always()
         uses: actions/upload-artifact@v4

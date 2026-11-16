@@ -23,6 +23,46 @@ FIRST_SHARD_CLASSES = AUDIT_CLASSES | {
 DURATIONS = Path(__file__).resolve().parents[1] / "dev/ci/runtime-durations.json"
 
 
+def _validate_durations(durations):
+    if any(not isinstance(value, (int, float)) or isinstance(value, bool)
+           or not math.isfinite(value) or value < 0 for value in durations.values()):
+        raise ValueError("Class duration estimates must be finite nonnegative numbers")
+
+
+def load_durations(line=None):
+    recorded = json.loads(DURATIONS.read_text())
+    durations = {**recorded.get("estimated_seconds", {}),
+                 **recorded.get("estimated_seconds_by_line", {}).get(line, {}),
+                 **recorded["seconds"],
+                 **recorded.get("seconds_by_line", {}).get(line, {})}
+    _validate_durations(durations)
+    provisional = recorded.get("provisional_seconds_by_line", {}).get(line, {})
+    _validate_durations(provisional)
+    for name, floor in provisional.items():
+        durations[name] = max(durations.get(name, 0), floor)
+    return durations
+
+
+def partition_workers(candidates, count, durations):
+    """Balance fixed worker lanes so class launch order cannot extend their total work."""
+    if not isinstance(count, int) or isinstance(count, bool) or count < 1:
+        raise ValueError("Worker count must be a positive integer")
+    candidates = list(candidates)
+    if (not candidates or any(not isinstance(name, str) or not name for name in candidates)
+            or len(set(candidates)) != len(candidates)):
+        raise ValueError("Worker inventory must contain nonempty unique class names")
+    _validate_durations(durations)
+    workers = [[] for _ in range(min(count, len(candidates)))]
+    loads = [0.0] * len(workers)
+    def cost(name):
+        return max(0.001, durations.get(name, 1.0))
+    for name in sorted(candidates, key=lambda name: (-cost(name), name)):
+        index = min(range(len(workers)), key=lambda index: (loads[index], len(workers[index]), index))
+        workers[index].append(name)
+        loads[index] += cost(name)
+    return [sorted(worker) for worker in workers]
+
+
 def candidates_for_suite(classes, suite):
     if suite not in ("all", "runtime", "canonical"):
         raise ValueError("Unknown test suite")
@@ -46,14 +86,8 @@ def partition(classes, count, suite="all", durations=None, line=None):
     if not candidates:
         raise ValueError("No compiled Surefire test candidates found")
     if durations is None:
-        recorded = json.loads(DURATIONS.read_text())
-        durations = {**recorded.get("estimated_seconds", {}),
-                     **recorded.get("estimated_seconds_by_line", {}).get(line, {}),
-                     **recorded["seconds"],
-                     **recorded.get("seconds_by_line", {}).get(line, {})}
-    if any(not isinstance(value, (int, float)) or isinstance(value, bool)
-           or not math.isfinite(value) or value < 0 for value in durations.values()):
-        raise ValueError("Class duration estimates must be finite nonnegative numbers")
+        durations = load_durations(line)
+    _validate_durations(durations)
     def cost(name):
         return max(0.001, durations.get(name, 1.0))
     shards = [[] for _ in range(count)]
