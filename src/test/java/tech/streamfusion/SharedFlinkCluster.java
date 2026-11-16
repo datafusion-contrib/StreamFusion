@@ -16,7 +16,7 @@ import tech.streamfusion.operator.NativeAllocator;
 import tech.streamfusion.operator.TaskOffHeapMemory;
 
 /**
- * Reuses one MiniCluster per launcher session (one Surefire fork), with fresh execution contexts
+ * Starts one MiniCluster on demand per launcher session, with fresh execution contexts
  * and native leak checks for every test. Launcher-session ownership closes the cluster when the
  * test run ends.
  */
@@ -74,6 +74,15 @@ public final class SharedFlinkCluster
   @Override
   public void beforeAll(ExtensionContext context) throws Exception {
     var cluster = session(context);
+    if (lazyStart()) TaskOffHeapMemory.initialize(configuration().getConfiguration());
+    else start(cluster);
+  }
+
+  private static boolean lazyStart() {
+    return Boolean.parseBoolean(System.getProperty("sf.test.lazyCluster", "true"));
+  }
+
+  private static void start(SessionCluster cluster) throws Exception {
     cluster.start();
     TaskOffHeapMemory.initialize(cluster.getMiniCluster().getConfiguration());
   }
@@ -81,7 +90,17 @@ public final class SharedFlinkCluster
   @Override
   public void beforeEach(ExtensionContext context) {
     var cluster = session(context);
-    FlinkTestContexts.setForLocalTests(cluster.getMiniCluster(), cluster.getNumberSlots());
+    if (lazyStart()) {
+      FlinkTestContexts.deferForLocalTests(
+          () -> {
+            try {
+              start(cluster);
+            } catch (Exception failure) {
+              throw new IllegalStateException("Cannot start the shared test cluster", failure);
+            }
+            FlinkTestContexts.setForLocalTests(cluster.getMiniCluster(), cluster.getNumberSlots());
+          });
+    } else FlinkTestContexts.setForLocalTests(cluster.getMiniCluster(), cluster.getNumberSlots());
   }
 
   @Override

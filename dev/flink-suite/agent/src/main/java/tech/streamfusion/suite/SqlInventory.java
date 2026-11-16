@@ -81,7 +81,8 @@ public final class SqlInventory {
     return active;
   }
 
-  public static synchronized void compaction(Object owner, Map<String, Object> work) throws Exception {
+  public static synchronized void compaction(Object owner, Map<String, Object> work)
+      throws Exception {
     if (!(owner instanceof Scope scope))
       throw new AssertionError("Compaction outside an upstream test invocation");
     scope.compactions.add(work);
@@ -90,7 +91,8 @@ public final class SqlInventory {
 
   private static void write(Scope scope) throws Exception {
     Files.createDirectories(directory());
-    Files.writeString(directory().resolve(scope.id + ".json"), json(scope.data) + "\n", StandardCharsets.UTF_8);
+    Files.writeString(
+        directory().resolve(scope.id + ".json"), json(scope.data) + "\n", StandardCharsets.UTF_8);
   }
 
   public static synchronized Object submitting(Object[] arguments) {
@@ -237,7 +239,8 @@ public final class SqlInventory {
       String job = call(result, "getJobId").toString();
       if (FINISHED_JOBS.contains(job)) return;
       String status = call(result, "getApplicationStatus").toString();
-      active.applicationStatuses
+      active
+          .applicationStatuses
           .computeIfAbsent(job, unused -> new java.util.LinkedHashSet<>())
           .add(status);
     } catch (ReflectiveOperationException | RuntimeException unavailable) {
@@ -322,8 +325,12 @@ public final class SqlInventory {
               "host_boundaries",
               boundaries,
               "native_operators",
-              operators.stream().filter(name -> name.startsWith("StreamPhysicalNative")
-                  || name.startsWith("BatchPhysicalNative")).count()));
+              operators.stream()
+                  .filter(
+                      name ->
+                          name.startsWith("StreamPhysicalNative")
+                              || name.startsWith("BatchPhysicalNative"))
+                  .count()));
     }
     plan.put("roots", finalRoots);
     active.plans.add(plan);
@@ -338,6 +345,8 @@ public final class SqlInventory {
     if (seen.put(node, Boolean.TRUE) != null) return;
     names.add(node.getClass().getSimpleName());
     String name = node.getClass().getSimpleName();
+    // The original scan under this boundary supplies discovery and state, not a host reader.
+    if (name.equals("BatchPhysicalNativeConnectorSource")) return;
     if (name.equals("BatchPhysicalTableSourceScan")
         || name.equals("BatchPhysicalLegacyTableSourceScan")
         || name.equals("BatchPhysicalSink")

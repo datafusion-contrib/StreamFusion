@@ -19,14 +19,29 @@ import org.apache.flink.table.types.logical.VarCharType;
 import org.apache.flink.types.RowKind;
 
 class CanonicalNormalizerRowKeyJobTest extends CanonicalNormalizerJobTest {
-  private boolean stockJoin;
+  private boolean joinConsumer;
+
+  static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> joinConsumerCases() {
+    return CanonicalTestMatrix.select(
+        java.util.stream.Stream.of(
+                "immediate", "mini", "no-input", "empty", "checkpoint", "rescale")
+            .flatMap(
+                mode ->
+                    handoffs()
+                        .filter(args -> !mode.equals("checkpoint") || (boolean) args.get()[0])
+                        .map(
+                            args ->
+                                org.junit.jupiter.params.provider.Arguments.of(
+                                    mode, args.get()[0], args.get()[1]))));
+  }
 
   @org.junit.jupiter.params.ParameterizedTest
-  @org.junit.jupiter.params.provider.ValueSource(strings = {"hashmap", "rocksdb"})
+  @org.junit.jupiter.params.provider.MethodSource("joinConsumerCases")
   @org.junit.jupiter.api.Timeout(value = 8, unit = java.util.concurrent.TimeUnit.MINUTES)
-  void stockJoinConsumerRetainsItsIdentitiesAcrossBothSwitches(String backend) throws Exception {
-    stockJoin = true;
-    check("mini", true, backend);
+  void normalizerAndJoinRetainBothOwnersAcrossCanonicalSwitches(
+      String mode, boolean nativeFirst, String backend) throws Exception {
+    joinConsumer = true;
+    check(mode, nativeFirst, backend);
   }
 
   boolean nested() {
@@ -35,12 +50,12 @@ class CanonicalNormalizerRowKeyJobTest extends CanonicalNormalizerJobTest {
 
   @Override
   String rescaleFamilies() {
-    return "Normalize,GroupAgg";
+    return joinConsumer ? "Normalize,UpdatingJoin" : "Normalize,GroupAgg";
   }
 
   @Override
   java.util.Map<String, Long> expected(Path root, String mode) throws Exception {
-    if (stockJoin) return super.expected(root, mode);
+    if (joinConsumer) return super.expected(root, mode);
     var retained = new java.util.HashMap<String, String>();
     for (String line : Files.readAllLines(oracleInput(root))) {
       var fields = line.split(",", -1);
@@ -111,23 +126,19 @@ class CanonicalNormalizerRowKeyJobTest extends CanonicalNormalizerJobTest {
     Files.writeString(
         root.resolve("query.sql"),
         "INSERT INTO output_table SELECT v,COUNT(*),CAST(0 AS BIGINT) FROM input_table GROUP BY v");
-    if (stockJoin) {
+    if (joinConsumer) {
       Files.writeString(
           root.resolve("query.sql"),
           "INSERT INTO output_table SELECT l.k.i,l.v,r.v FROM input_table l JOIN right_input_table"
               + " r ON l.v=r.k");
-      Files.writeString(root.resolve("native-absent-operators"), "NativeColumnarUpdatingJoin");
+
     } else Files.delete(root.resolve("right-input.csv"));
     Files.writeString(
         root.resolve("native-operator"),
-        "NativeChangelogNormalize,NativeColumnarGroupAgg,RowDataToArrow,ArrowToRowData");
-    Files.writeString(root.resolve("native-input-families"), "Normalize,GroupAgg");
-    if (mode.equals("mini")) {
-      Files.writeString(
-          root.resolve("native-operator"),
-          "NativeChangelogNormalize,RowDataToArrow,ArrowToRowData");
-      Files.writeString(root.resolve("native-input-families"), "Normalize");
-    }
+        "NativeChangelogNormalize,"
+            + (joinConsumer ? "NativeColumnarUpdatingJoin" : "NativeColumnarGroupAgg")
+            + ",RowDataToArrow,ArrowToRowData");
+    Files.writeString(root.resolve("native-input-families"), rescaleFamilies());
     Files.writeString(root.resolve("uid-generation"), "ALWAYS");
     return root;
   }

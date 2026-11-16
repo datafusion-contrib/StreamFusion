@@ -35,13 +35,11 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             || self
                 .kinds
                 .iter()
-                .any(|kind| !matches!(kind, 0 | 3 | 4 | 7 | 9 | 10 | 11 | 22))
-            || self.record_count_column >= 0
-            || self
-                .count_columns
-                .iter()
-                .enumerate()
-                .any(|(i, &column)| column >= 0 && !(self.stock_global_merge && self.kinds[i] == 4))
+                .any(|kind| !matches!(kind, 0 | 3 | 4 | 7 | 9 | 10 | 11 | 22 | 40))
+            || self.record_count_column >= 0 && !self.stock_global_merge
+            || self.count_columns.iter().enumerate().any(|(i, &column)| {
+                column >= 0 && !(self.stock_global_merge && matches!(self.kinds[i], 0 | 4))
+            })
             || self
                 .distinct_view_columns
                 .iter()
@@ -67,7 +65,11 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
     fn configure_typed(&mut self, kinds: &[i64], append_only: bool) -> Result<(), DataFusionError> {
         self.typed_shape()?;
         if self.kinds != kinds
-            || self.stock_global_merge && !append_only
+            || append_only && self.kinds.contains(&40)
+            || self.stock_global_merge
+                && !append_only
+                && (self.record_count_column < 0
+                    || self.kinds.iter().any(|kind| matches!(kind, 7 | 9)))
             || (!append_only && self.kinds.iter().any(|kind| matches!(kind, 9 | 10 | 11)))
             || self
                 .stock_append_only
@@ -119,7 +121,10 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             }
             let count = required_longs(batch.column(4 + 2 * i))?;
             for row in 0..batch.num_rows() {
-                if matches!(kind, 3 | 4 | 7 | 22) && scalar.is_null(row) {
+                if (matches!(kind, 3 | 7 | 22)
+                    || *kind == 4 && !matches!(scalar.data_type(), DataType::Decimal128(_, _)))
+                    && scalar.is_null(row)
+                {
                     return Err(invalid("NULL required accumulator"));
                 }
                 if *kind == 7 && count.value(row) != 0 {
@@ -142,8 +147,17 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         batch: &RecordBatch,
         validating: bool,
     ) -> Result<(), DataFusionError> {
+        self.typed_header_columns(batch)?;
+        self.transfer_header_batches(batch, validating, Self::transfer_typed_header_frame)
+    }
+
+    fn transfer_typed_header_frame(
+        &mut self,
+        batch: &RecordBatch,
+        validating: bool,
+    ) -> Result<(), DataFusionError> {
         let (keys, values) = self.typed_header_columns(batch)?;
-        if validating {
+        if validating && !self.store.serializes_values() {
             return Ok(());
         }
         let records = required_longs(batch.column(1))?;
@@ -152,6 +166,9 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             self.store.prepare_canonical_import(keys)?;
             if (0..keys.len()).any(|row| self.store.contains(keys.value(row))) {
                 return Err(invalid("duplicate retained group"));
+            }
+            if validating {
+                return Ok(());
             }
             self.snapshot_cache = None;
             for row in 0..batch.num_rows() {
@@ -187,18 +204,18 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                     last_output_bytes: 0,
                     distinct_retention: None,
                 };
-                if self.memory.tracking() {
+                if self.memory.tracking() && !self.store.owns_memory() {
                     self.memory.record(
                         (byte_key_bytes(keys.value(row)) + group_key_state_bytes(&state)) as isize,
                     );
                 }
                 self.store.insert(ByteKey::from(keys.value(row)), state);
             }
-            self.memory.account()
+            self.account_transfer_memory()
         })();
         let committed = self.store.end_bundle();
         self.memory.record(self.store.footprint_delta());
-        let accounted = self.memory.account();
+        let accounted = self.account_transfer_memory();
         result.and(committed).and(accounted)
     }
 
@@ -318,7 +335,18 @@ fn headers(
         let mut counts = Vec::with_capacity(groups.len());
         for (_, state) in groups {
             let (scalar, count) = match &state.aggs[i] {
-                GroupAggState::Running { agg, non_null } => (agg.emit(), *non_null),
+                GroupAggState::Running { agg, non_null } => {
+                    let value = if append_only
+                        && *kind == 0
+                        && *non_null == 0
+                        && matches!(agg, RunningAgg::SumDecimal { .. })
+                    {
+                        null_scalar(&types[i])
+                    } else {
+                        agg.emit()
+                    };
+                    (value, *non_null)
+                }
                 GroupAggState::DistinctRunning { agg, live, .. } => (agg.emit(), *live),
                 GroupAggState::Distinct { live, .. } => (ScalarValue::Int64(Some(*live)), 0),
                 _ => return Err(invalid("unsupported retained accumulator")),

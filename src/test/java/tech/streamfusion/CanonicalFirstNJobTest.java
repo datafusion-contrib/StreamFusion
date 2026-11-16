@@ -215,10 +215,14 @@ class CanonicalFirstNJobTest {
     return root;
   }
 
-  private static Map<String, Long> expected(Path root, String mode) throws Exception {
+  Path oracleInput(Path root) {
+    return root.resolve("input.csv");
+  }
+
+  private Map<String, Long> expected(Path root, String mode) throws Exception {
     var counts = new HashMap<String, Integer>();
     var result = new HashMap<String, Long>();
-    for (String line : Files.readAllLines(root.resolve("input.csv"))) {
+    for (String line : Files.readAllLines(oracleInput(root))) {
       String[] fields = line.split(",");
       assertEquals("INSERT", fields[0]);
       int rank = counts.merge(mode.equals("keyless") ? "singleton" : fields[1], 1, Integer::sum);

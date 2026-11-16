@@ -3,6 +3,37 @@
 ## Batch SQL development
 
 The planner factory and suite agent now install a mode-specific batch adapter.
+The observer instruments `tech.streamfusion.planner.batch.BatchPlanScan`, where
+`optimizeRoots` is declared. The root-package compatibility facade is not observed
+separately, so one completed rewrite produces one inventory event. Historical
+inventory records with the earlier planner package remain readable.
+Streaming observation similarly targets `planner.stream.StreamPlanScan` and the
+mode-specific `planner.stream.StockCompiledPlanLowering`; it does not instrument
+the inherited root `PhysicalPlanScan` facade as another scan. Both Flink source
+lines use the shared `planner.stream.NativeStreamPlanner`, while public installation and
+ServiceLoader entries retain their established names. Positive native-consumption
+and existing route expectations remain required after package moves.
+Planner observation matches method signatures explicitly: batch/portable string reasons and
+streaming operator/island reasons with their node argument keep the same exact fallback contracts.
+Batch inventories observe the two-argument semantic rewrite entry once, excluding its convenience
+wrapper. Bytecode-transform regressions cover mixed overloads, both rejection scopes and the
+single completed batch-plan event. Native OVER consumes through the same observed element
+boundary as its execution contract requires; opening or restored rows alone remain insufficient.
+Observer changes do not relax native-work requirements.
+Path-selected compatibility and JVM aggregate workflows also cover planner mode
+subpackages, so later edits to migrated implementations still select their checks.
+
+The released Paimon 2.1.0 partition-scan fixture
+`testScanWithSpecifiedPartitionsWithLevelMaxPt` randomly chooses a batch join or
+a lookup join, but asserts a fixed sequence without `ORDER BY`. Repeated local
+controls reproduce reversed batch-join output with the same exact rows, including
+before the streaming planner/runtime reorganization. This ordering assumption is
+tracked in [#639](https://github.com/datafusion-contrib/StreamFusion/issues/639).
+The narrowly guarded assertion adapter described in the Paimon section compares
+the complete result as a bag, retaining duplicate counts, row kinds and values.
+The randomized SQL and native execution remain unchanged. Ordered queries retain
+their ordering checks, and all native-consumption checks remain required.
+
 [Batch SQL](operators/batch.md) documents its current narrow admission. The published
 planner test JAR can be scanned directly with the runtime module's `batch-upstream`
 Maven profile, avoiding another source checkout or Maven repository for focused
@@ -12,13 +43,18 @@ The profile also includes the released `flink-table-common` test JAR: the Table
 API aggregate fixture uses its `LegacyRowExtension`. This remains test-only.
 Flink 1.18 additionally needs its released Scala Table bridge on the test classpath.
 
-The batch Calc contracts require stock fallback for `testManySelectWithFilter` and
-`testFilterOnInteger` under the measured scalar-boundary rule, and positive native
-work for `testUserDefinedScalarFunction`. Both runtime-route scope files retain
-those host/native expectations. Pass the current suite agent through
-`sf.extraJvmArgs`, with fresh `streamfusion.flink-suite.native-reports` and
+The batch Calc contracts require positive native work for
+`testManySelectWithFilter`, `testFilterOnInteger`, `testUserDefinedScalarFunction`
+and the contracted standalone DATE comparisons. Both runtime-route scope files
+require native execution for these methods. The unchanged `CodeSplitITCase`
+methods `testManyIns` and `testManyOrsInCondition` also require positive native
+Calc work: balanced pure Boolean trees now fit the native compiler's depth limit.
+Their contracts and route scopes no longer expect a nesting fallback. Batch compute admission uses semantic
+compatibility and whole-query columnar composition, without an operator/expression
+performance whitelist. Pass the current suite agent through `sf.extraJvmArgs`,
+with fresh `streamfusion.flink-suite.native-reports` and
 `streamfusion.flink-suite.sql-inventory` directories. A passing upstream assertion
-without those native/fallback witnesses is not acceleration evidence.
+without native/fallback witnesses is not execution evidence.
 
 The unchanged released batch SQL `MiscITCase` adds two positive sort contracts:
 `testNullOrdering` consumes 18 native rows across six queries and
@@ -29,32 +65,28 @@ successful processing; merely constructing a native plan is insufficient.
 [Sort validation evidence](benchmarks/results/batch-sort-sql-20261109.json) retains
 per-job success, batch graph types and positive native work from the focused runs.
 
-The released `SortLimitITCase` runs unchanged on both lines. Four signed-integer
-methods and the STRING-key `testOrderByLimitBehindField` require the standalone
-sorted-limit performance fallback. `testOrderBehindField` requires positive native
-sort work (21 rows) on both host lines. Candidate runs before the cost
-gate passed all assertions with positive bounded-sort work; those witnesses are
-labelled candidate-only, not current admission. Local composed SHA2/sorted-limit
-controls exercise the admitted native path. Private helper overloads of test method
-names are excluded from execution-contract advice, so the outer JUnit invocation
-owns one scope. No helper SQL or assertion is changed.
+The released `SortLimitITCase` runs unchanged on both lines. All six contracted
+methods require positive `NativeBatchSortOperator` work, including standalone
+signed-integer and STRING-key limits. Historical witnesses from the performance
+whitelist retain their original revision/route. Local controls compare standalone
+limits through multiple output batches, offsets, NULLs and empty input. Private
+helper overloads of test method names are excluded from execution-contract advice,
+so the outer JUnit invocation owns one scope. No helper SQL or assertion is changed.
 
-Released `HashAggITCase` and `SortAggITCase` now each contract the inherited
+Released `HashAggITCase` and `SortAggITCase` each contract the inherited
 `testAggWithoutGroups`, `testAggregationWithoutGroupby` and `testCountStar` methods.
-They require the exact standalone aggregate performance fallback; runtime routes
-remain `batch_host_only`. Candidate native observations are retained separately
-from current admission. The agent instruments the declaring aggregate base, then
-resolves each witness to the concrete JUnit fixture identity, so inherited methods
-cannot silently escape the contract or attach to the wrong class. Empty SUM/AVG
-fixtures are parity controls without fabricated positive-input credit.
+They require positive `NativeBatchAggregateOperator` work and native runtime routes.
+The agent instruments the declaring aggregate base, then resolves each witness to
+the concrete JUnit fixture identity, so inherited methods cannot silently escape
+the contract or attach to the wrong class. Empty SUM/AVG fixtures are parity
+controls without fabricated positive-input credit.
 
 The unchanged batch Table API `AggregationITCase.testAggregationTypes` requires
-`batch aggregate: standalone pipeline has no verified speedup` on both lines.
-`testWorkingAggregationDataTypes` includes unsupported floating-point AVG and requires
-`batch aggregate: SUM/SUM0/AVG require signed integers or DECIMAL; MIN/MAX require signed integers, BOOLEAN, DECIMAL, DATE or TIME`.
-Both are `batch_host_only` controls. Separate local SQL/operator controls establish
-positive native work for admitted fixed-width extrema and typed blocking-shuffle
-replay against the stock result.
+positive native aggregate work on both lines. `testWorkingAggregationDataTypes`
+includes unsupported floating-point AVG and still requires
+`batch aggregate: SUM/SUM0/AVG require signed integers or DECIMAL; MIN/MAX require signed integers, BOOLEAN, DECIMAL, DATE or TIME`
+and a `batch_host_only` route. Local SQL/operator controls also cover fixed-width
+extrema and typed blocking-shuffle replay against the stock result.
 
 Released HashAgg `testTwoPhasesAggregation`, `testNullGroupKeyAggregation` and
 `testGroupByOnly` require positive `NativeBatchAggregateOperator` work on both
@@ -268,8 +300,20 @@ Streaming inserts covered by the [Paimon connector whitelist](connectors/paimon.
 can take the native sink, including coordinated writers, coordinator commits, dynamic
 partition routing, and automatic append-buffer spilling. The regular StreamFusion SQL parity
 suite forces Arrow spilling and checkpoint failure/recovery; the unchanged upstream streaming
-tests exercise the surrounding writer lifecycle. Batch inserts,
-unsupported primary-key options, and compaction rewrites use stock Paimon. `CoordinatorCommitITCase`
+tests exercise the surrounding writer lifecycle. Bounded `INSERT INTO` jobs use the shared
+native connector boundaries independently of batch compute admission. Unsupported primary-key
+options retain stock Paimon. Flink 1.18 also runs the released shared
+`AppendOnlyTableITCase` and `BatchFileStoreITCase` classes, covering bounded reads, snapshots,
+time travel, partition pruning, pushdowns and append writes alongside its streaming/recovery
+selection and complete version-specific module. Each shared class is required in the result
+summary, so an empty selection cannot pass. Three Paimon 2.0 batch fixtures remain explicit
+stock-host exclusions in `paimon-flink118-shared-tests.txt`: `testIgnoreDelete` and
+`testIgnoreUpdateBeforeWithRowKindField` use named procedure arguments unsupported by Flink 1.18;
+`testNoOverwriteUpgradeWhenFilesOverlapped` also fails its deletion-vector visibility assertion
+on the unchanged stock runtime, before reaching its named procedure call. Native-disabled
+controls reproduced all three failures. The other 70 batch-source cases and all 26 shared
+append-only cases run unchanged, without skips. Flink 2.2 runs the complete classes.
+`CoordinatorCommitITCase`
 checks removal of the global committer, coordinator metrics, committed rows, and snapshot watermark
 parity for active and idle inputs. Because
 Surefire appends StreamFusion's classpath in no fixed order, the agent also resolves Paimon's
@@ -525,7 +569,7 @@ fail the join before it publishes any exact case associations.
 
 The separate `runtime_route` field recognizes `skipped`, `native`, `mixed`, `full_fallback`,
 `unmodified_plan`, `scan_only`,
-`batch_host_only` and `host_failure`; unresolved evidence remains `unclassified`.
+`batch_host_only`, `host_failure` and `job_failure`; unresolved evidence remains `unclassified`.
 Batch host-only requires a nonempty set of successful job results, a submitted batch graph for
 every job, resolved Flink operator classes or Flink's `CodeGenOperatorFactory` for every graph node,
 and a complete partition with
@@ -534,7 +578,15 @@ inventories without counter partitions remain `unclassified`. A host-failure rou
 at least one exceptional execution result with an explicit `FAILED` job status or a matching
 Flink `JobResult` application status of `FAILED`, resolved Flink operator classes in every submitted batch/streaming graph,
 no native work, and all other jobs either successful or similarly confirmed failed. Cancelled,
-suspended or pending jobs cannot establish this route. The agent observes `JobResult` before
+suspended or pending jobs cannot establish this route.
+`job_failure` uses the same confirmed-failure requirement for a resolved graph
+containing native operators. It grants no successful native-execution credit,
+permits partial or absent work counters, and rejects counters for absent operators
+or streaming-only native operators in batch graphs. An invocation containing such
+a failure keeps this failure route even if another job succeeds; any unresolved
+job still makes the invocation unclassified. Successful native jobs continue to
+require positive work for every native operator.
+The agent observes `JobResult` before
 its conversion to an execution result, preserving the authoritative outcome even after an archived
 job's status lookup becomes unavailable. Results join by job ID, including those observed before
 submission returns. Repeated outcomes are deduplicated; conflicting outcomes, a successful result
@@ -628,8 +680,12 @@ replace reports. Audit failure fails the worker and the final upstream gate; no 
 shared-build downloads are added.
 Each audit must match every listed requirement; missing, duplicate or unclassified required
 variants fail. The execution audit retains the exact matched count and any unrequired early returns.
-The batch `TableSinkITCase#testCollectSinkConfiguration` fixture establishes the host-failure
-route while its expected exception remains a passing upstream test.
+The batch `TableSinkITCase#testCollectSinkConfiguration` fixture establishes
+`job_failure`: its deliberately undersized collect buffer fails a job containing
+native computation, then its corrected configuration succeeds. The original
+exception and successful result assertions remain unchanged. Its native contract
+requires positive Calc work from the successful execution. `CalcITCase#testSelectStar`
+also requires positive native Calc work because its released plan includes a filter.
 
 The keyed `AggregateITCase#testGroupByAgg` fixture covers HEAP/ROCKSDB, immediate/mini-batch
 and local/global modes. Local and global native operators must each have positive associated
@@ -970,12 +1026,28 @@ StreamFusion's native workspace and Java payloads, and the upstream format test 
 build also includes the Delta payload. Kafka and Paimon compile their own test fixtures in their
 consumer jobs, reusing the common build. The isolated Maven repository at `.flink-suite/<line>/m2`
 is cached separately by platform, JDK, Flink version and build inputs; `setup-java`'s ordinary
-Maven cache serves the injection-agent build. Rust dependencies are cached in the isolated source
-build's actual native target directory. Every run still rebuilds current StreamFusion code.
-The Rust cache keeps the existing `upstream-suite` key. Each Flink line runs its own preparation
+Maven cache serves the injection-agent build. Both lines restore the ordinary CI producer's
+`debug-jvm` Rust dependency cache at `native/target`, with matching debug and backtrace
+settings. Cargo builds current libraries from the isolated suite source against that target,
+then stages only the dynamic libraries reported by the successful current build into the
+suite's own native directory. Before packing, CI replaces those private native copies with
+debug-stripped test libraries, verifying their ELF identity and every allocated section against
+the current full-symbol originals. The shared Cargo target and Java payloads retain their
+original files. A per-library size manifest travels with the preparation diagnostics. The shared
+archive retains the smaller test libraries without transferring Cargo intermediates.
+Upstream jobs do not save additional Rust cache copies. Every run still
+validates current StreamFusion sources through Cargo. Each Flink line runs its own preparation
 and consumer jobs in a reusable workflow: 1.18 consumers need only the 1.18 preparation, and 2.2
 consumers need only the 2.2 preparation. Suite selection happens inside preparation, removing a
 separate runner allocation. The parent gate still requires both lines to succeed.
+
+The successful pre-stripping run 43324963308 used 14,956 runner-seconds versus the original
+14,121 seconds; summed download/verification steps rose from 682 to 1,255 seconds across
+14 consumers. Its actual Flink 2.2 archive was 2,996,228,021 bytes and contained 1,814,625,672
+uncompressed native-library bytes, 2,571,642,206 Maven-repository bytes and 128,211,445
+duplicate JAR bytes. This prioritizes the already verified native stripping technique over
+a new JAR-deduplication format. The integrated campaign must establish the archive reduction
+and full-suite behavior; the pre-stripping observations do not claim an upstream speedup.
 
 The Flink wrapper installs its pinned Maven distribution under
 `.flink-suite/<line>/maven-wrapper`, which travels in the shared build with executable bits preserved.
@@ -1003,13 +1075,14 @@ The preparation job also caches the compiled, clean Flink checkout using an exac
 the released Flink version, actual JDK version, runner platform/architecture, and build script/settings/workflow
 hash. Maven still runs the same build commands to validate and install its outputs; this is incremental
 compilation reuse, not a cached test result or a skipped StreamFusion build. A cache miss takes the
-normal cold-build path. Only main-branch preparation jobs save the compiled Flink and isolated Maven
-caches, before any upstream tests run, and shared artifacts continue to exclude test reports.
-Rust caches in ordinary CI, upstream preparation, and Paimon 1.0 compatibility are saved only on each
-repository's `main`. Fork feature branches restore available caches but do not save their own copies
-of these large caches; sibling branches cannot reuse those copies. Syncing and pushing `main` in a
-fork seeds that fork's default-branch caches. Forks do not share the canonical repository's caches. The ordinary Maven dependency cache
-managed by `setup-java` retains its existing policy.
+normal cold-build path. Personal-fork preparation and canonical `main` save the compiled Flink
+and isolated Maven caches before any upstream tests run; canonical feature branches do not.
+Shared artifacts continue to exclude test reports. The ordinary CI producer is the sole writer
+of the shared debug Rust dependency cache; upstream preparation only restores it. Paimon 1.0
+and optimized images retain their release-cache configuration. Fork feature branches can
+restore their fork's default-branch caches, while sibling branches cannot restore one another's
+entries. Forks do not share the canonical repository's caches. The ordinary Maven dependency
+cache managed by `setup-java` retains its existing policy.
 
 The optimized image jobs cache `native/target/release-staging`, the actual Cargo target directory
 used by the release builder. Debug dependencies retain their separate caches. The first run after
@@ -1028,6 +1101,13 @@ loads models without executing a lifecycle or requiring unbuilt reactor artifact
 the line's pinned wrapper, profile and isolated repository. Downloads have bounded setup
 retries and a 60-second HTTP read inactivity timeout for both Resolver and Wagon; the original
 build and unchanged upstream test commands still run once. See [dependency setup](ci.md#maven-dependencies).
+
+Canonical Kafka savepoint inspection decodes committer-held transactions as well as writer state
+on Flink2.2, using the released collector and Kafka committable serializers. A rescale provider
+exposed an inspector that returned no committables without decoding the serialized state. Pure Java codec
+controls retain multiple checkpoints/writers and reject corrupted state; the focused rescale
+probe and full matrix retain the assertion requiring real pending transaction state, transaction
+ownership, exact offsets, native work and exactly-once output.
 The shared repository also contains the selected release's `paimon-vfs-hadoop` transitive
 provider graph, so Paimon connector compilation does not first fetch its Hadoop client graph
 after the dependency-preparation stage. Provider downloads use the same bounded setup retries.
@@ -1410,6 +1490,11 @@ assertions pass. Its labels describe:
   The classifier checks final root operators, not just positive substitution counts. One unsupported
   interior operator falls back the entire query. This is planner evidence, not a throughput
   measurement or a new per-query native-work contract. EXPLAIN-only plans earn no execution credit.
+  Bounded optional connector boundaries are admitted separately from SQL computation. A native
+  source/sink around host computation remains partial SQL coverage, without being an interior
+  compute-island violation. The retained discovery scan underneath a native bounded source is
+  not counted as an active host reader. Batch observations record the final roots after optional
+  connector lowering, once per optimizer call.
 - **not accelerated**: batch, deliberately preserved stock plans, source/constant-only plans,
   validation/API fixtures without an execution plan, upstream skips/failures, or documented non-goals.
 - **should be accelerated**: an in-scope streaming coverage gap, categorized by its recorded
@@ -2046,9 +2131,8 @@ these exact display names. The observer instruments both batch join input method
 result parity or unrelated native Calc work cannot satisfy the join contract.
 
 The unchanged batch date fixtures `CalcITCase#testDateCompareWithDateString` and
-`#testDateEqualsWithDateString` retain explicit standalone-Calc performance
-fallback contracts on both supported lines. Their exact runtime-route cases are
-`batch_host_only`; these passing oracle fixtures receive no native-work credit.
+`#testDateEqualsWithDateString` require positive native Calc work on both supported
+lines. Their exact runtime-route cases require `native` execution.
 Separate admitted-pipeline DATE controls verify native work and absence of
 registered Java predicate evaluators.
 

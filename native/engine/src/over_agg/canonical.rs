@@ -123,6 +123,15 @@ impl OverWindowAggregator {
         batch: &RecordBatch,
         validating: bool,
     ) -> Result<(), DataFusionError> {
+        if batch.num_columns() < self.key_columns.len() {
+            return Err(invalid("unexpected fold schema arity"));
+        }
+        let batch = crate::flink_key::canonical_stock_row_key_batch(
+            batch.clone(),
+            &(0..self.key_columns.len()).collect::<Vec<_>>(),
+            &self.key_timestamp_precisions,
+        )?;
+        let batch = &batch;
         let inner = self.canonical_fold()?;
         let types = inner.state_types();
         let arity = self.key_columns.len();

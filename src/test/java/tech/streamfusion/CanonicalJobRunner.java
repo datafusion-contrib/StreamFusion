@@ -125,6 +125,16 @@ class CanonicalJobRunner {
     command.add(2, "-Djava.io.tmpdir=" + workerTemporary);
     Path log = root.resolve(stage + ".log");
     try (var archive = cache == null ? null : cache.archive(command)) {
+      String profileDirectory = System.getenv("SF_CANONICAL_PROFILE_DIR");
+      if (profileDirectory != null && !profileDirectory.isEmpty()) {
+        Path profiles = Path.of(profileDirectory);
+        Files.createDirectories(profiles);
+        Path recording =
+            Files.createTempFile(
+                profiles, (nativeRun ? "native-" : "stock-") + stage + "-", ".jfr");
+        command.add(
+            1, "-XX:StartFlightRecording=settings=profile,dumponexit=true,filename=" + recording);
+      }
       Process process =
           new ProcessBuilder(command)
               .redirectErrorStream(true)
@@ -186,6 +196,31 @@ class CanonicalJobRunner {
   void verifyJoinSwitch(
       Path baseline, Path switched, boolean nativeFirst, String backend, String mode, String family)
       throws Exception {
+    var type = RowType.of(new BigIntType(), new BigIntType(), new BigIntType());
+    verifyJoinSwitch(
+        baseline,
+        switched,
+        nativeFirst,
+        backend,
+        mode,
+        family,
+        root -> CanonicalFixtureFactory.committedRows(root.resolve("committed"), type));
+  }
+
+  @FunctionalInterface
+  interface CommittedRows {
+    List<String> read(Path root) throws Exception;
+  }
+
+  void verifyJoinSwitch(
+      Path baseline,
+      Path switched,
+      boolean nativeFirst,
+      String backend,
+      String mode,
+      String family,
+      CommittedRows output)
+      throws Exception {
     var fixture = fixtureJar();
     if (Files.exists(baseline.resolve("same-cut-stock-reference")))
       runStockAtSavepointCuts(fixture, baseline, mode);
@@ -234,17 +269,9 @@ class CanonicalJobRunner {
         "suffix",
         3,
         nativeFirst ? backend : "hashmap");
-    var type = RowType.of(new BigIntType(), new BigIntType(), new BigIntType());
-    var expected =
-        CanonicalFixtureFactory.committedRows(baseline.resolve("committed"), type).stream()
-            .sorted()
-            .toArray();
+    var expected = output.read(baseline).stream().sorted().toArray();
     assertTrue(expected.length > 0);
-    assertArrayEquals(
-        expected,
-        CanonicalFixtureFactory.committedRows(switched.resolve("committed"), type).stream()
-            .sorted()
-            .toArray());
+    assertArrayEquals(expected, output.read(switched).stream().sorted().toArray());
     for (String stage : List.of("prefix", "middle")) {
       if (mode.equals("checkpoint") && stage.equals("prefix")) continue;
       var savepoint =
@@ -339,5 +366,8 @@ class CanonicalJobRunner {
       if (implemented.getPackageName().equals("org.example.canonical"))
         collect(implemented, classes);
     for (Class<?> child : type.getDeclaredClasses()) collect(child, classes);
+    // javac's enum-switch helpers are nest members, but not declared classes.
+    if (type.getNestHost() == type)
+      for (Class<?> member : type.getNestMembers()) collect(member, classes);
   }
 }

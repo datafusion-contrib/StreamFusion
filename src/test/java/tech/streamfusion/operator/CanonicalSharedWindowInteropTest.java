@@ -50,6 +50,7 @@ import tech.streamfusion.Native;
 import tech.streamfusion.NativePlannerTestEnvironment;
 import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.compat.FlinkPlanCompat;
+import tech.streamfusion.operator.window.stream.WindowTimeDomain;
 import tech.streamfusion.state.FlinkRocksDBOptions;
 import tech.streamfusion.state.StockSlicingWindowStateContract;
 

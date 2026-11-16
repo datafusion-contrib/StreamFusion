@@ -1149,7 +1149,9 @@ class CanonicalRestoreExecutionTest {
     var scope =
         windowScope("window-aggregate-session-partition-event-time-two-phase-distinct-split");
     if (!missing.equals("reason"))
-      NativeExecution.fallback("window aggregate: retracting state contract is not bound");
+      NativeExecution.fallback(
+          "window aggregate: retracting state requires a synchronous single-phase fixed event-time"
+              + " owner");
     if (!missing.equals("calc")) {
       var calc = new NativeCalcOperator();
       NativeExecution.opened(calc);

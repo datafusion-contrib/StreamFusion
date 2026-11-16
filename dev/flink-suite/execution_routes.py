@@ -225,16 +225,19 @@ def job_route(result, row=None):
     if not host <= host_classes:
         return 'unclassified'
     work = result.get('native_work', {})
+    expected = {name.rsplit('.', 1)[1] for name in native}
+    if confirmed_failure:
+        if (not set(work) <= expected
+                or graph['job_type'] == 'BATCH' and not native <= BATCH_NATIVE_OPERATORS):
+            return 'unclassified'
+        return 'job_failure' if native else 'host_failure'
     if work:
-        expected = {name.rsplit('.', 1)[1] for name in native}
-        if (confirmed_failure or set(work) != expected
+        if (set(work) != expected
                 or graph['job_type'] == 'BATCH' and not native <= BATCH_NATIVE_OPERATORS):
             return 'unclassified'
         return 'mixed' if host else 'native'
     if native or not classes <= host_classes:
         return 'unclassified'
-    if confirmed_failure:
-        return 'host_failure'
     if graph['job_type'] == 'BATCH':
         return 'batch_host_only'
     translations = linked_translations(row, result) if row is not None else []
@@ -261,6 +264,8 @@ def classify(row, partition_valid):
     routes = {job_route(result, row) for result in jobs.values()}
     if 'unclassified' in routes:
         return 'unclassified'
+    if 'job_failure' in routes:
+        return 'job_failure'
     if routes == {'host_only'}:
         return 'unclassified'
     if len(routes) == 1:

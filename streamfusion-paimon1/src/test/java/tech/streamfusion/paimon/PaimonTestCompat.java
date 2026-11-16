@@ -16,8 +16,12 @@ import org.apache.paimon.schema.SchemaManager;
 import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.table.sink.CommitMessage;
 
-final class PaimonTestCompat {
+public final class PaimonTestCompat {
   private PaimonTestCompat() {}
+
+  public static boolean postponeSinks() {
+    return false;
+  }
 
   static boolean appendCompactionSharesSequence() {
     return true;
@@ -59,7 +63,7 @@ final class PaimonTestCompat {
   static void installCompactionFactory(
       Object write, FileStoreTable table, NativePaimonCompactRewriter.Counters counters) {}
 
-  static org.apache.paimon.shade.org.apache.parquet.hadoop.ParquetFileReader parquetReader(
+  public static org.apache.paimon.shade.org.apache.parquet.hadoop.ParquetFileReader parquetReader(
       FileIO io, Path path, long size) throws java.io.IOException {
     return org.apache.paimon.format.parquet.ParquetUtil.getParquetReader(io, path, null);
   }
@@ -71,7 +75,7 @@ final class PaimonTestCompat {
         .build(BinaryRow.EMPTY_ROW, 0, name -> java.util.Optional.empty());
   }
 
-  static SchemaManager schemaManager(FileIO io, Path path) {
+  public static SchemaManager schemaManager(FileIO io, Path path) {
     return new SchemaManager(io, path);
   }
 

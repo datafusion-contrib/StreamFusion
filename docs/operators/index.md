@@ -24,7 +24,12 @@ whole query back to Flink** — there's no partial acceleration of a single quer
 `NativePlanner.explain(...)` to see the recorded reasons for a given plan. Completed planning
 passes also log concrete fallback reasons at INFO by default, including the Flink 2.2 stock
 compiled-plan lowering path. Identical reasons within a pass are combined with their occurrence
-count; programmatic and EXPLAIN diagnostics retain individual entries. Standard logger levels
+count; programmatic and EXPLAIN diagnostics retain individual entries. Streaming
+`planningRejections()` also records whether a rejection belongs to one operator or an entire
+candidate island, plus the original relational role's name and planning-local ID. EXPLAIN labels
+the total as admission rejections, not a count of executed Flink operators: a single unsupported
+interior node can reject its whole island. The legacy `fallbackReasons()` view and planning logs
+retain their plain reason strings. Standard logger levels
 control verbosity; no StreamFusion diagnostic switch is required. The former
 `streamfusion.logFallbackReasons` setting is no longer read.
 

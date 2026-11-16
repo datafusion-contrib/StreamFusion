@@ -13,12 +13,22 @@ import org.apache.paimon.types.RowType;
  */
 final class NativePaimonParquetWriterFactory implements FormatWriterFactory {
 
+  private final boolean batchRowEncoding;
   private final RowType writeType;
   private final Options parquetOptions;
   private final FormatWriterFactory stock;
 
   NativePaimonParquetWriterFactory(
       RowType writeType, Options parquetOptions, FormatWriterFactory stock) {
+    this(writeType, parquetOptions, stock, false);
+  }
+
+  NativePaimonParquetWriterFactory(
+      RowType writeType,
+      Options parquetOptions,
+      FormatWriterFactory stock,
+      boolean batchRowEncoding) {
+    this.batchRowEncoding = batchRowEncoding;
     this.writeType = writeType;
     this.parquetOptions = parquetOptions;
     this.stock = stock;
@@ -38,6 +48,7 @@ final class NativePaimonParquetWriterFactory implements FormatWriterFactory {
             out,
             compression,
             stock)
-        .withParquetFloatingStats();
+        .withParquetFloatingStats()
+        .withRowEncoding(batchRowEncoding);
   }
 }

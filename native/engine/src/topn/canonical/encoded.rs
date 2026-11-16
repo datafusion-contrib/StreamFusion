@@ -172,9 +172,10 @@ fn visit_buffer<'a>(
     finish(&scan)?;
     if let Some(rank_end) = rank_end {
         if layout == Layout::Update {
-            return Err(invalid("unexpected update rank bound"));
+            accept(Record::header(key, -1, rank_end.value, -1))?;
+        } else {
+            accept(Record::header(key, rank_end.value, rank_end.written_at, -1))?;
         }
-        accept(Record::header(key, rank_end.value, rank_end.written_at, -1))?;
     }
     let mut input = StateReader { rest: body };
     let mut previous = None;
@@ -353,18 +354,14 @@ pub(super) fn batch(
     let mut fields = schema
         .fields()
         .iter()
-        .map(|f| {
-            f.as_ref()
-                .clone()
-                .with_nullable(layout != Layout::Update || f.is_nullable())
-        })
+        .map(|f| f.as_ref().clone().with_nullable(true))
         .collect::<Vec<_>>();
     columns.push(Arc::new(BinaryArray::from_iter_values(
         rows.iter().map(|row| row.key),
     )));
     if layout == Layout::Update {
         columns.push(Arc::new(BinaryArray::from_iter_values(
-            rows.iter().map(|row| row.row_key.unwrap()),
+            rows.iter().map(|row| row.row_key.unwrap_or(&[])),
         )));
         columns.push(Arc::new(Int32Array::from_iter_values(
             rows.iter().map(|row| row.number as i32),
@@ -504,8 +501,8 @@ impl<F: FnMut(RecordBatch) -> Result<(), DataFusionError>> Emitter<'_, F> {
     ) -> Result<(), DataFusionError> {
         let mut frame = self.frame();
         for (key, partition) in partitions {
-            if partition.first_rank_end.is_some() {
-                return Err(invalid("unexpected update rank bound"));
+            if let Some(bound) = partition.first_rank_end {
+                frame.push(Record::header(&key.0, -1, bound.value, -1))?;
             }
             let mut previous = None;
             let mut inner = 0i32;

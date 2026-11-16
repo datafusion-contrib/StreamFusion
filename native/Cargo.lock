@@ -5430,6 +5430,7 @@ name = "streamfusion-csv"
 version = "0.1.0-rc4"
 dependencies = [
  "arrow 58.4.1",
+ "base64 0.22.1",
  "criterion",
  "csv-core",
  "jni",
@@ -5460,6 +5461,7 @@ name = "streamfusion-format-support"
 version = "0.1.0-rc4"
 dependencies = [
  "arrow 58.4.1",
+ "chrono",
  "criterion",
  "jni",
  "streamfusion-benchmark-support",
@@ -5498,11 +5500,17 @@ name = "streamfusion-integration-tests"
 version = "0.1.0-rc4"
 dependencies = [
  "arrow 58.4.1",
+ "base64 0.22.1",
+ "criterion",
  "prost-reflect",
  "streamfusion-avro",
+ "streamfusion-benchmark-support",
  "streamfusion-bridge",
- "streamfusion-kafka",
+ "streamfusion-csv",
+ "streamfusion-format-support",
+ "streamfusion-json",
  "streamfusion-protobuf",
+ "streamfusion-raw",
 ]
 
 [[package]]
@@ -5510,10 +5518,12 @@ name = "streamfusion-json"
 version = "0.1.0-rc4"
 dependencies = [
  "arrow 58.4.1",
+ "base64 0.22.1",
  "chrono",
  "criterion",
  "jni",
  "libmimalloc-sys",
+ "memchr",
  "num-bigint 0.4.6",
  "num-traits",
  "serde",
@@ -5531,18 +5541,8 @@ name = "streamfusion-kafka"
 version = "0.1.0-rc4"
 dependencies = [
  "arrow 58.4.1",
- "arrow-avro",
- "base64 0.22.1",
- "chrono",
- "criterion",
  "jni",
  "libmimalloc-sys",
- "memchr",
- "prost 0.14.4",
- "prost-reflect",
- "prost-types",
- "serde_json",
- "streamfusion-benchmark-support",
  "streamfusion-bridge",
  "streamfusion-native-build",
 ]
@@ -5609,6 +5609,7 @@ name = "streamfusion-protobuf"
 version = "0.1.0-rc4"
 dependencies = [
  "arrow 58.4.1",
+ "base64 0.22.1",
  "chrono",
  "criterion",
  "jni",

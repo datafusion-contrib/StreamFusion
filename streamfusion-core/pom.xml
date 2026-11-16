@@ -14,20 +14,7 @@
     <name>StreamFusion Core</name>
 
     <build>
-        <sourceDirectory>${project.basedir}/../src/main/java</sourceDirectory>
         <plugins>
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>build-helper-maven-plugin</artifactId>
-                <executions><execution>
-                    <id>flink-compatibility-sources</id>
-                    <phase>generate-sources</phase>
-                    <goals><goal>add-source</goal></goals>
-                    <configuration><sources>
-                        <source>${project.basedir}/../src/main/java-flink${flink.line}</source>
-                    </sources></configuration>
-                </execution></executions>
-            </plugin>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>flatten-maven-plugin</artifactId>
@@ -36,6 +23,11 @@
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

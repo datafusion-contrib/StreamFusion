@@ -6,18 +6,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.format.JdkFloatSpelling;
 
 /**
- * The FLOAT/DOUBLE spelling probe and its data plane. The suite runs on the parity JDK (17), so
- * the probe must pass, and a wide seeded differential pins the native legacy-algorithm port
- * against {@code Double.toString}/{@code Float.toString} value by value.
+ * The FLOAT/DOUBLE spelling probe and its data plane. The suite runs on the parity JDK (17), so the
+ * probe must pass, and a wide seeded differential pins the native legacy-algorithm port against
+ * {@code Double.toString}/{@code Float.toString} value by value.
  */
 @Tag("streamfusion-kafka")
 class JdkFloatSpellingTest {
 
   @Test
   void probePassesOnTheParityJdk() {
-    assertTrue(JdkFloatSpelling.nativeMatchesJvm());
+    assertTrue(JdkFloatSpelling.nativeMatchesJvm(NativeKafka::spellFloatingPoint));
   }
 
   @Test

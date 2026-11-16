@@ -10,8 +10,8 @@ scheduling and batch recovery. This does not accelerate arbitrary DataStream cod
 
 ## Admission
 
-Every interior operator must be an admitted Calc/filter, `UNION ALL`, sort, global
-aggregate, verified bounded join or blocking
+Every interior operator must be an admitted Calc/filter, `UNION ALL`, sort, aggregate,
+Expand, bounded limit, analytic window/rank, verified bounded join or blocking
 singleton/hash/broadcast exchange. All fields
 must use scalar types supported by the existing Arrow boundary, and every expression
 must pass the [Calc encoder and declared-result-type checks](calc-filter.md).
@@ -19,22 +19,25 @@ ARRAY, MAP, MULTISET, ROW, structured/RAW and unverified collection representati
 retain whole-query fallback. Stock sources, constant relations and row sinks may
 remain at the perimeter.
 
-Expressions requiring original Java UTF-16 string-cache sidecars, binary-backed
-STRING results, and legacy variable-width BINARY projections remain outside batch
-admission. Their streaming producer/consumer rules are not inferred for new batch
-boundaries.
+Row-source expressions requiring original Java UTF-16 string-cache sidecars,
+binary-backed STRING results, and legacy variable-width BINARY projections remain
+outside batch admission. Positively admitted native UTF-8 sources can use the
+generated scalar bridge described below. Other streaming producer/consumer rules
+are not inferred for new batch boundaries.
 
-Each source-to-sink path must also contain an admitted unrestricted sort,
-a verified bounded join, keyed reduction/DISTINCT, decimal SUM, a natively encoded
-`SHA2` call or a verified user-defined scalar function. Sort and SHA-256 complete-job
-comparisons demonstrate a gain with both row/Arrow conversions included. User functions retain the
-repository's accepted performance exception and their existing type/lifecycle rules.
-Arithmetic, casts, predicates and other admitted scalar expressions may compose
-with those operations inside the same columnar island. Simple DATE comparisons
-between direct columns/literals use existing DataFusion Date32 comparisons,
-avoiding generated Java predicate bridges. Computed temporal operands retain
-their existing evaluation rules. Every UNION ALL branch must
-meet this rule, unless a qualifying Calc or sort sits above the union.
+Batch compute admission uses compatibility and the all-or-nothing columnar rule.
+Every supported pipeline is eligible, including standalone scalar/filter jobs,
+global reductions and sorted limits. There is no performance whitelist based on
+operator names, expression names, source representation or work above/below an
+aggregate. Each UNION ALL branch must meet the same compatibility checks.
+Optional connector substitution remains independent when computation retains
+stock Flink; see [Paimon bounded execution](../connectors/paimon.md#bounded-batch-source-and-sink).
+
+Native execution does not guarantee a speedup. Historical complete-job comparisons
+include slower scalar, global-reduction and sorted-limit workloads; these remain
+performance evidence rather than planner admission rules. See the
+[scalar](../benchmarks/batch-scalars.md), [aggregate](../benchmarks/batch-aggregates.md)
+and [sort](../benchmarks/batch-sort-groundwork.md) comparisons.
 
 Sort keys may be TINYINT, SMALLINT, INTEGER, BIGINT, STRING/CHAR, BOOLEAN,
 DECIMAL (precision 1–38) or DATE, with any verified combination
@@ -45,11 +48,7 @@ copied into independently owned buffers keep the whole query on stock Flink.
 The same keys support finite sorted LIMIT and OFFSET/FETCH through Flink's existing local
 and global sort-limit stages. Each local stage retains `offset + fetch` candidates;
 the final stage applies the original offset after its singleton Arrow exchange.
-A sorted limit alone does not qualify a source-to-sink path: the measured cheap
-standalone jobs did not beat stock after their row/Arrow boundaries. They keep
-stock with `batch sort limit: standalone pipeline has no verified speedup`.
-Sorted limits can compose with another qualifying operation, such as SHA2 or an
-accepted user function. Other key types and range sorting remain outside admission.
+Other key types and range sorting remain outside admission.
 A new native key/schema capability probe prevents older libraries from admitting
 key types they cannot execute. String ordering follows the UTF-8 binary ordering
 of Flink's materialized batch-sort rows; supplementary-plane characters and NULLs
@@ -75,17 +74,10 @@ buffer and uses Flink's HALF_UP final division. SUM0 starts at numeric zero,
 ignores NULL input values and propagates NULL partial states on merge. These
 contracts also cover Flink's shared SUM/AVG optimizer rewrite.
 
-A global signed-integer aggregate alone does not qualify an island: representative complete jobs did
-not establish a reliable standalone gain after profiling, removing an unnecessary
-input copy and testing larger batches. Such queries retain stock with
-`batch aggregate: standalone pipeline has no verified speedup`. Aggregates can
-compose with qualifying SHA2/full sorts evaluated below the reduction, or accepted
-scalar user functions. SHA2 or a one-row sort above an aggregate does not amortize
-its input boundary; scalar user functions retain their accepted performance exception
-on either side.
-The measured SHA2 compositions outperform the previous whole-query stock fallback;
-this is a pipeline gain, not an isolated aggregate-kernel claim. See the
-[aggregate comparisons](../benchmarks/batch-aggregates.md).
+Standalone global reductions and compositions on either side of them use the
+same compatibility admission. No qualifying SHA2 call, sort or user function is
+required. The [aggregate comparisons](../benchmarks/batch-aggregates.md) retain
+measured standalone costs separately from pipeline gains.
 
 HashAgg GROUP BY admits one or more signed integer, STRING/CHAR, BOOLEAN,
 DECIMAL (precision 1–38) or DATE keys,
@@ -101,24 +93,47 @@ retraction state is reused.
 Key-only HashAgg stages implement DISTINCT over the same verified keys. Flink's
 single-argument COUNT/SUM/AVG DISTINCT rewrites may compose with these deduplication
 stages when every resulting physical operator is admitted. Aggregate calls that
-still carry a DISTINCT flag, grouping sets/Expand and unsupported key types retain
-whole-query stock fallback. Complete standalone GROUP BY and DISTINCT comparisons
+still carry a DISTINCT flag and unsupported key types retain whole-query stock fallback. Complete standalone GROUP BY and DISTINCT comparisons
 are recorded separately from global-reduction and SHA2-pipeline measurements.
 
-Cheap standalone scalar pipelines retain stock Flink with the reason:
+Grouping sets and rollups use a columnar Expand over Flink's input-reference and typed-literal
+projections. Each projection runs through the existing native Calc evaluator against the same
+borrowed batch. The returned Arrow batches own their buffers before the input is released.
+Unordered bounded LIMIT/OFFSET stages forward selected Arrow ranges and continue consuming
+input after the limit, preserving upstream evaluation and failures.
 
-```text
-batch Calc: standalone scalar pipeline has no verified speedup
-```
+Batch analytic windows use DataFusion's sorted partition/window plans, following Arroyo and
+Comet. Each physical node contains one window group; Flink can split distinct groups into separate nodes. The verified frames begin at UNBOUNDED PRECEDING and end at CURRENT ROW or
+UNBOUNDED FOLLOWING, with ROWS or RANGE semantics. COUNT, decimal SUM/SUM0, signed-integer/BOOLEAN/DECIMAL/DATE
+MIN/MAX, RANK, DENSE_RANK and ROW_NUMBER use the same signed-integer, STRING,
+BOOLEAN, DECIMAL and DATE partition/order keys as the bounded sorter. Decimal accumulation
+reuses Flink-compatible arithmetic. Bounded rank ranges filter the computed rank and preserve
+peer rows, including plans that omit the rank column from their output.
+When an OVER partition key also appears in ORDER BY, its direction and NULL placement
+follow Flink's combined collation. Physical rank retains Flink's ascending, NULLS FIRST
+partition prefix.
 
-The initial unrestricted candidate passed broad upstream Calc parity checks, but
-complete arithmetic and regex jobs lost to stock Flink. Larger Arrow batches did
-not establish a general speedup. There is no performance opt-in for these paths;
-their native implementations remain usable in admitted pipelines. See the
-[batch scalar measurements](../benchmarks/batch-scalars.md).
+Inner joins with a residual requiring generated scalar evaluation retain their native equality
+match and evaluate the residual in an Arrow Calc afterward. Outer/semi/anti residuals keep their
+existing admission rules. Fallible AND/OR expressions use Flink's generated whole-Calc evaluator
+to retain row short-circuiting. Native UTF-8 source pipelines can use that evaluator for builtins
+requiring Java string evaluation; row-source pipelines retain the original string-cache guard.
+These callbacks are reported in the plan's JVM function list.
+
+`IS DISTINCT FROM` and `IS NOT DISTINCT FROM` between scalar input references lower
+to existing NULL tests and equality. Signed integers, BOOLEAN, DECIMAL, DATE and
+VARCHAR are verified; decimal types must match exactly. Floating, nested and CHAR
+operands retain their existing admission rules. The lowering does not duplicate
+evaluation of computed or effectful expressions.
+
+Shared batches count their deployed chained and network outputs after Flink's reuse processors.
+Several logical consumers can share a single serialized network output, and reuse processors
+can merge consumers. Counting those consumers would retain unused Arrow views until GC. The deployed count releases each batch when
+its actual consumers finish, without increasing the native memory budget.
 
 The existing master and per-operator switches apply. Disabling `calc`, `filter`
-on a Calc with a predicate, `union`, `sort`, or `groupAggregate` declines the affected query as a whole.
+on a Calc with a predicate, `union`, `sort`, `groupAggregate`, `expand`, `limit`,
+`overAggregate`, or `rank` declines the affected query as a whole.
 `NativePlanner.explain(tableEnvironment, sql)` includes batch admission diagnostics.
 The deployed planner applies substitution after all batch sink roots are expanded;
 `NativePlanner.installBatch(tableEnvironment.getConfig())` supplies the per-root
@@ -177,7 +192,7 @@ runtime. Broadcast is limited to a nonpreserved build side. Residual predicates 
 JoinFilter. Keyless/nested-loop joins use DataFusion's NestedLoopJoinExec. Predicate
 representations requiring original Java string caches, collections or JVM callbacks
 remain outside this initial join whitelist. Mixed per-key NULL equality on keyed
-joins retains stock. Bounded joins qualify an otherwise verified pipeline; explicit per-operator switches
+joins retains stock. Bounded joins follow whole-query compatibility admission; explicit per-operator switches
 still apply.
 
 A bounded two-input task exposes DataFusion's input demand to Flink's input
@@ -203,21 +218,19 @@ arbitrary batch SQL or larger-data performance guarantee. See the
 
 ## Remaining gaps
 
-- Other grouping key types, auxiliary grouping, grouping sets/Expand,
+- Other grouping key types and auxiliary grouping,
   remaining DISTINCT aggregate flags, floating SUM/AVG, FLOAT/DOUBLE, STRING/BINARY
   and TIMESTAMP extrema, aggregate user functions, zero-function global/intermediate
   merge-only stages and unverified accumulator layouts. Timestamp input remains
   a two-field Arrow struct to preserve the full Flink range and fractions; scalar
   timestamp aggregation is not inferred from DataFusion's timestamp kernels.
-  Verified global states are supported only inside otherwise qualifying pipelines.
-- ORDER BY with other key types, standalone sorted limits without a
-  qualifying operation, OFFSET without finite FETCH, unsorted LIMIT/OFFSET, range sorting,
-  OVER/rank and other batch sort operators.
+- ORDER BY with other key types, sorted OFFSET without finite FETCH, range sorting,
+  analytic functions/frames outside the whitelist above, and other batch sort operators.
 - Join predicates requiring unverified JVM/string/collection representations, mixed
   keyed NULL equality, preserved-side broadcasts and external hash-table spilling.
-- Expand/UNNEST/correlate, nested boundary types and set-operation plans outside UNION ALL.
-- Native bounded connector admission beyond the documented filesystem Parquet
-  whitelist, including batch Iceberg/Paimon substitution, and native batch sinks.
+- Expand projections beyond references/literals, UNNEST/correlate, nested boundary types and set-operation plans outside UNION ALL.
+- Native bounded connector admission beyond the documented filesystem Parquet and
+  Paimon whitelists, including batch Iceberg substitution and other native batch sinks.
 - Native compiled batch plans. The deployed batch planner preserves stock compilation;
   Flink 1.18 keeps its own unsupported compiled-plan behavior.
 - Python, pattern matching, async/model functions and other unrecognized interior nodes.
@@ -231,28 +244,39 @@ sorts and admitted global aggregates.
 
 ## Validation
 
+Removing the performance whitelist passes 18 focused local SQL tests and 21
+unchanged released upstream methods on each supported Flink line, with no skips.
+The upstream methods record 20 positive native-work witnesses and one explicit
+unsupported floating-aggregate fallback per line. The collect-sink configuration
+fixture preserves its expected failure and then records native work on success.
+Local controls cover standalone
+scalar work, a UNION branch without SHA2, global reductions across both phases,
+typed extrema, standalone sorted limits and completed-shuffle recovery. Unsupported
+interiors and disabled operators still retain the whole stock compute query.
+
 The unrestricted scalar candidate passed the unchanged published batch SQL Calc
 class on both host lines: 93 executed/one upstream-disabled on 2.2.1, and
 91 executed/one upstream-disabled on 1.18.1. `testCurrentDate` was excluded under
 the repository's existing host-baseline restriction, rather than counted as native
 coverage. Candidate native work was observed in 65 and 64 upstream invocations,
-respectively; these counts predate the narrower performance admission above.
+respectively; these historical counts predate both the former performance
+whitelist and its removal.
 
-The upstream harness now checks explicit fallback for the cheap
-`testManySelectWithFilter` and `testFilterOnInteger` fixtures, and positive native
-work for `testUserDefinedScalarFunction`. Local SQL controls compare stock/native
+The upstream harness requires positive native work for
+`testManySelectWithFilter`, `testFilterOnInteger` and `testUserDefinedScalarFunction`,
+plus the contracted standalone DATE comparisons. Local SQL controls compare stock/native
 results through empty output, short final batches, composed expressions, UNION ALL
 and unchained Arrow IPC stages. The unchained control also checks the native
 operator's task name so chaining cannot silently bypass serialization.
 
-[Checkpoint runtime witnesses](../benchmarks/results/batch-sql-validation-20261109.json)
+[Historical runtime witnesses](../benchmarks/results/batch-sql-validation-20261109.json)
 retain successful BATCH job statuses, native work and exact fallback reasons for
 the three contracted upstream methods on each host line. Additional controls cover
 parallelism two and preservation of the host's compiled-plan capability.
 
 Unchanged released `MiscITCase.testNullOrdering` and `testGlobalSorting` require
-positive native sort work. `testNullOrderingOnMultiColumn` requires the exact
-unsupported-key fallback. Local controls additionally check ordered results over
+positive native sort work. `testNullOrderingOnMultiColumn` also requires positive
+native sort work. Local controls additionally check ordered results over
 multiple Arrow batches, mixed directions/NULL placement, empty input, unchained
 parallelism-two producers, forced spill metrics, and consumer failure after a
 completed blocking shuffle. The recovery control observes sort/exit attempts 0 and
@@ -262,27 +286,26 @@ The [sort measurements](../benchmarks/batch-sort-groundwork.md) retain separate
 operation and conversion-inclusive complete-job results, with raw trials and
 [validation witnesses](../benchmarks/results/batch-sort-sql-20261109.json).
 
-Sorted-limit candidate runs passed all six unchanged released upstream methods on
-both lines before the performance gate. Current contracts require stock fallback
-for the four cheap signed-key fixtures and key-type fallback for the two STRING
-fixtures. The admitted SHA2 compositions have separate positive native SQL
-controls, including offsets crossing output batches and a packaged-loader test.
-[Sorted-limit witnesses](../benchmarks/results/batch-sorted-limit-validation-20261109.json)
-distinguish those candidate native observations from the final admission results.
+All six contracted unchanged released `SortLimitITCase` methods require positive
+native sort work on both lines. Local standalone sorted-limit controls compare
+stock/native results through offsets crossing output batches, NULLs, duplicate
+keys, empty input and unchained Arrow IPC. Disabled sort still keeps the whole
+compute query on stock. The [historical sorted-limit witnesses](../benchmarks/results/batch-sorted-limit-validation-20261109.json)
+retain observations from before removal of the performance whitelist.
 
 Global aggregate controls compare stock results across both host lines, HashAgg/
 SortAgg physical state contracts, local/final stages, NULLs, overflow and FILTER.
 A final COUNT consumer fails after the blocking partial-state shuffle completes;
 its retry returns the original result while the partial producers remain on
 attempt zero. The isolated packaged loader covers populated and empty aggregate
-results. Unchanged released HashAggITCase/SortAggITCase methods retain exact
-standalone fallback contracts; passing those fixtures does not count as current
-native aggregate coverage. Admitted local SQL and release jobs assert positive
-aggregate input separately.
+results. Contracted unchanged released HashAggITCase/SortAggITCase standalone
+methods now require positive native aggregate work. Local SQL controls exercise
+standalone global aggregation across both phases and HashAgg/SortAgg plans.
 
 [Aggregate validation witnesses](../benchmarks/results/batch-aggregate-validation-20261109.json)
-retain the final exact upstream routes, admitted SQL work and earlier candidate
-observations separately. The consolidated local selection passes 51 Java/upstream
+retain the historical upstream routes, admitted SQL work and earlier candidate
+observations separately; their performance-fallback routes predate the current
+policy. That historical consolidated local selection passed 51 Java/upstream
 cases per host line, plus 46 bounded native controls. Aggregate operator controls
 include scalar COUNT validity, FILTER payloads, schema/input cleanup, cancellation,
 output surviving producer close and expression-workspace denial under 2 MiB.
@@ -294,8 +317,8 @@ and foreign Arrow time units, TIME(0) runtime milliseconds, and typed partial-st
 replay with every output field compared. The packaged planner checks populated
 and empty Boolean/decimal states. Unchanged released Table API
 `AggregationITCase.testAggregationTypes` and `testWorkingAggregationDataTypes`
-retain exact standalone-cost and unsupported-result fallback contracts respectively;
-they are host parity controls, not positive native extrema coverage.
+require positive native aggregate work and the exact unsupported-result fallback,
+respectively. Unsupported floating aggregation remains on stock Flink.
 [Extrema witnesses](../benchmarks/results/batch-extrema-validation-20261109.json)
 record 38 focused Java/upstream cases per host line and 48 bounded Rust controls.
 
@@ -306,10 +329,10 @@ native work at scale factors 0.01 and 1. Its initial complete CSV pipeline is
 performance-neutral; this is ongoing work, not a completed acceleration claim.
 See the [TPC-H audit and measurements](../benchmarks/tpch.md).
 
-Scalar-subquery SINGLE_VALUE guards are native only for a planner-proven
-at-most-one-row input: Calc/singleton exchange over a final global aggregate. The
-adapter uses DataFusion first-value semantics in that narrow case. Other
-SINGLE_VALUE inputs retain stock Flink and its multiple-row error.
+Scalar-subquery SINGLE_VALUE uses a Flink-compatible accumulator that counts NULL rows
+as well as non-NULL rows. Empty input returns NULL; a second row raises Flink's multiple-row
+error even if both values are equal or NULL. Local and final stages retain the Java value/count
+state layout rather than placing DataFusion's private state on the shuffle.
 
 A narrowly admitted inner Cartesian join can be reassociated into two linked
 equijoins following DataFusion’s cross-join elimination. The planner restores the

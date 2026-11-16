@@ -1,7 +1,6 @@
 package tech.streamfusion.suite;
 
 import static net.bytebuddy.matcher.ElementMatchers.isAnnotatedWith;
-import static net.bytebuddy.matcher.ElementMatchers.isDeclaredBy;
 import static net.bytebuddy.matcher.ElementMatchers.isBridge;
 import static net.bytebuddy.matcher.ElementMatchers.isConstructor;
 import static net.bytebuddy.matcher.ElementMatchers.isPrivate;
@@ -16,11 +15,14 @@ import static net.bytebuddy.matcher.ElementMatchers.takesArguments;
 import java.lang.instrument.Instrumentation;
 import java.lang.reflect.InvocationTargetException;
 import java.util.Collections;
+import java.util.List;
 import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.UnaryOperator;
 import net.bytebuddy.agent.builder.AgentBuilder;
 import net.bytebuddy.asm.Advice;
+import net.bytebuddy.dynamic.DynamicType;
 import net.bytebuddy.implementation.bytecode.assign.Assigner;
 
 /**
@@ -129,6 +131,7 @@ public final class StreamFusionSuiteAgent {
                 "org.apache.flink.table.runtime.operators.window.tvf.operator.UnalignedWindowTableFunctionOperator",
                 "org.apache.flink.table.runtime.operators.window.tvf.common.WindowAggOperator",
                 "org.apache.flink.table.runtime.operators.sort.RowTimeSortOperator",
+                "org.apache.flink.streaming.api.operators.KeyedProcessOperator",
                 "org.apache.flink.table.runtime.operators.join.window.WindowJoinOperator"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
@@ -202,23 +205,11 @@ public final class StreamFusionSuiteAgent {
                         .on(named("createPipeline").and(takesArguments(4)))))
         .type(
             namedOneOf(
-                "tech.streamfusion.planner.PhysicalPlanScan",
-                "tech.streamfusion.planner.BatchPlanScan",
-                "tech.streamfusion.planner.StockCompiledPlanLowering"))
+                "tech.streamfusion.planner.stream.StreamPlanScan",
+                "tech.streamfusion.planner.batch.BatchPlanScan",
+                "tech.streamfusion.planner.stream.StockCompiledPlanLowering"))
         .transform(
-            (builder, type, classLoader, module, protectionDomain) ->
-                builder
-                    .visit(Advice.to(RecordFallback.class).on(named("recordFallback")))
-                    .visit(
-                        Advice.to(RecordSqlPlan.class)
-                            .on(
-                                named("optimizeConfigured")
-                                    .or(
-                                        named("optimizeRoots")
-                                            .and(
-                                                isDeclaredBy(
-                                                    named(
-                                                        "tech.streamfusion.planner.BatchPlanScan")))))))
+            (builder, type, classLoader, module, protectionDomain) -> observePlanning(builder))
         .type(
             namedOneOf(
                 "tech.streamfusion.state.StockGroupTypedStateContract",
@@ -351,6 +342,7 @@ public final class StreamFusionSuiteAgent {
                 "tech.streamfusion.operator.NativeColumnarUnnestOperator",
                 "tech.streamfusion.operator.NativeColumnarJvmGroupOperator",
                 "tech.streamfusion.operator.NativeColumnarJvmOverOperator",
+                "tech.streamfusion.operator.NativeOverAggregateOperator",
                 "tech.streamfusion.operator.NativeColumnarTableFunctionOperator",
                 "tech.streamfusion.operator.NativeColumnarGroupAggregateOperator",
                 "tech.streamfusion.operator.NativeColumnarDeduplicateOperator",
@@ -518,7 +510,7 @@ public final class StreamFusionSuiteAgent {
             (builder, type, classLoader, module, protectionDomain) ->
                 builder.visit(
                     Advice.to(ReportNativePaimonBundle.class)
-                        .on(named("writeNative").and(takesArguments(1)))))
+                        .on(named("writeRoot").and(takesArguments(3)))))
         .type(named(NATIVE_PAIMON_KEY_VALUE_FILE_WRITER))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
@@ -928,6 +920,34 @@ public final class StreamFusionSuiteAgent {
     }
   }
 
+  static <T> DynamicType.Builder<T> observePlanning(DynamicType.Builder<T> builder) {
+    return builder
+        .visit(
+            Advice.to(RecordFallback.class)
+                .on(named("recordFallback").and(takesArguments(String.class))))
+        .visit(
+            Advice.to(RecordNodeFallback.class)
+                .on(
+                    namedOneOf("recordFallback", "recordIslandFallback")
+                        .and(takesArguments(2))
+                        .and(takesArgument(1, String.class))))
+        .visit(
+            Advice.to(RecordSqlPlan.class)
+                .on(
+                    named("optimizeConfigured")
+                        .and(takesArguments(List.class, boolean.class))
+                        .or(
+                            named("optimizeRoots")
+                                .and(takesArguments(List.class, UnaryOperator.class)))));
+  }
+
+  public static final class RecordNodeFallback {
+    @Advice.OnMethodExit
+    static void exit(@Advice.Argument(1) String reason) {
+      NativeExecution.fallback(reason);
+    }
+  }
+
   public static final class RecordFallback {
     @Advice.OnMethodExit
     static void exit(@Advice.Argument(0) String reason) {
@@ -1160,7 +1180,8 @@ public final class StreamFusionSuiteAgent {
                     Class.forName("org.apache.flink.configuration.ExecutionOptions")
                         .getField("RUNTIME_MODE")
                         .get(null));
-        if (!"STREAMING".equals(runtimeMode.toString()) && !"BATCH".equals(runtimeMode.toString())) {
+        if (!"STREAMING".equals(runtimeMode.toString())
+            && !"BATCH".equals(runtimeMode.toString())) {
           return;
         }
         if (!StreamFusionSuiteAgent.markConfigForInstallation(tableConfig)) {
@@ -1171,9 +1192,10 @@ public final class StreamFusionSuiteAgent {
           ClassLoader classLoader = context.getClass().getClassLoader();
           Class<?> nativePlanner =
               Class.forName("tech.streamfusion.planner.NativePlanner", true, classLoader);
-          if ("STREAMING".equals(runtimeMode.toString())) nativePlanner
-              .getMethod("install", Class.forName("org.apache.flink.table.api.TableConfig"))
-              .invoke(null, tableConfig);
+          if ("STREAMING".equals(runtimeMode.toString()))
+            nativePlanner
+                .getMethod("install", Class.forName("org.apache.flink.table.api.TableConfig"))
+                .invoke(null, tableConfig);
           Class.forName("tech.streamfusion.Native", true, classLoader);
         } catch (ClassNotFoundException
             | NoSuchMethodException
@@ -1341,7 +1363,7 @@ public final class StreamFusionSuiteAgent {
     }
   }
 
-  /** Proves that an untouched upstream Paimon test wrote a data file from a native Arrow bundle. */
+  /** Proves that an untouched upstream test encoded an Arrow batch after Java file planning. */
   public static final class ReportNativePaimonBundle {
 
     private ReportNativePaimonBundle() {}

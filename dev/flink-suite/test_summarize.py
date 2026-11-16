@@ -387,6 +387,19 @@ class CanonicalRestoreSummaryTest(unittest.TestCase):
         self.assertEqual({"StockWindowJoin": 2}, observations[0]["stock_state_owner_rows"])
         self.assertNotIn("StockWindowJoin", observations[0]["native_input_rows"])
 
+    def test_udf_over_requires_actual_stock_owner_and_exact_fallback(self):
+        reason = "over aggregate: released state layout is not bound"
+        contract = "!@NativeOverAggregateOperator:" + reason + "&&NativeCalcOperator+StockOverAggregate"
+        for fields in ({}, {"counts": "NativeCalcOperator=2", "reasons": reason},
+                       {"stock": "StockOverAggregate=2", "reasons": reason},
+                       {"counts": "NativeCalcOperator=2", "stock": "StockOverAggregate=2"},
+                       {"counts": "NativeCalcOperator=2,NativeOverAggregateOperator=1", "stock": "StockOverAggregate=2", "reasons": reason}):
+            self.assertTrue(self.check(contract, **fields)[0][2])
+        result, observations = self.check(contract, counts="NativeCalcOperator=2", stock="StockOverAggregate=2", reasons=reason)
+        self.assertEqual((0, 1, []), result)
+        self.assertEqual({"StockOverAggregate": 2}, observations[0]["stock_state_owner_rows"])
+        self.assertEqual("mixed", observations[0]["observed_route"])
+
     def test_stock_work_cannot_be_counterfeited_as_native_rows(self):
         result, _ = self.check("NativeColumnarGroupAggregateOperator+StockSessionTableFunction",
             counts="NativeColumnarGroupAggregateOperator=3,StockSessionTableFunction=2")

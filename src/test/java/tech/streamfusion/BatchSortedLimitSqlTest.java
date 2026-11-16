@@ -25,7 +25,7 @@ class BatchSortedLimitSqlTest {
         String sql =
             "SELECT CASE WHEN MOD(id, 17) = 0 THEN CAST(NULL AS INT)"
                 + " ELSE CAST(MOD(id, 71) AS INT) END AS k, id FROM input"
-                + " WHERE SHA2(CAST(id AS STRING), 256) <> '' ORDER BY k DESC NULLS FIRST, id ASC "
+                + " ORDER BY k DESC NULLS FIRST, id ASC "
                 + suffix;
         String plan = nativeEnv.explainSql(sql);
         assertTrue(
@@ -51,14 +51,15 @@ class BatchSortedLimitSqlTest {
   }
 
   @Test
-  void standaloneLimitsKeepStockAfterTheCompleteJobPerformanceGate() throws Exception {
+  void disabledSortKeepsTheWholeQueryOnStock() throws Exception {
     var env = BatchSortSqlTest.environment(true, 3, new Configuration());
+    env.getConfig().set("streamfusion.operator.sort.enabled", "false");
     String plan =
         tech.streamfusion.planner.NativePlanner.explain(
-            env, "SELECT id FROM input ORDER BY id LIMIT 2");
+            env, "SELECT id + 1 FROM input ORDER BY id LIMIT 2");
     assertFalse(plan.contains("NativeSort"), plan);
-    assertTrue(
-        plan.contains("batch sort limit: standalone pipeline has no verified speedup"), plan);
+    assertFalse(plan.contains("NativeCalc"), plan);
+    assertTrue(plan.contains("batch sort: disabled"), plan);
   }
 
   @Test
@@ -69,8 +70,7 @@ class BatchSortedLimitSqlTest {
       var stock = BatchSortSqlTest.environment(false, 3, new Configuration());
       for (String sql :
           List.of(
-              "SELECT id FROM input WHERE id < 0 AND SHA2(CAST(id AS STRING), 256) <> '' ORDER BY"
-                  + " id LIMIT 3",
+              "SELECT id FROM input WHERE id < 0 ORDER BY id LIMIT 3",
               "SELECT id FROM input ORDER BY id LIMIT 0")) {
         assertEquals(
             BatchSortSqlTest.collect(stock.executeSql(sql)),

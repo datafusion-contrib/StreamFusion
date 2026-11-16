@@ -1,4 +1,104 @@
 use super::*;
+
+use crate::flink_key::represented_row_key_fixture as represented_row_batch;
+
+fn represented_snapshots(operator: &mut KeepFirstDeduplicator, descriptor: &[i32]) -> Vec<Vec<u8>> {
+    #[cfg(feature = "rocksdb-state")]
+    if operator.store.is_some() {
+        return operator
+            .canonical_partitions()
+            .unwrap()
+            .into_values()
+            .collect();
+    }
+    operator
+        .snapshot_partitions(128, descriptor)
+        .into_values()
+        .collect()
+}
+
+#[test]
+fn represented_row_keys_share_candidates_and_markers_across_raw_recovery() {
+    let descriptor = vec![i32::MIN, -1, -1, -1];
+    for count in [2, 2048] {
+        for persistent in [false, true] {
+            #[cfg(not(feature = "rocksdb-state"))]
+            if persistent {
+                continue;
+            }
+            let directory = tempfile::tempdir().unwrap();
+            let binary = represented_row_batch(count, true, 1000);
+            let generic = crate::flink_key::row_key_fixture_with_list_label(
+                represented_row_batch(count, false, 900),
+                "$data$",
+            );
+            let mut source = KeepFirstDeduplicator::new(vec![0], 1)
+                .with_key_timestamp_precisions(descriptor.clone())
+                .with_state_ttl(1000);
+            #[cfg(feature = "rocksdb-state")]
+            if persistent {
+                let store = crate::state::RocksKeepFirstDedupStore::create(
+                    crate::state::RocksStoreConfig {
+                        table_dir: directory.path().join("source").to_str().unwrap().into(),
+                        max_parallelism: 128,
+                        options_json: include_str!("../../benches/fixtures/rocks-options.json")
+                            .into(),
+                        ttl_ms: 1000,
+                        shared_resources: 0,
+                    },
+                    binary.schema(),
+                    &[0],
+                )
+                .unwrap();
+                source = source.with_store(store);
+            }
+            source.push(&binary, 100).unwrap();
+            source.push(&generic, 100).unwrap();
+            if !persistent {
+                assert_eq!(source.pending_batch().unwrap().num_rows(), count);
+            }
+            let snapshots = represented_snapshots(&mut source, &descriptor);
+            let mut restored =
+                KeepFirstDeduplicator::restore_partitions(vec![0], 1, &snapshots, 100)
+                    .with_key_timestamp_precisions(descriptor.clone())
+                    .with_state_ttl(1000);
+            for operator in [&mut source, &mut restored] {
+                let output = operator.flush(1000, 100).unwrap();
+                assert_eq!(output.num_rows(), count);
+                assert!(column_i64(&output, "rt")
+                    .values()
+                    .iter()
+                    .all(|time| *time == 900));
+            }
+            let snapshots = represented_snapshots(&mut source, &descriptor);
+            let mut marker_restore =
+                KeepFirstDeduplicator::restore_partitions(vec![0], 1, &snapshots, 100)
+                    .with_key_timestamp_precisions(descriptor.clone())
+                    .with_state_ttl(1000);
+            for operator in [&mut source, &mut marker_restore] {
+                operator
+                    .push(&represented_row_batch(count, false, 2000), 500)
+                    .unwrap();
+                operator
+                    .push(&represented_row_batch(count, true, 2000), 500)
+                    .unwrap();
+                assert_eq!(operator.flush(2000, 500).unwrap().num_rows(), 0);
+                operator
+                    .push(&represented_row_batch(count, false, 3000), 1200)
+                    .unwrap();
+                operator
+                    .push(&represented_row_batch(count, true, 2999), 1200)
+                    .unwrap();
+                let output = operator.flush(3000, 1200).unwrap();
+                assert_eq!(output.num_rows(), count);
+                assert!(column_i64(&output, "rt")
+                    .values()
+                    .iter()
+                    .all(|time| *time == 2999));
+            }
+        }
+    }
+}
 use arrow::datatypes::TimeUnit;
 
 fn batch(keys: Vec<i64>, times: Vec<i64>, values: Vec<i64>) -> RecordBatch {

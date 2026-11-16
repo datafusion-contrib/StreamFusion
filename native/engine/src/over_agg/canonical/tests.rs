@@ -543,3 +543,85 @@ fn memory_capture_preserves_pending_event_rows_before_the_first_fold() {
         assert_eq!(live.flush(0, 200).unwrap(), captured.flush(0, 200).unwrap());
     }
 }
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
+fn represented_row_keys_share_unbounded_folds_and_canonical_owners_across_stores() {
+    let descriptor = [i32::MIN, -1, -1, -1];
+    let input = |binary, count| {
+        let fixture = crate::flink_key::represented_row_key_fixture(count, binary, 0);
+        let values = fixture
+            .column(2)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap();
+        RecordBatch::try_from_iter(vec![
+            ("key", fixture.column(0).clone()),
+            (
+                "value",
+                Arc::new(Float64Array::from_iter_values(
+                    values.values().iter().map(|&v| v as f64),
+                )) as ArrayRef,
+            ),
+            ("time", fixture.column(1).clone()),
+        ])
+        .unwrap()
+    };
+    let operator = |persistent: bool, path: &std::path::Path| {
+        let schema =
+            crate::flink_key::canonical_stock_row_key_batch(input(false, 0), &[0], &descriptor)
+                .unwrap()
+                .schema();
+        let mut owner =
+            memory(false, true, 1000).with_key_timestamp_precisions(descriptor.to_vec());
+        if persistent {
+            let store = crate::state::RocksOverAggStore::create(
+                crate::state::RocksStoreConfig {
+                    table_dir: path.to_str().unwrap().into(),
+                    max_parallelism: 128,
+                    options_json: include_str!("../../../benches/fixtures/rocks-options.json")
+                        .into(),
+                    ttl_ms: 0,
+                    shared_resources: 0,
+                },
+                &owner.inner.store_state_types(),
+                &[],
+                &[],
+                schema.clone(),
+                0..=127,
+            )
+            .unwrap();
+            owner = owner.with_store(store, vec![schema.field(0).data_type().clone()]);
+        }
+        owner
+    };
+    for from_store in [false, true] {
+        for to_store in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let mut source = operator(from_store, &directory.path().join("source"));
+            let mut target = operator(to_store, &directory.path().join("target"));
+            source.push_proctime(input(false, 2051), 100).unwrap();
+            source
+                .visit_canonical_folds(|batch| target.import_canonical_folds(&batch))
+                .unwrap();
+            let expected = source.push_proctime(input(true, 2051), 500).unwrap();
+            let actual = target.push_proctime(input(false, 2051), 500).unwrap();
+            assert_eq!(expected, actual);
+            let counts = actual
+                .column(actual.num_columns() - 4)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            assert!(counts.values().iter().all(|&count| count == 2));
+            let expected = source.push_proctime(input(false, 2051), 1500).unwrap();
+            let actual = target.push_proctime(input(true, 2051), 1500).unwrap();
+            assert_eq!(expected, actual);
+            let counts = actual
+                .column(actual.num_columns() - 4)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            assert!(counts.values().iter().all(|&count| count == 1));
+        }
+    }
+}

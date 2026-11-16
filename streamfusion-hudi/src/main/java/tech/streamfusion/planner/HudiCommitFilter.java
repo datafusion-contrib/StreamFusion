@@ -27,7 +27,7 @@ public final class HudiCommitFilter implements AutoCloseable {
     var types = new SqlTypeFactoryImpl(org.apache.calcite.rel.type.RelDataTypeSystem.DEFAULT);
     var builder = new RexBuilder(types);
     var commit = builder.makeInputRef(types.createSqlType(SqlTypeName.VARCHAR), output.size());
-    var encoded = RexExpression.encode(predicate(builder, commit, range));
+    var encoded = ExpressionPlanning.encode(predicate(builder, commit, range));
     if (encoded == null) throw new IllegalArgumentException("Unsupported Hudi commit range");
     int size = encoded.kinds().length;
     int[] kinds = Arrays.copyOf(encoded.kinds(), size + output.size());

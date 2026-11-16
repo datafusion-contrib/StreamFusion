@@ -24,6 +24,7 @@ admitted TUMBLE/HOP/CUMULATE bindings on 1.18 and 2.2, admitted SESSION TVFs on 
 event/processing-time SESSION/TUMBLE/HOP group windows on both lines.
 Flink 1.18 has no SESSION TVF.
 
+
 Legacy SESSION reuses the released `window-aggs`, `session-window-mapping` and window timer
 serializers. Ordinary SQL and compiled plans bind the original owner and key-group maximum,
 including a singleton maximum for global sessions. The binding checks the actual assigner,
@@ -1969,3 +1970,100 @@ disk spool. Past shared slices retain their released semantics; expired unshared
 remain excluded from native installation. Accumulator and shared-timer transfers share a
 1,024-row and four-MiB payload estimate, allowing an oversized value. No whole-job timer or
 owner set is retained in Java heap. Native checkpoint formats and operator admission are unchanged.
+
+## Additional canonical bindings awaiting qualification
+
+### Floating SUM preservation awaiting qualification
+
+Existing FLOAT and DOUBLE window/session SUM use the released nullable buffer semantics:
+the first non-NULL value is assigned directly, and later values or partial sums are added in
+arrival order at their declared width. A canonical import must preserve an initial negative
+zero rather than add it to positive zero. DOUBLE no longer delegates this fold to DataFusion's
+batch reduction, whose association can differ from Flink's row sequence. State remains one
+nullable floating field, including for local/global partials; native checkpoint and stock
+canonical serializers do not gain fields. New raw-state/rebuild and physical-batch controls
+await execution. This is a parity correction for existing native shapes, with no performance
+claim; both-release qualification remains pending.
+
+Additional single-phase full-job fixtures cover TUMBLE/HOP/CUMULATE and the released SESSION
+variant on each line, both engine orders and stores, ordinary/portable plans, empty returns,
+native checkpoints and source/keyed rescaling. They compare complete committed row bytes to
+an independent nullable floating fold, including negative-zero-only groups, NULL-only owners
+and values near the exact-integer limit. Both transposes and transactional stock writers remain
+in the jobs. These controls are authored and pending full qualification; local/global floating job qualification
+is separate.
+
+### Retracting fixed-window binding awaiting qualification
+
+Flink 2.2's released synchronous single-phase event-time TUMBLE/HOP/CUMULATE owner can now bind
+the existing native retracting COUNT/SUM/SUM0/AVG layout, including supported filters. The
+binding derives signed scalar widths and the hidden live-row count from the actual released
+aggregate information, preserves the input RowKind sidecar and checks the captured accumulator
+serializer before replacement. Retracting decimal AVG already has a numeric zero at creation;
+its NULL raw sum at count zero therefore retains sticky overflow and is not normalized away.
+The native state codec and stock descriptors are reused without adding fields to either format.
+
+Flink 1.18 does not expose this retracting TVF owner and retains its existing admission. Legacy,
+session, processing-time, attached, offset and local/global retracting window contracts remain
+outside this binding. The new 2.2 boundary awaits local qualification; existing two-release
+append-only bindings and their historical counts remain separate evidence.
+
+New 2.2 component fixtures use the actual planner-produced owner for ordinary SQL and portable
+plans, checking captured maximum parallelism and portable identities. They alternate engines,
+compare every raw namespaced accumulator after each cut, recover through a native checkpoint
+and fire the retained timers. INT/BIGINT/FLOAT/DOUBLE/wide-scale DECIMAL, keyed/global,
+explicit/hidden live counters, filters and both stores are represented. The decimal sequence
+reaches NULL raw AVG at count zero before adding new input. These controls remain pending full qualification.
+
+Separate complete-job fixtures cover the same three window assignments with INT/BIGINT/DECIMAL
+arithmetic, clean stock workers, both engine orders/stores/submission forms and the standard
+empty-return/checkpoint/rescale modes. An independent signed window fold checks committed SUM
+and AVG results. The rescale input reaches a zero-live-row state at the middle cut before new
+rows arrive. Source offsets, both transposes and transactional stock sink state remain in scope;
+execution and the wider delivery/failure matrix are still pending.
+
+## Bounded fixed-window firing
+
+Single-phase and global aligned window aggregates (including shared-slice HOP and CUMULATE)
+synchronously emit Arrow output in batches of at most 1,024 rows with a 4 MiB estimated
+working-size target. A single larger row remains a necessary minimum. Reservations can force
+smaller batches. This bounds the output retained by a watermark flush while preserving its
+existing (deadline, window end, grouping key) order. The downstream watermark is forwarded only
+after all due batches have been emitted; no pending cursor crosses a successful mailbox call or
+checkpoint barrier. A receiver failure fails the task, and recovery uses the preceding completed
+checkpoint.
+
+Direct RocksDB fixed windows merge key-group iterators in that same order instead of loading
+all due payloads into a vector. Iterator indices compare pinned keys, avoiding copies of one
+wide key per key group. Regional calendar firing inventories distinct window ends and their
+released-Flink deadlines, including future ends, without retaining their row payloads. That
+metadata, merge cursors and decode/output workspaces use the shared off-heap authority. The
+largest individual group and the window-end/key-group inventory remain working-memory floors.
+The memory backend still sorts the keys of its current resident window before emission.
+
+This changes the execution boundary, not supported SQL, state encodings or recovery routing.
+Window rank also uses bounded receivers with its own rank-state traversal; see [Top-N](top-n.md).
+No mailbox continuations or background state mutation are introduced.
+
+## Bounded session firing
+
+Final session output uses the same synchronous 1,024-row / 4 MiB estimated working-size target,
+with early emission under reservation pressure and one oversized row as a necessary minimum.
+Memory sessions emit in grouping-key/start order while retaining unfired sessions. Direct
+RocksDB sessions merge key-group iterators in that order and retain bounded key/end candidates;
+regional calendar conversion is batched over those headers. Future session payloads are not
+loaded for firing, and closed state is decoded in smaller frames when the task pool requires it.
+The existing per-key session hydration and largest individual session state remain working-set
+floors. Changelog, timer deadlines, persisted state and canonical formats are unchanged.
+A receiver error releases workspaces and fails the task; the preceding completed checkpoint
+remains the recovery boundary.
+
+## Bounded local partial transfer
+
+The local stage drains partials through the same synchronous bounded Arrow receiver at watermarks
+and before checkpoint barriers. Each transfer contains at most 1,024 groups with a 4 MiB estimated
+working-size target, allowing a larger individual accumulator. Rows retain slice-end/group-key
+order and the existing typed partial schema. Every open slice crosses the pre-barrier drain;
+stock-compatible local snapshots remain stateless. Draining does not advance the input watermark,
+so late partial admission remains the global stage's responsibility. A receiver failure fails the
+task and releases temporary buffers; recovery uses the preceding completed checkpoint.

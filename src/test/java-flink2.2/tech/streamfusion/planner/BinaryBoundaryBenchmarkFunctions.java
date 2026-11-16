@@ -51,7 +51,9 @@ public final class BinaryBoundaryBenchmarkFunctions {
     String b = fixed ? "BINARY(" + width + ")" : "BYTES";
     String p = fixed ? "BINARY(4)" : "BYTES";
     table.executeSql("CREATE TABLE inputs(b " + b + ",p " + p + ") WITH ('connector'='datagen')");
-    var query = ((TableImpl) table.sqlQuery("SELECT " + functionName() + "(b,p) FROM inputs")).getQueryOperation();
+    var query =
+        ((TableImpl) table.sqlQuery("SELECT " + functionName() + "(b,p) FROM inputs"))
+            .getQueryOperation();
     call = ((Project) ((PlannerQueryOperation) query).getCalciteTree()).getProjects().get(0);
     var encoded = RexExpression.encodeProjections(List.of(call), List.of("v"));
     boolean previous = Boolean.getBoolean("sf.binary.boundary.previous");

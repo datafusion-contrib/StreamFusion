@@ -6,7 +6,11 @@ import tech.streamfusion.NativeExtensionLoader;
 public final class NativeCsvFormat {
 
   static {
-    NativeExtensionLoader.load(NativeCsvFormat.class, "csv", NativeCsvFormat::nativeBuildVersion, NativeCsvFormat::liveNativeHandles);
+    NativeExtensionLoader.load(
+        NativeCsvFormat.class,
+        "csv",
+        NativeCsvFormat::nativeBuildVersion,
+        NativeCsvFormat::liveNativeHandles);
   }
 
   private NativeCsvFormat() {}
@@ -38,4 +42,24 @@ public final class NativeCsvFormat {
       long outSchemaAddress);
 
   static native void closeDecoder(long handle);
+
+  public static native boolean encoderSupported(int format);
+
+  public static native byte[] spellFloatingPoint(double[] doubles, float[] floats);
+
+  private static native long createEncoder(
+      int format, String options, String[] types, String[] names, int[] fields);
+
+  private static native tech.streamfusion.format.EncodedMessages encodeBatch(
+      long handle, long array, long schema);
+
+  private static native void closeEncoder(long handle);
+
+  public static tech.streamfusion.format.NativeMessageEncoder encoder(
+      int format, String options, String[] types, String[] names, int[] fields) {
+    return tech.streamfusion.format.NativeHandleMessageEncoder.open(
+        () -> createEncoder(format, options, types, names, fields),
+        NativeCsvFormat::encodeBatch,
+        NativeCsvFormat::closeEncoder);
+  }
 }

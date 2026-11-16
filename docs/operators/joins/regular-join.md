@@ -285,8 +285,13 @@ matrix also pass: 144 continued-input handoffs, eight no-input re-exports, four 
 recoveries and eight rescalings at 1→3→2/maxP128. The later shared-role fix has separate job and
 planner qualification.
 
-Constructed retained payloads, unaligned exchange reassembly, async/changelog state backends and
-unqualified ordinary wide keys are outside this binding scope. Existing native processing and
+Canonical binding now admits retained ROW/ARRAY/MAP payloads already supported by native
+execution, while join keys remain scalar. MAP/MULTISET descendants still require insert-only
+physical inputs. Stock import uses the same tagged Arrow map representation as ordinary native
+input. New planner and clean-worker nested-payload cases await qualification on both releases;
+they retain whole rows through a normal user scalar function consuming both join sides.
+Unaligned exchange reassembly, async/changelog state backends and unqualified ordinary wide
+keys remain outside this binding scope. Existing native processing and
 checkpoints retain their paths. Complete variant/type/backend/version/TTL/failure/connector and
 broader rescale qualification remains open under [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
 Benchmarking stays deferred. See [automatic regular binding](../../backends/canonical-state.md#automatic-regular-join-binding).
@@ -331,3 +336,36 @@ tombstones; both state owners bind to their stock identities. The 52 compiled/or
 scenarios cover both stores/orders, mini-batch barriers, no-input returns, native checkpoints,
 empty state and fixed-max rescaling. Other unqualified upstream native families remain part of
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569).
+
+
+Additional nested-payload component controls await both-release qualification. They compare
+complete serialized stock state immediately after a no-input canonical return and again after
+native checkpoint recovery, then continue actual stock and native operators. All six join kinds,
+scalar/unique-map/multiset side layouts, both stores and engine orders are included. Nested ROW
+kinds are retained. MAP-bearing inputs stay insert-only; other nested rows also exercise valid
+removal. These controls do not qualify updating MAP equality or binary ROW key metadata.
+Both stock input and the native Arrow boundary use the released SQL binary-row serialization,
+matching the existing join restore fixture. This keeps heap and RocksDB occurrence-map keys on
+the same serialized input contract through a savepoint; generic-row object identity is not used
+as an oracle for SQL join state. This fixture correction remains awaiting execution.
+
+Canonical regular joins retain optional owned binary ROW payloads in their declared
+transport schema. Inputs from ROW-key normalizers keep those bytes, including padding;
+plain ROW inputs receive empty optional transport children. Logical payload columns
+remain at the same ordinals, and typed reconstruction preserves nested ROW state.
+
+Temporary arrays for missing optional ROW transport fields are reserved against the existing
+operator memory pool before allocation and released after the batch is consumed.
+
+ROW-bearing input mirrors Flink’s serialized keyBy boundary before entering the retained
+row codec. A reusable serializer and Arrow writer establish the same owned ROW bytes for
+live input and canonical imports, so transport presence cannot split one stock multiset row
+into separate native candidates. Temporary Java serialization workspace is reserved before
+conversion, and the scoped Arrow root is released after synchronous C-data handover.
+Primitive input follows the existing columnar export path.
+
+Focused conversion controls deny the Java workspace before allocation, retry the same input,
+and inject an invalid row-kind carrier after conversion has begun. They require unchanged input
+ownership and no leaked Arrow buffers or reservations. Primitive and empty inputs retain their
+borrowed ownership. Same-build recovery controls do not establish migration from historical
+native checkpoints with a different physical ROW transport.

@@ -26,11 +26,14 @@
             <scope>provided</scope>
         </dependency>
         <dependency>
-            <groupId>org.apache.flink</groupId><artifactId>flink-orc</artifactId><scope>provided</scope>
+            <groupId>org.apache.flink</groupId><artifactId>flink-orc</artifactId>
+            <version>${flink.version}</version><scope>provided</scope>
         </dependency>
+
         <dependency>
             <groupId>org.apache.hadoop</groupId>
             <artifactId>hadoop-common</artifactId>
+            <version>3.3.4</version>
             <scope>provided</scope>
         </dependency>
     </dependencies>
@@ -58,6 +61,11 @@
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
             </plugin>
         </plugins>
     </build>

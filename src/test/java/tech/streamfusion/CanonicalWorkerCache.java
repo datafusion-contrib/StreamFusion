@@ -22,11 +22,17 @@ import java.util.jar.JarOutputStream;
 final class CanonicalWorkerCache {
   private static CanonicalWorkerCache configured;
   private final Path directory;
+  private final boolean packNativeResources;
   // Maven finishes compilation before Surefire starts; each fork sees immutable class directories.
   private final Map<Path, Path> classDirectories = new HashMap<>();
 
   CanonicalWorkerCache(Path directory) throws IOException {
+    this(directory, Boolean.getBoolean("sf.canonical.packNativeResources"));
+  }
+
+  CanonicalWorkerCache(Path directory, boolean packNativeResources) throws IOException {
     this.directory = directory;
+    this.packNativeResources = packNativeResources;
     Files.createDirectories(directory);
   }
 
@@ -70,6 +76,7 @@ final class CanonicalWorkerCache {
         for (Path file :
             files
                 .filter(path -> !path.equals(source))
+                .filter(path -> packNativeResources || !isNativePayload(source.relativize(path)))
                 .sorted()
                 .collect(java.util.stream.Collectors.toList())) {
           String name = source.relativize(file).toString().replace('\\', '/');
@@ -84,6 +91,13 @@ final class CanonicalWorkerCache {
     } finally {
       Files.deleteIfExists(temporary);
     }
+  }
+
+  private static boolean isNativePayload(Path path) {
+    // Workers load the current libraries through java.library.path; CDS only needs Java metadata.
+    String name = path.toString().replace('\\', '/');
+    return name.startsWith("tech/streamfusion/native/")
+        && (name.endsWith(".so") || name.endsWith(".dylib") || name.endsWith(".dll"));
   }
 
   private Path retain(Path source, String hash) throws Exception {
@@ -178,6 +192,9 @@ final class CanonicalWorkerCache {
     void trained() throws Exception {
       if (lock == null) return;
       Path temporary = Path.of(archive + ".tmp");
+      // A JDK 11 Serial full GC crashed while relocating CDS metadata; keep worker tuning separate.
+      dump.add("-XX:-UseSerialGC");
+      dump.add("-XX:+UseG1GC");
       dump.add("-Xshare:dump");
       dump.add("-XX:SharedClassListFile=" + classes);
       dump.add("-XX:SharedArchiveFile=" + temporary);

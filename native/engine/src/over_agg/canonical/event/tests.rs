@@ -947,8 +947,12 @@ fn event_cleanup_binding_rejects_other_protocols_without_mutation() {
     }
     let mut bounded = OverWindowAggregator::new(vec![1], vec![0], 2, vec![1], vec![0], 1, 2, false)
         .with_state_retention(1000);
-    assert!(bounded.bind_event_cleanup_timers().is_err());
-    assert!(!bounded.event_cleanup_external_timers);
+    bounded.bind_event_cleanup_timers().unwrap();
+    assert!(bounded.event_cleanup_external_timers);
+    let mut range = OverWindowAggregator::new(vec![1], vec![0], 2, vec![1], vec![0], 2, 2, false)
+        .with_state_retention(1000);
+    assert!(range.bind_event_cleanup_timers().is_err());
+    assert!(!range.event_cleanup_external_timers);
 }
 
 #[cfg(feature = "rocksdb-state")]
@@ -1643,5 +1647,72 @@ fn pre_polling_private_checkpoints_recover_pending_rows_under_both_released_poli
                 }
             }
         }
+    }
+}
+
+#[test]
+fn pending_schema_list_aliases_preserve_nested_values_and_reject_row_changes() {
+    use arrow::array::{Array, ListArray, StructArray};
+    use arrow::datatypes::Int64Type;
+    let values = Arc::new(ListArray::from_iter_primitive::<Int64Type, _, _>([
+        Some(vec![Some(7), None]),
+        None,
+        Some(vec![]),
+    ])) as ArrayRef;
+    let nested = Arc::new(StructArray::new(
+        vec![Arc::new(Field::new(
+            "logical-row-field",
+            values.data_type().clone(),
+            true,
+        ))]
+        .into(),
+        vec![values],
+        None,
+    )) as ArrayRef;
+    let batch = RecordBatch::try_from_iter(vec![
+        ("key", Arc::new(Int64Array::from(vec![1, 2, 3])) as ArrayRef),
+        ("payload", nested),
+        (
+            "time",
+            Arc::new(Int64Array::from(vec![10, 20, 30])) as ArrayRef,
+        ),
+    ])
+    .unwrap();
+    let mut target = memory(false, true, 1000);
+    target.buffered.push(batch.clone());
+    for alias in ["element", "$data$", "items", "entries"] {
+        let list = DataType::List(Arc::new(Field::new(alias, DataType::Int64, true)));
+        let ty =
+            DataType::Struct(vec![Arc::new(Field::new("logical-row-field", list, true))].into());
+        let payload = crate::over_agg::pending::align_column(batch.column(1), &ty).unwrap();
+        let next = RecordBatch::try_from_iter(vec![
+            ("key", batch.column(0).clone()),
+            ("payload", payload),
+            ("time", batch.column(2).clone()),
+        ])
+        .unwrap();
+        target.align_pending_schema(&next).unwrap();
+        assert_eq!(target.buffered[0], next);
+        let before = target.buffered.clone();
+        let nested = next
+            .column(1)
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .unwrap();
+        let mut field = nested.fields()[0].as_ref().clone();
+        field = field.with_name("different-logical-row-field");
+        let changed = Arc::new(StructArray::new(
+            vec![Arc::new(field)].into(),
+            nested.columns().to_vec(),
+            None,
+        ));
+        let invalid = RecordBatch::try_from_iter(vec![
+            ("key", batch.column(0).clone()),
+            ("payload", changed as ArrayRef),
+            ("time", batch.column(2).clone()),
+        ])
+        .unwrap();
+        assert!(target.align_pending_schema(&invalid).is_err());
+        assert_eq!(target.buffered, before);
     }
 }

@@ -67,6 +67,26 @@ The GitHub release archive includes all optional StreamFusion modules, including
 Install only the modules your jobs use and their stock connector dependencies; the archive does
 not bundle the stock connectors.
 
+## Source and module ownership
+
+Each deployable module owns its Java implementation under its own `src/main/java` tree and its
+Flink-line adapters under `src/main/java-flink<line>`. Core does not compile connector or format
+sources, and optional Kafka, JSON, CSV, Avro, ORC and Hadoop dependencies are declared by their
+owners rather than inherited as runtime dependencies by core. Parent test dependencies remain
+available to the parity baselines.
+
+`streamfusion-runtime` is the development and integration-test assembly. It depends on the real
+core, Kafka, file-format and serialization-format artifacts and compiles only integration tests;
+it does not emit another copy of their production classes. Optional Fluss, Delta and Paimon tests
+can consume the shared runtime test harness without making that assembly depend on those connectors.
+The reactor therefore stays acyclic. Install the deployable core and optional modules in Flink;
+the runtime test assembly is not a deployment artifact.
+
+The Paimon 1 compatibility build retains its explicit generated-source adapter: it combines
+shared Paimon-owned sources with its existing older-API replacements. Those alternative Paimon
+artifacts preserve the same Java package identities and are not installed together. This sharing
+is confined to the incompatible connector release lines, not a global production source tree.
+
 ## Kubernetes or Docker
 
 Generated Calc/filter bindings contain runtime-only functions; code generation remains in the
@@ -305,7 +325,7 @@ and the image SQL smoke test requires a real logging provider before running nat
 
 The released Paimon 2.0 connector bundles compatibility copies of Flink `RowData` and
 `ArrayData`, including the newer variant methods even in its Flink 1.18 artifact. These
-classes must not select the API used to compile StreamFusion's shared source. The Paimon
+classes must not select the API used to compile StreamFusion's core APIs. The Paimon
 module declares the target host's `flink-table-common` directly before the connector bundle;
 normal dependency version mediation alone cannot detect duplicate classes inside that bundle.
 Maven's dependency ordering can expose this difference, so reusing a successful local cache
@@ -313,7 +333,7 @@ is not evidence that a fresh image reactor will select the same classes.
 
 `python3 bin/test_paimon_host_classpath.py` resolves the production dependency declarations
 against canonical released artifacts on both supported Flink lines. It checks the loaded
-`RowData`/`ArrayData` origins and variant APIs and compiles the actual shared `PrunedRowData`
+`RowData`/`ArrayData` origins and variant APIs and compiles the actual core `PrunedRowData`
 with each compatibility adapter. Its negative control puts the fat connector first and
 reproduces the Flink 1.18 `getVariant(int)` compilation failure. Image CI runs this lightweight
 Java-only regression and records the Maven version before the native image build.
@@ -328,78 +348,39 @@ Set `-Dstreamfusion.fluss.enabled=false` to retain the stock endpoints; see
 the experimental coverage described in [Fluss](connectors/fluss.md).
 Primary-key writes remain on Flink's normal Fluss connector.
 
-## Production source ownership
+## Java source ownership
 
-Delta, Fluss and Paimon own their implementation and connector-specific planner classes
-under each module's `src/main/java`, beside its SPI registrations and tests. Paimon's
-`src/main/java-flink1.18` and `src/main/java-flink2.2` contain the selected host adapters.
-Delta requires Flink 2.2; it and Fluss do not add the root compatibility source tree.
-Paimon 1.0 retains filtered source generation and its legacy overrides, consuming common
-and Flink 1.18 sources from `streamfusion-paimon` rather than the root tree.
-Iceberg, Doris and Hudi also use their local source directories. The parent manages the
-build-helper plugin version without registering production source roots. Only core/runtime
-explicitly select the remaining root host adapters; Kafka, Avro and Paimon explicitly select
-their module-local adapters. A new module inherits no foreign source roots and needs no
-disabling execution or compiler/publication filters. Source and Javadoc attachments follow
-the same module boundaries as executable JARs; existing host and JDK requirements still apply.
+Each deployable module owns its production Java sources and Flink compatibility sources under
+its own `src/main/` directories. Core has no connector or format implementations; optional
+modules depend on core and declare their own provided host APIs. The runtime module is a test
+assembly consuming these real artifacts and does not compile duplicate production classes.
+Package names, service-provider names and serialized operator identities remain stable.
 
-This ownership boundary preserves Java packages, service names, JNI symbols, native
-resources and deployment coordinates. It adds no native libraries. Kafka and the JSON,
-CSV, RAW, Avro, Avro Confluent Registry, Protobuf, Parquet and ORC formats also own their
-production sources. Kafka and Avro select host adapters from their own
-`src/main/java-flink${flink.line}` directories; the common-only modules do not add the root
-compatibility tree. The registry HTTP client retains its existing Kafka package for
-compatibility but belongs to the Avro Confluent Registry module, not Kafka.
+The compiler also uses `-implicit:none` as a defensive guard against accidental source-path
+expansion. `python3 bin/test_module_source_ownership.py` checks the physical layout and recreates
+an old-timestamp dependency JAR with newer source as a negative control: javac must not implicitly
+copy the dependency into a connector. A runtime probe verifies that the dependency resolves from
+the core JAR. Image CI runs these checks before packaging; artifact validation rejects duplicate
+classes, optional implementations in core and production classes in the runtime assembly.
 
-Runtime tests depend on the actual Kafka and format modules instead of compiling duplicate
-implementations or carrying duplicate provider registrations. Module-local SPI files
-provide the same installed providers in the test classpath. Cross-module SQL and recovery
-tests remain in runtime, including its separate ORC execution with protobuf 2.5; ordinary
-Protobuf tests retain their selected host runtime. These test dependencies require no new
-test-utils artifact or reverse dependency from the optional modules to runtime.
+The parent selects only module-local host source directories. A Maven child-module probe
+also verifies that both supported Flink lines register only the child's own common and
+host source roots, without importing another module's compatibility sources.
 
-Kafka, JSON, CSV, Avro, ORC and Hadoop provided dependencies are declared by the modules
-that use them, with shared versions in parent dependency management. Core retains the
-common file-source interfaces but no longer inherits those specialized production APIs.
-Runtime declares their host implementations as test dependencies; connector suites and
-canonical-savepoint tests declare the extra APIs and modules their shared fixtures need.
-Parent Javadoc no longer injects Parquet or Hadoop to resolve unrelated root sources.
+`bin/check-artifacts.sh` additionally compares each optional deployment JAR with the Java
+sources selected for that module and host. It requires all owned production types, rejects
+foreign types and compares SPI registrations byte for byte. Nested classes retain their
+enclosing source owner. Source attachments must contain exactly the selected Java paths
+and contents, with no missing, stale, foreign, duplicate, other-host, compiled or native
+inputs. Missing attachments fail release validation. Iceberg and Doris participate on
+Flink 2.2 and Hudi on Flink 1.18; Doris and Hudi remain Java-only modules.
 
-Shared Java sources also require explicit module ownership during compilation. Reproducible
-JAR timestamps can precede a fresh checkout's source timestamps; javac then prefers the newer
-source of a referenced core class and can implicitly emit that class into a connector's output.
-The compiler configuration inherited by every module uses `-implicit:none`: javac may resolve
-shared source symbols, but emits classes only for the module's selected source inputs. This
-keeps the core runtime and optional connector/format JARs separate without hiding duplicate
-classes from artifact validation. Clean rebuilds remove classes emitted by an older configuration.
-
-`python3 bin/test_module_source_ownership.py` recreates an old-timestamp dependency JAR and
-newer shared source. Its negative control demonstrates implicit duplication; the configured
-compiler flag preserves only the connector's explicit class. A runtime probe executes the
-connector and verifies its dependency resolves from the core JAR. A new child-module Maven
-probe also requires exactly its own default source root after `generate-sources` on both
-Flink lines, without any parent compatibility-root injection. Image CI runs these regressions
-before packaging, and the artifact checker verifies ownership in the real bundle.
-
-`bin/check-artifacts.sh` also runs `bin/check-connector-ownership.py` on the actual Kafka,
-Delta, Fluss, Paimon, Iceberg, Doris, Hudi and eight format deployment JARs on their supported
-build lines. It requires every module-local production type for the selected host, rejects
-foreign and wrong-version classes, and compares SPI resources with
-their maintained module files. Nested classes retain their enclosing source owner.
-Release source attachments must contain exactly the selected module Java paths and bytes,
-with no missing, stale, foreign, duplicate, other-host, compiled or native inputs. Iceberg
-and Doris are checked on Flink 2.2, Hudi on Flink 1.18; Hudi and Doris remain Java-only
-artifacts with no separate native library.
-`python3 bin/test_connector_ownership.py` exercises missing types, leaked core or other-host
-types, conflicting source sets and changed/missing SPI registrations as negative controls.
-Source-attachment negative controls cover both hosts, stale contents and binary payloads.
-Its manifest probe also preserves module source-directory names when artifact coordinates
-include the Flink 1.18 suffix, and retains rejection of mismatched host identities.
-The existing bundle checks still require exact native resources, consumer POM identities,
-no duplicate deployable classes and the loader's exact embedded core payload.
-Runtime's module-origin regression additionally requires one class definition for each
-optional implementation and verifies its code source is the owning module, including the
-registry client. Paimon 1.0 CI watches the owning Parquet and ORC module paths.
+`python3 bin/test_connector_ownership.py` exercises missing and foreign types, conflicting
+source sets, changed/missing providers, both-host source attachments, stale contents and
+binary payloads as negative controls. It also checks that shell manifest validation keeps
+module directory names independent of host-qualified artifact IDs. Runtime's module-origin
+test requires each optional implementation to resolve from its owner with one class
+definition; its providers come from the owning modules instead of duplicate runtime SPI files.
 
 ## Portable plans, ordinary SQL and canonical handoff
 

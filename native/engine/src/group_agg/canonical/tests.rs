@@ -617,3 +617,140 @@ fn memory_capture_rejects_an_insufficient_budget_before_copying_resident_groups(
     assert_eq!(target.store.iter().count(), 0);
     assert_eq!(live.store.iter().count(), 1);
 }
+
+#[cfg(feature = "rocksdb-state")]
+mod import_memory {
+    use super::*;
+
+    fn persistent(
+        path: &std::path::Path,
+        append: bool,
+        pool: &Arc<dyn MemoryPool>,
+    ) -> GroupAggregator<RocksGroupStore> {
+        let mut configured = owner(vec![3], 0);
+        configured.configure_arithmetic(&[3], append).unwrap();
+        let store = RocksGroupStore::create(
+            RocksStoreConfig {
+                table_dir: path.to_string_lossy().into_owned(),
+                max_parallelism: 128,
+                options_json: include_str!("../../../benches/fixtures/rocks-options.json").into(),
+                ttl_ms: 0,
+                shared_resources: 0,
+            },
+            GroupStateCodec::new(vec![3], vec![DataType::Int64], vec![-1], vec![]),
+        )
+        .unwrap();
+        let mut target = configured.with_backend(store);
+        target
+            .memory
+            .attach_pool("group-aggregate", pool, 0)
+            .unwrap();
+        target.store.attach_memory(target.memory.state_memory());
+        target
+    }
+
+    fn source(append: bool, rows: usize) -> GroupAggregator {
+        let mut source = owner(vec![3], 0);
+        source.configure_arithmetic(&[3], append).unwrap();
+        for id in 0..rows {
+            seed(&mut source, id as i64, 1, 0);
+            let GroupAggState::Running { agg, non_null } =
+                &mut source.store.get_mut(&key(id as i64).0).unwrap().aggs[0]
+            else {
+                unreachable!()
+            };
+            agg.restore_value(&ScalarValue::Int64(Some(id as i64 + 1)));
+            *non_null = id as i64 + 1;
+        }
+        source
+    }
+
+    fn retained(target: &mut GroupAggregator<RocksGroupStore>) -> Vec<(Vec<u8>, i64)> {
+        let mut rows = Vec::new();
+        target
+            .store
+            .for_each_canonical_batch(1, |entries| {
+                for (key, state) in entries {
+                    let ScalarValue::Int64(Some(count)) = state.aggs[0].emit(&DataType::Int64)
+                    else {
+                        panic!("expected a retained COUNT")
+                    };
+                    rows.push((key.0.to_vec(), count));
+                }
+                Ok(())
+            })
+            .unwrap();
+        rows.sort();
+        rows
+    }
+
+    #[test]
+    fn persistent_count_import_retries_fresh_under_one_megabyte_without_retained_charges() {
+        for append in [false, true] {
+            let source = source(append, CHUNK_ROWS + 1);
+            let before = frame(&source);
+            let directory = tempfile::tempdir().unwrap();
+            let denied_pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(64));
+            let mut denied = persistent(&directory.path().join("denied"), append, &denied_pool);
+            assert!(matches!(
+                denied.transfer_arithmetic(&before.slice(0, CHUNK_ROWS), false),
+                Err(DataFusionError::ResourcesExhausted(_))
+            ));
+            drop(denied);
+            assert_eq!(denied_pool.reserved(), 0);
+            assert_eq!(frame(&source), before);
+
+            let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(1_000_000));
+            let mut retry = persistent(&directory.path().join("retry"), append, &pool);
+            for validating in [true, false] {
+                for (offset, count) in [(0, CHUNK_ROWS), (CHUNK_ROWS, 1)] {
+                    retry
+                        .transfer_arithmetic(&before.slice(offset, count), validating)
+                        .unwrap();
+                    assert_eq!(retry.memory.state_bytes(), 0);
+                    assert_eq!(pool.reserved(), 0);
+                }
+            }
+            let mut expected = (0..CHUNK_ROWS + 1)
+                .map(|id| (key(id as i64).0.to_vec(), id as i64 + 1))
+                .collect::<Vec<_>>();
+            expected.sort();
+            assert_eq!(retained(&mut retry), expected);
+            drop(retry);
+            assert_eq!(pool.reserved(), 0);
+        }
+    }
+
+    #[test]
+    fn persistent_late_duplicate_preflight_never_installs_earlier_working_frames() {
+        let source = source(false, CHUNK_ROWS);
+        let incoming = frame(&source);
+        let directory = tempfile::tempdir().unwrap();
+        let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(1_000_000));
+        let mut target = persistent(directory.path(), false, &pool);
+        let last = incoming.slice(CHUNK_ROWS - 1, 1);
+        target.transfer_arithmetic(&last, false).unwrap();
+        let before = retained(&mut target);
+        assert!(target.transfer_arithmetic(&incoming, false).is_err());
+        assert_eq!(retained(&mut target), before);
+        assert_eq!(target.memory.state_bytes(), 0);
+        assert_eq!(pool.reserved(), 0);
+
+        let keys = incoming
+            .column(0)
+            .as_any()
+            .downcast_ref::<BinaryArray>()
+            .unwrap();
+        let malformed = replace(
+            &incoming,
+            0,
+            Arc::new(BinaryArray::from_iter_values((0..CHUNK_ROWS).map(|row| {
+                keys.value(if row == CHUNK_ROWS - 1 { 0 } else { row })
+            }))),
+        );
+        assert!(target.transfer_arithmetic(&malformed, false).is_err());
+        assert_eq!(retained(&mut target), before);
+        drop(target);
+        assert_eq!(pool.reserved(), 0);
+    }
+}

@@ -61,6 +61,17 @@ vector. A rejected allocation or a row conversion error closes those vectors, in
 changelog sidecar, before propagating the original failure. Cleanup errors are attached as
 suppressed exceptions so they cannot hide the allocation or conversion error.
 
+Stateful operators register reservations, native handles, predicate bindings and coalescers as
+they acquire them in a task-thread resource scope. Cleanup releases dependent resources first
+and attempts every release, even if another release fails. Later failures are suppressed on the
+first exception. Canonical readers close before native state, and the host operator closes even
+after failed native teardown. Fresh window output roots are released immediately if downstream emission fails before claiming
+them; roots already claimed downstream keep their transferred ownership. Runtime operator
+serialization identifiers remain frozen when bounded-output hooks are added.
+Calc/filter bindings and partially initialized state use the same
+ownership rule. These scopes are transient; they do not change deployed operator fields or state
+encodings. They do not dispose task-thread native handles from a concurrent cancellation callback.
+
 Parquet sink writer allocations are not yet connected to this authority. Small allocations made
 inside native libraries, allocator metadata, thread stacks, loaded libraries, and other process
 overhead are also outside the reservation pool. The cap is therefore an allocation authority for
@@ -120,6 +131,28 @@ RocksDB at every batch, so an operator's resident working set stays bounded by i
 RocksDB's own memtables and block cache hold the rest, governed by Flink's
 `state.backend.rocksdb.memory.*` options rather than the task off-heap pool (see the
 [RocksDB backend](backends/rocksdb.md) memory section).
+
+Generic native RocksDB keyed stores own their decoded working-set reservations. Hydration
+reserves key and decode space before decoding persisted values, and bundle completion keeps
+live state and encoding workspace charged until writes finish and decoded values are released.
+A failed write retains the working-state charge until the store closes. Operators account
+mini-batch preimages and other staging separately, and `nativeStateBytes` includes the live
+store-owned state. This prevents an immediate bundle from allocating and clearing its decoded
+state between two operator-accounting samples. Raw codecs estimate their owned representation
+from their released encoding; Arrow-row codecs reserve overlapping input, decoded columns and
+owned values. These remain size estimates, not an allocator-level RSS limit.
+
+Canonical scalar group imports keep the existing 1,024-row transfer frames but commit
+persistent arithmetic and typed headers in working sets of at most 64 rows. The complete frame
+is validated, including existing target keys, before any of its working sets is installed.
+Each commit releases decoded state and encoding workspace before the next working set, and
+the operator does not retain a second charge for store-owned imported groups. Wide keys or
+aggregate state can still exceed the pool; this is bounded staging, not a spill mechanism.
+The memory backend continues to charge all retained groups.
+
+Read-through point access during an active bundle requires the key to have been hydrated by
+one of its input batches. A hydrated absent key returns no value; an unknown key fails the
+internal contract instead of silently masquerading as absent persisted state.
 
 RocksDB Top-N reconciles its reservation with the current read-through working set, not the
 cumulative size of persisted partition keys. Append-only (including Top-1), retracting and
@@ -199,3 +232,36 @@ Unprojected chunks are not read or reserved. The existing INT96 decoder's paired
 reader multiplier remains unchanged, although the initial filesystem source does
 not admit timestamp columns. Reader cancellation closes queued, unconsumed Arrow
 batches promptly. No source-specific memory budget is introduced.
+
+### Window final output
+
+Production aligned-window, session and window-rank final output uses synchronous bounded receivers rather than one
+Arrow batch containing an entire watermark backlog. Decode frames and output assembly retain
+separate reservations until their consumers release them. Either can flush early when a larger
+reservation is denied; a single row that cannot fit still fails normally. The maximum batch
+has 1,024 rows and a 4 MiB estimated working-size target; one larger row is admitted when the
+pool can cover it. Released Java Arrow buffers remain charged independently after handoff.
+
+RocksDB firing retains window-end metadata and key-group iterator indices, not all closed or
+future row payloads. The window-end inventory and the largest group still have to fit. Legacy
+single-result JNI helpers retain their compatibility behavior and can collect multiple emitted
+batches; the production fixed-window, session and local-partial operators use the bounded receiver entry points.
+
+Session firing merges key-group scans by grouping key and session start. It keeps bounded
+key/end frames for calendar decisions and decodes only closed session payloads. Key-header,
+decode and final-output workspaces use the same shared cap and can flush independently under
+pressure; future payloads remain in RocksDB. Session input still hydrates a touched key's
+neighboring sessions for merging, so a single large key/session remains a working-memory floor.
+
+Local partial transfer moves resident accumulators into bounded output frames and releases each
+group's state charge as ownership moves. Partial/decode workspace reservations cover the transfer
+until its receiver returns. The current resident window still requires key sorting, and the largest
+individual accumulator remains a necessary floor. Barrier drains emit every open slice without
+advancing the watermark; no pending transfer cursor becomes checkpoint state.
+
+Window rank copies bounded serialized row frames from pinned RocksDB values before decoding;
+a large retained group does not force full-group hydration during firing. Small groups coalesce
+within a frame, while rank numbers continue across frames of one group. Negative and nonnegative
+window starts are scanned separately before merging so the existing signed timestamp order and
+persisted bytes remain compatible. The resident memory backend transfers retained row ownership;
+window inventory and sorted partition metadata remain working-memory floors.

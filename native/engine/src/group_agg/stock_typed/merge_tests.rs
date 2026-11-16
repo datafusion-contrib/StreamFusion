@@ -63,6 +63,104 @@ fn frames(owner: &GroupAggregator) -> Vec<RecordBatch> {
     frames
 }
 
+fn retracting_owner() -> GroupAggregator {
+    let kinds = vec![0, 4, 22];
+    let mut owner =
+        GroupAggregator::new(kinds.clone(), vec![1, 1, 0], vec![1, 3, 5], vec![0], true)
+            .with_count_columns(vec![2, 4, -1])
+            .with_record_count_column(5)
+            .with_mini_batch()
+            .with_memory_budget(16 << 20)
+            .unwrap();
+    owner.configure_stock_global_merge().unwrap();
+    owner.configure_typed(&kinds, false).unwrap();
+    owner
+}
+
+fn retracting_partial(sum: Option<f64>, count: i64, records: i64) -> RecordBatch {
+    RecordBatch::try_new(
+        Arc::new(Schema::new(vec![
+            Field::new("key", DataType::Int64, false),
+            Field::new("sum", DataType::Float64, true),
+            Field::new("sum_count", DataType::Int64, false),
+            Field::new("average_sum", DataType::Float64, false),
+            Field::new("average_count", DataType::Int64, false),
+            Field::new("records", DataType::Int64, false),
+        ])),
+        vec![
+            Arc::new(Int64Array::from(vec![1])),
+            Arc::new(Float64Array::from(vec![sum])),
+            Arc::new(Int64Array::from(vec![count])),
+            Arc::new(Float64Array::from(vec![sum.unwrap_or(0.0)])),
+            Arc::new(Int64Array::from(vec![count])),
+            Arc::new(Int64Array::from(vec![records])),
+        ],
+    )
+    .unwrap()
+}
+
+#[test]
+fn retracting_global_keeps_zero_count_adjustments_and_signed_liveness_after_import() {
+    let mut source = retracting_owner();
+    source
+        .update(&retracting_partial(Some(7.0), 1, 1), 0)
+        .unwrap();
+    source.flush_mini_batch().unwrap();
+    let mut restored = retracting_owner();
+    for frame in frames(&source) {
+        restored.transfer_typed_headers(&frame, false).unwrap();
+    }
+    for partial in [
+        retracting_partial(Some(0.5), 0, 0),
+        retracting_partial(Some(-7.5), -1, -1),
+        retracting_partial(None, 0, 1),
+        retracting_partial(Some(3.0), 1, 1),
+    ] {
+        source.update(&partial, 1).unwrap();
+        restored.update(&partial, 1).unwrap();
+        assert_eq!(
+            source.flush_mini_batch().unwrap(),
+            restored.flush_mini_batch().unwrap()
+        );
+        assert_eq!(frames(&source), frames(&restored));
+    }
+    let exported = frames(&source);
+    assert_eq!(
+        ScalarValue::try_from_array(exported[0].column(1), 0).unwrap(),
+        ScalarValue::Int64(Some(2))
+    );
+    assert_eq!(
+        ScalarValue::try_from_array(exported[0].column(3), 0).unwrap(),
+        ScalarValue::Float64(Some(3.0))
+    );
+    assert_eq!(
+        ScalarValue::try_from_array(exported[0].column(4), 0).unwrap(),
+        ScalarValue::Int64(Some(1))
+    );
+}
+
+#[test]
+fn retracting_sum_raw_residual_is_not_erased_by_a_zero_net_count() {
+    let mut source = retracting_owner();
+    source
+        .update(&retracting_partial(Some(7.0), 1, 1), 0)
+        .unwrap();
+    source.flush_mini_batch().unwrap();
+    source
+        .update(&retracting_partial(Some(0.5), 0, 0), 1)
+        .unwrap();
+    source.flush_mini_batch().unwrap();
+    let exported = frames(&source);
+    assert_eq!(
+        ScalarValue::try_from_array(exported[0].column(3), 0).unwrap(),
+        ScalarValue::Float64(Some(7.5))
+    );
+    assert_eq!(
+        ScalarValue::try_from_array(exported[0].column(4), 0).unwrap(),
+        ScalarValue::Int64(Some(1))
+    );
+}
+
 #[test]
 fn local_running_string_partials_keep_java_order_and_companions() {
     let mut local = LocalGroupAggregator::new(

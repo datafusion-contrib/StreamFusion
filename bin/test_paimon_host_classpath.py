@@ -42,8 +42,8 @@ class PaimonHostClasspathTest(unittest.TestCase):
                                check=True, text=True)
                 cp = (directory / "classpath").read_text().strip()
                 # Compile the same shared row view that failed in the universal image reactor.
-                projector = ROOT / "src/main/java/tech/streamfusion/operator/PrunedRowData.java"
-                compatibility = ROOT / f"src/main/java-flink{line}/tech/streamfusion/compat/ProjectedRowDataCompat.java"
+                projector = ROOT / "streamfusion-core/src/main/java/tech/streamfusion/operator/PrunedRowData.java"
+                compatibility = ROOT / f"streamfusion-core/src/main/java-flink{line}/tech/streamfusion/compat/ProjectedRowDataCompat.java"
                 subprocess.run(["javac", "-encoding", "UTF-8", "-cp", cp, "-d", str(directory),
                                 str(compatibility), str(projector)], check=True)
                 if line == "1.18":

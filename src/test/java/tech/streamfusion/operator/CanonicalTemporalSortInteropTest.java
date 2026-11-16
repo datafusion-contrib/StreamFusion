@@ -41,7 +41,17 @@ class CanonicalTemporalSortInteropTest {
   private static Stream<Arguments> allModes() {
     var out = new ArrayList<Arguments>();
     for (String type :
-        List.of("long", "string", "decimal", "array", "row", "double", "binary", "map", "reserved"))
+        List.of(
+            "long",
+            "string",
+            "decimal",
+            "array",
+            "row",
+            "double",
+            "binary",
+            "map",
+            "nested",
+            "reserved"))
       for (boolean stock : new boolean[] {false, true})
         for (boolean nativeStore : new boolean[] {false, true})
           for (int maximum : new int[] {1, 128})
@@ -404,6 +414,9 @@ class CanonicalTemporalSortInteropTest {
         case "map":
           payload = new MapType(new VarCharType(100), new BigIntType());
           break;
+        case "nested":
+          payload = tech.streamfusion.CanonicalNestedJoinFixture.PAYLOAD;
+          break;
         case "reserved":
         case "long":
           payload = new BigIntType();
@@ -507,6 +520,9 @@ class CanonicalTemporalSortInteropTest {
               payload = new GenericMapData(values);
               break;
             }
+          case "nested":
+            payload = tech.streamfusion.CanonicalNestedJoinFixture.payload(id);
+            break;
           case "reserved":
           case "long":
             payload = (long) id;

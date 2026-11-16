@@ -3,6 +3,7 @@ use crate::*;
 
 mod canonical;
 mod collection_agg;
+mod stock_bundle;
 mod stock_merge;
 mod stock_typed;
 use collection_agg::{is_collection, CollectionState};
@@ -403,7 +404,7 @@ pub(crate) fn emit_running(agg: &RunningAgg, count: i64, result_type: &DataType)
         _ if count == 0 => null_scalar(result_type),
         // AVG divides the running sum by the live non-null count, truncating toward zero for an
         // integer result (Flink's div) and casting back to the input type — see AvgAggFunction.
-        RunningAgg::AvgInt { sum, result } => avg_int_scalar(sum.wrapping_div(count), result),
+        RunningAgg::AvgInt { sum, result } => integer_average(*sum, count, result),
         RunningAgg::AvgFloat { sum, result } => avg_float_scalar(*sum / count as f64, result),
         // Decimal AVG divides with Flink's exact decimal division (38-significant-digit
         // quotient, HALF_UP) and reports DECIMAL(38, max(6, s)) — findAvgAggType's type. An
@@ -2048,6 +2049,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         budget_bytes: i64,
     ) -> Result<Self, DataFusionError> {
         self.memory.attach("group-aggregate", budget_bytes, 0)?;
+        self.store.attach_memory(self.memory.state_memory());
         Ok(self)
     }
 
@@ -2201,7 +2203,10 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         }
         self.snapshot_cache = None;
         self.last_input_ms = now_ms;
-        if self.mini_batch && self.ttl_ms > 0 && !self.draining_deferred {
+        if self.mini_batch
+            && (self.ttl_ms > 0 || self.stock_retracting_bundle())
+            && !self.draining_deferred
+        {
             return self.update_regular(batch, now_ms);
         }
         if let Some(output) = self.try_update_single_append(batch, now_ms)? {
@@ -2229,7 +2234,10 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             .collect();
         self.snapshot_cache = None;
         self.last_input_ms = now_ms;
-        if self.mini_batch && self.ttl_ms > 0 && !self.draining_deferred {
+        if self.mini_batch
+            && (self.ttl_ms > 0 || self.stock_retracting_bundle())
+            && !self.draining_deferred
+        {
             // The host reads retained global state only when its temporary bundle is merged.
             let mut added = batch.get_array_memory_size() + std::mem::size_of::<RecordBatch>();
             let mut encoder = BinaryRowBatchEncoder::new(
@@ -3470,6 +3478,10 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
                 self.memory.set(bytes + self.staging_bytes());
             }
         }
+        if self.store.owns_memory() {
+            self.store.account_memory()?;
+            self.memory.set(self.staging_bytes());
+        }
         self.memory.account()?;
 
         // Mini-batch output is produced only by `flush_mini_batch`. Avoid constructing empty key
@@ -3537,11 +3549,18 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         now_ms: i64,
     ) -> Result<RecordBatch, DataFusionError> {
         let batches = std::mem::take(&mut self.deferred_batches);
-        self.deferred_keys = HashMap::default();
         self.draining_deferred = true;
+        let stock_bundle = self.stock_retracting_bundle();
         let result = (|| {
+            if stock_bundle {
+                self.drain_stock_retracting_bundle(&batches, now_ms)?;
+            }
             for (batch, bytes) in batches {
-                let result = self.update(&batch, now_ms);
+                let result = if stock_bundle {
+                    Ok(RecordBatch::new_empty(Arc::new(Schema::empty())))
+                } else {
+                    self.update(&batch, now_ms)
+                };
                 drop(batch);
                 self.deferred_bytes -= bytes;
                 if self.memory.tracking() {
@@ -3553,6 +3572,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             Ok::<(), DataFusionError>(())
         })();
         self.draining_deferred = false;
+        self.deferred_keys = HashMap::default();
         if self.memory.tracking() {
             self.memory.forget(self.deferred_bytes);
         }
@@ -3566,6 +3586,8 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             return self.finish_single_append();
         }
         if !self.mini_batch || self.staged_order.is_empty() {
+            self.store.end_bundle()?;
+            self.memory.account_shrink();
             return Ok(RecordBatch::new_empty(Arc::new(Schema::empty())));
         }
         let mut order = std::mem::take(&mut self.staged_order);
@@ -3913,6 +3935,9 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         }
         self.store.end_bundle()?;
         self.memory.record(self.store.footprint_delta());
+        if self.store.owns_memory() {
+            self.memory.set(self.staging_bytes());
+        }
         self.memory.account()?;
         Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), columns)
             .expect("failed to build mini-batch group-by changelog"))
@@ -4662,7 +4687,7 @@ pub(crate) struct LocalGroupAggregator {
     cached_state_bytes: usize,
     key_converter: Option<RowConverter>,
     key_batches: Vec<RecordBatch>,
-    scalar_key_mode: Option<bool>,
+    key_mode: Option<LocalKeyMode>,
     key_types: Vec<DataType>,
     pub(crate) memory: OperatorMemory,
 }
@@ -4672,6 +4697,13 @@ struct LocalGroupEntry {
     states: Vec<GroupAggState>,
     key_batch: usize,
     key_row: usize,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LocalKeyMode {
+    Scalar,
+    ArrowRow,
+    FlinkBinary,
 }
 
 enum LocalGroupKey {
@@ -4839,7 +4871,7 @@ impl LocalGroupAggregator {
             cached_state_bytes: 0,
             key_converter: None,
             key_batches: Vec::new(),
-            scalar_key_mode: None,
+            key_mode: None,
             key_types: Vec::new(),
             memory: OperatorMemory::unaccounted(),
         }
@@ -5103,9 +5135,26 @@ impl LocalGroupAggregator {
         // Arrow-row amortizes key encoding across a real bundle. For a stream of single-row physical
         // batches, preserve the cheaper direct ScalarValue path. Pin the representation until flush
         // so later physical batches in the same logical bundle probe the same state map.
-        let scalar_key_mode = *self.scalar_key_mode.get_or_insert(n == 1);
-        let arrow_keys =
-            (!scalar_key_mode).then(|| encode_keys(&mut self.key_converter, &key_arrays, n));
+        // Optional ROW transport children must not split one stock binary key into several groups.
+        let key_mode = *self.key_mode.get_or_insert_with(|| {
+            if self.key_timestamp_precisions.first() == Some(&i32::MIN)
+                && key_arrays
+                    .iter()
+                    .any(|array| crate::flink_key::binary_row_payload(array.data_type()))
+            {
+                LocalKeyMode::FlinkBinary
+            } else if n == 1 {
+                LocalKeyMode::Scalar
+            } else {
+                LocalKeyMode::ArrowRow
+            }
+        });
+        let scalar_key_mode = key_mode == LocalKeyMode::Scalar;
+        let arrow_keys = (key_mode == LocalKeyMode::ArrowRow)
+            .then(|| encode_keys(&mut self.key_converter, &key_arrays, n));
+        let mut binary_keys = (key_mode == LocalKeyMode::FlinkBinary).then(|| {
+            BinaryRowBatchEncoder::new(batch, &self.key_columns, &self.key_timestamp_precisions)
+        });
         let mut group_hashes = (!self.ordered_view_groups.is_empty()
             || self.kinds.iter().any(|&kind| list_agg::is_merge(kind)))
         .then(|| {
@@ -5227,8 +5276,13 @@ impl LocalGroupAggregator {
                     .get_mut(&key)
                     .expect("scalar key present")
             } else {
-                let row_key = arrow_keys.as_ref().expect("arrow keys configured").row(row);
-                let key = row_key.as_ref();
+                let row_key;
+                let key = if let Some(encoder) = &mut binary_keys {
+                    encoder.encode(row)
+                } else {
+                    row_key = arrow_keys.as_ref().expect("arrow keys configured").row(row);
+                    row_key.as_ref()
+                };
                 if !self.states.contains_key(key) {
                     let init = self.new_states(append_only);
                     let owned = ByteKey::from(key);
@@ -5501,7 +5555,7 @@ impl LocalGroupAggregator {
         let states = std::mem::take(&mut self.states);
         let scalar_states = std::mem::take(&mut self.scalar_states);
         let key_batches = std::mem::take(&mut self.key_batches);
-        let scalar_key_mode = self.scalar_key_mode.take().unwrap_or(false);
+        let scalar_key_mode = self.key_mode.take() == Some(LocalKeyMode::Scalar);
         let mut fields = key_fields(&self.key_types);
         let mut columns: Vec<ArrayRef> = if scalar_key_mode {
             let keys: Vec<GroupKey> = order

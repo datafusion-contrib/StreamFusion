@@ -45,6 +45,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import tech.streamfusion.Native;
 import tech.streamfusion.arrow.ArrowConversion;
+import tech.streamfusion.operator.window.stream.WindowTimeDomain;
 import tech.streamfusion.state.FlinkRocksDBOptions;
 import tech.streamfusion.state.StockSlicingWindowStateContract;
 

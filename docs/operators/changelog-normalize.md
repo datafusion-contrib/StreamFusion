@@ -82,9 +82,10 @@ flags as changed data. TTL refresh behavior retains its existing rules.
 
 Ordinary SQL resolves ROW-key normalization from the portable stock template, rebuilding both
 its input representation and state binding. Qualified native consumers remain native; consumers
-without a qualified canonical adapter retain their stock implementation and state identities. The existing mini-batch retracting aggregate
-and ROW-bearing regular-join exclusions are preserved. They do not disable the normalizer's
-portable binding or permit unmatched real state to be discarded.
+without a qualified canonical adapter retain their stock implementation and state identities.
+The pending one-phase retracting aggregate and nested regular-join bindings now also apply to
+these consumers. Their joint handoff controls await qualification; neither binding permits
+unmatched real state to be discarded.
 
 The shipping tests retain both input representations, actual nested row kinds, both stock/native
 stores, exact immediate/continued state, native checkpoint recovery, custom source/coordinator and
@@ -94,3 +95,14 @@ When ROW-key input crosses a network edge during rescaling, Arrow Java may renam
 UTF-16 list child. The normalizer preserves the original values and reconciles decoded retained
 rows with the output schema; both canonical restore and subsequent update-before emission accept
 that representation-only rename. Logical schema changes remain rejected.
+
+The binary-row schema builder is shared with canonical deduplication so retained input and
+key imports use one representation rule. Normalizer behavior and its qualified key scope are
+unchanged; new deduplication qualification is tracked on its operator page.
+
+
+Additional ROW-key consumer controls await both-release execution. The grouped fixture requires
+native work in both normalization and the existing retracting aggregate, including mini-batch
+checkpoint drains. The join fixture uses an actual ROW-bearing unique-key normalizer input, requires
+both native owners, and covers continuation, no-input returns, native recovery and rescaling.
+Historical passing cohorts above retain their original consumer scope.

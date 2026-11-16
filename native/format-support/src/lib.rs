@@ -19,3 +19,8 @@ mod facade;
 
 #[cfg(test)]
 mod tests;
+
+mod encode;
+pub use encode::*;
+mod encoder;
+pub use encoder::*;

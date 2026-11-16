@@ -16,13 +16,31 @@ Those historical records support a decision; this ledger describes the current
 technique and its measured limits.
 
 CI JVM startup settings, repeated-check elimination and profiling are documented in the
-[CI guide](../ci.md#profiling-ci-latency-and-cost). CI build reuse and runner scheduling are documented in the
+[CI guide](../ci.md#profiling-ci-latency-and-cost); its [canonical job matrix](../ci.md#complete-canonical-job-matrix)
+also documents sharing exact-commit Java compilation across savepoint shards while
+transferring native libraries separately, avoiding duplicate payloads in each Java archive.
+It also covers demand-started test clusters, pure Java preparation alongside native work,
+and smaller test-only native payloads while retaining full-symbol diagnostics.
+Upstream shared builds use the same ELF-verified stripping for their private native copies,
+retaining the original Cargo outputs and all Java payloads.
+Maven resolves ordinary release artifacts from Central before consulting the test-only vendor
+repository, avoiding unrelated vendor timeouts while retaining its required fallback.
+Canonical worker metadata snapshots also omit the bundled native copies already loaded through
+the worker's explicit library path, avoiding repeated packing and hashing in every parent fork.
+Archive generation uses G1 independently of the workers' measured collector settings to avoid
+the observed JDK 11 Serial full-GC crash during metadata relocation.
+Compatible Paimon format checks share compilation while keeping separate test processes
+and report sets, reducing required lake jobs from thirteen to nine with the same configurations.
+Canonical jobs group the same complete invocation inventory into forty jobs using a measured-class
+scheduling model; full hosted qualification remains necessary to establish actual savings.
+CI build reuse and runner scheduling are documented in the
 [upstream-suite guide](../upstream-flink-suite.md#shared-builds-and-runtime-shards): compiled Flink
 caching, shared build artifacts, grouped connector suites and combined coverage verification.
 Those measurements describe CI job counts and elapsed time, not SQL execution throughput.
 
+- [Native LZ4 shuffle decoding](native-lz4-shuffle.md): use the bounds-checked JNI decoder on StreamFusion task input gates while preserving Flink's block format and stock tasks.
 - [Retain final sink candidate replacements](sink-materializer-state.md): emit every change while storing only final same-key replacements per batch.
-- [Copy canonical state directly](canonical-state-installation.md): remove a full temporary payload copy while retaining managed chunk ownership.
+- [Copy canonical state directly](canonical-state-installation.md): remove a full temporary payload copy while retaining managed chunk ownership, and clear consumed stock maps once per serialized owner.
 - [Reuse Iceberg boundary setup](iceberg-boundary-overhead.md): cached task schemas and serializers, shared Arrow leases and routing maps.
 
 - [Bounded Arrow batch sizing](bounded-batch-sizing.md): 8,192-row bounded batches amortize JNI, ownership copies and IPC while retaining the shared memory cap.

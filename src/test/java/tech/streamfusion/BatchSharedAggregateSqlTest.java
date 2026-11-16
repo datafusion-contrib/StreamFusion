@@ -32,7 +32,19 @@ class BatchSharedAggregateSqlTest {
         String job = result.getJobClient().orElseThrow().getJobID().toString();
         assertEquals(expected, BatchSortSqlTest.collect(result));
         assertTrue(metrics.recordsIn(job, "NativeAggregate") > 0);
-        if (disabled.isEmpty()) assertTrue(metrics.recordsIn(job, "NativeShare") > 0);
+        if (disabled.isEmpty()) {
+          assertTrue(metrics.recordsIn(job, "NativeShare") > 0);
+          var shares =
+              metrics.nativeOperators().stream()
+                  .filter(
+                      row ->
+                          job.equals(row.get("jobId")) && row.containsKey("shareDeployedConsumers"))
+                  .collect(java.util.stream.Collectors.toList());
+          assertFalse(shares.isEmpty(), "deployed share ownership was not measured");
+          assertTrue(
+              shares.stream()
+                  .allMatch(row -> ((Number) row.get("shareDeployedConsumers")).intValue() > 0));
+        }
       }
     } finally {
       tech.streamfusion.compat.FlinkTestContexts.clearForRemoteSubmission();

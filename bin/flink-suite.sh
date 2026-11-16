@@ -410,10 +410,9 @@ else
   # development DSO explicitly so the suite cannot accidentally package or load an excluded,
   # stale native/target left by an earlier run.
   echo "Building the StreamFusion development native library for the source suite..."
-  (
-    cd "${STREAMFUSION_BUILD_ROOT}/native" &&
-      cargo build --workspace
-  ) || exit $?
+  python3 "${REPO_ROOT}/dev/flink-suite/native_build.py" \
+    --source "${STREAMFUSION_BUILD_ROOT}" \
+    --target "${FLINK_SUITE_NATIVE_TARGET_DIR:-${STREAMFUSION_BUILD_ROOT}/native/target}" || exit $?
 
   echo "Building and installing StreamFusion and its supported connector/format modules against the source-suite planner..."
   streamfusion_profiles="paimon"
@@ -800,7 +799,13 @@ if [[ "${SUITE_MODE}" == "state" && -z "${FLINK_SUITE_TEST:-}" ]]; then
 fi
 if [[ "${SUITE_MODE}" == "paimon" && "${FLINK_LINE}" == "1.18" && -z "${FLINK_SUITE_TEST:-}" ]]; then
   while IFS= read -r shared_test; do
-    SUMMARY_ARGS+=(--require-test-method "${shared_test}")
+    if [[ "${shared_test}" == "!"* ]]; then
+      continue
+    elif [[ "${shared_test}" == *"#"* ]]; then
+      SUMMARY_ARGS+=(--require-test-method "${shared_test}")
+    else
+      SUMMARY_ARGS+=(--require-test-class "${shared_test}")
+    fi
   done < "${PAIMON_118_SHARED_TESTS}"
 fi
 python3 "${REPO_ROOT}/dev/flink-suite/summarize.py" "${SUMMARY_ARGS[@]}"

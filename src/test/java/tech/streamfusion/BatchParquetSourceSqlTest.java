@@ -55,6 +55,11 @@ class BatchParquetSourceSqlTest {
             mode);
         assertEquals(
             mode.equals("native") ? ROWS : 0, metrics.counterValue(job, "sourceArrowRows"), mode);
+        if (mode.equals("native")) {
+          var counts = metrics.countersBySubtask(job, "sourceArrowRows");
+          assertEquals(java.util.Set.of("0", "1"), counts.keySet(), counts.toString());
+          assertTrue(counts.values().stream().allMatch(count -> count > 0), counts.toString());
+        }
       }
     } finally {
       tech.streamfusion.compat.FlinkTestContexts.clearForRemoteSubmission();
@@ -72,7 +77,7 @@ class BatchParquetSourceSqlTest {
   }
 
   @Test
-  void producerFailureRereadsWholeFileWithoutMissingOrDuplicatingRows() throws Exception {
+  void producerFailureRereadsRowGroupSplitsWithoutMissingOrDuplicatingRows() throws Exception {
     var file = fixture();
     var config = configuration();
     config.setString("restart-strategy.type", "fixed-delay");
@@ -145,11 +150,14 @@ class BatchParquetSourceSqlTest {
             new String[] {"id", "k", "v"});
     var file = directory.resolve("input;part.parquet");
     var path = new org.apache.flink.core.fs.Path(file.toUri());
+    var writerConfig = new org.apache.hadoop.conf.Configuration(false);
+    writerConfig.setInt("parquet.block.size", 1024);
+    writerConfig.setInt("parquet.page.size.row.check.min", 10);
+    writerConfig.setInt("parquet.page.size.row.check.max", 10);
+    writerConfig.setBoolean("parquet.enable.dictionary", false);
     try (var output = path.getFileSystem().create(path, WriteMode.NO_OVERWRITE)) {
       var writer =
-          ParquetRowDataBuilder.createWriterFactory(
-                  type, new org.apache.hadoop.conf.Configuration(false), false)
-              .create(output);
+          ParquetRowDataBuilder.createWriterFactory(type, writerConfig, false).create(output);
       for (int i = 0; i < ROWS; i++)
         writer.addElement(
             GenericRowData.of(

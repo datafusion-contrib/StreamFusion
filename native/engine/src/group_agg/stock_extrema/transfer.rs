@@ -1,6 +1,37 @@
 use super::*;
 
 const CHUNK_ROWS: usize = 1024;
+const EXPORT_ROWS: usize = 256;
+const CHUNK_BYTES: usize = 4 * 1024 * 1024;
+type Work = Option<datafusion::execution::memory_pool::MemoryReservation>;
+
+fn emit_frame(
+    kind: FrameKind,
+    key_bytes: usize,
+    rows: usize,
+    fields: usize,
+    work: &mut Work,
+    build: impl FnOnce() -> Result<RecordBatch, DataFusionError>,
+    receiver: &mut impl FnMut(FrameKind, RecordBatch, &mut Work) -> Result<(), DataFusionError>,
+) -> Result<(), DataFusionError> {
+    // Builders can hold old and grown buffers together; charge that capacity before allocating.
+    let bytes = key_bytes
+        .saturating_add(rows.saturating_mul(fields.saturating_mul(16).saturating_add(64)))
+        .saturating_mul(2)
+        .saturating_add(fields.saturating_mul(512));
+    let result = (|| {
+        if let Some(work) = work {
+            work.try_resize(bytes)?;
+        }
+        let batch = build()?;
+        if let Some(work) = work {
+            work.try_resize(batch.get_array_memory_size())?;
+        }
+        receiver(kind, batch, work)
+    })();
+    let released = work.as_mut().map_or(Ok(()), |work| work.try_resize(0));
+    result.and(released)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::group_agg) enum FrameKind {
@@ -38,6 +69,40 @@ fn headers(
 }
 
 type Entry<'a> = (&'a ByteKey, i64, i64, i64, i64);
+
+fn emit_headers(
+    kinds: &[i64],
+    ttl: bool,
+    groups: &[(&ByteKey, &GroupKeyState)],
+    work: &mut Work,
+    receiver: &mut impl FnMut(FrameKind, RecordBatch, &mut Work) -> Result<(), DataFusionError>,
+) -> Result<(), DataFusionError> {
+    emit_frame(
+        FrameKind::Headers,
+        groups.iter().map(|row| row.0 .0.len()).sum(),
+        groups.len(),
+        4 + 2 * kinds.len(),
+        work,
+        || headers(kinds, ttl, groups),
+        receiver,
+    )
+}
+
+fn emit_entries(
+    entries: &[Entry<'_>],
+    work: &mut Work,
+    receiver: &mut impl FnMut(FrameKind, RecordBatch, &mut Work) -> Result<(), DataFusionError>,
+) -> Result<(), DataFusionError> {
+    emit_frame(
+        FrameKind::Entries,
+        entries.iter().map(|row| row.0 .0.len()).sum(),
+        entries.len(),
+        5,
+        work,
+        || entry_batch(entries),
+        receiver,
+    )
+}
 
 fn entry_batch(entries: &[Entry<'_>]) -> Result<RecordBatch, DataFusionError> {
     Ok(RecordBatch::try_from_iter(vec![
@@ -78,10 +143,12 @@ fn visit_chunk(
     kinds: &[i64],
     ttl: bool,
     groups: &[(&ByteKey, &GroupKeyState)],
-    receiver: &mut impl FnMut(FrameKind, RecordBatch) -> Result<(), DataFusionError>,
+    work: &mut Work,
+    receiver: &mut impl FnMut(FrameKind, RecordBatch, &mut Work) -> Result<(), DataFusionError>,
 ) -> Result<(), DataFusionError> {
-    receiver(FrameKind::Headers, headers(kinds, ttl, groups)?)?;
-    let mut entries = Vec::with_capacity(CHUNK_ROWS);
+    emit_headers(kinds, ttl, groups, work, receiver)?;
+    let mut entries = Vec::with_capacity(EXPORT_ROWS);
+    let mut bytes = 0usize;
     for &(key, state) in groups {
         for (index, aggregate) in state.aggs.iter().enumerate() {
             let GroupAggState::Mapped(mapped) = aggregate else {
@@ -96,16 +163,24 @@ fn visit_chunk(
                 } else {
                     0
                 };
-                entries.push((key, index as i64, number, *count, written));
-                if entries.len() == CHUNK_ROWS {
-                    receiver(FrameKind::Entries, entry_batch(&entries)?)?;
+                let next = key.0.len().saturating_add(144);
+                if !entries.is_empty() && bytes.saturating_add(next) > CHUNK_BYTES {
+                    emit_entries(&entries, work, receiver)?;
                     entries.clear();
+                    bytes = 0;
+                }
+                entries.push((key, index as i64, number, *count, written));
+                bytes = bytes.saturating_add(next);
+                if entries.len() == EXPORT_ROWS {
+                    emit_entries(&entries, work, receiver)?;
+                    entries.clear();
+                    bytes = 0;
                 }
             }
         }
     }
     if !entries.is_empty() {
-        receiver(FrameKind::Entries, entry_batch(&entries)?)?;
+        emit_entries(&entries, work, receiver)?;
     }
     Ok(())
 }
@@ -115,19 +190,39 @@ impl GroupAggregator {
         &self,
         mut receiver: impl FnMut(FrameKind, RecordBatch) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
-        if !self.stock_extrema || self.staged_keys() != 0 || !self.deferred_batches.is_empty() {
-            return Err(invalid("unbound or pending group state"));
-        }
-        let mut groups = Vec::with_capacity(CHUNK_ROWS);
+        let mut work = self.memory.temporary_reservation();
+        self.visit_stock_extrema_with_memory(&mut work, |kind, batch, _| receiver(kind, batch))
+    }
+
+    pub(in crate::group_agg) fn visit_stock_extrema_with_memory(
+        &self,
+        work: &mut Work,
+        mut receiver: impl FnMut(FrameKind, RecordBatch, &mut Work) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
+        self.check_stock_transfer()?;
+        let mut groups = Vec::with_capacity(EXPORT_ROWS);
+        let mut bytes = 0usize;
         for entry in self.store.iter() {
-            groups.push(entry);
-            if groups.len() == CHUNK_ROWS {
-                visit_chunk(&self.kinds, self.ttl_ms > 0, &groups, &mut receiver)?;
+            let (key, _) = entry;
+            let next = key
+                .0
+                .len()
+                .saturating_add((4 + 2 * self.kinds.len()) * 16 + 64);
+            if !groups.is_empty() && bytes.saturating_add(next) > CHUNK_BYTES {
+                visit_chunk(&self.kinds, self.ttl_ms > 0, &groups, work, &mut receiver)?;
                 groups.clear();
+                bytes = 0;
+            }
+            groups.push(entry);
+            bytes = bytes.saturating_add(next);
+            if groups.len() == EXPORT_ROWS {
+                visit_chunk(&self.kinds, self.ttl_ms > 0, &groups, work, &mut receiver)?;
+                groups.clear();
+                bytes = 0;
             }
         }
         if !groups.is_empty() {
-            visit_chunk(&self.kinds, self.ttl_ms > 0, &groups, &mut receiver)?;
+            visit_chunk(&self.kinds, self.ttl_ms > 0, &groups, work, &mut receiver)?;
         }
         Ok(())
     }
@@ -193,7 +288,7 @@ impl<S: ExtremaStore> GroupAggregator<S> {
 
     fn stock_transfer_key(&self, bytes: &[u8]) -> bool {
         let fixed = (self.key_columns.len() + 8).div_ceil(64) * 8 + self.key_columns.len() * 8;
-        bytes.len() == fixed && bytes[0] == 0
+        bytes.len() >= fixed && bytes.len() % 8 == 0 && bytes[0] == 0
     }
 
     pub(in crate::group_agg) fn transfer_stock_extrema(
@@ -425,16 +520,25 @@ impl GroupAggregator<RocksGroupStore> {
         &mut self,
         mut receiver: impl FnMut(FrameKind, RecordBatch) -> Result<(), DataFusionError>,
     ) -> Result<(), DataFusionError> {
+        let mut work = self.memory.temporary_reservation();
+        self.visit_stock_extrema_with_memory(&mut work, |kind, batch, _| receiver(kind, batch))
+    }
+
+    pub(in crate::group_agg) fn visit_stock_extrema_with_memory(
+        &mut self,
+        work: &mut Work,
+        mut receiver: impl FnMut(FrameKind, RecordBatch, &mut Work) -> Result<(), DataFusionError>,
+    ) -> Result<(), DataFusionError> {
         self.check_stock_transfer()?;
         let kinds = &self.kinds;
         let ttl = self.ttl_ms > 0;
         self.store
-            .for_each_canonical_header_batch(CHUNK_ROWS, |rows| {
+            .for_each_canonical_header_batch(EXPORT_ROWS, |rows| {
                 let rows = rows
                     .iter()
                     .map(|(key, state)| (key, state))
                     .collect::<Vec<_>>();
-                receiver(FrameKind::Headers, headers(kinds, ttl, &rows)?)
+                emit_headers(kinds, ttl, &rows, work, &mut receiver)
             })?;
         for (aggregate, kind) in self.kinds.iter().enumerate() {
             if !matches!(kind, 38 | 39) {
@@ -445,7 +549,7 @@ impl GroupAggregator<RocksGroupStore> {
                 .canonical_multiset_position((aggregate + 1) as u8)
                 .ok_or_else(|| invalid("missing mapped companion table"))?;
             self.store
-                .for_each_canonical_timed_multiset_batch(position, CHUNK_ROWS, |rows| {
+                .for_each_canonical_timed_multiset_batch(position, EXPORT_ROWS, |rows| {
                     let entries = rows
                         .iter()
                         .map(|(key, value, count, written)| {
@@ -458,7 +562,7 @@ impl GroupAggregator<RocksGroupStore> {
                             ))
                         })
                         .collect::<Result<Vec<_>, DataFusionError>>()?;
-                    receiver(FrameKind::Entries, entry_batch(&entries)?)
+                    emit_entries(&entries, work, &mut receiver)
                 })?;
         }
         Ok(())

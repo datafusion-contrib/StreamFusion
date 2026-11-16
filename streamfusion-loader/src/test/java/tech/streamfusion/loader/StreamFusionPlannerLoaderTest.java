@@ -107,9 +107,25 @@ class StreamFusionPlannerLoaderTest {
   void corePayloadDoesNotContainOptionalConnectorIntegrations() {
     ClassLoader plannerClassLoader = PlannerModule.getInstance().getSubmoduleClassLoader();
 
-    assertMissing(plannerClassLoader, "tech.streamfusion.planner.KafkaTables");
+    for (String connector :
+        List.of(
+            "Kafka", "Fluss", "Parquet", "Orc", "Delta", "Paimon", "Iceberg", "Doris", "Hudi")) {
+      assertMissing(
+          plannerClassLoader, "tech.streamfusion.planner." + connector + "PlannerExtension");
+      assertMissing(
+          plannerClassLoader, "tech.streamfusion.planner.stream." + connector + "PlannerExtension");
+    }
+    for (String implementation :
+        List.of(
+            "KafkaTables",
+            "FlussTables",
+            "ParquetSinkTranslator",
+            "OrcSinkTranslator",
+            "PaimonSourceMatcher",
+            "PaimonSinkMatcher")) {
+      assertMissing(plannerClassLoader, "tech.streamfusion.planner.stream." + implementation);
+    }
     assertMissing(plannerClassLoader, "tech.streamfusion.kafka.NativeKafka");
-    assertMissing(plannerClassLoader, "tech.streamfusion.planner.ParquetSourceMatcher");
     assertMissing(plannerClassLoader, "tech.streamfusion.parquet.NativeParquet");
   }
 

@@ -24,6 +24,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import tech.streamfusion.extensions.HealthyPlannerExtension;
+import tech.streamfusion.planner.common.StreamRule;
 
 class NativePlannerExtensionsTest {
   private static final String SERVICE =
@@ -52,14 +54,14 @@ class NativePlannerExtensionsTest {
   @ParameterizedTest
   @MethodSource("optionalProviderFailures")
   void registrationIsAtomicAndHealthyProvidersRetainTheirOrder(Supplier<Error> failure) {
-    Substitution<?> first = rule();
-    Substitution<?> second = rule();
-    Substitution<?> third = rule();
+    StreamRule<?> first = rule();
+    StreamRule<?> second = rule();
+    StreamRule<?> third = rule();
     NativePlannerExtension before = entries -> entries.addAll(List.of(first, second));
     NativePlannerExtension broken =
         new NativePlannerExtension() {
           @Override
-          public void addSubstitutions(List<Substitution<?>> entries) {
+          public void addSubstitutions(List<StreamRule<?>> entries) {
             assertTrue(entries.isEmpty(), "a provider must not see another provider's rules");
             entries.add(rule());
             throw failure.get();
@@ -84,8 +86,8 @@ class NativePlannerExtensionsTest {
 
   @Test
   void publishedRulesDoNotRetainTheProvidersMutableList() {
-    List<List<Substitution<?>>> captured = new ArrayList<>();
-    Substitution<?> entry = rule();
+    List<List<StreamRule<?>>> captured = new ArrayList<>();
+    StreamRule<?> entry = rule();
     NativePlannerExtension provider =
         entries -> {
           entries.add(entry);
@@ -177,7 +179,7 @@ class NativePlannerExtensionsTest {
             + "\n"
             + MissingDependencyExtension.class.getName()
             + "\n"
-            + HealthyExtension.class.getName()
+            + HealthyPlannerExtension.class.getName()
             + "\n");
     ClassLoader previous = Thread.currentThread().getContextClassLoader();
     try (OptionalDependencyClassLoader isolated =
@@ -193,8 +195,8 @@ class NativePlannerExtensionsTest {
     }
   }
 
-  private static Substitution<?> rule() {
-    return Substitution.of(RelNode.class, (node, context) -> node);
+  private static StreamRule<?> rule() {
+    return StreamRule.of(RelNode.class, (node, context) -> node);
   }
 
   private static void throwFailure(Throwable failure) {
@@ -208,16 +210,15 @@ class NativePlannerExtensionsTest {
     }
 
     @Override
-    public void addSubstitutions(List<Substitution<?>> entries) {
+    public void addSubstitutions(List<StreamRule<?>> entries) {
       fail("the provider constructor should have failed");
     }
   }
 
   public static final class MissingDependencyExtension implements NativePlannerExtension {
     @Override
-    public void addSubstitutions(List<Substitution<?>> entries) {
-      entries.add(
-          Substitution.of(RelNode.class, (node, context) -> fail("partial rule leaked")));
+    public void addSubstitutions(List<StreamRule<?>> entries) {
+      entries.add(StreamRule.of(RelNode.class, (node, context) -> fail("partial rule leaked")));
       new OptionalDependency().touch();
     }
 
@@ -231,21 +232,6 @@ class NativePlannerExtensionsTest {
     public void touch() {}
   }
 
-  public static final class HealthyExtension implements NativePlannerExtension {
-    static int sharingCalls;
-
-    @Override
-    public void addSubstitutions(List<Substitution<?>> entries) {
-      entries.add(Substitution.of(RelNode.class, (node, context) -> node).matching(node -> false));
-    }
-
-    @Override
-    public String sourceSharingKey(RelNode node) {
-      sharingCalls++;
-      return null;
-    }
-  }
-
   public static final class IsolatedPlannerFixture {
     public static void verify() {
       TableEnvironment sql = TableEnvironment.create(EnvironmentSettings.inStreamingMode());
@@ -256,7 +242,8 @@ class NativePlannerExtensionsTest {
               "INSERT INTO output SELECT c0 * 2 FROM (VALUES (3), (4), (5)) AS t(c0)");
       assertTrue(plan.contains("NativeCalc"), plan);
       assertTrue(scan.substitutions() > 0, scan.explainSummary());
-      assertTrue(HealthyExtension.sharingCalls > 0, "the healthy sharing hook must remain active");
+      assertTrue(
+          HealthyPlannerExtension.sharingCalls > 0, "the healthy sharing hook must remain active");
     }
   }
 

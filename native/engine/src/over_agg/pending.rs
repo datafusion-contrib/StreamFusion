@@ -29,20 +29,31 @@ impl OverWindowAggregator {
                 .filter(|(_, field)| !companion(field))
                 .collect::<Vec<_>>();
             if payload.len() != logical.len()
-                || payload
-                    .iter()
-                    .zip(&logical)
-                    .any(|((_, left), right)| left.data_type() != right.data_type())
+                || payload.iter().zip(&logical).any(|((_, left), right)| {
+                    left.metadata() != right.metadata()
+                        || !crate::owned::same_logical_type(left.data_type(), right.data_type())
+                })
             {
-                return Err(DataFusionError::Execution(
-                    "OVER pending logical input schema changed".into(),
-                ));
+                return Err(DataFusionError::Execution(format!(
+                    "OVER pending logical input schema changed: {:?} -> {:?}",
+                    payload
+                        .iter()
+                        .map(|(_, field)| field.data_type())
+                        .collect::<Vec<_>>(),
+                    logical
+                        .iter()
+                        .map(|field| field.data_type())
+                        .collect::<Vec<_>>()
+                )));
             }
             let mut columns = Vec::with_capacity(schema.fields().len());
             let mut position = 0;
             for field in schema.fields() {
                 if !companion(field) {
-                    columns.push(batch.column(payload[position].0).clone());
+                    columns.push(align_column(
+                        batch.column(payload[position].0),
+                        field.data_type(),
+                    )?);
                     position += 1;
                 } else if let Some(column) = batch.column_by_name(field.name()) {
                     if column.data_type() != field.data_type() {
@@ -74,4 +85,14 @@ impl OverWindowAggregator {
         self.buffered = aligned;
         Ok(())
     }
+}
+
+pub(super) fn align_column(column: &ArrayRef, ty: &DataType) -> Result<ArrayRef, DataFusionError> {
+    if column.data_type() == ty {
+        return Ok(column.clone());
+    }
+    Ok(arrow::array::make_array(crate::owned::align_nested_data(
+        column.to_data(),
+        ty,
+    )?))
 }

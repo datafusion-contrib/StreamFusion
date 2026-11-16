@@ -13,15 +13,10 @@ import org.apache.paimon.types.RowType;
 import tech.streamfusion.format.ColumnarFileCodec;
 
 /**
- * A Paimon data-file writer that encodes Arrow bundles column-wise. The first record decides the
- * file: an {@link ArrowBatchBundle} opens the columnar encoder over Paimon's output stream and
- * every later bundle is appended to it column-wise, while a plain row hands the whole file to
- * Paimon's stock file writer. Paimon's released append writer feeds a bundle to its format writer
- * one cursor row at a time, so the cursor path recognises each bundle once and encodes it whole; a
- * Paimon that passes the bundle through takes the direct path. Admitted compaction rewrites and the
- * native append spill buffer drain Arrow bundles; other compaction rewrites retain the stock row
- * path. The footer stays a standard file footer, so Paimon extracts statistics from it exactly as
- * from its own files.
+ * Encodes borrowed Arrow bundles, or admitted bounded Java rows, over Paimon's output stream. Java
+ * rows are copied into bounded Arrow batches after Paimon has selected their file and order.
+ * Unmarked row-fed files retain the stock writer. Cursor rows identify an entire borrowed bundle,
+ * which is encoded once even when the released Paimon writer iterates it row by row.
  */
 public final class NativePaimonFileWriter implements BundleFormatWriter {
   private enum Mode {
@@ -38,6 +33,9 @@ public final class NativePaimonFileWriter implements BundleFormatWriter {
   private final FormatWriterFactory stockFactory;
   private final PaimonCompactMemory compactMemory;
   @Nullable private PaimonParquetFloatingStats floatingStats;
+
+  private boolean rowEncoding;
+  @Nullable private PaimonRowBatch rows;
 
   private Mode mode = Mode.UNDECIDED;
   private ColumnarFileCodec.Encoder encoder;
@@ -68,6 +66,11 @@ public final class NativePaimonFileWriter implements BundleFormatWriter {
     return this;
   }
 
+  NativePaimonFileWriter withRowEncoding(boolean enabled) {
+    rowEncoding = enabled;
+    return this;
+  }
+
   @Override
   public void writeBundle(BundleRecords bundle) throws IOException {
     if (closed) throw new IllegalStateException("Paimon file writer is closed");
@@ -85,9 +88,19 @@ public final class NativePaimonFileWriter implements BundleFormatWriter {
     if (closed) throw new IllegalStateException("Paimon file writer is closed");
     if (row instanceof ArrowBatchBundle.Cursor) {
       writeNative(((ArrowBatchBundle.Cursor) row).bundle());
+    } else if (rowEncoding) {
+      if (rows == null) rows = new PaimonRowBatch(writeType);
+      rows.add(row);
+      if (rows.isFull()) flushRows();
     } else {
       stock().addElement(row);
     }
+  }
+
+  private void flushRows() throws IOException {
+    if (rows == null || rows.isEmpty()) return;
+    writeRoot(rows.finish(), 0, rows.size());
+    rows.reset();
   }
 
   private void writeNative(ArrowBatchBundle bundle) throws IOException {
@@ -98,15 +111,18 @@ public final class NativePaimonFileWriter implements BundleFormatWriter {
     if (bundle == lastBundle) {
       return;
     }
-    VectorSchemaRoot root = bundle.root();
+    flushRows();
+    writeRoot(bundle.root(), bundle.rowOffset(), (int) bundle.rowCount());
+    lastBundle = bundle;
+  }
+
+  private void writeRoot(VectorSchemaRoot root, int offset, int count) throws IOException {
     if (mode == Mode.UNDECIDED) {
       openEncoder(root);
     }
-    encoder.write(root, new int[0], bundle.rowOffset(), (int) bundle.rowCount());
+    encoder.write(root, new int[0], offset, count);
     if (compactMemory != null) compactMemory.checkWriter(encoder.bufferedBytes());
-    if (floatingStats != null)
-      floatingStats.collect(root, bundle.rowOffset(), (int) bundle.rowCount());
-    lastBundle = bundle;
+    if (floatingStats != null) floatingStats.collect(root, offset, count);
   }
 
   private void openEncoder(VectorSchemaRoot root) throws IOException {
@@ -135,16 +151,16 @@ public final class NativePaimonFileWriter implements BundleFormatWriter {
 
   @Override
   public boolean reachTargetSize(boolean suggestedCheck, long targetSize) throws IOException {
-    switch (mode) {
-      case NATIVE:
-        return suggestedCheck && encoder.estimatedBytes() >= targetSize;
-      case STOCK:
-        return stock.reachTargetSize(suggestedCheck, targetSize);
-      case UNDECIDED:
-        return false;
-      default:
-        throw new IncompatibleClassChangeError();
+    if (mode == Mode.STOCK) return stock.reachTargetSize(suggestedCheck, targetSize);
+    if (!suggestedCheck) return false;
+    long estimated = mode == Mode.NATIVE ? encoder.estimatedBytes() : 0;
+    if (rows != null
+        && !rows.isEmpty()
+        && estimated >= Math.max(0, targetSize - rows.allocatedBytes())) {
+      flushRows();
+      estimated = encoder.estimatedBytes();
     }
+    return mode == Mode.NATIVE && estimated >= targetSize;
   }
 
   @Nullable
@@ -152,7 +168,7 @@ public final class NativePaimonFileWriter implements BundleFormatWriter {
     return mode == Mode.STOCK ? PaimonVersion.writerMetadata(stock) : floatingStats;
   }
 
-  /** Whether this file was written from Arrow bundles rather than by Paimon's stock writer. */
+  /** Whether this file used the native encoder. */
   public boolean wroteNatively() {
     return mode == Mode.NATIVE;
   }
@@ -161,25 +177,32 @@ public final class NativePaimonFileWriter implements BundleFormatWriter {
   public void close() throws IOException {
     if (closed) return;
     closed = true;
-    switch (mode) {
-      case NATIVE:
-        {
-          {
-            try {
-              encoder.finish();
-            } finally {
-              encoder.close();
-              encoder = null;
-            }
-          }
+    try (PaimonRowBatch bufferedRows = rows;
+        java.io.Closeable releaseEncoder = this::closeEncoder) {
+      flushRows();
+      switch (mode) {
+        case NATIVE:
+          encoder.finish();
           break;
-        }
-      case STOCK:
-        stock.close();
-        break;
-      case UNDECIDED:
-        stock().close();
-        break;
+        case STOCK:
+          stock.close();
+          break;
+        case UNDECIDED:
+          stock().close();
+          break;
+      }
+    } finally {
+      rows = null;
+    }
+  }
+
+  private void closeEncoder() {
+    if (encoder != null) {
+      try {
+        encoder.close();
+      } finally {
+        encoder = null;
+      }
     }
   }
 }

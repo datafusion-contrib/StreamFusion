@@ -92,6 +92,8 @@ public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoClosea
   private final String mergeOptions;
   private PaimonBufferMemory memory;
   private final Integer totalBuckets;
+  private Map<BinaryRow, Integer> partitionBuckets;
+  private int defaultPartitionBuckets;
   private final Map<BinaryRow, Map<Integer, BucketBuffer>> buffers = new LinkedHashMap<>();
   private NativePaimonKeyValueFileWriter files;
   private WriteRestore writeRestore;
@@ -103,6 +105,17 @@ public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoClosea
   public NativeKeyValueSinkWrite(
       FileStoreTable table, StoreSinkWrite delegate, StoreSinkWriteState state) {
     this(table, delegate, null, state);
+  }
+
+  NativeKeyValueSinkWrite(
+      FileStoreTable table,
+      StoreSinkWrite delegate,
+      StoreSinkWriteState state,
+      Map<BinaryRow, Integer> partitionBuckets,
+      int defaultPartitionBuckets) {
+    this(table, delegate, null, state);
+    this.partitionBuckets = partitionBuckets;
+    this.defaultPartitionBuckets = defaultPartitionBuckets;
   }
 
   NativeKeyValueSinkWrite(FileStoreTable table, StoreSinkWrite delegate, String postponePrefix) {
@@ -334,7 +347,9 @@ public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoClosea
       for (BucketBuffer buffer : partition.values()) {
         flush(buffer);
         memory.update(bufferedBytes());
-        if (!postpone && !buffer.pendingFiles.isEmpty()) {
+        // Bounded postpone is write-only and carries its per-partition bucket counts in our
+        // committables. Registering files with an unused row writer would reopen bucket -2.
+        if (!postpone && partitionBuckets == null && !buffer.pendingFiles.isEmpty()) {
           delegate.notifyNewFiles(
               NEW_FILES_SNAPSHOT, buffer.partition, buffer.bucket, buffer.pendingFiles);
           PaimonWriterLifecycle.modified(delegate, buffer.partition, buffer.bucket, checkpointId);
@@ -403,7 +418,9 @@ public final class NativeKeyValueSinkWrite implements StoreSinkWrite, AutoClosea
     return new CommitMessageImpl(
         buffer.partition,
         buffer.bucket,
-        totalBuckets,
+        partitionBuckets == null
+            ? totalBuckets
+            : partitionBuckets.getOrDefault(buffer.partition, defaultPartitionBuckets),
         new DataIncrement(
             data, existing.deletedFiles(), changelog, indexes, existing.deletedIndexFiles()),
         compaction);

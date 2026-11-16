@@ -94,10 +94,12 @@ fn full_range_readers<T: ChunkReader + Clone + 'static>(
     builder: ParquetRecordBatchReaderBuilder<T>,
     roots: &[usize],
     batch_size: usize,
+    groups: &[usize],
 ) -> (
     ParquetRecordBatchReaderBuilder<T>,
     Option<ParquetRecordBatchReader>,
 ) {
+    let builder = builder.with_row_groups(groups.to_vec());
     let projection = ProjectionMask::roots(builder.parquet_schema(), roots.iter().copied());
     let has_int96 = builder
         .parquet_schema()
@@ -132,7 +134,8 @@ fn full_range_readers<T: ChunkReader + Clone + 'static>(
         .build()
         .expect("INT96 fractional reader");
     (
-        ParquetRecordBatchReaderBuilder::new_with_metadata(file, metadata),
+        ParquetRecordBatchReaderBuilder::new_with_metadata(file, metadata)
+            .with_row_groups(groups.to_vec()),
         Some(fractions),
     )
 }
@@ -257,65 +260,198 @@ pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_createParque
     batch_size: jint,
 ) -> jlong {
     bridge::jni_guard(env, |env| {
-        let schema = import_schema(schema_address);
-        let names: Vec<String> = read_strings(env, &names)
-            .into_iter()
-            .map(|n| n.expect("Parquet field name"))
-            .collect();
-        let file = HostChunks(Arc::new(HostFile {
-            vm: env.get_java_vm().expect("JVM"),
-            input: env.new_global_ref(input).expect("input stream"),
-            length: length as u64,
-        }));
-        let builder =
-            ParquetRecordBatchReaderBuilder::try_new(file.clone()).expect("open Parquet file");
-        let indices: Vec<usize> = names
-            .iter()
-            .map(|name| {
-                builder
-                    .schema()
-                    .index_of(name)
-                    .unwrap_or_else(|_| panic!("Missing Parquet field {name}"))
-            })
-            .collect();
-        let projection = ProjectionMask::roots(builder.parquet_schema(), indices.clone());
-        // Unprojected chunks are never loaded by parquet-rs. Charging them made independent narrow
-        // scans compete for the whole file width rather than their actual decoder workspace.
-        let max_row_group_bytes = builder
+        create_decoder(
+            env,
+            input,
+            length,
+            schema_address,
+            names,
+            batch_size,
+            0,
+            length,
+        )
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_createParquetSplitDecoder<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    input: JObject<'local>,
+    length: jlong,
+    schema_address: jlong,
+    names: JObjectArray<'local>,
+    batch_size: jint,
+    split_offset: jlong,
+    split_length: jlong,
+) -> jlong {
+    bridge::jni_guard(env, |env| {
+        create_decoder(
+            env,
+            input,
+            length,
+            schema_address,
+            names,
+            batch_size,
+            split_offset,
+            split_length,
+        )
+    })
+}
+
+fn host_file(env: &mut JNIEnv, input: JObject, length: jlong) -> HostChunks {
+    assert!(length >= 0, "Negative Parquet file length");
+    HostChunks(Arc::new(HostFile {
+        vm: env.get_java_vm().expect("JVM"),
+        input: env.new_global_ref(input).expect("input stream"),
+        length: length as u64,
+    }))
+}
+
+fn group_start(group: &parquet::file::metadata::RowGroupMetaData) -> u64 {
+    group
+        .columns()
+        .iter()
+        .map(|column| column.byte_range().0)
+        .min()
+        .expect("Parquet row group has no column chunks")
+}
+
+fn split_row_groups(
+    metadata: &parquet::file::metadata::ParquetMetaData,
+    start: i64,
+    length: i64,
+) -> Vec<usize> {
+    assert!(start >= 0 && length >= 0, "Negative Parquet split range");
+    let end = start
+        .checked_add(length)
+        .expect("Parquet split range overflow") as u64;
+    metadata
+        .row_groups()
+        .iter()
+        .enumerate()
+        .filter(|(_, group)| group.num_rows() > 0)
+        .filter_map(|(index, group)| {
+            // Match parquet-mr's half-open midpoint ownership, independent of projection.
+            let midpoint = group_start(group)
+                .checked_add(
+                    u64::try_from(group.compressed_size()).expect("Negative Parquet group size")
+                        / 2,
+                )
+                .expect("Parquet group midpoint overflow");
+            (start as u64 <= midpoint && midpoint < end).then_some(index)
+        })
+        .collect()
+}
+
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_parquet_NativeParquet_parquetRowGroupOffsets<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    input: JObject<'local>,
+    length: jlong,
+) -> jni::sys::jlongArray {
+    bridge::jni_guard(env, |env| {
+        let builder = ParquetRecordBatchReaderBuilder::try_new(host_file(env, input, length))
+            .expect("open Parquet footer");
+        let offsets: Vec<i64> = builder
             .metadata()
             .row_groups()
             .iter()
+            .filter(|group| group.num_rows() > 0)
             .map(|group| {
-                group
-                    .columns()
-                    .iter()
-                    .enumerate()
-                    .filter(|(index, _)| projection.leaf_included(*index))
-                    .fold(0_i64, |bytes, (_, column)| {
-                        bytes.saturating_add(
-                            column
-                                .compressed_size()
-                                .saturating_add(column.uncompressed_size()),
-                        )
-                    })
+                i64::try_from(group_start(group)).expect("Parquet row-group offset overflow")
             })
-            .max()
-            .unwrap_or(0);
-        let (builder, fractions) = full_range_readers(file, builder, &indices, batch_size as usize);
-        let max_row_group_bytes =
-            max_row_group_bytes.saturating_mul(if fractions.is_some() { 2 } else { 1 });
-        let reader = builder
-            .with_projection(projection)
-            .with_batch_size(batch_size as usize)
-            .build()
-            .expect("Parquet batch reader");
-        into_handle(ParquetDecoder {
-            reader,
-            fractions,
-            output: schema,
-            names,
-            max_row_group_bytes,
+            .collect();
+        assert!(
+            offsets
+                .iter()
+                .all(|offset| *offset >= 0 && *offset < length)
+                && offsets.windows(2).all(|pair| pair[0] < pair[1]),
+            "Invalid Parquet row-group offsets"
+        );
+        let result = env
+            .new_long_array(offsets.len() as i32)
+            .expect("row-group offsets");
+        env.set_long_array_region(&result, 0, &offsets)
+            .expect("export row-group offsets");
+        result.into_raw()
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn create_decoder<'local>(
+    env: &mut JNIEnv<'local>,
+    input: JObject<'local>,
+    length: jlong,
+    schema_address: jlong,
+    names: JObjectArray<'local>,
+    batch_size: jint,
+    split_offset: jlong,
+    split_length: jlong,
+) -> jlong {
+    let schema = import_schema(schema_address);
+    let names: Vec<String> = read_strings(env, &names)
+        .into_iter()
+        .map(|n| n.expect("Parquet field name"))
+        .collect();
+    let file = host_file(env, input, length);
+    let builder =
+        ParquetRecordBatchReaderBuilder::try_new(file.clone()).expect("open Parquet file");
+    let groups = split_row_groups(builder.metadata(), split_offset, split_length);
+    let indices: Vec<usize> = names
+        .iter()
+        .map(|name| {
+            builder
+                .schema()
+                .index_of(name)
+                .unwrap_or_else(|_| panic!("Missing Parquet field {name}"))
         })
+        .collect();
+    let projection = ProjectionMask::roots(builder.parquet_schema(), indices.clone());
+    // Unprojected chunks are never loaded by parquet-rs. Charging them made independent narrow
+    // scans compete for the whole file width rather than their actual decoder workspace.
+    let max_row_group_bytes = builder
+        .metadata()
+        .row_groups()
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| groups.binary_search(index).is_ok())
+        .map(|(_, group)| {
+            group
+                .columns()
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| projection.leaf_included(*index))
+                .fold(0_i64, |bytes, (_, column)| {
+                    bytes.saturating_add(
+                        column
+                            .compressed_size()
+                            .saturating_add(column.uncompressed_size()),
+                    )
+                })
+        })
+        .max()
+        .unwrap_or(0);
+    let (builder, fractions) =
+        full_range_readers(file, builder, &indices, batch_size as usize, &groups);
+    let max_row_group_bytes =
+        max_row_group_bytes.saturating_mul(if fractions.is_some() { 2 } else { 1 });
+    let reader = builder
+        .with_projection(projection)
+        .with_batch_size(batch_size as usize)
+        .build()
+        .expect("Parquet batch reader");
+    into_handle(ParquetDecoder {
+        reader,
+        fractions,
+        output: schema,
+        names,
+        max_row_group_bytes,
     })
 }
 #[no_mangle]
@@ -408,8 +544,6 @@ mod timestamp_tests {
             );
             let mut bytes = Vec::new();
             let mut writer = SerializedFileWriter::new(&mut bytes, schema, props).unwrap();
-            let mut group = writer.next_row_group().unwrap();
-            let mut column = group.next_column().unwrap().unwrap();
             let values: Vec<_> = expected
                 .iter()
                 .flatten()
@@ -422,34 +556,74 @@ mod timestamp_tests {
                     raw
                 })
                 .collect();
-            column
-                .typed::<Int96Type>()
-                .write_batch(&values, Some(&[1, 0, 1, 1, 1]), None)
-                .unwrap();
-            column.close().unwrap();
-            group.close().unwrap();
+            for index in 0..2 {
+                if index == 1 {
+                    let mut empty = writer.next_row_group().unwrap();
+                    let mut column = empty.next_column().unwrap().unwrap();
+                    column
+                        .typed::<Int96Type>()
+                        .write_batch(&[], None, None)
+                        .unwrap();
+                    column.close().unwrap();
+                    empty.close().unwrap();
+                }
+                let mut group_values = values.clone();
+                if index == 1 {
+                    group_values.reverse();
+                }
+                let mut group = writer.next_row_group().unwrap();
+                let mut column = group.next_column().unwrap().unwrap();
+                column
+                    .typed::<Int96Type>()
+                    .write_batch(&group_values, Some(&[1, 0, 1, 1, 1]), None)
+                    .unwrap();
+                column.close().unwrap();
+                group.close().unwrap();
+            }
             writer.close().unwrap();
             let bytes = Bytes::from(bytes);
-            let builder = ParquetRecordBatchReaderBuilder::try_new(bytes.clone()).unwrap();
-            let (builder, fractions) = full_range_readers(bytes, builder, &[0], 2);
-            let mut fractions = fractions.unwrap();
-            let reader = builder.with_batch_size(2).build().unwrap();
-            let mut actual = Vec::new();
-            for batch in reader {
-                let batch = batch.unwrap();
-                let fraction = fractions.next().unwrap().unwrap();
-                let pair = merge_int96(batch.column(0), fraction.column(0));
-                let column = TimestampColumn::try_new(pair.as_ref()).unwrap();
-                actual.extend((0..pair.len()).map(|row| {
-                    if column.is_null(row) {
-                        None
-                    } else {
-                        Some(column.value(row).unwrap())
-                    }
-                }));
+            for groups in [vec![0], vec![2], vec![0, 2], vec![]] {
+                let builder = ParquetRecordBatchReaderBuilder::try_new(bytes.clone()).unwrap();
+                let midpoint = group_start(builder.metadata().row_group(2))
+                    + builder.metadata().row_group(2).compressed_size() as u64 / 2;
+                assert_eq!(
+                    split_row_groups(builder.metadata(), 0, midpoint as i64),
+                    vec![0]
+                );
+                assert_eq!(
+                    split_row_groups(
+                        builder.metadata(),
+                        midpoint as i64,
+                        bytes.len() as i64 - midpoint as i64
+                    ),
+                    vec![2]
+                );
+                let (builder, fractions) =
+                    full_range_readers(bytes.clone(), builder, &[0], 2, &groups);
+                let mut fractions = fractions.unwrap();
+                let reader = builder.with_batch_size(2).build().unwrap();
+                let mut actual = Vec::new();
+                for batch in reader {
+                    let batch = batch.unwrap();
+                    let fraction = fractions.next().unwrap().unwrap();
+                    let pair = merge_int96(batch.column(0), fraction.column(0));
+                    let column = TimestampColumn::try_new(pair.as_ref()).unwrap();
+                    actual.extend((0..pair.len()).map(|row| {
+                        if column.is_null(row) {
+                            None
+                        } else {
+                            Some(column.value(row).unwrap())
+                        }
+                    }));
+                }
+                assert!(fractions.next().is_none());
+                let second = [expected[4], None, expected[3], expected[2], expected[0]];
+                let selected: Vec<_> = groups
+                    .iter()
+                    .flat_map(|index| if *index == 0 { expected } else { second })
+                    .collect();
+                assert_eq!(actual, selected);
             }
-            assert!(fractions.next().is_none());
-            assert_eq!(actual, expected);
         }
     }
 }
@@ -459,7 +633,8 @@ pub(crate) fn decode_for_benchmark(bytes: &[u8], batch_rows: usize) -> Vec<Recor
     let file = bytes::Bytes::copy_from_slice(bytes);
     let builder = ParquetRecordBatchReaderBuilder::try_new(file.clone()).unwrap();
     let roots: Vec<_> = (0..builder.schema().fields().len()).collect();
-    let (builder, mut fractions) = full_range_readers(file, builder, &roots, batch_rows);
+    let groups: Vec<_> = (0..builder.metadata().num_row_groups()).collect();
+    let (builder, mut fractions) = full_range_readers(file, builder, &roots, batch_rows, &groups);
     builder
         .with_batch_size(batch_rows)
         .build()

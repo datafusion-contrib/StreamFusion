@@ -14,8 +14,10 @@
     <url>https://streamfusion.tech/</url>
 
     <modules>
+        <module>streamfusion-runtime</module>
         <module>streamfusion-core</module>
         <module>streamfusion-kafka</module>
+        <module>streamfusion-fluss</module>
         <module>streamfusion-json</module>
         <module>streamfusion-csv</module>
         <module>streamfusion-raw</module>
@@ -24,8 +26,6 @@
         <module>streamfusion-protobuf</module>
         <module>streamfusion-parquet</module>
         <module>streamfusion-orc</module>
-        <module>streamfusion-runtime</module>
-        <module>streamfusion-fluss</module>
         <module>streamfusion-loader</module>
     </modules>
 
@@ -101,46 +101,6 @@
         <sf.protobuf.checkStaleness>false</sf.protobuf.checkStaleness>
         <sf.testReuseForks>true</sf.testReuseForks>
     </properties>
-
-    <dependencyManagement>
-        <dependencies>
-            <dependency>
-                <groupId>org.apache.flink</groupId>
-                <artifactId>flink-connector-kafka</artifactId>
-                <version>${flink.connector.kafka.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.apache.kafka</groupId>
-                <artifactId>kafka-clients</artifactId>
-                <version>${kafka.clients.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.apache.flink</groupId>
-                <artifactId>flink-json</artifactId>
-                <version>${flink.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.apache.flink</groupId>
-                <artifactId>flink-csv</artifactId>
-                <version>${flink.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.apache.flink</groupId>
-                <artifactId>flink-avro</artifactId>
-                <version>${flink.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.apache.flink</groupId>
-                <artifactId>flink-orc</artifactId>
-                <version>${flink.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.apache.hadoop</groupId>
-                <artifactId>hadoop-common</artifactId>
-                <version>3.3.4</version>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
 
     <dependencies>
         <!-- Flink owns its logging API and provider on the process classpath. -->
@@ -236,13 +196,42 @@
         </dependency>
         <!-- The native file sources plug into Flink's file source for enumeration/split assignment/
              checkpointing, so the connector is a compile-time dependency (provided at runtime by the
-             Flink distribution, which bundles it). Specialized connector and format APIs are declared
-             by their owners; the runtime test assembly supplies baseline implementations. -->
+             Flink distribution, which bundles it). The format jars and Hadoop below stay test-only,
+             used to write the baselines the native readers/writer are compared against. -->
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-connector-files</artifactId>
             <version>${flink.version}</version>
             <scope>provided</scope>
+        </dependency>
+        <!-- Optional connector/format dependencies here are parity baselines. Their owning modules
+             declare the provided APIs needed by production compilation and deployment. -->
+        <!-- Flink owns Kafka consumption and production; StreamFusion wraps its byte-array source
+             and sink with native format operators. The 5.0.0-2.2 release targets Flink 2.2.x and
+             is provided at runtime by the deployment. -->
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-connector-kafka</artifactId>
+            <version>${flink.connector.kafka.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- The JSON format factory. Flink instantiates the original kafka+json table source during SQL
+             validation (the native node replaces it only at physical-plan time), and the shallow
+             fallback uses it at runtime. Provided at runtime by the Flink distribution. -->
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-json</artifactId>
+            <version>${flink.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Avro format: the Confluent-Avro benchmark's row-materializing baseline
+             (AvroRowDataDeserializationSchema) and its AvroSchemaConverter + Avro writer for generating
+             the test data. Provided at runtime by the Flink distribution. -->
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-avro</artifactId>
+            <version>${flink.version}</version>
+            <scope>test</scope>
         </dependency>
         <!-- Confluent-registry Avro format: the host baseline the native avro-confluent decode is
              compared against, and the format factory Flink needs to validate an avro-confluent table
@@ -255,9 +244,24 @@
             <version>${flink.version}</version>
             <scope>test</scope>
         </dependency>
+        <!-- CSV format factory. Flink validates+builds the kafka+csv table source during SQL validation
+             (the native decode node replaces it at physical-plan time); the format factory must be on
+             the classpath for that, like flink-json. Provided at runtime by the Flink distribution. -->
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-csv</artifactId>
+            <version>${flink.version}</version>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-parquet</artifactId>
+            <version>${flink.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-orc</artifactId>
             <version>${flink.version}</version>
             <scope>test</scope>
         </dependency>
@@ -276,10 +280,27 @@
             <version>${protobuf.version}</version>
             <scope>test</scope>
         </dependency>
+        <!-- Hadoop is the filesystem/IO layer Flink's Parquet format reads and writes through; the
+             Parquet baseline tests need it at runtime. (Hadoop 3.3.4 runs fine on protobuf-java 4.x.) -->
+        <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-common</artifactId>
+            <version>3.3.4</version>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.apache.hadoop</groupId>
             <artifactId>hadoop-mapreduce-client-core</artifactId>
             <version>3.3.4</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Kafka client classes (TopicPartition etc.) referenced by the native source's split reader.
+             Provided at runtime by the Flink Kafka connector distribution, like flink-connector-kafka
+             above; also used by the opt-in ingest benchmark and integration tests. -->
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+            <version>${kafka.clients.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -312,6 +333,11 @@
     </dependencies>
 
     <repositories>
+        <repository>
+            <id>central</id>
+            <url>https://repo.maven.apache.org/maven2</url>
+            <snapshots><enabled>false</enabled></snapshots>
+        </repository>
         <!-- Hosts io.confluent:kafka-schema-registry-client, the transitive of the test-only
              flink-avro-confluent-registry baseline above (the shipped jar doesn't touch it). -->
         <repository>
@@ -323,13 +349,13 @@
     <build>
         <resources>
             <resource>
-                <directory>${project.basedir}/../src/main/resources</directory>
+                <directory>${project.basedir}/src/main/resources</directory>
             </resource>
             <!-- The build stamp: the project version filtered into a classpath resource, compared
                  against the loaded native library's own stamp so a stale library on
                  java.library.path fails loudly instead of silently shadowing the bundled one. -->
             <resource>
-                <directory>${project.basedir}/../src/main/resources-filtered</directory>
+                <directory>${project.basedir}/src/main/resources-filtered</directory>
                 <filtering>true</filtering>
             </resource>
             <!-- The local-development resource. The universal release profile replaces this with
@@ -351,8 +377,8 @@
                 <version>1.7.1</version>
             </extension>
         </extensions>
-        <!-- Validate module dependencies through Javadoc in ordinary builds as well as releases.
-             Skip documentation generation for a quick loop with -Dmaven.javadoc.skip=true. -->
+        <!-- Generate javadoc for each module's owned sources during ordinary tests, so unresolved
+             module references fail before release. Use -Dmaven.javadoc.skip=true for quick loops. -->
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -390,6 +416,22 @@
                 </execution></executions>
             </plugin>
             <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <id>flink-compatibility-sources</id>
+                        <phase>generate-sources</phase>
+                        <goals><goal>add-source</goal></goals>
+                        <configuration><sources>
+                            <source>${project.basedir}/src/main/java-flink${flink.line}</source>
+                        </sources></configuration>
+                    </execution>
+
+                </executions>
+            </plugin>
+            <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-javadoc-plugin</artifactId>
                 <executions>
@@ -404,18 +446,12 @@
         <pluginManagement>
         <plugins>
             <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>build-helper-maven-plugin</artifactId>
-                <version>3.6.0</version>
-            </plugin>
-            <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
                 <configuration>
-                    <!-- Reproducible dependency JAR timestamps can make javac prefer newer
-                         sources in the remaining shared roots. Resolve them if needed, but
-                         emit only the module's owned sources, never another module's classes. -->
+                    <!-- Resolve project dependencies from their artifacts without implicitly emitting
+                         classes from an added sourcepath into another module. -->
                     <compilerArgs>
                         <arg>-implicit:none</arg>
                     </compilerArgs>
@@ -581,6 +617,16 @@
 
     <profiles>
         <profile>
+            <id>ci-precompiled-java</id>
+            <activation><property><name>sf.ci.precompiledJava</name><value>true</value></property></activation>
+            <properties><maven.javadoc.skip>true</maven.javadoc.skip></properties>
+            <build><pluginManagement><plugins><plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration><skipMain>true</skipMain><skip>true</skip></configuration>
+            </plugin></plugins></pluginManagement></build>
+        </profile>
+        <profile>
             <id>ci-diagnostics</id>
             <dependencies>
                 <dependency>
@@ -634,6 +680,34 @@
                                 </goals>
                             </execution>
                         </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <configuration>
+                            <additionalDependencies combine.self="override">
+                                <additionalDependency>
+                                    <groupId>org.apache.fluss</groupId>
+                                    <artifactId>fluss-flink-1.18</artifactId>
+                                    <version>1.0.0</version>
+                                </additionalDependency>
+                                <additionalDependency>
+                                    <groupId>org.apache.parquet</groupId>
+                                    <artifactId>parquet-hadoop</artifactId>
+                                    <version>1.16.0</version>
+                                </additionalDependency>
+                                <additionalDependency>
+                                    <groupId>org.apache.hadoop</groupId>
+                                    <artifactId>hadoop-common</artifactId>
+                                    <version>3.3.4</version>
+                                </additionalDependency>
+                                <additionalDependency>
+                                    <groupId>org.apache.paimon</groupId>
+                                    <artifactId>paimon-flink-1.18</artifactId>
+                                    <version>${paimon.version}</version>
+                                </additionalDependency>
+                            </additionalDependencies>
+                        </configuration>
                     </plugin>
                 </plugins>
             </build>

@@ -14,6 +14,75 @@ class SqlInventoryTest {
   @TempDir Path directory;
 
   @Test
+  void batchObserverRecordsTheSemanticRewriteOnceThroughItsConvenienceWrapper() throws Exception {
+    Class<?> observed =
+        StreamFusionSuiteAgent.observePlanning(
+                new net.bytebuddy.ByteBuddy().redefine(BatchScan.class))
+            .make()
+            .load(
+                BatchScan.class.getClassLoader(),
+                net.bytebuddy.dynamic.loading.ClassLoadingStrategy.Default.CHILD_FIRST)
+            .getLoaded();
+    System.setProperty("streamfusion.flink-suite.sql-inventory", directory.toString());
+    try {
+      SqlInventory.started(new Identifier());
+      Object translation = SqlInventory.translating(this);
+      Object roots =
+          observed
+              .getMethod("optimizeRoots", List.class)
+              .invoke(
+                  observed.getConstructor().newInstance(), List.of(new StreamPhysicalNativeCalc()));
+      SqlInventory.translated(translation, roots, null);
+      SqlInventory.finished(new Identifier(), new Result());
+      try (var files = Files.list(directory)) {
+        String json = Files.readString(files.findFirst().orElseThrow());
+        org.junit.jupiter.api.Assertions.assertEquals(
+            1, json.split("\"substitutions\":1", -1).length - 1);
+        assertTrue(json.contains("StreamPhysicalNativeCalc"));
+      }
+    } finally {
+      System.clearProperty("streamfusion.flink-suite.sql-inventory");
+    }
+  }
+
+  public static class BatchScan extends Scan {
+    public List<Object> optimizeRoots(List<Object> roots) {
+      return optimizeRoots(roots, java.util.function.UnaryOperator.identity());
+    }
+
+    public List<Object> optimizeRoots(
+        List<Object> roots, java.util.function.UnaryOperator<Object> normalize) {
+      return roots;
+    }
+  }
+
+  @Test
+  void boundedNativeSourceDoesNotReportItsDiscoveryScanAsAHostReader() throws Exception {
+    System.setProperty("streamfusion.flink-suite.sql-inventory", directory.toString());
+    try {
+      var identifier = new Identifier();
+      SqlInventory.started(identifier);
+      Object translation = SqlInventory.translating(this);
+      SqlInventory.plan(new Scan(), List.of(new BatchPhysicalNativeConnectorSource()));
+      SqlInventory.translated(translation, List.of(new Object()), null);
+      SqlInventory.finished(identifier, new Result());
+      try (var files = Files.list(directory)) {
+        String json = Files.readString(files.findFirst().orElseThrow());
+        assertTrue(json.contains("BatchPhysicalNativeConnectorSource"));
+        assertTrue(json.contains("\"host_boundaries\":[]"));
+      }
+    } finally {
+      System.clearProperty("streamfusion.flink-suite.sql-inventory");
+    }
+  }
+
+  public static class BatchPhysicalNativeConnectorSource {
+    public List<Object> getInputs() {
+      throw new AssertionError("Discovery-only scan must not be visited as an active host reader");
+    }
+  }
+
+  @Test
   void preservesSeparateStatementRootsAndInvocationIdentity() throws Exception {
     System.setProperty("streamfusion.flink-suite.sql-inventory", directory.toString());
     Identifier identifier = new Identifier();
@@ -139,10 +208,17 @@ class SqlInventoryTest {
       SqlInventory.compaction(owner, Map.of("native", true, "before_rows", 42));
       SqlInventory.finished(identifier, new Result());
       try (var paths = Files.list(directory)) {
-        var reports = paths.map(path -> {
-          try { return Files.readString(path); }
-          catch (java.io.IOException failure) { throw new java.io.UncheckedIOException(failure); }
-        }).toList();
+        var reports =
+            paths
+                .map(
+                    path -> {
+                      try {
+                        return Files.readString(path);
+                      } catch (java.io.IOException failure) {
+                        throw new java.io.UncheckedIOException(failure);
+                      }
+                    })
+                .toList();
         org.junit.jupiter.api.Assertions.assertEquals(2, reports.size());
         assertTrue(reports.stream().anyMatch(json -> json.contains("\"before_rows\":42")));
         assertTrue(reports.stream().anyMatch(json -> json.contains("\"compactions\":[]")));
@@ -519,29 +595,48 @@ class SqlInventoryTest {
       SqlInventory.jobResult(new ApplicationResult("orphan-result", "CANCELED"));
       SqlInventory.submitted(
           SqlInventory.submitting(),
-          new JobClient("observed-result", java.util.concurrent.CompletableFuture.failedFuture(
-              new IllegalStateException("expected failure"))), null);
+          new JobClient(
+              "observed-result",
+              java.util.concurrent.CompletableFuture.failedFuture(
+                  new IllegalStateException("expected failure"))),
+          null);
       SqlInventory.finished(identifier, new Result());
       SqlInventory.started(identifier);
       SqlInventory.jobResult(new ApplicationResult("observed-result", "FAILED"));
       SqlInventory.jobResult(new ApplicationResult("orphan-result", "CANCELED"));
       SqlInventory.finished(identifier, new Result());
       try (var paths = Files.list(directory)) {
-        var reports = paths.map(path -> {
-          try {
-            return Files.readString(path);
-          } catch (java.io.IOException failure) {
-            throw new java.io.UncheckedIOException(failure);
-          }
-        }).toList();
+        var reports =
+            paths
+                .map(
+                    path -> {
+                      try {
+                        return Files.readString(path);
+                      } catch (java.io.IOException failure) {
+                        throw new java.io.UncheckedIOException(failure);
+                      }
+                    })
+                .toList();
         org.junit.jupiter.api.Assertions.assertEquals(2, reports.size());
-        org.junit.jupiter.api.Assertions.assertEquals(1,
-            reports.stream().filter(json -> json.contains("\"application_statuses\":[\"FAILED\"]")).count());
-        org.junit.jupiter.api.Assertions.assertEquals(1,
-            reports.stream().filter(json -> json.contains(
-                "\"unmatched_job_results\":{\"orphan-result\":[\"CANCELED\"]}")).count());
-        assertTrue(reports.stream().anyMatch(json -> json.contains("\"jobs\":{}")
-            && json.contains("\"unmatched_job_results\":{}")));
+        org.junit.jupiter.api.Assertions.assertEquals(
+            1,
+            reports.stream()
+                .filter(json -> json.contains("\"application_statuses\":[\"FAILED\"]"))
+                .count());
+        org.junit.jupiter.api.Assertions.assertEquals(
+            1,
+            reports.stream()
+                .filter(
+                    json ->
+                        json.contains(
+                            "\"unmatched_job_results\":{\"orphan-result\":[\"CANCELED\"]}"))
+                .count());
+        assertTrue(
+            reports.stream()
+                .anyMatch(
+                    json ->
+                        json.contains("\"jobs\":{}")
+                            && json.contains("\"unmatched_job_results\":{}")));
       }
     } finally {
       System.clearProperty("streamfusion.flink-suite.sql-inventory");

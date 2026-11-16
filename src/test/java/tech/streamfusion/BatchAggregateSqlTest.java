@@ -22,8 +22,7 @@ class BatchAggregateSqlTest {
           String sql =
               "SELECT SUM(CAST(id AS TINYINT)), SUM(CAST(id AS SMALLINT)), SUM(CAST(id AS INT)),"
                   + " SUM(id), COUNT(*), COUNT(id), MIN(CAST(id AS INT)), MAX(id), AVG(id),"
-                  + " AVG(CAST(id AS TINYINT)) FILTER (WHERE MOD(id,3) <> 0) FROM input"
-                  + " WHERE SHA2(CAST(id AS STRING),256) <> ''";
+                  + " AVG(CAST(id AS TINYINT)) FILTER (WHERE MOD(id,3) <> 0) FROM input";
           String plan = nativeEnv.explainSql(sql);
           assertTrue(plan.contains("NativeAggregate"), plan);
           var result = nativeEnv.executeSql(sql);
@@ -64,9 +63,7 @@ class BatchAggregateSqlTest {
               + " 'number-of-rows'='1000', 'fields.id.kind'='sequence',"
               + " 'fields.id.start'='0', 'fields.id.end'='999')");
       env.executeSql("CREATE TABLE output(id BIGINT) WITH ('connector'='batch-replay')");
-      String sql =
-          "INSERT INTO output SELECT COUNT(*) FROM input"
-              + " WHERE SHA2(CAST(id AS STRING),256) <> ''";
+      String sql = "INSERT INTO output SELECT COUNT(*) FROM input";
       String plan = env.explainSql(sql);
       assertTrue(plan.contains("NativeAggregate") && plan.contains("NativeExchange"), plan);
       var result = env.executeSql(sql);
@@ -102,17 +99,16 @@ class BatchAggregateSqlTest {
       String plan = env.explainSql(sql);
       assertFalse(plan.contains("NativeAggregate") || plan.contains("NativeCalc"), plan);
     }
-    String cheap =
+    String standalone =
         tech.streamfusion.planner.NativePlanner.explain(env, "SELECT SUM(id) FROM input");
-    assertFalse(cheap.contains("NativeAggregate("), cheap);
-    assertTrue(
-        cheap.contains("batch aggregate: standalone pipeline has no verified speedup"), cheap);
+    assertTrue(standalone.contains("NativeAggregate("), standalone);
+    assertTrue(standalone.contains("fallback reasons=[]"), standalone);
     for (String sql :
         List.of(
             "SELECT SHA2(CAST(SUM(id) AS STRING),256) FROM input",
             "SELECT SUM(id) FROM input ORDER BY SUM(id)")) {
       String postAggregate = env.explainSql(sql);
-      assertFalse(postAggregate.contains("NativeAggregate"), postAggregate);
+      assertTrue(postAggregate.contains("NativeAggregate"), postAggregate);
     }
     env.createTemporarySystemFunction("after_aggregate", BatchSqlBenchmark.AddOne.class);
     String userFunction = env.explainSql("SELECT after_aggregate(SUM(id)) FROM input");
@@ -134,10 +130,9 @@ class BatchAggregateSqlTest {
         for (String sql :
             List.of(
                 "SELECT SUM(id), COUNT(id), COUNT(*), MIN(id), MAX(id), AVG(id) FROM input WHERE id"
-                    + " < 0 AND SHA2(CAST(id AS STRING),256) <> ''",
+                    + " < 0",
                 "SELECT SUM(CAST(NULL AS INT)), COUNT(CAST(NULL AS INT)), AVG(CAST(NULL AS"
-                    + " SMALLINT)), COUNT(*) FROM input WHERE SHA2(CAST(id AS STRING),256) <>"
-                    + " ''")) {
+                    + " SMALLINT)), COUNT(*) FROM input")) {
           String plan = nativeEnv.explainSql(sql);
           assertTrue(plan.contains("NativeAggregate"), plan);
           assertEquals(

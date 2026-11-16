@@ -27,6 +27,14 @@ functionality groundwork. Benchmarking is explicitly deferred under
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569), which remains open for wider
 canonical schemas, broader native graphs and full qualification.
 
+Floating sort keys retain stock owners at planning time. Stock's sorted count map compares keys,
+while its independent list MapState retains byte-distinct keys; signed zero and NaN can expose
+that difference. The current native stock-state mode deliberately rejects FLOAT/DOUBLE sorts.
+Preserve this guard in Java admission until both key spaces and the first retained comparator
+representative have a direct projection. Floating payloads and partition keys do not require
+that additional sort-map contract. The wider scalar tests do not count these excluded sorts as
+qualified handoffs; explicit fallback tests retain the gap under #569.
+
 
 ## Direct stock projection
 

@@ -1,8 +1,9 @@
 # Batch global aggregate comparisons
 
-Global signed integer aggregates now compose with an otherwise qualified
-[batch SQL island](../operators/batch.md). Standalone aggregate queries retain
-stock Flink. These are complete-job measurements, including the row/Arrow
+Global signed integer aggregates run in compatible
+[batch SQL islands](../operators/batch.md), including standalone aggregate queries.
+The historical measurements below predate removal of the performance whitelist.
+These are complete-job measurements, including the row/Arrow
 perimeter; no isolated aggregate-kernel speedup is claimed.
 
 ## Admitted compositions
@@ -53,8 +54,8 @@ both-line upstream routes, positive admitted SQL work and cleanup/recovery contr
 
 ## Fixed-width extrema compositions
 
-Global MIN/MAX now also admit BOOLEAN, DECIMAL (precision 1–38), DATE and TIME
-inside otherwise qualifying pipelines. The query below uses all four types:
+Global MIN/MAX also admit BOOLEAN, DECIMAL (precision 1–38), DATE and TIME
+in compatible pipelines. The measured query below uses all four types:
 
 ```sql
 SELECT MIN(b), MAX(b), MIN(d), MAX(d), MIN(dt), MAX(dt), MIN(tm), MAX(tm), COUNT(*)
@@ -94,7 +95,8 @@ larger workload still lost at 329.79/369.66 ms (0.89×); these separate cohorts 
 not isolate a precise before/after optimization ratio. A second batching diagnostic
 used 4,096 rows and measured 337.57/296.48 ms (1.14×), with wide overlapping ranges.
 This did not establish a reliable standalone gain or justify changing the default
-batch size. Standalone aggregates therefore do not qualify a native island.
+batch size. These results motivated the former performance whitelist. Standalone
+compatible aggregates are now admitted; no new standalone speedup is claimed.
 
 A JFR diagnostic found source/dispatch work dominant, with rowwise Arrow writing,
 Calc/JNI work and stock generated aggregation visible in samples. Java stacks do
@@ -123,8 +125,6 @@ Parameters are `sf.batch.aggregate.rows`, `.type`, `.cardinality`, `.warmups`,
 to 3/7. Set `.fixedExtrema=true` for the typed source/query above (default false);
 `.type` then does not change its four fixed types. Use task-scoped runtime temporary directories and clean them afterwards.
 
-Reproducing rejected candidates requires a temporary source-only change making
-`BatchPhysicalGroupAggregateBase` qualify `amortizesRowBoundaries`, followed by
-`.sha2=false`. Restore the current gate after the experiment. This is not a
-production performance opt-in; the unchanged harness deliberately requires native
+To measure standalone aggregates with the current planner, set `.sha2=false`.
+No temporary planner changes are needed. The unchanged harness requires native
 plan/work evidence and fails if it silently benchmarks stock twice.

@@ -3148,6 +3148,13 @@ non-null violations, duplicate native groups and pending unflushed input are rej
 validates the complete source and empty target before applying data, consuming source state only
 after success. A resource-denied destination must be closed before retrying on a fresh target.
 
+Persistent arithmetic and typed scalar header imports retain the 1,024-row transfer format,
+but install at most 64 rows per internal working set. All keys in an incoming frame are checked
+before the first set is written, so an existing key in a later set still rejects without partial
+installation. Each set reserves decoded state and encoding overlap through its commit, then
+releases both before proceeding. Imported persistent groups are charged only to their live
+store owner; memory imports continue to retain and charge the complete destination state.
+
 Export visits live memory or raw native RocksDB state in bounded Arrow callbacks, preserving
 actual binary keys. It never writes an intermediate native checkpoint. Decoded persistent state
 and output buffers reserve the task's memory budget. TTL-disabled export emits no write age even
@@ -3392,13 +3399,14 @@ Benchmarking remains deferred.
 ## Typed retracting canonical extrema (partial)
 
 Ordinary SQL and portable stock plans bind single-phase retracting MIN/MAX for BIGINT, INT,
-SMALLINT, TINYINT, DATE, TIME and BOOLEAN. The grouping contract remains one INT/BIGINT key or
-a global singleton. Actual generated accumulator fields, hidden record counts, MapView IDs,
+SMALLINT, TINYINT, DATE, TIME and BOOLEAN. The historical grouping cohort used one INT/BIGINT
+key or a global singleton; additional fixed-width scalar/composite keys are authored below and
+await qualification. Actual generated accumulator fields, hidden record counts, MapView IDs,
 serializers, TTL policy, stock identities and maximum parallelism come from the released owner.
 The captured TIME schema uses the released planner's resolved precision zero; declared TIME(0)
 and TIME(3) queries are tested separately. Arithmetic slots sharing this contract remain BIGINT.
-Other schemas, composite keys, DISTINCT/views, aggregate phases and asynchronous/unaligned owners
-remain outside this structured binding.
+Constructed grouping keys, other value schemas, DISTINCT/views, aggregate phases and
+asynchronous/unaligned owners remain outside this structured binding.
 
 Each cached selection and map-size counter remains independent of the retained value-to-signed-
 count map. Negative and zero counts, independently written map entries, a cached selection hidden
@@ -3538,7 +3546,21 @@ accumulator contract during SQL and compiled-plan submission. The global stage r
 `accState` under the original operator identity, key serializer and maximum parallelism.
 Its native configuration is rebound before canonical or ordinary native-checkpoint restore;
 no StreamFusion serializer or additional persistent state descriptor enters the savepoint.
-Retracting mini-batches and global DISTINCT/data-view/UDF layouts remain outside this adapter.
+Local/global retracting DISTINCT mini-batches remain outside this typed adapter. The newly added
+scalar local/global binding below awaits qualification. Captured managed UDF
+contracts have their own scope below.
+
+The resumed #569 implementation additionally binds one-phase retracting scalar bundles and
+COUNT DISTINCT through the existing typed header/view contract. Hidden record counts retain
+group liveness independently of filtered SUM/AVG counts and DISTINCT multiplicities. A barrier
+drains the existing native bundle before direct canonical projection; no input replay or new
+state encoding is added. SUM DISTINCT and retracting MIN/MAX views retain their existing gates,
+and DISTINCT with entry TTL still requires a separate timestamp contract.
+New planner and repeated-switch controls cover nullable/duplicate members, orphan retracts,
+temporary zero counts, group deletion/recreation, both native stores and native-checkpoint
+recovery. Full jobs retain ordinary SQL/compiled submission, both engine orders, stock reference
+jobs stopped at the same bundle cuts, and rescaling. These tests await complete qualification; selected local results are recorded in the
+[canonical inventory](../backends/canonical-state.md#resumed-scope-local-qualification), separately from historical evidence below.
 
 The local stage produces stock partial fields directly. AVG carries its widened sum and
 independent BIGINT count, with the actual released accumulator type defining the sum carrier.
@@ -3919,3 +3941,133 @@ Broader user serializer contracts, key/value schemas, view/phase/TTL/failure com
 connector delivery and cross-version qualification remain in
 [#569](https://github.com/datafusion-contrib/StreamFusion/issues/569). Every family remains partial.
 Benchmarking remains explicitly deferred.
+
+## Additional canonical bindings awaiting qualification
+
+Typed scalar/shared DISTINCT owners now retain binary ROW-bearing grouping keys at the actual
+stock input boundary. Existing eager, one-phase and append-only two-phase execution uses the
+same raw-key protocol for live input and canonical state. New nested-key state/planner/job
+controls include NULLs, original padding, checkpoint recovery and rescaling on both Flink lines.
+
+Two-phase retracting COUNT/SUM/AVG additionally binds signed arithmetic counts and the hidden
+input-row counter. Raw SUM partials survive a zero net non-null count; bundle precombination
+retains released Flink's merge order before one retained-state merge. Existing native execution
+and private checkpoint encodings are reused. Retracting global DISTINCT remains excluded.
+These additions await complete qualification; selected local results are recorded in the
+[canonical inventory](../backends/canonical-state.md#resumed-scope-local-qualification);
+historical passing cohorts above do not qualify this wider scope.
+
+### One-phase decimal accumulator projection awaiting qualification
+
+Existing decimal SUM and AVG now have typed canonical bindings for eager and one-phase bundled
+execution. The projection distinguishes an unseen append SUM from native zero, retains the
+nullable raw accumulator and signed count for retracting SUM, and permits AVG's overflowed NULL
+raw sum with its independent count. Existing shared COUNT DISTINCT views continue through their
+own stock descriptors. New compact/wide-scale controls compare raw stock bytes, post-overflow
+continuation, native checkpoint recovery and full-job effects. Both released Flink lines remain
+awaiting qualification; decimal global partials and extrema are still outside this adapter.
+
+Local bundles with the stock projection descriptor and represented ROW keys now group by the
+stock binary key encoder. Optional owned-byte/string transport children no longer split one
+stock key into multiple local partials. Scalar and ordinary Arrow-row key paths retain their
+existing selection. A floating-sum regression mixes logical and owned ROW representations in
+single-row and whole-batch input, across repeated flushes; one stock key must keep one fold in
+arrival order. Execution of this new control remains deferred to the qualification window.
+
+
+## Additional COUNT arguments awaiting canonical qualification
+
+Canonical scalar and local/global binding now admits non-DISTINCT COUNT arguments wherever the
+existing Arrow input reader supports them, including binary, interval, ROW, ARRAY, MAP and
+MULTISET values. COUNT uses only argument validity and retains the same BIGINT accumulator;
+no value view, input-row replay or native state format is added. Grouping keys and all other
+aggregate arguments retain their existing type and view gates. Decimal COUNT likewise uses
+its validity reader independently of decimal SUM/AVG accumulator restrictions.
+
+New planner controls cover eager, one-phase and two-phase execution, append/retract input and
+ordinary/portable submissions. Raw-state controls include signed retractions, filters, NULLs,
+empty group removal, repeated switches and native recovery on both stores. Clean-worker jobs
+also cover hidden liveness counts, partial bundle barriers and rescaling with a separate final
+COUNT oracle. All additions await both-release execution in the local testing window; no new
+passing cohort or performance result is claimed.
+
+
+The existing retracting MIN/MAX map-view contract additionally binds drained one-phase
+mini-batches for its integral/date/time/boolean values. Capture uses the actual released
+MiniBatchGroupAggFunction, retention and count trigger, preserving stock view serializers and
+hidden input-row counters. Local/global extrema and filtered extrema remain gated. No native
+state format or new aggregate algorithm is introduced.
+
+New raw-state/changelog controls include duplicate minima, unmatched removal debts, empty-group
+recreation, both engine orders and native checkpoint recovery; ordinary/portable planner controls
+capture the original trigger and retention. Clean-worker jobs add no-input returns and rescaling
+with a separate MIN/MAX oracle. These additions await both-release execution, and earlier eager
+extrema results do not qualify the new mini-batch scope.
+
+## Scalar and composite retracting extrema keys awaiting qualification
+
+The existing header/map transfer now admits scalar grouping codecs and composites, including
+arbitrary key counts: integer widths, FLOAT/DOUBLE, BOOLEAN, DATE/TIME, intervals, CHAR/VARCHAR,
+binary values, compact/wide DECIMAL and TIMESTAMP/LTZ including nanosecond precision. The native
+transfer validates the complete BinaryRow key's minimum fixed prefix and eight-byte alignment,
+matching the typed group adapter; variable bytes stay opaque and retain their original encoding.
+The binding retains released selectors, serializer metadata, owner IDs and maximum parallelism.
+This widens key admission for existing eager and one-phase mini-batch retracting MIN/MAX without
+changing signed value carriers, independent headers/map entries, TTL or native state format.
+Constructed ROW/ARRAY/MAP/MULTISET keys remain outside this extension.
+
+Authored actual-stock controls cover complete raw state, opposite signed-zero and NaN keys,
+nullable composite components, a 65-column key crossing a null-bitmap boundary, both engine
+orders/stores, no-input returns, retractions, TTL expiry and native checkpoint recovery. Ordinary
+and portable planner controls require the actual scalar key schema and reject constructed
+schemas. Clean-stock jobs use independent SMALLINT/compact-DECIMAL or non-inline VARCHAR/wide-DECIMAL
+physical key columns, check both fields on the bound extrema contract in every native worker and
+retain independent final-value oracles through eager/mini-batch handoffs and rescaling. Native
+controls additionally preserve long UTF-8 keys and reject unaligned frames without mutation. These controls
+await Flink 1.18/2.2 qualification; historical counts above do not qualify them.
+The optional local pairwise selector also applies to grouped complete-job providers; default/CI
+execution retains every original invocation. No performance claim is added.
+
+The global ROW-key rescale fixture retains input beyond both fixed savepoint cuts, then checks
+new aggregate values after the final restore. Its six-round rescale oracle stays separate from
+the four-round continued-input oracle.
+Rescale execution evidence counts every native owner in the executed graph at its actual
+parallelism, including separate local and global grouped stages; both stages are required.
+
+Variable-key extrema export also bounds resident header and companion batches by 256 records
+and four MiB of payload estimates, plus one oversized record. This prevents a hot large key from
+being copied across an entire entry chunk. Both stores reserve conversion capacity before Arrow
+allocation, then retain the same reservation through the synchronous C Data receiver, avoiding a
+duplicate charge. Failure and denial release temporary charges and retain source state. Existing
+RocksDB raw-reader bounds and per-record working sets remain separate. Authored native controls
+cover a two-MiB hot key, denial before allocation, receiver failure/retry and reservation release;
+Java and clean-worker qualification remains pending. The 256-record export quantum keeps the
+pre-allocation conversion allowance within the existing 128-KiB small-pool control; imported
+frames retain their 1,024-record protocol limit. Drained mini-batches use the same retracting
+view contract, while pending bundles still fail direct export. Logical schema fixtures use the
+released Table API for interval columns that SQL DDL cannot declare.
+
+Bound one-phase retracting mini-batches follow the released 1.18/2.2 whole-bundle early return
+when a key has only unmatched retractions and no live accumulator. Their buffered Arrow rows
+are grouped in the released binary-key HashMap order before applying state changes; later keys
+remain untouched after that return. A later insertion for the same key in the bundle prevents
+the early return. The existing deferred-input buffers and task reservation cover this work,
+including TTL reads at bundle drainage. Two-phase merges retain their independent contract.
+
+Ordinary grouped owners with non-compact DECIMAL or precise TIMESTAMP grouping fields likewise
+use the captured stock template when direct ordinary binding cannot retain that key layout.
+Canonical qualification remains scoped to the existing supported aggregate/state contracts.
+
+Bound, drained one-phase MIN/MAX bundles also use the existing direct RocksDB group store,
+with independent header/view expiry. The canonical component matrix requires that actual
+persistent path; a raw-keyed snapshot fallback does not qualify it.
+
+Integer AVG finalization shares the same signed-count, wrapping-division and narrowing kernel
+as window accumulators and native OVER. Storage layouts and update/merge loops remain
+specialized; shared contract cases cover NULLs, changelog retractions and partial-state restore.
+See [the integer AVG decision](https://github.com/datafusion-contrib/StreamFusion/blob/main/divergences/01-integer-truncating-avg.md) in the repository.
+
+Composite-key mini-batch extrema interchange compares committed changelogs with a stock
+reference stopped at the same savepoint cuts. Those cuts flush pending bundles, so an
+uninterrupted reference can emit different intermediate updates despite equal final tables.
+The independent final MIN/MAX oracle remains required.

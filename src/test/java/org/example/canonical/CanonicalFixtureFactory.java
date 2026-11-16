@@ -459,17 +459,7 @@ public final class CanonicalFixtureFactory
         var row = new GenericRowData(RowKind.valueOf(fields[0]), type.getFieldCount());
         for (int i = 0; i < type.getFieldCount(); i++) {
           String value = fields[i + 1];
-          row.setField(
-              i,
-              value.equals("null")
-                  ? null
-                  : type.getTypeAt(i)
-                          .is(
-                              org.apache.flink.table.types.logical.LogicalTypeRoot
-                                  .TIMESTAMP_WITHOUT_TIME_ZONE)
-                      ? org.apache.flink.table.data.TimestampData.fromEpochMillis(
-                          Long.parseLong(value))
-                      : Long.parseLong(value));
+          row.setField(i, scalar(type.getTypeAt(i), value));
         }
         output.collect(serializer.toBinaryRow(row).copy());
       }
@@ -480,6 +470,46 @@ public final class CanonicalFixtureFactory
           : split.offset == rows.size() && noMoreSplits
               ? InputStatus.END_OF_INPUT
               : InputStatus.NOTHING_AVAILABLE;
+    }
+
+    private static Object scalar(
+        org.apache.flink.table.types.logical.LogicalType type, String value) {
+      if (value.equals("null")) return null;
+      switch (type.getTypeRoot()) {
+        case TINYINT:
+          return Byte.parseByte(value);
+        case SMALLINT:
+          return Short.parseShort(value);
+        case INTEGER:
+        case DATE:
+        case TIME_WITHOUT_TIME_ZONE:
+        case INTERVAL_YEAR_MONTH:
+          return Integer.parseInt(value);
+        case BIGINT:
+        case INTERVAL_DAY_TIME:
+          return Long.parseLong(value);
+        case BOOLEAN:
+          return Boolean.parseBoolean(value);
+        case FLOAT:
+          return Float.parseFloat(value);
+        case DOUBLE:
+          return Double.parseDouble(value);
+        case CHAR:
+        case VARCHAR:
+          return org.apache.flink.table.data.StringData.fromString(value);
+        case DECIMAL:
+          var decimal = (org.apache.flink.table.types.logical.DecimalType) type;
+          return org.apache.flink.table.data.DecimalData.fromBigDecimal(
+              new java.math.BigDecimal(value), decimal.getPrecision(), decimal.getScale());
+        case TIMESTAMP_WITHOUT_TIME_ZONE:
+        case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
+          return org.apache.flink.table.data.TimestampData.fromEpochMillis(Long.parseLong(value));
+        case BINARY:
+        case VARBINARY:
+          return java.util.Base64.getDecoder().decode(value);
+        default:
+          throw new IllegalArgumentException("Use BINARY rows for fixture type " + type);
+      }
     }
 
     private void markReady() throws IOException {
@@ -532,25 +562,38 @@ public final class CanonicalFixtureFactory
   }
 
   public static final class WriterState {
+    final long generation;
+    final int writer;
     final long transaction;
     final List<byte[]> rows;
 
     WriterState(long transaction, List<byte[]> rows) {
+      this(0, 0, transaction, rows);
+    }
+
+    WriterState(long generation, int writer, long transaction, List<byte[]> rows) {
+      this.generation = generation;
+      this.writer = writer;
       this.transaction = transaction;
       this.rows = List.copyOf(rows);
     }
   }
 
   public static final class RowsSerializer implements SimpleVersionedSerializer<WriterState> {
+    private static final long OWNER_HEADER = 0xC516_7A11_0000_0002L;
+
     @Override
     public int getVersion() {
-      return 1;
+      return 2;
     }
 
     @Override
     public byte[] serialize(WriterState state) throws IOException {
       var bytes = new ByteArrayOutputStream();
       try (var output = new DataOutputStream(bytes)) {
+        output.writeLong(OWNER_HEADER);
+        output.writeLong(state.generation);
+        output.writeInt(state.writer);
         output.writeLong(state.transaction);
         output.writeInt(state.rows.size());
         for (byte[] row : state.rows) {
@@ -563,12 +606,19 @@ public final class CanonicalFixtureFactory
 
     @Override
     public WriterState deserialize(int version, byte[] bytes) throws IOException {
-      if (version != 1) throw new IOException("unsupported sink state version");
+      if (version != 1 && version != 2) throw new IOException("unsupported sink state version");
       try (var input = new DataInputStream(new ByteArrayInputStream(bytes))) {
+        if (version == 2 && input.readLong() != OWNER_HEADER)
+          throw new IOException("invalid fixture writer ownership header");
+        long generation = version == 1 ? 0 : input.readLong();
+        int writer = version == 1 ? 0 : input.readInt();
         long transaction = input.readLong();
         int count = input.readInt();
-        if (transaction < 0 || count < 0 || count > bytes.length / 4)
-          throw new IOException("invalid sink state");
+        if (generation < 0
+            || writer < 0
+            || transaction < 0
+            || count < 0
+            || count > bytes.length / 4) throw new IOException("invalid sink state");
         List<byte[]> rows = new ArrayList<>();
         for (int i = 0; i < count; i++) {
           int size = input.readInt();
@@ -577,7 +627,13 @@ public final class CanonicalFixtureFactory
           rows.add(input.readNBytes(size));
         }
         if (input.available() != 0) throw new IOException("trailing sink state bytes");
-        return new WriterState(transaction, rows);
+        return new WriterState(generation, writer, transaction, rows);
+      }
+    }
+
+    WriterState committed(byte[] bytes) throws IOException {
+      try (var input = new DataInputStream(new ByteArrayInputStream(bytes))) {
+        return deserialize(input.readLong() == OWNER_HEADER ? 2 : 1, bytes);
       }
     }
   }
@@ -608,6 +664,8 @@ public final class CanonicalFixtureFactory
     private final RowDataSerializer serializer;
     private final String witness;
     private final List<byte[]> pending = new ArrayList<>();
+    private long generation;
+    private int writer;
     private long transaction;
     private boolean witnessed;
     private boolean outputWitnessed;
@@ -620,10 +678,19 @@ public final class CanonicalFixtureFactory
       countEnabled = Files.exists(Path.of(witness + "-count-enabled"));
       if (countEnabled) Files.writeString(Path.of(witness + "-sink-count"), "0");
       for (WriterState state : restored) {
+        generation = Math.max(generation, Math.addExact(state.generation, 1));
         transaction = Math.max(transaction, state.transaction);
         pending.addAll(state.rows);
       }
       Files.writeString(Path.of(witness + "-sink-ready"), "ready");
+    }
+
+    RowsWriter withIdentity(long restoredCheckpoint, int writer) {
+      if (restoredCheckpoint < -1 || writer < 0)
+        throw new IllegalArgumentException("invalid fixture writer identity");
+      generation = Math.max(generation, Math.addExact(restoredCheckpoint, 1));
+      this.writer = writer;
+      return this;
     }
 
     @Override
@@ -662,14 +729,14 @@ public final class CanonicalFixtureFactory
     @Override
     public Collection<WriterState> prepareCommit() {
       if (pending.isEmpty()) return List.of();
-      WriterState commit = new WriterState(transaction++, pending);
+      WriterState commit = new WriterState(generation, writer, transaction++, pending);
       pending.clear();
       return List.of(commit);
     }
 
     @Override
     public List<WriterState> snapshotState(long checkpoint) {
-      return List.of(new WriterState(transaction, pending));
+      return List.of(new WriterState(generation, writer, transaction, pending));
     }
 
     @Override
@@ -691,7 +758,26 @@ public final class CanonicalFixtureFactory
         failCommit("before");
         WriterState commit = request.getCommittable();
         byte[] bytes = new RowsSerializer().serialize(commit);
-        Path target = directory.resolve(String.format("transaction-%020d", commit.transaction));
+        if (commit.generation == 0 && commit.writer == 0) {
+          Path legacy =
+              directory.resolve(
+                  String.format(java.util.Locale.ROOT, "transaction-%020d", commit.transaction));
+          if (Files.exists(legacy)) {
+            var serializer = new RowsSerializer();
+            if (!java.util.Arrays.equals(
+                bytes, serializer.serialize(serializer.committed(Files.readAllBytes(legacy)))))
+              throw new IOException("transaction reused with different contents");
+            continue;
+          }
+        }
+        Path target =
+            directory.resolve(
+                String.format(
+                    java.util.Locale.ROOT,
+                    "transaction-%020d-%010d-%020d",
+                    commit.generation,
+                    commit.writer,
+                    commit.transaction));
         if (Files.exists(target)) {
           if (!java.util.Arrays.equals(bytes, Files.readAllBytes(target)))
             throw new IOException("transaction reused with different contents");
@@ -716,6 +802,71 @@ public final class CanonicalFixtureFactory
 
     @Override
     public void close() {}
+  }
+
+  public static final class NestedRankChecksum
+      extends org.apache.flink.table.functions.ScalarFunction {
+    public Long eval(
+        @org.apache.flink.table.annotation.DataTypeHint(NestedJoinChecksum.TYPE)
+            org.apache.flink.types.Row row,
+        Long rank) {
+      return NestedJoinChecksum.checksum(row) * 31 + rank;
+    }
+  }
+
+  public static final class NestedRowRankChecksum
+      extends org.apache.flink.table.functions.ScalarFunction {
+    public static final String TYPE = "ROW<a ARRAY<BIGINT>,r ROW<v BIGINT,s STRING>>";
+
+    public Long eval(
+        @org.apache.flink.table.annotation.DataTypeHint(TYPE) org.apache.flink.types.Row row,
+        Long rank) {
+      if (row == null) return -7 * 31 + rank;
+      Object[] array = (Object[]) row.getField(0);
+      long result = 17;
+      if (array != null)
+        for (Object value : array) result = result * 37 + (value == null ? -1 : (Long) value);
+      var nested = (org.apache.flink.types.Row) row.getField(1);
+      if (nested != null) {
+        result = result * 41 + (nested.getField(0) == null ? -5 : (Long) nested.getField(0));
+        result += nested.getField(1) == null ? -11 : nested.getField(1).hashCode();
+      }
+      return result * 31 + rank;
+    }
+  }
+
+  public static final class NestedJoinChecksum
+      extends org.apache.flink.table.functions.ScalarFunction {
+    public static final String TYPE =
+        "ROW<a ARRAY<BIGINT>,m MAP<STRING,BIGINT>,r ROW<v BIGINT,s STRING>>";
+
+    public Long eval(
+        @org.apache.flink.table.annotation.DataTypeHint(TYPE) org.apache.flink.types.Row left,
+        @org.apache.flink.table.annotation.DataTypeHint(TYPE) org.apache.flink.types.Row right) {
+      return checksum(left) * 31 + checksum(right);
+    }
+
+    private static long checksum(org.apache.flink.types.Row row) {
+      if (row == null) return -7;
+      long result = 17;
+      Object[] array = (Object[]) row.getField(0);
+      if (array != null)
+        for (Object value : array) result = result * 37 + (value == null ? -1 : (Long) value);
+      @SuppressWarnings("unchecked")
+      var map = (java.util.Map<String, Long>) row.getField(1);
+      if (map != null)
+        for (var entry : map.entrySet())
+          result +=
+              entry.getKey().hashCode() * 19L + (entry.getValue() == null ? -3 : entry.getValue());
+      var nested = (org.apache.flink.types.Row) row.getField(2);
+      if (nested != null) {
+        var value = (Long) nested.getField(0);
+        var text = (String) nested.getField(1);
+        result = result * 41 + (value == null ? -5 : value);
+        result += text == null ? -11 : text.hashCode();
+      }
+      return result;
+    }
   }
 
   public static final class MergeHistoryAccumulator {
@@ -890,24 +1041,31 @@ public final class CanonicalFixtureFactory
     }
   }
 
-  public static List<String> committedRows(Path directory, RowType type) throws IOException {
-    List<String> result = new ArrayList<>();
-    RowDataSerializer serializer = new RowDataSerializer(type);
+  public static List<byte[]> committedRecords(Path directory) throws IOException {
+    List<byte[]> result = new ArrayList<>();
     try (var files = Files.list(directory)) {
       for (Path file :
           files
               .filter(path -> path.getFileName().toString().startsWith("transaction-"))
               .sorted()
               .collect(java.util.stream.Collectors.toList())) {
-        WriterState state = new RowsSerializer().deserialize(1, Files.readAllBytes(file));
-        for (byte[] bytes : state.rows) {
-          RowData row = serializer.deserialize(new DataInputDeserializer(bytes));
-          StringBuilder value = new StringBuilder(row.getRowKind().shortString());
-          for (int i = 0; i < row.getArity(); i++)
-            value.append('|').append(row.isNullAt(i) ? "null" : row.getLong(i));
-          result.add(value.toString());
-        }
+        var serializer = new RowsSerializer();
+        WriterState state = serializer.committed(Files.readAllBytes(file));
+        result.addAll(state.rows);
       }
+    }
+    return result;
+  }
+
+  public static List<String> committedRows(Path directory, RowType type) throws IOException {
+    List<String> result = new ArrayList<>();
+    RowDataSerializer serializer = new RowDataSerializer(type);
+    for (byte[] bytes : committedRecords(directory)) {
+      RowData row = serializer.deserialize(new DataInputDeserializer(bytes));
+      StringBuilder value = new StringBuilder(row.getRowKind().shortString());
+      for (int i = 0; i < row.getArity(); i++)
+        value.append('|').append(row.isNullAt(i) ? "null" : row.getLong(i));
+      result.add(value.toString());
     }
     return result;
   }

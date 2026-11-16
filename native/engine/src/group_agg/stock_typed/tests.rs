@@ -1,4 +1,86 @@
 use super::*;
+use crate::aggregates::DECIMAL128_MAX;
+
+#[test]
+fn decimal_raw_state_keeps_empty_sum_presence_and_overflowed_average() {
+    fn owner(append: bool) -> GroupAggregator {
+        let kinds = vec![if append { 0 } else { 40 }, 4];
+        let mut owner =
+            GroupAggregator::new(kinds.clone(), vec![5802, 5802], vec![1, 1], vec![0], true);
+        owner.configure_typed(&kinds, append).unwrap();
+        owner
+    }
+    fn batch(value: Option<i128>) -> RecordBatch {
+        RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("key", DataType::Int64, false),
+                Field::new("value", DataType::Decimal128(38, 2), true),
+            ])),
+            vec![
+                Arc::new(Int64Array::from(vec![1])),
+                Arc::new(
+                    arrow::array::Decimal128Array::from(vec![value])
+                        .with_precision_and_scale(38, 2)
+                        .unwrap(),
+                ),
+            ],
+        )
+        .unwrap()
+    }
+    fn frames(owner: &GroupAggregator) -> Vec<RecordBatch> {
+        let mut frames = vec![];
+        owner
+            .visit_typed(None, |batch| {
+                frames.push(batch);
+                Ok(())
+            })
+            .unwrap();
+        frames
+    }
+    for append in [false, true] {
+        let mut source = owner(append);
+        source.update(&batch(None), 0).unwrap();
+        let initial = frames(&source);
+        assert!(
+            initial[0].column(3).is_null(0),
+            "SUM starts NULL before a non-null value"
+        );
+        assert_eq!(
+            ScalarValue::try_from_array(initial[0].column(5), 0).unwrap(),
+            ScalarValue::Decimal128(Some(0), 38, 2)
+        );
+        let mut restored = owner(append);
+        for frame in &initial {
+            restored.transfer_typed_headers(frame, false).unwrap();
+        }
+        for value in [DECIMAL128_MAX - 1, DECIMAL128_MAX - 1, 100] {
+            let input = batch(Some(value));
+            assert_eq!(
+                source.update(&input, 1).unwrap(),
+                restored.update(&input, 1).unwrap()
+            );
+        }
+        let exported = frames(&source);
+        assert_eq!(exported, frames(&restored));
+        assert_eq!(
+            ScalarValue::try_from_array(exported[0].column(3), 0).unwrap(),
+            ScalarValue::Decimal128(Some(100), 38, 2)
+        );
+        assert!(
+            exported[0].column(5).is_null(0),
+            "AVG retains its overflowed NULL sum"
+        );
+        assert_eq!(
+            ScalarValue::try_from_array(exported[0].column(6), 0).unwrap(),
+            ScalarValue::Int64(Some(3))
+        );
+        let mut returned = owner(append);
+        for frame in &exported {
+            returned.transfer_typed_headers(frame, false).unwrap();
+        }
+        assert_eq!(exported, frames(&returned));
+    }
+}
 
 #[cfg(feature = "rocksdb-state")]
 use crate::state::RocksStoreConfig;
@@ -541,5 +623,50 @@ fn null_markers_preserve_counts_without_contributing_to_the_distinct_scalar() {
                 }
             }
         }
+    }
+}
+
+#[cfg(feature = "rocksdb-state")]
+#[test]
+fn persistent_typed_headers_release_each_import_working_frame() {
+    for append in [false, true] {
+        let mut source = Owner::new(false, append);
+        for id in 0..1025 {
+            source.update(&input(
+                Some(&format!("key-{id}")),
+                Some(id),
+                Some("member"),
+                0,
+            ));
+        }
+        let frames = source.frames(None);
+        assert_eq!(
+            frames.iter().map(RecordBatch::num_rows).sum::<usize>(),
+            1025
+        );
+        let expected = raw(source.frames(None));
+        let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(1_000_000));
+        let mut target = Owner::new(true, append);
+        let Owner::Rocks(native, _) = &mut target else {
+            unreachable!()
+        };
+        native
+            .memory
+            .attach_pool("group-aggregate", &pool, 0)
+            .unwrap();
+        native.store.attach_memory(native.memory.state_memory());
+        for validating in [true, false] {
+            for frame in &frames {
+                target.import(None, frame, validating).unwrap();
+                assert_eq!(pool.reserved(), 0);
+            }
+        }
+        assert_eq!(raw(target.frames(None)), expected);
+        let Owner::Rocks(native, _) = &mut target else {
+            unreachable!()
+        };
+        assert_eq!(native.memory.state_bytes(), 0);
+        drop(target);
+        assert_eq!(pool.reserved(), 0);
     }
 }

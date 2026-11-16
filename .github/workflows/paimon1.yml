@@ -7,10 +7,12 @@ on:
     paths:
       - 'streamfusion-paimon1/**'
       - 'streamfusion-paimon/**'
-      - 'src/main/java/tech/streamfusion/arrow/**'
-      - 'streamfusion-parquet/**'
-      - 'streamfusion-orc/**'
-      - 'src/main/java/tech/streamfusion/operator/**'
+      - 'streamfusion-paimon/src/main/java/tech/streamfusion/paimon/**'
+      - 'streamfusion-paimon/src/main/java/tech/streamfusion/planner/**/*Paimon*'
+      - 'streamfusion-core/src/main/java/tech/streamfusion/arrow/**'
+      - 'streamfusion-parquet/src/main/java/tech/streamfusion/parquet/**'
+      - 'streamfusion-orc/src/main/java/tech/streamfusion/orc/**'
+      - 'streamfusion-core/src/main/java/tech/streamfusion/operator/**'
       - 'native/paimon/**'
       - 'native/parquet/**'
       - 'native/orc/**'
@@ -63,8 +65,19 @@ jobs:
         run: >-
           mvn -B -ntp -Pflink-1.18,paimon1,bench -pl streamfusion-paimon1 -am
           -Dnative.build.skip=true
-          -Dsf.testForks=1 '-Dtest=LegacyPaimon*Test,PaimonSourceSqlTest,PaimonSplitWatermarksTest,PaimonFetcherLifecycleTest,PaimonCompaction*Test,PaimonMaintenanceTest'
+          -Dsf.testForks=1 '-Dtest=LegacyPaimon*Test,PaimonSourceSqlTest,PaimonSplitWatermarksTest,PaimonFetcherLifecycleTest,PaimonCompaction*Test,PaimonMaintenanceTest,PaimonBatchSqlTest,PaimonBatchEncodingTest'
           -Dsurefire.failIfNoSpecifiedTests=false '-Dsf.extraJvmArgs=-Xmx2g -XX:ActiveProcessorCount=2 --add-opens=java.base/java.math=ALL-UNNAMED --add-opens=java.base/java.time=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED' test
+      - name: Plan every released TPC-DS variant with the legacy adapter
+        env:
+          SF_TPCDS: 'true'
+        run: |
+          tpcds_scratch="$RUNNER_TEMP/paimon1-tpcds"
+          trap 'rm -rf "$tpcds_scratch"' EXIT
+          mvn -B -ntp -Pflink-1.18,paimon1,bench,tpcds -pl streamfusion-paimon1 -am \
+            -Dnative.build.skip=true -Dsf.runtime.tests.skip=true \
+            -Dtest=PaimonTpcdsBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
+            -Dsf.tpcds.mode=plan -Dsf.tpcds.scale=0.01 \
+            -Dsf.tpcds.directory="$tpcds_scratch" test
       - name: Released upstream merge-engine compaction fixtures
         run: python3 bin/paimon-compaction-suite.py --paimon-version 1.0.0 --release --skip-native-build
       - name: Upstream SQL tests (reuse release libraries)

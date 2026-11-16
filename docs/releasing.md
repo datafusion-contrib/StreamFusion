@@ -12,14 +12,13 @@ addition to checking native payload boundaries. The loader also validates the li
 release all modules from the same build; an unmarked older payload cannot be mixed into a newly
 built installation. The current release target remains Flink 2.2.
 
-The guard also checks each optional module's executable and source JARs against its selected
-module-local Java sources and SPI files. Source attachments must contain the exact selected
-paths and contents, without another module's sources, another host's adapters, duplicate entries,
-compiled classes or native libraries. Missing source attachments fail release validation.
-Additional source roots are declared by their consumers; the parent manages the helper's
-version without adding root compatibility sources to new modules.
-Iceberg and Doris participate on Flink 2.2; Hudi participates in the Flink 1.18 development
-bundle and remains Java-only, reusing Parquet's native library.
+The guard checks each optional module's executable and source JARs against its selected
+module-local Java sources and SPI files. Source attachments must contain the exact paths
+and bytes, without foreign or wrong-host sources, duplicate entries, compiled classes or
+native libraries. Missing source attachments fail release validation. Iceberg and Doris
+participate on Flink 2.2; Hudi participates in the Flink 1.18 development bundle and remains
+Java-only, reusing Parquet's native library. The runtime test assembly contains no
+production classes; it consumes the actual deployable module artifacts.
 
 ## One-time GitHub setup
 
@@ -57,11 +56,11 @@ bin/check-artifacts.sh --host-only
 ```
 
 `bin/build-release.sh` packages with the unsigned `release` profile, so the source and javadoc
-attachments the publish workflow builds are verified locally before any tag exists. Javadoc is
-also generated during every `mvn test` so unresolved references or missing module dependencies
-fail the ordinary build. Optional implementations and host adapters live in their owning modules;
-Javadoc does not need another connector's root sources. Use `-Dmaven.javadoc.skip=true` for a
-quick loop.
+attachments the publish workflow builds are verified locally before any tag exists. Javadoc itself is
+also generated during every `mvn test`. Each module documents its own production sources against
+its declared dependencies; optional connector APIs are provided by their owning modules rather
+than a global javadoc dependency list. An unresolved reference fails the ordinary test build;
+`-Dmaven.javadoc.skip=true` skips documentation generation for a quick loop.
 
 The workflow's universal bundle verification also enables the `release` profile with
 `-Dgpg.skip=true`. This generates the flattened publication POMs and source/javadoc attachments

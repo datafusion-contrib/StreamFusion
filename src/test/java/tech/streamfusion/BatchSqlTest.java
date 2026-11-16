@@ -13,6 +13,39 @@ import org.junit.jupiter.api.Test;
 
 class BatchSqlTest {
   @Test
+  void sharedTransformationsKeepSimplifiedNamesAndOnlyPerimeterTransposes() throws Exception {
+    Configuration config = new Configuration();
+    config.setString("pipeline.operator-chaining.enabled", "false");
+    config.setString("table.exec.simplify-operator-name-enabled", "true");
+    try (var metrics = new RecoveryExecutionMetrics()) {
+      metrics.setAsContext(config, 1, 0);
+      var nativeEnv = environment(true, 13, config);
+      String sql =
+          "SELECT SHA2(CAST(id AS STRING), 256) FROM input WHERE id < 5 UNION ALL "
+              + "SELECT SHA2(CAST(id AS STRING), 256) FROM input WHERE id >= 5";
+      nativeEnv.executeSql("CREATE TABLE output(v STRING) WITH ('connector'='blackhole')");
+      String plan = nativeEnv.explainSql("INSERT INTO output " + sql);
+      String physical =
+          plan.substring(
+              plan.indexOf("== Optimized Physical Plan =="),
+              plan.indexOf("== Optimized Execution Plan =="));
+      assertEquals(2, physical.split("RowDataToArrow", -1).length - 1, physical);
+      assertEquals(1, physical.split("ArrowToRowData", -1).length - 1, physical);
+      assertEquals(collect(environment(false, 13, config), sql), collect(nativeEnv, sql));
+      RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeCalc");
+      for (String operator : List.of("RowDataToArrow", "ArrowToRowData")) {
+        var names = metrics.taskNames(operator);
+        assertFalse(names.isEmpty(), operator);
+        assertTrue(
+            names.stream().allMatch(name -> name.startsWith(operator + "ExecNode[")),
+            names.toString());
+      }
+    } finally {
+      tech.streamfusion.compat.FlinkTestContexts.clearForRemoteSubmission();
+    }
+  }
+
+  @Test
   void parallelBoundedInputsPreserveResults() throws Exception {
     try (var metrics = new RecoveryExecutionMetrics()) {
       metrics.setAsContext(new Configuration(), 2, 0);
@@ -54,7 +87,7 @@ class BatchSqlTest {
     config.setString("pipeline.operator-chaining.enabled", "false");
     try (var metrics = new RecoveryExecutionMetrics()) {
       metrics.setAsContext(config, 1, 0);
-      String sql = "SELECT SHA2(CAST(id * 2 AS STRING), 256) FROM input WHERE MOD(id, 3) = 0";
+      String sql = "SELECT id * 2 FROM input WHERE MOD(id, 3) = 0";
       assertEquals(
           collect(environment(false, 3107, config), sql),
           collect(environment(true, 3107, config), sql));
@@ -74,7 +107,7 @@ class BatchSqlTest {
         metrics.setAsContext(new Configuration(), 1, 0);
         TableEnvironment nativeEnv = environment(true, count);
         String sql =
-            "SELECT id, id * 3 + 7 AS calculated, SHA2(CAST(id AS STRING), 256) "
+            "SELECT id, id * 3 + 7 AS calculated "
                 + "FROM input WHERE MOD(id, 2) = 0 AND id < "
                 + count;
         String plan = nativeEnv.explainSql(sql);
@@ -96,7 +129,7 @@ class BatchSqlTest {
       metrics.setAsContext(new Configuration(), 1, 0);
       String sql =
           "SELECT SHA2(CAST(id * 2 AS STRING), 256) FROM input WHERE id < 5 UNION ALL "
-              + "SELECT SHA2(CAST(id * 3 AS STRING), 256) FROM input WHERE id >= 5";
+              + "SELECT CAST(id * 3 AS STRING) FROM input WHERE id >= 5";
       var nativeEnv = environment(true, 13);
       String plan = nativeEnv.explainSql(sql);
       assertTrue(plan.contains("NativeUnion"), plan);
@@ -110,11 +143,21 @@ class BatchSqlTest {
   @Test
   void unsupportedInteriorRetainsWholeQueryOnStock() throws Exception {
     var env = environment(true, 10);
-    String plan = env.explainSql("SELECT SUM(id * 2) FROM input");
-    assertFalse(plan.contains("NativeCalc"), plan);
-    String cheap = tech.streamfusion.planner.NativePlanner.explain(env, "SELECT id + 1 FROM input");
-    assertFalse(cheap.contains("NativeCalc("), cheap);
-    assertTrue(cheap.contains("standalone scalar pipeline has no verified speedup"), cheap);
+    String plan = env.explainSql("SELECT SUM(CAST(id * 2 AS DOUBLE)) FROM input");
+    assertFalse(plan.contains("NativeCalc") || plan.contains("NativeAggregate"), plan);
+    String scalar = tech.streamfusion.planner.NativePlanner.explain(env, "SELECT id + 1 FROM input");
+    assertTrue(scalar.contains("NativeCalc("), scalar);
+    assertTrue(scalar.contains("fallback reasons=[]"), scalar);
+    for (String operator : List.of("calc", "filter", "union")) {
+      var disabled = environment(true, 10);
+      disabled.getConfig().set("streamfusion.operator." + operator + ".enabled", "false");
+      String disabledPlan =
+          disabled.explainSql(
+              "SELECT id + 1 FROM input WHERE id < 5 UNION ALL SELECT id + 2 FROM input");
+      assertFalse(
+          disabledPlan.contains("NativeCalc") || disabledPlan.contains("NativeUnion"),
+          disabledPlan);
+    }
     env.getConfig().set("streamfusion.native.enabled", "false");
     assertFalse(env.explainSql("SELECT id + 1 FROM input").contains("NativeCalc"));
   }

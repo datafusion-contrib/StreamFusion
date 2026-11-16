@@ -34,6 +34,20 @@ class RuntimeProfileTest(unittest.TestCase):
             self.assertEqual(0, totals["skipped"])
             self.assertEqual(5, len(classes))
 
+    def test_cluster_startup_selection_requires_all_twenty_cases_on_both_lines(self):
+        for line in ("2.2", "1.18"):
+            with self.subTest(line=line), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self.reports(root, line, profile.CLUSTER_STARTUP)
+                cases, totals, classes = profile.outcomes(root, "trial", line, profile.CLUSTER_STARTUP)
+                self.assertEqual(20, sum(cases.values()))
+                self.assertEqual(20, totals["tests"])
+                self.assertEqual(0, totals["skipped"])
+                self.assertEqual(3, len(classes))
+                next(root.glob("*TransposeOperatorsTest*")).unlink()
+                with self.assertRaisesRegex(ValueError, "selection"):
+                    profile.outcomes(root, "trial", line, profile.CLUSTER_STARTUP)
+
     def test_both_lines_retain_every_invocation_and_existing_skip(self):
         for line, skips in (("2.2", 2), ("1.18", 58)):
             with self.subTest(line=line), tempfile.TemporaryDirectory() as directory:

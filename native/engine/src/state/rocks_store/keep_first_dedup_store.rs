@@ -77,10 +77,7 @@ impl RocksKeepFirstDedupStore {
                 "keep-first dedup row shape not supported by RocksDB".into(),
             ));
         }
-        let key_types: Vec<DataType> = partition_columns
-            .iter()
-            .map(|&column| schema.field(column).data_type().clone())
-            .collect();
+        let key_types = crate::flink_key::stock_row_key_types(&schema, partition_columns);
         let opened = open_shared_db(
             &config,
             &[
@@ -208,10 +205,14 @@ impl RocksKeepFirstDedupStore {
         key_timestamp_precisions: &[i32],
     ) -> Vec<ByteKey> {
         let mut encoder = BinaryRowBatchEncoder::new(batch, key_columns, key_timestamp_precisions);
-        let key_arrays: Vec<ArrayRef> = key_columns
-            .iter()
-            .map(|&column| batch.column(column).clone())
-            .collect();
+        let key_arrays =
+            crate::flink_key::stock_row_key_columns(batch, key_columns, key_timestamp_precisions)
+                .unwrap_or_else(|| {
+                    key_columns
+                        .iter()
+                        .map(|&column| batch.column(column).clone())
+                        .collect()
+                });
         let key_rows = encode_group_keys(&self.key_converter, &key_arrays, batch.num_rows());
         (0..batch.num_rows())
             .map(|row| {

@@ -65,9 +65,33 @@ class CanonicalBoundedOverJobTest {
     var baseline = prepare("baseline", kind, mode, ordinary);
     var switched = prepare("switched", kind, mode, ordinary);
     new CanonicalJobRunner(directory)
-        .verifyJoinSwitch(baseline, switched, first, backend, mode, "OverAgg");
-    var type = RowType.of(new BigIntType(), new BigIntType(), new BigIntType());
-    var committed = CanonicalFixtureFactory.committedRows(switched.resolve("committed"), type);
+        .verifyJoinSwitch(
+            baseline,
+            switched,
+            first,
+            backend,
+            mode,
+            "OverAgg",
+            root ->
+                CanonicalFixtureFactory.committedRecords(root.resolve("committed")).stream()
+                    .map(bytes -> java.util.Base64.getEncoder().encodeToString(bytes))
+                    .collect(java.util.stream.Collectors.toList()));
+    var type = outputType();
+    var committed = new ArrayList<String>();
+    var serializer = new org.apache.flink.table.runtime.typeutils.RowDataSerializer(type);
+    for (byte[] bytes : CanonicalFixtureFactory.committedRecords(switched.resolve("committed"))) {
+      var row =
+          serializer.deserialize(new org.apache.flink.core.memory.DataInputDeserializer(bytes));
+      var value = new StringBuilder(row.getRowKind().shortString());
+      for (int field = 0; field < row.getArity(); field++)
+        value
+            .append('|')
+            .append(
+                org.apache.flink.table.data.RowData.createFieldGetter(
+                        type.getTypeAt(field).copy(true), field)
+                    .getFieldOrNull(row));
+      committed.add(value.toString());
+    }
     assertEquals(mode.equals("rescale") ? 384 : 11, committed.size());
     var materialized = new HashMap<String, String>();
     for (String row : committed) {
@@ -82,6 +106,10 @@ class CanonicalBoundedOverJobTest {
       assertFalse(Files.exists(switched.resolve("plan.json")));
     } else
       assertFalse(Files.readString(switched.resolve("plan.json")).contains("tech.streamfusion"));
+  }
+
+  RowType outputType() {
+    return RowType.of(new BigIntType(), new BigIntType(), new BigIntType());
   }
 
   Map<String, String> expectedTable(String kind, String mode) {
