@@ -16,11 +16,20 @@ maintainer authorization.
 Conserve runner capacity by testing changed functionality locally and reusing compatible build
 caches while iterating.
 Full CI is final qualification, never an agent's development loop. Do not dispatch it while
-implementation, investigation, benchmarks, required documentation, or known fixes remain.
+implementation, active investigation, benchmarks, required documentation, or known actionable
+fixes remain.
 Batch the complete task into one ready candidate, including its documentation, before qualification.
 Do not run CI for each local commit, intermediate push, review edit, or progress checkpoint.
 First reproduce a failure locally or with the smallest focused hosted probe; fix the complete
 cause before considering another candidate. A red matrix is not a reason to restart the matrix.
+
+Timebox local reproduction of residual historical failures and state the limit before starting.
+A passing repeat establishes only that the failure did not reproduce. Do not keep rerunning a
+passing selection without a new falsifiable hypothesis and a specific observation that could
+confirm or reject it. When the timebox expires, document the original failure, controls and
+remaining risk as deferred; retain the correctness assertions and finish the prepared work.
+Explicitly deferred investigations do not prolong the task or trigger extra campaigns.
+A user's instruction to avoid CI applies to focused hosted diagnostics as well as full matrices.
 
 Submit merge-gate campaigns with `python3 bin/ci-campaign.py start --repo OWNER/FORK
 --validation 'the focused local checks actually run and their outcomes'`. Use its `status`

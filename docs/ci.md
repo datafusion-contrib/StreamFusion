@@ -1122,6 +1122,13 @@ Canonical shards have a 180-minute limit; no test is removed to make a shard pas
 
 ### Runner queue discipline
 
+Timebox local reproduction of residual historical failures before starting it. A passing repeat
+shows that the failure did not reproduce; it does not establish a fix. Each further diagnostic
+needs a new falsifiable hypothesis and a defined observation. When the stated timebox ends,
+record the original failure, control scope and remaining risk as deferred, retain the correctness
+assertions, and finish the prepared changes. Deferred investigations do not require more campaigns.
+A request for local-only verification excludes hosted diagnostics as well as full matrices.
+
 Use three feedback loops: local selection/codec/dependency checks in seconds, a focused
 Linux/native regression that includes the failing provider, and the complete matrices after
 the candidate is ready. Standard hosted concurrency is shared across an owner's repositories;
@@ -2029,3 +2036,34 @@ retain every measured pair, invocation counts, source references and artifact
 checksums. Existing JDK11 tuning and G1-only metadata archive generation remain
 separate decisions. The [rejected investigation](https://github.com/jordepic/StreamFusion-contrib/blob/perf/ci-reduction-20261115/.claude/wontdos/ci-jdk17-serial-gc.md)
 records when to revisit this question.
+
+
+### Deferred historical failures after the local reproduction timebox
+
+The remaining Kafka extra-record and Hudi Q10 row-deficit investigations were deferred within
+a stated 15-minute local reproduction budget. Their existing suite cases remain enabled and
+retain their correctness assertions. No new hosted diagnostic or qualification was submitted.
+The prepared CI changes still need their full merge gates when hosted validation is resumed;
+passing local controls are not a claim that either archived failure has been eliminated.
+
+A local released Flink 1.18.1/Kafka connector 3.2.0-1.18 control used the real cp-kafka 7.6.1 broker.
+It serialized and restored a checkpoint prefix committable, then varied recovery commit ordering
+before new records, after one new record, and after four new records. All three retained exactly
+committed IDs 0–4 after aborting the new writer; the recovered and current transaction IDs stayed
+distinct. This exercises the released sink protocol directly, without the native source/encoder,
+and does not reproduce or explain archived job 132632169593.
+
+A local released Flink 1.18.1/Hudi 1.2.1 control used four skewed bounded source subtasks, object
+reuse and stock Hudi append/readback. At both 1000ms and 100ms checkpoints, physical Parquet
+footers, commit metadata and full-value readback each covered all 200,000 rows. The two controls
+produced 76 and 828 Parquet files. Commit accounting includes active and archived instants:
+the 100ms run had only 36,648 rows in active commit metadata but all 200,000 across both timelines.
+The initial active-only accounting assertion was corrected against the retained table, without
+rerunning its already-complete full-value readback. This is a stock-endpoint boundary control,
+not the original native-compute Q10 history; its historical cause remains unknown.
+
+The previously queued Hudi observer run 43947118491 recovered and completed successfully on
+head 09391dcd8. All three unchanged Q10 engine identities passed with 1,840,000 rows and valid
+operator/writer/readback counts. The orchestration delay is resolved; that passing control does
+not explain the archived row deficit. Follow-up work needs a new local reproducer or an actual
+failure carrying those boundary observations, rather than another passing CI loop.
