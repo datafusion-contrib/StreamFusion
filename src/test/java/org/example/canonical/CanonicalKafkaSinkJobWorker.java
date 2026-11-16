@@ -338,6 +338,9 @@ public final class CanonicalKafkaSinkJobWorker {
                 .get(90, TimeUnit.SECONDS);
         job.getJobExecutionResult().get(30, TimeUnit.SECONDS);
       }
+      Files.writeString(
+          root.resolve(stage + "-committed-after-savepoint"),
+          Integer.toString(committedKafkaRows(root, limit)));
       if (completionLoss) {
         if (job.getJobStatus().get(30, TimeUnit.SECONDS)
                 != org.apache.flink.api.common.JobStatus.FINISHED

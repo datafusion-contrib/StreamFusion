@@ -1931,3 +1931,25 @@ its JUnit and SQL/compaction inventory; a repeat does not excuse any failed resu
 The campaign launcher disables Python bytecode writes while loading its coverage-proof
 helper. A status lookup must leave the checkout clean so the following authorized
 qualification does not reject a cache file produced by that lookup itself.
+
+For a targeted failure-diagnostic follow-up, `flink_line=1.18` selects only its canonical
+JDK 11 lane, and `flink_line=2.2` selects only the four current-line lanes. The default `all`
+retains all five. The lifecycle cleanup control uses the existing released-host discard-sink
+adapter so the same assertion runs on both Flink lines.
+
+The Kafka diagnostic uses complete provider lists: eight completed-handoff and eight
+task-failure cases on 2.2, and three repetitions of all four task-failure and four process-failure
+providers on 1.18. The legacy repetitions also investigate a historical partial external commit
+after task-manager loss; this is tracked separately from the completed-snapshot assertion.
+
+Completed Kafka handoffs may also have no pending transactions at a middle data boundary.
+For every data boundary, an empty transaction set now requires a worker-recorded read-committed
+count proving that every input row was externally committed after the savepoint completed.
+Otherwise actual pending state remains required. The eight-provider completed-handoff
+regression forces this condition at both middle and final snapshots, retaining subsequent
+opposite-engine continuation, the final no-input return and every exact external-row assertion.
+
+Use `failure_suite=canonical` to select only the canonical failure lanes, combined with
+`flink_line` when needed. Other choices select Iceberg, Doris or the Paimon policy probe.
+A lightweight selection job rejects empty combinations before any build or test starts;
+focused follow-ups can reuse independent successful diagnostics without repeating them.

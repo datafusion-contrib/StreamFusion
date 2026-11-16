@@ -8,6 +8,11 @@ on:
         type: choice
         options: [runtime, runtime-parallel, runtime-jfr, canonical, native-only, runtime-hotspots, canonical-setup, canonical-reference, lake-setup, native-lz4, failure-regressions]
         default: runtime
+      failure_suite:
+        description: 'Failure diagnostic lane to run'
+        type: choice
+        options: [all, canonical, iceberg, doris, paimon-policy]
+        default: all
       native_run:
         description: 'Existing native producer for focused diagnostics'
         type: string
@@ -53,19 +58,45 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  failure-regression-selection:
+    if: inputs.suite == 'failure-regressions'
+    runs-on: ubuntu-slim
+    outputs:
+      matrix: ${{ steps.selection.outputs.matrix }}
+    steps:
+      - id: selection
+        env:
+          SELECTED_SUITE: ${{ inputs.failure_suite || 'all' }}
+          SELECTED_LINE: ${{ inputs.flink_line || 'all' }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          rows = [
+              dict(suite='canonical', line='1.18', jdk='11', profiles='flink-1.18,canonical-kafka', module='streamfusion-runtime'),
+              dict(suite='canonical', line='2.2', jdk='17', profiles='canonical-kafka', module='streamfusion-runtime'),
+              dict(suite='iceberg', line='2.2', jdk='17', profiles='iceberg', module='streamfusion-iceberg'),
+              dict(suite='doris', line='2.2', jdk='17', profiles='doris,doris-it,doris-upstream', module='streamfusion-doris'),
+              dict(suite='paimon-policy', line='2.2', jdk='17', profiles='paimon,upstream-paimon-compaction', module='streamfusion-paimon'),
+          ]
+          rows = [row for row in rows
+                  if os.environ['SELECTED_SUITE'] in ('all', row['suite'])
+                  and os.environ['SELECTED_LINE'] in ('all', row['line'])]
+          if not rows:
+              raise SystemExit('No failure diagnostic exists for the selected suite and Flink line')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              print('matrix=' + json.dumps(rows), file=output)
+          PY
+
   failure-regressions:
+    needs: failure-regression-selection
     if: inputs.suite == 'failure-regressions' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - {suite: canonical, line: '1.18', jdk: '11', profiles: 'flink-1.18,canonical-kafka', module: streamfusion-runtime}
-          - {suite: canonical, line: '2.2', jdk: '17', profiles: canonical-kafka, module: streamfusion-runtime}
-          - {suite: iceberg, line: '2.2', jdk: '17', profiles: iceberg, module: streamfusion-iceberg}
-          - {suite: doris, line: '2.2', jdk: '17', profiles: 'doris,doris-it,doris-upstream', module: streamfusion-doris}
-          - {suite: paimon-policy, line: '2.2', jdk: '17', profiles: 'paimon,upstream-paimon-compaction', module: streamfusion-paimon}
+        include: ${{ fromJSON(needs.failure-regression-selection.outputs.matrix) }}
     env:
       JAVA_TOOL_OPTIONS: '-XX:ActiveProcessorCount=4 -XX:TieredStopAtLevel=1 -XX:ReservedCodeCacheSize=512m -XX:+UseSerialGC'
       SF_KAFKA_INTEGRATION: 'true'
@@ -111,13 +142,39 @@ jobs:
             "-Dtest=$selection" -Dsurefire.failIfNoSpecifiedTests=false \
             -Dsf.testForks=4 -Dsf.testReuseForks=false '-Dsf.extraJvmArgs=-Xmx1g'
           if [[ '${{ matrix.line }}' == '2.2' ]]; then
+            kafka_selection='CanonicalKafkaCompletedHandoffJobTest,CanonicalKafkaPipelineFailureJobTest'
+            kafka_trials=1
+          else
+            kafka_selection='CanonicalKafkaPipelineFailureJobTest,CanonicalKafkaPipelineProcessFailureJobTest'
+            kafka_trials=3
+          fi
+          for trial in $(seq 1 "$kafka_trials"); do
             mvn -B -ntp -P"$PROFILES" -pl streamfusion-runtime -am test \
               -Dnative.build.skip=true -Dsf.protobuf.checkStaleness=true \
-              -Dtest=CanonicalKafkaCompletedHandoffJobTest,CanonicalKafkaPipelineFailureJobTest \
-              -Dsf.canonical.kafka.fixture.smoke=true -Dsf.canonical.kafka.sink.mode=rescale \
+              "-Dtest=$kafka_selection" -Dsf.canonical.kafka.fixture.smoke=false \
               -Dsurefire.failIfNoSpecifiedTests=false \
               -Dsf.testForks=2 -Dsf.testReuseForks=false '-Dsf.extraJvmArgs=-Xmx1g'
-          fi
+            evidence="$RUNNER_TEMP/failure-regressions/kafka-${{ matrix.line }}-$trial"
+            mkdir -p "$evidence"
+            cp streamfusion-runtime/target/surefire-reports/TEST-tech.streamfusion.CanonicalKafka*.xml "$evidence/"
+            LINE='${{ matrix.line }}' EVIDENCE="$evidence" python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          expected = ({'CanonicalKafkaCompletedHandoffJobTest': 8,
+                       'CanonicalKafkaPipelineFailureJobTest': 8} if os.environ['LINE'] == '2.2'
+                      else {'CanonicalKafkaPipelineFailureJobTest': 4,
+                            'CanonicalKafkaPipelineProcessFailureJobTest': 4})
+          observed = {}
+          for report in Path(os.environ['EVIDENCE']).glob('TEST-*.xml'):
+              suite = ET.parse(report).getroot()
+              name = suite.get('name').rsplit('.', 1)[-1]
+              observed[name] = int(suite.get('tests', 0))
+              assert all(int(suite.get(key, 0)) == 0 for key in ('failures', 'errors', 'skipped')), name
+          assert observed == expected, (observed, expected)
+          print(f'Complete Kafka provider inventory passed: {observed}')
+          PY
+          done
       - name: Check the real Iceberg branch race and complete original writer configurations
         if: matrix.suite == 'iceberg'
         run: >-

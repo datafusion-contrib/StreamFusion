@@ -2145,3 +2145,8 @@ registered Java predicate evaluators.
 The inherited batch aggregate identity check applies to contracts that include those fixtures; the Flink 1.18 RocksDB-only contract has no batch aggregate fixtures.
 
 The unchanged `JoinITCase#testLongHashJoinGenerator` checks Flink-generated operator source code, so that invocation retains the stock planner. The adjacent SQL join fixtures retain their native execution contracts. The batch code splitting fixtures explicitly check deep-expression fallback and positive native work for wide grouped reductions.
+
+Kafka completed-handoff controls force committed empty transaction sets at both the middle
+and final data boundaries. An empty set at any data handoff is accepted only with a recorded
+post-savepoint read-committed count for all input rows; subsequent fresh-engine restoration
+and exact external effects still have to pass.

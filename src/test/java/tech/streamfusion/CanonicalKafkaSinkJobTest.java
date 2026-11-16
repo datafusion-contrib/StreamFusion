@@ -52,7 +52,7 @@ class CanonicalKafkaSinkJobTest {
     return false;
   }
 
-  boolean checkpointFinalTransaction() {
+  boolean checkpointCompletedTransactions() {
     return false;
   }
 
@@ -125,8 +125,10 @@ class CanonicalKafkaSinkJobTest {
     if (strictBatchBoundaries() || mode.equals("process-failure") || completedRecovery)
       Files.createFile(root.resolve("strict-batch-boundaries"));
     if (ordinary) Files.createFile(root.resolve("ordinary-sql"));
-    if (checkpointFinalTransaction())
+    if (checkpointCompletedTransactions()) {
+      Files.createFile(root.resolve("middle-complete-transaction-before-savepoint"));
       Files.createFile(root.resolve("suffix-complete-transaction-before-savepoint"));
+    }
     if (rescaleReaders()) {
       assertTrue(kafkaInput());
       assertEquals("rescale-uids", mode);
@@ -395,10 +397,12 @@ class CanonicalKafkaSinkJobTest {
               .toString(),
           writerState.get(0)[6],
           "Saved transaction ownership must match the released rescaling contract");
-      if (incoming > 0 && !stage.equals("suffix"))
-        assertTrue(
-            inventory.stream().mapToInt(cells -> Integer.parseInt(cells[7])).sum() > 0,
-            "The handoff must retain actual precommitted transaction state: stage="
+      int pendingTransactions = inventory.stream().mapToInt(cells -> Integer.parseInt(cells[7])).sum();
+      if (incoming > 0 && pendingTransactions == 0)
+        assertEquals(
+            Integer.toString(limit),
+            Files.readString(root.resolve(stage + "-committed-after-savepoint")),
+            "A handoff without pending state must have committed every input row: stage="
                 + stage
                 + ", mode="
                 + mode
@@ -412,10 +416,10 @@ class CanonicalKafkaSinkJobTest {
                 + Files.readString(root.resolve(stage + "-committed-before-savepoint"))
                 + ", inventory="
                 + Files.readString(root.resolve(stage + "-inventory.tsv")));
-      if (stage.equals("suffix") && checkpointFinalTransaction())
+      if ((stage.equals("middle") || stage.equals("suffix")) && checkpointCompletedTransactions())
         assertEquals(
             0,
-            inventory.stream().mapToInt(cells -> Integer.parseInt(cells[7])).sum(),
+            pendingTransactions,
             "The completed transaction regression must restore an empty final transaction set");
       String saved = Files.readString(root.resolve(stage + "-savepoint")).trim();
       String metadata =

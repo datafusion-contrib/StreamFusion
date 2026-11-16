@@ -16,7 +16,7 @@ class CanonicalKafkaCompletedHandoffJobTest extends CanonicalKafkaSinkJobTest {
   }
 
   @Override
-  boolean checkpointFinalTransaction() {
+  boolean checkpointCompletedTransactions() {
     return true;
   }
 }

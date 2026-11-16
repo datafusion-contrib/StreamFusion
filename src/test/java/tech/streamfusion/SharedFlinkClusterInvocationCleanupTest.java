@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.util.concurrent.TimeUnit;
 import org.apache.flink.api.common.JobStatus;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.streaming.api.functions.sink.v2.DiscardingSink;
+import tech.streamfusion.compat.StreamTestSinks;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
@@ -20,7 +20,7 @@ class SharedFlinkClusterInvocationCleanupTest {
   void aTestMayLeaveAnUnboundedJobForTheFixtureToClose() throws Exception {
     var env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
-    env.fromSequence(0, Long.MAX_VALUE).sinkTo(new DiscardingSink<>());
+    StreamTestSinks.discard(env.fromSequence(0, Long.MAX_VALUE));
     previous = env.executeAsync("fixture-cleanup-regression");
     long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
     JobStatus status;
