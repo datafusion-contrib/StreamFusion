@@ -5,6 +5,7 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 import fcntl
+import importlib.util
 import json
 from pathlib import Path
 import subprocess
@@ -69,6 +70,13 @@ def require_current_base(sha):
         raise ValueError("Integrate current canonical main and validate locally before qualification.")
 
 
+def qualified_docs_candidate(repository, sha, branch):
+    spec = importlib.util.spec_from_file_location("ci_plan", Path(__file__).with_name("ci-plan.py"))
+    planner = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(planner)
+    return planner.qualified_branch_docs(repository, sha, branch, fetch=False)
+
+
 def latest_run(repository, branch, sha, workflow):
     query = urlencode({"branch": branch, "head_sha": sha})
     matches = [r for r in pages(f"repos/{repository}/actions/workflows/{workflow}/runs?{query}", "workflow_runs")
@@ -119,9 +127,15 @@ def campaign_lock():
             fcntl.flock(lock, fcntl.LOCK_UN)
 
 
-def ensure_capacity(repository, runs, capacity=20):
+def ensure_capacity(repository, runs, capacity=20, branch=None):
     reuse = {(repository, run["id"]) for run in runs if run and run["status"] in ACTIVE}
     busy = competitors(repository, reuse)
+    same_branch = [run for run in busy if run["repository_name"] == repository
+                   and branch and run.get("head_branch") == branch]
+    if same_branch:
+        links = "\n".join("  " + run["html_url"] for run in same_branch)
+        raise ValueError("Active work already exists on this branch. Reuse it, or finish/cancel "
+                         "this task's superseded work before submitting another campaign:\n" + links)
     queued, running = [], 0
     for run in busy:
         jobs = list(pages(f"repos/{run['repository_name']}/actions/runs/{run['id']}/jobs?filter=latest",
@@ -176,8 +190,9 @@ def qualify(repository, branch, workflows, *, start=False, validation="", capaci
         return
     if not any(run and (run["status"] in ACTIVE or run.get("conclusion") == "success")
                for _, run in runs):
-        require_current_base(sha)
-    ensure_capacity(repository, [run for _, run in runs], capacity)
+        if not qualified_docs_candidate(repository, sha, branch):
+            require_current_base(sha)
+    ensure_capacity(repository, [run for _, run in runs], capacity, branch=branch)
     if not start:
         print("Ready to submit after local validation: " + ", ".join(missing))
         return
@@ -208,7 +223,7 @@ def retry(repository, branch, run_id, validation, capacity=20):
     if not validation.strip():
         raise ValueError("Record the failure diagnosis and focused validation with --validation.")
     same_head = [latest_run(repository, branch, sha, w) for w in (*REQUIRED, *OPTIONAL)]
-    ensure_capacity(repository, same_head, capacity)
+    ensure_capacity(repository, same_head, capacity, branch=branch)
     if candidate(repository, branch) != sha:
         raise ValueError("The branch head changed before retry.")
     print("Failure diagnosis and focused validation: " + validation)

@@ -25,10 +25,30 @@ def run(workflow="ci.yml", *, status="completed", conclusion="success", run_id=1
 
 
 class CampaignTest(unittest.TestCase):
+    def test_superseded_same_branch_work_blocks_even_when_capacity_is_idle(self):
+        active = {**run(run_id=2, status="in_progress", conclusion=None), "repository_name": REPO}
+        with patch.object(campaign, "competitors", return_value=[active]), \
+                patch.object(campaign, "pages") as jobs:
+            with self.assertRaisesRegex(ValueError, "Active work already exists on this branch"):
+                campaign.ensure_capacity(REPO, [], 20, branch=BRANCH)
+            jobs.assert_not_called()
+
     def setUp(self):
         base = patch.object(campaign, "require_current_base")
         self.base = base.start()
         self.addCleanup(base.stop)
+        docs = patch.object(campaign, "qualified_docs_candidate", return_value=None)
+        self.docs = docs.start()
+        self.addCleanup(docs.stop)
+
+    def test_proven_docs_followup_does_not_force_an_unrelated_main_rebase(self):
+        self.docs.return_value = "b" * 40
+        with patch.object(campaign, "candidate", return_value=SHA), \
+                patch.object(campaign, "latest_run", return_value=None), \
+                patch.object(campaign, "ensure_capacity"), patch.object(campaign, "api") as api:
+            campaign.qualify(REPO, BRANCH, campaign.REQUIRED)
+            self.base.assert_not_called()
+            api.assert_not_called()
 
     def test_real_git_readiness_rejects_uncommitted_and_unpushed_work(self):
         with tempfile.TemporaryDirectory() as directory:

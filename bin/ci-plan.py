@@ -102,6 +102,38 @@ def qualified_merge(repository, head, branch):
     return None
 
 
+def qualified_branch_docs(repository, head, branch, *, fetch=True):
+    query = urlencode({"branch": branch})
+    ci = api(f"repos/{repository}/actions/workflows/ci.yml/runs?{query}&per_page=100")["workflow_runs"]
+    previous = [run for run in ci if run.get("head_branch") == branch
+                and run.get("head_sha") != head and run.get("event") in ("push", "workflow_dispatch")]
+    if not previous:
+        return None
+    # Use the immediately preceding submitted head, never an older green head
+    # behind a failed or unfinished qualification on this branch.
+    base = max(previous, key=lambda run: run["id"])["head_sha"]
+    if not re.fullmatch(r"[0-9a-f]{40}", base or ""):
+        return None
+    proven_ci = proven_qualification(ci, base, branch, "ci.yml")
+    if not proven_ci:
+        return None
+    query = urlencode({"branch": branch, "head_sha": base})
+    upstream = api(f"repos/{repository}/actions/workflows/flink-suite.yml/runs?{query}&per_page=100")["workflow_runs"]
+    proven_upstream = proven_qualification(upstream, base, branch, "flink-suite.yml")
+    if not proven_upstream:
+        return None
+    if fetch:
+        subprocess.run(["git", "fetch", "--no-tags", "--filter=blob:none", "--depth=1",
+                        f"https://github.com/{repository}.git", base], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    paths = changed_paths(base, head)
+    if paths and not documentation_only(paths):
+        return None
+    for run in (proven_ci, proven_upstream):
+        print(f"Verified unchanged branch source: {run['html_url']}", file=sys.stderr)
+    return base
+
+
 def plan(repository, head, before, branch):
     qualified = qualified_merge(repository, head, branch)
     if qualified:
@@ -136,8 +168,14 @@ def main():
         try:
             with open(os.environ["GITHUB_EVENT_PATH"]) as stream:
                 event = json.load(stream)
-            tests, baseline, reason = plan(os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_SHA"],
-                                           event.get("before"), os.environ["GITHUB_REF_NAME"])
+            if manual_docs:
+                baseline = qualified_branch_docs(os.environ["GITHUB_REPOSITORY"],
+                                                 os.environ["GITHUB_SHA"], os.environ["GITHUB_REF_NAME"]) or ""
+            if baseline:
+                tests, reason = False, "documentation-only-with-passing-branch-qualification"
+            else:
+                tests, baseline, reason = plan(os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_SHA"],
+                                               event.get("before"), os.environ["GITHUB_REF_NAME"])
         except (OSError, ValueError, KeyError, subprocess.SubprocessError):
             # Missing API access, history or evidence must never turn untested source green.
             reason = "unable-to-prove-previous-coverage"

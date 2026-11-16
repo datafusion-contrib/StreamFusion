@@ -640,5 +640,289 @@
       "failures": 0,
       "skipped": 0
     }
-  ]
+  ],
+  "hosted_reference_cache": {
+    "flink_line": "2.2",
+    "platform": "Linux-7.0.0-1017-azure-x86_64-with-glibc2.39",
+    "java": "11.0.32+9",
+    "host_logical_processors": 4,
+    "worker_gc": "Serial",
+    "trials": [
+      {
+        "pair": 0,
+        "cached": false,
+        "phase": "preparation",
+        "family": "materializer",
+        "elapsed_seconds": 132.355035499,
+        "cpu_seconds": 148.49164,
+        "exit_code": 0,
+        "invocations": [
+          "CANONICAL_CASE materializer false hashmap passed",
+          "CANONICAL_CASE materializer false rocksdb passed",
+          "CANONICAL_CASE materializer true hashmap passed",
+          "CANONICAL_CASE materializer true rocksdb passed"
+        ],
+        "reference_workers": 4,
+        "handoff_workers": 12
+      },
+      {
+        "pair": 0,
+        "cached": false,
+        "phase": "preparation",
+        "family": "count",
+        "elapsed_seconds": 67.06532498199999,
+        "cpu_seconds": 92.97301099999999,
+        "exit_code": 0,
+        "invocations": [
+          "CANONICAL_CASE count false hashmap passed",
+          "CANONICAL_CASE count false rocksdb passed",
+          "CANONICAL_CASE count true hashmap passed",
+          "CANONICAL_CASE count true rocksdb passed"
+        ],
+        "reference_workers": 12,
+        "handoff_workers": 12
+      },
+      {
+        "pair": 1,
+        "cached": false,
+        "phase": "measurement",
+        "family": "materializer",
+        "elapsed_seconds": 41.81811059199998,
+        "cpu_seconds": 57.382563,
+        "exit_code": 0,
+        "invocations": [
+          "CANONICAL_CASE materializer false hashmap passed",
+          "CANONICAL_CASE materializer false rocksdb passed",
+          "CANONICAL_CASE materializer true hashmap passed",
+          "CANONICAL_CASE materializer true rocksdb passed"
+        ],
+        "reference_workers": 4,
+        "handoff_workers": 12
+      },
+      {
+        "pair": 1,
+        "cached": false,
+        "phase": "measurement",
+        "family": "count",
+        "elapsed_seconds": 67.47654624800003,
+        "cpu_seconds": 92.90761200000003,
+        "exit_code": 0,
+        "invocations": [
+          "CANONICAL_CASE count false hashmap passed",
+          "CANONICAL_CASE count false rocksdb passed",
+          "CANONICAL_CASE count true hashmap passed",
+          "CANONICAL_CASE count true rocksdb passed"
+        ],
+        "reference_workers": 12,
+        "handoff_workers": 12
+      },
+      {
+        "pair": 1,
+        "cached": true,
+        "phase": "measurement",
+        "family": "materializer",
+        "elapsed_seconds": 34.398982814999954,
+        "cpu_seconds": 47.049991999999975,
+        "exit_code": 0,
+        "invocations": [
+          "CANONICAL_CASE materializer false hashmap passed",
+          "CANONICAL_CASE materializer false rocksdb passed",
+          "CANONICAL_CASE materializer true hashmap passed",
+          "CANONICAL_CASE materializer true rocksdb passed"
+        ],
+        "reference_workers": 1,
+        "handoff_workers": 12
+      },
+      {
+        "pair": 1,
+        "cached": true,
+        "phase": "measurement",
+        "family": "count",
+        "elapsed_seconds": 43.22257972,
+        "cpu_seconds": 59.92112400000003,
+        "exit_code": 0,
+        "invocations": [
+          "CANONICAL_CASE count false hashmap passed",
+          "CANONICAL_CASE count false rocksdb passed",
+          "CANONICAL_CASE count true hashmap passed",
+          "CANONICAL_CASE count true rocksdb passed"
+        ],
+        "reference_workers": 3,
+        "handoff_workers": 12
+      },
+      {
+        "pair": 2,
+        "cached": true,
+        "phase": "measurement",
+        "family": "materializer",
+        "elapsed_seconds": 34.803913818999945,
+        "cpu_seconds": 47.479608999999996,
+        "exit_code": 0,
+        "invocations": [
+          "CANONICAL_CASE materializer false hashmap passed",
+          "CANONICAL_CASE materializer false rocksdb passed",
+          "CANONICAL_CASE materializer true hashmap passed",
+          "CANONICAL_CASE materializer true rocksdb passed"
+        ],
+        "reference_workers": 1,
+        "handoff_workers": 12
+      },
+      {
+        "pair": 2,
+        "cached": true,
+        "phase": "measurement",
+        "family": "count",
+        "elapsed_seconds": 43.597265312000104,
+        "cpu_seconds": 59.753452000000024,
+        "exit_code": 0,
+        "invocations": [
+          "CANONICAL_CASE count false hashmap passed",
+          "CANONICAL_CASE count false rocksdb passed",
+          "CANONICAL_CASE count true hashmap passed",
+          "CANONICAL_CASE count true rocksdb passed"
+        ],
+        "reference_workers": 3,
+        "handoff_workers": 12
+      },
+      {
+        "pair": 2,
+        "cached": false,
+        "phase": "measurement",
+        "family": "materializer",
+        "elapsed_seconds": 41.75285122899993,
+        "cpu_seconds": 58.14698100000001,
+        "exit_code": 0,
+        "invocations": [
+          "CANONICAL_CASE materializer false hashmap passed",
+          "CANONICAL_CASE materializer false rocksdb passed",
+          "CANONICAL_CASE materializer true hashmap passed",
+          "CANONICAL_CASE materializer true rocksdb passed"
+        ],
+        "reference_workers": 4,
+        "handoff_workers": 12
+      },
+      {
+        "pair": 2,
+        "cached": false,
+        "phase": "measurement",
+        "family": "count",
+        "elapsed_seconds": 68.18161885100005,
+        "cpu_seconds": 94.08033300000001,
+        "exit_code": 0,
+        "invocations": [
+          "CANONICAL_CASE count false hashmap passed",
+          "CANONICAL_CASE count false rocksdb passed",
+          "CANONICAL_CASE count true hashmap passed",
+          "CANONICAL_CASE count true rocksdb passed"
+        ],
+        "reference_workers": 12,
+        "handoff_workers": 12
+      },
+      {
+        "pair": 3,
+        "cached": false,
+        "phase": "measurement",
+        "family": "materializer",
+        "elapsed_seconds": 43.69593181100004,
+        "cpu_seconds": 59.045132999999964,
+        "exit_code": 0,
+        "invocations": [
+          "CANONICAL_CASE materializer false hashmap passed",
+          "CANONICAL_CASE materializer false rocksdb passed",
+          "CANONICAL_CASE materializer true hashmap passed",
+          "CANONICAL_CASE materializer true rocksdb passed"
+        ],
+        "reference_workers": 4,
+        "handoff_workers": 12
+      },
+      {
+        "pair": 3,
+        "cached": false,
+        "phase": "measurement",
+        "family": "count",
+        "elapsed_seconds": 70.67767941,
+        "cpu_seconds": 97.39866700000006,
+        "exit_code": 0,
+        "invocations": [
+          "CANONICAL_CASE count false hashmap passed",
+          "CANONICAL_CASE count false rocksdb passed",
+          "CANONICAL_CASE count true hashmap passed",
+          "CANONICAL_CASE count true rocksdb passed"
+        ],
+        "reference_workers": 12,
+        "handoff_workers": 12
+      },
+      {
+        "pair": 3,
+        "cached": true,
+        "phase": "measurement",
+        "family": "materializer",
+        "elapsed_seconds": 36.28695616599998,
+        "cpu_seconds": 50.32943800000004,
+        "exit_code": 0,
+        "invocations": [
+          "CANONICAL_CASE materializer false hashmap passed",
+          "CANONICAL_CASE materializer false rocksdb passed",
+          "CANONICAL_CASE materializer true hashmap passed",
+          "CANONICAL_CASE materializer true rocksdb passed"
+        ],
+        "reference_workers": 1,
+        "handoff_workers": 12
+      },
+      {
+        "pair": 3,
+        "cached": true,
+        "phase": "measurement",
+        "family": "count",
+        "elapsed_seconds": 45.67095916599999,
+        "cpu_seconds": 63.20632000000002,
+        "exit_code": 0,
+        "invocations": [
+          "CANONICAL_CASE count false hashmap passed",
+          "CANONICAL_CASE count false rocksdb passed",
+          "CANONICAL_CASE count true hashmap passed",
+          "CANONICAL_CASE count true rocksdb passed"
+        ],
+        "reference_workers": 3,
+        "handoff_workers": 12
+      }
+    ],
+    "run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43778182559",
+    "source_commit": "a6e58aab2e2efd1aa95a43b427bd711084229c8f",
+    "native_producer": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43777739213",
+    "medians": {
+      "materializer": {
+        "fresh": {
+          "elapsed_seconds": 41.81811059199998,
+          "cpu_seconds": 58.14698100000001
+        },
+        "reused": {
+          "elapsed_seconds": 34.803913818999945,
+          "cpu_seconds": 47.479608999999996
+        }
+      },
+      "count": {
+        "fresh": {
+          "elapsed_seconds": 68.18161885100005,
+          "cpu_seconds": 94.08033300000001
+        },
+        "reused": {
+          "elapsed_seconds": 43.597265312000104,
+          "cpu_seconds": 59.92112400000003
+        }
+      }
+    }
+  },
+  "known_main_failure_local_controls": {
+    "selection": [
+      "CanonicalVariableExtremaMiniBatchJobTest[1]",
+      "CanonicalVariableExtremaMiniBatchJobTest[15]",
+      "CanonicalVariableExtremaMiniBatchJobTest[20]",
+      "CanonicalCompositeExtremaMiniBatchJobTest[2]"
+    ],
+    "cases": 4,
+    "failures": 0,
+    "platform": "macOS arm64 / JDK 17",
+    "limits": "Focused local results do not establish that the existing main failures are fixed on hosted Linux."
+  }
 }

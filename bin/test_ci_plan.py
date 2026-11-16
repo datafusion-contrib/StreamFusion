@@ -17,6 +17,31 @@ spec.loader.exec_module(plan)
 
 
 class CiPlanTest(unittest.TestCase):
+    def test_manual_docs_followup_requires_both_latest_branch_gates_and_unchanged_source(self):
+        sha, head = "a" * 40, "b" * 40
+        good = {"id": 1, "head_sha": sha, "head_branch": "feature", "event": "workflow_dispatch",
+                "status": "completed", "conclusion": "success", "html_url": "https://example.invalid/run",
+                "display_title": "Full upstream Flink suite (merge gate)"}
+        for paths in (["docs/ci.md"], ["CLAUDE.md"], [], ["src/Engine.java"], ["pom.xml"],
+                      [".github/workflows/ci.yml"], ["src/Engine.java", "docs/Engine.md"]):
+            with self.subTest(paths=paths), patch.object(plan, "api", side_effect=[{"workflow_runs": [good]},
+                    {"workflow_runs": [good]}]), patch.object(plan.subprocess, "run"), \
+                    patch.object(plan, "changed_paths", return_value=paths):
+                self.assertEqual(sha if not paths or plan.documentation_only(paths) else None,
+                                 plan.qualified_branch_docs("owner/fork", head, "feature"))
+        for change in ({"conclusion": "failure"}, {"status": "in_progress", "conclusion": None},
+                       {"head_sha": "c" * 40}, {"head_branch": "other"},
+                       {"display_title": "SQL admission inventory (all)"}):
+            with self.subTest(change=change), patch.object(plan, "api", side_effect=[{"workflow_runs": [good]},
+                    {"workflow_runs": [{**good, **change}]}]), patch.object(plan.subprocess, "run") as fetch:
+                self.assertIsNone(plan.qualified_branch_docs("owner/fork", head, "feature"))
+                fetch.assert_not_called()
+        with patch.object(plan, "api", return_value={"workflow_runs": [good,
+                {**good, "id": 2, "head_sha": "c" * 40, "conclusion": "failure"}]}), \
+                patch.object(plan.subprocess, "run") as fetch:
+            self.assertIsNone(plan.qualified_branch_docs("owner/fork", head, "feature"))
+            fetch.assert_not_called()
+
     def test_merged_tree_reuses_only_both_complete_exact_head_fork_qualifications(self):
         sha, head = "a" * 40, "b" * 40
         pr = {"number": 12, "merged_at": "2026-11-15T12:00:00Z", "merge_commit_sha": head,
@@ -160,7 +185,8 @@ class CiPlanTest(unittest.TestCase):
             env = {"GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_STEP_SUMMARY": "",
                    "GITHUB_EVENT_PATH": str(event), "GITHUB_REF_NAME": "feature/docs",
                    "GITHUB_SHA": "b" * 40, "GITHUB_REPOSITORY": "owner/fork"}
-            with patch.dict(os.environ, env), patch.object(plan, "plan", return_value=(False, "a" * 40, "proven-docs")) as decision, \
+            with patch.dict(os.environ, env), patch.object(plan, "qualified_branch_docs", return_value=None), \
+                    patch.object(plan, "plan", return_value=(False, "a" * 40, "proven-docs")) as decision, \
                     patch("sys.stdout", new_callable=io.StringIO) as output:
                 plan.main()
                 decision.assert_called_once_with("owner/fork", "b" * 40, None, "feature/docs")

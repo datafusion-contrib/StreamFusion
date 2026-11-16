@@ -69,6 +69,9 @@ If an existing run failed, diagnose it in the short loop, then use
 `python3 bin/ci-campaign.py retry --repo OWNER/FORK --run RUN_ID --validation 'failure diagnosis
 and focused passing checks'`. Retry uses GitHub's failed-job endpoint; successful matrix jobs
 are retained. Retries and inspection do not force a rebase onto unrelated new main commits.
+An unchanged-source documentation follow-up also reuses the last successful branch qualification
+without forcing an unrelated main rebase. The planner verifies both preceding branch gates and
+the complete file diff; a failed or unfinished preceding head cannot be bypassed with older green evidence.
 
 Before a new submission the launcher checks queued/running work across the owner's accessible
 repositories and reads their actual job states in small pages. Queued work or a full scheduling
@@ -76,6 +79,8 @@ budget makes it refuse another campaign; current-head runs belonging to the qual
 reused. If other campaigns have only already-running tail jobs, unused slots remain available.
 The default 20-job scheduling budget is conservative; `--capacity` accepts a measured budget,
 not a claim about the account's configured limit. Docs and status-reporting jobs do not block it.
+Active work on the candidate's own branch blocks another head even when slots are idle; reuse
+that work, or finish/cancel this task's superseded runs before submitting a new campaign.
 All worktrees share a kernel lock in the common Git directory, so concurrent agents on one host
 cannot both inspect an empty queue and dispatch duplicate campaigns. The lock inode remains as
 an empty coordination file; the kernel releases ownership when the command exits. Record the
@@ -258,6 +263,14 @@ Missing history, unavailable API access, missing workflows or incomplete/failed 
 select the full matrix. Feature-branch manual dispatches use the same proof against canonical
 main, allowing documentation-only follow-ups to avoid retesting unchanged source. Manual main
 dispatches and weekly schedules always run the full selection.
+
+For manual feature submissions, the planner first checks the preceding submitted head on the
+same branch. Both latest CI and full upstream results for that head must be successful, and
+the complete diff to the new head must contain only the documentation whitelist above (or be
+empty). This permits recording measured qualification results without repeating the expensive
+matrix for an unmerged feature. Failed, canceled or unfinished preceding heads, new executable
+content, and unknown paths prevent that reuse. If branch evidence is absent, canonical main
+remains the candidate baseline. Manual main dispatches remain an explicit full requalification.
 
 When those proofs pass, the documentation push has unchanged tested source. Its native and
 integration jobs are deliberately skipped, and both aggregate checks succeed on the new head
@@ -998,6 +1011,15 @@ Both versions launched the same twelve fresh handoff workers per four-case trial
 workers fell from four to one for the materializer and from twelve to three for COUNT.
 The preparation phase is separate; these component results do not establish whole-CI savings.
 Structured observations live in [the November 15 evidence](benchmarks/ci-profile-20261115.json).
+
+The [focused hosted comparison](https://github.com/jordepic/StreamFusion-contrib/actions/runs/43778182559)
+then passed all 56 selected invocations on four-CPU Linux with pinned Temurin 11.0.32+9 and
+the canonical Serial collector. Three alternating pairs reduced materializer elapsed medians
+from 41.82 to 34.80 seconds (16.8%) and CPU from 58.15 to 47.48 seconds (18.3%). COUNT elapsed
+fell from 68.18 to 43.60 seconds (36.1%) and CPU from 94.08 to 59.92 seconds (36.3%). Every
+four-case trial retained all twelve fresh handoff workers. Reference caches began empty in
+each cached trial; class metadata preparation remained separate. This proves the component
+improvement on the hosted configuration, not a complete-matrix speedup.
 
 After compiling the selected line with its matching native library, reproduce with
 `JAVA_HOME=YOUR_JDK python3 bin/profile-canonical-reference-ci.py --line 2.2 --repetitions 3
