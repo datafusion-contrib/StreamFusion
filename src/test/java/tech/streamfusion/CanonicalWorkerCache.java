@@ -200,16 +200,12 @@ final class CanonicalWorkerCache {
       dump.add("-XX:SharedArchiveFile=" + temporary);
       Process process =
           new ProcessBuilder(dump).redirectErrorStream(true).redirectOutput(log.toFile()).start();
-      try {
+      try (var lifetime = new CanonicalWorkerProcess(process)) {
         if (!process.waitFor(120, TimeUnit.SECONDS) || process.exitValue() != 0)
           throw new IOException("Worker archive generation failed: " + Files.readString(log));
         Files.move(temporary, archive, StandardCopyOption.ATOMIC_MOVE);
         Files.deleteIfExists(log);
       } finally {
-        if (process.isAlive()) {
-          process.destroyForcibly();
-          process.waitFor(10, TimeUnit.SECONDS);
-        }
         Files.deleteIfExists(temporary);
         Files.deleteIfExists(classes);
       }

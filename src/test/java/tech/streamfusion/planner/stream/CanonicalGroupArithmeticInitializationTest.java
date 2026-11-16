@@ -396,6 +396,8 @@ class CanonicalGroupArithmeticInitializationTest {
         new KeyedOneInputStreamOperatorTestHarness<Integer, ArrowBatch, ArrowBatch>(
             operator, batch -> 0, Types.INT, fixture.maximum, 1, 0);
     var config = new Configuration();
+    tech.streamfusion.compat.CanonicalTestCompat.rawStateConfiguration(
+        harness.getEnvironment().getTaskManagerInfo().getConfiguration());
     if (rocks)
       config.setString(
           "state.backend.type", "tech.streamfusion.state.RocksDBNativeStateBackendFactory");

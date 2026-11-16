@@ -6,8 +6,10 @@ For ordinary development, create or use the authenticated contributor's personal
 Actions there, and push feature branches to that fork. Open PRs from the personal fork into canonical
 `main`; do not push development branches to `datafusion-contrib/StreamFusion`. Fork push workflows
 run on the fork owner's Actions quota, avoiding the shared organization's runner backlog. Sync or
-rebase on current upstream `main` before pushing so the branch has the fork CI workflows. Verify
-both aggregate checks for the exact PR head before merging; see [docs/ci.md](docs/ci.md) for setup,
+rebase on current upstream `main` before the first feature-branch push so the branch has the
+fork CI workflows, and integrate current main before the first source qualification. Once
+qualification starts, preserve the candidate across unrelated main movement; use proof-backed
+documentation follow-ups for unchanged tested source. Verify both aggregate checks for the exact PR head before merging; see [docs/ci.md](docs/ci.md) for setup,
 result mirroring, and existing-PR migration. Direct changes to canonical `main` require explicit
 maintainer authorization.
 
@@ -61,7 +63,9 @@ This applies across concurrent tasks, not only within one task. Keep one full qu
 for the candidate; run optional
 profiling campaigns separately so they do not compete with its merge gates or contaminate timing.
 Use the smallest diagnostic matrix needed for the question. Reuse existing successful native
-artifacts after verifying their source and producer. Cancel only this task's superseded work;
+artifacts after verifying their source and producer. The producer must belong to the repository
+queried by the verifier; confirm an available, unexpired artifact with matching native inputs
+before dispatching the diagnostic. Cancel only this task's superseded work;
 leave other contributors' or sessions' runs alone. If a shared setup failure guarantees that this
 task's full campaign cannot pass, retain its failure evidence and stop its remaining work while
 fixing the setup in a short loop.

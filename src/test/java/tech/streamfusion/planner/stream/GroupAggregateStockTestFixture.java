@@ -375,7 +375,7 @@ final class GroupAggregateStockTestFixture implements AutoCloseable {
             operator, selector, selector.getProducedType(), maximum, 1, 0);
     harness.setStateBackend(
         rocks
-            ? tech.streamfusion.compat.CanonicalTestCompat.rocksBackend()
+            ? tech.streamfusion.compat.CanonicalTestCompat.rawStateBackend()
             : new HashMapStateBackend());
     harness.setup((TypeSerializer<RowData>) node.getTypeSerializerOut());
   }

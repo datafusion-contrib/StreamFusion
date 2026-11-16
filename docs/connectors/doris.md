@@ -142,8 +142,13 @@ without the StreamFusion agent, retaining both parameter variants in `stock-base
 and `stock-baseline.log`. This distinguishes connector/server failures from native
 execution failures. Only the existing exact timestamp discrepancy can qualify for
 the stock-matched expected-failure rule; an overwrite result mismatch still fails
-the suite. An overwrite job that reports FINISHED but exposes zero of three expected
-rows must retain its assertions and execution graph while the stock control is checked.
+the suite. The fixture's result-check helper now waits up to 30 seconds for missing committed
+rows to become externally visible before applying its original size and exact-value assertions.
+In failed run 43810763822, the overwrite query read zero rows at 06:03:16.764 UTC;
+Doris marked its transaction visible at 06:03:16.773 UTC, nine milliseconds later.
+The test methods and assertions remain unchanged; the source manifest records the helper
+adaptation and checksums. The same visibility wait applies to stock and accelerated controls.
+Wrong values, excess rows, query errors and missing rows after the deadline still fail.
 
 The CI Doris job runs the same script and retains server logs, SQL plans, Surefire assertions
 and the agent's SQL inventory. An upstream run without StreamFusion activation fails the job. Each upstream streaming SQL source
@@ -268,3 +273,10 @@ retain 192 warmup/measured trials, including the actual previous materializer bu
 DROP, Unicode TRIM_PAD, MAP state at 1k/100k key cardinalities and nested payloads. Disk-backed
 candidates trade higher cost than the previous RAM-backed implementation for bounded resident
 state, while improving stock Flink medians on these workloads.
+
+The Arrow sink waits for the released 26.3.0 batch loader's startup acknowledgment when
+creating or restoring a writer. The connector starts its executor asynchronously; an empty
+writer or short job could otherwise flush before that thread sets its ready flag, failing
+with `load thread already exit, write was interrupted`. Startup errors, interruption and
+a ten-second startup deadline still fail the job. Ordinary Stream Load, transaction state,
+serialization and commit behavior continue to use the released connector.

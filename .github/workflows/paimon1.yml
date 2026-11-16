@@ -97,5 +97,6 @@ jobs:
             streamfusion-paimon1/target/upstream-suite/inventory/
             streamfusion-paimon1/target/upstream-suite/diagnostics/
             streamfusion-paimon1/target/native-reports/
-            streamfusion-paimon1/target/upstream-compaction/
+            streamfusion-paimon1/target/upstream-compaction/*/stock/
+            streamfusion-paimon1/target/upstream-compaction/*/native/
             native/target/cargo-timings/

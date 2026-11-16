@@ -572,7 +572,8 @@ jobs:
         with:
           name: paimon-compaction-upstream
           path: |
-            streamfusion-paimon/target/upstream-compaction/
+            streamfusion-paimon/target/upstream-compaction/*/stock/
+            streamfusion-paimon/target/upstream-compaction/*/native/
             streamfusion-paimon/target/surefire-reports/
           if-no-files-found: error
           retention-days: 7

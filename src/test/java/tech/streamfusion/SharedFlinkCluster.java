@@ -106,6 +106,7 @@ public final class SharedFlinkCluster
   @Override
   public void afterEach(ExtensionContext context) throws Exception {
     FlinkTestContexts.clearForRemoteSubmission();
+    session(context).cancelRemainingJobs();
     assertNativeMemoryReleased(context.getDisplayName());
   }
 

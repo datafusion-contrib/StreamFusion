@@ -588,3 +588,12 @@ reader projections contain only declared fields; Arrow file writes retain the or
 value buffers while excluding these execution sidecars. Nested ROWs loaded from files have
 INSERT kind, matching Flink. Top-level changelog columns retain their existing contract.
 See [nested Java scalar results](../operators/calc-filter.md#nested-java-scalar-results).
+
+The released 1.12.0 dynamic controller can cache a missing branch while another writer
+creates it. Its next create call then throws `Ref main already exists` before emitting
+the row. The Arrow generator handles this exact upstream branch-creation failure by
+checking current catalog metadata, invalidating the stale negative lookup, and retrying
+the same control record once. It requires a real branch with the requested name; other
+validation errors and repeated failures remain errors. The router still runs once, and
+no payload or previously emitted output is replayed. All original parallel writer,
+format, branch, file-writer and committed-row assertions remain required.

@@ -97,7 +97,7 @@ public final class NativeIcebergDynamicSink {
               destination.writeParallelism());
       record.setUpsertMode(destination.upsert());
       record.setEqualityFields(destination.equalityFields());
-      out.collect(record);
+      IcebergDynamicBranchRecovery.collect(out, record);
     }
   }
 

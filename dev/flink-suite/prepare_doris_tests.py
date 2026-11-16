@@ -41,6 +41,25 @@ def prepare(source_root, output_root):
             "compiled_sha256": hashlib.sha256(adapted.encode()).hexdigest(),
             "adaptation": "published Guava Cache import" if adapted != original else "none",
         })
+    relative = Path("org/apache/doris/flink/container/ContainerUtils.java")
+    source = (source_root / "flink-doris-connector/flink-doris-connector-base/src/test/java"
+              / relative)
+    original = source.read_text()
+    old = "List<String> actual = getResult(connection, logger, expected, query, columnSize);"
+    if original.count(old) != 1:
+        raise ValueError("Expected the pinned upstream result check exactly once")
+    adapted = original.replace(old,
+        "List<String> actual = tech.streamfusion.doris.DorisFixtureVisibility.await("
+        "() -> getResult(connection, logger, expected, query, columnSize), expected.size());")
+    output = output_root / relative
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(adapted)
+    manifest.append({
+        "test": "container/ContainerUtils.java",
+        "source_sha256": hashlib.sha256(original.encode()).hexdigest(),
+        "compiled_sha256": hashlib.sha256(adapted.encode()).hexdigest(),
+        "adaptation": "bounded committed-row visibility wait; original assertions retained",
+    })
     (output_root / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
 

@@ -99,7 +99,9 @@ cannot restore each other's caches ([cache access rules](https://docs.github.com
 The native-only producer builds the complete workspace with the normal debug dependency
 configuration, verifies JNI exports and retains the libraries for one day as `debug-native-SHA`.
 Its successful **Shared debug native libraries** job can then supply source-verified focused
-diagnostics without another Rust build. A verified sibling-branch run restored that default-branch cache in about
+diagnostics without another Rust build. Use a producer from the repository queried by the
+verifier, and check that its artifact is available, unexpired and matches the native inputs
+before dispatching a consumer. A verified sibling-branch run restored that default-branch cache in about
 33 seconds, then built in 24.06 seconds with 42 positive-duration compilation units and
 no RocksDB rebuild. Cold builds of the same native tree recorded 639 such units and
 598.57–632 seconds. The consumer created no duplicate branch cache. This is native setup
@@ -999,7 +1001,7 @@ shares running operators, user-function instances or state between cases.
 Canonical workers also use class-data sharing through `SF_CANONICAL_CDS_DIR`, set only for
 their test step. The first successful worker on each classpath records loaded classes, then
 HotSpot builds a metadata archive. Later stages use that archive in fresh JVMs with
-`-Xshare:on`. A process lock serializes initial archive creation across the two Surefire forks.
+`-Xshare:on`. A process lock serializes initial archive creation across the configured Surefire forks.
 Every engine handoff still creates fresh worker processes, clusters, native state, user-function
 instances and checkpoints; the archive stores class metadata rather than a running application.
 
@@ -1012,6 +1014,20 @@ The cache never contains restorable state, running clusters, user functions or c
 Each consumer receives a separate copy of the output. Process locks serialize identical references;
 atomic publication and content checksums reject partial or corrupt results. Failed stock workers
 publish nothing. Local runs without the environment variable execute every stock reference afresh.
+
+The composite-key and variable-value extrema mini-batch handoff fixtures explicitly use a
+one-hour latency, matching the other count-driven canonical mini-batch fixtures. Their original
+seven-record batch size, recovery modes, backends, input rows and exact changelog assertions
+remain in place. Count thresholds and checkpoint barriers drive these fixtures' flushes; a
+ten-second wall-clock timer must not inject extra flushes while a loaded runner coordinates a
+handoff. Processing-time trigger checks need their own controlled-clock coverage.
+
+Raw aggregate-state compatibility fixtures disable automatic RocksDB compaction in their
+stock reference and canonical projection backends. These checks compare every physical
+accumulator/map byte and original TTL write age; asynchronous removal of expired cells would
+make that physical comparison depend on background scheduling. TTL visibility and the original
+processing-time steps remain active, and the byte, changelog and restore assertions remain
+unchanged. Ordinary backends and production compaction settings are unaffected.
 
 Two alternating local pairs on macOS arm64 / Temurin 17.0.17 exercised four original configurations
 per family: both engine directions and both backends, retaining every assertion. Materializer
@@ -1031,7 +1047,9 @@ four-case trial retained all twelve fresh handoff workers. Reference caches bega
 each cached trial; class metadata preparation remained separate. This proves the component
 improvement on the hosted configuration, not a complete-matrix speedup.
 
-After compiling the selected line with its matching native library, reproduce with
+The reference profiler requires an AppCDS-capable JVM. A local macOS arm64 Temurin 11
+VM rejected shared spaces during metadata preparation: its five cache controls passed,
+but no timed trial ran. After compiling the selected line with its matching native library, reproduce with
 `JAVA_HOME=YOUR_JDK python3 bin/profile-canonical-reference-ci.py --line 2.2 --repetitions 3
 --output NEW_DIRECTORY`. The profiler checks cache invalidation/failure controls, invokes the
 unchanged test methods, verifies membership in their original providers, and compares exact
@@ -1233,7 +1251,11 @@ Hotspot jobs use a shallow partial checkout and fetch only the native-producing
 commit needed for their unchanged source comparison, avoiding a complete history clone.
 
 To compare a canonical matrix with a previous complete run, download that candidate's
-`canonical-job-results-*` artifacts into one directory. Pass it to `bin/profile-ci.py`
+`canonical-job-results-*` artifacts into one directory. After a failed-job retry, resolve
+each name to its newest artifact by creation time and ID, then download that immutable ID.
+Multiple attempts can retain the same name, and [name-only CLI downloads have selected an older
+attempt](https://github.com/cli/cli/issues/12437). Retain unsuccessful execution intervals in
+cost accounting even when the latest reports pass. Pass the downloaded directory to `bin/profile-ci.py`
 with `--canonical-reports DIRECTORY --canonical-baseline BASELINE.json` alongside the
 usual `--repo`, `--run` and optional `--json` arguments. The helper requires every cohort
 and declared shard, matches each selection manifest to its reports, rejects duplicate
@@ -1854,6 +1876,29 @@ times. The previous 180-minute job budget could stop a successful expanded cohor
 finished. The larger job guard accommodates the added cases without multiplying runners or
 changing the four-minute worker and eight-minute invocation failure limits.
 
+### Failure diagnostics remain stable while tests stop
+
+Paimon compaction uploads retain each release's stock/native JUnit reports, invocation
+inventory and result tables. They exclude downloaded fixture JARs and the live runtime
+warehouse/checkpoint directory: asynchronous cleanup can remove checkpoint metadata while
+GitHub is archiving it, causing an upload failure after the actual checks finished.
+
+Fork result follow-up dispatches retry transient transport or server failures at most three
+times with short backoff. Permission errors fail immediately. This only refreshes reporting;
+it never reruns tests or changes a pending/failed merge gate to success.
+
+The shared test MiniCluster cancels and awaits leftover jobs after each invocation, before
+checking native memory. A failed collect or deliberately interrupted source cannot retain
+slots until the end of a parameterized class and starve later host/native comparisons.
+A two-invocation regression leaves a running source behind, then requires its cancellation
+and a fresh successful collection in the following invocation.
+
+Canonical worker and class-archive JVMs also register a scoped parent shutdown hook.
+Cancellation stops those exact child processes before job cleanup removes their metadata
+and reference directories; ordinary completion removes the hook. A subprocess regression
+terminates a parent JVM and verifies that its worker exits rather than continuing to write
+into a directory being removed.
+
 ### Balance canonical work within the existing runner budget
 
 Each canonical shard now assigns its complete class list to four duration-balanced lanes.
@@ -1869,3 +1914,16 @@ handoff regression has an explicit conservative estimate until its first qualifi
 These weights guide scheduling; modeled loads are not measured workflow savings. The
 precompiled Maven profile resolves CI-friendly parent versions when installing prepared
 reactor artifacts, avoiding unresolved literal `${revision}` dependencies in later workers.
+
+`CI startup profile` with `suite=failure-regressions` reuses a source-verified native producer
+and runs five focused lanes: the affected canonical families on 1.18/JDK 11 and 2.2/JDK 17,
+the original Iceberg dynamic writer configurations plus its deterministic branch-race control,
+and the Doris adapter/released fixture suite. The 2.2 canonical lane also exercises completed
+Kafka handoffs and the previously failing task-recovery family. This diagnostic never starts
+the full merge-gate matrix. A source manifest records the Doris result-helper visibility wait;
+all released test methods and exact result assertions remain intact.
+
+The fifth lane repeats the original Paimon full-compaction audit-log method three times in
+alternating stock/decorated modes. A prior decorated run returned an extra update before
+the expected delete despite retaining the Java compaction policy. Each invocation keeps
+its JUnit and SQL/compaction inventory; a repeat does not excuse any failed result.
