@@ -1986,6 +1986,10 @@ remains in place. Broker inspection runs only after a row mismatch is establishe
 preserving the normal failure-injection and consumer timing. Inspection errors appear
 in the assertion detail without replacing the original external-effect assertion.
 
+Python bytecode caches are ignored as generated files, so local documentation
+validation does not make an otherwise committed source candidate appear dirty.
+Task-owned caches should still be removed when validation finishes.
+
 Historical JVM aggregate comparisons copy the complete current metric fixture dependencies,
 including the counter-only reporter, into the immutable previous runtime. Omitting that
 helper made the 1.18 previous-source build fail before measurements in run 43655033166.
