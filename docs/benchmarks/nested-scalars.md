@@ -1,5 +1,9 @@
 # Nested Java scalar comparisons
 
+Performance runs are local-only. The former GitHub Actions nested-scalar benchmark workflow
+has been removed; correctness and recovery tests remain in normal CI. Use the local runner
+below on a controlled host and keep its builds separate from measurements.
+
 Verified nested scalar coverage is enabled by default under the maintainer's accepted
 UDF performance exception. The October 16 measurements below describe its earlier opt-in
 implementation; further optimization remains deferred. Correctness and allocation profiles

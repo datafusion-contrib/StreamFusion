@@ -162,8 +162,17 @@ def plan(repository, head, before, branch):
 def main():
     tests, baseline, reason = True, "", "non-push-event"
     event_name = os.environ.get("GITHUB_EVENT_NAME")
+    exhaustive = False
+    if event_name == "workflow_dispatch":
+        try:
+            with open(os.environ["GITHUB_EVENT_PATH"]) as stream:
+                exhaustive = json.load(stream).get("inputs", {}).get("canonical_coverage") == "full"
+        except (OSError, ValueError, KeyError):
+            pass
+    if exhaustive:
+        reason = "explicit-exhaustive-canonical-qualification"
     manual_docs = (event_name == "workflow_dispatch"
-                   and os.environ.get("GITHUB_REF_NAME") != "main")
+                   and os.environ.get("GITHUB_REF_NAME") != "main" and not exhaustive)
     if event_name == "push" or manual_docs:
         try:
             with open(os.environ["GITHUB_EVENT_PATH"]) as stream:

@@ -19,7 +19,6 @@ import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class CanonicalNormalizerJobTest {
@@ -41,7 +40,9 @@ class CanonicalNormalizerJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("cases")
+  @CanonicalCases(
+      value = "cases",
+      recoveryAxes = {0, 1, 2})
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void normalizerAndJoinContinueAcrossIsolatedEngineProcesses(
       String mode, boolean nativeFirst, String backend) throws Exception {
@@ -49,7 +50,7 @@ class CanonicalNormalizerJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("handoffs")
+  @CanonicalCases("handoffs")
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void retainedRowsReexportWithoutNewInput(boolean nativeFirst, String backend) throws Exception {
     check("no-input", nativeFirst, backend);
@@ -63,7 +64,7 @@ class CanonicalNormalizerJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("handoffs")
+  @CanonicalCases("handoffs")
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void retainedRowsRescaleThroughOneThreeAndTwoTasks(boolean nativeFirst, String backend)
       throws Exception {
@@ -71,7 +72,7 @@ class CanonicalNormalizerJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("handoffs")
+  @CanonicalCases("handoffs")
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void emptyRowsAcceptTheFirstUpdatesAfterAnEngineSwitch(boolean nativeFirst, String backend)
       throws Exception {

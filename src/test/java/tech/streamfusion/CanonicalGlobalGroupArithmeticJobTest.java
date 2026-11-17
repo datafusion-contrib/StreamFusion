@@ -11,7 +11,6 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
 
 class CanonicalGlobalGroupArithmeticJobTest extends CanonicalGroupArithmeticJobTest {
   static Stream<Arguments> cases() {
@@ -29,7 +28,9 @@ class CanonicalGlobalGroupArithmeticJobTest extends CanonicalGroupArithmeticJobT
 
   @Override
   @ParameterizedTest
-  @MethodSource("cases")
+  @CanonicalCases(
+      value = "cases",
+      recoveryAxes = {0, 2, 3})
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void generatedArithmeticStateContinuesAcrossIsolatedEngines(
       String mode, boolean ordinary, boolean nativeFirst, String backend) throws Exception {

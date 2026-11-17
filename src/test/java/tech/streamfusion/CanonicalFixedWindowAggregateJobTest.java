@@ -17,7 +17,6 @@ import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
 
 class CanonicalFixedWindowAggregateJobTest {
   @TempDir(cleanup = CleanupMode.ON_SUCCESS)
@@ -39,7 +38,9 @@ class CanonicalFixedWindowAggregateJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("continuedCases")
+  @CanonicalCases(
+      value = "continuedCases",
+      recoveryAxes = {0, 2, 3})
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void continuedJobs(String mode, boolean ordinary, boolean first, String backend)
       throws Exception {
@@ -47,7 +48,9 @@ class CanonicalFixedWindowAggregateJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("recoveryCases")
+  @CanonicalCases(
+      value = "recoveryCases",
+      recoveryAxes = {0, 2, 3})
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void recoveryJobs(String mode, boolean ordinary, boolean first, String backend) throws Exception {
     verify(mode, ordinary, first, backend);

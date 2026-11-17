@@ -1,0 +1,75 @@
+name: Shared CI Maven dependencies
+description: Restore a complete dependency repository produced before the test fan-out
+inputs:
+  jdk:
+    description: JDK major version
+    required: true
+  mode:
+    description: prepare for producers, restore for consumers
+    default: restore
+runs:
+  using: composite
+  steps:
+    - id: identity
+      shell: bash
+      env:
+        CACHE_KEY: sf-maven-v1-${{ runner.os }}-${{ runner.arch }}-jdk${{ inputs.jdk }}-${{ hashFiles('**/pom.xml', '.mvn/**', 'dev/flink-suite/settings.xml', 'dev/flink-suite/paimon-compaction-releases.json', 'bin/ci-maven-dependencies.py', 'bin/ci_maven_cache.py', '.github/actions/maven-cache/action.yml') }}
+      run: printf 'key=%s\n' "$CACHE_KEY" >> "$GITHUB_OUTPUT"
+    - id: cache
+      if: inputs.mode == 'prepare'
+      uses: actions/cache/restore@v4
+      with:
+        path: ~/.m2/repository
+        key: ${{ steps.identity.outputs.key }}
+        restore-keys: |
+          ${{ inputs.mode == 'prepare' && format('sf-maven-v1-{0}-{1}-jdk{2}-', runner.os, runner.arch, inputs.jdk) || '' }}
+          ${{ inputs.mode == 'prepare' && format('setup-java-{0}-{1}-maven-', runner.os, runner.arch == 'X64' && 'x64' || 'arm64') || '' }}
+    - name: Resolve every consumer graph before publishing a new cache
+      if: inputs.mode == 'prepare' && steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        CACHE_KEY: ${{ steps.identity.outputs.key }}
+        CACHE_JDK: ${{ inputs.jdk }}
+      run: python3 bin/ci_maven_cache.py prepare --key "$CACHE_KEY" --jdk "$CACHE_JDK"
+    - name: Require a complete matching dependency preparation
+      if: inputs.mode == 'prepare'
+      shell: bash
+      env:
+        CACHE_KEY: ${{ steps.identity.outputs.key }}
+        CACHE_JDK: ${{ inputs.jdk }}
+      run: python3 bin/ci_maven_cache.py verify --key "$CACHE_KEY" --jdk "$CACHE_JDK"
+    - uses: actions/cache/save@v4
+      if: inputs.mode == 'prepare' && steps.cache.outputs.cache-hit != 'true'
+      with:
+        path: ~/.m2/repository
+        key: ${{ steps.identity.outputs.key }}
+    - name: Publish an immutable repository for this campaign
+      if: inputs.mode == 'prepare'
+      shell: bash
+      env:
+        CACHE_KEY: ${{ steps.identity.outputs.key }}
+        CACHE_JDK: ${{ inputs.jdk }}
+      run: python3 bin/ci_maven_cache.py pack --key "$CACHE_KEY" --jdk "$CACHE_JDK" --archive "$RUNNER_TEMP/maven-dependencies.tar"
+    - uses: actions/upload-artifact@v4
+      if: inputs.mode == 'prepare'
+      with:
+        name: maven-dependencies-jdk${{ inputs.jdk }}-${{ github.sha }}
+        path: ${{ runner.temp }}/maven-dependencies.tar*
+        compression-level: 0
+        if-no-files-found: error
+        retention-days: 1
+    - uses: actions/download-artifact@v5
+      if: inputs.mode != 'prepare'
+      with:
+        name: maven-dependencies-jdk${{ inputs.jdk }}-${{ github.sha }}
+        path: ${{ runner.temp }}
+    - name: Restore the complete repository without contacting Maven Central
+      if: inputs.mode != 'prepare'
+      shell: bash
+      env:
+        CACHE_KEY: ${{ steps.identity.outputs.key }}
+        CACHE_JDK: ${{ inputs.jdk }}
+      run: python3 bin/ci_maven_cache.py restore --key "$CACHE_KEY" --jdk "$CACHE_JDK" --archive "$RUNNER_TEMP/maven-dependencies.tar"
+    - name: Remove the transfer archive
+      shell: bash
+      run: rm "$RUNNER_TEMP/maven-dependencies.tar" "$RUNNER_TEMP/maven-dependencies.tar.sha256"

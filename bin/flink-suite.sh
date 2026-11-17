@@ -366,6 +366,17 @@ else
     -T "${FLINK_SUITE_BUILD_THREADS:-1}" \
     -pl flink-table/flink-table-planner -am -DskipTests -Dfast install || exit $?
 
+  if [[ -n "${FORMAT_COMPILE_MODULES}" ]]; then
+    echo "Compiling the untouched upstream Flink format integration tests..."
+    format_goal=process-test-classes
+    if [[ "${SUITE_MODE}" == "prepare" ]]; then format_goal=install; fi
+    flink_mvn ${FLINK_TARGET_PROFILE:+-P${FLINK_TARGET_PROFILE}} -B -ntp -s "${MAVEN_SETTINGS}" -f "${FLINK_ROOT}/pom.xml" \
+      -Dmaven.repo.local="${SUITE_MAVEN_REPO}" -Didea.version=streamfusion-suite \
+      -T "${FLINK_SUITE_BUILD_THREADS:-1}" \
+      -pl "${FORMAT_COMPILE_MODULES}" \
+      -am -Dfast -DskipTests "${format_goal}" || exit $?
+  fi
+
   echo "Installing the untouched planner classes for StreamFusion's source-suite build..."
   jar --create --file "${UNSHADED_SQL_PARSER_JAR}" \
     -C "${FLINK_ROOT}/flink-table/flink-sql-parser/target/classes" . || exit $?
@@ -433,15 +444,6 @@ else
     -f "${REPO_ROOT}/dev/flink-suite/classpath-pom.xml" "${STREAMFUSION_LINE_PROFILES[@]}" \
     dependency:build-classpath -Dmdep.outputFile="${CLASSPATH_FILE}" || exit $?
 
-  if [[ -n "${FORMAT_COMPILE_MODULES}" ]]; then
-    echo "Compiling the untouched upstream Flink format integration tests..."
-    flink_mvn ${FLINK_TARGET_PROFILE:+-P${FLINK_TARGET_PROFILE}} -B -ntp -s "${MAVEN_SETTINGS}" -f "${FLINK_ROOT}/pom.xml" \
-      -Dmaven.repo.local="${SUITE_MAVEN_REPO}" -Didea.version=streamfusion-suite \
-      -T "${FLINK_SUITE_BUILD_THREADS:-1}" \
-      -pl "${FORMAT_COMPILE_MODULES}" \
-      -am -Dfast -DskipTests process-test-classes || exit $?
-  fi
-
 fi
 
 if [[ "${FLINK_SUITE_REUSE_BUILD:-false}" != "true" ]]; then
@@ -468,6 +470,8 @@ if [[ "${FLINK_SUITE_REUSE_BUILD:-false}" != "true" ]]; then
 fi
 python3 "${REPO_ROOT}/bin/check-flink-suite-classpath.py" "${CLASSPATH_FILE}" "${FLINK_LINE}" || exit $?
 if [[ "${SUITE_MODE}" == "prepare" ]]; then
+  python3 "${REPO_ROOT}/bin/check-flink-suite-unshaded.py" \
+    "${SUITE_ROOT}" "${SUITE_MAVEN_REPO}" "${FLINK_VERSION}" || exit $?
   echo "Preparing the dynamically resolved upstream Surefire runtime..."
   test_runtime_surefire_version=3.2.2
   test_runtime_platform_version=1.11.4
@@ -485,6 +489,9 @@ if [[ "${SUITE_MODE}" == "prepare" ]]; then
     test_runtime_artifacts+=(
       --artifact "org.apache.maven.surefire:surefire-junit-platform:3.2.5"
       --artifact "org.junit.platform:junit-platform-launcher:1.13.3"
+      --artifact "org.apache.maven.plugins:maven-surefire-plugin:3.5.3"
+      --artifact "org.apache.maven.surefire:surefire-junit-platform:3.5.3"
+      --artifact "org.apache.maven.plugins:maven-resources-plugin:3.5.0"
     )
   fi
   (

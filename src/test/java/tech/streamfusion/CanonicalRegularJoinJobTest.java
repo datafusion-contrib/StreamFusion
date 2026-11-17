@@ -19,7 +19,6 @@ import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
 
 class CanonicalRegularJoinJobTest {
   @TempDir(cleanup = CleanupMode.ON_SUCCESS)
@@ -43,7 +42,7 @@ class CanonicalRegularJoinJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("cases")
+  @CanonicalCases("cases")
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void regularStateContinuesAcrossCleanEngineProcesses(
       String kind, String shape, boolean nativeFirst, String backend) throws Exception {
@@ -57,7 +56,7 @@ class CanonicalRegularJoinJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("handoffs")
+  @CanonicalCases("handoffs")
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void retainedRegularRowsReexportWithoutNewInput(boolean nativeFirst, String backend)
       throws Exception {
@@ -72,7 +71,7 @@ class CanonicalRegularJoinJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("handoffs")
+  @CanonicalCases("handoffs")
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void regularKeysRescaleThroughOneThreeAndTwoTasks(boolean nativeFirst, String backend)
       throws Exception {
@@ -80,7 +79,7 @@ class CanonicalRegularJoinJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("handoffs")
+  @CanonicalCases("handoffs")
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void sharedCalculatedInputResumesWithOneLogicalOwner(boolean nativeFirst, String backend)
       throws Exception {
@@ -88,7 +87,7 @@ class CanonicalRegularJoinJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("handoffs")
+  @CanonicalCases("handoffs")
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void keylessInnerJoinContinuesFromTheStockSingletonState(boolean nativeFirst, String backend)
       throws Exception {

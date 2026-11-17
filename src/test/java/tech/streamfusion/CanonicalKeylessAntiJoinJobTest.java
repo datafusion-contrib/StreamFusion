@@ -18,7 +18,6 @@ import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
 
 class CanonicalKeylessAntiJoinJobTest {
   @TempDir(cleanup = CleanupMode.ON_SUCCESS)
@@ -30,7 +29,7 @@ class CanonicalKeylessAntiJoinJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("cases")
+  @CanonicalCases("cases")
   @Timeout(value = 8, unit = java.util.concurrent.TimeUnit.MINUTES)
   void nullAwareNotInRetractionsContinueAcrossCanonicalSwitches(boolean nativeFirst, String store)
       throws Exception {

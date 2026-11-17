@@ -16,7 +16,6 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
 
 abstract class CanonicalSinkMaterializerJobTest {
   @TempDir Path directory;
@@ -49,7 +48,9 @@ abstract class CanonicalSinkMaterializerJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("cases")
+  @CanonicalCases(
+      value = "cases",
+      recoveryAxes = {3, 5, 6})
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void releasedSinkContinuesThroughCanonicalNativeStateAndBack(
       String strategy,

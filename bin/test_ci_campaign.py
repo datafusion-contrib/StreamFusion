@@ -75,6 +75,27 @@ class AvailabilityReadsTest(unittest.TestCase):
 
 
 class CampaignTest(unittest.TestCase):
+    def test_exhaustive_qualification_cannot_reuse_a_representative_run(self):
+        full = {**run(run_id=1), 'display_title': 'CI (canonical full)'}
+        representative = {**run(run_id=2), 'display_title': 'CI (canonical representative)'}
+        with patch.object(campaign, 'pages', return_value=[full, representative]):
+            self.assertEqual(representative, campaign.latest_run(REPO, BRANCH, SHA, 'ci.yml'))
+            self.assertEqual(full, campaign.latest_run(REPO, BRANCH, SHA, 'ci.yml', 'full'))
+        with patch.object(campaign, 'pages', return_value=[representative]):
+            self.assertIsNone(campaign.latest_run(REPO, BRANCH, SHA, 'ci.yml', 'full'))
+
+    def test_explicit_full_submission_passes_the_policy_and_waits_for_that_policy(self):
+        with patch.object(campaign, 'candidate', return_value=SHA), \
+                patch.object(campaign, 'latest_run', return_value=None), \
+                patch.object(campaign, 'ensure_capacity'), \
+                patch.object(campaign, 'wait_for_dispatch', return_value=run()) as wait, \
+                patch.object(campaign, 'api') as api:
+            campaign.qualify(REPO, BRANCH, ('ci.yml',), start=True, validation='local audit passed',
+                             canonical_coverage='full')
+            api.assert_called_once_with(f'repos/{REPO}/actions/workflows/ci.yml/dispatches',
+                                        data={'ref': BRANCH, 'inputs': {'canonical_coverage': 'full'}})
+            wait.assert_called_once_with(REPO, BRANCH, SHA, 'ci.yml', canonical_coverage='full')
+
     def test_proof_lookup_does_not_dirty_the_checkout_with_bytecode(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

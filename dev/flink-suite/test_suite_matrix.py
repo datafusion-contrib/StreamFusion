@@ -20,11 +20,10 @@ class SuiteMatrixTest(unittest.TestCase):
         expected["2.2", "delta", ""] += 1
         expected["2.2", "iceberg", ""] += 1
         self.assertEqual(expected, self.cases())
-        self.assertEqual(14, len(matrix()["include"]))
+        self.assertEqual(22, len(matrix()["include"]))
         for entry in matrix()["include"]:
-            if entry["label"] == "connectors":
-                self.assertEqual("formats", entry["suites"].split()[0],
-                                 "Formats cleanup must precede the other format reports")
+            self.assertEqual(1, len(entry["suites"].split()),
+                             "Each connector/format has an independent scheduling entry")
         self.assertEqual(expected, self.cases(True, "all"))
         self.assertEqual(expected, self.cases(False, "connectors"))
 

@@ -18,7 +18,6 @@ import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
 
 class CanonicalSharedFirstNJobTest {
   @TempDir(cleanup = CleanupMode.ON_SUCCESS)
@@ -40,7 +39,7 @@ class CanonicalSharedFirstNJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("cases")
+  @CanonicalCases("cases")
   @Timeout(value = 8, unit = java.util.concurrent.TimeUnit.MINUTES)
   void counterAndJoinStateContinueTogether(boolean nativeFirst, String store, boolean sameLimit)
       throws Exception {
@@ -48,7 +47,7 @@ class CanonicalSharedFirstNJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("sharedCases")
+  @CanonicalCases("sharedCases")
   @Timeout(value = 8, unit = java.util.concurrent.TimeUnit.MINUTES)
   void sharedStateRescalesWithoutDuplicatingOwners(boolean nativeFirst, String store)
       throws Exception {
@@ -56,7 +55,7 @@ class CanonicalSharedFirstNJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("sharedCases")
+  @CanonicalCases("sharedCases")
   @Timeout(value = 8, unit = java.util.concurrent.TimeUnit.MINUTES)
   void sharedStateReexportsWithoutInput(boolean nativeFirst, String store) throws Exception {
     check(compiled(), nativeFirst, store, true, "no-input");

@@ -106,7 +106,7 @@ class MavenDependenciesTest(unittest.TestCase):
         self.assertFalse(sleeps)
         self.assertEqual(1, len(calls))
         command = calls[0].args[0]
-        self.assertIn("-U", command)
+        self.assertNotIn("-U", command)
         self.assertIn("-Pflink-1.18", command)
         self.assertIn("streamfusion-runtime", command)
         self.assertIn("-am", command)
@@ -123,7 +123,7 @@ class MavenDependenciesTest(unittest.TestCase):
                 patch.object(PREPARE.time, "sleep"):
             self.assertEqual(0, PREPARE.resolve(options))
         command = run.call_args_list[0].args[0]
-        self.assertEqual(command, run.call_args_list[1].args[0])
+        self.assertEqual([x for x in command if x != "-U"], [x for x in run.call_args_list[1].args[0] if x != "-U"])
         self.assertIn(PREPARE.MODEL_GOAL, command)
         self.assertIn("-Dexpression=project.id", command)
         self.assertIn("streamfusion-runtime", command)
@@ -135,8 +135,10 @@ class MavenDependenciesTest(unittest.TestCase):
         status, calls, sleeps = self.invoke([1, 1, 0])
         self.assertEqual(0, status)
         self.assertEqual(3, len(calls))
-        self.assertTrue(all(call.args[0] == calls[0].args[0] for call in calls))
-        self.assertEqual([5, 15], [call.args[0] for call in sleeps])
+        self.assertNotIn("-U", calls[0].args[0])
+        self.assertTrue(all("-U" in call.args[0] for call in calls[1:]))
+        self.assertTrue(15 <= sleeps[0].args[0] <= 22.5)
+        self.assertTrue(45 <= sleeps[1].args[0] <= 67.5)
 
     def test_persistent_failure_and_timeout_remain_blocking(self):
         for statuses, expected in (([7, 7, 7], 7),
@@ -155,7 +157,7 @@ class MavenDependenciesTest(unittest.TestCase):
         self.assertIn("unrecognized arguments", result.stderr)
 
     @unittest.skipUnless(shutil.which("mvn"), "Maven is required for the HTTP transport integration")
-    def test_http_transports_recover_five_failed_requests_within_one_setup_attempt(self):
+    def test_http_transports_recover_two_failed_requests_within_one_setup_attempt(self):
         version = subprocess.check_output(["mvn", "--version"], text=True)
         print(version, flush=True)
         match = re.search(r"Apache Maven (\d+)\.(\d+)", version)
@@ -185,7 +187,7 @@ class MavenDependenciesTest(unittest.TestCase):
                         def do_GET(self):
                             if self.path == path:
                                 requests.append(self.path)
-                                if len(requests) <= 5:
+                                if len(requests) <= 2:
                                     if transport == "native":
                                         self.send_error(502)
                                     else:
@@ -223,7 +225,7 @@ class MavenDependenciesTest(unittest.TestCase):
                                 patch.object(PREPARE, "TIMEOUT_SECONDS", 120), \
                                 patch.object(PREPARE, "TRANSPORT_OPTIONS", transport_options):
                             self.assertEqual(0, PREPARE.resolve(options))
-                        self.assertEqual(6, len(requests))
+                        self.assertEqual(3, len(requests))
                     finally:
                         server.shutdown()
                         server.server_close()
@@ -240,8 +242,10 @@ class MavenDependenciesTest(unittest.TestCase):
         commands = [call.args[0] for call in run.call_args_list]
         self.assertIn("-Dartifact=" + options.artifact[0], commands[0])
         self.assertIn("-Dartifact=" + options.artifact[1], commands[1])
-        self.assertEqual(commands[1], commands[2])
-        self.assertEqual([5], [call.args[0] for call in sleep.call_args_list])
+        self.assertNotIn("-U", commands[1])
+        self.assertIn("-U", commands[2])
+        self.assertEqual(commands[1], [x for x in commands[2] if x != "-U"])
+        self.assertTrue(15 <= sleep.call_args_list[0].args[0] <= 22.5)
         for command in commands:
             self.assertIn(PREPARE.ARTIFACT_GOAL, command)
             self.assertIn("-Dtransitive=true", command)

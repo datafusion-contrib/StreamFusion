@@ -16,7 +16,7 @@ Those historical records support a decision; this ledger describes the current
 technique and its measured limits.
 
 CI JVM startup settings, repeated-check elimination and profiling are documented in the
-[CI guide](../ci.md#profiling-ci-latency-and-cost); its [canonical job matrix](../ci.md#complete-canonical-job-matrix)
+[CI guide](../ci.md#profiling-ci-latency-and-cost); its [canonical job matrix](../ci.md#canonical-java-preparation-and-worker-execution)
 also documents sharing exact-commit Java compilation across savepoint shards while
 transferring native libraries separately, avoiding duplicate payloads in each Java archive.
 It also covers demand-started test clusters, pure Java preparation alongside native work,
@@ -31,8 +31,12 @@ Archive generation uses G1 independently of the workers' measured collector sett
 the observed JDK 11 Serial full-GC crash during metadata relocation.
 Compatible Paimon format checks share compilation while keeping separate test processes
 and report sets, reducing required lake jobs from thirteen to nine with the same configurations.
-Canonical jobs group the same complete invocation inventory into forty jobs using a measured-class
-scheduling model; full hosted qualification remains necessary to establish actual savings.
+Canonical CI retains every concrete fixture while selecting 15,150 cases instead of 53,360,
+with all option pairs and the required three-way recovery interactions. Sixteen routine jobs
+use measured class costs scaled by their selected work; the explicit full policy retains all
+forty jobs. Independently validated inventories and per-invocation audits protect both policies.
+The [coverage budget](../ci.md#canonical-coverage-budget-and-connector-scheduling) distinguishes
+case-count reduction from measured hosted runtime.
 Canonical shards divide their classes among four concurrent lanes after one
 prepared reactor installation; each lane executes classes sequentially. Verified
 completed stock reference outputs can be reused by fixture/runtime/input identity,
@@ -41,7 +45,8 @@ while switched workers and checkpoint state stay fresh. The
 found no Serial-GC speedup, so that setting remains unchanged.
 CI build reuse and runner scheduling are documented in the
 [upstream-suite guide](../upstream-flink-suite.md#shared-builds-and-runtime-shards): compiled Flink
-caching, shared build artifacts, grouped connector suites and combined coverage verification.
+caching, shared build artifacts, independent connector suites with bounded fan-out, complete
+Maven dependency producers and combined coverage verification.
 Those measurements describe CI job counts and elapsed time, not SQL execution throughput.
 
 - [Native LZ4 shuffle decoding](native-lz4-shuffle.md): use the bounds-checked JNI decoder on StreamFusion task input gates while preserving Flink's block format and stock tasks.

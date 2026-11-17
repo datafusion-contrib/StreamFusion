@@ -118,7 +118,10 @@ with the owned root.
 Build the optional module with `mvn -Pdoris -pl streamfusion-doris -am test`. With Docker and
 JDK 17, `bin/doris-suite.sh` builds a fixture using the released Doris 4.1.4.1 FE/BE images and the
 published 4.1.3 all-in-one launcher, with image digests pinned in `dev/doris/Dockerfile`.
-The newer FE fixes hidden delete-sign resolution in Arrow loads. The script runs:
+The newer FE fixes hidden delete-sign resolution in Arrow loads. CI schedules Doris as an entry
+in the same connector matrix as the other optional adapters, using the shared native build and
+Maven repository. Its Flink 2.2/JDK 17 entry retains the full fixture and upstream assertions.
+The script runs:
 
 - buffer-address, JNI batch-echo, lifetime, cancellation and failed-reservation checks;
 - SQL comparisons with stock Flink, including a Doris-to-Doris Arrow pipeline, saved plans,

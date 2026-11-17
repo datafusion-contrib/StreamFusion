@@ -20,7 +20,6 @@ import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
 
 class CanonicalTemporalJoinJobTest {
   @TempDir(cleanup = CleanupMode.ON_SUCCESS)
@@ -55,7 +54,7 @@ class CanonicalTemporalJoinJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("cases")
+  @CanonicalCases("cases")
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void pendingProbesAndVersionsContinueAcrossCleanEngineProcesses(
       String kind, boolean nativeFirst, String backend, boolean residual) throws Exception {
@@ -63,7 +62,7 @@ class CanonicalTemporalJoinJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("handoffs")
+  @CanonicalCases("handoffs")
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void pendingProbesAndVersionsReexportWithoutNewInput(boolean nativeFirst, String backend)
       throws Exception {
@@ -71,14 +70,14 @@ class CanonicalTemporalJoinJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("backends")
+  @CanonicalCases("backends")
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void nativeCheckpointResumesBeforeCanonicalSwitch(String backend) throws Exception {
     check("INNER", true, backend, "checkpoint", true);
   }
 
   @ParameterizedTest
-  @MethodSource("handoffs")
+  @CanonicalCases("handoffs")
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void actualTemporalKeysRescaleThroughOneThreeAndTwoTasks(boolean nativeFirst, String backend)
       throws Exception {

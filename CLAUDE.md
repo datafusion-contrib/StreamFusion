@@ -15,6 +15,23 @@ maintainer authorization.
 
 Conserve runner capacity by testing changed functionality locally and reusing compatible build
 caches while iterating.
+CI must not execute Nexmark, JVM aggregate, nested-scalar, table-function, or other
+end-to-end performance benchmarks, including through manually dispatched Actions workflows.
+Run those benchmarks locally on controlled hosts. Small focused Criterion checks are the
+only performance-benchmark exception; do not add the exhaustive Criterion suite as a gate.
+Keep correctness/recovery tests and plan-only SQL coverage in CI. A Maven `bench` build
+profile selects optimized libraries and does not itself authorize benchmark execution.
+Explicitly requested, timeboxed profiling of CI startup/fixture overhead remains diagnostic work.
+
+Routine canonical savepoint CI uses the representative coverage policy across both Flink lines
+and JDKs. Keep every concrete fixture and test method, every valid option pair, and the annotated
+recovery-mode/engine/backend or transaction-naming interactions. Do not replace this with a few
+handpicked smoke classes or mark unselected cases as successful/skipped. Require the generated
+coverage inventory and per-invocation outcome audit. The exhaustive matrix is an explicit release
+or compatibility investigation (`ci-campaign.py --canonical-coverage full`), not an extra default
+qualification for each agent edit. Connector and format suites have independent matrix entries
+with their actual supported versions; reuse shared preparation and bound competing fan-out.
+
 Full CI is final qualification, never an agent's development loop. Do not dispatch it while
 implementation, active investigation, benchmarks, required documentation, or known actionable
 fixes remain.

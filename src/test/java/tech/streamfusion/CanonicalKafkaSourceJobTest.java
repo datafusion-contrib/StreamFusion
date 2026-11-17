@@ -53,7 +53,7 @@ class CanonicalKafkaSourceJobTest {
   }
 
   @ParameterizedTest(name = "{0},ordinary={1},nativeFirst={2}")
-  @MethodSource("cases")
+  @CanonicalCases("cases")
   @Timeout(value = 12, unit = TimeUnit.MINUTES)
   void sourceOffsetsAndCoordinatorSurviveRepeatedCanonicalEngineSwitches(
       String mode, boolean ordinary, boolean nativeFirst) throws Exception {

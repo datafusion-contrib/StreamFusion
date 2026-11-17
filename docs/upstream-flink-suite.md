@@ -388,6 +388,14 @@ beside the injected native planner. The runner excludes the isolated loader and 
 Calcite after Flink's patched classes. This changes only the harness classpath; the pinned
 connector sources, SQL and result assertions remain unchanged.
 
+The shared preparer installs the format reactor before replacing the planner, parser and
+Calcite bridge with their unshaded source-suite artifacts. Maven reactor installation shades
+those artifacts and reduces their POM dependencies; doing it afterward removes required
+planner dependencies such as Avatica from independent connector JVMs. The unshaded
+installation and StreamFusion classpath resolution must follow every reactor install. Before
+publishing the build, the preparer checks the SHA-256 of all three installed JARs and POMs
+against their unshaded originals; any later overwrite fails preparation.
+
 On Flink 2.2, the suite agent extends Kafka's topic-creation fixture with a bounded
 administrative readiness check. Partition offsets can be readable before the metadata
 and producer-state requests used by the host exactly-once sink succeed. The check uses
@@ -1210,11 +1218,15 @@ artifact to model the incomplete CI cache. After dependency preparation, both en
 execute successfully offline. This is a runtime-loader regression, not a replacement for
 the unchanged upstream SQL smoke test or the complete integration suites.
 
-Short connector suites run sequentially in one job per Flink line: formats first, then Parquet,
-ORC, Kafka, and (on 2.2 only) Delta. Formats runs first because its report cleanup spans the format
-modules. Each command retains its original selector, native-execution audit, diagnostics and log;
-a failed command does not prevent the remaining suites from running, and any failure fails the
-job. Paimon and native state suites remain independent, as do the four runtime shards per line.
+Each connector/format suite has an independent matrix entry: formats, Parquet, ORC, Kafka and
+Paimon on both lines, plus Delta and Iceberg on 2.2. Every entry restores the same verified shared
+build and retains its original selector, native-execution audit, diagnostics and log. Separate
+job directories make format report cleanup independent. A failed connector no longer delays or
+requires retrying another connector in the same sequential job. Native state suites and all
+four runtime shards per line remain independent. Per-line consumption is limited to two jobs
+so short-suite fan-out does not occupy the whole account queue ahead of canonical savepoints.
+Doris follows the common connector matrix in ordinary CI with its released server fixture and
+unchanged upstream assertions; its current adapter supports Flink 2.2/JDK 17.
 Inventory dispatches retain their runtime/connectors/all selections. New commits cancel obsolete
 runs for the same fork feature branch or canonical main branch, following Flink's own per-ref cancellation policy. Manual SQL
 inventories have separate concurrency groups by scope so routine pushes do not cancel them. The
@@ -1225,12 +1237,12 @@ both lines' runtime reports and runs the existing complete-shard verifier itself
 or unexpectedly skipped dependencies fail the gate. The legacy Delta audit is intentionally skipped
 only for inventory dispatches; connector-only inventories do not request runtime artifacts.
 
-A normal upstream workflow uses 18 runner jobs (two preparations, fourteen consumers, the legacy
-Delta audit, and the final gate), down from 19 with a separate matrix selector and 28 before grouping.
-Shared-build downloads remain fourteen. Ordinary CI uses 17 jobs: one Rust job, two Java jobs, five lake-module jobs, two image jobs,
-six grouped module jobs, and the final gate. Folding the Flink 1.18 artifact checks into its image
-job removed one allocation; grouping short module checks removed another twelve. All test
-selections and required gates are retained.
+A normal upstream workflow now uses 27 runner jobs: the plan, two preparations, 22 independent
+consumers, the legacy Delta audit and the final gate. Shared-build downloads increase from 14
+to 22 in exchange for independent connector scheduling and failure isolation. Ordinary CI uses
+50 jobs with representative canonical coverage (16 savepoint consumers instead of 40), shared
+Maven preparation and the common connector matrix. Test families and gates are retained;
+canonical argument combinations follow the [coverage policy](ci.md#canonical-coverage-budget-and-connector-scheduling).
 For context, September 27, 2026 [PR #269's upstream run](https://github.com/datafusion-contrib/StreamFusion/actions/runs/36298667226)
 spent 42.7 aggregate runner-minutes deleting preinstalled tools and 24.0 downloading/restoring shared
 builds. Its coverage jobs waited 33.9 and 36.1 minutes after the final suite completed, then took six

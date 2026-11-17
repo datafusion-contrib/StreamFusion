@@ -18,7 +18,6 @@ import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
 
 class CanonicalBoundedOverJobTest {
   @TempDir(cleanup = CleanupMode.ON_SUCCESS)
@@ -45,7 +44,9 @@ class CanonicalBoundedOverJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("continuedCases")
+  @CanonicalCases(
+      value = "continuedCases",
+      recoveryAxes = {1, 3, 4})
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void continuedJobs(String kind, String mode, boolean ordinary, boolean first, String backend)
       throws Exception {
@@ -53,7 +54,9 @@ class CanonicalBoundedOverJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("recoveryCases")
+  @CanonicalCases(
+      value = "recoveryCases",
+      recoveryAxes = {1, 3, 4})
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void recoveryJobs(String kind, String mode, boolean ordinary, boolean first, String backend)
       throws Exception {

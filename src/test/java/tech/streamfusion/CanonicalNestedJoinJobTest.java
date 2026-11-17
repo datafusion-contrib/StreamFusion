@@ -14,7 +14,6 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
 
 class CanonicalNestedJoinJobTest {
   @TempDir Path directory;
@@ -53,7 +52,9 @@ class CanonicalNestedJoinJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("cases")
+  @CanonicalCases(
+      value = "cases",
+      recoveryAxes = {4, 1, 2})
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void completeNestedPayloadsContinueInCleanStockWorkers(
       String family, boolean nativeFirst, String backend, boolean compiled, String mode)

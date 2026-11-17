@@ -79,7 +79,7 @@ abstract class CanonicalManagedUdfWideKeyJobTest extends CanonicalManagedUdfGrou
 
   @Override
   @ParameterizedTest(name = "{0},ordinary={1},nativeFirst={2},backend={3}")
-  @MethodSource("cases")
+  @CanonicalCases("cases")
   @Timeout(value = 8, unit = java.util.concurrent.TimeUnit.MINUTES)
   void generatedArithmeticStateContinuesAcrossIsolatedEngines(
       String scenario, boolean ordinary, boolean first, String backend) throws Exception {

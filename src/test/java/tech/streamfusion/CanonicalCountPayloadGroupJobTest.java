@@ -18,7 +18,6 @@ import org.apache.flink.types.RowKind;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
 
 class CanonicalCountPayloadGroupJobTest extends CanonicalGroupArithmeticJobTest {
   private String phase, shape;
@@ -43,7 +42,7 @@ class CanonicalCountPayloadGroupJobTest extends CanonicalGroupArithmeticJobTest 
 
   @Override
   @ParameterizedTest
-  @MethodSource("cases")
+  @CanonicalCases("cases")
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void generatedArithmeticStateContinuesAcrossIsolatedEngines(
       String spec, boolean ordinary, boolean first, String backend) throws Exception {

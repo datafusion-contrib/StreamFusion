@@ -2,6 +2,7 @@
 
 import argparse
 from contextlib import ExitStack
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -9,9 +10,10 @@ import signal
 import subprocess
 
 from ci_runtime_test_shards import load_durations, partition_workers
+from ci_canonical_coverage import audit, costs as coverage_costs, load_inventory
 
 
-def selections(includes, workers, line):
+def selections(includes, workers, line, inventory=None, coverage="full"):
     manifest = json.loads(includes.with_suffix(".json").read_text())
     names = [row.removesuffix(".java") for row in includes.read_text().splitlines() if row]
     if manifest["suite"] != "canonical" or manifest["flink_line"] != line:
@@ -24,6 +26,12 @@ def selections(includes, workers, line):
     if missing:
         raise ValueError("Canonical classes need measured or estimated scheduling costs: "
                          + ", ".join(missing))
+    if inventory:
+        data = load_inventory(inventory)
+        if (data["line"] != line or manifest.get("coverage") != coverage
+                or manifest.get("coverage_inventory_sha256") != hashlib.sha256(inventory.read_bytes()).hexdigest()):
+            raise ValueError("Canonical worker coverage differs from its inventory")
+        costs = coverage_costs(costs, data, coverage)
     lanes = partition_workers(names, workers, costs)
     directory = includes.with_suffix(".workers")
     directory.mkdir(exist_ok=False)
@@ -58,8 +66,10 @@ def worker_command(profiles, includes, jvm_args, extra):
             "-Dsf.extraJvmArgs=" + jvm_args, *extra]
 
 
-def run(root, includes, profiles, line, workers, jvm_args, extra=()):
-    shard, directory, entries = selections(includes, workers, line)
+def run(root, includes, profiles, line, workers, jvm_args, extra=(), inventory=None, coverage="full"):
+    shard, directory, entries = selections(includes, workers, line, inventory, coverage)
+    if inventory:
+        extra = [*extra, "-Dsf.canonical.coverage=" + coverage]
     subprocess.run(prepare_command(profiles, shard, workers, jvm_args, extra),
                    cwd=root, check=True)
     processes = []
@@ -100,6 +110,10 @@ def run(root, includes, profiles, line, workers, jvm_args, extra=()):
         if code:
             failed = True
             print("\n".join(log.read_text(errors="replace").splitlines()[-80:]), flush=True)
+    if not failed and inventory:
+        result = audit(json.loads(includes.with_suffix(".json").read_text()), inventory,
+                       root / "streamfusion-runtime/target/surefire-reports", coverage)
+        (directory / "coverage-audit.json").write_text(json.dumps(result, indent=2) + "\n")
     return 1 if failed else 0
 
 
@@ -112,10 +126,12 @@ def main():
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--jvm-args", default="-Xmx1g")
     parser.add_argument("--maven-arg", action="append", default=[])
+    parser.add_argument("--inventory", type=Path, required=True)
+    parser.add_argument("--coverage", choices=("full", "representative"), default="full")
     args = parser.parse_args()
     try:
         return run(args.root.resolve(), args.includes.resolve(), args.profiles, args.line,
-                   args.workers, args.jvm_args, args.maven_arg)
+                   args.workers, args.jvm_args, args.maven_arg, args.inventory, args.coverage)
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"Canonical shard failed: {error}\n")
 
