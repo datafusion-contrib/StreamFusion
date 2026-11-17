@@ -1,0 +1,26 @@
+== Abstract Syntax Tree ==
+LogicalAggregate(group=[{0}], changes=[COUNT()], amount=[SUM($1)], score=[SUM($2)], named=[COUNT($3)])
++- LogicalProject(tenant=[$1], amount=[$3], $f2=[$4.score], name=[$2])
+   +- LogicalTableScan(table=[[default_catalog, default_database, cdc]])
+
+== Optimized Physical Plan ==
+NativeColumnarGroupAggregate(reuseBarrier=[412])
++- NativeColumnarExchange(reuseBarrier=[411])
+   +- NativeColumnarLocalGroupAggregate(reuseBarrier=[410])
+      +- NativeCalc(select=[tenant, amount, info.score AS $f2, name], nativeFunctions=[], jvmFunctions=[], reuseBarrier=[409])
+         +- NativeMiniBatchAssigner(reuseBarrier=[408])
+            +- NativeKafkaDecode(table=[[default_catalog, default_database, cdc]], fields=[id, tenant, name, amount, info, attrs, items], topic=[nested-canal-10000000-mvqp3w2k], format=[canal-json], reuseBarrier=[407])
+
+== Optimized Execution Plan ==
+NativeColumnarGroupAggregate
++- NativeColumnarExchange
+   +- NativeColumnarLocalGroupAggregate
+      +- NativeCalc(select=[tenant, amount, info.score AS $f2, name], nativeFunctions=[], jvmFunctions=[])
+         +- NativeMiniBatchAssigner
+            +- NativeKafkaDecode(table=[[default_catalog, default_database, cdc]], fields=[id, tenant, name, amount, info, attrs, items], topic=[nested-canal-10000000-mvqp3w2k], format=[canal-json])
+
+== Native acceleration (StreamFusion) ==
+5 operator(s) ran natively.
+No operators fell back to Flink.
+Function execution:
+  - NativeCalc functions: native=[], jvm=[]

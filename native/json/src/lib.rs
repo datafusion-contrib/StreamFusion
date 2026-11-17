@@ -4,6 +4,8 @@ use streamfusion_bridge::prelude::*;
 use streamfusion_bridge::{self as bridge, flink_text, json_string, *};
 use streamfusion_format_support::*;
 streamfusion_bridge::link_allocator!();
+mod canal_filter;
+use canal_filter::*;
 mod formats;
 #[allow(unused_imports)]
 use formats::*;
