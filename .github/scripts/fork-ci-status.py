@@ -177,10 +177,19 @@ def mirror(repository, pr, *, wait_for_runs=False):
 
 
 def dispatch_watch(repository, number, deadline, branch):
-    api('POST', f'repos/{repository}/actions/workflows/fork-ci-status.yml/dispatches', {
-        'ref': branch,
-        'inputs': {'pr_number': str(number), 'watch_until': str(deadline)},
-    })
+    for attempt in range(3):
+        try:
+            api('POST', f'repos/{repository}/actions/workflows/fork-ci-status.yml/dispatches', {
+                'ref': branch,
+                'inputs': {'pr_number': str(number), 'watch_until': str(deadline)},
+            })
+            break
+        except (URLError, TimeoutError) as error:
+            if not transient_error(error) or attempt == 2:
+                raise
+            print(f'PR #{number}: temporary follow-up dispatch failure: {error}; retrying',
+                  file=sys.stderr)
+            time.sleep(2 ** attempt)
     print(f'Queued follow-up for PR #{number}; deadline {deadline}', flush=True)
 
 

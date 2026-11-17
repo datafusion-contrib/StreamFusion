@@ -1,4 +1,5 @@
 target/
+__pycache__/
 .flattened-pom.xml
 /docs/sql-inventory/report.html
 /docs/sql-inventory/*.csv

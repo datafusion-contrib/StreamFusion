@@ -206,11 +206,13 @@ jobs:
           python3 -m unittest discover -s bin -p 'test_ci_module_groups.py'
           python3 -m unittest discover -s bin -p 'test_ci_lake_tests.py'
           python3 -m unittest discover -s bin -p 'test_ci_runtime_test_shards.py'
+          python3 -m unittest discover -s bin -p 'test_ci_canonical_jobs.py'
           python3 -m unittest discover -s bin -p 'test_ci_java_build.py'
           python3 -m unittest discover -s bin -p 'test_ci_native_source.py'
           python3 -m unittest discover -s bin -p 'test_ci_native_test_artifact.py'
           python3 -m unittest discover -s bin -p 'test_ci_maven_dependencies.py'
           python3 -m unittest discover -s bin -p 'test_ci_plan.py'
+          python3 -m unittest discover -s bin -p 'test_ci_campaign.py'
           python3 -m unittest discover -s bin -p 'test_profile_ci.py'
           python3 -m unittest discover -s bin -p 'test_profile_canonical_ci.py'
           python3 -m unittest discover -s bin -p 'test_profile_runtime_ci.py'
@@ -364,8 +366,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        jdk: ['11', '17']
         line: ['2.2', '1.18']
+        jdk: ['11', '17']
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
         include:
           - line: '2.2'
@@ -413,18 +415,19 @@ jobs:
       - name: Run every selected canonical job
         env:
           SF_CANONICAL_CDS_DIR: ${{ runner.temp }}/canonical-cds
+          SF_CANONICAL_REFERENCE_DIR: ${{ runner.temp }}/canonical-references
         run: |
           nproc
           free -m
           vmstat -w 30 &
           memory_sampler=$!
           trap 'kill "$memory_sampler" 2>/dev/null || true' EXIT
-          mvn -B -ntp -P${{ matrix.profiles }} -pl streamfusion-runtime -am test \
-            -Dnative.build.skip=true -Dsf.protobuf.checkStaleness=true \
-            -Dsf.ci.precompiledJava=true \
-            -DskipTests=${{ matrix.shard != 1 }} -Dsf.runtime.tests.skip=false \
-            "-Dsf.runtime.testIncludesFile=$RUNNER_TEMP/canonical-job-includes.txt" \
-            -Dsf.testForks=4 -Dsf.testReuseForks=false "-Dsf.extraJvmArgs=-Xmx1g"
+          mkdir -p "$RUNNER_TEMP/canonical-fixtures"
+          python3 bin/ci_canonical_jobs.py \
+            --includes "$RUNNER_TEMP/canonical-job-includes.txt" \
+            --line '${{ matrix.line }}' --profiles '${{ matrix.profiles }}' --workers 4 \
+            --maven-arg=-Dsf.canonical.kafka.quarantineLegacyTaskFailure=true \
+            --jvm-args="-Xmx1g -Djava.io.tmpdir=$RUNNER_TEMP/canonical-fixtures"
       - name: Retain canonical job selection and outcomes
         if: always()
         uses: actions/upload-artifact@v4
@@ -434,6 +437,15 @@ jobs:
             ${{ runner.temp }}/canonical-job-includes.*
             streamfusion-runtime/target/surefire-reports/*
             ${{ runner.temp }}/canonical-cds/*.log
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*.log
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*.tsv
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*.txt
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*.json
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*.sql
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*native-rows
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*native-source-output
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*expected-failure
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*committed-*
             **/hs_err_pid*.log
           if-no-files-found: error
           retention-days: 7
@@ -449,16 +461,17 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Remove canonical worker class metadata
+      - name: Remove canonical worker metadata and reference outputs
         if: always()
         run: |
           python3 - <<'PY'
           import os
           from pathlib import Path
           import shutil
-          directory = Path(os.environ['RUNNER_TEMP']) / 'canonical-cds'
-          if directory.exists():
-              shutil.rmtree(directory)
+          for name in ('canonical-cds', 'canonical-references', 'canonical-fixtures'):
+              directory = Path(os.environ['RUNNER_TEMP']) / name
+              if directory.exists():
+                  shutil.rmtree(directory)
           PY
 
   lake-module-tests:
@@ -571,7 +584,8 @@ jobs:
         with:
           name: paimon-compaction-upstream
           path: |
-            streamfusion-paimon/target/upstream-compaction/
+            streamfusion-paimon/target/upstream-compaction/*/stock/
+            streamfusion-paimon/target/upstream-compaction/*/native/
             streamfusion-paimon/target/surefire-reports/
           if-no-files-found: error
           retention-days: 7
@@ -746,11 +760,11 @@ jobs:
       - name: Require every test job to succeed
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
-          DOCS_ONLY: ${{ needs.plan.outputs.tests == 'false' }}
+          REUSED_COVERAGE: ${{ needs.plan.outputs.tests == 'false' }}
         run: |
-          jq -e --arg docs "$DOCS_ONLY" '
+          jq -e --arg reused "$REUSED_COVERAGE" '
             .plan.result == "success" and
-            if $docs == "true" then
+            if $reused == "true" then
               all(to_entries[]; .key == "plan" or .value.result == "skipped")
             else
               all(.[]; .result == "success")

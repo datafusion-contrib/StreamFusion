@@ -48,7 +48,7 @@ on:
       kafka_rescale_regression:
         type: boolean
         default: false
-        description: 'Run the released committer codec and all eight Kafka rescale providers'
+        description: 'Run Kafka codec, rescale, task-failure and completed-handoff regressions'
 
 permissions:
   contents: read
@@ -169,7 +169,7 @@ jobs:
           fi
           if [[ "$KAFKA_RESCALE_REGRESSION" == 'true' ]]; then
             [[ "$METADATA_REGRESSION" != 'true' && "$FLINK_PROFILES" == 'canonical-kafka' ]]
-            selection='CanonicalWorkerCompatTest,CanonicalKafkaSinkJobTest'
+            selection='CanonicalWorkerCompatTest,CanonicalKafkaSinkJobTest,CanonicalKafkaPipelineFailureJobTest,CanonicalKafkaCompletedHandoffJobTest'
             kafka_mode=rescale
             kafka_smoke=false
           fi
@@ -203,12 +203,14 @@ jobs:
               suite = ET.parse(report).getroot()
               counts.update({key: int(suite.get(key, 0)) for key in ('tests', 'failures', 'errors', 'skipped')})
               classes[suite.get('name')] = int(suite.get('tests', 0))
-          expected = 10 if os.environ['KAFKA_RESCALE_REGRESSION'] == 'true' else 36 if os.environ['METADATA_REGRESSION'] == 'true' else 8
+          expected = 26 if os.environ['KAFKA_RESCALE_REGRESSION'] == 'true' else 36 if os.environ['METADATA_REGRESSION'] == 'true' else 8
           if counts != dict(tests=expected, failures=0, errors=0, skipped=0):
               raise SystemExit(f'Incomplete canonical setup probe: {counts}')
           if os.environ['KAFKA_RESCALE_REGRESSION'] == 'true' and classes != {
                   'org.example.canonical.CanonicalWorkerCompatTest': 2,
-                  'tech.streamfusion.CanonicalKafkaSinkJobTest': 8}:
+                  'tech.streamfusion.CanonicalKafkaSinkJobTest': 8,
+                  'tech.streamfusion.CanonicalKafkaPipelineFailureJobTest': 8,
+                  'tech.streamfusion.CanonicalKafkaCompletedHandoffJobTest': 8}:
               raise SystemExit(f'Incomplete Kafka rescale/codec selection: {classes}')
           print(f'All {expected} selected canonical setup checks passed')
           PY

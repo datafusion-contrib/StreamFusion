@@ -33,6 +33,12 @@ Compatible Paimon format checks share compilation while keeping separate test pr
 and report sets, reducing required lake jobs from thirteen to nine with the same configurations.
 Canonical jobs group the same complete invocation inventory into forty jobs using a measured-class
 scheduling model; full hosted qualification remains necessary to establish actual savings.
+Canonical shards divide their classes among four concurrent lanes after one
+prepared reactor installation; each lane executes classes sequentially. Verified
+completed stock reference outputs can be reused by fixture/runtime/input identity,
+while switched workers and checkpoint state stay fresh. The
+[controlled JDK17 collector comparison](../ci.md#controlled-jdk17-collector-comparison)
+found no Serial-GC speedup, so that setting remains unchanged.
 CI build reuse and runner scheduling are documented in the
 [upstream-suite guide](../upstream-flink-suite.md#shared-builds-and-runtime-shards): compiled Flink
 caching, shared build artifacts, grouped connector suites and combined coverage verification.

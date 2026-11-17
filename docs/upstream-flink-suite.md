@@ -1108,6 +1108,12 @@ exposed an inspector that returned no committables without decoding the serializ
 controls retain multiple checkpoints/writers and reject corrupted state; the focused rescale
 probe and full matrix retain the assertion requiring real pending transaction state, transaction
 ownership, exact offsets, native work and exactly-once output.
+The custom Kafka fixtures require pending transactions at their data-bearing handoffs and also
+restore the final completed canonical snapshot without new input. A final snapshot can have an
+empty transaction set; its opposite-engine restore must preserve the exact external effects and
+offsets without re-encoding records. A separate Flink 2.2 provider forces this completed-state
+case through a real checkpoint. These are project recovery fixtures; released upstream Hudi
+and Flink test bytecode remains unchanged.
 The shared repository also contains the selected release's `paimon-vfs-hadoop` transitive
 provider graph, so Paimon connector compilation does not first fetch its Hadoop client graph
 after the dependency-preparation stage. Provider downloads use the same bounded setup retries.
@@ -2139,3 +2145,8 @@ registered Java predicate evaluators.
 The inherited batch aggregate identity check applies to contracts that include those fixtures; the Flink 1.18 RocksDB-only contract has no batch aggregate fixtures.
 
 The unchanged `JoinITCase#testLongHashJoinGenerator` checks Flink-generated operator source code, so that invocation retains the stock planner. The adjacent SQL join fixtures retain their native execution contracts. The batch code splitting fixtures explicitly check deep-expression fallback and positive native work for wide grouped reductions.
+
+Kafka completed-handoff controls force committed empty transaction sets at both the middle
+and final data boundaries. An empty set at any data handoff is accepted only with a recorded
+post-savepoint read-committed count for all input rows; subsequent fresh-engine restoration
+and exact external effects still have to pass.

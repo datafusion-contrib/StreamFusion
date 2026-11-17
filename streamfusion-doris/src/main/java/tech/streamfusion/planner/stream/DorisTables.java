@@ -7,7 +7,6 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.doris.flink.cfg.DorisExecutionOptions;
 import org.apache.doris.flink.cfg.DorisOptions;
 import org.apache.doris.flink.cfg.DorisReadOptions;
-import org.apache.doris.flink.sink.DorisSink;
 import org.apache.doris.flink.sink.writer.WriteMode;
 import org.apache.doris.flink.source.DorisSource;
 import org.apache.doris.flink.table.DorisDynamicTableSink;
@@ -181,7 +180,7 @@ final class DorisTables {
             "columns", quotedColumns(type, ",") + (deletable ? ",__DORIS_DELETE_SIGN__" : ""));
       }
       var delegate =
-          new DorisSink<>(options, reads, execution, new DorisArrowSerializer(type, deletable));
+          new DorisReadySink(options, reads, execution, new DorisArrowSerializer(type, deletable));
       int[] keys =
           sink.contextResolvedTable()
               .getResolvedSchema()

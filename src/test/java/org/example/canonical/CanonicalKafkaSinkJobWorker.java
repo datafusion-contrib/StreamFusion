@@ -192,6 +192,7 @@ public final class CanonicalKafkaSinkJobWorker {
       }
       CommonTestUtils.waitForAllTaskRunning(cluster, job.getJobID(), false);
       var actualGraph = cluster.getExecutionGraph(job.getJobID()).get(30, TimeUnit.SECONDS);
+      saveCheckpointEvidence(root, stage, actualGraph);
       String actualPlan =
           actualGraph.getAllVertices().values().stream()
               .map(vertex -> vertex.getName())
@@ -296,6 +297,15 @@ public final class CanonicalKafkaSinkJobWorker {
         if (job.getJobStatus().get(30, TimeUnit.SECONDS)
             != org.apache.flink.api.common.JobStatus.FAILED)
           throw new AssertionError("Lost task manager did not fail the job");
+        try {
+          saveCheckpointEvidence(
+              root, stage + "-after-fault",
+              cluster.getExecutionGraph(job.getJobID()).get(30, TimeUnit.SECONDS));
+        } catch (Exception diagnosticFailure) {
+          Files.writeString(
+              root.resolve(stage + "-after-fault-checkpoint-error.txt"),
+              diagnosticFailure.toString());
+        }
         Files.writeString(root.resolve(stage + "-native-rows"), Long.toString(Reporter.rows()));
         Files.writeString(
             root.resolve(stage + "-native-source-output"), Long.toString(Reporter.sourceOutput()));
@@ -306,6 +316,17 @@ public final class CanonicalKafkaSinkJobWorker {
       Files.writeString(
           root.resolve(stage + "-committed-before-savepoint"),
           Integer.toString(committedKafkaRows(root, limit)));
+      if (Files.exists(root.resolve(stage + "-complete-transaction-before-savepoint"))) {
+        String completed = cluster.triggerCheckpoint(job.getJobID()).get(90, TimeUnit.SECONDS);
+        long commitDeadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+        while (committedKafkaRows(root, limit) != limit) {
+          if (job.getJobExecutionResult().isDone()) job.getJobExecutionResult().get();
+          if (System.nanoTime() > commitDeadline)
+            throw new AssertionError("Final checkpoint did not commit its Kafka transaction");
+          Thread.sleep(10);
+        }
+        Files.writeString(root.resolve(stage + "-completed-transaction-checkpoint"), completed);
+      }
       if (checkpoint) {
         saved = cluster.triggerCheckpoint(job.getJobID()).get(90, TimeUnit.SECONDS);
         job.cancel().get(30, TimeUnit.SECONDS);
@@ -327,6 +348,9 @@ public final class CanonicalKafkaSinkJobWorker {
                 .get(90, TimeUnit.SECONDS);
         job.getJobExecutionResult().get(30, TimeUnit.SECONDS);
       }
+      Files.writeString(
+          root.resolve(stage + "-committed-after-savepoint"),
+          Integer.toString(committedKafkaRows(root, limit)));
       if (completionLoss) {
         if (job.getJobStatus().get(30, TimeUnit.SECONDS)
                 != org.apache.flink.api.common.JobStatus.FINISHED
@@ -348,6 +372,23 @@ public final class CanonicalKafkaSinkJobWorker {
     } finally {
       Thread.currentThread().setContextClassLoader(previous);
     }
+  }
+
+  private static void saveCheckpointEvidence(
+      Path root, String stage,
+      org.apache.flink.runtime.executiongraph.AccessExecutionGraph graph)
+      throws java.io.IOException {
+    var configuration = graph.getCheckpointCoordinatorConfiguration();
+    var stats = graph.getCheckpointStatsSnapshot();
+    var restored = stats == null ? null : stats.getLatestRestoredCheckpoint();
+    var completed = stats == null ? null : stats.getHistory().getLatestCompletedCheckpoint();
+    Files.write(
+        root.resolve(stage + "-checkpoint-counts.tsv"),
+        List.of(
+            "interval_ms\t" + (configuration == null ? -1 : configuration.getCheckpointInterval()),
+            "completed\t" + (stats == null ? -1 : stats.getCounts().getNumberOfCompletedCheckpoints()),
+            "restored\t" + (restored == null ? -1 : restored.getCheckpointId()),
+            "latest_completed\t" + (completed == null ? -1 : completed.getCheckpointId())));
   }
 
   private static String stackTrace(Throwable failure) {
@@ -517,6 +558,9 @@ public final class CanonicalKafkaSinkJobWorker {
       var metadata =
           org.apache.flink.runtime.checkpoint.Checkpoints.loadCheckpointMetadata(
               input, CanonicalKafkaSinkJobWorker.class.getClassLoader(), pointer);
+      Files.writeString(
+          root.resolve(stage + "-checkpoint-id.tsv"),
+          Long.toString(metadata.getCheckpointId()));
       var inventory = new ArrayList<String>();
       var transactions = new ArrayList<String>();
       for (var state : metadata.getOperatorStates()) {

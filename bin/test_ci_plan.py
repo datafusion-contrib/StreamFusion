@@ -17,10 +17,97 @@ spec.loader.exec_module(plan)
 
 
 class CiPlanTest(unittest.TestCase):
+    def test_manual_docs_followup_requires_both_latest_branch_gates_and_unchanged_source(self):
+        sha, head = "a" * 40, "b" * 40
+        good = {"id": 1, "head_sha": sha, "head_branch": "feature", "event": "workflow_dispatch",
+                "status": "completed", "conclusion": "success", "html_url": "https://example.invalid/run",
+                "display_title": "Full upstream Flink suite (merge gate)"}
+        for paths in (["docs/ci.md"], ["CLAUDE.md"], [], ["src/Engine.java"], ["pom.xml"],
+                      [".github/workflows/ci.yml"], ["src/Engine.java", "docs/Engine.md"]):
+            with self.subTest(paths=paths), patch.object(plan, "api", side_effect=[{"workflow_runs": [good]},
+                    {"workflow_runs": [good]}]), patch.object(plan.subprocess, "run"), \
+                    patch.object(plan, "changed_paths", return_value=paths):
+                self.assertEqual(sha if not paths or plan.documentation_only(paths) else None,
+                                 plan.qualified_branch_docs("owner/fork", head, "feature"))
+        for change in ({"conclusion": "failure"}, {"status": "in_progress", "conclusion": None},
+                       {"head_sha": "c" * 40}, {"head_branch": "other"},
+                       {"display_title": "SQL admission inventory (all)"}):
+            with self.subTest(change=change), patch.object(plan, "api", side_effect=[{"workflow_runs": [good]},
+                    {"workflow_runs": [{**good, **change}]}]), patch.object(plan.subprocess, "run") as fetch:
+                self.assertIsNone(plan.qualified_branch_docs("owner/fork", head, "feature"))
+                fetch.assert_not_called()
+        with patch.object(plan, "api", return_value={"workflow_runs": [good,
+                {**good, "id": 2, "head_sha": "c" * 40, "conclusion": "failure"}]}), \
+                patch.object(plan.subprocess, "run") as fetch:
+            self.assertIsNone(plan.qualified_branch_docs("owner/fork", head, "feature"))
+            fetch.assert_not_called()
+
+    def test_merged_tree_reuses_only_both_complete_exact_head_fork_qualifications(self):
+        sha, head = "a" * 40, "b" * 40
+        pr = {"number": 12, "merged_at": "2026-11-15T12:00:00Z", "merge_commit_sha": head,
+              "base": {"ref": "main"}, "head": {"sha": sha, "ref": "feature/ready",
+              "repo": {"fork": True, "full_name": "owner/fork"}}}
+        good = {"id": 1, "head_sha": sha, "head_branch": "feature/ready",
+                "event": "workflow_dispatch", "status": "completed", "conclusion": "success",
+                "display_title": "Full upstream Flink suite (merge gate)", "html_url": "https://example.invalid/run"}
+        for changes in ({}, {"conclusion": "failure"}, {"conclusion": "cancelled"},
+                        {"status": "in_progress", "conclusion": None}, {"head_sha": head},
+                        {"head_branch": "other"}, {"display_title": "SQL admission inventory (all)"}):
+            with self.subTest(changes=changes), patch.object(plan.subprocess, "run"), \
+                    patch.object(plan, "changed_paths", return_value=[]), \
+                    patch.object(plan, "api", side_effect=[[pr], {"workflow_runs": [good]},
+                                                           {"workflow_runs": [{**good, **changes}]}]):
+                result = plan.qualified_merge(plan.CANONICAL, head, "main")
+                self.assertEqual(sha if not changes else None, result)
+
+    def test_merge_with_any_new_tree_content_still_runs_integration(self):
+        pr = {"number": 12, "merged_at": "now", "merge_commit_sha": "b" * 40,
+              "base": {"ref": "main"}, "head": {"sha": "a" * 40, "ref": "ready",
+              "repo": {"fork": True, "full_name": "owner/fork"}}}
+        for path in ("src/Engine.java", ".github/workflows/ci.yml", "docs/ci.md"):
+            with self.subTest(path=path), patch.object(plan.subprocess, "run"), \
+                    patch.object(plan, "changed_paths", return_value=[path]), \
+                    patch.object(plan, "api", return_value=[pr]) as api:
+                self.assertIsNone(plan.qualified_merge(plan.CANONICAL, "b" * 40, "main"))
+                self.assertEqual(1, api.call_count)
+
+    def test_only_the_actual_merged_pr_can_establish_coverage(self):
+        pr = {"number": 12, "merged_at": "now", "merge_commit_sha": "b" * 40,
+              "base": {"ref": "main"}, "head": {"sha": "a" * 40, "ref": "ready",
+              "repo": {"fork": True, "full_name": "owner/fork"}}}
+        for change in ({"merged_at": None}, {"merge_commit_sha": "c" * 40},
+                       {"base": {"ref": "other"}}, {"head": {**pr["head"], "repo": None}}):
+            with self.subTest(change=change), patch.object(plan, "api", return_value=[{**pr, **change}]), \
+                    patch.object(plan.subprocess, "run") as fetch:
+                self.assertIsNone(plan.qualified_merge(plan.CANONICAL, "b" * 40, "main"))
+                fetch.assert_not_called()
+        with patch.object(plan, "api") as api:
+            self.assertIsNone(plan.qualified_merge("owner/fork", "b" * 40, "main"))
+            self.assertIsNone(plan.qualified_merge(plan.CANONICAL, "b" * 40, "feature"))
+            api.assert_not_called()
+
+    def test_real_committed_tree_comparison_ignores_commit_metadata_but_not_integration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            def git(*args):
+                return subprocess.check_output(["git", "-C", str(root), *args], text=True).strip()
+            git("init", "-q")
+            git("config", "user.name", "CI fixture")
+            git("config", "user.email", "ci@example.invalid")
+            (root / "Engine.java").write_text("class Engine {}\n")
+            git("add", ".")
+            git("commit", "-qm", "qualified source")
+            qualified = git("rev-parse", "HEAD")
+            git("commit", "--allow-empty", "-qm", "merged metadata")
+            self.assertEqual([], plan.changed_paths(qualified, "HEAD", cwd=root))
+            (root / "Engine.java").write_text("class Engine { int integrated; }\n")
+            git("commit", "-qam", "integration")
+            self.assertEqual(["Engine.java"], plan.changed_paths(qualified, "HEAD", cwd=root))
+
     def test_documentation_whitelist_excludes_build_config_and_other_data(self):
-        self.assertTrue(plan.documentation_only(["readme.md", "docs/operators/over.md",
+        self.assertTrue(plan.documentation_only(["readme.md", "CLAUDE.md", "AGENTS.md", "docs/operators/over.md",
                                                  "docs/benchmarks/ci-profile-20261107.json"]))
-        for name in ("pom.xml", "CLAUDE.md", ".github/workflows/ci.yml", "bin/ci-plan.py",
+        for name in ("pom.xml", ".github/workflows/ci.yml", "bin/ci-plan.py",
                      "docs/benchmarks/input.json", "docs/hook.py", "src/Foo.java"):
             self.assertFalse(plan.documentation_only(["docs/ci.md", name]), name)
         self.assertFalse(plan.documentation_only([]))
@@ -83,12 +170,27 @@ class CiPlanTest(unittest.TestCase):
                 plan.main()
                 self.assertIn("tests=true", output.getvalue())
 
-    def test_manual_dispatch_always_requires_tests(self):
-        with patch.dict(os.environ, {"GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_STEP_SUMMARY": ""}), \
+    def test_manual_main_dispatch_always_requires_tests(self):
+        with patch.dict(os.environ, {"GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_STEP_SUMMARY": "",
+                                    "GITHUB_REF_NAME": "main"}), \
                 patch.object(plan, "plan") as decision, patch("sys.stdout", new_callable=io.StringIO) as output:
             plan.main()
             decision.assert_not_called()
             self.assertIn("tests=true", output.getvalue())
+
+    def test_manual_feature_docs_dispatch_uses_the_same_source_and_baseline_proof(self):
+        with tempfile.TemporaryDirectory() as directory:
+            event = Path(directory) / "event.json"
+            event.write_text("{}")
+            env = {"GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_STEP_SUMMARY": "",
+                   "GITHUB_EVENT_PATH": str(event), "GITHUB_REF_NAME": "feature/docs",
+                   "GITHUB_SHA": "b" * 40, "GITHUB_REPOSITORY": "owner/fork"}
+            with patch.dict(os.environ, env), patch.object(plan, "qualified_branch_docs", return_value=None), \
+                    patch.object(plan, "plan", return_value=(False, "a" * 40, "proven-docs")) as decision, \
+                    patch("sys.stdout", new_callable=io.StringIO) as output:
+                plan.main()
+                decision.assert_called_once_with("owner/fork", "b" * 40, None, "feature/docs")
+                self.assertIn("tests=false", output.getvalue())
 
     def test_new_branches_require_both_canonical_main_push_results(self):
         sha = "a" * 40
@@ -122,7 +224,7 @@ class CiPlanTest(unittest.TestCase):
                             needs = {"plan": {"result": plan_result}, "tests": {"result": tests_result}}
                             result = subprocess.run(["bash", "-e", "-c", script], capture_output=True,
                                                     env={**os.environ, "NEEDS_JSON": json.dumps(needs),
-                                                         "DOCS_ONLY": str(docs).lower(), "INVENTORY": "false"})
+                                                         "REUSED_COVERAGE": str(docs).lower(), "INVENTORY": "false"})
                             expected = plan_result == "success" and tests_result == ("skipped" if docs else "success")
                             self.assertEqual(expected, result.returncode == 0, result.stderr)
 

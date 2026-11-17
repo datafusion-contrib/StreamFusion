@@ -137,6 +137,7 @@
             <testInclude>org/apache/doris/flink/source/DorisSourceITCase.java</testInclude>
             <testInclude>org/apache/doris/flink/source/*DorisIncremental*.java</testInclude>
             <testInclude>org/apache/doris/flink/sink/DorisSinkITCase.java</testInclude>
+            <testInclude>org/apache/doris/flink/container/ContainerUtils.java</testInclude>
             <testInclude>org/apache/doris/flink/catalog/DorisCatalogITCase.java</testInclude>
             <testInclude>org/apache/doris/flink/lookup/DorisLookupTableITCase.java</testInclude>
             <testInclude>org/apache/doris/flink/table/DorisRowDataJdbcLookupFunctionITCase.java</testInclude>

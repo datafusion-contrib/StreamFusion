@@ -6,13 +6,51 @@ For ordinary development, create or use the authenticated contributor's personal
 Actions there, and push feature branches to that fork. Open PRs from the personal fork into canonical
 `main`; do not push development branches to `datafusion-contrib/StreamFusion`. Fork push workflows
 run on the fork owner's Actions quota, avoiding the shared organization's runner backlog. Sync or
-rebase on current upstream `main` before pushing so the branch has the fork CI workflows. Verify
-both aggregate checks for the exact PR head before merging; see [docs/ci.md](docs/ci.md) for setup,
+rebase on current upstream `main` before the first feature-branch push so the branch has the
+fork CI workflows, and integrate current main before the first source qualification. Once
+qualification starts, preserve the candidate across unrelated main movement; use proof-backed
+documentation follow-ups for unchanged tested source. Verify both aggregate checks for the exact PR head before merging; see [docs/ci.md](docs/ci.md) for setup,
 result mirroring, and existing-PR migration. Direct changes to canonical `main` require explicit
 maintainer authorization.
 
 Conserve runner capacity by testing changed functionality locally and reusing compatible build
 caches while iterating.
+Full CI is final qualification, never an agent's development loop. Do not dispatch it while
+implementation, active investigation, benchmarks, required documentation, or known actionable
+fixes remain.
+Batch the complete task into one ready candidate, including its documentation, before qualification.
+Do not run CI for each local commit, intermediate push, review edit, or progress checkpoint.
+First reproduce a failure locally or with the smallest focused hosted probe; fix the complete
+cause before considering another candidate. A red matrix is not a reason to restart the matrix.
+
+Timebox local reproduction of residual historical failures and state the limit before starting.
+A passing repeat establishes only that the failure did not reproduce. Do not keep rerunning a
+passing selection without a new falsifiable hypothesis and a specific observation that could
+confirm or reject it. When the timebox expires, document the original failure, controls and
+remaining risk as deferred; retain the correctness assertions and finish the prepared work.
+Explicitly deferred investigations do not prolong the task or trigger extra campaigns.
+A user's instruction to avoid CI applies to focused hosted diagnostics as well as full matrices.
+
+Submit merge-gate campaigns with `python3 bin/ci-campaign.py start --repo OWNER/FORK
+--validation 'the focused local checks actually run and their outcomes'`. Use its `status`
+command to inspect readiness and reuse, and `retry --run RUN_ID --validation 'diagnosis and
+focused regression outcomes'` only for failed jobs on the unchanged current head. Do not bypass
+the launcher with raw dispatches or whole-workflow reruns. It verifies a clean, pushed, current
+PR head based on current canonical main, reuses exact-head green/active runs, checks account-wide
+competing work, and locks submissions across local worktrees. It blocks when other work is queued
+or fills the observed scheduling budget; running tails may leave usable idle slots.
+A capacity refusal means finish
+local preparation and wait; it does not authorize canceling another task's workflows. Scoped
+hosted diagnostics remain separate and must follow the capacity rules below.
+
+After qualification starts, keep the candidate stable. Prepare optional follow-up work separately
+instead of invalidating hours of checks. If a necessary correction changes the candidate, stop
+this task's superseded runs, validate the correction in the short loop, and submit only when the
+whole candidate is ready again. Reuse automatically triggered `ci/**` and main runs; do not
+dispatch another copy after a submission push or merge. Optional diagnostics and compatibility
+workflows require an applicable code change or a specific unanswered diagnostic question; do not
+run them as a precaution for unrelated changes.
+
 Keep concurrent tasks on distinct branches and worktrees when a shared checkout is active.
 Preserve other work when isolating changes; shared-branch commits can invalidate another
 task's candidate checks and force unnecessary restarts.
@@ -34,7 +72,9 @@ This applies across concurrent tasks, not only within one task. Keep one full qu
 for the candidate; run optional
 profiling campaigns separately so they do not compete with its merge gates or contaminate timing.
 Use the smallest diagnostic matrix needed for the question. Reuse existing successful native
-artifacts after verifying their source and producer. Cancel only this task's superseded work;
+artifacts after verifying their source and producer. The producer must belong to the repository
+queried by the verifier; confirm an available, unexpired artifact with matching native inputs
+before dispatching the diagnostic. Cancel only this task's superseded work;
 leave other contributors' or sessions' runs alone. If a shared setup failure guarantees that this
 task's full campaign cannot pass, retain its failure evidence and stop its remaining work while
 fixing the setup in a short loop.
@@ -59,6 +99,10 @@ still the current PR head or, before a PR exists, the current branch tip. Reuse 
 and successful checks for that commit. When a push supersedes it, cancel queued and running CI
 for the older commits on that PR. Retry only the failed jobs needed for the current head and
 merge after its required checks pass.
+
+Scheduled full suites belong to the canonical repository; personal forks use explicit
+qualification. Keep fork default-branch workflows free of obsolete copied schedules, since
+GitHub runs cron from the default branch rather than the current development candidate.
 
 Feature-branch pushes do not automatically run the test matrices or release diagnostics.
 When the combined change is ready, explicitly dispatch CI and the full upstream Flink suite

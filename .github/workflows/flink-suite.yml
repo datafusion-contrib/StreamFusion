@@ -30,7 +30,7 @@ concurrency:
 
 jobs:
   plan:
-    if: ${{ github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main' }}
+    if: ${{ (github.event_name != 'schedule' || github.repository == 'datafusion-contrib/StreamFusion') && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
     uses: ./.github/workflows/ci-plan.yml
 
   upstream-line:
@@ -81,7 +81,7 @@ jobs:
 
   all-tests:
     name: All upstream integration tests
-    if: ${{ (always() && !cancelled()) && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
+    if: ${{ (always() && !cancelled()) && (github.event_name != 'schedule' || github.repository == 'datafusion-contrib/StreamFusion') && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
     needs: [plan, upstream-line, legacy-delta-audit]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -90,11 +90,11 @@ jobs:
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
           INVENTORY: ${{ inputs.sql_inventory || false }}
-          DOCS_ONLY: ${{ needs.plan.outputs.tests == 'false' }}
+          REUSED_COVERAGE: ${{ needs.plan.outputs.tests == 'false' }}
         run: |
-          jq -e --arg inventory "$INVENTORY" --arg docs "$DOCS_ONLY" '
+          jq -e --arg inventory "$INVENTORY" --arg reused "$REUSED_COVERAGE" '
             .plan.result == "success" and
-            if $docs == "true" then
+            if $reused == "true" then
               all(to_entries[]; .key == "plan" or .value.result == "skipped")
             else
               all(to_entries[];

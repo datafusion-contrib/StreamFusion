@@ -1,4 +1,4 @@
-"""Keep the upstream test adapter limited to its published Guava type."""
+"""Preserve upstream assertions while adapting released connector APIs and visibility."""
 
 import importlib.util
 import json
@@ -29,21 +29,37 @@ class DorisTestPreparationTest(unittest.TestCase):
                         'assertEquals(expected, actual);\n')
                 source.write_text(text)
                 originals[source] = text
+            helper = (original_root / "flink-doris-connector/flink-doris-connector-base"
+                      / "src/test/java/org/apache/doris/flink/container/ContainerUtils.java")
+            helper.parent.mkdir(parents=True, exist_ok=True)
+            helper_text = (
+                "List<String> actual = getResult(connection, logger, expected, query, columnSize);\n"
+                "assertEquals(expected, actual);\n"
+            )
+            helper.write_text(helper_text)
+            originals[helper] = helper_text
             PREPARE.prepare(original_root, output)
             manifest = json.loads((output / "manifest.json").read_text())
-            self.assertEqual(set(PREPARE.TESTS), {entry["test"] for entry in manifest})
+            self.assertEqual(set(PREPARE.TESTS) | {"container/ContainerUtils.java"},
+                             {entry["test"] for entry in manifest})
             for source, original in originals.items():
                 self.assertEqual(original, source.read_text())
             for entry in manifest:
                 compiled = (output / "org/apache/doris/flink" / entry["test"]).read_text()
-                original = next(iter(originals.values()))
+                original = helper_text if entry["test"] == "container/ContainerUtils.java" else text
                 if entry["adaptation"] == "none":
                     self.assertEqual(original, compiled)
                     self.assertEqual(entry["source_sha256"], entry["compiled_sha256"])
-                else:
-                    self.assertEqual("table/DorisRowDataJdbcLookupFunctionITCase.java", entry["test"])
+                elif entry["test"] == "table/DorisRowDataJdbcLookupFunctionITCase.java":
                     self.assertEqual(original.replace("com.google.common.cache.Cache",
                         "org.apache.doris.shaded.com.google.common.cache.Cache"), compiled)
+                else:
+                    self.assertEqual("container/ContainerUtils.java", entry["test"])
+                    self.assertEqual(original.replace(
+                        "List<String> actual = getResult(connection, logger, expected, query, columnSize);",
+                        "List<String> actual = tech.streamfusion.doris.DorisFixtureVisibility.await("
+                        "() -> getResult(connection, logger, expected, query, columnSize), expected.size());"),
+                        compiled)
 
     def test_rejects_unexpected_upstream_import(self):
         with tempfile.TemporaryDirectory() as directory:

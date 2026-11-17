@@ -541,6 +541,27 @@ class ForkCiWatchTest(unittest.TestCase):
                 STATUS.main()
         dispatch.assert_called_once_with('datafusion-contrib/StreamFusion', 43, 22600, 'main')
 
+    def test_followup_dispatch_recovers_from_dns_and_stops_after_three_attempts(self):
+        error = URLError('Temporary failure in name resolution')
+        with self.clock() as clock, patch.object(STATUS, 'api', side_effect=[error, None]) as api:
+            STATUS.dispatch_watch('datafusion-contrib/StreamFusion', 42, 10000, 'main')
+        self.assertEqual(2, api.call_count)
+        self.assertEqual(api.call_args_list[0], api.call_args_list[1])
+        clock.sleep.assert_called_once_with(1)
+        with self.clock() as clock, patch.object(STATUS, 'api', side_effect=error) as api:
+            with self.assertRaises(URLError):
+                STATUS.dispatch_watch('datafusion-contrib/StreamFusion', 42, 10000, 'main')
+        self.assertEqual(3, api.call_count)
+        self.assertEqual([1, 2], [call.args[0] for call in clock.sleep.call_args_list])
+
+    def test_followup_dispatch_does_not_retry_permission_errors(self):
+        with self.clock() as clock, patch.object(STATUS, 'api', side_effect=
+                HTTPError('url', 403, 'Forbidden', {}, None)) as api:
+            with self.assertRaises(HTTPError):
+                STATUS.dispatch_watch('datafusion-contrib/StreamFusion', 42, 10000, 'main')
+        self.assertEqual(1, api.call_count)
+        clock.sleep.assert_not_called()
+
     def test_dispatch_uses_only_the_default_branch_and_preserves_the_deadline(self):
         with patch.object(STATUS, 'api') as api:
             STATUS.dispatch_watch('datafusion-contrib/StreamFusion', 42, 10000, 'main')

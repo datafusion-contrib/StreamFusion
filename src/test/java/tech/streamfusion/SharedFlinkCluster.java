@@ -106,6 +106,7 @@ public final class SharedFlinkCluster
   @Override
   public void afterEach(ExtensionContext context) throws Exception {
     FlinkTestContexts.clearForRemoteSubmission();
+    session(context).cancelRemainingJobs();
     assertNativeMemoryReleased(context.getDisplayName());
   }
 
@@ -192,6 +193,18 @@ public final class SharedFlinkCluster
               .isGloballyTerminalState()) throw failure;
         }
         cluster.requestJobResult(job.getJobId()).get(30, TimeUnit.SECONDS);
+      }
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+      while (true) {
+        var resources = cluster.getResourceOverview().get(10, TimeUnit.SECONDS);
+        if (resources.getNumberFreeSlots() == getNumberSlots()) return;
+        if (System.nanoTime() > deadline)
+          throw new AssertionError(
+              "Shared test cluster did not release its slots: "
+                  + resources.getNumberFreeSlots()
+                  + " free of "
+                  + getNumberSlots());
+        Thread.sleep(20);
       }
     }
 

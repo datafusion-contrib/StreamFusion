@@ -17,6 +17,33 @@ public final class CanonicalTestCompat {
     return new org.apache.flink.contrib.streaming.state.EmbeddedRocksDBStateBackend();
   }
 
+  public static org.apache.flink.runtime.state.StateBackend rawStateBackend() {
+    var backend = new org.apache.flink.contrib.streaming.state.EmbeddedRocksDBStateBackend();
+    backend.setRocksDBOptions(new RawStateRocksDBOptions());
+    return backend;
+  }
+
+  public static void rawStateConfiguration(org.apache.flink.configuration.Configuration config) {
+    config.setString("state.backend.rocksdb.options-factory", RawStateRocksDBOptions.class.getName());
+  }
+
+  public static final class RawStateRocksDBOptions
+      implements org.apache.flink.contrib.streaming.state.RocksDBOptionsFactory {
+    private static final long serialVersionUID = 1L;
+
+    @Override
+    public org.rocksdb.DBOptions createDBOptions(
+        org.rocksdb.DBOptions options, java.util.Collection<AutoCloseable> handles) {
+      return options;
+    }
+
+    @Override
+    public org.rocksdb.ColumnFamilyOptions createColumnOptions(
+        org.rocksdb.ColumnFamilyOptions options, java.util.Collection<AutoCloseable> handles) {
+      return options.setDisableAutoCompactions(true);
+    }
+  }
+
   public static org.apache.flink.table.runtime.operators.join.stream.state.JoinInputSideSpec
       joinSide(int shape, org.apache.flink.table.runtime.keyselector.RowDataKeySelector selector) {
     return shape == 0

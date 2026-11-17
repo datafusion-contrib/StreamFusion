@@ -29,6 +29,9 @@ def git(*args):
 def copy_fixtures(source, worktree, flink_line):
     fixtures = [Path("src/test/java/tech/streamfusion") / name for name in FIXTURES]
     fixtures.append(
+        Path("src/test/java/org/apache/flink/runtime/testutils/RetainedCounterReporter.java")
+    )
+    fixtures.append(
         Path(f"src/test/java-flink{flink_line}")
         / "tech/streamfusion/compat/FlinkTestContexts.java"
     )

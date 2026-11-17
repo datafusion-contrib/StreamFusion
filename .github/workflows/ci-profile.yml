@@ -6,8 +6,13 @@ on:
       suite:
         description: 'Paired JVM comparison to run'
         type: choice
-        options: [runtime, runtime-parallel, runtime-jfr, canonical, native-only, runtime-hotspots, canonical-setup, lake-setup, native-lz4]
+        options: [runtime, runtime-parallel, runtime-jfr, canonical, native-only, runtime-hotspots, canonical-setup, canonical-reference, lake-setup, native-lz4, failure-regressions]
         default: runtime
+      failure_suite:
+        description: 'Failure diagnostic lane to run'
+        type: choice
+        options: [all, canonical, kafka, iceberg, doris, paimon-policy]
+        default: all
       native_run:
         description: 'Existing native producer for focused diagnostics'
         type: string
@@ -25,7 +30,7 @@ on:
         type: boolean
         default: false
       kafka_rescale_regression:
-        description: 'Check released committer-state decoding and all Kafka rescale providers'
+        description: 'Check Kafka codec, rescale, task-failure and completed-handoff recovery'
         type: boolean
         default: false
       flink_line:
@@ -53,6 +58,290 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  failure-regression-selection:
+    if: inputs.suite == 'failure-regressions'
+    runs-on: ubuntu-slim
+    outputs:
+      matrix: ${{ steps.selection.outputs.matrix }}
+    steps:
+      - id: selection
+        env:
+          SELECTED_SUITE: ${{ inputs.failure_suite || 'all' }}
+          SELECTED_LINE: ${{ inputs.flink_line || 'all' }}
+          SELECTED_JDK: ${{ inputs.jdk || '11' }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          rows = [
+              dict(suite='canonical', line='1.18', jdk='11', profiles='flink-1.18,canonical-kafka', module='streamfusion-runtime'),
+              dict(suite='canonical', line='2.2', jdk='17', profiles='canonical-kafka', module='streamfusion-runtime'),
+              dict(suite='iceberg', line='2.2', jdk='17', profiles='iceberg', module='streamfusion-iceberg'),
+              dict(suite='doris', line='2.2', jdk='17', profiles='doris,doris-it,doris-upstream', module='streamfusion-doris'),
+              dict(suite='paimon-policy', line='2.2', jdk='17', profiles='paimon,upstream-paimon-compaction', module='streamfusion-paimon'),
+          ]
+          if os.environ['SELECTED_SUITE'] == 'kafka':
+              rows = [dict(row, suite='kafka', jdk=os.environ['SELECTED_JDK'])
+                      for row in rows if row['suite'] == 'canonical']
+          rows = [row for row in rows
+                  if os.environ['SELECTED_SUITE'] in ('all', row['suite'])
+                  and os.environ['SELECTED_LINE'] in ('all', row['line'])]
+          if not rows:
+              raise SystemExit('No failure diagnostic exists for the selected suite and Flink line')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              print('matrix=' + json.dumps(rows), file=output)
+          PY
+
+  failure-regressions:
+    needs: failure-regression-selection
+    if: inputs.suite == 'failure-regressions' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.failure-regression-selection.outputs.matrix) }}
+    env:
+      JAVA_TOOL_OPTIONS: '-XX:ActiveProcessorCount=4 -XX:TieredStopAtLevel=1 -XX:ReservedCodeCacheSize=512m -XX:+UseSerialGC'
+      SF_KAFKA_INTEGRATION: 'true'
+    steps:
+      - uses: actions/checkout@v6
+      - run: python3 bin/ci-free-disk.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.jdk == '11' && env.CANONICAL_JAVA_11 || env.CANONICAL_JAVA_17 }}
+          cache: maven
+      - name: Verify the existing native producer
+        id: native
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NATIVE_RUN: ${{ inputs.native_run }}
+        run: python3 bin/ci_native_source.py --run "$NATIVE_RUN"
+      - uses: actions/download-artifact@v5
+        with:
+          name: ${{ steps.native.outputs.artifact }}
+          run-id: ${{ inputs.native_run }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/original-native
+      - name: Stage the verified native libraries
+        run: >-
+          python3 bin/ci_native_test_artifact.py --input "$RUNNER_TEMP/original-native"
+          --output native/target/debug
+      - name: Resolve only this diagnostic's dependencies
+        env:
+          PROFILES: ${{ matrix.profiles }}
+          MODULE: ${{ matrix.module }}
+        run: python3 bin/ci-maven-dependencies.py --profile "$PROFILES" --projects "$MODULE" --also-make
+      - name: Check canonical timing, physical state and worker cleanup regressions
+        if: matrix.suite == 'canonical' || matrix.suite == 'kafka'
+        env:
+          SF_CANONICAL_CDS_DIR: ${{ runner.temp }}/canonical-cds
+          SF_CANONICAL_REFERENCE_DIR: ${{ runner.temp }}/canonical-references
+          PROFILES: ${{ matrix.profiles }}
+        run: |
+          selection='CanonicalCompositeExtremaMiniBatchJobTest,CanonicalVariableExtremaMiniBatchJobTest,CanonicalRetractingExtremaInitializationTest,CanonicalHiddenExtremaTest,CanonicalGroupArithmeticInitializationTest,CanonicalWorkerProcessTest,SharedFlinkClusterInvocationCleanupTest,SharedFlinkClusterLifecycleTest,FlinkJsonObjectPartialsSqlHarnessTest'
+          mkdir -p "$RUNNER_TEMP/canonical-fixtures"
+          if [[ '${{ matrix.suite }}' == 'canonical' ]]; then
+            mvn -B -ntp -P"$PROFILES" -pl streamfusion-runtime -am test \
+              -Dnative.build.skip=true -Dsf.protobuf.checkStaleness=true \
+              "-Dtest=$selection" -Dsurefire.failIfNoSpecifiedTests=false \
+              -Dsf.testForks=4 -Dsf.testReuseForks=false \
+              "-Dsf.extraJvmArgs=-Xmx1g -Djava.io.tmpdir=$RUNNER_TEMP/canonical-fixtures"
+          fi
+          if [[ '${{ matrix.line }}' == '2.2' ]]; then
+            kafka_selection='CanonicalKafkaCompletedHandoffJobTest,CanonicalKafkaPipelineFailureJobTest'
+            kafka_trials=1
+          else
+            kafka_selection='CanonicalKafkaPipelineFailureJobTest,CanonicalKafkaPipelineProcessFailureJobTest'
+            kafka_trials=3
+          fi
+          for trial in $(seq 1 "$kafka_trials"); do
+            mvn -B -ntp -P"$PROFILES" -pl streamfusion-runtime -am test \
+              -Dnative.build.skip=true -Dsf.protobuf.checkStaleness=true \
+              "-Dtest=$kafka_selection" -Dsf.canonical.kafka.fixture.smoke=false \
+              -Dsurefire.failIfNoSpecifiedTests=false \
+              -Dsf.testForks=2 -Dsf.testReuseForks=false \
+              "-Dsf.extraJvmArgs=-Xmx1g -Djava.io.tmpdir=$RUNNER_TEMP/canonical-fixtures"
+            evidence="$RUNNER_TEMP/failure-regressions/kafka-${{ matrix.line }}-$trial"
+            mkdir -p "$evidence"
+            cp streamfusion-runtime/target/surefire-reports/TEST-tech.streamfusion.CanonicalKafka*.xml "$evidence/"
+            LINE='${{ matrix.line }}' EVIDENCE="$evidence" python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          expected = ({'CanonicalKafkaCompletedHandoffJobTest': 8,
+                       'CanonicalKafkaPipelineFailureJobTest': 8} if os.environ['LINE'] == '2.2'
+                      else {'CanonicalKafkaPipelineFailureJobTest': 4,
+                            'CanonicalKafkaPipelineProcessFailureJobTest': 4})
+          observed = {}
+          for report in Path(os.environ['EVIDENCE']).glob('TEST-*.xml'):
+              suite = ET.parse(report).getroot()
+              name = suite.get('name').rsplit('.', 1)[-1]
+              observed[name] = int(suite.get('tests', 0))
+              assert all(int(suite.get(key, 0)) == 0 for key in ('failures', 'errors', 'skipped')), name
+          assert observed == expected, (observed, expected)
+          print(f'Complete Kafka provider inventory passed: {observed}')
+          PY
+          done
+      - name: Check the real Iceberg branch race and complete original writer configurations
+        if: matrix.suite == 'iceberg'
+        run: >-
+          mvn -B -ntp -Piceberg -pl streamfusion-iceberg -am test
+          -Dnative.build.skip=true -Dsf.protobuf.checkStaleness=true
+          -Dtest=IcebergDynamicBranchRecoveryTest,NativeIcebergDynamicSinkTest,IcebergDynamicGeneratorTest,IcebergDynamicRoutingTest
+          -Dsurefire.failIfNoSpecifiedTests=false -Dsf.testForks=1 '-Dsf.extraJvmArgs=-Xmx1g'
+      - name: Check Doris writer startup and released source/sink fixtures
+        if: matrix.suite == 'doris'
+        env:
+          SF_DORIS_NATIVE_BUILD_SKIP: 'true'
+        run: bin/doris-suite.sh
+      - name: Investigate the released full-compaction changelog failure
+        if: matrix.suite == 'paimon-policy'
+        run: |
+          mvn -B -ntp -f dev/flink-suite/agent/pom.xml package -DskipTests
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import shutil
+          import subprocess
+          import xml.etree.ElementTree as ET
+          root = Path.cwd()
+          output = Path(os.environ['RUNNER_TEMP']) / 'failure-regressions'
+          agent = root / 'dev/flink-suite/agent/target/streamfusion-flink-suite-agent-1.0-SNAPSHOT.jar'
+          failed = False
+          for trial in range(1, 4):
+              for mode in ('stock', 'native'):
+                  evidence = output / f'paimon-{trial}-{mode}'
+                  evidence.mkdir(parents=True)
+                  extra = (f'-Xmx1g -javaagent:{agent} '
+                           f'-Dstreamfusion.paimon.compaction.mode={mode} '
+                           f'-Dstreamfusion.flink-suite.sql-inventory={evidence / "inventory"} '
+                           '-Dstreamfusion.flink-suite.flink-line=2.2')
+                  command = ['mvn', '-B', '-ntp', '-Ppaimon,upstream-paimon-compaction',
+                             '-pl', 'streamfusion-paimon', '-am', 'test', '-Dnative.build.skip=true',
+                             '-Dtest=FullCompactionFileStoreITCase#testIgnoreUpdateBeforeAuditLog',
+                             '-Dsurefire.failIfNoSpecifiedTests=false', '-Dsf.testForks=1',
+                             '-Dsf.extraJvmArgs=' + extra]
+                  result = subprocess.run(command)
+                  reports = list((root / 'streamfusion-paimon/target/surefire-reports').glob(
+                      'TEST-org.apache.paimon.flink.FullCompactionFileStoreITCase.xml'))
+                  if len(reports) != 1:
+                      failed = True
+                      continue
+                  shutil.copy2(reports[0], evidence / reports[0].name)
+                  suite = ET.parse(reports[0]).getroot()
+                  counts = {key: int(suite.get(key, 0))
+                            for key in ('tests', 'failures', 'errors', 'skipped')}
+                  print(f'Paimon policy trial {trial} {mode}: {counts}', flush=True)
+                  failed |= result.returncode != 0 or counts != dict(tests=1, failures=0, errors=0, skipped=0)
+          raise SystemExit(int(failed))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: failure-regressions-${{ matrix.suite }}-${{ matrix.line }}-jdk${{ matrix.jdk }}
+          path: |
+            **/target/surefire-reports/*.xml
+            streamfusion-doris/target/doris-suite/
+            streamfusion-doris/target/doris-sql-plans/
+            ${{ runner.temp }}/canonical-cds/*.log
+            ${{ runner.temp }}/failure-regressions/
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*.log
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*.tsv
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*.txt
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*.json
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*.sql
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*native-rows
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*native-source-output
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*expected-failure
+            ${{ runner.temp }}/canonical-fixtures/**/switched/*committed-*
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove diagnostic native libraries and worker caches
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import shutil
+          for directory in (Path(os.environ['RUNNER_TEMP']) / 'original-native',
+                            Path(os.environ['RUNNER_TEMP']) / 'canonical-cds',
+                            Path(os.environ['RUNNER_TEMP']) / 'canonical-references',
+                            Path(os.environ['RUNNER_TEMP']) / 'canonical-fixtures',
+                            Path('native/target/debug')):
+              if directory.exists():
+                  shutil.rmtree(directory)
+          PY
+
+  canonical-reference:
+    if: inputs.suite == 'canonical-reference' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        line: ${{ fromJSON(inputs.flink_line == 'all' && '["2.2","1.18"]' || format('["{0}"]', inputs.flink_line)) }}
+    env:
+      FLINK_PROFILES: ${{ matrix.line == '1.18' && 'flink-1.18,canonical-kafka' || 'canonical-kafka' }}
+      JAVA_TOOL_OPTIONS: ${{ inputs.jdk == '11' && '-XX:+UseSerialGC' || '' }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          filter: blob:none
+      - run: python3 bin/ci-free-disk.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.jdk == '11' && env.CANONICAL_JAVA_11 || env.CANONICAL_JAVA_17 }}
+          cache: maven
+      - name: Verify the existing native producer
+        id: native
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NATIVE_RUN: ${{ inputs.native_run }}
+        run: python3 bin/ci_native_source.py --run "$NATIVE_RUN"
+      - uses: actions/download-artifact@v5
+        with:
+          name: ${{ steps.native.outputs.artifact }}
+          run-id: ${{ inputs.native_run }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/original-native
+      - name: Stage the canonical native libraries
+        run: >-
+          python3 bin/ci_native_test_artifact.py --input "$RUNNER_TEMP/original-native"
+          --output native/target/debug
+      - name: Compile once before paired trials
+        run: |
+          python3 bin/ci-maven-dependencies.py --profile "$FLINK_PROFILES" --projects streamfusion-runtime --also-make
+          mvn -B -ntp -P"$FLINK_PROFILES" -pl streamfusion-runtime -am test-compile \
+            -DskipTests=true -Dnative.build.skip=true -Dsf.protobuf.checkStaleness=true
+      - name: Compare identical handoffs with independent reference cache lifetimes
+        run: >-
+          python3 bin/profile-canonical-reference-ci.py --line '${{ matrix.line }}'
+          --repetitions 3 --output "$RUNNER_TEMP/reference-comparison"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: canonical-reference-flink${{ matrix.line }}-jdk${{ inputs.jdk }}
+          path: |
+            ${{ runner.temp }}/reference-comparison/summary.json
+            ${{ runner.temp }}/reference-comparison/*.log
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove staged libraries and fixtures
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import os, shutil
+          from pathlib import Path
+          for path in (Path(os.environ['RUNNER_TEMP']) / 'original-native',
+                       Path(os.environ['RUNNER_TEMP']) / 'reference-comparison',
+                       Path('native/target/debug')):
+              if path.exists():
+                  shutil.rmtree(path)
+          PY
+
   native-lz4:
     if: inputs.suite == 'native-lz4' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main')
     runs-on: ubuntu-24.04
@@ -167,7 +456,8 @@ jobs:
       kafka_rescale_regression: ${{ inputs.kafka_rescale_regression }}
 
   native:
-    if: ${{ inputs.suite != 'runtime-hotspots' && inputs.suite != 'canonical-setup' && inputs.suite != 'lake-setup' && inputs.suite != 'native-lz4' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
+    name: ${{ inputs.suite == 'native-only' && 'Shared debug native libraries' || 'native' }}
+    if: ${{ inputs.suite != 'runtime-hotspots' && inputs.suite != 'canonical-setup' && inputs.suite != 'canonical-reference' && inputs.suite != 'lake-setup' && inputs.suite != 'native-lz4' && inputs.suite != 'failure-regressions' && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -183,6 +473,17 @@ jobs:
           shared-key: debug-jvm
           save-if: ${{ github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main' }}
       - run: cargo build --manifest-path native/Cargo.toml --workspace --lib --locked --timings
+      - name: Verify native JNI exports
+        if: inputs.suite == 'native-only'
+        run: python3 bin/check-native-workspace.py --libraries native/target/debug
+      - uses: actions/upload-artifact@v4
+        if: inputs.suite == 'native-only'
+        with:
+          name: debug-native-${{ github.sha }}
+          path: native/target/debug/libstreamfusion*.so
+          compression-level: 1
+          retention-days: 1
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: inputs.suite != 'native-only'
         with:
@@ -238,7 +539,7 @@ jobs:
 
   runtime:
     needs: native
-    if: inputs.suite != 'canonical' && inputs.suite != 'native-only' && inputs.suite != 'runtime-hotspots' && inputs.suite != 'canonical-setup' && inputs.suite != 'lake-setup' && inputs.suite != 'native-lz4'
+    if: inputs.suite != 'canonical' && inputs.suite != 'native-only' && inputs.suite != 'runtime-hotspots' && inputs.suite != 'canonical-setup' && inputs.suite != 'canonical-reference' && inputs.suite != 'lake-setup' && inputs.suite != 'native-lz4' && inputs.suite != 'failure-regressions'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
