@@ -1,5 +1,6 @@
 package tech.streamfusion;
 
+import static java.nio.file.StandardCopyOption.ATOMIC_MOVE;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Files;
@@ -14,17 +15,25 @@ class CanonicalWorkerProcessTest {
   @Test
   void terminatingAParentAlsoStopsItsWorker() throws Exception {
     var marker = temporary.resolve("worker.pid");
-    var parent = java(Parent.class, marker.toString())
-        .redirectErrorStream(true).redirectOutput(temporary.resolve("parent.log").toFile()).start();
+    var parent =
+        java(Parent.class, marker.toString())
+            .redirectErrorStream(true)
+            .redirectOutput(temporary.resolve("parent.log").toFile())
+            .start();
     ProcessHandle worker = null;
     try {
       long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
       while (!Files.exists(marker) && parent.isAlive() && System.nanoTime() < deadline)
         Thread.sleep(20);
-      assertTrue(Files.exists(marker), () -> {
-        try { return Files.readString(temporary.resolve("parent.log")); }
-        catch (Exception failure) { return failure.toString(); }
-      });
+      assertTrue(
+          Files.exists(marker),
+          () -> {
+            try {
+              return Files.readString(temporary.resolve("parent.log"));
+            } catch (Exception failure) {
+              return failure.toString();
+            }
+          });
       worker = ProcessHandle.of(Long.parseLong(Files.readString(marker))).orElseThrow();
       assertTrue(worker.isAlive());
       parent.destroy();
@@ -53,7 +62,10 @@ class CanonicalWorkerProcessTest {
     public static void main(String[] args) throws Exception {
       var worker = java(Sleeper.class).start();
       try (var lifetime = new CanonicalWorkerProcess(worker)) {
-        Files.writeString(Path.of(args[0]), Long.toString(worker.pid()));
+        var marker = Path.of(args[0]);
+        var staging = marker.resolveSibling(marker.getFileName() + ".tmp");
+        Files.writeString(staging, Long.toString(worker.pid()));
+        Files.move(staging, marker, ATOMIC_MOVE);
         Thread.sleep(TimeUnit.MINUTES.toMillis(1));
       }
     }

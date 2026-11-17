@@ -984,6 +984,11 @@ failure still prints its original stack and exits nonzero. The process regressio
 injects a lingering non-daemon thread and checks both outcomes and completed cleanup.
 The timeout and all result, state-transfer and native-execution checks are unchanged.
 
+The parent/worker lifetime regression publishes its PID marker with an atomic rename in
+the same directory after closing the complete payload. Observing file creation before the
+PID write completes must not become a test failure. The bounded readiness wait, parent
+termination and assertion that its worker also exits remain required.
+
 Kafka checkpoint handoffs wait for the fixture sink's external commit before cancelling the
 completed checkpoint leg. The coordinator's checkpoint future can complete before the committer
 receives its completion notification. The boundary still requires the exact row count and the
