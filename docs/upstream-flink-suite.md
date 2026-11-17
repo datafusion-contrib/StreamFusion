@@ -388,6 +388,14 @@ beside the injected native planner. The runner excludes the isolated loader and 
 Calcite after Flink's patched classes. This changes only the harness classpath; the pinned
 connector sources, SQL and result assertions remain unchanged.
 
+The shared preparer installs the format reactor before replacing the planner, parser and
+Calcite bridge with their unshaded source-suite artifacts. Maven reactor installation shades
+those artifacts and reduces their POM dependencies; doing it afterward removes required
+planner dependencies such as Avatica from independent connector JVMs. The unshaded
+installation and StreamFusion classpath resolution must follow every reactor install. Before
+publishing the build, the preparer checks the SHA-256 of all three installed JARs and POMs
+against their unshaded originals; any later overwrite fails preparation.
+
 On Flink 2.2, the suite agent extends Kafka's topic-creation fixture with a bounded
 administrative readiness check. Partition offsets can be readable before the metadata
 and producer-state requests used by the host exactly-once sink succeed. The check uses

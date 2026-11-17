@@ -114,6 +114,8 @@ class TestRuntimePreparationTest(unittest.TestCase):
                 'import json, os, sys\n'
                 'with open(os.environ["CALLS"], "a") as output:\n'
                 '    output.write(json.dumps([os.environ.get("MAVEN_USER_HOME"), os.getcwd(), sys.argv[1:]]) + "\\n")\n'
+                'if sys.argv[1].endswith("check-flink-suite-unshaded.py"):\n'
+                '    sys.exit(int(os.environ["ARTIFACT_STATUS"]))\n'
                 'if sys.argv[1].endswith("ci-maven-dependencies.py"):\n'
                 '    sys.exit(int(os.environ["DOWNLOAD_STATUS"]))\n'
             )
@@ -122,15 +124,15 @@ class TestRuntimePreparationTest(unittest.TestCase):
             for line in ("2.2", "1.18"):
                 suite = root / f"suite with spaces/{line}"
                 (suite / "flink").mkdir(parents=True)
-                for status, probe_status in ((0, 0), (7, 0), (0, 9)):
-                    with self.subTest(line=line, status=status, probe_status=probe_status):
+                for status, probe_status, artifact_status in ((0, 0, 0), (7, 0, 0), (0, 9, 0), (0, 0, 13)):
+                    with self.subTest(line=line, status=status, probe_status=probe_status, artifact_status=artifact_status):
                         calls.unlink(missing_ok=True)
                         result = subprocess.run(
                             ["bash", "-c", 'flink_mvn() { echo "offline-probe:$*"; return "$PROBE_STATUS"; }\n' + command],
                             capture_output=True, text=True,
                             env={**os.environ, "PATH": str(root) + os.pathsep + os.environ["PATH"],
                                  "CALLS": str(calls), "DOWNLOAD_STATUS": str(status),
-                                 "PROBE_STATUS": str(probe_status), "MAVEN_SETTINGS": "settings",
+                                 "PROBE_STATUS": str(probe_status), "ARTIFACT_STATUS": str(artifact_status), "MAVEN_SETTINGS": "settings",
                                  "SUITE_MODE": "prepare", "FLINK_LINE": line, "FLINK_VERSION": "test",
                                  "PAIMON_VERSION": "2.0.0",
                                  "FLINK_TARGET_PROFILE": "java11-target" if line == "2.2" else "",
@@ -139,8 +141,15 @@ class TestRuntimePreparationTest(unittest.TestCase):
                                  "SUITE_MAVEN_USER_HOME": str(suite / "maven-wrapper"),
                                  "FLINK_ROOT": str(suite / "flink"), "CONTRACT_FILE": "contracts"},
                         )
-                        self.assertEqual(status or probe_status, result.returncode, result.stderr)
+                        self.assertEqual(artifact_status or status or probe_status, result.returncode, result.stderr)
                         invocations = [json.loads(row) for row in calls.read_text().splitlines()]
+                        guard = invocations.pop(0)[2]
+                        self.assertTrue(guard[0].endswith("check-flink-suite-unshaded.py"))
+                        self.assertEqual([str(suite), str(suite / "m2"), "test"], guard[1:])
+                        if artifact_status:
+                            self.assertEqual([], invocations)
+                            self.assertNotIn("offline-probe:", result.stdout)
+                            continue
                         wrapper_home, working_directory, arguments = invocations[0]
                         self.assertEqual(str(suite / "maven-wrapper"), wrapper_home)
                         self.assertEqual(str(suite / "flink"), working_directory)

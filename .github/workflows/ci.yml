@@ -229,7 +229,7 @@ jobs:
         run: |
           mvn -B -ntp -f dev/flink-suite/agent/pom.xml package
           python3 -m unittest discover -s dev/flink-suite -p 'test_*.py'
-          python3 -m unittest discover -s bin -p 'test_check_flink_suite_classpath.py'
+          python3 -m unittest discover -s bin -p 'test_check_flink_suite_*.py'
           python3 -m unittest discover -s bin -p 'test_check_native_glibc.py'
           python3 -m unittest discover -s bin -p 'test_check_native_tls.py'
           python3 -m unittest discover -s bin -p 'test_ci_free_disk.py'
