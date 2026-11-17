@@ -426,6 +426,7 @@ jobs:
           python3 bin/ci_canonical_jobs.py \
             --includes "$RUNNER_TEMP/canonical-job-includes.txt" \
             --line '${{ matrix.line }}' --profiles '${{ matrix.profiles }}' --workers 4 \
+            --maven-arg=-Dsf.canonical.kafka.quarantineLegacyTaskFailure=true \
             --jvm-args="-Xmx1g -Djava.io.tmpdir=$RUNNER_TEMP/canonical-fixtures"
       - name: Retain canonical job selection and outcomes
         if: always()

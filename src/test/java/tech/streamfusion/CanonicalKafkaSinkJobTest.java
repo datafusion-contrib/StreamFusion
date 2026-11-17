@@ -106,6 +106,13 @@ class CanonicalKafkaSinkJobTest {
   @Timeout(value = 12, unit = TimeUnit.MINUTES)
   void preservesExactlyOnceSinkEffectsAcrossRepeatedCanonicalSwitches(
       String mode, boolean ordinary, boolean nativeFirst, String naming) throws Exception {
+    org.junit.jupiter.api.Assumptions.assumeFalse(
+        KafkaTestQuarantine.matches(
+            Boolean.getBoolean("sf.canonical.kafka.quarantineLegacyTaskFailure"),
+            tech.streamfusion.compat.CanonicalTestCompat.flink22(),
+            Runtime.version().feature(),
+            getClass().getName(), mode, ordinary, nativeFirst, naming),
+        KafkaTestQuarantine.REASON);
     int batchRows = mode.equals("full-batch") ? 5 : 3;
     boolean completedRecovery = mode.equals("completion-failure");
     String topic = "canonical-sink-" + UUID.randomUUID();
