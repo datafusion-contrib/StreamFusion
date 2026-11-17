@@ -1,0 +1,16 @@
+{
+  "commit": "1f6407e37f091b23d406fe05af41120ae2f73eee",
+  "branch": "feat/kafka-canal-include-filters",
+  "host": {
+    "cpu": "Apple M1 Max",
+    "cores": 10,
+    "memory_bytes": 34359738368,
+    "os": "macOS-26.5.2-arm64-arm-64bit-Mach-O"
+  },
+  "java": "openjdk version \"17.0.20\" 2026-07-21",
+  "rustc": "rustc 1.94.0 (4a4ef493e 2026-03-02)",
+  "kafka_broker": "Apache Kafka 4.2.2 (KRaft, single node, host process; release tarball SHA-512 verified)",
+  "load_average_at_start": "{ 12.34 12.11 11.39 }",
+  "notes": "Shared developer machine: the VS Code renderer and Java language server each used about one core throughout; routes rotate order every run so that load widens spreads rather than biasing one route.",
+  "commit_note": "An earlier, unpublished revision of this change; its id is kept for the record but resolves only in the author's clone."
+}

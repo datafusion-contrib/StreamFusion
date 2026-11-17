@@ -11,6 +11,8 @@ mod options;
 pub use options::*;
 mod keyed;
 pub use keyed::*;
+mod metadata;
+pub use metadata::*;
 mod decoder;
 pub use decoder::*;
 mod jni;

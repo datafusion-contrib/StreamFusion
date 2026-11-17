@@ -59,6 +59,18 @@ public final class NativeAvroFormat {
       long outArrayAddress,
       long outSchemaAddress);
 
+  /** Decodes Kafka records with their connector metadata; see {@code NativeMessageDecoder}. */
+  public static native void decodeRecordsInto(
+      long handle,
+      long slabAddress,
+      long slabLength,
+      long[] layout,
+      int count,
+      String topic,
+      int partition,
+      long outArrayAddress,
+      long outSchemaAddress);
+
   public static native void closeDecoder(long handle);
 
   public static native boolean encoderSupported(int format);

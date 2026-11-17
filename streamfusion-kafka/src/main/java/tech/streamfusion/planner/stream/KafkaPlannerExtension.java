@@ -92,6 +92,7 @@ public class KafkaPlannerExtension implements NativePlannerExtension {
         FilesystemTables.physicalRowType(scan),
         "NativeKafkaDecode(table=[" + String.join(".", scan.getTable().getQualifiedName()) + "])",
         KafkaTables.decodeOptions(scan),
+        KafkaTables.connectorMetadata(scan),
         ScanWatermarkSpec.of(scan));
   }
 

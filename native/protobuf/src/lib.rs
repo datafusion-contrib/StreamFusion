@@ -13,6 +13,7 @@ streamfusion_format_support::format_jni_facade!(
     Java_tech_streamfusion_format_protobuf_NativeProtobufFormat_isLoaded,
     Java_tech_streamfusion_format_protobuf_NativeProtobufFormat_nativeBuildVersion,
     Java_tech_streamfusion_format_protobuf_NativeProtobufFormat_decodeInto,
+    Java_tech_streamfusion_format_protobuf_NativeProtobufFormat_decodeRecordsInto,
     Java_tech_streamfusion_format_protobuf_NativeProtobufFormat_closeDecoder
 );
 mod protobuf_decode;

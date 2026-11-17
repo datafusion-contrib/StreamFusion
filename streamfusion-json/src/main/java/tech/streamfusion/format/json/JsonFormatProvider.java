@@ -75,6 +75,11 @@ public final class JsonFormatProvider implements NativeFormatProvider {
   }
 
   @Override
+  public boolean composesKafkaMetadata() {
+    return true;
+  }
+
+  @Override
   public boolean honorsProjection() {
     return true;
   }
@@ -96,7 +101,8 @@ public final class JsonFormatProvider implements NativeFormatProvider {
         new JsonDecoder(
             FormatCodes.JSON,
             context.ignoreParseErrors(),
-            NativeFormatOptions.encode(context.options()));
+            NativeFormatOptions.encode(context.options()),
+            null);
   }
 
   @Override
@@ -165,6 +171,11 @@ public final class JsonFormatProvider implements NativeFormatProvider {
     }
 
     @Override
+    public boolean composesKafkaMetadata() {
+      return true;
+    }
+
+    @Override
     public boolean honorsProjection() {
       return false;
     }
@@ -197,9 +208,19 @@ public final class JsonFormatProvider implements NativeFormatProvider {
       // Capture the code, not `this`: the factory ships in the job graph and providers are not
       // serializable (reading the field inside the lambda would capture the provider).
       int format = this.format;
+      // Flink's Kafka source never pushes a projection into the format, so its mapper sees every
+      // value column. The CDC decode is never narrowed today (writer and output types agree); the
+      // writer type is the defensive choice should that change.
+      CanalIncludeFilter include =
+          format == FormatCodes.CANAL_JSON
+              ? CanalIncludeFilter.of(context.options(), context.writerType())
+              : null;
       return () ->
           new JsonDecoder(
-              format, context.ignoreParseErrors(), NativeFormatOptions.encode(context.options()));
+              format,
+              context.ignoreParseErrors(),
+              NativeFormatOptions.encode(context.options()),
+              include);
     }
   }
 
@@ -207,15 +228,28 @@ public final class JsonFormatProvider implements NativeFormatProvider {
     private final int format;
     private final boolean skipParseErrors;
     private final String formatOptions;
+    private final CanalIncludeFilter include;
 
-    private JsonDecoder(int format, boolean skipParseErrors, String formatOptions) {
+    private JsonDecoder(
+        int format, boolean skipParseErrors, String formatOptions, CanalIncludeFilter include) {
       this.format = format;
       this.skipParseErrors = skipParseErrors;
       this.formatOptions = formatOptions;
+      this.include = include;
     }
 
     @Override
     protected long createHandle(long schemaArrayAddress, long schemaAddress) {
+      if (include != null) {
+        return NativeJsonFormat.createCanalDecoder(
+            schemaArrayAddress,
+            schemaAddress,
+            skipParseErrors,
+            formatOptions,
+            include,
+            include.filtersDatabase(),
+            include.filtersTable());
+      }
       return NativeJsonFormat.createDecoder(
           format, schemaArrayAddress, schemaAddress, skipParseErrors, formatOptions);
     }
@@ -223,6 +257,20 @@ public final class JsonFormatProvider implements NativeFormatProvider {
     @Override
     public void decodeInto(long inArray, long inSchema, long outArray, long outSchema) {
       NativeJsonFormat.decodeInto(handle, inArray, inSchema, outArray, outSchema);
+    }
+
+    @Override
+    public void decodeRecordsInto(
+        long slabAddress,
+        long slabLength,
+        long[] layout,
+        int count,
+        String topic,
+        int partition,
+        long outArray,
+        long outSchema) {
+      NativeJsonFormat.decodeRecordsInto(
+          handle, slabAddress, slabLength, layout, count, topic, partition, outArray, outSchema);
     }
 
     @Override
@@ -246,7 +294,8 @@ public final class JsonFormatProvider implements NativeFormatProvider {
 
     @Override
     public long driverInitAddress() {
-      return NativeJsonFormat.driverInitAddress();
+      // Include filters ask the JVM for their verdicts, so their decode stays JVM-mediated.
+      return include == null ? NativeJsonFormat.driverInitAddress() : 0;
     }
 
     @Override

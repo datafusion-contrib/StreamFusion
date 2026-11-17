@@ -18,6 +18,11 @@ public final class NativeFormatOptions {
   public static final String KEYED_VALUE_POSITIONS = "streamfusion.keyed.value-positions";
   public static final String KEYED_KEY_ENDIANNESS = "streamfusion.keyed.key-endianness";
 
+  /** The Kafka connector metadata columns the decode fills, as {@code position:key} pairs over the
+   * decoder's output schema (for example {@code 3:offset,4:timestamp}); {@link #encode} forwards
+   * them as the {@code metadata.columns} option line. */
+  public static final String METADATA_COLUMNS = "streamfusion.metadata.columns";
+
   /** A value-format option, resolved with Flink's own prefixing ({@code FactoryUtil.getFormatPrefix}):
    * {@code csv.field-delimiter} when the table uses {@code format = 'csv'}, but
    * {@code value.csv.field-delimiter} when it uses {@code value.format = 'csv'}. */
@@ -41,6 +46,10 @@ public final class NativeFormatOptions {
    */
   public static String encode(Map<String, String> options) {
     String encoded = encodeFormat(options);
+    String metadata = options.get(METADATA_COLUMNS);
+    if (encoded != null && metadata != null) {
+      encoded = encoded + "metadata.columns=" + metadata + '\n';
+    }
     String keyPosition = options.get(KEYED_KEY_POSITION);
     if (encoded == null || keyPosition == null) {
       return encoded;

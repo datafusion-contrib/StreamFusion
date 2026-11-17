@@ -1,8 +1,12 @@
 package tech.streamfusion.planner.stream;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.StringJoiner;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.configuration.ReadableConfig;
@@ -36,6 +40,7 @@ public class NativeKafkaDecodeExecNode extends ExecNodeBase<ArrowBatch>
   private final RowType outputType;
   private final RowType writerType;
   private final Map<String, String> options;
+  private final Map<String, String> metadata;
   private final ScanWatermarkSpec watermark;
 
   public NativeKafkaDecodeExecNode(
@@ -44,6 +49,7 @@ public class NativeKafkaDecodeExecNode extends ExecNodeBase<ArrowBatch>
       RowType writerType,
       String description,
       Map<String, String> options,
+      Map<String, String> metadata,
       ScanWatermarkSpec watermark) {
     super(
         ExecNodeContext.newNodeId(),
@@ -55,6 +61,7 @@ public class NativeKafkaDecodeExecNode extends ExecNodeBase<ArrowBatch>
     this.outputType = outputType;
     this.writerType = writerType;
     this.options = options;
+    this.metadata = metadata;
     this.watermark = watermark;
   }
 
@@ -66,12 +73,30 @@ public class NativeKafkaDecodeExecNode extends ExecNodeBase<ArrowBatch>
     // decoder run against that projection, while the operator still exports the physical schema
     // (the native keyed composition owns the split and the scatter).
     boolean keyed = options.containsKey(NativeFormatOptions.KEYED_KEY_POSITION);
-    RowType formatType = keyed ? valueRowType() : writerType;
+    RowType formatType = keyed ? valueRowType() : withoutMetadata(writerType);
+    // A table reading connector metadata: the value format sees only the other columns, and the
+    // native decode fills each metadata column's output position from the row's record.
+    Map<String, String> formatOptions = options;
+    List<String> metadataKeys = new ArrayList<>();
+    StringJoiner metadataColumns = new StringJoiner(",");
+    for (int position = 0; position < outputType.getFieldCount(); position++) {
+      String key = metadata.get(outputType.getFieldNames().get(position));
+      if (key != null) {
+        metadataColumns.add(position + ":" + key);
+        if (!metadataKeys.contains(key)) {
+          metadataKeys.add(key);
+        }
+      }
+    }
+    if (!metadataKeys.isEmpty()) {
+      formatOptions = new HashMap<>(options);
+      formatOptions.put(NativeFormatOptions.METADATA_COLUMNS, metadataColumns.toString());
+    }
     NativeFormatContext formatContext =
         new NativeFormatContext(
-            keyed ? formatType : outputType,
+            keyed ? formatType : withoutMetadata(outputType),
             formatType,
-            options,
+            formatOptions,
             KafkaTables.ignoreParseErrors(options));
     NativeFormatProvider formatProvider =
         NativeFormatProviders.find(formatContext)
@@ -89,6 +114,7 @@ public class NativeKafkaDecodeExecNode extends ExecNodeBase<ArrowBatch>
             outputType,
             formatProvider.createDecoder(formatContext),
             keyed,
+            metadataKeys,
             watermark == null ? -1 : watermark.rowtimeIndex,
             watermark == null ? null : watermark.expression);
     WatermarkStrategy<ArrowBatch> strategy =
@@ -103,6 +129,20 @@ public class NativeKafkaDecodeExecNode extends ExecNodeBase<ArrowBatch>
             ArrowBatchTypeInformation.INSTANCE);
     stream.getTransformation().setDescription(getDescription());
     return stream.getTransformation();
+  }
+
+  /** {@code type} without its metadata columns: the columns the value format decodes. */
+  private RowType withoutMetadata(RowType type) {
+    if (metadata.isEmpty()) {
+      return type;
+    }
+    List<RowType.RowField> fields = new ArrayList<>();
+    for (RowType.RowField field : type.getFields()) {
+      if (!metadata.containsKey(field.getName())) {
+        fields.add(field);
+      }
+    }
+    return new RowType(type.isNullable(), fields);
   }
 
   /** The physical schema projected to the keyed markers' value positions. */

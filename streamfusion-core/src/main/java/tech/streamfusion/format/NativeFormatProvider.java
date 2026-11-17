@@ -24,6 +24,15 @@ public interface NativeFormatProvider {
 
   NativeMessageDecoderFactory createDecoder(NativeFormatContext context);
 
+  /**
+   * Whether this artifact's decoder composes Kafka connector metadata columns into its output, as
+   * the {@code metadata.columns} option line asks. A table reading connector metadata stays on Flink
+   * over any other format.
+   */
+  default boolean composesKafkaMetadata() {
+    return false;
+  }
+
   /** Runtime encoder entry point owned by this provider, independent of its planning inputs. */
   default NativeMessageEncoderFactory encoderFactory() {
     return null;

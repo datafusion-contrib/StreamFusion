@@ -17,6 +17,7 @@ import org.apache.flink.table.planner.plan.schema.TableSourceTable;
 import org.apache.flink.table.planner.utils.ShortcutUtils;
 import org.apache.flink.util.TimeUtils;
 import tech.streamfusion.operator.WatermarkExpression;
+import tech.streamfusion.planner.ExpressionPlanning;
 
 /**
  * A scan's pushed-down source watermark, in the shapes the native sources reproduce: bounded
@@ -115,7 +116,8 @@ final class ScanWatermarkSpec {
     boolean valid =
         isEpochMillisTerm(term)
             ? fieldType.getSqlTypeName() == org.apache.calcite.sql.type.SqlTypeName.BIGINT
-            : FlinkTypeFactory$.MODULE$.isRowtimeIndicatorType(fieldType);
+            : ExpressionPlanning.identityTimestampCast(term) != null
+                || FlinkTypeFactory$.MODULE$.isRowtimeIndicatorType(fieldType);
     if (!valid) {
       return UNSUPPORTED;
     }
@@ -173,11 +175,16 @@ final class ScanWatermarkSpec {
     if (node instanceof RexInputRef) {
       return ((RexInputRef) node).getIndex();
     }
+    RexInputRef cast = ExpressionPlanning.identityTimestampCast(node);
+    if (cast != null) {
+      return cast.getIndex();
+    }
     if (isEpochMillisTerm(node)) {
       return ((RexInputRef) ((RexCall) node).getOperands().get(0)).getIndex();
     }
     return null;
   }
+
 
   /** Whether this is {@code TO_TIMESTAMP_LTZ(colRef, 3)} — millisecond precision only, matching the
    * expression engine's own gate for the function. */

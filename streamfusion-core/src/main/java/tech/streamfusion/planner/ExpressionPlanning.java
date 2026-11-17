@@ -6,6 +6,7 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Calc;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.RexBuilder;
+import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexProgram;
 import tech.streamfusion.operator.EncodedPredicate;
@@ -68,6 +69,11 @@ public final class ExpressionPlanning {
   public static EncodedExpression encodeWatermark(
       RexNode expression, int rowtimeColumn, boolean epochMillis) {
     return RexExpression.encodeWatermark(expression, rowtimeColumn, epochMillis);
+  }
+
+  /** The rowtime column an identity {@code TIMESTAMP_LTZ(3)} cast reads, or null. */
+  public static RexInputRef identityTimestampCast(RexNode expression) {
+    return RexExpression.identityTimestampCast(expression);
   }
 
   public static String reasonForCalc(Calc calc) {
