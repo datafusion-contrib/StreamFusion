@@ -158,7 +158,10 @@ class TestRuntimePreparationTest(unittest.TestCase):
                                     "org.apache.paimon:paimon-vfs-hadoop:2.0.0"]
                         if line == "2.2":
                             expected.extend(["org.apache.maven.surefire:surefire-junit-platform:3.2.5",
-                                             "org.junit.platform:junit-platform-launcher:1.13.3"])
+                                             "org.junit.platform:junit-platform-launcher:1.13.3",
+                                             "org.apache.maven.plugins:maven-surefire-plugin:3.5.3",
+                                             "org.apache.maven.surefire:surefire-junit-platform:3.5.3",
+                                             "org.apache.maven.plugins:maven-resources-plugin:3.5.0"])
                         self.assertEqual(expected, artifacts)
                         self.assertEqual(1 if status or probe_status else 2, len(invocations))
                         self.assertEqual(not (status or probe_status), "build is ready" in result.stdout)

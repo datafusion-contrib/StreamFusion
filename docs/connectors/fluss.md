@@ -634,10 +634,10 @@ Tests compare output with
 stock Flink, assert expected values/changelog kinds, and save
 actual physical plans while checking acceleration or fallback. The ordinary CI Java
 reactor runs these tests on Flink 2.2 and 1.18. The optimized Flink 2.2 image job also
-explicitly enables the full 23-query Nexmark parity smoke at 8,192 events, with no
-performance assertions. It reuses that job's staged release library, runs zero warmups
-and one pair per query, and uploads SQL/Nexmark plans and test reports. The environment
-opt-in still protects normal local builds from unexpectedly running the full matrix.
+runs `FlussSqlTest` against its staged release library and uploads SQL plans and reports.
+Nexmark benchmarks run locally, outside CI; the former 23-query CI parity smoke and RocksDB
+Nexmark invocation have been removed. Local benchmark opt-ins and original assertions remain
+available for explicit performance investigations.
 
 Each SQL test invocation reuses one stock and one native table environment across its
 DDL, reads and inserts. Both catalogs close in `@AfterEach`, including after a failing

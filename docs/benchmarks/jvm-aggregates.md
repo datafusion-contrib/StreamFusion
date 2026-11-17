@@ -1,5 +1,18 @@
 # JVM aggregate release diagnostics
 
+Performance runs are local-only. The former GitHub Actions JVM aggregate/table-function
+benchmark workflow has been removed; ordinary correctness/recovery tests remain in CI.
+The hosted workflow descriptions and results below record historical measurements, not an
+active CI configuration. Reproduce new measurements locally on an otherwise idle host:
+
+```sh
+python3 bin/bench-jvm-aggregates.py --flink-line 2.2 --output /path/to/new-results
+python3 bin/bench-jvm-previous.py --flink-line 2.2 --worktree /path/to/previous-worktree --output /path/to/new-previous-results
+```
+
+Supply `--profiler-agent` with a locally installed released async-profiler when profiling.
+Repeat with `--flink-line 1.18` for the legacy line.
+
 Verified JVM aggregates are enabled by default under the maintainer's accepted UDF performance
 exception. Accumulator caching and borrowed STRING output remain optional optimizations. The dated
 measurements below describe earlier opt-in coverage and retain its performance regressions;
@@ -57,20 +70,16 @@ Correctness coverage also runs on Flink 1.18.1; these local timings are specific
 ## Isolated measurement
 
 Shared-workspace builds repeatedly overlapped local trials. The JVM aggregate diagnostics
-workflow gives each released Flink line its own GitHub-hosted Ubuntu runner and JDK 17.
+workflow gave each released Flink line its own GitHub-hosted Ubuntu runner and JDK 17.
 Release compilation finishes first, followed by the focused correctness/recovery suite at
 65,536-entry and three-entry capacities, including checkpoint rescaling, actual canonical-savepoint restores and borrowed-string
 probe slice/ownership checks. Only then does `bin/bench-jvm-aggregates.py` run
 complete jobs; it never overlaps its build or correctness checks with measurements.
 
-The workflow runs on relevant pull-request changes, and can be dispatched once available on
-the default branch. It changes no Nexmark fixtures. Its successful completion proves fixture
-execution and retained evidence; it is not a throughput threshold or admission decision.
-Newer runs cancel obsolete diagnostics on the same ref; retained results identify their exact
-source commit. When distinct runtime revisions need comparisons, dispatch the earlier immutable
-revision separately and verify its recorded SHA. A branch dispatch and PR run use different ref
-groups and execute on separate diagnostic hosts. Diagnostic outputs use fresh runner temporary
-directories outside the Cargo cache, so restored builds cannot contribute old trials or snapshots.
+The archived workflow ran on matching changes and explicit dispatches. It changed no Nexmark
+fixtures; successful completion proved fixture execution and retained evidence rather than a
+throughput threshold. New measurements now use the local commands above. Historical outputs
+used fresh temporary directories so restored builds could not contribute old trials or snapshots.
 The pinned released Rust cache action saves dependencies and workspace crates for canonical
 branches. A separate release-library cache is keyed by native sources, Cargo files/configuration,
 Rust compiler identity, root/module build configuration, native build flags, OS/architecture
@@ -108,7 +117,7 @@ visible and does not become accelerated merely because the workflow passed.
 
 ## Profiling
 
-The workflow installs released async-profiler 4.6 from its canonical release with a pinned
+The archived workflow installed released async-profiler 4.6 from its canonical release with a pinned
 SHA-256 checksum. After the unprofiled runs, separate INT and STRING medium/distinct-key jobs
 record mixed Java/symbolized Rust CPU stacks with `cpu-clock`, 2 ms sampling and DWARF native
 unwinding, plus Java allocation samples at 1 MB intervals. These use 1M rows, two warmup pairs
@@ -188,7 +197,7 @@ are unchanged. The runner marks this method `symmetric-preflight-v2`.
 retain all ranges: 16 keys stock/native .721/.637 s; 65,536 keys 1.361/1.261 s; 2M distinct
 2.048/2.213 s. The low/medium ranges overlap, while distinct keys still regress. Both released
 Flink lines pass all six 2,000-row aggregate/table-function fixture shapes; those are smokes,
-not speed evidence. The isolated workflow repeats all nine aggregate cases and profiles plus
+not speed evidence. The archived isolated workflow repeated all nine aggregate cases and profiles plus
 split/numeric, wide split and grouped table functions with corrected preflight. Prior v1
 results remain historical diagnostics and do not establish current admission.
 
@@ -216,7 +225,7 @@ for all case medians and the evidence JSON for ranges and every trial.
 The next [borrowed STRING exit experiment](../optimizations/zero-copy-exit-transpose.md#experimental-borrowed-string-exit)
 targets the profiled temporary string copy while retaining mandatory output ownership.
 It defaults off; pass `--borrowed-string-exit` to the runner after building the candidate.
-The workflow measures that flag explicitly and records it in configuration. Its matched local
+The local runner measures that flag explicitly and records it in configuration. Its matched local
 profiles show lower sampled allocations, while local distinct-key throughput still regresses.
 The historical candidate required its own isolated matrix; the completed results follow below.
 
@@ -249,7 +258,7 @@ No new clean whole-job speed comparison or default admission is claimed.
 
 ## Actual previous-runtime control
 
-After candidate measurements and profiles finish, the workflow builds and measures immutable
+After candidate measurements and profiles finish, the local runner builds and measures immutable
 revision `b965b8bf0c97450f6971f20db0fe6abc6bbac8ae`, before JVM table/aggregate implementation.
 `bin/bench-jvm-previous.py` creates a separate worktree and copies only the current aggregate
 fixture, table-function fixture, timing/metrics helpers and the selected Flink line's test-context
@@ -335,7 +344,7 @@ wide table-function profiles rather than aggregate stacks. Its [profile evidence
 retains immutable `5cbd6ec2` production and the candidate with identical fixtures, source/library
 hashes, full stacks and all timing exclusions. Allocation changes do not establish throughput.
 
-The isolated workflow now adds row-distinct text at widths 16 and 256. `tablefunc.textCardinality`
+The archived isolated workflow added row-distinct text at widths 16 and 256. `tablefunc.textCardinality`
 defaults to one, preserving all preceding queries/data. Setting it to the row count appends a
 row-specific suffix to each non-NULL payload; both engines use that same fixture. The ordinary
 width/cardinality workloads stay in the matrix, and neither Nexmark schemas nor queries change.
@@ -390,7 +399,7 @@ from the original native control; all native/build inputs match.
 The next writer policy resets its bounded miss counter on a successful reuse. Separate
 [cold-text profiles and correctness evidence](results/jvm-encoding-adaptive-profiles-2026-10-16.json)
 show lower allocation and 41 focused passes per released line. All profile durations are excluded.
-The workflow now compares against actual `846cbb7c` before this reset rule, with the same six table
+The local runner compares against actual `846cbb7c` before this reset rule, with the same six table
 cases and stock controls. Whole-job results for that change remain pending.
 
 

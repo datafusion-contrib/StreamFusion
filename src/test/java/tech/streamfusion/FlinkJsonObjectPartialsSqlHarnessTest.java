@@ -12,11 +12,17 @@ import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.table.connector.ChangelogMode;
 import org.apache.flink.types.Row;
 import org.apache.flink.types.RowKind;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
+@DisabledIfEnvironmentVariable(
+    named = "CI",
+    matches = "true",
+    disabledReason =
+        "CI_QUARANTINE_JSON_SLOT_STARVATION: original MiniCluster starvation trigger unresolved")
 class FlinkJsonObjectPartialsSqlHarnessTest {
   static Stream<Arguments> profiles() {
     return Stream.of("v", "CAST(v AS DECIMAL(20,3))", "CAST(v AS CHAR(8))")

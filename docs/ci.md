@@ -25,6 +25,44 @@ do not each need a CI push. Cancel superseded or redundant runs you started, inc
 duplicate post-merge runs, and leave other contributors' runs alone. The final change still needs
 the required successful checks on its exact PR head before merging.
 
+## Benchmark exclusion and Maven dependency fan-out
+
+GitHub Actions runs build, correctness, recovery and compatibility gates. Nexmark and other
+end-to-end/JVM performance benchmarks do not run in CI, including manual Actions dispatches.
+The JVM aggregate and nested-scalar performance workflows have been removed. Fluss image
+validation retains `FlussSqlTest` and drops both Nexmark invocations. Small focused Criterion
+checks are the only performance-benchmark exception; the exhaustive suite remains local.
+Maven's `bench` profile can still build optimized libraries for image/correctness checks.
+TPC-DS `mode=plan` validates plans without executing measured query workloads. Released
+Paimon compaction fixtures remain correctness/native-work checks. Explicitly requested,
+timeboxed profiling of CI startup or fixture overhead remains available separately.
+
+Two Maven dependency producers, one per JDK, resolve the reactor and optional test profiles
+before Java consumers fan out. A persistent repository cache is keyed by OS/architecture,
+JDK major, POMs, Maven settings, the preparation recipe and cache action. The preparation
+includes the platform-specific protobuf compilers and dynamically loaded test providers. Producers may reuse
+an older compatible cache, but only publish the new key after every resolution succeeds.
+Failed preparation removes its completion marker; it cannot publish an incomplete repository.
+
+Each producer also uploads a checksum-protected, immutable repository artifact for the current
+campaign. Consumers download that artifact rather than racing to fill independent Maven caches
+or relying on a cache entry surviving eviction throughout the long matrix. Restore checks the
+input/JDK marker, checksum and archive paths, and requires a fresh repository. The archive
+excludes project-installed `tech.streamfusion` artifacts and failed-download/partial/lock files;
+Maven settings and credentials are never transferred. Transfer archives are removed immediately
+after use. Canonical preparation/workers, runtime tests and lake test configurations use Maven
+offline mode. Image/Doris tooling starts from the same primed repository. Test assertions and
+native-work requirements are unchanged.
+
+The upstream Flink preparation installs the compiled format reactor dependencies before packing
+its isolated repository, and primes the test-specific Surefire/resources plugin versions needed
+by the connector suites. This closes the observed cold format POM/plugin misses at fan-out.
+Only dependency resolution retries: ordinary attempts do not force updates, retries refresh
+cached failed lookups, HTTP retries are bounded and outer delays include jitter. Test lifecycles
+are not retried. The lake matrix uses `fail-fast: false`, so one transport failure cannot cancel
+an unrelated module and force its complete rerun at the end of qualification. Cold producers may
+still encounter provider/shared-egress throttling; the cache prevents consumers amplifying it.
+
 ## Contributing from a personal fork
 
 1. Fork `datafusion-contrib/StreamFusion` into your personal account. If that name is already
@@ -60,9 +98,9 @@ python3 bin/ci-campaign.py start --repo YOUR_LOGIN/YOUR_FORK \
   --validation 'focused regression commands and their actual passing outcomes'
 ```
 
-For docs changes, also dispatch `docs.yml`. Dispatch `paimon1.yml`,
-`nested-scalars.yml` or `jvm-aggregates.yml` when the change touches their listed
-compatibility/diagnostic scope. Run these once the combined change is locally ready;
+For docs changes, also dispatch `docs.yml`. Dispatch `paimon1.yml` when the change
+touches its compatibility scope. Product performance benchmarks run locally; the former
+JVM aggregate and nested-scalar benchmark workflows have been removed. Run these once the combined change is locally ready;
 commits and intermediate pushes do not each need a matrix. Until older feature
 branches include this configuration, `[skip ci]` can suppress their push-triggered
 workflows; it does not suppress the lightweight `pull_request_target` reporter.
@@ -1800,7 +1838,7 @@ with the precompiled-Java profile, skip dependency tests, and explicitly enable 
 This reuses the exact compiled owner modules and refreshes reactor artifacts/resources without
 installing project snapshots or recompiling sources. A standalone `surefire:test` invocation
 cannot resolve those owner artifacts from a prior Maven invocation, even with `-am`; it can
-otherwise fail resolution or load an installed build instead. Release benchmark workflows that
+otherwise fail resolution or load an installed build instead. Local release benchmark runners that
 install the complete candidate first can still use their existing direct Surefire commands.
 Profiler elapsed time includes this Maven lifecycle overhead; historical direct-Surefire timings
 above retain their original boundary and are not fresh measurements of the current harness.
@@ -2087,3 +2125,14 @@ configurations remain enabled. The final coverage audit requires all 53,360 invo
 identities, with exactly this one quarantine and 53,359 executed canonical cases.
 Remove the quarantine when a local reproducer establishes and verifies the corrective fix.
 The separate historical Hudi feature benchmark is outside this candidate.
+
+### CI quarantine for JSON partial-aggregation slot starvation
+
+`FlinkJsonObjectPartialsSqlHarnessTest` is disabled only when `CI=true`, with marker
+`CI_QUARANTINE_JSON_SLOT_STARVATION`. The shared-MiniCluster cleanup mitigation passes its
+controlled slot-release checks, but the original starvation trigger remains unproven. This
+quarantine is restricted to that harness; other JSON tests remain enabled. All original
+assertions and parameterized cases remain executable locally without `CI=true`. Remove the
+quarantine after a local reproducer verifies a corrective fix. The existing exact Kafka-provider
+quarantine remains unchanged. The unresolved feature-only Hudi Q10 benchmark is excluded from
+CI by the benchmark policy and remains outside main.

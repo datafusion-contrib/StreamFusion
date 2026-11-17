@@ -23,6 +23,28 @@ jobs:
     if: ${{ github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main' }}
     uses: ./.github/workflows/ci-plan.yml
 
+  maven-dependencies:
+    needs: plan
+    if: needs.plan.outputs.tests == 'true'
+    name: Prepare shared Maven dependencies (JDK ${{ matrix.jdk }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        jdk: ['11', '17']
+    steps:
+      - uses: actions/checkout@v6
+      - run: python3 bin/ci-free-disk.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.jdk }}
+      - uses: ./.github/actions/maven-cache
+        with:
+          mode: prepare
+          jdk: ${{ matrix.jdk }}
+
   native-build:
     needs: plan
     if: needs.plan.outputs.tests == 'true'
@@ -162,7 +184,7 @@ jobs:
         run: cargo fmt --all -- --check
 
   java-tests:
-    needs: native-build
+    needs: [native-build, maven-dependencies]
     name: Runtime, connectors and formats${{ matrix.suffix }} (JDK ${{ matrix.jdk }}, shard ${{ matrix.shard }})
     strategy:
       fail-fast: false
@@ -189,14 +211,14 @@ jobs:
         with:
           distribution: temurin
           java-version: ${{ matrix.jdk }}
-          cache: maven
+      - uses: ./.github/actions/maven-cache
+        with:
+          jdk: ${{ matrix.jdk }}
 
       # The upstream-suite instrumentation agent is a separate JDK 17 development tool.
       - name: Test upstream execution evidence checks
         if: matrix.jdk == '17' && matrix.shard == 1
         run: |
-          python3 bin/ci-maven-dependencies.py --pom dev/flink-suite/agent/pom.xml
-          python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.5.3
           mvn -B -ntp -f dev/flink-suite/agent/pom.xml package
           python3 -m unittest discover -s dev/flink-suite -p 'test_*.py'
           python3 -m unittest discover -s bin -p 'test_check_flink_suite_classpath.py'
@@ -211,6 +233,7 @@ jobs:
           python3 -m unittest discover -s bin -p 'test_ci_native_source.py'
           python3 -m unittest discover -s bin -p 'test_ci_native_test_artifact.py'
           python3 -m unittest discover -s bin -p 'test_ci_maven_dependencies.py'
+          python3 -m unittest discover -s bin -p 'test_ci_maven_cache.py'
           python3 -m unittest discover -s bin -p 'test_ci_plan.py'
           python3 -m unittest discover -s bin -p 'test_ci_campaign.py'
           python3 -m unittest discover -s bin -p 'test_profile_ci.py'
@@ -233,12 +256,9 @@ jobs:
           path: native/target/debug
 
       # The Kafka decode harnesses use the hosted runner's Docker daemon.
-      - name: Resolve Java dependencies before tests
-        run: |
-          python3 bin/ci-maven-dependencies.py --profile "${{ matrix.line == '1.18' && 'flink-1.18' || '' }}"
-          python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5 --artifact com.google.protobuf:protobuf-java:2.5.0
-
       - name: Compile the complete reactor and partition runtime test classes
+        env:
+          MAVEN_ARGS: -o
         run: |
           mvn -B -ntp ${{ matrix.profile }} test -DskipTests -Dnative.build.skip=true
           python3 bin/ci_runtime_test_shards.py \
@@ -249,6 +269,7 @@ jobs:
 
       - name: Run Java test suite
         env:
+          MAVEN_ARGS: -o
           JAVA_TOOL_OPTIONS: '-XX:TieredStopAtLevel=1 -XX:ReservedCodeCacheSize=512m'
         run: |
           nproc
@@ -262,6 +283,8 @@ jobs:
             -Dsf.testForks=4 -Dsf.testReuseForks=false -Dsurefire.timeout=1800 "-Dsf.extraJvmArgs=-Xmx2g"
 
       - name: Verify JVM boundary defaults and optional cache on the freshly built native library
+        env:
+          MAVEN_ARGS: -o
         if: matrix.jdk == '17' && matrix.shard == 1
         run: >-
           mvn -B -ntp ${{ matrix.profile }} -pl streamfusion-runtime
@@ -275,6 +298,8 @@ jobs:
           -Dsf.protobuf.checkStaleness=true -Dsurefire.failIfNoSpecifiedTests=false
 
       - name: Check deployed Java 11 bytecode including embedded payloads
+        env:
+          MAVEN_ARGS: -o
         if: matrix.shard == 1
         run: |
           mvn -B -ntp ${{ matrix.profile }} package -DskipTests -Dnative.build.skip=true -Dsf.protobuf.checkStaleness=true
@@ -313,7 +338,7 @@ jobs:
           if-no-files-found: error
 
   canonical-java-build:
-    needs: plan
+    needs: [plan, maven-dependencies]
     if: needs.plan.outputs.tests == 'true'
     name: Prepare canonical Java (Flink ${{ matrix.line }}, JDK ${{ matrix.jdk }})
     runs-on: ubuntu-24.04
@@ -329,6 +354,7 @@ jobs:
           - line: '1.18'
             profiles: 'flink-1.18,canonical-kafka'
     env:
+      MAVEN_ARGS: -o
       SF_KAFKA_INTEGRATION: 'true'
       JAVA_TOOL_OPTIONS: '-XX:TieredStopAtLevel=1 -XX:ReservedCodeCacheSize=512m'
     steps:
@@ -338,11 +364,9 @@ jobs:
         with:
           distribution: temurin
           java-version: ${{ matrix.jdk == '11' && env.CANONICAL_JAVA_11 || env.CANONICAL_JAVA_17 }}
-          cache: maven
-      - name: Resolve canonical Java dependencies
-        run: |
-          python3 bin/ci-maven-dependencies.py --profile "${{ matrix.profiles }}" --projects streamfusion-runtime --also-make
-          python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5 --artifact com.google.protobuf:protobuf-java:2.5.0
+      - uses: ./.github/actions/maven-cache
+        with:
+          jdk: ${{ matrix.jdk }}
       - name: Compile canonical Java before native-dependent work
         run: |
           mvn -B -ntp -P${{ matrix.profiles }} -pl streamfusion-runtime -am test \
@@ -359,7 +383,7 @@ jobs:
           retention-days: 1
 
   canonical-job-tests:
-    needs: [native-build, canonical-java-build]
+    needs: [native-build, canonical-java-build, maven-dependencies]
     name: Canonical savepoint jobs (Flink ${{ matrix.line }}, JDK ${{ matrix.jdk }}) (shard ${{ matrix.shard }})
     runs-on: ubuntu-24.04
     timeout-minutes: 300
@@ -375,6 +399,7 @@ jobs:
           - line: '1.18'
             profiles: 'flink-1.18,canonical-kafka'
     env:
+      MAVEN_ARGS: -o
       SF_KAFKA_INTEGRATION: 'true'
       # Each handoff starts a fresh worker; optimizing compilation cannot amortize here.
       JAVA_TOOL_OPTIONS: >-
@@ -388,7 +413,9 @@ jobs:
         with:
           distribution: temurin
           java-version: ${{ matrix.jdk == '11' && env.CANONICAL_JAVA_11 || env.CANONICAL_JAVA_17 }}
-          cache: maven
+      - uses: ./.github/actions/maven-cache
+        with:
+          jdk: ${{ matrix.jdk }}
       - uses: actions/download-artifact@v5
         with:
           name: canonical-native-${{ github.sha }}
@@ -402,10 +429,6 @@ jobs:
           python3 bin/ci_java_build.py restore --line '${{ matrix.line }}' \
             --archive "$RUNNER_TEMP/canonical-java.tar.gz"
           rm "$RUNNER_TEMP/canonical-java.tar.gz" "$RUNNER_TEMP/canonical-java.tar.gz.sha256"
-      - name: Resolve Java dependencies before tests
-        run: |
-          python3 bin/ci-maven-dependencies.py --profile "${{ matrix.profiles }}" --projects streamfusion-runtime --also-make
-          python3 bin/ci-maven-dependencies.py --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5 --artifact com.google.protobuf:protobuf-java:2.5.0
       - name: Partition the complete compiled canonical inventory
         run: |
           python3 bin/ci_runtime_test_shards.py \
@@ -475,12 +498,12 @@ jobs:
           PY
 
   lake-module-tests:
-    needs: native-build
+    needs: [native-build, maven-dependencies]
     name: ${{ matrix.name }} tests (debug native build)${{ matrix.jdk == '11' && ' (JDK 11)' || '' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 150
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         include:
           - name: Delta
@@ -519,6 +542,8 @@ jobs:
             jdk: '11'
             profile: paimon,flink-1.18
             module: streamfusion-paimon
+    env:
+      MAVEN_ARGS: -o
     steps:
       - uses: actions/checkout@v6
 
@@ -529,15 +554,14 @@ jobs:
         with:
           distribution: temurin
           java-version: ${{ matrix.jdk }}
-          cache: maven
+      - uses: ./.github/actions/maven-cache
+        with:
+          jdk: ${{ matrix.jdk }}
 
       - uses: actions/download-artifact@v5
         with:
           name: test-native-${{ github.sha }}
           path: native/target/debug
-
-      - name: Resolve lake module dependencies before tests
-        run: python3 bin/ci-maven-dependencies.py --profile "${{ matrix.profile }}" --projects "${{ matrix.module }}" --also-make
 
       - name: Run every lake module configuration
         run: >-
@@ -550,7 +574,6 @@ jobs:
         env:
           SF_TPCDS: 'true'
         run: |
-          python3 bin/ci-maven-dependencies.py --profile '${{ matrix.profile }},tpcds' --projects streamfusion-paimon --also-make
           tpcds_scratch="$RUNNER_TEMP/tpcds-${{ contains(matrix.profile, 'flink-1.18') && '1.18' || '2.2' }}"
           trap 'rm -rf "$tpcds_scratch"' EXIT
           mvn -B -ntp -P'${{ matrix.profile }},tpcds' -pl streamfusion-paimon -am \
@@ -574,8 +597,6 @@ jobs:
       - name: Run unchanged Paimon compaction fixtures with stock and native work evidence
         if: matrix.name == 'Paimon formats' && matrix.jdk == '17'
         run: |
-          python3 bin/ci-maven-dependencies.py --profile paimon,upstream-paimon-compaction --projects streamfusion-paimon --also-make
-          python3 bin/ci-maven-dependencies.py --pom dev/flink-suite/agent/pom.xml
           python3 bin/paimon-compaction-suite.py --skip-native-build
 
       - name: Retain Paimon compaction results and invocation evidence
@@ -591,7 +612,7 @@ jobs:
           retention-days: 7
 
   doris-tests:
-    needs: native-build
+    needs: [native-build, maven-dependencies]
     name: Doris connector and upstream SQL tests
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -603,13 +624,13 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-          cache: maven
+      - uses: ./.github/actions/maven-cache
+        with:
+          jdk: '17'
       - uses: actions/download-artifact@v5
         with:
           name: test-native-${{ github.sha }}
           path: native/target/debug
-      - name: Resolve Doris dependencies before tests
-        run: python3 bin/ci-maven-dependencies.py --profile doris,doris-it,doris-upstream --projects streamfusion-doris --also-make
       - name: Run Arrow ownership, SQL parity and upstream Doris connector tests
         env:
           SF_DORIS_NATIVE_BUILD_SKIP: 'true'
@@ -627,7 +648,7 @@ jobs:
           retention-days: 7
 
   image-integration:
-    needs: plan
+    needs: [plan, maven-dependencies]
     if: needs.plan.outputs.tests == 'true'
     name: Flink image integration (optimized native build)${{ matrix.suffix }}
     runs-on: ubuntu-22.04
@@ -652,7 +673,9 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-          cache: maven
+      - uses: ./.github/actions/maven-cache
+        with:
+          jdk: '17'
 
       - uses: ./.github/actions/setup-rust
 
@@ -661,9 +684,6 @@ jobs:
           key: ubuntu-22.04-glibc-2.35
           workspaces: native -> target/release-staging
           save-if: ${{ github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main' }}
-
-      - name: Resolve image dependencies before builds and tests
-        run: python3 bin/ci-maven-dependencies.py --profile "${{ matrix.profile }}"
 
       - name: Verify Java host APIs and deployment module ownership
         run: |
@@ -681,31 +701,13 @@ jobs:
           bin/check-artifacts.sh --host-only --flink-line "$FLINK_LINE"
           bin/build-flink-image.sh --flink-line "$FLINK_LINE" --tag streamfusion-flink:image-it --load --skip-release-build
 
-      - name: Run Fluss SQL and complete Nexmark parity smoke
+      - name: Run Fluss SQL correctness checks
         if: matrix.line == '2.2'
-        env:
-          SF_FLUSS_BENCH: 'true'
-          SF_ROWS: '8192'
         run: >
           mvn -B -ntp -Pbench -pl streamfusion-fluss -am test
           -Dnative.build.skip=true -Dnative.profile=release-staging/release
           -Dmaven.javadoc.skip=true -Dsurefire.failIfNoSpecifiedTests=false
-          -Dsf.extraJvmArgs=-Xmx2g -Dtest=FlussSqlTest,NexmarkFlussBenchmark
-          -Dnexmark.warmups=0 -Dnexmark.runs=1
-
-      - name: Verify Fluss RocksDB backends and output parity
-        if: matrix.line == '2.2'
-        env:
-          SF_FLUSS_BENCH: 'true'
-          SF_FLUSS_STATE_BACKEND: 'rocksdb'
-          SF_ROWS: '8192'
-          SF_MATRIX_QUERIES: 'q4,q5'
-        run: >
-          mvn -B -ntp -Pbench -pl streamfusion-fluss -am test
-          -Dnative.build.skip=true -Dnative.profile=release-staging/release
-          -Dmaven.javadoc.skip=true -Dsurefire.failIfNoSpecifiedTests=false
-          -Dsf.extraJvmArgs=-Xmx2g -Dtest=NexmarkFlussBenchmark
-          -Dnexmark.warmups=0 -Dnexmark.runs=1
+          -Dsf.extraJvmArgs=-Xmx2g -Dtest=FlussSqlTest
 
       - name: Upload Fluss SQL execution plans and test results
         if: always() && matrix.line == '2.2'
@@ -753,7 +755,7 @@ jobs:
   all-tests:
     name: All CI tests
     if: ${{ (always() && !cancelled()) && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
-    needs: [plan, native-build, native-tests, java-tests, canonical-java-build, canonical-job-tests, lake-module-tests, image-integration, doris-tests]
+    needs: [plan, maven-dependencies, native-build, native-tests, java-tests, canonical-java-build, canonical-job-tests, lake-module-tests, image-integration, doris-tests]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

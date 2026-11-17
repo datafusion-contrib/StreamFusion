@@ -435,11 +435,13 @@ else
 
   if [[ -n "${FORMAT_COMPILE_MODULES}" ]]; then
     echo "Compiling the untouched upstream Flink format integration tests..."
+    format_goal=process-test-classes
+    if [[ "${SUITE_MODE}" == "prepare" ]]; then format_goal=install; fi
     flink_mvn ${FLINK_TARGET_PROFILE:+-P${FLINK_TARGET_PROFILE}} -B -ntp -s "${MAVEN_SETTINGS}" -f "${FLINK_ROOT}/pom.xml" \
       -Dmaven.repo.local="${SUITE_MAVEN_REPO}" -Didea.version=streamfusion-suite \
       -T "${FLINK_SUITE_BUILD_THREADS:-1}" \
       -pl "${FORMAT_COMPILE_MODULES}" \
-      -am -Dfast -DskipTests process-test-classes || exit $?
+      -am -Dfast -DskipTests "${format_goal}" || exit $?
   fi
 
 fi
@@ -485,6 +487,9 @@ if [[ "${SUITE_MODE}" == "prepare" ]]; then
     test_runtime_artifacts+=(
       --artifact "org.apache.maven.surefire:surefire-junit-platform:3.2.5"
       --artifact "org.junit.platform:junit-platform-launcher:1.13.3"
+      --artifact "org.apache.maven.plugins:maven-surefire-plugin:3.5.3"
+      --artifact "org.apache.maven.surefire:surefire-junit-platform:3.5.3"
+      --artifact "org.apache.maven.plugins:maven-resources-plugin:3.5.0"
     )
   fi
   (

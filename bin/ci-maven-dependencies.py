@@ -3,6 +3,7 @@
 
 import argparse
 from pathlib import Path
+import random
 import subprocess
 import sys
 import time
@@ -13,24 +14,24 @@ ARTIFACT_POM = ROOT / "dev/flink-suite/runtime-dependencies/pom.xml"
 GOAL = "org.apache.maven.plugins:maven-dependency-plugin:3.11.0:go-offline"
 ARTIFACT_GOAL = "org.apache.maven.plugins:maven-dependency-plugin:3.11.0:get"
 MODEL_GOAL = "org.apache.maven.plugins:maven-help-plugin:3.5.1:evaluate"
-DELAYS = (5, 15)
+DELAYS = (15, 45)
 TIMEOUT_SECONDS = 600
 TRANSPORT_OPTIONS = [
     # Hosted Maven and upstream wrappers span both Resolver generations and Wagon.
     "-Daether.connector.requestTimeout=60000",
-    "-Daether.connector.http.retryHandler.count=5",
+    "-Daether.connector.http.retryHandler.count=2",
     "-Daether.connector.http.retryHandler.serviceUnavailable=429,500,502,503,504",
     "-Daether.transport.http.requestTimeout=60000",
-    "-Daether.transport.http.retryHandler.count=5",
+    "-Daether.transport.http.retryHandler.count=2",
     "-Daether.transport.http.retryHandler.serviceUnavailable=429,500,502,503,504",
     "-Dmaven.wagon.rto=60000",
-    "-Dmaven.wagon.http.retryHandler.count=5",
+    "-Dmaven.wagon.http.retryHandler.count=2",
 ]
 
 
 def resolve(options):
     settings = str(ROOT / "dev/flink-suite/settings.xml")
-    command = [options.maven, "-B", "-ntp", "-U", "-s", settings, "-gs", settings,
+    command = [options.maven, "-B", "-ntp", "-s", settings, "-gs", settings,
                *TRANSPORT_OPTIONS]
     if options.artifact:
         # Build plugins and test providers can resolve original artifact graphs outside
@@ -62,7 +63,9 @@ def resolve_command(command):
     for attempt in range(attempts):
         print(f"Resolving Maven dependencies (attempt {attempt + 1}/{attempts})", flush=True)
         try:
-            status = subprocess.run(command, timeout=TIMEOUT_SECONDS).returncode
+            # Only a failed resolution needs to bypass Maven's negative lookup cache.
+            invocation = [command[0], "-U", *command[1:]] if attempt else command
+            status = subprocess.run(invocation, timeout=TIMEOUT_SECONDS).returncode
         except subprocess.TimeoutExpired:
             status = 124
         except OSError as error:
@@ -71,7 +74,7 @@ def resolve_command(command):
         if status == 0:
             return 0
         if attempt < len(DELAYS):
-            time.sleep(DELAYS[attempt])
+            time.sleep(random.uniform(DELAYS[attempt], DELAYS[attempt] * 1.5))
     return status
 
 
