@@ -110,6 +110,57 @@ class KafkaDecodeRoutingTest {
   }
 
   @Test
+  void nestedMaxwellSchemaRoutes() {
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(
+        table(
+            "id BIGINT, info ROW<name STRING, score DOUBLE>, tags ARRAY<STRING>,"
+                + " attrs MAP<STRING, BIGINT>, bag MULTISET<STRING>,"
+                + " items ARRAY<ROW<id BIGINT, name STRING>>",
+            "maxwell-json"));
+    String plan = NativePlanner.explain(tEnv, "SELECT * FROM t");
+    assertTrue(
+        plan.contains("NativeKafkaDecode"),
+        "a nested Maxwell table should decode natively:\n" + plan);
+  }
+
+  @Test
+  void nestedCanalSchemaRoutes() {
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(
+        table(
+            "id BIGINT, info ROW<name STRING, score DOUBLE>, tags ARRAY<STRING>,"
+                + " attrs MAP<STRING, BIGINT>, bag MULTISET<STRING>",
+            "canal-json"));
+    String plan = NativePlanner.explain(tEnv, "SELECT * FROM t");
+    assertTrue(
+        plan.contains("NativeKafkaDecode"),
+        "a nested Canal table should decode natively:\n" + plan);
+  }
+
+  @Test
+  void maxwellSchemaWiderThan128ColumnsRoutes() {
+    StringBuilder columns = new StringBuilder("c0 BIGINT");
+    for (int i = 1; i < 200; i++) {
+      columns.append(", c").append(i).append(" BIGINT");
+    }
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(table(columns.toString(), "maxwell-json"));
+    String plan = NativePlanner.explain(tEnv, "SELECT * FROM t");
+    assertTrue(
+        plan.contains("NativeKafkaDecode"),
+        "a 200-column Maxwell table should decode natively:\n" + plan);
+  }
+
+  @Test
+  void nestedCanalUnsupportedLeafKeepsTheScanOnFlink() {
+    // Nesting no longer gates Maxwell/Canal, but the JSON type gate still recurses into it.
+    StreamTableEnvironment tEnv = env();
+    tEnv.executeSql(table("id BIGINT, info ROW<name STRING, bin BINARY(4)>", "canal-json"));
+    assertStaysOnFlink(tEnv, "SELECT * FROM t");
+  }
+
+  @Test
   void debeziumAvroConfluentRoutes() {
     StreamTableEnvironment tEnv = env();
     tEnv.executeSql(

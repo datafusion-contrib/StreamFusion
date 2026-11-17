@@ -21,7 +21,7 @@ pub(crate) fn new_decoder(
     )
 }
 
-fn build_decoder(
+pub(crate) fn build_decoder(
     format: i32,
     output_schema: SchemaRef,
     _avro_schema: &str,
@@ -106,8 +106,9 @@ pub(crate) struct CdcJsonDecoder {
     output: SchemaRef,
     /// Number of physical columns (envelope/output arity excludes op and `$row_kind$`).
     arity: usize,
-    /// Physical column names, for the `old`-key presence scan of the `DataOld` dialects.
-    field_names: Vec<String>,
+    /// Physical column positions by name, for the `old`-key presence scan of the `DataOld`
+    /// dialects.
+    field_positions: HashMap<String, usize>,
     dialect: CdcDialect,
     /// Flink's `ignore-parse-errors`, handled here (not by a generic wrapper) because the CDC skip
     /// has three granularities at once: a structurally bad message drops whole, a bad value inside
@@ -149,12 +150,6 @@ impl CdcJsonDecoder {
         let mut output_fields: Vec<FieldRef> = nullable.iter().cloned().collect();
         output_fields.push(Arc::new(Field::new(ROW_KIND_COLUMN, DataType::Int8, false)));
         let output = Arc::new(Schema::new(output_fields));
-        if spec.shape == CdcShape::DataOld {
-            assert!(
-                nullable.len() <= 128,
-                "the old-key presence bitmask carries up to 128 columns"
-            );
-        }
         // A CDC envelope never fans a top-level array out the way the plain `json` format does:
         // Maxwell/Canal hand the root to the tree converter (any array is corrupt), while
         // Debezium/OGG decode through Flink's deprecated one-row entry, which unwraps an array
@@ -179,7 +174,12 @@ impl CdcJsonDecoder {
             ),
             output,
             arity: nullable.len(),
-            field_names: physical.fields().iter().map(|f| f.name().clone()).collect(),
+            field_positions: physical
+                .fields()
+                .iter()
+                .enumerate()
+                .map(|(position, f)| (f.name().clone(), position))
+                .collect(),
             dialect,
             skip_errors,
         }
@@ -188,12 +188,10 @@ impl CdcJsonDecoder {
     /// Emits one envelope row's — one message's — output rows. Any failure in here is the
     /// message's own corruption (unknown op, null image, uneven Canal arrays), which fails the job
     /// in default mode and is caught per message in skip mode, keeping the rows already emitted.
-    #[allow(clippy::too_many_arguments)]
     fn emit_message(
         &self,
         row: usize,
         spec: &CdcSpec,
-        presence: &[u128],
         envelope: &RecordBatch,
         before: &StructArray,
         after: &StructArray,
@@ -217,7 +215,6 @@ impl CdcJsonDecoder {
             // Flink throws on an unrecognized op by default; we fail too (never drop it silently).
             CdcOp::Unknown => panic!("unknown CDC operation \"{op}\""),
         };
-        let mask = presence.get(row).copied().unwrap_or(0);
         if spec.arrays {
             let after_list = envelope
                 .column(1)
@@ -258,14 +255,14 @@ impl CdcJsonDecoder {
                     before_idx,
                     after_off + i,
                     spec.shape,
-                    mask,
+                    row,
                     before,
                     after,
                     out_rows,
                 );
             }
         } else {
-            cdc_emit(&action, row, row, spec.shape, mask, before, after, out_rows);
+            cdc_emit(&action, row, row, spec.shape, row, before, after, out_rows);
         }
     }
 
@@ -302,78 +299,112 @@ impl CdcJsonDecoder {
             .expect("failed to rebuild the CDC body batch")
     }
 
-    /// The `DataOld` presence scan: per surviving body (same null/whitespace skips as the envelope
-    /// decode, asserted below), the set of physical field keys Flink's `oldField.findValue` would
-    /// find under the message's `old` node — a recursive depth-first search of the whole subtree
-    /// (nested objects AND arrays; for Canal the array node's elements fall out of the same
-    /// descent). The envelope's `old` is the LAST top-level occurrence, matching the Jackson tree
-    /// `root.get` reads. A message without a usable `old` contributes an empty mask (only updates
-    /// read it, and a null `old` on an update already failed in `cdc_emit`).
-    fn old_key_presence(&self, bodies: &RecordBatch) -> Vec<u128> {
-        use simd_json::prelude::*;
-        let spec = self.dialect.spec();
-        let column = bodies.column(0);
-        let mut masks = Vec::with_capacity(bodies.num_rows());
-        let mut scratch: Vec<u8> = Vec::new();
-        let mut buffers = simd_json::Buffers::default();
-        for row in 0..bodies.num_rows() {
-            let Some(bytes) = binary_body(column, row) else {
-                continue;
-            };
-            if bytes.iter().all(u8::is_ascii_whitespace) {
-                continue;
-            }
-            scratch.clear();
-            scratch.extend_from_slice(bytes);
-            let Ok(tape) = simd_json::to_tape_with_buffers(&mut scratch, &mut buffers) else {
-                if self.skip_errors {
-                    continue; // the lenient envelope decode dropped this message too
-                }
-                masks.push(0); // the strict envelope decode fails this body first
-                continue;
-            };
-            let root = tape.as_value();
-            if self.skip_errors && root.as_object().is_none() {
-                continue; // ditto: a non-object root is dropped by the lenient envelope decode
-            }
-            let old = root
-                .as_object()
-                .and_then(|envelope| {
-                    envelope
-                        .iter()
-                        .filter(|(key, _)| *key == spec.before_field)
-                        .last()
-                })
-                .map(|(_, value)| value);
-            let mut mask = 0u128;
-            if let Some(value) = old {
-                self.find_value_mask(value, &mut mask);
-            }
-            masks.push(mask);
+    /// Which body each envelope row decoded from, or `None` when they pair in order. An envelope
+    /// decodes at most one row per body, so equal counts pair them; fewer rows means skip mode
+    /// dropped bodies, and decoding each body alone finds the ones that survived.
+    fn enveloped_bodies(&self, bodies: &RecordBatch, envelope_rows: usize) -> Option<Vec<usize>> {
+        if envelope_rows == bodies.num_rows() {
+            return None;
         }
-        masks
+        let kept: Vec<usize> = (0..bodies.num_rows())
+            .filter(|&row| self.envelope.decode(&bodies.slice(row, 1)).num_rows() > 0)
+            .collect();
+        assert_eq!(
+            kept.len(),
+            envelope_rows,
+            "CDC envelope rows don't match their bodies"
+        );
+        Some(kept)
     }
 
-    /// Jackson `findValue` presence over a tape subtree: sets bit `i` when physical field `i`'s
-    /// name appears as an object key anywhere under `value`. A duplicate key within an object
-    /// collapses to its LAST occurrence first (Jackson's tree build overwrites the earlier value,
-    /// so names reachable only through a discarded subtree are not found).
-    fn find_value_mask(&self, value: simd_json::tape::Value<'_, '_>, mask: &mut u128) {
-        use simd_json::prelude::*;
+    /// The `DataOld` presence scan: per envelope row, the set of physical field keys Flink's
+    /// `oldField.findValue` would find under its message's `old` node — a recursive depth-first
+    /// search of the whole subtree (nested objects AND arrays; for Canal the array node's elements
+    /// fall out of the same descent). The envelope's `old` is the LAST top-level occurrence,
+    /// matching the Jackson tree `root.get` reads. Only an update reads its presence, so
+    /// `reads_old` spares every other row the parse and leaves its mask empty; a null `old` on an
+    /// update already failed in `cdc_emit`. Each update parses the body its envelope row came from
+    /// (`body_of`), so a body the envelope dropped can't shift the rows after it. A body the
+    /// envelope accepted but simd-json rejects (arrow-json reads raw control characters, for one)
+    /// is read through Jackson's tokens instead, which keep its keys.
+    fn old_key_presence(
+        &self,
+        bodies: &RecordBatch,
+        envelope_rows: usize,
+        body_of: impl Fn(usize) -> usize,
+        reads_old: impl Fn(usize) -> bool,
+    ) -> OldKeyPresence {
+        let spec = self.dialect.spec();
+        let column = bodies.column(0);
+        let mut presence = OldKeyPresence::new(self.arity);
+        let mut scratch: Vec<u8> = Vec::new();
+        let mut buffers = simd_json::Buffers::default();
+        let mut reusable = Some(simd_json::tape::Tape::null());
+        let mark_old_keys = |root: simd_json::tape::Value<'_, '_>, bits: &mut [u64]| {
+            let old = root.as_object().and_then(|envelope| {
+                envelope
+                    .iter()
+                    .filter(|(key, _)| *key == spec.before_field)
+                    .last()
+            });
+            if let Some((_, value)) = old {
+                self.find_value_presence(value, bits);
+            }
+        };
+        for row in 0..envelope_rows {
+            let bits = presence.push_message();
+            if !reads_old(row) {
+                continue;
+            }
+            let bytes = binary_body(column, body_of(row)).expect("an enveloped body is present");
+            scratch.clear();
+            scratch.extend_from_slice(bytes);
+            let mut tape = reusable
+                .take()
+                .unwrap_or_else(simd_json::tape::Tape::null)
+                .reset();
+            if simd_json::fill_tape(&mut scratch, &mut buffers, &mut tape).is_ok() {
+                mark_old_keys(tape.as_value(), bits);
+            } else {
+                let tokens = crate::json_retry::tokenize(bytes).unwrap_or_else(|error| {
+                    panic!("Corrupt {} JSON message: {error}", self.dialect.name())
+                });
+                let mut skeleton = crate::json_retry::skeleton(&tokens).into_bytes();
+                let skeleton = simd_json::to_tape(&mut skeleton).expect("a skeleton reparses");
+                mark_old_keys(skeleton.as_value(), bits);
+            }
+            reusable = Some(tape.reset());
+        }
+        presence
+    }
+
+    /// Jackson `findValue` presence over a tape subtree: marks physical field `i` when its name
+    /// appears as an object key anywhere under `value`. A duplicate key within an object collapses
+    /// to its LAST occurrence first (Jackson's tree build overwrites the earlier value, so names
+    /// reachable only through a discarded subtree are not found).
+    fn find_value_presence(&self, value: simd_json::tape::Value<'_, '_>, bits: &mut [u64]) {
         if let Some(object) = value.as_object() {
             let entries: Vec<(&str, simd_json::tape::Value<'_, '_>)> = object.iter().collect();
-            for (i, (key, child)) in entries.iter().enumerate() {
-                if entries[i + 1..].iter().any(|(later, _)| later == key) {
+            let mut seen: HashSet<&str> = HashSet::default();
+            for (position, (key, child)) in entries[..].iter().enumerate().rev() {
+                let repeated = if entries.len() <= 8 {
+                    entries[position + 1..]
+                        .iter()
+                        .any(|(later, _)| later == key)
+                } else {
+                    !seen.insert(key)
+                };
+                if repeated {
                     continue;
                 }
-                if let Some(field) = self.field_names.iter().position(|name| name == key) {
-                    *mask |= 1 << field;
+                if let Some(&field) = self.field_positions.get(*key) {
+                    mark_present(bits, field);
                 }
-                self.find_value_mask(*child, mask);
+                self.find_value_presence(*child, bits);
             }
         } else if let Some(array) = value.as_array() {
             for element in &array {
-                self.find_value_mask(element, mask);
+                self.find_value_presence(element, bits);
             }
         }
     }
@@ -420,18 +451,23 @@ impl CdcJsonDecoder {
             .downcast_ref::<StructArray>()
             .expect("post-image struct");
 
-        // The DataOld dialects need per-message key presence in `old` (Flink's findValue rule);
-        // the scan mirrors the envelope decode's skip conditions, asserted here.
+        // The DataOld dialects need per-message key presence in `old` (Flink's findValue rule).
         let presence = if spec.shape == CdcShape::DataOld {
-            let masks = self.old_key_presence(bodies);
-            assert_eq!(
-                masks.len(),
+            let enveloped = self.enveloped_bodies(bodies, envelope.num_rows());
+            self.old_key_presence(
+                bodies,
                 envelope.num_rows(),
-                "old-key presence misaligned"
-            );
-            masks
+                |row| enveloped.as_ref().map_or(row, |rows| rows[row]),
+                |row| {
+                    ops.is_valid(row)
+                        && matches!(
+                            self.dialect.classify(ops.value(row)),
+                            CdcOp::Change(CdcAction::Update)
+                        )
+                },
+            )
         } else {
-            Vec::new()
+            OldKeyPresence::new(0)
         };
 
         // Per output row: its RowKind byte (0 +I, 1 -U, 2 +U, 3 -D — `RowKind.toByteValue()`), and the
@@ -447,37 +483,26 @@ impl CdcJsonDecoder {
                 use std::panic::{catch_unwind, AssertUnwindSafe};
                 let _ = silence_expected_decode_panics(|| {
                     catch_unwind(AssertUnwindSafe(|| {
-                        self.emit_message(
-                            row,
-                            &spec,
-                            &presence,
-                            &envelope,
-                            before,
-                            after,
-                            &mut out_rows,
-                        )
+                        self.emit_message(row, &spec, &envelope, before, after, &mut out_rows)
                     }))
                 });
             } else {
-                self.emit_message(
-                    row,
-                    &spec,
-                    &presence,
-                    &envelope,
-                    before,
-                    after,
-                    &mut out_rows,
-                );
+                self.emit_message(row, &spec, &envelope, before, after, &mut out_rows);
             }
         }
 
-        gather_cdc_batch(&out_rows, before, after, self.arity, &self.output)
+        gather_cdc_batch(
+            &out_rows,
+            before,
+            after,
+            self.arity,
+            &self.output,
+            &presence,
+        )
     }
 }
 
-/// Builds the fanned-out changelog batch: each physical column gathered from the pre/post-image
-/// struct children per output row, plus the trailing `$row_kind$` bytes. The source is the same
-/// across columns except for `Coalesce`, which picks per field by the key's presence in the/// Builds a binary input column over a contiguous values region. `copy_values` is used for keyed
+/// Builds a binary input column over a contiguous values region. `copy_values` is used for keyed
 /// raw columns because a raw decode may legally pass those buffers through to the exported output;
 /// JSON bodies are consumed synchronously into fresh Arrow builders and can borrow the JVM slab.
 fn contiguous_binary_array(

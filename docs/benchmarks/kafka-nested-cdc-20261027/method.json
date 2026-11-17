@@ -1,0 +1,30 @@
+{
+  "flink": "2.2.1",
+  "connector": "flink-connector-kafka 5.0.0-2.2",
+  "kafka_client": "4.2.0",
+  "profile": "bench (release native build, mimalloc)",
+  "workloads": [
+    "nested-maxwell",
+    "nested-canal"
+  ],
+  "records": [
+    1000000,
+    10000000
+  ],
+  "partitions": 4,
+  "parallelism": 4,
+  "warmups": 2,
+  "trials": 6,
+  "routes": [
+    "stock",
+    "previous",
+    "native"
+  ],
+  "mini_batch": {
+    "table.exec.mini-batch.enabled": "true",
+    "table.exec.mini-batch.allow-latency": "1 s",
+    "table.exec.mini-batch.size": "50000"
+  },
+  "timing": "planning and submission through the last collected row; production, plan inspection and output comparison untimed",
+  "query": "SELECT tenant, COUNT(*) AS changes, SUM(amount) AS amount, SUM(info.score) AS score, COUNT(name) AS named FROM cdc GROUP BY tenant"
+}

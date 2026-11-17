@@ -56,7 +56,8 @@ they're the single source of truth for what does and doesn't run natively. The s
 what stays on Flink: lateral table functions and `MATCH_RECOGNIZE`, PyFlink UDFs, the three-phase
 distinct aggregate, remote (`hdfs:`/`s3:`) file paths, a handful of expression/type edges where
 native execution would diverge from the JVM (opt-in behind `allowIncompatible`), and connector
-options we can't yet reproduce bit-identically (Maxwell/Canal CDC, some protobuf field types).
+options we can't yet reproduce bit-identically (Canal's database/table filters, some protobuf
+field types).
 
 **Determinism.** Results are byte-identical to stock Flink for everything admitted. The one caveat
 is late-data dropping on out-of-order event-time streams, where Flink is itself non-deterministic
