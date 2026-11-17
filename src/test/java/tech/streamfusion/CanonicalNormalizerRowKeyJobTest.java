@@ -36,7 +36,9 @@ class CanonicalNormalizerRowKeyJobTest extends CanonicalNormalizerJobTest {
   }
 
   @org.junit.jupiter.params.ParameterizedTest
-  @org.junit.jupiter.params.provider.MethodSource("joinConsumerCases")
+  @CanonicalCases(
+      value = "joinConsumerCases",
+      recoveryAxes = {0, 1, 2})
   @org.junit.jupiter.api.Timeout(value = 8, unit = java.util.concurrent.TimeUnit.MINUTES)
   void normalizerAndJoinRetainBothOwnersAcrossCanonicalSwitches(
       String mode, boolean nativeFirst, String backend) throws Exception {

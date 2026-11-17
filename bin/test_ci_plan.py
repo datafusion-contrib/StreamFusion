@@ -17,6 +17,22 @@ spec.loader.exec_module(plan)
 
 
 class CiPlanTest(unittest.TestCase):
+    def test_explicit_exhaustive_dispatch_cannot_reuse_representative_or_docs_coverage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            event = Path(directory) / 'event.json'
+            event.write_text(json.dumps({'inputs': {'canonical_coverage': 'full'}}))
+            with patch.dict(os.environ, {'GITHUB_EVENT_NAME': 'workflow_dispatch',
+                    'GITHUB_EVENT_PATH': str(event), 'GITHUB_REF_NAME': 'feature/docs',
+                    'GITHUB_STEP_SUMMARY': ''}), \
+                    patch.object(plan, 'qualified_branch_docs') as reuse, \
+                    patch.object(plan, 'plan') as decision, \
+                    patch('sys.stdout', new_callable=io.StringIO) as output:
+                plan.main()
+                reuse.assert_not_called()
+                decision.assert_not_called()
+                self.assertIn('tests=true', output.getvalue())
+                self.assertIn('explicit-exhaustive', output.getvalue())
+
     def test_manual_docs_followup_requires_both_latest_branch_gates_and_unchanged_source(self):
         sha, head = "a" * 40, "b" * 40
         good = {"id": 1, "head_sha": sha, "head_branch": "feature", "event": "workflow_dispatch",

@@ -33,7 +33,7 @@ class ModuleGroupsTest(unittest.TestCase):
         workflow = WORKFLOW.read_text().split('  lake-module-tests:', 1)[1].split('    steps:', 1)[0]
         observed = set()
         jobs = re.findall(r'          - name: [^\n]+\n((?:            [^\n]+\n)+)', workflow)
-        self.assertEqual(9, len(jobs))
+        self.assertEqual(10, len(jobs))
         for job in jobs:
             fields = {key: value.strip().strip("'\"")
                       for key, value in re.findall(r'            (\w+): (.+)', job)}
@@ -45,7 +45,8 @@ class ModuleGroupsTest(unittest.TestCase):
         expected.update(('streamfusion-paimon', jdk, profile, format)
                         for jdk in ('11', '17') for profile in ('paimon', 'paimon,flink-1.18')
                         for format in ('parquet', 'orc'))
-        self.assertEqual(13, len(observed))
+        expected.add(('streamfusion-doris', '17', 'doris,doris-it,doris-upstream', None))
+        self.assertEqual(14, len(observed))
         self.assertEqual(expected, observed)
 
     def test_only_first_shard_runs_deployment_modules_and_every_shard_runs_runtime(self):

@@ -40,7 +40,9 @@ timeboxed profiling of CI startup or fixture overhead remains available separate
 Two Maven dependency producers, one per JDK, resolve the reactor and optional test profiles
 before Java consumers fan out. A persistent repository cache is keyed by OS/architecture,
 JDK major, POMs, Maven settings, the preparation recipe and cache action. The preparation
-includes the platform-specific protobuf compilers and dynamically loaded test providers. Producers may reuse
+includes the platform-specific protobuf compilers and dynamically loaded test providers. It also
+records Maven's mediated dependency trees and fills missing selected artifacts: `go-offline` alone
+can traverse original POMs without downloading the versions chosen for actual compilation. Producers may reuse
 an older compatible cache, but only publish the new key after every resolution succeeds.
 Failed preparation removes its completion marker; it cannot publish an incomplete repository.
 
@@ -50,8 +52,8 @@ or relying on a cache entry surviving eviction throughout the long matrix. Resto
 input/JDK marker, checksum and archive paths, and requires a fresh repository. The archive
 excludes project-installed `tech.streamfusion` artifacts and failed-download/partial/lock files;
 Maven settings and credentials are never transferred. Transfer archives are removed immediately
-after use. Canonical preparation/workers, runtime tests and lake test configurations use Maven
-offline mode. Image/Doris tooling starts from the same primed repository. Test assertions and
+after use. Canonical preparation/workers, runtime tests and every connector configuration
+(including Doris) use Maven offline mode. Image tooling starts from the same primed repository. Test assertions and
 native-work requirements are unchanged.
 
 The upstream Flink preparation installs the compiled format reactor dependencies before packing
@@ -62,6 +64,56 @@ cached failed lookups, HTTP retries are bounded and outer delays include jitter.
 are not retried. The lake matrix uses `fail-fast: false`, so one transport failure cannot cancel
 an unrelated module and force its complete rerun at the end of qualification. Cold producers may
 still encounter provider/shared-egress throttling; the cache prevents consumers amplifying it.
+
+## Canonical coverage budget and connector scheduling
+
+Routine CI runs deterministic representative canonical matrices across all four Flink/JDK
+configurations. Every concrete fixture and test method remains included. Selection happens at
+the final argument-provider boundary, after inherited providers and fixture-specific filters
+have assembled valid cases. Stable scalar ordering makes the selection independent of provider
+hash-iteration order. It preserves every individual option and option pair, plus the
+annotated three-way recovery mode, engine direction and backend/transaction-naming interactions.
+Original job bodies, state/result assertions and positive native-work requirements are unchanged.
+Other higher-order combinations remain in the explicit exhaustive policy.
+Unselected combinations are absent from discovery; they are not manufactured passes or skips.
+
+| Flink line | Full cases per JDK | Representative cases per JDK |
+| --- | ---: | ---: |
+| 2.2 | 16,732 | 3,984 |
+| 1.18 | 9,948 | 3,591 |
+| Both JDKs combined | 53,360 | 15,150 |
+
+This removes 71.6% of routine parameter combinations. Four shards per cohort use 16 runner
+jobs instead of 40; each shard retains four balanced sequential worker lanes. Scheduling costs
+scale the recorded full-class cost by the selected/full invocation ratio. These are placement
+estimates, not measured new runtimes. Local inventories independently match the prior qualified
+full-case counts for every concrete class on both lines and both JDKs.
+
+Each preparation inventories all compiled canonical fixtures without starting a cluster. Its
+full argument sets, selected indices and required interaction axes travel inside the verified
+Java archive. Python independently checks covering-array completeness, class inventory and
+cohort identity before fan-out. Every worker must then report every expected method/invocation
+exactly once. Missing, extra, failed or unexpectedly skipped cases fail the job. Only the exact
+legacy Kafka quarantine is allowed when that selected provider belongs to Flink 1.18/JDK 17.
+
+The unchanged exhaustive providers remain available for an explicitly requested release or
+state-compatibility qualification:
+
+```bash
+python3 bin/ci-campaign.py start --repo YOUR_LOGIN/YOUR_FORK \
+  --canonical-coverage full --validation 'focused local checks and their outcomes'
+```
+
+This selects ten shards per cohort and all 53,360 cases. A successful representative run is
+not reused as exhaustive proof. Routine qualification does not launch both policies.
+
+Runtime fan-out is limited to six jobs, the shared connector matrix to three, and upstream
+suite consumption to two jobs per Flink line. These limits leave room for long canonical work
+in the observed 20-runner budget; GitHub still controls queue order. Kafka, Parquet, ORC, Paimon,
+Delta, Iceberg and format suites have independent upstream matrix entries, restoring the same
+prepared artifacts. Doris uses the common connector matrix while retaining its server fixture,
+adapter assertions and unchanged upstream SQL tests. Current Doris and Iceberg adapters target
+Flink 2.2/JDK 17; supported cross-version coverage for other connectors remains unchanged.
 
 ## Contributing from a personal fork
 
@@ -809,7 +861,7 @@ That preparation includes Kafka 5.0's distinct Surefire 3.2.5 provider and Platf
 
 ## Doris connector
 
-The required `doris-tests` job runs `bin/doris-suite.sh`: the Arrow adapter tests and the
+The required Doris entry in the common connector matrix runs `bin/doris-suite.sh`: the Arrow adapter tests and the
 unchanged source, sink, catalog and lookup SQL tests from released Doris connector 26.3.0
 against a real released Doris 4.1.4.1 FE/BE fixture. StreamFusion activation, per-test SQL
 inventory and nonempty Arrow source-read witnesses are audited. One stale upstream batch
@@ -817,20 +869,23 @@ timestamp assertion is accepted only after reproducing and matching its exact fa
 StreamFusion disabled; all original test SQL and assertions still execute. The incremental reader has unit coverage; a compatible Doris 5.0 server is not
 yet available as a released CI fixture.
 
-## Complete canonical job matrix
+<a id="complete-canonical-job-matrix"></a>
+
+## Canonical Java preparation and worker execution
 
 Canonical Java compilation runs once for each Flink/JDK pair, in four required preparation
-jobs. These jobs depend on the change plan and start alongside native work; compilation
-does not download or wait for a native library. They retain Maven dependency resolution,
-Java and protobuf compilation and javadoc checks, with test execution deferred.
-The 40 consumer shards require both Java preparation and the native producer. The first
+jobs. These jobs consume the shared Maven preparation and overlap native work; compilation
+does not download or wait for a native library. They retain Java/protobuf compilation and
+javadoc checks, then inventory the canonical providers without executing their job bodies.
+The 16 routine consumer shards (40 for explicit exhaustive qualification) require both Java
+preparation and the native producer. The first
 shard in each Flink/JDK cohort executes the reactor dependencies' test lifecycle; the
 remaining shards skip dependency tests. Every shard runs its complete selected runtime
 inventory. This keeps once-per-cohort dependency-test coverage without delaying pure
 compilation behind the runtime queue.
 
 Each preparation uploads a one-day, exact-commit archive of the compiled module classes,
-non-native resources and test classes. Native libraries are supplied by
+non-native resources, test classes and their coverage inventory. Native libraries are supplied by
 the separate exact-commit native artifact and copied by the normal resource lifecycle;
 packaged reactor JARs are regenerated by that lifecycle rather than transferred twice.
 The Java cache includes each production owner consumed by the runtime test assembly: core,
@@ -841,8 +896,8 @@ reactor build. The archive excludes Surefire reports,
 checkpoints, diagnostics and other execution state. Consumers verify its checksum, source
 commit, Flink line, complete Java version, operating system and architecture before restoring
 into fresh output directories. They download the same commit's canonical native payload,
-resolve dependencies with bounded retries, discover their complete compiled canonical
-inventory, and create independent workers, archives and application state.
+verify the prepared offline dependencies, discover their complete compiled canonical inventory,
+and create independent workers, archives and application state.
 Both preparation and consumer jobs pin the same complete Temurin release (11.0.32+9 or
 17.0.21+9). Floating major-version selection previously chose 11.0.33+10 for a producer
 and 11.0.32+1 for consumers on different runner images; the identity guard correctly
@@ -1019,10 +1074,10 @@ operator selections reduce 171 event-time invocations to 63 and 208 processing-t
 to 69 locally; default/CI retain the original providers and every invocation. Existing release
 assumptions still apply; a skipped case does not qualify a native path. Named corruption and
 regression providers remain exhaustive except the extrema corruption combinations named above.
-This is an iteration check, not full matrix qualification;
-omitting the flag retains every invocation in its original order. CI does not set this flag and
-continues to run the complete matrices. Batch operators and release lines in these short checks,
-then use the complete matrix for the final qualification. The 2,500-key window-deduplication
+Omitting this local flag retains the original provider stream. Routine CI applies its separate
+representative policy only at the final parameter-provider boundary and audits every selected
+invocation. Explicit exhaustive qualification retains every invocation in its original order.
+Batch operators and release lines in short checks before the final qualification. The 2,500-key window-deduplication
 continuation sends three native Arrow batches while retaining every stock input and result
 assertion, avoiding 2,500 individual input conversions per invocation.
 
@@ -2121,8 +2176,9 @@ The cause remains unknown; this is an explicit quarantine, not a correctness fix
 JUnit reports the invocation as skipped with marker
 `CI_QUARANTINE_LEGACY_KAFKA_TASK_FAILURE`. It remains executable locally by default,
 and the other providers, process-failure variants, Flink 1.18/JDK 11 and all Flink 2.2
-configurations remain enabled. The final coverage audit requires all 53,360 invocation
-identities, with exactly this one quarantine and 53,359 executed canonical cases.
+configurations remain available. Exhaustive qualification requires all 53,360 invocation
+identities, with exactly this one quarantine and 53,359 executed canonical cases. Routine
+qualification verifies its 15,150 selected invocations, with the same exact quarantine.
 Remove the quarantine when a local reproducer establishes and verifies the corrective fix.
 The separate historical Hudi feature benchmark is outside this candidate.
 

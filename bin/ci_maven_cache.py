@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import xml.etree.ElementTree as ET
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,12 +20,18 @@ def recipes(jdk):
     os_name = {"Linux": "linux", "Darwin": "osx"}[platform.system()]
     architecture = {"x86_64": "x86_64", "arm64": "aarch_64", "aarch64": "aarch_64"}[platform.machine()]
     classifier = f"{os_name}-{architecture}"
+    versions = {entry.text.strip() for entry in ET.parse(ROOT / "pom.xml").iter(
+        "{http://maven.apache.org/POM/4.0.0}protobuf.version")}
     result = [["--artifact", f"com.google.protobuf:protoc:{version}:exe:{classifier}"]
-              for version in ("4.32.1", "3.21.7")]
+              for version in sorted(versions)]
     for line in ("", ",flink-1.18"):
+        result.append(["--profile", line.lstrip(",")])
         result.append(["--profile", "canonical-kafka" + line])
-        result.append(["--profile", "paimon" + (",tpcds" if jdk == "17" else "") + line,
+        result.append(["--profile", "paimon" + line,
                        "--projects", "streamfusion-paimon", "--also-make"])
+        if jdk == "17":
+            result.append(["--profile", "paimon,tpcds" + line,
+                           "--projects", "streamfusion-paimon", "--also-make"])
     result.extend([
         ["--profile", "hudi,flink-1.18", "--projects", "streamfusion-hudi", "--also-make"],
         ["--profile", "delta", "--projects", "streamfusion-delta", "--also-make"],
@@ -36,7 +43,8 @@ def recipes(jdk):
     if jdk == "17":
         result.extend([
             ["--profile", "iceberg,iceberg-upstream", "--projects", "streamfusion-iceberg", "--also-make"],
-            ["--profile", "doris,doris-it,doris-upstream", "--projects", "streamfusion-doris", "--also-make"],
+            *[["--profile", profile, "--projects", "streamfusion-doris", "--also-make"]
+              for profile in ("doris,doris-it", "doris,doris-upstream", "doris,doris-it,doris-upstream")],
             ["--profile", "image-it"],
             ["--profile", "image-it,flink-1.18"],
             ["--profile", "paimon,upstream-paimon-compaction", "--projects", "streamfusion-paimon", "--also-make"],
@@ -51,6 +59,55 @@ def metadata(key, jdk):
     return {"key": key, "jdk": jdk, "recipes": recipes(jdk)}
 
 
+def graph_artifacts(node):
+    result = set()
+    if node["groupId"] != "tech.streamfusion":
+        kind = node["type"]
+        classifier = node.get("classifier", "")
+        if kind == "test-jar":
+            kind, classifier = "jar", classifier or "tests"
+        elif kind in ("bundle", "maven-plugin"):
+            kind = "jar"
+        coordinate = (node["groupId"], node["artifactId"], node["version"], kind, classifier)
+        result.add(coordinate)
+    for child in node.get("children", []):
+        result.update(graph_artifacts(child))
+    return result
+
+
+def complete_graph(repository, recipe):
+    # go-offline traverses original POMs; compilation uses Maven's mediated graph.
+    # Resolve that graph too, without building/installing our reactor artifacts.
+    paths = [ROOT / "target/ci-maven-graph.json", ROOT / "dev/flink-suite/agent/target/ci-maven-graph.json"]
+    paths.extend(ROOT.glob("streamfusion-*/target/ci-maven-graph.json"))
+    for path in paths:
+        path.unlink(missing_ok=True)
+    subprocess.run([sys.executable, str(ROOT / "bin/ci-maven-dependencies.py"),
+                    "--repository", str(repository), *recipe, "--graph"], cwd=ROOT, check=True)
+    paths = [ROOT / "target/ci-maven-graph.json", ROOT / "dev/flink-suite/agent/target/ci-maven-graph.json"]
+    paths.extend(ROOT.glob("streamfusion-*/target/ci-maven-graph.json"))
+    artifacts = set()
+    for path in paths:
+        if path.exists():
+            artifacts.update(graph_artifacts(json.loads(path.read_text())))
+            path.unlink()
+    if not artifacts:
+        raise ValueError("Maven produced no external dependency graph")
+    missing, missing_paths = [], []
+    for group, artifact, version, kind, classifier in sorted(artifacts):
+        filename = artifact + "-" + version + ("-" + classifier if classifier else "") + "." + kind
+        path = repository / group.replace(".", "/") / artifact / version / filename
+        if not path.is_file():
+            missing_paths.append(path)
+            missing.extend(["--artifact", ":".join([group, artifact, version, kind, *([classifier] if classifier else [])])])
+    if missing:
+        print(f"Completing {len(missing) // 2} mediated dependency artifacts", flush=True)
+        subprocess.run([sys.executable, str(ROOT / "bin/ci-maven-dependencies.py"),
+                        "--repository", str(repository), *missing], cwd=ROOT, check=True)
+        if any(not path.is_file() for path in missing_paths):
+            raise ValueError("Maven did not populate every selected dependency artifact")
+
+
 def prepare(repository, key, jdk):
     repository.mkdir(parents=True, exist_ok=True)
     marker = repository / MARKER
@@ -58,6 +115,8 @@ def prepare(repository, key, jdk):
     for recipe in recipes(jdk):
         subprocess.run([sys.executable, str(ROOT / "bin/ci-maven-dependencies.py"),
                         "--repository", str(repository), *recipe], cwd=ROOT, check=True)
+        if "--artifact" not in recipe:
+            complete_graph(repository, recipe)
     marker.write_text(json.dumps(metadata(key, jdk), indent=2) + "\n")
 
 

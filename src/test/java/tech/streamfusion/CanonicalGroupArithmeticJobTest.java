@@ -16,7 +16,6 @@ import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
 
 class CanonicalGroupArithmeticJobTest {
   @TempDir(cleanup = CleanupMode.ON_SUCCESS)
@@ -49,7 +48,9 @@ class CanonicalGroupArithmeticJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("cases")
+  @CanonicalCases(
+      value = "cases",
+      recoveryAxes = {0, 2, 3})
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void generatedArithmeticStateContinuesAcrossIsolatedEngines(
       String mode, boolean ordinary, boolean nativeFirst, String backend) throws Exception {

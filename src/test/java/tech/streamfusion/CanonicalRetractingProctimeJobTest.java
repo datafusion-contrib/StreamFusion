@@ -20,7 +20,6 @@ import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
 
 class CanonicalRetractingProctimeJobTest {
   @TempDir(cleanup = CleanupMode.ON_SUCCESS)
@@ -51,7 +50,9 @@ class CanonicalRetractingProctimeJobTest {
   }
 
   @ParameterizedTest(name = "compiled={0}, {1}, native-first={2}, {3}")
-  @MethodSource("cases")
+  @CanonicalCases(
+      value = "cases",
+      recoveryAxes = {1, 2, 3})
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void projectedClockSurvivesCanonicalSwitchesWithCleanStockWorkers(
       boolean compiled, String mode, boolean nativeFirst, String backend) throws Exception {

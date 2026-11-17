@@ -1,9 +1,16 @@
 name: CI
+run-name: CI (canonical ${{ inputs.canonical_coverage || 'representative' }})
 
 on:
   push:
     branches: ['main', 'ci/**']
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      canonical_coverage:
+        description: Canonical savepoint coverage (full is an explicit exhaustive qualification)
+        type: choice
+        options: [representative, full]
+        default: representative
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -188,6 +195,7 @@ jobs:
     name: Runtime, connectors and formats${{ matrix.suffix }} (JDK ${{ matrix.jdk }}, shard ${{ matrix.shard }})
     strategy:
       fail-fast: false
+      max-parallel: 6
       matrix:
         line: ['2.2', '1.18']
         jdk: ['17', '11']
@@ -229,6 +237,7 @@ jobs:
           python3 -m unittest discover -s bin -p 'test_ci_lake_tests.py'
           python3 -m unittest discover -s bin -p 'test_ci_runtime_test_shards.py'
           python3 -m unittest discover -s bin -p 'test_ci_canonical_jobs.py'
+          python3 -m unittest discover -s bin -p 'test_ci_canonical_coverage.py'
           python3 -m unittest discover -s bin -p 'test_ci_java_build.py'
           python3 -m unittest discover -s bin -p 'test_ci_native_source.py'
           python3 -m unittest discover -s bin -p 'test_ci_native_test_artifact.py'
@@ -372,6 +381,16 @@ jobs:
           mvn -B -ntp -P${{ matrix.profiles }} -pl streamfusion-runtime -am test \
             -DskipTests=true -Dnative.build.skip=true \
             -Dsf.testForks=4 -Dsf.testReuseForks=false "-Dsf.extraJvmArgs=-Xmx1g"
+          mvn -B -ntp -P${{ matrix.profiles }} -pl streamfusion-runtime -am test \
+            -Dnative.build.skip=true -Dsf.ci.precompiledJava=true -Dmaven.javadoc.skip=true \
+            -DskipTests=true -Dsf.runtime.tests.skip=false \
+            -Dtest=CanonicalCoverageInventoryTest -Dsurefire.failIfNoSpecifiedTests=false \
+            -Djunit.jupiter.extensions.autodetection.enabled=false \
+            -Dsf.canonical.inventory.line='${{ matrix.line }}' \
+            "-Dsf.canonical.inventory.output=$GITHUB_WORKSPACE/streamfusion-runtime/target/test-classes/canonical-coverage.json"
+          python3 bin/ci_canonical_coverage.py \
+            --inventory streamfusion-runtime/target/test-classes/canonical-coverage.json \
+            --line '${{ matrix.line }}' --jdk '${{ matrix.jdk }}'
           python3 bin/ci_java_build.py pack --line '${{ matrix.line }}' \
             --archive "$RUNNER_TEMP/canonical-java.tar.gz"
       - uses: actions/upload-artifact@v4
@@ -392,7 +411,7 @@ jobs:
       matrix:
         line: ['2.2', '1.18']
         jdk: ['11', '17']
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        shard: ${{ fromJSON(inputs.canonical_coverage == 'full' && '[1,2,3,4,5,6,7,8,9,10]' || '[1,2,3,4]') }}
         include:
           - line: '2.2'
             profiles: 'canonical-kafka'
@@ -433,7 +452,10 @@ jobs:
         run: |
           python3 bin/ci_runtime_test_shards.py \
             --classes streamfusion-runtime/target/test-classes \
-            --suite canonical --line ${{ matrix.line }} --count 10 --index ${{ matrix.shard }} \
+            --suite canonical --line ${{ matrix.line }} \
+            --count ${{ inputs.canonical_coverage == 'full' && '10' || '4' }} --index ${{ matrix.shard }} \
+            --inventory streamfusion-runtime/target/test-classes/canonical-coverage.json \
+            --coverage '${{ inputs.canonical_coverage || 'representative' }}' \
             --output "$RUNNER_TEMP/canonical-job-includes.txt"
       - name: Run every selected canonical job
         env:
@@ -449,6 +471,8 @@ jobs:
           python3 bin/ci_canonical_jobs.py \
             --includes "$RUNNER_TEMP/canonical-job-includes.txt" \
             --line '${{ matrix.line }}' --profiles '${{ matrix.profiles }}' --workers 4 \
+            --inventory streamfusion-runtime/target/test-classes/canonical-coverage.json \
+            --coverage '${{ inputs.canonical_coverage || 'representative' }}' \
             --maven-arg=-Dsf.canonical.kafka.quarantineLegacyTaskFailure=true \
             --jvm-args="-Xmx1g -Djava.io.tmpdir=$RUNNER_TEMP/canonical-fixtures"
       - name: Retain canonical job selection and outcomes
@@ -458,6 +482,7 @@ jobs:
           name: canonical-job-results-flink${{ matrix.line }}-jdk${{ matrix.jdk }}-shard${{ matrix.shard }}
           path: |
             ${{ runner.temp }}/canonical-job-includes.*
+            streamfusion-runtime/target/test-classes/canonical-coverage.json
             streamfusion-runtime/target/surefire-reports/*
             ${{ runner.temp }}/canonical-cds/*.log
             ${{ runner.temp }}/canonical-fixtures/**/switched/*.log
@@ -504,8 +529,13 @@ jobs:
     timeout-minutes: 150
     strategy:
       fail-fast: false
+      max-parallel: 3
       matrix:
         include:
+          - name: Doris
+            jdk: '17'
+            profile: doris,doris-it,doris-upstream
+            module: streamfusion-doris
           - name: Delta
             jdk: '17'
             profile: delta
@@ -564,6 +594,7 @@ jobs:
           path: native/target/debug
 
       - name: Run every lake module configuration
+        if: matrix.module != 'streamfusion-doris'
         run: >-
           python3 bin/ci_lake_tests.py --profile '${{ matrix.profile }}'
           --module '${{ matrix.module }}'
@@ -611,32 +642,14 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  doris-tests:
-    needs: [native-build, maven-dependencies]
-    name: Doris connector and upstream SQL tests
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@v6
-      - name: Free disk space
-        run: python3 bin/ci-free-disk.py
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-      - uses: ./.github/actions/maven-cache
-        with:
-          jdk: '17'
-      - uses: actions/download-artifact@v5
-        with:
-          name: test-native-${{ github.sha }}
-          path: native/target/debug
-      - name: Run Arrow ownership, SQL parity and upstream Doris connector tests
+      - name: Run Doris SQL and upstream connector checks
+        if: matrix.module == 'streamfusion-doris'
         env:
           SF_DORIS_NATIVE_BUILD_SKIP: 'true'
         run: bin/doris-suite.sh
+
       - name: Retain Doris plans, upstream assertions and server logs
-        if: always()
+        if: always() && matrix.module == 'streamfusion-doris'
         uses: actions/upload-artifact@v4
         with:
           name: doris-sql-parity
@@ -755,7 +768,7 @@ jobs:
   all-tests:
     name: All CI tests
     if: ${{ (always() && !cancelled()) && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
-    needs: [plan, maven-dependencies, native-build, native-tests, java-tests, canonical-java-build, canonical-job-tests, lake-module-tests, image-integration, doris-tests]
+    needs: [plan, maven-dependencies, native-build, native-tests, java-tests, canonical-java-build, canonical-job-tests, lake-module-tests, image-integration]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

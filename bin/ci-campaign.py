@@ -96,10 +96,12 @@ def qualified_docs_candidate(repository, sha, branch):
     return planner.qualified_branch_docs(repository, sha, branch, fetch=False)
 
 
-def latest_run(repository, branch, sha, workflow):
+def latest_run(repository, branch, sha, workflow, canonical_coverage=None):
     query = urlencode({"branch": branch, "head_sha": sha})
     matches = [r for r in pages(f"repos/{repository}/actions/workflows/{workflow}/runs?{query}", "workflow_runs")
                if r["head_sha"] == sha and r["head_branch"] == branch
+               and (canonical_coverage != "full" or workflow != "ci.yml"
+                    or r.get("display_title") == "CI (canonical full)")
                and (r["event"] == "push" or r["event"] == "workflow_dispatch"
                     and (workflow != "flink-suite.yml"
                          or r.get("display_title") == "Full upstream Flink suite (merge gate)"))]
@@ -180,9 +182,11 @@ def ensure_capacity(repository, runs, capacity=20, branch=None):
               "No queued work will be displaced.")
 
 
-def wait_for_dispatch(repository, branch, sha, workflow, previous=0):
+def wait_for_dispatch(repository, branch, sha, workflow, previous=0, canonical_coverage=None):
     for _ in range(10):
-        run = latest_run(repository, branch, sha, workflow)
+        run = (latest_run(repository, branch, sha, workflow, canonical_coverage="full")
+               if canonical_coverage == "full" and workflow == "ci.yml"
+               else latest_run(repository, branch, sha, workflow))
         if run and run["id"] > previous:
             return run
         time.sleep(3)
@@ -190,9 +194,12 @@ def wait_for_dispatch(repository, branch, sha, workflow, previous=0):
                        "head again; do not dispatch another copy.")
 
 
-def qualify(repository, branch, workflows, *, start=False, validation="", capacity=20):
+def qualify(repository, branch, workflows, *, start=False, validation="", capacity=20,
+            canonical_coverage="representative"):
     sha = candidate(repository, branch)
-    runs = [(workflow, latest_run(repository, branch, sha, workflow)) for workflow in workflows]
+    runs = [(workflow, latest_run(repository, branch, sha, workflow, canonical_coverage="full")
+             if workflow == "ci.yml" and canonical_coverage == "full"
+             else latest_run(repository, branch, sha, workflow)) for workflow in workflows]
     missing = []
     for workflow, run in runs:
         if run:
@@ -221,8 +228,13 @@ def qualify(repository, branch, workflows, *, start=False, validation="", capaci
     for workflow in missing:
         if candidate(repository, branch) != sha:
             raise ValueError("The head changed during submission; stop and prepare the new candidate.")
-        api(f"repos/{repository}/actions/workflows/{workflow}/dispatches", data={"ref": branch})
-        run = wait_for_dispatch(repository, branch, sha, workflow)
+        payload = {"ref": branch}
+        if workflow == "ci.yml" and canonical_coverage == "full":
+            payload["inputs"] = {"canonical_coverage": canonical_coverage}
+        api(f"repos/{repository}/actions/workflows/{workflow}/dispatches", data=payload)
+        run = (wait_for_dispatch(repository, branch, sha, workflow, canonical_coverage="full")
+               if workflow == "ci.yml" and canonical_coverage == "full"
+               else wait_for_dispatch(repository, branch, sha, workflow))
         print(f"Started {workflow}: {run['html_url']}", flush=True)
 
 
@@ -258,6 +270,8 @@ def main():
     parser.add_argument("--include", choices=OPTIONAL, action="append", default=[])
     parser.add_argument("--validation", default="", help="Actual focused local checks, or retry diagnosis")
     parser.add_argument("--run", type=int, help="Unsuccessful current-head run for retry")
+    parser.add_argument("--canonical-coverage", choices=("representative", "full"),
+                        default="representative", help="Full is an explicitly requested exhaustive qualification")
     parser.add_argument("--capacity", type=int, default=20,
                         help="Conservative observed runner budget, not a configured account limit (default: 20)")
     args = parser.parse_args()
@@ -274,7 +288,8 @@ def main():
                 retry(args.repo, branch, args.run, args.validation, args.capacity)
             else:
                 qualify(args.repo, branch, tuple(dict.fromkeys((*REQUIRED, *args.include))),
-                        start=args.action == "start", validation=args.validation, capacity=args.capacity)
+                        start=args.action == "start", validation=args.validation, capacity=args.capacity,
+                        canonical_coverage=args.canonical_coverage)
     except (ValueError, RuntimeError, subprocess.SubprocessError) as error:
         parser.exit(1, f"{error}\n")
 

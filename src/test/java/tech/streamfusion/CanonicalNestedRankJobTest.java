@@ -17,7 +17,6 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
 
 class CanonicalNestedRankJobTest {
   @TempDir Path directory;
@@ -39,7 +38,9 @@ class CanonicalNestedRankJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("cases")
+  @CanonicalCases(
+      value = "cases",
+      recoveryAxes = {1, 3, 4})
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void nestedRetainedRowsContinueAcrossCanonicalAndNativeRecovery(
       String shape, String mode, boolean ordinary, boolean nativeFirst, String backend)

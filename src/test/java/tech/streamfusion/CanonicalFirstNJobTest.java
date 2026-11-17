@@ -19,7 +19,6 @@ import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class CanonicalFirstNJobTest {
@@ -41,7 +40,9 @@ class CanonicalFirstNJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("cases")
+  @CanonicalCases(
+      value = "cases",
+      recoveryAxes = {0, 1, 2})
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void countersContinueAcrossIsolatedEngineProcesses(
       String mode, boolean nativeFirst, String backend) throws Exception {
@@ -49,7 +50,7 @@ class CanonicalFirstNJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("handoffs")
+  @CanonicalCases("handoffs")
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void retainedCountersReexportWithoutNewInput(boolean nativeFirst, String backend)
       throws Exception {
@@ -64,7 +65,7 @@ class CanonicalFirstNJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("handoffs")
+  @CanonicalCases("handoffs")
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void countersRescaleThroughOneThreeAndTwoTasks(boolean nativeFirst, String backend)
       throws Exception {
@@ -72,7 +73,7 @@ class CanonicalFirstNJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("handoffs")
+  @CanonicalCases("handoffs")
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void emptyCountersAcceptTheFirstRowsAfterAnEngineSwitch(boolean nativeFirst, String backend)
       throws Exception {

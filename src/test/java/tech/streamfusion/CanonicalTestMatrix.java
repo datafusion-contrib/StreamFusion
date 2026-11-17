@@ -9,7 +9,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.params.provider.Arguments;
 
-/** Optional local iteration matrix; the default and CI retain every invocation. */
+/** Deterministic covering arrays for local iteration and canonical CI. */
 public final class CanonicalTestMatrix {
   private CanonicalTestMatrix() {}
 
@@ -25,6 +25,10 @@ public final class CanonicalTestMatrix {
   }
 
   static List<Arguments> representatives(List<Arguments> cases) {
+    return representatives(cases, new int[0]);
+  }
+
+  static List<Arguments> representatives(List<Arguments> cases, int[] recoveryAxes) {
     var coverage = new ArrayList<Set<List<Object>>>();
     var remaining = new HashSet<List<Object>>();
     int width = cases.isEmpty() ? 0 : cases.get(0).get().length;
@@ -35,6 +39,19 @@ public final class CanonicalTestMatrix {
       for (int first = 0; first < width; first++)
         for (int second = first; second < width; second++)
           pairs.add(Arrays.asList(first, values[first], second, values[second]));
+      if (recoveryAxes.length != 0) {
+        if (recoveryAxes.length != 3
+            || Arrays.stream(recoveryAxes).distinct().count() != 3
+            || Arrays.stream(recoveryAxes).anyMatch(axis -> axis < 0 || axis >= values.length))
+          throw new IllegalArgumentException(
+              "Recovery interactions require three valid distinct axes");
+        var interaction = new ArrayList<Object>();
+        for (int axis : recoveryAxes) {
+          interaction.add(axis);
+          interaction.add(values[axis]);
+        }
+        pairs.add(interaction);
+      }
       coverage.add(pairs);
       remaining.addAll(pairs);
     }

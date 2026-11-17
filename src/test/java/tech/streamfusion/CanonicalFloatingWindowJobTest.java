@@ -28,7 +28,6 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
 
 class CanonicalFloatingWindowJobTest {
   @TempDir Path directory;
@@ -54,7 +53,9 @@ class CanonicalFloatingWindowJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("cases")
+  @CanonicalCases(
+      value = "cases",
+      recoveryAxes = {2, 4, 5})
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void nullableFloatingBuffersRetainRawBitsAndCommittedResults(
       boolean single, String shape, String mode, boolean ordinary, boolean first, String backend)

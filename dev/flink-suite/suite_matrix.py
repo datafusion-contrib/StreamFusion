@@ -1,4 +1,4 @@
-"""Group short connector suites without changing the selected upstream test corpus."""
+"""Schedule independent suites without changing the selected upstream test corpus."""
 
 import json
 import os
@@ -18,8 +18,10 @@ def matrix(inventory=False, scope="all", line=None):
         if not inventory or scope in ("all", "runtime"):
             groups.extend((f"runtime-{shard}", "runtime", str(shard)) for shard in range(1, 5))
         if not inventory or scope in ("all", "connectors"):
-            connectors = "formats parquet orc kafka" + (" delta iceberg" if line == "2.2" else "")
-            groups.extend((("connectors", connectors, ""), ("paimon", "paimon", "")))
+            connectors = ["formats", "parquet", "orc", "kafka", "paimon"]
+            if line == "2.2":
+                connectors.extend(("delta", "iceberg"))
+            groups.extend((suite, suite, "") for suite in connectors)
         if not inventory or scope == "all":
             groups.append(("state", "state", ""))
         for label, suites, shard in groups:

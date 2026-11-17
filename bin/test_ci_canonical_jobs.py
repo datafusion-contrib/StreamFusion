@@ -1,6 +1,7 @@
 """Keep canonical lane failures and complete selections visible to the merge gate."""
 
 import json
+import hashlib
 import os
 from pathlib import Path
 import subprocess
@@ -13,6 +14,31 @@ import ci_canonical_jobs as jobs
 
 
 class CanonicalJobsTest(unittest.TestCase):
+    def test_ci_cli_requires_an_inventory_before_starting_maven(self):
+        result = subprocess.run([sys.executable, str(Path(jobs.__file__)),
+            '--includes', 'unused', '--profiles', 'canonical-kafka', '--line', '2.2'],
+            capture_output=True, text=True)
+        self.assertEqual(2, result.returncode)
+        self.assertIn('--inventory', result.stderr)
+
+    def test_successful_worker_exit_codes_cannot_hide_missing_test_reports(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            includes, names, environment = self.fixture(root)
+            inventory = root / 'inventory.json'
+            inventory.write_text(json.dumps(dict(schema_version=1, line='2.2', jdk=17,
+                full_cases=4, representative_cases=4,
+                classes={name.replace('/', '.'): dict(abstract=False, full=1, representative=1,
+                    methods={'checked': dict(kind='test', full=1, representative=1)}) for name in names})))
+            selection = json.loads(includes.with_suffix('.json').read_text())
+            selection.update(coverage='representative',
+                             coverage_inventory_sha256=hashlib.sha256(inventory.read_bytes()).hexdigest())
+            includes.with_suffix('.json').write_text(json.dumps(selection))
+            with patch.dict(os.environ, environment), self.assertRaisesRegex(ValueError, 'Incomplete canonical outcomes'):
+                jobs.run(root, includes, 'canonical-kafka', '2.2', 4, '-Xmx1g',
+                         inventory=inventory, coverage='representative')
+            self.assertEqual(4, len(list(root.glob('*.done'))))
+
     def fixture(self, root):
         names = [f"tech/streamfusion/FixtureWorker{i}JobTest" for i in range(4)]
         includes = root / "includes.txt"

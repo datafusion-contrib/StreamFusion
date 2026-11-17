@@ -11,7 +11,6 @@ import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
 
 class CanonicalWindowJoinJobTest {
   @TempDir(cleanup = CleanupMode.ON_SUCCESS)
@@ -46,7 +45,7 @@ class CanonicalWindowJoinJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("cases")
+  @CanonicalCases("cases")
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void pendingWindowJoinsContinueAcrossCleanProcesses(
       String kind, String shape, boolean keyless, boolean nativeFirst, String backend)
@@ -55,7 +54,7 @@ class CanonicalWindowJoinJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("handoffCases")
+  @CanonicalCases("handoffCases")
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void pendingWindowJoinsReexportWithoutNewInput(boolean nativeFirst, String backend)
       throws Exception {
@@ -70,7 +69,7 @@ class CanonicalWindowJoinJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("handoffCases")
+  @CanonicalCases("handoffCases")
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void actualWindowJoinKeysRescaleThroughOneThreeAndTwoTasks(boolean nativeFirst, String backend)
       throws Exception {

@@ -42,7 +42,9 @@ class CanonicalGroupRowKeyJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("cases")
+  @CanonicalCases(
+      value = "cases",
+      recoveryAxes = {2, 4, 5})
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void binaryGroupingKeysRetainAccumulatorsViewsAndCommittedEffects(
       String variant, boolean nested, String mode, boolean ordinary, boolean first, String backend)

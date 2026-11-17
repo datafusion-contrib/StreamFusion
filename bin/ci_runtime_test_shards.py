@@ -7,6 +7,8 @@ import json
 import math
 from pathlib import Path
 
+from ci_canonical_coverage import costs as coverage_costs, load_inventory
+
 
 DEFAULT_INCLUDES = ("Test*", "*Test", "*Tests", "*TestCase")
 AUDIT_CLASSES = {
@@ -104,10 +106,19 @@ def partition(classes, count, suite="all", durations=None, line=None):
     return [sorted(shard) for shard in shards]
 
 
-def write_selection(classes, count, index, output, suite="all", line=None):
+def write_selection(classes, count, index, output, suite="all", line=None,
+                    inventory=None, coverage="full"):
     if index not in range(1, count + 1):
         raise ValueError("Shard index must be between 1 and the shard count")
-    shards = partition(classes, count, suite, line=line)
+    durations = load_durations(line)
+    if inventory:
+        data = load_inventory(inventory)
+        if suite != "canonical" or data["line"] != line:
+            raise ValueError("Coverage inventory does not match the selected canonical line")
+        if set(data["classes"]) != {name.replace("/", ".") for name in candidates_for_suite(classes, suite)}:
+            raise ValueError("Coverage inventory differs from the compiled canonical classes")
+        durations = coverage_costs(durations, data, coverage)
+    shards = partition(classes, count, suite, durations=durations, line=line)
     output.write_text("".join(name + ".java\n" for name in shards[index - 1]))
     manifest = {"shard": index, "count": count, "suite": suite, "flink_line": line,
                 "classes": shards[index - 1],
@@ -116,6 +127,9 @@ def write_selection(classes, count, index, output, suite="all", line=None):
                 "inventory_sha256": hashlib.sha256(
                     json.dumps(sorted(name for shard in shards for name in shard)).encode()).hexdigest(),
                 "shard_sizes": list(map(len, shards))}
+    if inventory:
+        manifest.update(coverage=coverage,
+                        coverage_inventory_sha256=hashlib.sha256(inventory.read_bytes()).hexdigest())
     output.with_suffix(".json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(f"Runtime shard {index}/{count}: {len(shards[index - 1])} classes; "
           f"complete partition sizes: {manifest['shard_sizes']}")
@@ -129,9 +143,12 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--suite", choices=("all", "runtime", "canonical"), default="all")
     parser.add_argument("--line", choices=("1.18", "2.2"), help="Use this Flink line's recorded costs")
+    parser.add_argument("--inventory", type=Path)
+    parser.add_argument("--coverage", choices=("full", "representative"), default="full")
     args = parser.parse_args()
     try:
-        write_selection(args.classes, args.count, args.index, args.output, args.suite, args.line)
+        write_selection(args.classes, args.count, args.index, args.output, args.suite, args.line,
+                        args.inventory, args.coverage)
     except (OSError, ValueError) as error:
         parser.exit(1, f"Runtime test partition failed: {error}\n")
 

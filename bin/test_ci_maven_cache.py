@@ -17,6 +17,50 @@ import ci_maven_cache as cache
 
 
 class MavenCacheTest(unittest.TestCase):
+    def test_mediated_graph_fills_missing_winners_and_classified_artifacts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repository = root / 'm2'
+            graph = root / 'target/ci-maven-graph.json'
+            graph.parent.mkdir()
+            (repository / 'test/parent/1').mkdir(parents=True)
+            (repository / 'test/parent/1/parent-1.jar').touch()
+            winner = {'groupId': 'test', 'artifactId': 'winner', 'version': '2', 'type': 'jar'}
+            fixture = {'groupId': 'test', 'artifactId': 'fixture', 'version': '1', 'type': 'test-jar'}
+            tree = {'groupId': 'tech.streamfusion', 'artifactId': 'reactor', 'version': '1',
+                    'type': 'jar', 'children': [
+                        {'groupId': 'test', 'artifactId': 'parent', 'version': '1', 'type': 'jar',
+                         'children': [winner, fixture]}, winner]}
+            calls = []
+
+            def run(command, **kwargs):
+                calls.append(command)
+                if '--graph' in command:
+                    graph.write_text(json.dumps(tree))
+                else:
+                    for relative in ('test/fixture/1/fixture-1-tests.jar', 'test/winner/2/winner-2.jar'):
+                        path = repository / relative
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        path.touch()
+                return subprocess.CompletedProcess(command, 0)
+
+            with patch.object(cache, 'ROOT', root), patch.object(cache.subprocess, 'run', run):
+                cache.complete_graph(repository, ['--profile', 'connector'])
+            self.assertEqual(2, len(calls))
+            self.assertIn('--graph', calls[0])
+            self.assertEqual(['--artifact', 'test:fixture:1:jar:tests', '--artifact', 'test:winner:2:jar'],
+                             calls[1][calls[1].index('--artifact'):])
+            self.assertFalse(graph.exists())
+
+    def test_missing_mediated_graph_cannot_publish_completion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch.object(cache, 'ROOT', root), patch.object(cache, 'recipes', return_value=[[]]), \
+                    patch.object(cache.subprocess, 'run'):
+                with self.assertRaisesRegex(ValueError, 'no external dependency graph'):
+                    cache.prepare(root / 'm2', 'key', '17')
+            self.assertFalse((root / 'm2' / cache.MARKER).exists())
+
     def test_failed_preparation_invalidates_completion_marker(self):
         with tempfile.TemporaryDirectory() as directory:
             repository = Path(directory)

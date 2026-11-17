@@ -29,7 +29,6 @@ import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
@@ -102,7 +101,9 @@ class CanonicalKafkaSinkJobTest {
   }
 
   @ParameterizedTest(name = "{0},ordinary={1},nativeFirst={2},naming={3}")
-  @MethodSource("cases")
+  @CanonicalCases(
+      value = "cases",
+      recoveryAxes = {0, 2, 3})
   @Timeout(value = 12, unit = TimeUnit.MINUTES)
   void preservesExactlyOnceSinkEffectsAcrossRepeatedCanonicalSwitches(
       String mode, boolean ordinary, boolean nativeFirst, String naming) throws Exception {
@@ -111,7 +112,11 @@ class CanonicalKafkaSinkJobTest {
             Boolean.getBoolean("sf.canonical.kafka.quarantineLegacyTaskFailure"),
             tech.streamfusion.compat.CanonicalTestCompat.flink22(),
             Runtime.version().feature(),
-            getClass().getName(), mode, ordinary, nativeFirst, naming),
+            getClass().getName(),
+            mode,
+            ordinary,
+            nativeFirst,
+            naming),
         KafkaTestQuarantine.REASON);
     int batchRows = mode.equals("full-batch") ? 5 : 3;
     boolean completedRecovery = mode.equals("completion-failure");
@@ -302,7 +307,8 @@ class CanonicalKafkaSinkJobTest {
             : mode.equals("checkpoint")
                 ? List.of("canonical", "middle", "suffix", "completed-return")
                 : mode.equals("no-input")
-                    ? List.of("prefix", "no-input", "return", "middle", "suffix", "completed-return")
+                    ? List.of(
+                        "prefix", "no-input", "return", "middle", "suffix", "completed-return")
                     : List.of("prefix", "middle", "suffix", "completed-return")) {
       var inventory =
           Files.readAllLines(root.resolve(stage + "-inventory.tsv")).stream()
@@ -404,7 +410,8 @@ class CanonicalKafkaSinkJobTest {
               .toString(),
           writerState.get(0)[6],
           "Saved transaction ownership must match the released rescaling contract");
-      int pendingTransactions = inventory.stream().mapToInt(cells -> Integer.parseInt(cells[7])).sum();
+      int pendingTransactions =
+          inventory.stream().mapToInt(cells -> Integer.parseInt(cells[7])).sum();
       if (incoming > 0 && pendingTransactions == 0)
         assertEquals(
             Integer.toString(limit),

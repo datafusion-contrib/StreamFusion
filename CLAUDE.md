@@ -23,6 +23,15 @@ Keep correctness/recovery tests and plan-only SQL coverage in CI. A Maven `bench
 profile selects optimized libraries and does not itself authorize benchmark execution.
 Explicitly requested, timeboxed profiling of CI startup/fixture overhead remains diagnostic work.
 
+Routine canonical savepoint CI uses the representative coverage policy across both Flink lines
+and JDKs. Keep every concrete fixture and test method, every valid option pair, and the annotated
+recovery-mode/engine/backend or transaction-naming interactions. Do not replace this with a few
+handpicked smoke classes or mark unselected cases as successful/skipped. Require the generated
+coverage inventory and per-invocation outcome audit. The exhaustive matrix is an explicit release
+or compatibility investigation (`ci-campaign.py --canonical-coverage full`), not an extra default
+qualification for each agent edit. Connector and format suites have independent matrix entries
+with their actual supported versions; reuse shared preparation and bound competing fan-out.
+
 Full CI is final qualification, never an agent's development loop. Do not dispatch it while
 implementation, active investigation, benchmarks, required documentation, or known actionable
 fixes remain.

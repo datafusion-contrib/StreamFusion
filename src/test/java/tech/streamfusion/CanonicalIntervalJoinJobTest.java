@@ -9,7 +9,6 @@ import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
 
 class CanonicalIntervalJoinJobTest {
   @TempDir(cleanup = CleanupMode.ON_SUCCESS)
@@ -47,7 +46,7 @@ class CanonicalIntervalJoinJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("cases")
+  @CanonicalCases("cases")
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void cachedRowsContinueAcrossCleanEngineProcesses(
       String kind, boolean nativeFirst, String backend, boolean processingTime) throws Exception {
@@ -55,7 +54,7 @@ class CanonicalIntervalJoinJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("handoffs")
+  @CanonicalCases("handoffs")
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void cachesReexportWithoutNewInput(boolean nativeFirst, String backend, boolean processingTime)
       throws Exception {
@@ -63,7 +62,7 @@ class CanonicalIntervalJoinJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("checkpoints")
+  @CanonicalCases("checkpoints")
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void nativeCheckpointsResumeBeforeCanonicalSwitch(String backend, boolean processingTime)
       throws Exception {
@@ -71,7 +70,7 @@ class CanonicalIntervalJoinJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("handoffs")
+  @CanonicalCases("handoffs")
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void actualJoinKeysRescaleThroughOneThreeAndTwoTasks(
       boolean nativeFirst, String backend, boolean processingTime) throws Exception {
@@ -79,7 +78,7 @@ class CanonicalIntervalJoinJobTest {
   }
 
   @ParameterizedTest
-  @MethodSource("cases")
+  @CanonicalCases("cases")
   @Timeout(value = 8, unit = TimeUnit.MINUTES)
   void residualPredicatesRetainTheirLogicalInputPositions(
       String kind, boolean nativeFirst, String backend, boolean processingTime) throws Exception {
