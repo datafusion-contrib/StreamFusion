@@ -13,6 +13,7 @@ streamfusion_format_support::format_jni_facade!(
     Java_tech_streamfusion_format_avro_NativeAvroFormat_isLoaded,
     Java_tech_streamfusion_format_avro_NativeAvroFormat_nativeBuildVersion,
     Java_tech_streamfusion_format_avro_NativeAvroFormat_decodeInto,
+    Java_tech_streamfusion_format_avro_NativeAvroFormat_decodeRecordsInto,
     Java_tech_streamfusion_format_avro_NativeAvroFormat_closeDecoder
 );
 mod avro;

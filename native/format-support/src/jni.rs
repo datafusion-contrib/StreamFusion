@@ -3,6 +3,52 @@ use crate::*;
 pub type DecoderFactory =
     fn(i32, SchemaRef, &str, &str, i32, bool, &FormatOptions) -> MessageDecoder;
 
+/// Builds a decoder for a table that may read Kafka metadata. `value` builds the value decoder
+/// from a schema and option lines; when the options read metadata, it sees the output schema
+/// without the metadata columns (and the options without the metadata line), and a composer
+/// places its columns and the gathered metadata into the output. A CDC value decode's trailing
+/// row-kind column stays last.
+pub fn compose_metadata(
+    format: i32,
+    output_schema: SchemaRef,
+    format_options: &str,
+    value: impl FnOnce(SchemaRef, &str) -> MessageDecoder,
+) -> MessageDecoder {
+    let metadata = parse_format_options(format_options).metadata;
+    if metadata.is_empty() {
+        return value(output_schema, format_options);
+    }
+    let value_options: String = format_options
+        .lines()
+        .filter(|line| !line.is_empty() && !line.starts_with("metadata."))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    let mut value_positions: Vec<usize> = (0..output_schema.fields().len())
+        .filter(|position| !metadata.iter().any(|(m, _)| m == position))
+        .collect();
+    let value_schema: SchemaRef = Arc::new(Schema::new(
+        value_positions
+            .iter()
+            .map(|position| output_schema.field(*position).clone())
+            .collect::<Vec<_>>(),
+    ));
+    let value = value(value_schema, &value_options);
+    let mut output_fields: Vec<FieldRef> = output_schema.fields().iter().cloned().collect();
+    if (FORMAT_DEBEZIUM_JSON..=FORMAT_DEBEZIUM_AVRO_CONFLUENT).contains(&format) {
+        value_positions.push(output_fields.len());
+        output_fields.push(Arc::new(Field::new(ROW_KIND_COLUMN, DataType::Int8, false)));
+    }
+    MessageDecoder {
+        decoder: Box::new(MetadataDecoder::new(
+            value,
+            value_positions,
+            metadata,
+            Arc::new(Schema::new(output_fields)),
+        )),
+        skip_errors: false,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn create_message_decoder(
     factory: DecoderFactory,
@@ -14,16 +60,53 @@ pub fn create_message_decoder(
     skip_errors: bool,
     format_options: &str,
 ) -> MessageDecoder {
+    compose_metadata(
+        format,
+        output_schema,
+        format_options,
+        |output_schema, format_options| {
+            create_value_decoder(
+                factory,
+                format,
+                output_schema,
+                avro_schema,
+                reader_avro_schema,
+                schema_id,
+                skip_errors,
+                format_options,
+            )
+        },
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn create_value_decoder(
+    factory: DecoderFactory,
+    format: i32,
+    output_schema: SchemaRef,
+    avro_schema: &str,
+    reader_avro_schema: &str,
+    schema_id: i32,
+    skip_errors: bool,
+    format_options: &str,
+) -> MessageDecoder {
     let options = parse_format_options(format_options);
     if let Some(keyed) = options.keyed.clone() {
-        // A keyed table: build the value decoder against the physical schema projected to the
-        // value positions (the keyed option lines stripped so the recursion is plain), and the
-        // raw key decoder against the key column; the wrapper owns per-record composition.
-        let value_options: String = format_options
+        // A keyed table: the value decoder sees the physical schema projected to the value
+        // positions (the keyed option lines stripped so the recursion is plain), the key decoder
+        // the key fields under the names the key format reads, and the wrapper owns the per-record
+        // composition. The key format is raw or the value's own, so this library decodes both; an
+        // Avro key's schemas ride its option lines.
+        let mut value_options: String = format_options
             .lines()
             .filter(|line| !line.is_empty() && !line.starts_with("keyed."))
             .map(|line| format!("{line}\n"))
             .collect();
+        // A strict JSON value reports the null rows Flink's merge fails on beside a key row (see
+        // KeyedDecoder); one that skips errors drops such an element alone (divergences/21).
+        if format == FORMAT_JSON && !skip_errors {
+            value_options.push_str("json.null-rows=true\n");
+        }
         let value_schema: SchemaRef = Arc::new(Schema::new(
             keyed
                 .value_positions
@@ -41,15 +124,51 @@ pub fn create_message_decoder(
             skip_errors,
             &value_options,
         ));
-        let key_schema: SchemaRef = Arc::new(Schema::new(vec![output_schema
-            .field(keyed.key_position)
-            .clone()]));
+        let key_schema: SchemaRef = Arc::new(Schema::new(
+            keyed
+                .key_positions
+                .iter()
+                .map(|position| {
+                    let field = output_schema.field(*position);
+                    let name = field
+                        .name()
+                        .strip_prefix(keyed.key_prefix.as_str())
+                        .expect("a key field carries the key prefix");
+                    field.as_ref().clone().with_name(name)
+                })
+                .collect::<Vec<_>>(),
+        ));
+        let key_options = parse_format_options(&keyed.key_options);
+        // A JSON key reports the null rows Flink's merge trips over (see KeyedDecoder).
+        let key_option_lines = if keyed.key_format == FORMAT_JSON {
+            format!("{}json.null-rows=true\n", keyed.key_options)
+        } else {
+            keyed.key_options.clone()
+        };
+        let key = Box::new(if keyed.key_format == FORMAT_RAW {
+            MessageDecoder {
+                decoder: Box::new(RawDecoder::new(key_schema, key_options.raw_little_endian)),
+                skip_errors: false,
+            }
+        } else {
+            create_message_decoder(
+                factory,
+                keyed.key_format,
+                key_schema,
+                &key_options.avro_writer_schema,
+                &key_options.avro_reader_schema,
+                0,
+                keyed.key_skip_errors,
+                &key_option_lines,
+            )
+        });
         return MessageDecoder {
             decoder: Box::new(KeyedDecoder {
                 value,
-                key: RawDecoder::new(key_schema, keyed.key_little_endian),
-                key_position: keyed.key_position,
+                key,
+                key_positions: keyed.key_positions,
                 value_positions: keyed.value_positions,
+                value_skips_errors: skip_errors,
                 output: output_schema,
             }),
             skip_errors: false,
@@ -140,6 +259,25 @@ pub fn register_avro_schema<'local>(
     })
 }
 
+/// [`register_avro_schema`] for a keyed table's Confluent-Avro key, whose writer schemas the JVM
+/// fetches through the key format's own registry options.
+pub fn register_avro_key_schema<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    schema_id: jint,
+    schema: JString<'local>,
+) {
+    crate::bridge::jni_guard(env, move |env| {
+        let decoder = unsafe { &mut *(handle as *mut MessageDecoder) };
+        let schema: String = env
+            .get_string(&schema)
+            .expect("failed to read avro schema")
+            .into();
+        decoder.register_key_writer_schema(schema_id as u32, &schema);
+    })
+}
+
 /// Decodes one body batch into a typed batch, exporting it into the consumer-allocated C structs.
 /// A decode failure (bad data outside skip mode) surfaces as a Java `RuntimeException` — the task
 /// fails the way Flink's own deserializer failure does — rather than unwinding across the JNI
@@ -161,6 +299,55 @@ pub fn decode_into<'local>(
     }));
     match decoded {
         Ok(batch) => export_record_batch(batch, out_array_address, out_schema_address),
+        Err(panic) => {
+            let _ = env.throw_new(
+                "java/lang/RuntimeException",
+                format!("native decode failed: {}", panic_message(panic)),
+            );
+        }
+    }
+}
+
+/// Decodes one Kafka split batch of a table that reads connector metadata. The JVM wrote the
+/// values and the requested per-record metadata into one direct buffer, described by `layout`
+/// (see [`RecordSlab`]); `topic` and `partition` are the split's. The buffer stays the JVM's: the
+/// decode reads it during this call, copying the values first when its output may alias them.
+#[allow(clippy::too_many_arguments)]
+pub fn decode_records_into<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    slab_address: jlong,
+    slab_length: jlong,
+    layout: JLongArray<'local>,
+    count: jint,
+    topic: JString<'local>,
+    partition: jint,
+    out_array_address: jlong,
+    out_schema_address: jlong,
+) {
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+    let decoded = catch_unwind(AssertUnwindSafe(|| {
+        let mut regions = [0_i64; LAYOUT_LEN];
+        assert_eq!(
+            env.get_array_length(&layout)
+                .expect("Kafka record layout length") as usize,
+            LAYOUT_LEN,
+            "Kafka record layout shape mismatch"
+        );
+        env.get_long_array_region(&layout, 0, &mut regions)
+            .expect("read Kafka record layout");
+        let topic: String = env.get_string(&topic).expect("Kafka topic").into();
+        let count = usize::try_from(count).expect("negative Kafka record count");
+        let length = usize::try_from(slab_length).expect("negative Kafka record buffer length");
+        let decoder = unsafe { &*(handle as *mut MessageDecoder) };
+        let slab = unsafe { RecordSlab::new(slab_address as usize, length, regions, count) };
+        let input = slab.records(decoder.output_may_alias_input());
+        let batch = decoder.decode_records(&input, &slab.metadata(&topic, partition));
+        export_record_batch(batch, out_array_address, out_schema_address);
+    }));
+    match decoded {
+        Ok(()) => {}
         Err(panic) => {
             let _ = env.throw_new(
                 "java/lang/RuntimeException",

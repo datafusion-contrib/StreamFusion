@@ -1,0 +1,18 @@
+== Abstract Syntax Tree ==
+LogicalAggregate(group=[{0}], records=[COUNT()], amount=[SUM($1)], last_key=[MAX($2)], named=[COUNT($3)])
++- LogicalProject(tenant=[$1], amount=[$3], k=[$0], name=[$2])
+   +- LogicalTableScan(table=[[default_catalog, default_database, cdc]])
+
+== Optimized Physical Plan ==
+GlobalGroupAggregate(groupBy=[tenant], select=[tenant, COUNT(count1$0) AS records, SUM(sum$1) AS amount, MAX(max$2) AS last_key, COUNT(count$3) AS named])
++- Exchange(distribution=[hash[tenant]])
+   +- LocalGroupAggregate(groupBy=[tenant], select=[tenant, COUNT(*) AS count1$0, SUM(amount) AS sum$1, MAX(k) AS max$2, COUNT(name) AS count$3])
+      +- MiniBatchAssigner(interval=[1000ms], mode=[ProcTime])
+         +- TableSourceScan(table=[[default_catalog, default_database, cdc]], fields=[k, tenant, name, amount])
+
+== Optimized Execution Plan ==
+GlobalGroupAggregate(groupBy=[tenant], select=[tenant, COUNT(count1$0) AS records, SUM(sum$1) AS amount, MAX(max$2) AS last_key, COUNT(count$3) AS named])
++- Exchange(distribution=[hash[tenant]])
+   +- LocalGroupAggregate(groupBy=[tenant], select=[tenant, COUNT(*) AS count1$0, SUM(amount) AS sum$1, MAX(k) AS max$2, COUNT(name) AS count$3])
+      +- MiniBatchAssigner(interval=[1000ms], mode=[ProcTime])
+         +- TableSourceScan(table=[[default_catalog, default_database, cdc]], fields=[k, tenant, name, amount])

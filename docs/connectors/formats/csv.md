@@ -25,6 +25,10 @@ allocating a divisor, while retaining Java's scale and supported-integer-range e
 Decode supports BOOLEAN, integer and floating-point types, CHAR/VARCHAR, DATE, TIMESTAMP,
 TIMESTAMP_LTZ, and DECIMAL. It does not admit TIME, binary, or container types.
 
+As a [Kafka key format](../kafka.md#keyed-tables) over a CSV value, `csv` decodes keys with the
+same parsers and its own `key.csv.*` options; a null key yields no key row, so its record emits
+nothing.
+
 | Fallback condition | Why |
 |---|---|
 | `escape-character` | Jackson unescapes an escape character in unquoted fields; csv-core can't. |

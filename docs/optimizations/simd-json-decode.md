@@ -68,3 +68,9 @@ production JNI benchmark measured 2.226 million rows/s (449 ns/row), **1.45x** F
 decoder. A follow-up profile confirmed that the former per-row binary/time null appenders fell from
 7.8% of decode samples combined to bulk string/timestamp null appends at 2.1% combined; field
 matching, compatibility checking, and simd-json string parsing are now the main native costs.
+
+Maxwell and Canal reconstruct UPDATE_BEFORE from which columns a message's `old` image names, a
+second walk over each message. Only updates read that presence, so the walk now parses update
+messages alone, into a reused tape. On the Canal Criterion cases (8,192 messages as Canal writes
+them, envelope fields included), a batch of inserts fell from 8.70 ms to 5.01 ms (**42% less
+time**) and a batch of updates from 10.14 ms to 9.97 ms (**1.6% less time**).

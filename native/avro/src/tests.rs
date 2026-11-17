@@ -431,3 +431,203 @@ fn debezium_avro_unknown_op_fails() {
     let unknown = dbz_message(5, None, Some(dbz_image(1, "a", 1_000)), "t");
     dbz_decoder().decode(&bodies(vec![Some(&unknown)]));
 }
+
+fn keyed_records(keys: Vec<Option<&[u8]>>, bodies: Vec<Option<&[u8]>>) -> RecordBatch {
+    let keys: ArrayRef = Arc::new(BinaryArray::from(keys));
+    let bodies: ArrayRef = Arc::new(BinaryArray::from(bodies));
+    RecordBatch::try_new(
+        Arc::new(Schema::new(vec![
+            Field::new("key", DataType::Binary, true),
+            Field::new("body", DataType::Binary, true),
+        ])),
+        vec![keys, bodies],
+    )
+    .unwrap()
+}
+
+fn confluent_frame(schema_id: u32, datum: Vec<u8>) -> Vec<u8> {
+    let mut v = vec![0x00];
+    v.extend_from_slice(&schema_id.to_be_bytes());
+    v.extend(datum);
+    v
+}
+
+// A keyed table whose key and value are both Confluent-framed Avro: each side resolves its frames
+// against its own writer store — key schemas arrive through the key route, so one id can name a
+// different schema on each side, as with two registries — and the rows pair up per record. A null
+// key yields no key row, so its record emits nothing.
+#[test]
+fn keyed_confluent_avro_keys_resolve_their_own_writer_schemas() {
+    let physical = Arc::new(Schema::new(vec![
+        Field::new("k_id", DataType::Int64, true),
+        Field::new("name", DataType::Utf8, true),
+    ]));
+    let key_reader = r#"{"type":"record","name":"record","namespace":"org.apache.flink.avro.generated","fields":[{"name":"id","type":"long"}]}"#;
+    let value_reader = r#"{"type":"record","name":"record","namespace":"org.apache.flink.avro.generated","fields":[{"name":"name","type":"string"}]}"#;
+    let mut decoder = new_decoder(
+        FORMAT_AVRO_CONFLUENT,
+        physical,
+        "",
+        value_reader,
+        0,
+        false,
+        &format!(
+            "keyed.key-format={FORMAT_AVRO_CONFLUENT}\nkeyed.key-positions=0\n\
+             keyed.value-positions=1\nkeyed.key-prefix=k_\n\
+             keyed.key.avro.reader-schema={key_reader}\n"
+        ),
+    );
+    decoder.register_key_writer_schema(
+        3,
+        r#"{"type":"record","name":"Key","namespace":"com.example","aliases":["org.apache.flink.avro.generated.record"],"fields":[{"name":"id","type":"long"}]}"#,
+    );
+    decoder.register_writer_schema(
+        3,
+        r#"{"type":"record","name":"Value","namespace":"com.example","aliases":["org.apache.flink.avro.generated.record"],"fields":[{"name":"name","type":"string"}]}"#,
+    );
+    let (key, a, b) = (
+        confluent_frame(3, dbz_zigzag(7)),
+        confluent_frame(3, dbz_string("a")),
+        confluent_frame(3, dbz_string("b")),
+    );
+
+    let out = decoder.decode(&keyed_records(
+        vec![Some(&key), None],
+        vec![Some(&a), Some(&b)],
+    ));
+
+    assert_eq!(values(&out, 0), vec![7]);
+    let names = out
+        .column(1)
+        .as_any()
+        .downcast_ref::<arrow::array::StringArray>()
+        .unwrap();
+    assert_eq!(names.value(0), "a");
+}
+
+// A bare `avro` key decodes against the writer schema derived from the key's row type, which rides
+// the key's option lines; a raw key beside an Avro value keeps raw's one row per record.
+#[test]
+fn keyed_bare_avro_and_raw_keys_compose_with_avro_values() {
+    let physical = Arc::new(Schema::new(vec![
+        Field::new("k", DataType::Int64, true),
+        Field::new("name", DataType::Utf8, true),
+    ]));
+    let value_writer = r#"{"type":"record","name":"record","namespace":"org.apache.flink.avro.generated","fields":[{"name":"name","type":"string"}]}"#;
+    let key_writer = r#"{"type":"record","name":"record","namespace":"org.apache.flink.avro.generated","fields":[{"name":"k","type":"long"}]}"#;
+    let avro_keyed = new_decoder(
+        FORMAT_AVRO,
+        physical.clone(),
+        value_writer,
+        "",
+        0,
+        false,
+        &format!(
+            "keyed.key-format={FORMAT_AVRO}\nkeyed.key-positions=0\nkeyed.value-positions=1\n\
+             keyed.key.avro.writer-schema={key_writer}\n"
+        ),
+    );
+    let raw_keyed = new_decoder(
+        FORMAT_AVRO,
+        physical,
+        value_writer,
+        "",
+        0,
+        false,
+        &format!("keyed.key-format={FORMAT_RAW}\nkeyed.key-positions=0\nkeyed.value-positions=1\n"),
+    );
+    let (avro_key, raw_key, value) = (dbz_zigzag(9), 9_i64.to_be_bytes(), dbz_string("a"));
+
+    let avro_out = avro_keyed.decode(&keyed_records(vec![Some(&avro_key)], vec![Some(&value)]));
+    let raw_out = raw_keyed.decode(&keyed_records(
+        vec![Some(raw_key.as_slice()), None],
+        vec![Some(&value), Some(&value)],
+    ));
+
+    assert_eq!(values(&avro_out, 0), vec![9]);
+    let raw_keys = raw_out
+        .column(0)
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .unwrap();
+    assert_eq!(raw_keys.iter().collect::<Vec<_>>(), vec![Some(9), None]);
+}
+
+// Kafka connector metadata composes over Avro values like any other format: a record yields one
+// row, and a tombstone yields none and contributes no metadata.
+#[test]
+fn metadata_follows_avro_records() {
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("name", DataType::Utf8, true),
+        Field::new("off", DataType::Int64, false),
+    ]));
+    let writer = r#"{"type":"record","name":"record","namespace":"org.apache.flink.avro.generated","fields":[{"name":"name","type":"string"}]}"#;
+    let decoder = new_decoder(
+        FORMAT_AVRO,
+        schema,
+        writer,
+        "",
+        0,
+        false,
+        "metadata.columns=1:offset\n",
+    );
+    let (a, b) = (dbz_string("a"), dbz_string("b"));
+    let offsets = [5_i64, 6, 7];
+    let metadata = RecordMetadata {
+        topic: "t",
+        partition: 0,
+        offsets: &offsets,
+        timestamps: &[],
+        timestamp_types: &[],
+        leader_epochs: &[],
+        headers: RecordHeaders::new(&[], &[]),
+    };
+
+    let out = decoder.decode_records(&bodies(vec![Some(&a), None, Some(&b)]), &metadata);
+
+    assert_eq!(values(&out, 1), vec![5, 7]);
+}
+
+// A writer schema without fields encodes every datum in zero bytes; Avro resolution still reads
+// one record per message, filling the reader's fields from their defaults, so each message is one
+// all-null row in its place.
+#[test]
+fn zero_byte_datums_of_a_fieldless_writer_decode_one_row_each() {
+    let reader = r#"{"type":"record","name":"record","namespace":"org.apache.flink.avro.generated","fields":[
+            {"name":"f0","type":["null","boolean"],"default":null}]}"#;
+    let fieldless = r#"{"type":"record","name":"Envelope","namespace":"com.example",
+            "aliases":["org.apache.flink.avro.generated.record"],"fields":[]}"#;
+    let full = r#"{"type":"record","name":"record","namespace":"org.apache.flink.avro.generated",
+            "fields":[{"name":"f0","type":["null","boolean"],"default":null}]}"#;
+    let target: SchemaRef = Arc::new(Schema::new(vec![Field::new("f0", DataType::Boolean, true)]));
+    let mut decoder = new_decoder(FORMAT_AVRO_CONFLUENT, target, "", reader, 0, false, "");
+    decoder.register_writer_schema(7, fieldless);
+    decoder.register_writer_schema(9, full);
+    // union branch 1 (boolean), then true
+    let (m1, m2, m3, m4) = (
+        confluent_frame(7, vec![]),
+        confluent_frame(9, vec![0x02, 0x01]),
+        confluent_frame(7, vec![]),
+        confluent_frame(7, vec![]),
+    );
+    let body = bodies(vec![Some(&m1), Some(&m2), Some(&m3), Some(&m4)]);
+    // The batch ends on a zero-byte datum whose writer switch waits behind decoded rows.
+    let switching = bodies(vec![Some(&m2), Some(&m3)]);
+
+    let (out, sources) = decoder.decode_traced(&body);
+    let (switched, switched_sources) = decoder.decode_traced(&switching);
+
+    let values = |batch: &RecordBatch| {
+        batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<arrow::array::BooleanArray>()
+            .unwrap()
+            .iter()
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(values(&out), vec![None, Some(true), None, None]);
+    assert_eq!(sources, Sources::Identity);
+    assert_eq!(values(&switched), vec![Some(true), None]);
+    assert_eq!(switched_sources, Sources::Identity);
+}

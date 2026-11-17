@@ -82,13 +82,19 @@ impl Cursor<'_> {
 
 /// Decodes one message Jackson's way and rewrites it into sanitized single-row documents for the
 /// fast path to append (possibly none — every skip-mode drop returns an empty vec). Strict-mode
-/// failures panic, like the appenders they mirror.
-pub(crate) fn rewrite_message(bytes: &[u8], fields: &Fields, env: JsonEnv) -> Vec<String> {
+/// failures panic, like the appenders they mirror. With `null_rows`, a fanned-out element Flink
+/// collects as a null row is reported by how many rows came before it (see `NullRows`).
+pub(crate) fn rewrite_message(
+    bytes: &[u8],
+    fields: &Fields,
+    env: JsonEnv,
+    null_rows: bool,
+) -> (Vec<String>, Option<usize>) {
     let tokens = match tokenize(bytes) {
         Ok(tokens) => tokens,
         Err(reason) => {
             assert!(env.lenient, "failed to decode JSON record: {reason}");
-            return Vec::new();
+            return (Vec::new(), None);
         }
     };
     let mut cursor = Cursor {
@@ -103,14 +109,16 @@ pub(crate) fn rewrite_message(bytes: &[u8], fields: &Fields, env: JsonEnv) -> Ve
                 env.lenient,
                 "failed to decode JSON record: no content to map due to end-of-input"
             );
-            return Vec::new();
+            return (Vec::new(), None);
         }
-        Some(Token::StartObject) => row_object(&mut cursor, fields, env).map(|row| vec![row]),
+        Some(Token::StartObject) => {
+            row_object(&mut cursor, fields, env).map(|row| (vec![row], None))
+        }
         // Only the plain `json` format (top-level arrays fan out) retries — see the decode loop.
-        Some(Token::StartArray) => fan_out(&mut cursor, fields, env),
+        Some(Token::StartArray) => fan_out(&mut cursor, fields, env, null_rows),
         Some(_) => {
             assert!(env.lenient, "JSON body was not a single object");
-            return Vec::new();
+            return (Vec::new(), None);
         }
     };
     match rows {
@@ -121,7 +129,7 @@ pub(crate) fn rewrite_message(bytes: &[u8], fields: &Fields, env: JsonEnv) -> Ve
                 "failed to decode JSON record: the converter walk ran past end-of-input \
                  (Flink's parser loop would spin forever here) — divergences/21"
             );
-            Vec::new()
+            (Vec::new(), None)
         }
     }
 }
@@ -129,14 +137,24 @@ pub(crate) fn rewrite_message(bytes: &[u8], fields: &Fields, env: JsonEnv) -> Ve
 /// `processArray`: one row per element, converted from wherever the cursor stands — a failing
 /// element fails the whole message in strict mode; in skip mode its null row drops alone and the
 /// walk continues from the element's own tokens (a container element drifts into its subtree).
-fn fan_out(cursor: &mut Cursor, fields: &Fields, env: JsonEnv) -> Walk<Vec<String>> {
+/// With `null_rows`, the first `null` element is reported by how many rows came before it.
+fn fan_out(
+    cursor: &mut Cursor,
+    fields: &Fields,
+    env: JsonEnv,
+    null_rows: bool,
+) -> Walk<(Vec<String>, Option<usize>)> {
     let mut rows = Vec::new();
+    let mut first_null = None;
     loop {
         cursor.advance();
         match cursor.current() {
             None => return Err(WalkSpins),
-            Some(Token::EndArray) => return Ok(rows),
+            Some(Token::EndArray) => return Ok((rows, first_null)),
             Some(Token::StartObject) => rows.push(row_object(cursor, fields, env)?),
+            Some(Token::Null) if null_rows => {
+                first_null.get_or_insert(rows.len());
+            }
             Some(other) => {
                 assert!(
                     env.lenient,
@@ -529,6 +547,52 @@ pub(crate) fn tokenize(bytes: &[u8]) -> Result<Vec<Token>, String> {
     let mut tokens = Vec::new();
     reader.read_value(&mut tokens, 0)?;
     Ok(tokens)
+}
+
+/// Re-spells a token stream as a document simd-json parses: the same containers and field names,
+/// with every scalar a `null`. Only structure and names survive, which is all a key-presence scan
+/// reads.
+pub(crate) fn skeleton(tokens: &[Token]) -> String {
+    let mut out = String::new();
+    let mut first = vec![true];
+    let mut after_name = false;
+    for token in tokens {
+        if !after_name && !matches!(token, Token::EndObject | Token::EndArray) {
+            let first = first.last_mut().expect("an open container");
+            if !*first {
+                out.push(',');
+            }
+            *first = false;
+        }
+        after_name = false;
+        match token {
+            Token::StartObject => {
+                out.push('{');
+                first.push(true);
+            }
+            Token::StartArray => {
+                out.push('[');
+                first.push(true);
+            }
+            Token::EndObject => {
+                out.push('}');
+                first.pop();
+            }
+            Token::EndArray => {
+                out.push(']');
+                first.pop();
+            }
+            Token::FieldName(name) => {
+                write_json_string(&mut out, name);
+                out.push(':');
+                after_name = true;
+            }
+            Token::Str(_) | Token::Number { .. } | Token::True | Token::False | Token::Null => {
+                out.push_str("null")
+            }
+        }
+    }
+    out
 }
 
 struct Reader<'a> {

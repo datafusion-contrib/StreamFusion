@@ -1,0 +1,24 @@
+== Abstract Syntax Tree ==
+LogicalAggregate(group=[{0}], records=[COUNT()], amount=[SUM($1)], last_id=[MAX($2)], named=[COUNT($3)])
++- LogicalProject(k_tenant=[$0], amount=[$3], k_id=[$2], name=[$1])
+   +- LogicalTableScan(table=[[default_catalog, default_database, cdc]])
+
+== Optimized Physical Plan ==
+NativeColumnarGroupAggregate(reuseBarrier=[719])
++- NativeColumnarExchange(reuseBarrier=[718])
+   +- NativeColumnarLocalGroupAggregate(reuseBarrier=[717])
+      +- NativeMiniBatchAssigner(reuseBarrier=[716])
+         +- RowDataToArrow(reuseBarrier=[715])
+            +- TableSourceScan(table=[[default_catalog, default_database, cdc]], fields=[k_tenant, name, k_id, amount])
+
+== Optimized Execution Plan ==
+NativeColumnarGroupAggregate
++- NativeColumnarExchange
+   +- NativeColumnarLocalGroupAggregate
+      +- NativeMiniBatchAssigner
+         +- RowDataToArrow(fields=[4])
+            +- TableSourceScan(table=[[default_catalog, default_database, cdc]], fields=[k_tenant, name, k_id, amount])
+
+== Native acceleration (StreamFusion) ==
+3 operator(s) ran natively.
+No operators fell back to Flink.

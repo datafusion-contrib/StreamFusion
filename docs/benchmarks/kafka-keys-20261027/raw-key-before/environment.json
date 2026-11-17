@@ -1,0 +1,22 @@
+{
+  "host": {
+    "cpu": "Apple M1 Max",
+    "cores": 10,
+    "memory_bytes": 34359738368,
+    "os": "macOS-26.5.2-arm64-arm-64bit-Mach-O"
+  },
+  "java": "openjdk version \"17.0.20\" 2026-07-21",
+  "rustc": "rustc 1.94.0 (4a4ef493e 2026-03-02)",
+  "kafka_broker": "Apache Kafka 4.2.2 (KRaft, single node, host process; release tarball SHA-512 verified)",
+  "load_average_at_start": "{ 10.63 10.98 9.76 }",
+  "notes": "Shared developer machine: the VS Code renderer and its Java and C++ language servers each used about one core throughout; routes rotate order every run so that load widens spreads rather than biasing one route.",
+  "measured_code": {
+    "native": "8cfec4731ae0d692ed4cdca596dba4e0d41cce4a",
+    "src/main": "0d17dab3330e5d5ecbc00218239dc44fcbdb0310",
+    "bin": "9c21d2e25f81f0f705b4014eeb74f9790f099297",
+    "streamfusion-runtime": "593a90985ba2c2fc3519451f1d158b387103fa71",
+    "pom.xml": "6038ecdca51e5182d01a50b891d3a6c79ed1449a",
+    "src/test/java/tech/streamfusion/kafka/KafkaSourceBenchmark.java": "ddc6022e26543eb7379a9ae3700c5940ae3e53c9"
+  },
+  "measured_code_note": "git tree/blob ids of the measured build: the production code of the series before keys decoded in batches (the commit counting native Kafka decode work, whose objects these are), run with the keyed series' benchmark driver, which gained the raw-keyed workload in the series' first commit; it is the driver blob the carrying commit holds."
+}

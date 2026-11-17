@@ -25,6 +25,13 @@ A secured registry is native for two header-only auth schemes, sent on every fet
 
 Both send the Confluent client's exact Authorization header.
 
+Kafka [connector metadata](../kafka.md#connector-metadata) composes natively. A
+[keyed table](../kafka.md#keyed-tables) decodes a `raw` or `avro-confluent` key beside the value;
+Confluent-framed keys fetch their writer schemas through the key format's own `key.avro-confluent.*`
+registry options, resolve them against the reader schema of the key fields, and keep a writer store
+separate from the values', so the key and value registries may differ. The key's registry options
+gate exactly like the value's.
+
 Row-type gates, `TIME(0)`, and `BINARY(n)` are identical to bare Avro decode. Unlike bare Avro,
 `avro-confluent` has neither an `avro.encoding` option nor `avro.timestamp_mapping.legacy`: Flink
 hard-wires it to binary encoding and the legacy timestamp mapping, an asymmetry the native gate
@@ -37,7 +44,7 @@ mirrors exactly.
 | A row type Flink's own avro-confluent factory rejects at job submission (RAW and other unmapped types, TIMESTAMP_LTZ under the always-active legacy mapping, TIMESTAMP/TIME precision beyond the mapping's limit, a non-string map key) | Declined at plan time, reproducing Flink's own submission failure — the same derivation as bare [Avro](avro.md#decode-fallback-conditions). |
 | `TIME(0)` column | Same second-vs-millisecond gap as bare Avro. |
 | `BINARY(n)` column | Same fixed-size boundary gap as bare Avro (decode only — encode is fine, below). |
-| An explicit reader `schema` option | Not translated to the native registry client. |
+| An explicit reader `schema` option (or its fallback key `schema-registry.schema`), for a value or a key | Not translated to the native registry client. |
 | Any `ssl.*` registry option | Not translated. |
 | Pass-through client `properties` | Not translated. |
 | A credentials source beyond `USER_INFO`/`STATIC_TOKEN` (`URL`, `SASL_INHERIT`, OAuth/`CUSTOM` bearer) | Needs the registry URL's userinfo, the Kafka JAAS login, or a token flow — not a header the format options alone supply. |
@@ -131,5 +138,4 @@ BINARY(n) and the other legacy-mapping exclusions apply to the physical columns.
 |---|---|
 | Row-type and registry-option gates | Same as plain `avro-confluent` — see the tables above. |
 | The `schema-include` envelope wrapper | Not supported. |
-| A metadata or computed column | Not supported on the CDC decode path. |
-| Nested Maxwell/Canal columns, Canal's `database.include`/`table.include` filters | Gaps in the sibling JSON dialects, not this format — see [CDC JSON](cdc-json.md). |
+| A metadata or computed column | The decoder doesn't compose [connector metadata](../kafka.md#connector-metadata) yet, and the CDC decode path takes no computed columns. |

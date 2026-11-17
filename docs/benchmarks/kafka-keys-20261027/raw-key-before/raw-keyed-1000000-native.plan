@@ -1,0 +1,22 @@
+== Abstract Syntax Tree ==
+LogicalAggregate(group=[{0}], records=[COUNT()], amount=[SUM($1)], last_key=[MAX($2)], named=[COUNT($3)])
++- LogicalProject(tenant=[$1], amount=[$3], k=[$0], name=[$2])
+   +- LogicalTableScan(table=[[default_catalog, default_database, cdc]])
+
+== Optimized Physical Plan ==
+NativeColumnarGroupAggregate(reuseBarrier=[14])
++- NativeColumnarExchange(reuseBarrier=[13])
+   +- NativeColumnarLocalGroupAggregate(reuseBarrier=[12])
+      +- NativeMiniBatchAssigner(reuseBarrier=[11])
+         +- NativeKafkaDecode(table=[[default_catalog, default_database, cdc]], fields=[k, tenant, name, amount], topic=[raw-keyed-1000000-mvr2mmou], format=[json], keyFormat=[raw], keyFields=[k], valueFieldsInclude=[EXCEPT_KEY], reuseBarrier=[10])
+
+== Optimized Execution Plan ==
+NativeColumnarGroupAggregate
++- NativeColumnarExchange
+   +- NativeColumnarLocalGroupAggregate
+      +- NativeMiniBatchAssigner
+         +- NativeKafkaDecode(table=[[default_catalog, default_database, cdc]], fields=[k, tenant, name, amount], topic=[raw-keyed-1000000-mvr2mmou], format=[json], keyFormat=[raw], keyFields=[k], valueFieldsInclude=[EXCEPT_KEY])
+
+== Native acceleration (StreamFusion) ==
+4 operator(s) ran natively.
+No operators fell back to Flink.

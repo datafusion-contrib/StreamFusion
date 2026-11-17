@@ -1,0 +1,31 @@
+{
+  "flink": "2.2.1",
+  "connector": "flink-connector-kafka 5.0.0-2.2",
+  "kafka_client": "4.2.0",
+  "profile": "bench (release native build, mimalloc)",
+  "workloads": [
+    "json-keyed",
+    "raw-keyed",
+    "avro-confluent-keyed"
+  ],
+  "records": [
+    1000000,
+    10000000
+  ],
+  "partitions": 4,
+  "parallelism": 4,
+  "warmups": 2,
+  "trials": 6,
+  "routes": [
+    "stock",
+    "previous",
+    "native"
+  ],
+  "mini_batch": {
+    "table.exec.mini-batch.enabled": "true",
+    "table.exec.mini-batch.allow-latency": "1 s",
+    "table.exec.mini-batch.size": "50000"
+  },
+  "timing": "planning and submission through the last collected row; production, plan inspection and output comparison untimed",
+  "query": "SELECT k_tenant, COUNT(*) AS records, SUM(amount) AS amount, MAX(k_id) AS last_id, COUNT(name) AS named FROM cdc GROUP BY k_tenant (json-keyed, avro-confluent-keyed); SELECT tenant, COUNT(*) AS records, SUM(amount) AS amount, MAX(k) AS last_key, COUNT(name) AS named FROM cdc GROUP BY tenant (raw-keyed)"
+}

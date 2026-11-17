@@ -122,6 +122,11 @@ impl AvroDecoder {
     /// body contributes no row — Flink's deserializer returns null for a null Kafka value (a
     /// tombstone), which the collector drops silently.
     pub(crate) fn decode(&self, body: &RecordBatch) -> RecordBatch {
+        self.decode_traced(body).0
+    }
+
+    /// Each message that reaches the decoder is exactly one datum, so one row.
+    pub(crate) fn decode_traced(&self, body: &RecordBatch) -> (RecordBatch, Sources) {
         let column = body
             .column(0)
             .as_any()
@@ -154,6 +159,11 @@ impl AvroDecoder {
         // The last message's skipper, reused while the schema id repeats (the overwhelmingly
         // common shape — a per-message map lookup shows up at these per-message costs).
         let mut cached: Option<(u32, &DatumSkipper)> = None;
+        let mut sources: Vec<u32> = Vec::with_capacity(column.len());
+        // arrow-avro decodes a datum's body only from bytes after its prefix, so a zero-byte datum
+        // (a writer record without fields) decodes when the next message arrives — or, for the
+        // batch's last message, when a lone magic byte follows it.
+        let mut empty_body_pending = false;
         for i in 0..column.len() {
             if !column.is_valid(i) {
                 continue;
@@ -184,6 +194,8 @@ impl AvroDecoder {
             let end = skipper
                 .datum_end(column.value(i), start)
                 .unwrap_or_else(|error| panic!("avro decode failed: {error}"));
+            empty_body_pending = end == start;
+            sources.push(i as u32);
             let bytes = if self.bare {
                 framed.clear();
                 framed.extend_from_slice(&[0x00, 0x00, 0x00, 0x00, 0x00]); // id-0 Confluent header
@@ -211,6 +223,18 @@ impl AvroDecoder {
                 }
             }
         }
+        if empty_body_pending {
+            let decoder = decoder
+                .as_mut()
+                .expect("a decoded message built the decoder");
+            // A writer switch behind decoded rows holds the body back until those rows flush.
+            if decoder.batch_is_full() {
+                if let Some(batch) = decoder.flush().expect("avro flush failed") {
+                    batches.push(batch);
+                }
+            }
+            decoder.decode(&[0x00]).expect("avro decode failed");
+        }
         if let Some(batch) = decoder
             .as_mut()
             .and_then(|d| d.flush().expect("avro flush failed"))
@@ -219,7 +243,7 @@ impl AvroDecoder {
         }
         if self.target.fields().is_empty() {
             // Benchmark-only counting path: no boundary schema, so no reconciliation.
-            return match batches.len() {
+            let batch = match batches.len() {
                 0 => panic!("an all-null avro body batch needs the boundary schema"),
                 1 => batches.into_iter().next().unwrap(),
                 _ => {
@@ -227,6 +251,7 @@ impl AvroDecoder {
                     concat_batches(&schema, &batches).expect("avro batch concat failed")
                 }
             };
+            return (batch, Sources::from_rows(sources, column.len()));
         }
         // Reconcile each flush before concatenating: writer schemas differing mid-batch can flush
         // under reader shapes that differ in field metadata (arrow-avro annotates a defaulted
@@ -234,7 +259,7 @@ impl AvroDecoder {
         let mut reconciled = batches
             .into_iter()
             .map(|batch| reconcile(&self.target, batch));
-        match (reconciled.next(), reconciled.next()) {
+        let batch = match (reconciled.next(), reconciled.next()) {
             (None, _) => RecordBatch::new_empty(self.target.clone()),
             (Some(single), None) => single,
             (Some(first), Some(second)) => {
@@ -242,7 +267,10 @@ impl AvroDecoder {
                     [first, second].into_iter().chain(reconciled).collect();
                 concat_batches(&self.target, &batches).expect("avro batch concat failed")
             }
-        }
+        };
+        // Kafka metadata gathers through these sources, so a lost row must fail rather than shift.
+        assert_eq!(batch.num_rows(), sources.len(), "one row per avro datum");
+        (batch, Sources::from_rows(sources, column.len()))
     }
 }
 

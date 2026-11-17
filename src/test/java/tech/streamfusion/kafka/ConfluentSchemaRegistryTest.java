@@ -217,6 +217,31 @@ class ConfluentSchemaRegistryTest {
     assertNotNull(withUrl("bearer-auth.token", "t"));
   }
 
+  /** A table's explicit reader schema falls back under either of Flink's keys, value or key. */
+  @Test
+  void declinesAnExplicitReaderSchemaUnderEitherSpellingForValuesAndKeys() {
+    Map<String, String> valueSchema =
+        Map.of(
+            "value.format", "avro-confluent",
+            "value.avro-confluent.url", "http://r:8081",
+            "value.avro-confluent.schema-registry.schema", "{\"type\":\"string\"}");
+    Map<String, String> keySchema =
+        Map.of(
+            "key.format", "avro-confluent",
+            "key.avro-confluent.url", "http://r:8081",
+            "key.avro-confluent.schema-registry.schema", "{\"type\":\"string\"}");
+    Map<String, String> keyWithoutSchema =
+        Map.of("key.format", "avro-confluent", "key.avro-confluent.url", "http://r:8081");
+
+    ConfluentSchemaRegistry value = ConfluentSchemaRegistry.fromOptions(valueSchema);
+    ConfluentSchemaRegistry key = ConfluentSchemaRegistry.fromKeyOptions(keySchema);
+    ConfluentSchemaRegistry plainKey = ConfluentSchemaRegistry.fromKeyOptions(keyWithoutSchema);
+
+    assertNull(value);
+    assertNull(key);
+    assertNotNull(plainKey);
+  }
+
   private static ConfluentSchemaRegistry withUrl(String key, String value) {
     return ConfluentSchemaRegistry.fromFormatOptions(Map.of("url", "http://r:8081", key, value));
   }

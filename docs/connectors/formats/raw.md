@@ -36,6 +36,11 @@ Each whole Kafka message becomes the single physical column's value:
   `ignore-parse-errors`.
 - A null message stays a null field.
 
+As a [Kafka key format](../kafka.md#keyed-tables), `raw` decodes the single key field beside any
+natively decoded JSON, CSV, raw, Avro or Avro Confluent value, with its own `key.raw.*` options.
+A null Kafka key stays one row with a NULL key column — the one key format whose null key keeps its
+record.
+
 One deliberate divergence from Flink: a string column fed invalid UTF-8 bytes fails the native
 decode outright, because Arrow strings must be valid UTF-8, where Flink smuggles the bytes through
 unvalidated as `StringData`.

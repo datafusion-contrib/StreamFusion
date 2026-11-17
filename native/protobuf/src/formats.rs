@@ -352,8 +352,15 @@ pub(crate) fn create_protobuf_decoder<'local>(
 }
 
 impl Decoder for ProtobufDecoder {
-    fn decode(&self, body: &RecordBatch) -> RecordBatch {
-        self.decode(body)
+    /// Every message decodes to exactly one row or fails the batch.
+    fn decode_traced(&self, body: &RecordBatch) -> (RecordBatch, Sources) {
+        let batch = self.decode(body);
+        assert_eq!(
+            batch.num_rows(),
+            body.num_rows(),
+            "one protobuf row per message"
+        );
+        (batch, Sources::Identity)
     }
 }
 #[no_mangle]

@@ -6,6 +6,7 @@ import java.util.Map;
 import org.apache.flink.table.catalog.Column;
 import org.apache.flink.table.catalog.ResolvedCatalogBaseTable;
 import org.apache.flink.table.catalog.ResolvedCatalogTable;
+import org.apache.flink.table.catalog.ResolvedSchema;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalTableSourceScan;
 import org.apache.flink.table.planner.plan.schema.TableSourceTable;
 
@@ -31,40 +32,28 @@ final class FilesystemTables {
     }
   }
 
-  /**
-   * Whether every column of the matched scan's table is physical — i.e. there are no metadata or
-   * computed columns. A native value decode produces only the physical columns straight from the
-   * message, so a table that adds metadata/computed columns (e.g. CDC source timestamps) must fall back
-   * to Flink, which fills those columns. Returns false if the schema can't be resolved (fail safe).
-   */
-  static boolean allPhysicalColumns(StreamPhysicalTableSourceScan scan) {
+  /** Whether the table declares no computed column; false if the schema can't be resolved. */
+  static boolean noComputedColumns(StreamPhysicalTableSourceScan scan) {
+    ResolvedSchema schema = resolvedSchema(scan);
+    return schema != null
+        && schema.getColumns().stream()
+            .noneMatch(column -> column instanceof Column.ComputedColumn);
+  }
+
+  /** The matched scan's resolved table schema, or null if it can't be resolved (fail safe). */
+  static ResolvedSchema resolvedSchema(StreamPhysicalTableSourceScan scan) {
     try {
       TableSourceTable table = scan.getTable().unwrap(TableSourceTable.class);
       if (table == null) {
-        return false;
+        return null;
       }
       ResolvedCatalogBaseTable<?> resolved = table.contextResolvedTable().getResolvedTable();
-      if (!(resolved instanceof ResolvedCatalogTable)) {
-        return false;
-      }
-      return ((ResolvedCatalogTable) resolved)
-          .getResolvedSchema().getColumns().stream().allMatch(Column::isPhysical);
+      return resolved instanceof ResolvedCatalogTable
+          ? ((ResolvedCatalogTable) resolved).getResolvedSchema()
+          : null;
     } catch (RuntimeException e) {
-      return false;
+      return null;
     }
-  }
-
-  /**
-   * Whether the scan produces exactly the table's physical columns. A metadata column is part of
-   * the scan's output but is filled by the connector, not decoded from the message value, so a
-   * native value decode must not replace such a scan. Computed columns never appear in the scan's
-   * output (the planner projects them above it), so a computed-rowtime table still passes. Returns
-   * false if the schema can't be resolved (fail safe).
-   */
-  static boolean scanProducesPhysicalColumnsOnly(StreamPhysicalTableSourceScan scan) {
-    org.apache.flink.table.types.logical.RowType physical = physicalRowType(scan);
-    return physical != null
-        && scan.getRowType().getFieldNames().equals(physical.getFieldNames());
   }
 
   /**

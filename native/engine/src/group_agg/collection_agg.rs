@@ -1,6 +1,6 @@
-use super::java_map_order::JavaMapOrder;
 use crate::*;
 use serde::{Deserialize, Serialize};
+use streamfusion_bridge::java_map_order::JavaMapOrder;
 mod elements;
 use elements::{DecimalElement, FloatElement, StringElement, TimestampElement};
 
