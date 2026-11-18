@@ -72,7 +72,6 @@
 
     <!-- Integration tests consume the deployable modules without duplicating their production classes. -->
     <build>
-        <testSourceDirectory>${project.basedir}/../src/test/java</testSourceDirectory>
         <resources combine.self="override">
             <!-- The all-in-one development/test assembly exposes every optional planner provider.
                  Deployable artifacts carry only their own provider file. -->
@@ -90,7 +89,7 @@
         </resources>
         <testResources>
             <testResource>
-                <directory>${project.basedir}/../src/test/resources</directory>
+                <directory>${project.basedir}/src/test/resources</directory>
             </testResource>
             <testResource>
                 <directory>${project.basedir}/../native/engine/tests/fixtures</directory>
@@ -112,7 +111,7 @@
                         <phase>generate-test-sources</phase>
                         <goals><goal>add-test-source</goal></goals>
                         <configuration><sources>
-                            <source>${project.basedir}/../src/test/java-flink${flink.line}</source>
+                            <source>${project.basedir}/src/test/java-flink${flink.line}</source>
                         </sources></configuration>
                     </execution>
                 </executions>
@@ -147,9 +146,6 @@
             <plugin>
                 <groupId>org.xolstice.maven.plugins</groupId>
                 <artifactId>protobuf-maven-plugin</artifactId>
-                <configuration>
-                    <protoTestSourceRoot>${project.basedir}/../src/test/proto</protoTestSourceRoot>
-                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>

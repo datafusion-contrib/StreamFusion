@@ -1,5 +1,10 @@
 # CI setup and failure handling
 
+The shared Java test sources and resources live in `streamfusion-runtime/src/test`. Runtime
+shards still discover compiled classes in `streamfusion-runtime/target/test-classes`; source
+ownership does not change the selected test identities or native/recovery assertions. See
+[test ownership and repository contents](development.md) for version adapters and benchmark rules.
+
 Contributor builds and tests run in **personal forks**, using each fork owner's GitHub Actions
 quota instead of the shared `datafusion-contrib` quota. Opening or updating a PR does not launch
 the test matrix in the canonical repository. Source-changing canonical `main` pushes still run

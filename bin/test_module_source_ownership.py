@@ -13,6 +13,17 @@ NS = {"m": "http://maven.apache.org/POM/4.0.0"}
 
 
 class ModuleSourceOwnershipTest(unittest.TestCase):
+    def test_runtime_owns_the_shared_test_corpus_and_uses_its_default_java_root(self):
+        self.assertFalse((ROOT / "src/test").exists())
+        runtime = ET.parse(ROOT / "streamfusion-runtime/pom.xml").getroot()
+        self.assertIsNone(runtime.find("m:build/m:testSourceDirectory", NS))
+        for source in ("java", "java-flink1.18", "java-flink2.2", "resources", "proto"):
+            self.assertTrue((ROOT / "streamfusion-runtime/src/test" / source).is_dir(), source)
+        for module in ("streamfusion-core", "streamfusion-runtime"):
+            pom = ET.parse(ROOT / module / "pom.xml").getroot()
+            for element in pom.iter():
+                self.assertNotIn("${project.basedir}/../src/test", element.text or "", module)
+
     def test_runtime_assembles_artifacts_without_compiling_shared_production_sources(self):
         self.assertFalse(any((ROOT / "src/main").glob("java*")))
         runtime = ET.parse(ROOT / "streamfusion-runtime/pom.xml").getroot()

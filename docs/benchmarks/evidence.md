@@ -62,6 +62,7 @@ complete-job observations. The linked reports explain which comparisons are vali
 | Iceberg selection ownership and dynamic routing | [Second boundary investigation](iceberg-boundary-round2-20261017/README.md); includes an abandoned combined-size prototype and earlier generator references corrected in the checked comparison |
 | Iceberg writer-only v2/v3 diagnostics | [Format v2](iceberg-dynamic-v2-20261017/README.md) and [format v3](iceberg-dynamic-v3-20261017/README.md); these are not Nexmark matrix cells |
 | Iceberg state/checkpoint and I/O investigations | [Profile guide and cohort reports](iceberg-profile-20261017/README.md); profiled, compressed and previous-I/O runs stay separate |
+| Iceberg allocation and bounded routing follow-ups | [Method and cohort index](iceberg-perf-followups-20261018/README.md); component routing measurements and complete writer comparisons retain their separate boundaries |
 | Iceberg correctness validation | [Recorded test inventory and reports](iceberg-validation-20261017/README.md); Criterion smoke checks fixtures, not throughput |
 | Superseded Iceberg completion protocol | [Interrupted canonical-export sweep](iceberg-canonical-20261017/README.md); excluded from final aggregates |
 
@@ -77,6 +78,7 @@ repository's `.claude/wontdos/` directory.
 | Hyperbolic compiler specialization | [Prototype comparison](hyperbolic-specialization.md): isolated kernel gains did not establish broad complete-job admission |
 | Reserved primitive entry | [Rejected entry-only experiment](primitive-reserved-entry-experiment.md): mixed full-job changes did not resolve typed math regressions |
 | Primitive and binary boundary experiments | [Criterion diagnostics](native-criterion.md#narrow-primitive-exit-rejection) and [scalar BINARY exit experiments](scalar-functions.md#rejected-manual-binary-exit-projection) retain their unfavorable results |
+| Interrupted, contended Iceberg sweep | [Recorded interruption](iceberg-followups-nexmark-20261018/README.md); partial cells and overlapping host activity are retained and excluded from complete performance comparisons |
 
 ## Maintaining the evidence
 

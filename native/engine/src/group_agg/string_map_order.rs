@@ -18,7 +18,7 @@ mod tests {
     #[test]
     fn string_and_composite_views_match_released_hashes_copies_and_removals() {
         let cases: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../../src/test/resources/string-map-order.json"
+            "../../../../streamfusion-runtime/src/test/resources/string-map-order.json"
         ))
         .unwrap();
         for case in cases.as_array().unwrap() {

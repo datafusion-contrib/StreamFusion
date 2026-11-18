@@ -267,7 +267,7 @@ mod tests {
     #[test]
     fn floating_views_match_jdk_hashmap_copy_resize_and_tree_order() {
         let fixtures: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../../src/test/resources/floating-map-order.json"
+            "../../../../streamfusion-runtime/src/test/resources/floating-map-order.json"
         ))
         .unwrap();
         for case in fixtures.as_array().unwrap() {

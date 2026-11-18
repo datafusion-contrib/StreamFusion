@@ -13,6 +13,8 @@ import shutil
 import statistics
 import subprocess
 
+from benchmark_test_sources import copy_test_sources
+
 ROOT = Path(__file__).resolve().parents[1]
 PREVIOUS = "b170a474d5658330ed7e92e9b8bcc54117c8d287"
 FIXTURES = [
@@ -132,16 +134,13 @@ def main():
         cwd=ROOT,
         check=True,
     )
-    for name in FIXTURES:
-        relative = Path("src/test/java/tech/streamfusion") / name
-        shutil.copy2(ROOT / relative, previous / relative)
-        report["fixtures"][str(relative)] = hashlib.sha256(
-            (ROOT / relative).read_bytes()
-        ).hexdigest()
+    report["fixtures"] = copy_test_sources(
+        ROOT, previous, [Path("java/tech/streamfusion") / name for name in FIXTURES]
+    )
     report["fixture_worktree_dirty"] = bool(
         subprocess.check_output(
             ["git", "status", "--porcelain", "--", *report["fixtures"]],
-            cwd=ROOT,
+            cwd=previous,
             text=True,
         ).strip()
     )

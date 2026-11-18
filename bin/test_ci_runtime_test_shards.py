@@ -216,8 +216,8 @@ class RuntimeTestShardsTest(unittest.TestCase):
 
     def test_audit_artifact_producers_are_pinned(self):
         producers = {
-            path.relative_to(ROOT / "src/test/java").with_suffix("").as_posix()
-            for path in (ROOT / "src/test/java").rglob("*.java")
+            path.relative_to(ROOT / "streamfusion-runtime/src/test/java").with_suffix("").as_posix()
+            for path in (ROOT / "streamfusion-runtime/src/test/java").rglob("*.java")
             if '"sql-audit"' in path.read_text()
         }
         self.assertEqual(producers, shards.AUDIT_CLASSES)

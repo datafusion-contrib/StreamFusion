@@ -290,7 +290,9 @@ fn check_stock_trace(source_disk: bool, target_disk: bool, sst: bool, aligned: b
         directories.push(tempfile::tempdir().unwrap());
         operator(disk.then_some(directories.last().unwrap().path())).with_state_retention(retention)
     }
-    let trace = include_str!("../../../../src/test/resources/canonical-temporal-metadata.tsv");
+    let trace = include_str!(
+        "../../../../streamfusion-runtime/src/test/resources/canonical-temporal-metadata.tsv"
+    );
     let mut scenario = "";
     let mut joiner = create(&mut directories, source_disk, 0);
     let mut now = 0;
@@ -543,12 +545,12 @@ fn frozen_legacy_raw_snapshots_restore_without_rewriting_the_fixture() {
     for (retention, bytes) in [
         (
             0,
-            include_bytes!("../../../../src/test/resources/canonical-temporal-legacy/raw-0.bin")
+            include_bytes!("../../../../streamfusion-runtime/src/test/resources/canonical-temporal-legacy/raw-0.bin")
                 .as_slice(),
         ),
         (
             100,
-            include_bytes!("../../../../src/test/resources/canonical-temporal-legacy/raw-100.bin")
+            include_bytes!("../../../../streamfusion-runtime/src/test/resources/canonical-temporal-legacy/raw-100.bin")
                 .as_slice(),
         ),
     ] {
@@ -619,13 +621,13 @@ fn frozen_legacy_sst_checkpoints_upgrade_global_sequences_on_both_restore_paths(
         for aligned in [false, true] {
             let source = tempfile::tempdir().unwrap();
             let files: [(&str, &[u8]); 3] = if retention == 0 {
-                [("000008.sst", include_bytes!("../../../../src/test/resources/canonical-temporal-legacy/sst-0/000008.sst")),
-                 ("CURRENT", include_bytes!("../../../../src/test/resources/canonical-temporal-legacy/sst-0/CURRENT")),
-                 ("MANIFEST-000005", include_bytes!("../../../../src/test/resources/canonical-temporal-legacy/sst-0/MANIFEST-000005"))]
+                [("000008.sst", include_bytes!("../../../../streamfusion-runtime/src/test/resources/canonical-temporal-legacy/sst-0/000008.sst")),
+                 ("CURRENT", include_bytes!("../../../../streamfusion-runtime/src/test/resources/canonical-temporal-legacy/sst-0/CURRENT")),
+                 ("MANIFEST-000005", include_bytes!("../../../../streamfusion-runtime/src/test/resources/canonical-temporal-legacy/sst-0/MANIFEST-000005"))]
             } else {
-                [("000008.sst", include_bytes!("../../../../src/test/resources/canonical-temporal-legacy/sst-100/000008.sst")),
-                 ("CURRENT", include_bytes!("../../../../src/test/resources/canonical-temporal-legacy/sst-100/CURRENT")),
-                 ("MANIFEST-000005", include_bytes!("../../../../src/test/resources/canonical-temporal-legacy/sst-100/MANIFEST-000005"))]
+                [("000008.sst", include_bytes!("../../../../streamfusion-runtime/src/test/resources/canonical-temporal-legacy/sst-100/000008.sst")),
+                 ("CURRENT", include_bytes!("../../../../streamfusion-runtime/src/test/resources/canonical-temporal-legacy/sst-100/CURRENT")),
+                 ("MANIFEST-000005", include_bytes!("../../../../streamfusion-runtime/src/test/resources/canonical-temporal-legacy/sst-100/MANIFEST-000005"))]
             };
             for (name, bytes) in files {
                 std::fs::write(source.path().join(name), bytes).unwrap();

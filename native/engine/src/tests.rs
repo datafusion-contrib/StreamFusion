@@ -55,7 +55,7 @@ fn wide_distinct_retention_reads_state_at_flush_and_refreshes_at_flush() {
 #[test]
 fn wide_decimal_local_emission_matches_binary_group_order_across_flushes() {
     let fixtures: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../src/test/resources/group-map-order.json"
+        "../../../streamfusion-runtime/src/test/resources/group-map-order.json"
     ))
     .unwrap();
     for case in fixtures.as_array().unwrap() {

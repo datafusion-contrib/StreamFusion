@@ -56,7 +56,7 @@ class ExpressionProtocolTest(unittest.TestCase):
         self.assertEqual(47, kinds["DECIMAL_IF"])
 
     def test_all_frozen_wire_identities_survive_protocol_extensions(self):
-        fixture = json.loads((ROOT / "src/test/resources/compact-protocol-v1.json").read_text())
+        fixture = json.loads((ROOT / "streamfusion-runtime/src/test/resources/compact-protocol-v1.json").read_text())
         for group, frozen in fixture.items():
             actual = {entry["name"]: entry["code"] for entry in self.manifest[group]}
             for name, code in frozen.items():

@@ -76,11 +76,16 @@ owners rather than inherited as runtime dependencies by core. Parent test depend
 available to the parity baselines.
 
 `streamfusion-runtime` is the development and integration-test assembly. It depends on the real
-core, Kafka, file-format and serialization-format artifacts and compiles only integration tests;
+core, Kafka, file-format and serialization-format artifacts and owns the shared Java test corpus;
 it does not emit another copy of their production classes. Optional Fluss, Delta and Paimon tests
 can consume the shared runtime test harness without making that assembly depend on those connectors.
 The reactor therefore stays acyclic. Install the deployable core and optional modules in Flink;
 the runtime test assembly is not a deployment artifact.
+
+The corpus lives in `streamfusion-runtime/src/test`, including internal unit tests, cross-module
+SQL/recovery tests, shared fixtures and benchmark programs. Root `src/test` is no longer a shared
+source tree. See [test ownership and repository contents](development.md) for the source sets,
+historical benchmark compatibility and the remaining decomposition work.
 
 The Paimon 1 compatibility build retains its explicit generated-source adapter: it combines
 shared Paimon-owned sources with its existing older-API replacements. Those alternative Paimon

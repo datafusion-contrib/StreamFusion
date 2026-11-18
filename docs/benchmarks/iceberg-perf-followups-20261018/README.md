@@ -101,6 +101,23 @@ catalog/processor, shuffle, writing and lifecycle. `component-final/` verifies r
 writes and existing route/generator paths; their native encoders are unchanged and
 cohort drift must not be attributed to the new dynamic routing changes.
 
+## Retained component cohorts
+
+These tables belong to the component methods described above. They are not complete streaming
+job measurements, and repeated cohorts remain separate observations rather than extra samples
+in a combined performance claim.
+
+| Cohort | Recorded result |
+| --- | --- |
+| File-task baseline | [Read, write and route tables](file-task-before/results.md) |
+| Final file-task components | [Read, write and route tables](component-final/results.md) |
+| Initial four-bucket routing | [Measured table](dynamic-key-final/results.md) |
+| Repeated four-bucket routing | [Measured table](dynamic-key-repeat/results.md) |
+| Initial high-cardinality routing | [Measured table](dynamic-key-cardinality/results.md) |
+| Repeated high-cardinality routing | [Measured table](dynamic-key-cardinality-repeat/results.md) |
+| Bounded four-bucket routing | [Measured table](dynamic-key-bounded-final/results.md) |
+| Bounded high-cardinality routing | [Measured table](dynamic-key-bounded-cardinality/results.md) |
+
 ## After-allocation diagnostic
 
 `dynamic-profile-after/` retains another separate whole-JVM diagnostic with the same
