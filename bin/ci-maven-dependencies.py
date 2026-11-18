@@ -52,7 +52,8 @@ def resolve(options):
             if options.model_only else [GOAL])
     if getattr(options, "graph", False):
         goal = [GRAPH_GOAL, "-DoutputType=json", "-DoutputFile=target/ci-maven-graph.json"]
-    commands = ([command + [ARTIFACT_GOAL, "-Dartifact=" + artifact, "-Dtransitive=true"]
+    transitive = "false" if getattr(options, "no_transitive", False) else "true"
+    commands = ([command + [ARTIFACT_GOAL, "-Dartifact=" + artifact, "-Dtransitive=" + transitive]
                  for artifact in options.artifact] if options.artifact else [command + goal])
     for invocation in commands:
         status = resolve_command(invocation)
@@ -89,6 +90,8 @@ def main():
     parser.add_argument("--pom", type=Path)
     parser.add_argument("--repository", type=Path)
     parser.add_argument("--maven", default="mvn")
+    parser.add_argument("--no-transitive", action="store_true",
+                        help="Fetch exact artifacts from an already mediated dependency closure")
     resolution = parser.add_mutually_exclusive_group()
     resolution.add_argument("--artifact", action="append", default=[],
                             help="Resolve an artifact's original transitive graph in an independent POM")

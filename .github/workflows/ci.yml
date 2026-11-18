@@ -634,9 +634,6 @@ jobs:
       - name: Run unchanged upstream Hudi SQL corpus with stock and native evidence
         if: matrix.module == 'streamfusion-hudi' && matrix.jdk == '17'
         run: |
-          python3 bin/ci-maven-dependencies.py --model-only --profile hudi,flink-1.18,hudi-upstream --projects streamfusion-hudi --also-make
-          python3 bin/ci-maven-dependencies.py --model-only --pom dev/flink-suite/hudi-fixtures/pom.xml
-          python3 bin/ci-maven-dependencies.py --pom dev/flink-suite/agent/pom.xml
           python3 bin/hudi-suite.py --native-library-dir "$PWD/native/target/debug"
 
       - name: Retain upstream Hudi invocation and execution evidence

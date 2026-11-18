@@ -5,65 +5,44 @@ corpus with Hudi tables at both ends. This is a separate storage workload from
 the README Kafka benchmark. It requires the released Hudi 1.2.1 Flink 1.18 bundle
 and release StreamFusion engine/Parquet libraries.
 
-For the Java batching/allocation investigation, the manual **CI startup profile**
-workflow with suite `hudi-benchmark` runs Q8/Q12 on one isolated Ubuntu runner. Supply a full baseline commit
-SHA with identical native sources, build inputs and benchmark harness. The runner
-admits changes only to the allocation authority, Calc transport and Hudi terminal-batch proof,
-builds the two release libraries once, verifies their hashes throughout, and
-alternates baseline/candidate then candidate/baseline. Each invocation retains
-one warmup and three rotating stock/previous/native trials, four source/sink tasks,
-heap state and mini-batching off. It restores candidate sources and deletes runtime
-tables even after failure. The workflow artifact retains every observation and log.
-This focused comparison is separate from the complete four-configuration matrix.
-The Java-only runner follows the module-owned core sources and rejects unlisted
-core, Hudi or Parquet changes before replacing any source files.
-Q10 is also available for a Java-only comparison with matching native inputs.
+Run performance measurements locally on an otherwise idle, controlled host. GitHub
+Actions does not run Hudi Nexmark or its Java comparison; the historical hosted
+campaign below predates that CI policy. Use a supported JDK, prevent host sleep,
+and build the production release libraries at the committed source being measured:
 
-The same comparison can run on an otherwise idle developer machine using
-`python3 bin/bench-hudi-java.py --baseline FULL_BASELINE_SHA --output NEW_DIRECTORY`
-with production engine/Parquet libraries in `native/target/release`. Set `JAVA_HOME`
-to a supported JDK and prevent system sleep for local timings. The
-[processing-time investigation](hudi-processing-time-batches-20261114.json)
-retains the local diagnostic and excluded contended attempts.
+```bash
+cargo build --manifest-path native/Cargo.toml --release --locked --lib \
+  -p streamfusion -p streamfusion-parquet \
+  --features streamfusion/mimalloc,streamfusion-parquet/mimalloc
+python3 bin/bench-hudi-matrix.py --backend memory --mini-batch false \
+  --output /tmp/hudi-memory-false
+```
 
-For complete qualification, select suite `hudi-benchmark` with
-`hudi_full_matrix=true` and set `native_run` to a successful Hudi release
-producer. Suite `hudi-native` builds and publishes only the two release libraries
-using the same build/cache steps; it needs no Java comparison baseline and makes
-no benchmark or correctness qualification claim. Use it when native sources have
-changed. A successful focused `hudi-benchmark` run can also supply those libraries.
-The full mode uses two million events and every unchanged query in four
-isolated jobs: heap/RocksDB × mini-batching off/on. Native source/toolchain inputs
-must match the producer, its release-build step must have succeeded, and its
-library artifact must still be available. Each job downloads those same libraries
-and records their hashes. No native rebuild is required for Java-only follow-ups.
-`hudi_configurations=all` retains the default four configurations. For retries,
-`off` selects both mini-batching-off configurations; `memory-false`, `memory-true`,
-`rocksdb-false` or `rocksdb-true` selects one complete configuration. These selections
-retain every query, engine, warmup and trial within that configuration. Preserve
-successful configurations and rerun only unfinished ones; partial query reports
-do not satisfy the complete-configuration and final native-cleanup gates.
+Repeat with `--backend memory|rocksdb` and `--mini-batch false|true`, using a fresh
+output directory for each of the four configurations. Each configuration retains
+two million events, every unchanged query, one warmup and three rotating trials
+per stock/previous/native engine. The runner records the source commit, native
+tree, platform and library hashes; a historical `--native-producer-run` is optional
+provenance rather than a requirement for a local build. It rejects incomplete or
+duplicate timing identities, altered resources, missing RocksDB engagement and
+changed correctness or cleanup results. Runtime tables are removed on success
+and failure; retain the compact reports and archive logs under the evidence policy.
 
-`bin/bench-hudi-matrix.py` checks all 198 timing identities plus the exact Q7 stock
-planner exclusion per configuration, full-value/count validation, fixed resources,
-and actual RocksDB engagement. Partial or duplicate reports fail validation. Source
-commit, producer, platform, library hashes and every trial remain in the artifacts.
-Generated runtime tables are removed on success and failure. Focused and full
-modes have separate workflow concurrency groups; run the required CI, upstream
-Flink and docs gates for the final candidate after recording the results.
-Each full configuration has a six-hour limit on slower hosted CPUs. The
-launcher forwards the existing per-query/engine progress lines to the job console
-while retaining the complete byte-for-byte Maven log, including failure output.
-The selected queries, warmups, trials, resources and measured boundaries remain
-the fixed matrix above; the timeout does not exclude slow controls or partial runs.
+The Java batching/allocation comparison is also local:
+`python3 bin/bench-hudi-java.py --baseline FULL_BASELINE_SHA --output NEW_DIRECTORY`.
+Its baseline must have identical native sources, build inputs and benchmark harness.
+It admits only the documented Java allocation, Calc transport and terminal-batch
+changes, alternates baseline/candidate order, and verifies unchanged library hashes.
+The [processing-time investigation](hudi-processing-time-batches-20261114.json)
+retains earlier diagnostics and excluded contended attempts.
 
-For a focused correctness reproduction, select suite `hudi-diagnostic`, one
-explicit `hudi_configurations` value such as `rocksdb-false`, `hudi_queries=q10`
-and a source-compatible `native_run`. This reuses the same two-million-event
-runner, resources, warmup and three-engine rotating trials for the selected
-unchanged queries. It publishes `hudi-diagnostic-*` artifacts and records
-`diagnostic-passed`; it cannot qualify a complete configuration. The default full
-matrix still requires all 198 timing identities and Q7's exact exclusion.
+For a focused reproduction, add `--diagnostic-queries q10` to the local matrix
+command and select one explicit backend/mini-batch configuration. This retains
+the same data, resources, warmup and rotating trials for those unchanged queries;
+`diagnostic-passed` does not qualify a complete configuration. Full qualification
+requires all 198 timing identities and Q7's exact stock planner exclusion per
+configuration. Required CI, upstream Flink and docs checks validate the final
+candidate separately from these source-pinned performance observations.
 
 ## Full Linux matrix (2026-11-15)
 

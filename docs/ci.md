@@ -211,17 +211,12 @@ path filters still apply there. On other branches, dispatch these optional
 workflows only when their functionality changed. Development branches belong in
 personal forks, and tags do not trigger these branch test workflows.
 
-The startup-profile workflow's `hudi-native` suite produces only the engine and
-Parquet release libraries for Hudi diagnostics and Nexmark. It reuses the focused
-Hudi job's release build/cache steps without requiring a Java-only comparison
-baseline. Consumers still verify the successful build, exact native/toolchain
-inputs and live artifact. A library producer supplies no test or benchmark gate;
-full Hudi configurations and final CI remain separate checks.
-`hudi-diagnostic` reuses one explicitly selected configuration and the verified
-libraries for unchanged focused queries. Its artifacts and successful status are
-labelled diagnostic and cannot satisfy the full Hudi matrix.
-The default debug-native and runtime jobs admit only their named runtime or
-canonical suites. Adding a focused mode cannot implicitly launch those matrices.
+Hudi performance measurements run locally under the
+[Hudi benchmark guide](benchmarks/hudi-nexmark.md). The former `hudi-native`,
+`hudi-benchmark` and `hudi-diagnostic` Actions modes are not available. The local
+runner records the committed source and release-library hashes. The focused
+`lake-setup` correctness diagnostic can select Hudi without launching a benchmark.
+Native and runtime startup-profile jobs admit only their explicit named suites.
 
 The upstream full-suite dispatch is identified as **Full upstream Flink suite
 (merge gate)**. Inventory dispatches have a separate title and cannot satisfy that
@@ -1261,8 +1256,9 @@ The setup probe's `kafka_rescale_regression` input runs the two released-state c
 all eight Flink2.2 providers in each of the Kafka rescale, pipeline task-failure and completed
 final-snapshot recovery classes, including ordinary SQL, both engine directions and both transaction
 naming strategies. It requires exactly those 26 cases with zero skips/errors/failures. This isolates
-full-matrix recovery failures without rerunning unrelated jobs. The complete CI
-still runs every Kafka provider. Flink2.2 inventory reads both writer and committer state with
+full-matrix recovery failures without rerunning unrelated jobs. Routine CI retains every Kafka
+fixture and method under its audited representative provider policy; the explicit full policy
+retains every provider combination. Flink2.2 inventory reads both writer and committer state with
 the released collector serializer; the previous empty committer inspector could miss real pending
 transactions. The existing assertion requiring actual precommitted state stays in force.
 
@@ -1273,18 +1269,14 @@ and both pinned JDK releases. Locally, after compiling the requested line, use
 It checks every invocation/outcome and the number of parent clusters actually started.
 The full CI and upstream matrices remain final qualification gates.
 
-The optional startup-profile suite `hudi-benchmark` also supports
-`hudi_full_matrix=true`. It requires `native_run` from a successful focused Hudi
-release comparison. The verifier checks its release-build step, live artifact and
-unchanged native/toolchain inputs before four isolated heap/RocksDB × mini-batch
-jobs reuse the libraries. Each job runs the unchanged two-million-event Nexmark
-matrix and rejects incomplete trial identities, missing actual RocksDB engagement
-or changed validation/settings. The [Hudi benchmark guide](benchmarks/hudi-nexmark.md)
-documents the workload and evidence. Full and focused modes have separate
-concurrency groups; observe the account-wide capacity rules before dispatching.
-Producer commits already present locally are verified without another shallow
-fetch, preserving the history of shared developer checkouts. Source comparison
-still runs for both existing and newly fetched producer commits.
+The Hudi SQL/source/file-group-reader corpus remains a correctness gate in the
+Hudi JDK 17 connector lane, with unchanged released fixtures and per-invocation
+native/fallback evidence. Shared JDK 17 dependency preparation includes its fixture
+POM and mediated Hive-enabled graph. Exact graph artifacts are fetched without
+re-traversing original POM transitives, preserving the `jdk.tools` exclusion.
+Consumers run offline from the immutable prepared repository. The full performance
+matrix and Java comparisons remain local under the
+[Hudi benchmark guide](benchmarks/hudi-nexmark.md).
 
 Before a dispatch, inspect active workflows across the fork and reuse their handles. Keep
 optional diagnostics separate from the candidate's full qualification campaign. When another
@@ -2232,5 +2224,6 @@ controlled slot-release checks, but the original starvation trigger remains unpr
 quarantine is restricted to that harness; other JSON tests remain enabled. All original
 assertions and parameterized cases remain executable locally without `CI=true`. Remove the
 quarantine after a local reproducer verifies a corrective fix. The existing exact Kafka-provider
-quarantine remains unchanged. The unresolved feature-only Hudi Q10 benchmark is excluded from
-CI by the benchmark policy and remains outside main.
+quarantine remains unchanged. The historical feature-only Hudi Q10 control failure remains
+documented without a root-cause claim. All 36 later timed Q10 identities in the source-pinned Hudi matrix pass;
+performance benchmarks remain excluded from CI by policy.

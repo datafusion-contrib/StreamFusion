@@ -45,11 +45,39 @@ class MavenCacheTest(unittest.TestCase):
                 return subprocess.CompletedProcess(command, 0)
 
             with patch.object(cache, 'ROOT', root), patch.object(cache.subprocess, 'run', run):
-                cache.complete_graph(repository, ['--profile', 'connector'])
+                cache.complete_graph(repository, ['--model-only', '--profile', 'connector'])
             self.assertEqual(2, len(calls))
             self.assertIn('--graph', calls[0])
+            self.assertNotIn('--model-only', calls[0])
+            self.assertIn('--no-transitive', calls[1])
             self.assertEqual(['--artifact', 'test:fixture:1:jar:tests', '--artifact', 'test:winner:2:jar'],
                              calls[1][calls[1].index('--artifact'):])
+            self.assertFalse(graph.exists())
+
+    def test_standalone_fixture_graph_preserves_mediated_exclusions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repository = root / 'm2'
+            graph = root / 'dev/flink-suite/hudi-fixtures/target/ci-maven-graph.json'
+            artifact = repository / 'org/apache/hive/hive-metastore/2.3.1/hive-metastore-2.3.1.jar'
+            calls = []
+
+            def run(command, **kwargs):
+                calls.append(command)
+                if '--graph' in command:
+                    graph.parent.mkdir(parents=True)
+                    graph.write_text(json.dumps({'groupId': 'org.apache.hive',
+                        'artifactId': 'hive-metastore', 'version': '2.3.1', 'type': 'jar'}))
+                else:
+                    artifact.parent.mkdir(parents=True)
+                    artifact.touch()
+                return subprocess.CompletedProcess(command, 0)
+
+            with patch.object(cache, 'ROOT', root), patch.object(cache.subprocess, 'run', run):
+                cache.complete_graph(repository, ['--model-only', '--pom', 'dev/flink-suite/hudi-fixtures/pom.xml'])
+            self.assertEqual(2, len(calls))
+            self.assertIn('--no-transitive', calls[1])
+            self.assertNotIn('jdk.tools', ' '.join(calls[1]))
             self.assertFalse(graph.exists())
 
     def test_missing_mediated_graph_cannot_publish_completion(self):

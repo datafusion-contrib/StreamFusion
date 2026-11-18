@@ -109,8 +109,8 @@ def validate(report, backend, mini_batch, diagnostic=None):
 
 
 def run(args):
-    if args.native_producer_run < 1:
-        raise ValueError("Provide a verified native producer run ID")
+    if args.native_producer_run is not None and args.native_producer_run < 1:
+        raise ValueError("Native producer run IDs must be positive when supplied")
     diagnostic = diagnostic_queries(args.diagnostic_queries) if args.diagnostic_queries else None
     subprocess.run(["git", "diff", "--exit-code", "HEAD"], cwd=ROOT, check=True,
                    stdout=subprocess.DEVNULL)
@@ -191,7 +191,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--backend", choices=["memory", "rocksdb"], required=True)
     parser.add_argument("--mini-batch", choices=["false", "true"], required=True)
-    parser.add_argument("--native-producer-run", type=int, required=True)
+    parser.add_argument("--native-producer-run", type=int,
+                        help="Optional provenance when reusing libraries from a historical producer")
     parser.add_argument("--diagnostic-queries", default="",
                         help="Focused unchanged queries; never qualifies a complete configuration")
     parser.add_argument("--native-library-dir", type=Path, default=ROOT / "native/target/release")

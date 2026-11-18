@@ -42,6 +42,9 @@ def recipes(jdk):
     ])
     if jdk == "17":
         result.extend([
+            ["--model-only", "--profile", "hudi,flink-1.18,hudi-upstream",
+             "--projects", "streamfusion-hudi", "--also-make"],
+            ["--model-only", "--pom", "dev/flink-suite/hudi-fixtures/pom.xml"],
             ["--profile", "iceberg,iceberg-upstream", "--projects", "streamfusion-iceberg", "--also-make"],
             *[["--profile", profile, "--projects", "streamfusion-doris", "--also-make"]
               for profile in ("doris,doris-it", "doris,doris-upstream", "doris,doris-it,doris-upstream")],
@@ -80,12 +83,18 @@ def complete_graph(repository, recipe):
     # Resolve that graph too, without building/installing our reactor artifacts.
     paths = [ROOT / "target/ci-maven-graph.json", ROOT / "dev/flink-suite/agent/target/ci-maven-graph.json"]
     paths.extend(ROOT.glob("streamfusion-*/target/ci-maven-graph.json"))
+    if "--pom" in recipe:
+        paths.append((ROOT / recipe[recipe.index("--pom") + 1]).parent / "target/ci-maven-graph.json")
     for path in paths:
         path.unlink(missing_ok=True)
     subprocess.run([sys.executable, str(ROOT / "bin/ci-maven-dependencies.py"),
-                    "--repository", str(repository), *recipe, "--graph"], cwd=ROOT, check=True)
+                    "--repository", str(repository),
+                    *(value for value in recipe if value != "--model-only"), "--graph"],
+                   cwd=ROOT, check=True)
     paths = [ROOT / "target/ci-maven-graph.json", ROOT / "dev/flink-suite/agent/target/ci-maven-graph.json"]
     paths.extend(ROOT.glob("streamfusion-*/target/ci-maven-graph.json"))
+    if "--pom" in recipe:
+        paths.append((ROOT / recipe[recipe.index("--pom") + 1]).parent / "target/ci-maven-graph.json")
     artifacts = set()
     for path in paths:
         if path.exists():
@@ -103,7 +112,7 @@ def complete_graph(repository, recipe):
     if missing:
         print(f"Completing {len(missing) // 2} mediated dependency artifacts", flush=True)
         subprocess.run([sys.executable, str(ROOT / "bin/ci-maven-dependencies.py"),
-                        "--repository", str(repository), *missing], cwd=ROOT, check=True)
+                        "--repository", str(repository), "--no-transitive", *missing], cwd=ROOT, check=True)
         if any(not path.is_file() for path in missing_paths):
             raise ValueError("Maven did not populate every selected dependency artifact")
 
