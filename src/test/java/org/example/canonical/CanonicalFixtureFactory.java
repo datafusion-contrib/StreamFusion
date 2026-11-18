@@ -81,7 +81,7 @@ public final class CanonicalFixtureFactory
   @Override
   public DynamicTableSource createDynamicTableSource(DynamicTableSourceFactory.Context context) {
     var options = context.getCatalogTable().getOptions();
-    return new TableSource(
+    var source = new TableSource(
         options.get("input"),
         options.get("ready"),
         Integer.parseInt(options.getOrDefault("limit", Integer.toString(Integer.MAX_VALUE))),
@@ -89,6 +89,14 @@ public final class CanonicalFixtureFactory
         Boolean.parseBoolean(options.getOrDefault("upsert", "false")),
         options.containsKey("parallelism") ? Integer.valueOf(options.get("parallelism")) : null,
         (RowType) context.getPhysicalRowDataType().getLogicalType());
+    // Stock savepoint workers load the fixture without StreamFusion on the classpath.
+    try {
+      Class.forName(
+          "tech.streamfusion.planner.Utf8StringSource", false, getClass().getClassLoader());
+    } catch (ClassNotFoundException stockWorker) {
+      return source;
+    }
+    return new Utf8TableSource(source);
   }
 
   @Override
@@ -102,10 +110,9 @@ public final class CanonicalFixtureFactory
         Boolean.parseBoolean(options.getOrDefault("upsert", "false")));
   }
 
-  public static final class TableSource
+  public static class TableSource
       implements ScanTableSource,
-          org.apache.flink.table.connector.source.abilities.SupportsSourceWatermark,
-          tech.streamfusion.planner.Utf8StringSource {
+          org.apache.flink.table.connector.source.abilities.SupportsSourceWatermark {
     private final String input;
     private final String ready;
     private final int limit;
@@ -132,9 +139,16 @@ public final class CanonicalFixtureFactory
       this.type = type;
     }
 
-    @Override
-    public boolean guaranteesUtf8Strings() {
-      return true;
+    private TableSource(TableSource source) {
+      this(
+          source.input,
+          source.ready,
+          source.limit,
+          source.insertOnly,
+          source.upsert,
+          source.parallelism,
+          source.type);
+      sourceWatermarks = source.sourceWatermarks;
     }
 
     @Override
@@ -187,14 +201,30 @@ public final class CanonicalFixtureFactory
 
     @Override
     public DynamicTableSource copy() {
-      var copy = new TableSource(input, ready, limit, insertOnly, upsert, parallelism, type);
-      copy.sourceWatermarks = sourceWatermarks;
-      return copy;
+      return new TableSource(this);
     }
 
     @Override
     public String asSummaryString() {
       return "CanonicalFixtureSource";
+    }
+  }
+
+  /** Binds the fixture's Java text conversion to the optional accelerator contract. */
+  private static final class Utf8TableSource extends TableSource
+      implements tech.streamfusion.planner.Utf8StringSource {
+    private Utf8TableSource(TableSource source) {
+      super(source);
+    }
+
+    @Override
+    public boolean guaranteesUtf8Strings() {
+      return true;
+    }
+
+    @Override
+    public DynamicTableSource copy() {
+      return new Utf8TableSource(this);
     }
   }
 

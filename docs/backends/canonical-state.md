@@ -2739,6 +2739,8 @@ unknown real state is still validated independently before any cleanup.
 Isolated stock-worker fixture JARs include compiler-generated nest members as well as
 declared user classes. This keeps source value conversion self-contained when javac emits
 synthetic enum-dispatch helpers, while the worker still excludes StreamFusion classes.
+The fixture advertises its UTF-8 guarantee when StreamFusion is present. Both worker types
+use the same Flink source reader and checkpoint format.
 
 Typed group fixtures declare released widened decimal SUM/AVG output types. Rank planner
 controls retain released constant-rank pruning and construct nested payloads after a monotonic
