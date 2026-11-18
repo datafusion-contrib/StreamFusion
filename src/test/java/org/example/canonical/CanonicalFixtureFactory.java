@@ -1,5 +1,7 @@
 package org.example.canonical;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
@@ -34,6 +36,7 @@ import org.apache.flink.table.connector.sink.SinkV2Provider;
 import org.apache.flink.table.connector.source.DynamicTableSource;
 import org.apache.flink.table.connector.source.ScanTableSource;
 import org.apache.flink.table.connector.source.SourceProvider;
+import org.apache.flink.table.connector.source.abilities.SupportsSourceWatermark;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.factories.DynamicTableSinkFactory;
@@ -90,13 +93,36 @@ public final class CanonicalFixtureFactory
         options.containsKey("parallelism") ? Integer.valueOf(options.get("parallelism")) : null,
         (RowType) context.getPhysicalRowDataType().getLogicalType());
     // Stock savepoint workers load the fixture without StreamFusion on the classpath.
+    Class<?> contract;
     try {
-      Class.forName(
-          "tech.streamfusion.planner.Utf8StringSource", false, getClass().getClassLoader());
+      contract =
+          Class.forName(
+              "tech.streamfusion.planner.Utf8StringSource", false, getClass().getClassLoader());
     } catch (ClassNotFoundException stockWorker) {
       return source;
     }
-    return new Utf8TableSource(source);
+    return advertiseUtf8(source, contract);
+  }
+
+  private static DynamicTableSource advertiseUtf8(TableSource source, Class<?> contract) {
+    // Generated stock code scans the fixture JAR. Keep its class files free of a static
+    // dependency on the optional accelerator interface.
+    return (DynamicTableSource)
+        Proxy.newProxyInstance(
+            contract.getClassLoader(),
+            new Class<?>[] {ScanTableSource.class, SupportsSourceWatermark.class, contract},
+            (proxy, method, arguments) -> {
+              if (method.getDeclaringClass() == contract) return true;
+              if (method.getName().equals("copy")) {
+                return advertiseUtf8(new TableSource(source), contract);
+              }
+              if (method.getName().equals("equals")) return proxy == arguments[0];
+              try {
+                return method.invoke(source, arguments);
+              } catch (InvocationTargetException failure) {
+                throw failure.getCause();
+              }
+            });
   }
 
   @Override
@@ -110,9 +136,7 @@ public final class CanonicalFixtureFactory
         Boolean.parseBoolean(options.getOrDefault("upsert", "false")));
   }
 
-  public static class TableSource
-      implements ScanTableSource,
-          org.apache.flink.table.connector.source.abilities.SupportsSourceWatermark {
+  public static final class TableSource implements ScanTableSource, SupportsSourceWatermark {
     private final String input;
     private final String ready;
     private final int limit;
@@ -207,24 +231,6 @@ public final class CanonicalFixtureFactory
     @Override
     public String asSummaryString() {
       return "CanonicalFixtureSource";
-    }
-  }
-
-  /** Binds the fixture's Java text conversion to the optional accelerator contract. */
-  private static final class Utf8TableSource extends TableSource
-      implements tech.streamfusion.planner.Utf8StringSource {
-    private Utf8TableSource(TableSource source) {
-      super(source);
-    }
-
-    @Override
-    public boolean guaranteesUtf8Strings() {
-      return true;
-    }
-
-    @Override
-    public DynamicTableSource copy() {
-      return new Utf8TableSource(this);
     }
   }
 
