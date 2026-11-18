@@ -1274,8 +1274,14 @@ Hudi JDK 17 connector lane, with unchanged released fixtures and per-invocation
 native/fallback evidence. Shared JDK 17 dependency preparation includes its fixture
 POM and mediated Hive-enabled graph. Exact graph artifacts are fetched without
 re-traversing original POM transitives, preserving the `jdk.tools` exclusion.
-Consumers run offline from the immutable prepared repository. The full performance
-matrix and Java comparisons remain local under the
+Consumers run offline from the immutable prepared repository. The standalone
+fixture build pins its lifecycle plugins, including Surefire, to versions covered
+by shared preparation. A Maven upgrade therefore cannot select an uncached
+default plugin during fixture packaging. Validate the complete offline fixture
+package with the runner's Maven version when changing this setup.
+The upstream suite includes Maven exception stacks in failure logs so dependency
+bootstrap failures can be distinguished from executed test failures.
+The full performance matrix and Java comparisons remain local under the
 [Hudi benchmark guide](benchmarks/hudi-nexmark.md).
 
 Before a dispatch, inspect active workflows across the fork and reuse their handles. Keep

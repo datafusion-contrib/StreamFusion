@@ -580,7 +580,7 @@ else
   find "${REPORT_ROOT}" -mindepth 1 -maxdepth 1 -type f -delete
 fi
 MAVEN_TEST_ARGS=(
-  -B -ntp -s "${MAVEN_SETTINGS}" \
+  -B -ntp -e -s "${MAVEN_SETTINGS}" \
   -Dmaven.repo.local="${SUITE_MAVEN_REPO}" \
   -pl "${TEST_MODULES}" \
   -Dmaven.test.additionalClasspath="${STREAMFUSION_CLASSPATH}" \
