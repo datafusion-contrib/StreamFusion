@@ -24,7 +24,9 @@ import java.util.function.UnaryOperator;
 import net.bytebuddy.agent.builder.AgentBuilder;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.dynamic.DynamicType;
+import net.bytebuddy.implementation.MethodCall;
 import net.bytebuddy.implementation.bytecode.assign.Assigner;
+import net.bytebuddy.pool.TypePool;
 
 /**
  * Installs StreamFusion when an untouched upstream Flink test creates a streaming planner, and
@@ -91,6 +93,26 @@ public final class StreamFusionSuiteAgent {
                 builder.visit(
                     Advice.to(WaitForKafkaTopic.class)
                         .on(named("createNewTopicAndWaitForPartitionAssignment"))))
+        .type(
+            named(
+                "org.apache.flink.table.planner.factories.TestValuesTableFactory"
+                    + "$TestValuesScanTableSourceWithoutProjectionPushDown"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) -> {
+              // This source converts external Rows using producedDataType. The separate
+              // TestValuesScanTableSourceWithInternalData class can emit arbitrary string bytes.
+              var types = TypePool.Default.of(classLoader);
+              var contract = types.describe("tech.streamfusion.planner.Utf8StringSource").resolve();
+              var checkExternalType =
+                  types.describe("tech.streamfusion.planner.HostStringInputs")
+                      .resolve()
+                      .getDeclaredMethods()
+                      .filter(named("externalConversionGuaranteesUtf8"))
+                      .getOnly();
+              return builder
+                  .implement(contract)
+                  .intercept(MethodCall.invoke(checkExternalType).withField("producedDataType"));
+            })
         .type(named("org.apache.flink.table.api.internal.TableEnvironmentImpl"))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->

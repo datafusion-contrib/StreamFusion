@@ -41,10 +41,10 @@ also not running it is parity, not a gap.
 ## String representation at input boundaries
 
 Flink's logical `STRING` can contain arbitrary bytes. An Arrow `Utf8` field requires valid
-UTF-8 within each element. External Java string sources, SQL values, Flink's datagen, and
-filesystem scans using Flink's CSV decoder can supply UTF-8 to a row transpose. A custom connector can implement `Utf8StringSource` when
-every available reader mode guarantees valid string bytes, including nested string values. Generic
-`RowData` requires a
+UTF-8 within each element. Flink's external Java string conversion, including bounded DataStreams,
+SQL values, Flink's datagen, and filesystem scans using Flink's CSV decoder can supply UTF-8 to a
+row transpose. A custom connector can implement `Utf8StringSource` when every available reader mode
+guarantees valid string bytes, including nested string values. Generic `RowData` requires a
 [byte-preserving path](calc-filter.md#byte-preserving-string-input) or planned Flink fallback.
 
 The JNI bridge checks imported string buffers and element boundaries before creating typed

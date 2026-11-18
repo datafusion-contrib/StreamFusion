@@ -19,6 +19,7 @@ import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.type.SqlTypeUtil;
 import org.apache.flink.connector.datagen.table.DataGenTableSource;
 import org.apache.flink.table.connector.source.DynamicTableSource;
+import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalBoundedStreamScan;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalDataStreamScan;
 import org.apache.flink.table.planner.plan.schema.TableSourceTable;
 import org.apache.flink.table.types.DataType;
@@ -108,14 +109,16 @@ public final class HostStringInputs {
   }
 
   static boolean areJavaBacked(RelNode input) {
+    if (input instanceof BatchPhysicalBoundedStreamScan) {
+      var scan = (BatchPhysicalBoundedStreamScan) input;
+      return externalConversionGuaranteesUtf8(scan.boundedStreamTable().dataType());
+    }
     if (input instanceof StreamPhysicalDataStreamScan) {
-      StreamPhysicalDataStreamScan scan = ((StreamPhysicalDataStreamScan) input);
-
-      return hasExternalStrings(scan.dataStreamTable().dataType());
+      var scan = (StreamPhysicalDataStreamScan) input;
+      return externalConversionGuaranteesUtf8(scan.dataStreamTable().dataType());
     }
     if (!(input instanceof TableScan)) return false;
-    TableScan scan = ((TableScan) input);
-
+    var scan = (TableScan) input;
     TableSourceTable table = scan.getTable().unwrap(TableSourceTable.class);
     if (table == null) return false;
     Object source = table.tableSource();
@@ -123,7 +126,7 @@ public final class HostStringInputs {
         "org.apache.flink.table.planner.connectors.ExternalDynamicSource")) return false;
     try {
       // ExternalDynamicSource is package-private and exposes no physical-conversion accessor.
-      return hasExternalStrings((DataType) readField(source, "physicalDataType"));
+      return externalConversionGuaranteesUtf8((DataType) readField(source, "physicalDataType"));
     } catch (ReflectiveOperationException | RuntimeException unavailable) {
       return false;
     }
@@ -135,7 +138,8 @@ public final class HostStringInputs {
     return field.get(object);
   }
 
-  private static boolean hasExternalStrings(DataType type) {
+  /** Whether Flink's external-to-internal converter encodes every character field from Java text. */
+  public static boolean externalConversionGuaranteesUtf8(DataType type) {
     if (org.apache.flink.table.data.RowData.class.isAssignableFrom(type.getConversionClass())
         || org.apache.flink.table.data.ArrayData.class.isAssignableFrom(type.getConversionClass())
         || org.apache.flink.table.data.MapData.class.isAssignableFrom(type.getConversionClass())) {
@@ -144,6 +148,6 @@ public final class HostStringInputs {
     if (type.getLogicalType().is(LogicalTypeFamily.CHARACTER_STRING)) {
       return type.getConversionClass() == String.class;
     }
-    return type.getChildren().stream().allMatch(HostStringInputs::hasExternalStrings);
+    return type.getChildren().stream().allMatch(HostStringInputs::externalConversionGuaranteesUtf8);
   }
 }
