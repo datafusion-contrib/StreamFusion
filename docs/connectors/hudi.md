@@ -350,11 +350,18 @@ unexpected routes and changed fallback reasons. The unchanged upstream
 cases retain their original legacy-source and row-result choices, so many Hudi
 boundaries correctly stay stock while native Calcs execute. The expanded tests
 and Nexmark harness separately require native Hudi source/sink execution.
-A full native replay after the batch-admission policy change passes all 349
-enabled upstream cases. Exactly 99 contracts now require positive native Calc
-work in place of the removed standalone-scalar performance rejection. Every
-other native-work requirement and semantic fallback reason is preserved. This
-credits core Calc execution, not native Hudi I/O. Batch plans must be observed at
+
+Stock Hudi row scans that expose unverified character columns need a verified
+byte-preserving consumer to enter a native plan. Otherwise the planner keeps the
+affected branch in Flink. The released Hudi 1.2.1 corpus records this explicit
+fallback in 186 of its 349 enabled invocations. The stock and accelerated runs
+keep the same results and test coverage, and the audit still requires positive
+work for the native operators that run.
+
+A full native replay after the earlier batch-admission change passed all 349
+enabled upstream cases. The change added 99 requirements for positive native
+Calc work where planners had previously rejected standalone scalar operators.
+Those requirements cover core Calc execution. Batch plans must be observed at
 the current three-argument planner boundary, including calls through convenience
 wrappers without counting their observations twice. Runtime work observation also
 includes bounded columnar limits, independently of their presence in a plan. The
