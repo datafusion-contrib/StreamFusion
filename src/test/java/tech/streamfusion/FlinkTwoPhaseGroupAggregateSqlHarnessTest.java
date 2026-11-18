@@ -413,6 +413,8 @@ class FlinkTwoPhaseGroupAggregateSqlHarnessTest {
   }
 
   private static void writeInput(Path directory) throws Exception {
+    // The stock CSV reader constructs StringData from decoded Java text. Keep the fixture's
+    // string columns eligible for native aggregation by using that verified source conversion.
     StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
     env.setParallelism(1);
     env.enableCheckpointing(100);
@@ -422,7 +424,7 @@ class FlinkTwoPhaseGroupAggregateSqlHarnessTest {
             + " vf FLOAT, vdec DECIMAL(10, 2), u BIGINT, us VARCHAR) WITH ('connector' ="
             + " 'filesystem', 'path' = '"
             + directory.toUri()
-            + "', 'format' = 'parquet')");
+            + "', 'format' = 'csv')");
     // The negative rows make integer AVG's truncate-toward-zero division observable (-7 + 4 + 9
     // over key 2 divides negatively at some prefixes of the changelog). The u/us columns repeat
     // values within and across keys so distinct aggregates see real multiplicities.
@@ -456,7 +458,7 @@ class FlinkTwoPhaseGroupAggregateSqlHarnessTest {
               + " vf FLOAT, vdec DECIMAL(10, 2), u BIGINT, us VARCHAR) WITH ('connector' ="
               + " 'filesystem', 'path' = '"
               + directory.toUri()
-              + "', 'format' = 'parquet')");
+              + "', 'format' = 'csv')");
       return tEnv;
     };
   }
