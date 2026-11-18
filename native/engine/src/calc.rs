@@ -37,8 +37,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_filterGreaterThan<'local>(
         let schema = Arc::new(Schema::new(vec![field]));
         let column_name = schema.field(0).name().clone();
 
-        let data =
-            unsafe { import_array_data(ffi_array, &ffi_schema) }.expect("failed to import Arrow array");
+        let data = unsafe { import_array_data(ffi_array, &ffi_schema) }
+            .expect("failed to import Arrow array");
         let batch = RecordBatch::try_new(schema.clone(), vec![make_array(data)])
             .expect("failed to build batch");
 
@@ -350,7 +350,8 @@ impl CalcExpression {
             for projection in &projections {
                 if let Some(column) = projection.downcast_ref::<Column>() {
                     if is_byte_string(schema.field(column.index())) {
-                        projection_input_indices.extend(string_cache_position(schema, column.index()));
+                        projection_input_indices
+                            .extend(string_cache_position(schema, column.index()));
                     }
                 }
             }
@@ -460,7 +461,10 @@ impl CalcExpression {
                 field = field.with_metadata(input.metadata().clone());
                 if is_byte_string(input) {
                     if let Some(cache) = string_cache_column(&filtered, index) {
-                        caches.push((string_cache_field(i, cache.data_type().clone()), cache.clone()));
+                        caches.push((
+                            string_cache_field(i, cache.data_type().clone()),
+                            cache.clone(),
+                        ));
                     }
                 }
             }
@@ -493,7 +497,10 @@ impl CalcExpression {
 
 fn is_byte_string(field: &Field) -> bool {
     field.data_type() == &DataType::Binary
-        && field.metadata().get("streamfusion.logical_string").is_some_and(|value| value == "1")
+        && field
+            .metadata()
+            .get("streamfusion.logical_string")
+            .is_some_and(|value| value == "1")
 }
 
 fn evaluate_projection(projection: &Arc<dyn PhysicalExpr>, batch: &RecordBatch) -> ArrayRef {
@@ -595,7 +602,11 @@ mod row_udf_tests {
         let output = calc.evaluate(input);
         assert_eq!(output.num_rows(), 2);
         for column in 0..2 {
-            let bytes = output.column(column).as_any().downcast_ref::<BinaryArray>().unwrap();
+            let bytes = output
+                .column(column)
+                .as_any()
+                .downcast_ref::<BinaryArray>()
+                .unwrap();
             assert_eq!(bytes.value(0), &[0xff]);
             assert_eq!(bytes.value(1), b"?");
             let cache = JavaStringCacheColumn::new(string_cache_column(&output, column).unwrap());

@@ -2504,8 +2504,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_tumblingSum<'local>(
             )
         };
 
-        let data =
-            unsafe { import_array_data(ffi_array, &ffi_schema) }.expect("failed to import Arrow batch");
+        let data = unsafe { import_array_data(ffi_array, &ffi_schema) }
+            .expect("failed to import Arrow batch");
         let batch = RecordBatch::from(StructArray::from(data));
 
         let window = format!("ts - (ts % {window_millis})");

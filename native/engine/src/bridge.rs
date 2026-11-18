@@ -138,8 +138,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_sumInt<'local>(
             )
         };
 
-        let data =
-            unsafe { import_array_data(ffi_array, &ffi_schema) }.expect("failed to import Arrow array");
+        let data = unsafe { import_array_data(ffi_array, &ffi_schema) }
+            .expect("failed to import Arrow array");
 
         let array = make_array(data);
         let ints = array
@@ -179,8 +179,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_roundTrip<'local>(
             )
         };
 
-        let data =
-            unsafe { import_array_data(ffi_array, &ffi_schema) }.expect("failed to import Arrow array");
+        let data = unsafe { import_array_data(ffi_array, &ffi_schema) }
+            .expect("failed to import Arrow array");
 
         let array = make_array(data);
         let ints = array
@@ -232,8 +232,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_doubleColumn<'local>(
         let field = Field::try_from(&ffi_schema).expect("failed to import Arrow field");
         let schema = Arc::new(Schema::new(vec![field]));
 
-        let data =
-            unsafe { import_array_data(ffi_array, &ffi_schema) }.expect("failed to import Arrow array");
+        let data = unsafe { import_array_data(ffi_array, &ffi_schema) }
+            .expect("failed to import Arrow array");
         let batch = RecordBatch::try_new(schema.clone(), vec![make_array(data)])
             .expect("failed to build batch");
 
@@ -284,8 +284,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_echoBatch<'local>(
             )
         };
 
-        let data =
-            unsafe { import_array_data(ffi_array, &ffi_schema) }.expect("failed to import Arrow batch");
+        let data = unsafe { import_array_data(ffi_array, &ffi_schema) }
+            .expect("failed to import Arrow batch");
         let batch = RecordBatch::from(StructArray::from(data));
 
         let out_data = StructArray::from(batch).to_data();
