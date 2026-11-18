@@ -1,0 +1,409 @@
+{
+  "status": "failed-under-investigation",
+  "scope": "Correctness failure in a partial full-size benchmark; not a qualified configuration or performance claim",
+  "workflow_run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43650417787",
+  "job": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43650417787/job/132617478396",
+  "source": "5cf84474a7d2c5e6ee4ca82f16ee2927777c18ae",
+  "native_tree": "16d4c0052bb61c9a6c783bd03bdafc6c02fe9896",
+  "native_producer_run": 43624540633,
+  "libraries_sha256": {
+    "libstreamfusion.so": "49f41446c4a45f9b8f03840a3c6bf5ab28669c91e81ffc422f231dc65cbab5dd",
+    "libstreamfusion_parquet.so": "ff679550c487d9bb9014a9d4b6724e9e2cecd8dbf2786e2b9f81ee22b48f742b"
+  },
+  "environment": {
+    "platform": "Linux-7.0.0-1017-azure-x86_64-with-glibc2.39",
+    "processors": 4,
+    "backend": "rocksdb",
+    "mini_batch": false,
+    "cpu_model": "AMD EPYC 7763 64-Core Processor",
+    "physical_memory_bytes": 16760344576
+  },
+  "configuration": {
+    "rows": 2000000,
+    "input_bids": 1840000,
+    "parallelism": 4,
+    "source_partitions": 4,
+    "sink_partition_modulus": 4,
+    "checkpoint_ms": 1000,
+    "warmups": 1,
+    "runs": 3,
+    "object_reuse": true,
+    "jdk": "17.0.21+9",
+    "architecture": "amd64",
+    "available_processors": 4,
+    "heap_max_bytes": 8589934592,
+    "native_task_off_heap_capacity_bytes": 51539607552
+  },
+  "failure": {
+    "query": "q10",
+    "engine": "previous",
+    "trial": 1,
+    "expected_stock_output_rows": 1840000,
+    "actual_previous_output_rows": 1696199,
+    "missing_rows": 143801,
+    "stock_hudi_endpoints": true,
+    "native_hudi_endpoints": false
+  },
+  "completed_timing_observations": 66,
+  "stock_planner_rejections": [
+    {
+      "status": "stock-planner-rejected",
+      "reason": "Incomparable types: TIMESTAMP_LTZ(3) and TIMESTAMP(3) NOT NULL",
+      "query": "q7",
+      "backend": "rocksdb",
+      "mini_batch": false
+    }
+  ],
+  "previous_successful_q10_trial": [
+    {
+      "query": "q10",
+      "engine": "stock",
+      "backend": "rocksdb",
+      "mini_batch": false,
+      "trial": 0,
+      "milliseconds": 5979.500464,
+      "wall_milliseconds": 5979.501826,
+      "started_at_utc": "2026-11-15T00:24:42.723809022Z",
+      "output_rows": 1840000,
+      "sink_partitions": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "validation": "full-value multiset"
+    },
+    {
+      "query": "q10",
+      "engine": "previous",
+      "backend": "rocksdb",
+      "mini_batch": false,
+      "trial": 0,
+      "milliseconds": 49682.444508,
+      "wall_milliseconds": 49682.446292,
+      "started_at_utc": "2026-11-15T00:25:11.098278766Z",
+      "output_rows": 1840000,
+      "sink_partitions": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "validation": "full-value multiset"
+    },
+    {
+      "query": "q10",
+      "engine": "native",
+      "backend": "rocksdb",
+      "mini_batch": false,
+      "trial": 0,
+      "milliseconds": 2469.557624,
+      "wall_milliseconds": 2469.559267,
+      "started_at_utc": "2026-11-15T00:26:25.832573830Z",
+      "output_rows": 1840000,
+      "sink_partitions": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "validation": "full-value multiset"
+    }
+  ],
+  "limits": [
+    "Frozen source did not retain per-file physical row counts or commit metadata on this assertion failure.",
+    "The job removed its generated runtime tables after uploading logs and reports.",
+    "Native q10 trial1 parity was not reached after the previous-control assertion failed.",
+    "Partial query results do not qualify a complete configuration."
+  ],
+  "next_step": "Final exact-head hosted qualification after upstream integration. Preserve the original16d mismatch as unexplained historical evidence; the completed current-source campaign passes all36 Q10 timing identities without claiming its cause or a fix.",
+  "raw_evidence": {
+    "url": "https://github.com/jordepic/StreamFusion-contrib/releases/tag/benchmark-evidence-hudi-q10-failure-20261115-5cf84474a",
+    "bundle": {
+      "path": "hudi-q10-failure.tar.gz",
+      "bytes": 14380,
+      "sha256": "7562f9c3d79e850b356d3fcbe02b8c56a6f8ddb0342bbffc71336a7741c03957"
+    },
+    "files": 4,
+    "verification": "Independent download; bundle and all4member sizes/hashes checked before local raw-log cleanup."
+  },
+  "post_integration_reproduction": {
+    "status": "diagnostic-passed; original failure unresolved",
+    "source": "bf877576f92e605c03994b767a27a6a4dd52638a",
+    "native_tree": "54cfc7608463ba3a18aefac0d98764fcbfa88c4c",
+    "libraries_sha256": {
+      "libstreamfusion.dylib": "72f7ead6366250f881b321073250e642f86d06de6d3f665174bc1aecc5a13e22",
+      "libstreamfusion_parquet.dylib": "8b87c89e15b90d7afe509d0ccdcf61eda5f92f3b7ee028630e579907a220e2db"
+    },
+    "scope": "Focused unchanged Q10 correctness reproduction only; does not qualify the full matrix or integrated-candidate speedups",
+    "rows": 2000000,
+    "source_and_sink_tasks": 4,
+    "backend_configuration": "rocksdb",
+    "mini_batch": false,
+    "warmups": 1,
+    "trials_per_engine": 3,
+    "completed_timing_identities": 9,
+    "all_output_rows": 1840000,
+    "validated": [
+      "full-value multiset for each stock/previous/native trial",
+      "all four physical sink partitions",
+      "Rust footers for native user payloads",
+      "zero final native handles and memory reservations",
+      "wall/monotonic clock gaps below one second"
+    ],
+    "power_guard": "caffeinate -is",
+    "interpretation": "Did not reproduce on this host and newer integrated source. Does not explain or fix the archived hosted mismatch; no full-matrix or performance qualification claim.",
+    "raw_evidence": {
+      "url": "https://github.com/jordepic/StreamFusion-contrib/releases/tag/benchmark-evidence-hudi-integration-20261115-bf877576f",
+      "bundle": {
+        "path": "hudi-integration-evidence.tar.gz",
+        "bytes": 55642,
+        "sha256": "f3750f762d9a36c78fe8b924e23bd95d0d534ada49390cc4bb9971035f7fc4b2"
+      },
+      "files": 23,
+      "verification": "Independent download; bundle and all23member sizes/hashes verified before raw-log cleanup."
+    }
+  },
+  "linux_reproduction": {
+    "status": "diagnostic-passed",
+    "commit": "480eefc2a32f9e17f30ea89cf4b1fbd3ca1b7373",
+    "native_tree": "54cfc7608463ba3a18aefac0d98764fcbfa88c4c",
+    "native_producer_run": 43663389459,
+    "libraries_sha256": {
+      "libstreamfusion.so": "44edd010401f1ad0a2980429abf14215ca99d262ef711a43124c96739a9bddff",
+      "libstreamfusion_parquet.so": "7fcc7ffecd0e4a15538ccd5cd51ee58931d7c0482f1c1a5ffb6181326be22775"
+    },
+    "platform": "Linux-7.0.0-1014-aws-x86_64-with-glibc2.39",
+    "processors": 4,
+    "backend": "rocksdb",
+    "mini_batch": false,
+    "scope": "Focused correctness diagnostic; not full-matrix qualification",
+    "diagnostic_queries": [
+      "q10"
+    ],
+    "cpu_model": "Intel(R) Xeon(R) 6975P-C",
+    "physical_memory_bytes": 16464293888,
+    "exit_code": 0,
+    "report": {
+      "status": "passed",
+      "failure_diagnostics": [],
+      "rows": 2000000,
+      "input_bids": 1840000,
+      "parallelism": 4,
+      "source_partitions": 4,
+      "sink_partition_modulus": 4,
+      "checkpoint_ms": 1000,
+      "warmups": 1,
+      "runs": 3,
+      "object_reuse": true,
+      "jdk": "17.0.21+9",
+      "architecture": "amd64",
+      "available_processors": 4,
+      "heap_max_bytes": 8589934592,
+      "native_task_off_heap_capacity_bytes": 51539607552,
+      "state_backend_checks": [],
+      "observations": [
+        {
+          "query": "q10",
+          "engine": "stock",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 20132.276479,
+          "wall_milliseconds": 20132.280864,
+          "started_at_utc": "2026-11-15T02:30:35.982766390Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q10",
+          "engine": "previous",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 43366.171751,
+          "wall_milliseconds": 43366.175268,
+          "started_at_utc": "2026-11-15T02:31:12.621693002Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q10",
+          "engine": "native",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 0,
+          "milliseconds": 1454.503408,
+          "wall_milliseconds": 1454.507279,
+          "started_at_utc": "2026-11-15T02:32:13.850478465Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q10",
+          "engine": "native",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 1518.082516,
+          "wall_milliseconds": 1518.086508,
+          "started_at_utc": "2026-11-15T02:32:32.304670746Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q10",
+          "engine": "stock",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 19719.451446,
+          "wall_milliseconds": 19719.455163,
+          "started_at_utc": "2026-11-15T02:32:49.666128834Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q10",
+          "engine": "previous",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 1,
+          "milliseconds": 43452.324338,
+          "wall_milliseconds": 43452.327955,
+          "started_at_utc": "2026-11-15T02:33:25.606171984Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q10",
+          "engine": "previous",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 43214.361804,
+          "wall_milliseconds": 43214.365298,
+          "started_at_utc": "2026-11-15T02:34:28.554554012Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q10",
+          "engine": "native",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 1337.967493,
+          "wall_milliseconds": 1337.970528,
+          "started_at_utc": "2026-11-15T02:35:29.458205771Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        },
+        {
+          "query": "q10",
+          "engine": "stock",
+          "backend": "rocksdb",
+          "mini_batch": false,
+          "trial": 2,
+          "milliseconds": 20027.062748,
+          "wall_milliseconds": 20027.066251,
+          "started_at_utc": "2026-11-15T02:35:46.531841757Z",
+          "output_rows": 1840000,
+          "sink_partitions": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "validation": "full-value multiset"
+        }
+      ]
+    },
+    "workflow_run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43665309971",
+    "interpretation": "Current-source Linux repeat passes all nine timed identities and full output values. Does not explain or fix the archived failure, qualify a full configuration, or establish a before/after performance comparison.",
+    "raw_evidence": {
+      "url": "https://github.com/jordepic/StreamFusion-contrib/releases/tag/benchmark-evidence-hudi-q10-linux-20261115-480eefc2a",
+      "bundle": {
+        "path": "hudi-q10-linux-diagnostic.tar.gz",
+        "bytes": 7798,
+        "sha256": "a869af6cd5d6e6c4542b77026e8726132df2422e451262e9bfa3f8c0eebfe1df"
+      },
+      "files": 4,
+      "verification": "Independent download; bundle and all four member sizes/hashes checked before raw-log cleanup."
+    },
+    "medians_ms": {
+      "stock": 20027.062748,
+      "previous": 43366.171751,
+      "native": 1454.503408
+    }
+  },
+  "full_matrix_reproduction": {
+    "status": "passed on source67d03a0f7; original failure unexplained",
+    "source": "67d03a0f775e7ea8d5339c9bfd8bdc316778d23d",
+    "native_tree": "54cfc7608463ba3a18aefac0d98764fcbfa88c4c",
+    "workflow_run": "https://github.com/jordepic/StreamFusion-contrib/actions/runs/43680106018",
+    "completed_configurations": 4,
+    "timed_observations": 792,
+    "q10_timed_identities": 36,
+    "all_q10_output_rows": 1840000,
+    "q10_validation": "full-value multiset in every stock/previous/native trial",
+    "raw_evidence": {
+      "url": "https://github.com/jordepic/StreamFusion-contrib/releases/tag/benchmark-evidence-hudi-matrix-20261115-67d03a0f7",
+      "bundle": {
+        "path": "hudi-full-matrix.tar.gz",
+        "bytes": 136335,
+        "sha256": "ac00363b0aed7c9ab92614d4b4f1c5daac78162736e6d06c771ca6c52bfdf91f"
+      },
+      "files": 16,
+      "verification": "Independent download; bundle and all16 member sizes/hashes checked before raw-log cleanup."
+    }
+  }
+}

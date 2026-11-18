@@ -18,15 +18,16 @@ import org.apache.hudi.table.HoodieTableSink;
 import tech.streamfusion.operator.ArrowBatch;
 
 /** Version-pinned graph boundary; SQL admission is separate from this payload adaptation. */
-final class HudiMorSink {
-  private HudiMorSink() {}
+final class HudiSinkGraph {
+  private HudiSinkGraph() {}
 
   @SuppressWarnings({"rawtypes", "unchecked"})
   static DataStreamSink<?> appendValidated(
       DataStream<ArrowBatch> input,
       HoodieTableSink table,
       RowType type,
-      DynamicTableSink.Context context) {
+      DynamicTableSink.Context context,
+      boolean mor) {
     var copied = (HoodieTableSink) table.copy();
     var provider = (DataStreamSinkProviderAdapter) copied.getSinkRuntimeProvider(context);
     var roots = input.getExecutionEnvironment().getTransformations();
@@ -49,29 +50,56 @@ final class HudiMorSink {
       var factory = operator.getOperatorFactory();
       if (!(factory instanceof SimpleOperatorFactory)
           || ((SimpleOperatorFactory<?>) factory).getOperator().getClass()
-              != BucketStreamWriteOperator.class) continue;
-      if (operator.getParallelism() != 1 || operator.getStateKeySelector() != null)
-        throw new IllegalArgumentException(
-            "MOR Arrow admission requires one unkeyed bucket writer");
+              != (mor
+                  ? BucketStreamWriteOperator.class
+                  : org.apache.hudi.sink.append.AppendWriteOperator.class)) continue;
+      if (mor && operator.getStateKeySelector() != null)
+        throw new IllegalArgumentException("MOR Arrow admission requires unkeyed bucket writers");
       try {
         var replacement = OneInputTransformation.class.getDeclaredField("operatorFactory");
         replacement.setAccessible(true);
         replacement.set(
             operator,
-            WriteOperatorFactory.instance(
-                copied.getConf(), new HudiMorOperator(copied.getConf(), type)));
-        var edge = OneInputTransformation.class.getDeclaredField("input");
-        edge.setAccessible(true);
-        // With one writer, Hudi's key partitioner routes to zero; a single input needs no shuffle.
-        edge.set(
-            operator, (input.getParallelism() == 1 ? input : input.global()).getTransformation());
+            mor
+                ? WriteOperatorFactory.instance(
+                    copied.getConf(), new HudiMorOperator(copied.getConf(), type))
+                : WriteOperatorFactory.instance(
+                    copied.getConf(), new HudiAppendOperator(copied.getConf(), type)));
+        if (mor) {
+          var edge = OneInputTransformation.class.getDeclaredField("input");
+          edge.setAccessible(true);
+          int writers = operator.getParallelism();
+          if (writers == 1) {
+            edge.set(
+                operator,
+                (input.getParallelism() == 1 ? input : input.global()).getTransformation());
+          } else {
+            var routed =
+                input.transform(
+                    "hudi-bucket-routing",
+                    tech.streamfusion.operator.ArrowBatchTypeInformation.INSTANCE,
+                    new HudiBucketRouter(copied.getConf(), type, writers));
+            edge.set(
+                operator,
+                routed
+                    .partitionCustom(
+                        (Integer channel, int channels) -> {
+                          if (channel < 0 || channel >= channels)
+                            throw new IllegalArgumentException(
+                                "Invalid Hudi writer channel " + channel);
+                          return channel;
+                        },
+                        ArrowBatch::keyGroup)
+                    .getTransformation());
+          }
+        }
       } catch (ReflectiveOperationException failure) {
-        throw new IllegalArgumentException("Unsupported released Hudi bucket topology", failure);
+        throw new IllegalArgumentException("Unsupported released Hudi writer topology", failure);
       }
       replaced++;
     }
     if (replaced != 1)
-      throw new IllegalArgumentException("Expected one Hudi bucket writer, found " + replaced);
+      throw new IllegalArgumentException("Expected one Hudi writer, found " + replaced);
     seen.clear();
     pending.add(sink.getTransformation());
     while (!pending.isEmpty()) {

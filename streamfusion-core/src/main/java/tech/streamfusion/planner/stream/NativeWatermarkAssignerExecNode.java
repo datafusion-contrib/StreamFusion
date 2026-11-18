@@ -14,6 +14,7 @@ import org.apache.flink.table.planner.plan.nodes.exec.utils.ExecNodeUtil;
 import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.ArrowBatchTypeInformation;
+import tech.streamfusion.operator.NativeColumnarTerminalWatermarkAssignerOperator;
 import tech.streamfusion.operator.NativeColumnarWatermarkAssignerOperator;
 import tech.streamfusion.operator.WatermarkExpression;
 
@@ -28,6 +29,7 @@ public class NativeWatermarkAssignerExecNode extends ExecNodeBase<ArrowBatch>
 
   private final int rowtimeColumn;
   private final WatermarkExpression expression;
+  private final boolean preserveBoundaries;
 
   public NativeWatermarkAssignerExecNode(
       ReadableConfig tableConfig,
@@ -36,6 +38,17 @@ public class NativeWatermarkAssignerExecNode extends ExecNodeBase<ArrowBatch>
       String description,
       int rowtimeColumn,
       WatermarkExpression expression) {
+    this(tableConfig, inputProperty, outputType, description, rowtimeColumn, expression, true);
+  }
+
+  public NativeWatermarkAssignerExecNode(
+      ReadableConfig tableConfig,
+      InputProperty inputProperty,
+      RowType outputType,
+      String description,
+      int rowtimeColumn,
+      WatermarkExpression expression,
+      boolean preserveBoundaries) {
     super(
         ExecNodeContext.newNodeId(),
         new ExecNodeContext("stream-exec-native-watermark-assigner_1"),
@@ -45,6 +58,7 @@ public class NativeWatermarkAssignerExecNode extends ExecNodeBase<ArrowBatch>
         description);
     this.rowtimeColumn = rowtimeColumn;
     this.expression = expression;
+    this.preserveBoundaries = preserveBoundaries;
   }
 
   @Override
@@ -56,7 +70,9 @@ public class NativeWatermarkAssignerExecNode extends ExecNodeBase<ArrowBatch>
     return ExecNodeUtil.createOneInputTransformation(
         input,
         createTransformationMeta(TRANSFORMATION, config),
-        new NativeColumnarWatermarkAssignerOperator(rowtimeColumn, expression),
+        preserveBoundaries
+            ? new NativeColumnarWatermarkAssignerOperator(rowtimeColumn, expression)
+            : new NativeColumnarTerminalWatermarkAssignerOperator(rowtimeColumn, expression),
         ArrowBatchTypeInformation.INSTANCE,
         input.getParallelism(),
         false);

@@ -1,0 +1,232 @@
+diff --git a/native/engine/src/state/rocks_store/window_agg_store.rs b/native/engine/src/state/rocks_store/window_agg_store.rs
+index af66bb414..8f266857d 100644
+--- a/native/engine/src/state/rocks_store/window_agg_store.rs
++++ b/native/engine/src/state/rocks_store/window_agg_store.rs
+@@ -181,6 +181,11 @@ impl RocksWindowAggStore {
+         self.watermark
+     }
+ 
++    #[cfg(test)]
++    pub(crate) fn io_counts(&self) -> (usize, usize) {
++        self.db.io_counts()
++    }
++
+     /// The processing-time timer deadline persisted by the checkpoint this store restored from.
+     pub(crate) fn timer_deadline(&self) -> i64 {
+         self.timer_deadline
+diff --git a/native/engine/src/window_agg.rs b/native/engine/src/window_agg.rs
+index 96aeb7f71..ce202002c 100644
+--- a/native/engine/src/window_agg.rs
++++ b/native/engine/src/window_agg.rs
+@@ -314,6 +314,12 @@ struct WindowSnapshotCache {
+     snapshots: BTreeMap<i32, Vec<u8>>,
+ }
+ 
++#[derive(Clone, Copy)]
++struct SliceTimer {
++    key_group: i32,
++    dirty: bool,
++}
++
+ /// Event-time aligned-window aggregation that holds open windows across batches: tumbling and
+ /// hopping (fixed-size windows at a slide interval) and cumulative (nested windows sharing a start,
+ /// growing by a step up to a max size). Fixed grids retain independent window accumulators.
+@@ -336,7 +342,7 @@ pub(crate) struct TumblingAggregator {
+     shared_slices: bool,
+     legacy_slices: bool,
+     timer_watermark_uninitialized: bool,
+-    slice_timers: BTreeMap<i64, BTreeMap<OwnedRow, i32>>,
++    slice_timers: BTreeMap<i64, BTreeMap<OwnedRow, SliceTimer>>,
+     aggregates: Vec<WindowAggregate>,
+     exact_panes: bool,
+     live_count: Option<usize>,
+@@ -656,7 +662,7 @@ impl TumblingAggregator {
+                 .slice_timers
+                 .values()
+                 .flat_map(|keys| keys.keys())
+-                .map(|key| owned_row_bytes(key) + std::mem::size_of::<(i64, i32)>())
++                .map(|key| owned_row_bytes(key) + std::mem::size_of::<(i64, SliceTimer)>())
+                 .sum::<usize>()
+             + self
+                 .canonical_distinct_counts
+@@ -1886,9 +1892,13 @@ impl TumblingAggregator {
+                     .filter(|_| persist_timers)
+                     .flat_map(|(&end, keys)| {
+                         keys.iter()
+-                            .map(move |(key, &group)| (group, end, key.row().data()))
++                            .filter(|(_, timer)| timer.dirty)
++                            .map(move |(key, timer)| (timer.key_group, end, key.row().data()))
+                     }),
+             )?;
++        if persist_timers {
++            self.mark_slice_timers_persisted();
++        }
+         self.memory.account_shrink();
+         Ok(())
+     }
+@@ -2295,7 +2305,13 @@ impl TumblingAggregator {
+                         .slice_timers
+                         .entry(ends.value(row))
+                         .or_default()
+-                        .insert(key, -1);
++                        .insert(
++                            key,
++                            SliceTimer {
++                                key_group: -1,
++                                dirty: true,
++                            },
++                        );
+                     continue;
+                 }
+                 let mut column = 2 + arity + usize::from(record_kinds.is_some());
+diff --git a/native/engine/src/window_agg/canonical.rs b/native/engine/src/window_agg/canonical.rs
+index efdc546e7..f950aafb7 100644
+--- a/native/engine/src/window_agg/canonical.rs
++++ b/native/engine/src/window_agg/canonical.rs
+@@ -854,7 +854,7 @@ impl crate::state::canonical_memory::CanonicalMemoryState for TumblingAggregator
+                 (
+                     *end,
+                     keys.iter()
+-                        .map(|(key, group)| (copy_key(key), *group))
++                        .map(|(key, timer)| (copy_key(key), *timer))
+                         .collect(),
+                 )
+             })
+diff --git a/native/engine/src/window_agg/canonical/tests.rs b/native/engine/src/window_agg/canonical/tests.rs
+index 2d48072c4..67fd5b087 100644
+--- a/native/engine/src/window_agg/canonical/tests.rs
++++ b/native/engine/src/window_agg/canonical/tests.rs
+@@ -114,6 +114,39 @@ fn shared_firing_tracks_earlier_input_between_watermarks() {
+     }
+ }
+ 
++#[test]
++fn unchanged_pending_timers_do_not_rewrite_rocksdb() {
++    let directory = tempfile::tempdir().unwrap();
++    let mut operator = shared(Some(directory.path()), false, false, true);
++    let key = operator
++        .key_converter
++        .as_ref()
++        .unwrap()
++        .convert_columns(&[Arc::new(Int64Array::from(vec![7])) as ArrayRef])
++        .unwrap()
++        .row(0)
++        .owned();
++    assert!(operator.add_slice_timer(1000, key.clone(), 7).unwrap());
++    assert!(operator.add_slice_timer(2000, key.clone(), 7).unwrap());
++    operator.persist_slice_timers().unwrap();
++    let writes = operator.store.as_ref().unwrap().io_counts().1;
++    assert!(!operator.add_slice_timer(1000, key, 7).unwrap());
++    operator.persist_slice_timers().unwrap();
++    assert_eq!(operator.store.as_ref().unwrap().io_counts().1, writes);
++    assert_eq!(operator.flush(0).unwrap().num_rows(), 0);
++    assert_eq!(operator.store.as_ref().unwrap().io_counts().1, writes);
++    assert_eq!(
++        operator
++            .store
++            .as_ref()
++            .unwrap()
++            .slice_timers()
++            .unwrap()
++            .len(),
++        2
++    );
++}
++
+ #[test]
+ fn timer_only_namespaces_survive_bounded_transfer_and_failed_receiver() {
+     for rocks in [false, true] {
+diff --git a/native/engine/src/window_agg/shared.rs b/native/engine/src/window_agg/shared.rs
+index 54dc76ac1..efdaf8c9f 100644
+--- a/native/engine/src/window_agg/shared.rs
++++ b/native/engine/src/window_agg/shared.rs
+@@ -75,15 +75,27 @@ impl TumblingAggregator {
+         if self.slice_deadline_known {
+             self.next_slice_end = Some(self.next_slice_end.map_or(end, |next| next.min(end)));
+         }
+-        let added = self
+-            .slice_timers
+-            .entry(end)
+-            .or_default()
+-            .insert(key.clone(), key_group)
+-            .is_none();
++        let added = match self.slice_timers.entry(end).or_default().entry(key.clone()) {
++            std::collections::btree_map::Entry::Vacant(entry) => {
++                entry.insert(SliceTimer {
++                    key_group,
++                    dirty: true,
++                });
++                true
++            }
++            std::collections::btree_map::Entry::Occupied(mut entry) => {
++                if entry.get().key_group != key_group {
++                    let timer = entry.get_mut();
++                    timer.key_group = key_group;
++                    timer.dirty = true;
++                }
++                false
++            }
++        };
+         if added && self.memory.tracking() {
+-            self.memory
+-                .record((owned_row_bytes(&key) + std::mem::size_of::<(i64, i32)>()) as isize);
++            self.memory.record(
++                (owned_row_bytes(&key) + std::mem::size_of::<(i64, SliceTimer)>()) as isize,
++            );
+         }
+         Ok(added)
+     }
+@@ -93,12 +105,24 @@ impl TumblingAggregator {
+         if let Some(store) = &mut self.store {
+             store.put_slice_timers(self.slice_timers.iter().flat_map(|(&end, keys)| {
+                 keys.iter()
+-                    .map(move |(key, &group)| (group, end, key.row().data()))
++                    .filter(|(_, timer)| timer.dirty)
++                    .map(move |(key, timer)| (timer.key_group, end, key.row().data()))
+             }))?;
++            self.mark_slice_timers_persisted();
+         }
+         Ok(())
+     }
+ 
++    pub(super) fn mark_slice_timers_persisted(&mut self) {
++        for timer in self
++            .slice_timers
++            .values_mut()
++            .flat_map(|keys| keys.values_mut())
++        {
++            timer.dirty = false;
++        }
++    }
++
+     pub(super) fn clear_resident_slice_timers(&mut self) {
+         #[cfg(feature = "rocksdb-state")]
+         if self.store.is_some() {
+@@ -294,7 +318,11 @@ impl TumblingAggregator {
+                 self.slice_timers
+                     .entry(end)
+                     .or_default()
+-                    .insert(parser.parse(&bytes).owned(), key_group);
++                    .entry(parser.parse(&bytes).owned())
++                    .or_insert(SliceTimer {
++                        key_group,
++                        dirty: false,
++                    });
+             }
+             self.memory.set(self.computed_state_bytes());
+             self.memory.account()?;
+@@ -495,11 +523,12 @@ impl TumblingAggregator {
+                 self.memory.forget(
+                     timers
+                         .keys()
+-                        .map(|key| owned_row_bytes(key) + std::mem::size_of::<(i64, i32)>())
++                        .map(|key| owned_row_bytes(key) + std::mem::size_of::<(i64, SliceTimer)>())
+                         .sum(),
+                 );
+             }
+-            for (key, key_group) in timers {
++            for (key, timer) in timers {
++                let key_group = timer.key_group;
+                 #[cfg(feature = "rocksdb-state")]
+                 if let Some(store) = &mut self.store {
+                     store.delete_slice_timer(key_group, end, key.row().data())?;

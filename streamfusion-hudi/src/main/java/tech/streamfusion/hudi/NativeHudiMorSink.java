@@ -18,7 +18,7 @@ import org.apache.hudi.util.StreamerUtil;
 import tech.streamfusion.Native;
 import tech.streamfusion.operator.ArrowBatch;
 
-/** Admission for raw Arrow staging around the original single-writer bucket-index sink. */
+/** Admission for Arrow buffering around Hudi's original bucket-index writers. */
 public final class NativeHudiMorSink {
   private NativeHudiMorSink() {}
 
@@ -28,9 +28,8 @@ public final class NativeHudiMorSink {
         || !"upsert".equals(conf.get(FlinkOptions.OPERATION))
         || !"BUCKET".equals(conf.get(FlinkOptions.INDEX_TYPE))
         || !"SIMPLE".equals(conf.get(FlinkOptions.BUCKET_INDEX_ENGINE_TYPE))
-        || conf.getOptional(FlinkOptions.WRITE_TASKS).orElse(-1) != 1
+        || conf.getOptional(FlinkOptions.WRITE_TASKS).orElse(-1) <= 0
         || conf.get(FlinkOptions.METADATA_ENABLED)
-        || conf.get(FlinkOptions.PRE_COMBINE)
         || conf.get(FlinkOptions.CDC_ENABLED)
         || conf.get(FlinkOptions.CHANGELOG_ENABLED)
         || conf.get(FlinkOptions.COMPACTION_SCHEDULE_ENABLED)
@@ -39,15 +38,15 @@ public final class NativeHudiMorSink {
         || conf.get(FlinkOptions.CLUSTERING_ASYNC_ENABLED)
         || OptionsResolver.isManagedMemoryBufferEnabled(conf)
         || conf.get(FlinkOptions.WRITE_RATE_LIMIT) != 0
-        || !conf.get(FlinkOptions.PARTITION_PATH_FIELD).isEmpty()
         || !"parquet".equalsIgnoreCase(conf.toMap().get("hoodie.logfile.data.block.format"))
         || !Double.isFinite(conf.get(FlinkOptions.WRITE_BATCH_SIZE))
         || conf.get(FlinkOptions.WRITE_BATCH_SIZE) <= 0
         || OptionsResolver.getWriteBufferSizeInBytes(conf) <= 0)
       throw new IllegalArgumentException(
-          "MOR Arrow writes require one unpartitioned SIMPLE bucket writer, Parquet logs, "
-              + "no precombine, metadata table, changelog storage or rewrite services");
+          "MOR Arrow writes require explicit SIMPLE bucket writers, Parquet logs, "
+              + "no metadata table, changelog storage or rewrite services");
     var effective = HudiWriteAdmission.validateFormat(table, type);
+    for (var field : type.getFields()) HudiTypes.validate(field.getType(), false);
     if (effective.getWriteVersion().versionCode() != 9
         || !effective.populateMetaFields()
         || effective.allowOperationMetadataField()
@@ -92,19 +91,38 @@ public final class NativeHudiMorSink {
         if (!"MERGE_ON_READ".equals(meta.getTableType().name())
             || actual.getTableVersion().versionCode() != 9
             || !actual.populateMetaFields()
-            || actual.isTablePartitioned()
             || actual.isCDCEnabled()
             || actual.getBootstrapBasePath().isPresent()
             || actual.getPartialUpdateMode().isPresent()
+            || actual.shouldDropPartitionColumns()
             || !"PARQUET".equals(actual.getBaseFileFormat().name())
             || actual.getRecordMergeMode() != effective.getRecordMergeMode()
             || !standardPayload(actual.getLegacyPayloadClass())
             || !keys.equals(Arrays.asList(actual.getRecordKeyFields().orElse(new String[0]))))
           throw new IllegalArgumentException("Existing target does not match MOR Arrow admission");
+        var partitions = conf.get(FlinkOptions.PARTITION_PATH_FIELD);
+        var expectedPartitions =
+            partitions.isEmpty()
+                ? List.<String>of()
+                : Arrays.stream(partitions.split(","))
+                    .map(String::trim)
+                    .collect(Collectors.toList());
+        if (!expectedPartitions.equals(
+            Arrays.asList(actual.getPartitionFields().orElse(new String[0]))))
+          throw new IllegalArgumentException("MOR target partition fields do not match");
+        var orderingFields = OptionsResolver.getOrderingFieldsStr(conf);
+        var expectedOrdering =
+            orderingFields == null || orderingFields.isEmpty()
+                ? List.<String>of()
+                : Arrays.stream(orderingFields.split(","))
+                    .map(String::trim)
+                    .collect(Collectors.toList());
+        if (!expectedOrdering.equals(actual.getOrderingFields()))
+          throw new IllegalArgumentException("MOR target ordering fields do not match");
         var stored =
             HoodieSchemaConverter.convertToRowType(
                 new TableSchemaResolver(meta).getTableSchema(false));
-        if (!stored.copy(true).equals(declared.copy(true)))
+        if (!stored.copy(true).equals(HudiWriteAdmission.canonicalType(declared).copy(true)))
           throw new IllegalArgumentException("MOR target schema evolution is not admitted");
       } catch (Exception failure) {
         throw new IllegalArgumentException("Cannot verify the existing MOR target", failure);
@@ -147,8 +165,8 @@ public final class NativeHudiMorSink {
     @Override
     public DataStreamSink<?> append(
         DataStream<ArrowBatch> input, DynamicTableSink.Context context) {
-      return HudiMorSink.appendValidated(
-          HudiWriteAdmission.constrainInput(input, declared), table, declared, context);
+      return HudiSinkGraph.appendValidated(
+          HudiWriteAdmission.constrainInput(input, declared), table, declared, context, true);
     }
 
     @Override

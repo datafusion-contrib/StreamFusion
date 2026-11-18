@@ -46,10 +46,41 @@ class HudiRowBufferControlTest {
         for (int index = 0; index < values.size(); index++)
           assertEquals(
               serializer.toBinaryRow(values.get(index)).getSizeInBytes(),
-              HudiRowBufferControl.rowBytes(root, index, fields));
+              HudiRowBufferControl.rowBytes(root, index, type));
       }
     }
     assertEquals(0, TaskOffHeapMemory.reservedBytes());
+  }
+
+  @Test
+  void scalarSizesMatchFlinkWithoutSerializingArrowPayloads() {
+    var type =
+        RowType.of(
+            new org.apache.flink.table.types.logical.VarBinaryType(),
+            new org.apache.flink.table.types.logical.DecimalType(25, 6),
+            new org.apache.flink.table.types.logical.DecimalType(9, 3),
+            new org.apache.flink.table.types.logical.TimestampType(6),
+            new org.apache.flink.table.types.logical.LocalZonedTimestampType(6));
+    List<RowData> values = new ArrayList<>();
+    values.add(new GenericRowData(5));
+    for (int length : new int[] {0, 1, 7, 8, 15, 16, 32769}) {
+      values.add(
+          GenericRowData.of(
+              new byte[length],
+              org.apache.flink.table.data.DecimalData.fromBigDecimal(
+                  new java.math.BigDecimal("1234567890123456789.123456"), 25, 6),
+              org.apache.flink.table.data.DecimalData.fromBigDecimal(
+                  new java.math.BigDecimal("-12.345"), 9, 3),
+              org.apache.flink.table.data.TimestampData.fromEpochMillis(-1, 123000),
+              org.apache.flink.table.data.TimestampData.fromEpochMillis(123, 456000)));
+    }
+    var serializer = new RowDataSerializer(type);
+    try (var root = RowDataArrowConverter.write(values, type, NativeAllocator.SHARED)) {
+      for (int row = 0; row < values.size(); row++)
+        assertEquals(
+            serializer.toBinaryRow(values.get(row)).getSizeInBytes(),
+            HudiRowBufferControl.rowBytes(root, row, type));
+    }
   }
 
   @Test

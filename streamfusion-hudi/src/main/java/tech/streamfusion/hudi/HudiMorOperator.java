@@ -13,6 +13,7 @@ import java.util.NoSuchElementException;
 import org.apache.arrow.vector.TinyIntVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.runtime.state.FunctionInitializationContext;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
@@ -23,13 +24,19 @@ import org.apache.hudi.client.WriteStatus;
 import org.apache.hudi.client.model.HoodieFlinkInternalRow;
 import org.apache.hudi.common.config.HoodieStorageConfig;
 import org.apache.hudi.common.model.HoodieRecord;
+import org.apache.hudi.common.schema.HoodieSchema;
+import org.apache.hudi.common.table.read.BufferedRecordMerger;
+import org.apache.hudi.common.table.read.BufferedRecordMergerFactory;
+import org.apache.hudi.common.util.HoodieRecordUtils;
 import org.apache.hudi.configuration.FlinkOptions;
 import org.apache.hudi.exception.HoodieException;
 import org.apache.hudi.sink.StreamWriteFunction;
 import org.apache.hudi.sink.bucket.BucketStreamWriteFunction;
 import org.apache.hudi.sink.buffer.RowDataBucket;
 import org.apache.hudi.sink.common.AbstractWriteOperator;
+import org.apache.hudi.sink.utils.TimeWait;
 import org.apache.hudi.table.action.commit.BucketInfo;
+import org.apache.hudi.table.action.commit.FlinkWriteHelper;
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.RowDataArrowConverter;
 import tech.streamfusion.operator.TaskOffHeapMemory;
@@ -72,14 +79,42 @@ final class HudiMorOperator extends AbstractWriteOperator<HoodieFlinkInternalRow
     private transient BufferedBatch currentBatch;
     private transient HoodieFlinkInternalRow currentControl;
     private transient int currentRow;
+    private transient HudiArrowWriteContext mergeContext;
+    private transient BufferedRecordMerger<RowData> merger;
+    private transient String[] orderingFields;
+    private transient boolean recovering;
 
     Function(Configuration conf, RowType type) {
       super(conf, type);
     }
 
     @Override
+    public void initializeState(FunctionInitializationContext context) throws Exception {
+      super.initializeState(context);
+      recovering = context.isRestored();
+    }
+
+    @Override
     public void open(Configuration parameters) throws IOException {
       super.open(parameters);
+      if (config.get(FlinkOptions.PRE_COMBINE)) {
+        mergeContext = new HudiArrowWriteContext(metaClient);
+        var props = writeClient.getConfig().getProps();
+        mergeContext.initRecordMergerForIngestion(props);
+        orderingFields =
+            HoodieRecordUtils.getOrderingFieldNames(mergeContext.getMergeMode(), metaClient)
+                .toArray(new String[0]);
+        merger =
+            BufferedRecordMergerFactory.create(
+                mergeContext,
+                mergeContext.getMergeMode(),
+                false,
+                mergeContext.getRecordMerger(),
+                HoodieSchema.parse(writeClient.getConfig().getSchema()),
+                mergeContext.getPayloadClasses(props),
+                props,
+                metaClient.getTableConfig().getPartialUpdateMode());
+      }
       Map<String, RowDataBucket> buckets =
           new LinkedHashMap<String, RowDataBucket>() {
             @Override
@@ -101,8 +136,7 @@ final class HudiMorOperator extends AbstractWriteOperator<HoodieFlinkInternalRow
         throw new IOException("Unsupported Hudi write-buffer boundary", failure);
       }
       writeClient
-          .getHoodieTable(false)
-          .getContext()
+          .getEngineContext()
           .getStorageConf()
           .set(HoodieStorageConfig.HOODIE_IO_FACTORY_CLASS.key(), HudiMorIOFactory.class.getName());
     }
@@ -120,13 +154,24 @@ final class HudiMorOperator extends AbstractWriteOperator<HoodieFlinkInternalRow
       }
       currentBatch = input;
       try {
+        if (recovering) {
+          // The coordinator must finish replayed commits before Java bootstraps file groups.
+          var wait =
+              TimeWait.builder()
+                  .timeout(config.get(FlinkOptions.WRITE_COMMIT_ACK_TIMEOUT))
+                  .interval(50)
+                  .action("restored Hudi commits before bucket bootstrap")
+                  .build();
+          while (correspondent.requestInflightInstants().keySet().stream()
+              .anyMatch(id -> id < checkpointId)) wait.waitFor();
+          recovering = false;
+        }
         var shape = HudiRowBufferControl.shape(rowType.getFieldCount());
         for (currentRow = 0; currentRow < root.getRowCount(); currentRow++) {
           var cursor = input.batch.cursor;
           cursor.setRowId(currentRow);
           cursor.setRowKind(kind(input.kinds, currentRow));
-          shape.setTotalSize(
-              HudiRowBufferControl.rowBytes(root, currentRow, rowType.getFieldCount()));
+          shape.setTotalSize(HudiRowBufferControl.rowBytes(root, currentRow, rowType));
           currentControl =
               new HoodieFlinkInternalRow(
                   keyGen.getRecordKey(cursor), keyGen.getPartitionPath(cursor), shape);
@@ -146,7 +191,8 @@ final class HudiMorOperator extends AbstractWriteOperator<HoodieFlinkInternalRow
       try {
         var statuses =
             writeFunction.write(
-                new Records(arrowBucket.selections, bucket.getBucketInfo()),
+                deduplicateRecordsIfNeeded(
+                    new Records(arrowBucket.selections, bucket.getBucketInfo())),
                 bucket.getBucketInfo(),
                 instant);
         writeMetrics.endFileFlush();
@@ -155,6 +201,21 @@ final class HudiMorOperator extends AbstractWriteOperator<HoodieFlinkInternalRow
       } finally {
         arrowBucket.releasePayloads();
       }
+    }
+
+    @Override
+    protected Iterator<HoodieRecord> deduplicateRecordsIfNeeded(Iterator<HoodieRecord> records) {
+      if (!config.get(FlinkOptions.PRE_COMBINE)) return records;
+      return FlinkWriteHelper.newInstance()
+          .deduplicateRecords(
+              records,
+              null,
+              -1,
+              writeClient.getConfig().getSchema(),
+              writeClient.getConfig().getProps(),
+              merger,
+              mergeContext,
+              orderingFields);
     }
 
     private final class BufferedBatch {
@@ -315,8 +376,8 @@ final class HudiMorOperator extends AbstractWriteOperator<HoodieFlinkInternalRow
 
   private static RowKind kind(TinyIntVector kinds, int row) {
     if (kinds == null) return RowKind.INSERT;
-    if (kinds.isNull(row) || kinds.get(row) == RowKind.UPDATE_BEFORE.toByteValue())
-      throw new IllegalArgumentException("Hudi MOR requires INSERT, UPDATE_AFTER or DELETE");
+    if (kinds.isNull(row))
+      throw new IllegalArgumentException("Hudi MOR requires a valid changelog row kind");
     return RowKind.fromByteValue(kinds.get(row));
   }
 }

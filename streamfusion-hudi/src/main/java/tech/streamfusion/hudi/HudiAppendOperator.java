@@ -67,6 +67,7 @@ final class HudiAppendOperator extends AbstractWriteOperator<Object> {
             batch.cursor.setRowId(i);
             super.processElement(batch.cursor, context, output);
           }
+          batch.finish();
         } finally {
           batch.finished = true;
         }

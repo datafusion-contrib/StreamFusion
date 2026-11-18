@@ -115,11 +115,36 @@ class HudiMorSinkTest {
   }
 
   @Test
-  void sqlPostImagesUseTheColumnarSinkAndUnverifiedPoliciesStayStock() throws Exception {
+  void aWriteSchemaOverrideCannotChangeTheArrowColumnLayout() {
+    var conf = configuration();
+    var different =
+        RowType.of(
+            new org.apache.flink.table.types.logical.LogicalType[] {
+              TYPE.getTypeAt(0),
+              new org.apache.flink.table.types.logical.IntType(),
+              TYPE.getTypeAt(2)
+            },
+            new String[] {"id", "name", "ts"});
+    conf.set(
+        FlinkOptions.SOURCE_AVRO_SCHEMA,
+        HoodieSchemaConverter.convertToSchema(different.copy(false)).toString());
+    var failure =
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> NativeHudiMorSink.validate(new HoodieTableSink(conf, SCHEMA), TYPE));
+    assertTrue(failure.getMessage().contains("write schema does not match"), failure.getMessage());
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+  void sqlPostImagesUseTheColumnarSinkAndUnverifiedPoliciesStayStock(boolean materialize)
+      throws Exception {
     var memory = new Configuration();
     memory.set(TaskManagerOptions.TASK_OFF_HEAP_MEMORY, MemorySize.ofMebiBytes(1024));
     var env = StreamExecutionEnvironment.createLocalEnvironment(1, memory);
     var sql = StreamTableEnvironment.create(env);
+    if (materialize)
+      sql.getConfig().getConfiguration().setString("table.exec.sink.upsert-materialize", "FORCE");
     var conf = configuration();
     sql.executeSql(ddl(conf));
     var changes =
@@ -152,6 +177,7 @@ class HudiMorSinkTest {
     String plan = sql.explainSql(query);
     assertTrue(plan.contains("NativeHudiSink"), plan);
     assertTrue(plan.contains("writeMode=[MOR upsert]"), plan);
+    assertEquals(materialize, plan.contains("materializer=[native]"), plan);
     assertFalse(plan.contains("ArrowToRow"), plan);
     sql.executeSql(query).await();
     assertEquals(List.of("+I[1, updated, 30]"), read(conf));
@@ -167,12 +193,11 @@ class HudiMorSinkTest {
     assertFalse(nullablePlan.contains("NativeHudiSink"), nullablePlan);
     for (var option :
         Map.of(
-                "write.precombine", "true",
-                "write.tasks", "2",
                 "hoodie.logfile.data.block.format", "avro",
                 "index.type", "FLINK_STATE",
                 "metadata.enabled", "true",
                 "hoodie.metadata.enable", "true",
+                "hoodie.datasource.write.drop.partition.columns", "true",
                 "hoodie.allow.operation.metadata.field", "true")
             .entrySet()) {
       String fallback =
@@ -199,7 +224,11 @@ class HudiMorSinkTest {
                         + "'")
             .collect(java.util.stream.Collectors.joining(","));
     return "CREATE TABLE target (id BIGINT,name STRING,ts BIGINT NOT NULL,PRIMARY KEY(id) NOT"
-        + " ENFORCED) WITH ('connector'='hudi',"
+        + " ENFORCED) "
+        + (conf.get(FlinkOptions.PARTITION_PATH_FIELD).isEmpty()
+            ? ""
+            : "PARTITIONED BY(" + conf.get(FlinkOptions.PARTITION_PATH_FIELD) + ") ")
+        + "WITH ('connector'='hudi',"
         + options
         + ")";
   }
@@ -250,6 +279,65 @@ class HudiMorSinkTest {
     return read(stock);
   }
 
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.CsvSource({
+    "EVENT_TIME_ORDERING,false",
+    "COMMIT_TIME_ORDERING,false",
+    "EVENT_TIME_ORDERING,true",
+    "COMMIT_TIME_ORDERING,true"
+  })
+  void updateBeforeRowsUseTheOriginalHudiWriterSemantics(String mode, boolean precombine)
+      throws Exception {
+    var conf = configuration();
+    conf.set(FlinkOptions.RECORD_MERGE_MODE, mode);
+    conf.set(FlinkOptions.PRE_COMBINE, precombine);
+    conf.set(FlinkOptions.WRITE_BATCH_SIZE, 256D);
+    var changes =
+        List.of(
+            Row.ofKind(RowKind.INSERT, 1L, "old", 10L),
+            Row.ofKind(RowKind.UPDATE_BEFORE, 1L, "old", 10L),
+            Row.ofKind(RowKind.UPDATE_AFTER, 1L, "new", 20L),
+            Row.ofKind(RowKind.DELETE, 1L, null, 30L),
+            Row.ofKind(RowKind.INSERT, 1L, "reinserted", 30L));
+    write(conf, changes, 3);
+    var stock = new Configuration(conf);
+    stock.set(FlinkOptions.PATH, temporary.resolve("stock-full-changelog").toUri().toString());
+    var memory = new Configuration();
+    memory.set(TaskManagerOptions.TASK_OFF_HEAP_MEMORY, MemorySize.ofMebiBytes(1024));
+    var env = StreamExecutionEnvironment.createLocalEnvironment(1, memory);
+    var rows =
+        env.fromCollection(
+                changes,
+                org.apache.flink.api.common.typeinfo.Types.ROW_NAMED(
+                    new String[] {"id", "name", "ts"},
+                    org.apache.flink.api.common.typeinfo.Types.LONG,
+                    org.apache.flink.api.common.typeinfo.Types.STRING,
+                    org.apache.flink.api.common.typeinfo.Types.LONG))
+            .map(
+                row -> {
+                  var value =
+                      org.apache.flink.table.data.GenericRowData.of(
+                          row.getField(0),
+                          row.getField(1) == null
+                              ? null
+                              : org.apache.flink.table.data.StringData.fromString(
+                                  (String) row.getField(1)),
+                          row.getField(2));
+                  value.setRowKind(row.getKind());
+                  return (org.apache.flink.table.data.RowData) value;
+                })
+            .returns(org.apache.flink.table.runtime.typeutils.InternalTypeInfo.of(TYPE));
+    var provider =
+        (org.apache.hudi.adapter.DataStreamSinkProviderAdapter)
+            new HoodieTableSink(stock, SCHEMA)
+                .getSinkRuntimeProvider(
+                    new org.apache.flink.table.runtime.connector.sink.SinkRuntimeProviderContext(
+                        true));
+    provider.consumeDataStream(rows);
+    env.execute("Stock Hudi full changelog");
+    assertEquals(read(stock), read(conf));
+  }
+
   @Test
   void writerBudgetFlushesExistingArrowBuffersThroughTheJavaCoordinator() throws Exception {
     var conf = configuration();
@@ -290,17 +378,24 @@ class HudiMorSinkTest {
     verifyNativeLogBlocks(conf);
   }
 
-  @Test
-  void checkpointRecoveryPreservesTheOriginalBucketIndexAndTransactions() throws Exception {
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(ints = {1, 2, 3, 4})
+  void checkpointRecoveryPreservesTheOriginalBucketIndexAndTransactions(int writers)
+      throws Exception {
     var conf = configuration();
+    conf.set(FlinkOptions.WRITE_TASKS, writers);
+    if (writers > 1) conf.set(FlinkOptions.PARTITION_PATH_FIELD, "name");
     conf.set(FlinkOptions.WRITE_BATCH_SIZE, 1D);
     List<Row> changes = new ArrayList<>();
     List<String> expected = new ArrayList<>();
-    for (long id = 0; id < 512; id++) changes.add(Row.ofKind(RowKind.INSERT, id, "old", 10L));
-    for (long id = 0; id < 512; id++) changes.add(Row.ofKind(RowKind.UPDATE_AFTER, id, "new", 20L));
+    for (long id = 0; id < 512; id++)
+      changes.add(Row.ofKind(RowKind.INSERT, id, writers == 1 ? "old" : "p" + id % 4, 10L));
+    for (long id = 0; id < 512; id++)
+      changes.add(Row.ofKind(RowKind.UPDATE_AFTER, id, writers == 1 ? "new" : "p" + id % 4, 20L));
     for (long id = 0; id < 512; id++) {
-      if (id % 7 == 0) changes.add(Row.ofKind(RowKind.DELETE, id, null, 30L));
-      else expected.add("+I[" + id + ", new, 20]");
+      if (id % 7 == 0)
+        changes.add(Row.ofKind(RowKind.DELETE, id, writers == 1 ? null : "p" + id % 4, 30L));
+      else expected.add("+I[" + id + ", " + (writers == 1 ? "new" : "p" + id % 4) + ", 20]");
     }
     write(conf, changes, 8, true);
     assertTrue(java.nio.file.Files.exists(temporary.resolve("sink-failed-once")));
@@ -322,7 +417,13 @@ class HudiMorSinkTest {
       Configuration conf, List<Row> changes, int batchRows, boolean recover, int parallelism)
       throws Exception {
     var memory = new Configuration();
-    memory.set(TaskManagerOptions.TASK_OFF_HEAP_MEMORY, MemorySize.ofMebiBytes(1024));
+    memory.set(
+        TaskManagerOptions.TASK_OFF_HEAP_MEMORY,
+        MemorySize.ofMebiBytes(Math.max(1024, 512L * conf.get(FlinkOptions.WRITE_TASKS))));
+    memory.set(
+        TaskManagerOptions.NUM_TASK_SLOTS,
+        Math.max(parallelism, conf.get(FlinkOptions.WRITE_TASKS)));
+    TaskOffHeapMemory.initialize(memory);
     var env = StreamExecutionEnvironment.createLocalEnvironment(parallelism, memory);
     if (recover) {
       env.enableCheckpointing(100);

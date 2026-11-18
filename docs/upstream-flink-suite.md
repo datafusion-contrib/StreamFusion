@@ -1479,6 +1479,13 @@ Set `FLINK_SUITE_SQL_INVENTORY=true` for a selected suite to record each JUnit i
 planner mode, complete-plan admission counts, fallback reasons and translation failures.
 The optional observer preserves upstream inputs, assertions and existing native execution contracts.
 It records batch and intentionally unmodified planners as well as streaming planners.
+The batch hook observes the three-argument `BatchPlanScan.optimizeRoots`
+entry point (`List`, `UnaryOperator`, `Predicate`), including calls through its
+convenience wrapper exactly once. Planner signature changes must keep this
+observer aligned: otherwise
+native-work counters can remain populated while batch plans and their fallback
+reasons disappear from the inventory. The unchanged Hudi vector fixtures verify
+that their unsupported batch boundaries still retain explicit fallback evidence.
 
 Each executed JUnit case carries an invocation identifier that joins its XML outcome to exactly
 one JSON observation under `diagnostics/<suite>/sql-inventory`. Parameterized cases retain their

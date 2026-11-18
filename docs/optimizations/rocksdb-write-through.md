@@ -58,6 +58,52 @@ The store now follows Flink's write path with the batching advantage kept:
 The `streamfusion.state.rocksdb.write-buffer-mb` knob and the memory-pressure flush are deleted;
 there is no StreamFusion-specific state memory tuning.
 
+## Window firing scans
+
+Fixed-grid persistent window aggregates and window joins retain the earliest pending
+window end as transient control metadata. Inserts lower that bound when an earlier
+window arrives. A watermark before the bound, or a proven empty store, avoids the
+RocksDB firing scan. Shared-window aggregates retain the earliest pending timer end
+after a firing and update it as input registers timers. This follows the earliest-bin
+advance check in Arroyo's sliding window operator. Window results and downstream
+watermark positions retain their existing order.
+
+Restore and canonical timer import invalidate the cached bound; the next firing
+rebuilds it from persisted state. Regional calendar windows retain their original
+deadline conversion and scanning path. The cache contains no payloads and changes
+neither the persisted format nor checkpoint ownership.
+
+A two-million-event, four-partition Hudi Q5 CPU diagnostic attributed 71.4% of
+19,743 samples to persistent window-aggregate flushing and 14.8% to window-join
+flushing; these inclusive shares are diagnostic rather than measured speedups.
+The focused 200k-event Q5 comparison uses one warmup and three rotating trials
+per engine. The native median falls from 35,801 ms (35,072–41,817) to 10,119 ms
+(8,846–10,900), a 3.54× improvement. Stock medians remain 1,390 / 1,397 ms;
+the updated native path is still 7.25× slower than stock. The shared-state fix
+also reduces the previous StreamFusion boundary's median from 25,769 to 7,648 ms.
+All 99 affected native tests pass, including timer import and heap/RocksDB state
+transfer. [Structured trials and diagnostic](../benchmarks/hudi-window-firing-20261114.json)
+retain source trees, library hashes, all ranges and positive RocksDB engagement.
+These are smaller complete-job measurements. The later
+[two-million-event full matrix](../benchmarks/hudi-nexmark.md#full-linux-matrix-2026-11-15)
+at source `67d03a0f7`, native tree `54cfc7608`, includes the subsequent bounded-output
+integration and completes all four configurations. Q5 remains slower than stock
+in every configuration; those combined results do not isolate this optimization.
+
+Firing and timer reads also reuse one snapshot-aware cursor across populated key
+groups. Fixed-grid seeks start at the known earliest live end, and timer reads
+jump over accumulator namespaces. This removes empty-group iterator setup and
+avoids copying values that will not fire. Regional deadline conversion retains
+its full candidate set. Negative ends, keyless timers and frozen views are covered.
+
+In the repeated 200k-event Q5 check, native improves from 10,039 ms
+(8,528–10,479) to 8,004 ms (7,895–8,026), or 1.25×. Stock is 1,267 ms and the
+Hudi-disabled path is 7,593 ms. The combined native improvement over the original
+35,801 ms median is 4.47×; it still loses to stock by 6.32×. All 100 affected
+native cases pass. Per-timer dirty markers and the initial per-group seek variant
+did not establish stable gains and were not retained; the structured report keeps
+their trials and source patches alongside the retained variants.
+
 Measured (Nexmark state-backend A/B, 200K events, parallelism 2, best of 1, vs Flink RocksDB):
 
 - q4: 1.41s → 1.30s (4.20x → 5.05x); with the old knob at 1 MiB (the pathology at small scale) the

@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 import net.bytebuddy.agent.builder.AgentBuilder;
 import net.bytebuddy.asm.Advice;
@@ -335,6 +336,7 @@ public final class StreamFusionSuiteAgent {
             namedOneOf(
                 "tech.streamfusion.operator.NativeCalcOperator",
                 "tech.streamfusion.operator.NativeBoundedBatchOperator",
+                "tech.streamfusion.operator.NativeBatchLimitOperator",
                 "tech.streamfusion.operator.NativeBatchJoinOperator",
                 "tech.streamfusion.operator.NativeLookupJoinOperator",
                 "tech.streamfusion.operator.NativeAsyncLookupJoinOperator",
@@ -439,6 +441,23 @@ public final class StreamFusionSuiteAgent {
                         Advice.to(ReportNativeMemoryState.class)
                             .on(named("initializeState").and(takesArguments(1))))
                     .visit(Advice.to(BindNativeExecution.class).on(named("open"))))
+        .type(
+            namedOneOf(
+                "tech.streamfusion.hudi.HudiAppendOperator",
+                "tech.streamfusion.hudi.HudiMorOperator"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                builder
+                    .visit(Advice.to(BindNativeExecution.class).on(named("open")))
+                    .visit(
+                        Advice.to(RecordNativeElement.class)
+                            .on(named("processElement").and(not(isBridge())))))
+        .type(named("tech.streamfusion.hudi.HudiParquetReader"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                builder
+                    .visit(Advice.to(BindNativeExecution.class).on(isConstructor()))
+                    .visit(Advice.to(RecordDorisArrowRead.class).on(named("next"))))
         .type(named(NATIVE_PARQUET_WRITER_FACTORY))
         .transform(
             (builder, type, classLoader, module, protectionDomain) ->
@@ -938,7 +957,9 @@ public final class StreamFusionSuiteAgent {
                         .and(takesArguments(List.class, boolean.class))
                         .or(
                             named("optimizeRoots")
-                                .and(takesArguments(List.class, UnaryOperator.class)))));
+                                .and(
+                                    takesArguments(
+                                        List.class, UnaryOperator.class, Predicate.class)))));
   }
 
   public static final class RecordNodeFallback {

@@ -521,6 +521,31 @@ apply to both engines; these differ from the explicit Iceberg writer settings an
 so a cross-connector speedup gap is a diagnostic signal rather than proof of its
 cause. The original best-of Paimon runner remains available unchanged.
 
+## Hudi storage comparison
+
+The [four-partition Hudi Nexmark matrix](benchmarks/hudi-nexmark.md) retains shared
+query SQL and the two-million-event Kafka corpus with Hudi tables at both ends.
+All four configurations pass at measured source `67d03a0f7`:
+
+| State | Mini-batching | Stock/native | Previous SF/native |
+| --- | --- | ---: | ---: |
+| Heap | off | **1.89×** | **11.23×** |
+| Heap | on | **2.21×** | **13.72×** |
+| RocksDB | off | **1.80×** | **9.28×** |
+| RocksDB | on | **2.09×** | **8.97×** |
+
+Native medians beat stock on 17/22 queries in each configuration;
+Q5/Q8/Q11/Q13/Q14 retain substantial stock losses. All 792 timings, four exact Q7
+stock planner exclusions, full-value deterministic comparisons, Q12 count
+invariants, actual RocksDB checks, Rust payload footers and final native cleanup
+validate. The historical Q10 control failure remains archived; the completed
+campaign passes every Q10 trial without claiming its cause or a fix.
+
+Compare engines within each configuration. Different runner hosts/CPU models
+prevent causal backend, mini-batch or before/after claims. These are complete-job
+timings, not sustained throughput, and precede later upstream integrations.
+The detailed page retains all trials/ranges, hashes, host context and raw archives.
+
 ## Historical Nexmark report review (2026-09-08)
 
 The [report submitted in #354](https://github.com/datafusion-contrib/StreamFusion/issues/354)

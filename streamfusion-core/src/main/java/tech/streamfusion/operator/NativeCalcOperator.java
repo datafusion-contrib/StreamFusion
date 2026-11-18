@@ -1,7 +1,10 @@
 package tech.streamfusion.operator;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.TreeSet;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.CDataDictionaryProvider;
@@ -15,6 +18,7 @@ import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.table.functions.FunctionContext;
 import tech.streamfusion.Native;
 import tech.streamfusion.compat.FlinkStreamOperator;
+import tech.streamfusion.planner.common.ExpressionKind;
 
 /**
  * Stateless native Calc, columnar in and out: applies an encoded Calc — an optional condition then
@@ -51,11 +55,60 @@ public class NativeCalcOperator extends FlinkStreamOperator<ArrowBatch>
 
   private static final class CompiledCalc {
     final long handle;
+    final InputProjection input;
     Schema outputSchema;
 
-    CompiledCalc(long handle) {
+    CompiledCalc(long handle, InputProjection input) {
       this.handle = handle;
+      this.input = input;
     }
+  }
+
+  private static final class InputProjection {
+    final Schema schema;
+    final int[] columns;
+    final int[] payload;
+
+    InputProjection(Schema schema, int[] columns, int[] payload) {
+      this.schema = schema;
+      this.columns = columns;
+      this.payload = payload;
+    }
+
+    VectorSchemaRoot borrow(VectorSchemaRoot input) {
+      if (columns == null) return input;
+      var vectors = new ArrayList<org.apache.arrow.vector.FieldVector>(columns.length);
+      for (int column : columns) vectors.add(input.getVector(column));
+      // This wrapper borrows vectors; the original input root remains their sole Java owner.
+      return new VectorSchemaRoot(schema, vectors, input.getRowCount());
+    }
+  }
+
+  private InputProjection inputProjection(Schema schema) {
+    if (!udfBinding.isEmpty()
+        || Arrays.stream(kinds)
+            .anyMatch(
+                kind -> kind == ExpressionKind.UDF.code() || kind == ExpressionKind.ROW_UDF.code()))
+      return new InputProjection(schema, null, payload);
+    var used = new TreeSet<Integer>();
+    for (int node = 0; node < kinds.length; node++) {
+      if (kinds[node] == ExpressionKind.INPUT_REF.code()) used.add(payload[node]); // encoded input reference
+    }
+    for (int column = 0; column < schema.getFields().size(); column++) {
+      if (schema.getFields().get(column).getName().equals(RowDataArrowConverter.ROW_KIND_COLUMN))
+        used.add(column);
+    }
+    int[] selected = used.stream().mapToInt(Integer::intValue).toArray();
+    if (selected.length == schema.getFields().size()
+        && java.util.stream.IntStream.range(0, selected.length).allMatch(i -> selected[i] == i))
+      return new InputProjection(schema, null, payload);
+    int[] remapped = payload.clone();
+    for (int node = 0; node < kinds.length; node++) {
+      if (kinds[node] == ExpressionKind.INPUT_REF.code()) remapped[node] = Arrays.binarySearch(selected, payload[node]);
+    }
+    var fields = new ArrayList<Field>(selected.length);
+    for (int column : selected) fields.add(schema.getFields().get(column));
+    return new InputProjection(new Schema(fields, schema.getCustomMetadata()), selected, remapped);
   }
 
   private static boolean hasDictionary(Field field) {
@@ -176,80 +229,97 @@ public class NativeCalcOperator extends FlinkStreamOperator<ArrowBatch>
       } finally {
         in.close();
       }
-      ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(result, keyGroup));
+      emitResult(result, keyGroup);
       return;
     }
     // The input batch's buffers belong to the upstream operator's allocator; the C Data export must
     // use that allocator (buffers associate only within one allocator root). The operator's own
     // allocator owns only the imported result.
-    BufferAllocator inAllocator =
-        in.getFieldVectors().isEmpty() ? allocator : in.getFieldVectors().get(0).getAllocator();
-    CompiledCalc cached = compiledSchemas.get(in.getSchema());
     VectorSchemaRoot out;
-    try (ArrowArray inArray = ArrowArray.allocateNew(inAllocator);
-        ArrowArray outArray = ArrowArray.allocateNew(allocator);
-        ArrowSchema outSchema = cached == null || cached.outputSchema == null
-            ? ArrowSchema.allocateNew(allocator) : null) {
-      try {
-        // UNION ALL can mix insert-only batches with batches carrying the hidden row-kind
-        // column. Each native handle caches its own immutable Arrow schema.
-        if (cached != null) {
-          Data.exportVectorSchemaRoot(inAllocator, in, dictionaries, inArray);
-          if (outSchema == null) {
-            Native.calcExpressionWithCachedSchemasAtWatermark(
-                cached.handle, inArray.memoryAddress(), outArray.memoryAddress(), watermark);
-          } else {
-            Native.calcExpressionArrayAtWatermark(
-                cached.handle, inArray.memoryAddress(), outArray.memoryAddress(),
-                outSchema.memoryAddress(), watermark);
-          }
-        } else {
-          long calc =
-              Native.createCalcExpression(
-                  kinds,
-                  payload,
-                  childCounts,
-                  boundLongs,
-                  doubles,
-                  strings,
-                  projectionRoots,
-                  conditionRoot,
-                  outputNames);
-          resources.own(() -> Native.closeCalcExpression(calc));
-          cached = new CompiledCalc(calc);
-          compiledSchemas.put(in.getSchema(), cached);
-          try (ArrowSchema inSchema = ArrowSchema.allocateNew(inAllocator)) {
-            Data.exportVectorSchemaRoot(inAllocator, in, dictionaries, inArray, inSchema);
-            Native.calcExpressionAtWatermark(
-                calc,
-                inArray.memoryAddress(),
-                inSchema.memoryAddress(),
-                outArray.memoryAddress(),
-                outSchema.memoryAddress(),
-                watermark);
-          }
-        }
-      } catch (tech.streamfusion.NativeException e) {
-        throw NativeUdf.propagateUpcallFailure(e);
-      }
-      if (outSchema != null) {
-        out = Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
-        // Dictionary IDs refer to mutable provider entries. Preserve the existing full
-        // schema import instead of caching those IDs across result batches.
-        if (out.getSchema().getFields().stream().noneMatch(NativeCalcOperator::hasDictionary))
-          cached.outputSchema = out.getSchema();
-      } else {
-        out = VectorSchemaRoot.create(cached.outputSchema, allocator);
+    try {
+      CompiledCalc cached = compiledSchemas.get(in.getSchema());
+      InputProjection projection = cached == null ? inputProjection(in.getSchema()) : cached.input;
+      VectorSchemaRoot exported = projection.borrow(in);
+      BufferAllocator inAllocator =
+          exported.getFieldVectors().isEmpty() ? allocator : exported.getVector(0).getAllocator();
+      try (ArrowArray inArray = ArrowArray.allocateNew(inAllocator);
+          ArrowArray outArray = ArrowArray.allocateNew(allocator);
+          ArrowSchema outSchema =
+              cached == null || cached.outputSchema == null
+                  ? ArrowSchema.allocateNew(allocator)
+                  : null) {
         try {
-          Data.importIntoVectorSchemaRoot(allocator, outArray, out, dictionaries);
-        } catch (Throwable failure) {
-          out.close();
-          throw failure;
+          // UNION ALL can mix insert-only batches with batches carrying the hidden row-kind
+          // column. Each native handle caches its own immutable Arrow schema.
+          if (cached != null) {
+            Data.exportVectorSchemaRoot(inAllocator, exported, dictionaries, inArray);
+            if (outSchema == null) {
+              Native.calcExpressionWithCachedSchemasAtWatermark(
+                  cached.handle, inArray.memoryAddress(), outArray.memoryAddress(), watermark);
+            } else {
+              Native.calcExpressionArrayAtWatermark(
+                  cached.handle,
+                  inArray.memoryAddress(),
+                  outArray.memoryAddress(),
+                  outSchema.memoryAddress(),
+                  watermark);
+            }
+          } else {
+            long calc =
+                Native.createCalcExpression(
+                    kinds,
+                    projection.payload,
+                    childCounts,
+                    boundLongs,
+                    doubles,
+                    strings,
+                    projectionRoots,
+                    conditionRoot,
+                    outputNames);
+            resources.own(() -> Native.closeCalcExpression(calc));
+            cached = new CompiledCalc(calc, projection);
+            compiledSchemas.put(in.getSchema(), cached);
+            try (ArrowSchema inSchema = ArrowSchema.allocateNew(inAllocator)) {
+              Data.exportVectorSchemaRoot(inAllocator, exported, dictionaries, inArray, inSchema);
+              Native.calcExpressionAtWatermark(
+                  calc,
+                  inArray.memoryAddress(),
+                  inSchema.memoryAddress(),
+                  outArray.memoryAddress(),
+                  outSchema.memoryAddress(),
+                  watermark);
+            }
+          }
+        } catch (tech.streamfusion.NativeException e) {
+          throw NativeUdf.propagateUpcallFailure(e);
+        }
+        if (outSchema != null) {
+          out = Data.importVectorSchemaRoot(allocator, outArray, outSchema, dictionaries);
+          // Dictionary IDs refer to mutable provider entries. Preserve the existing full
+          // schema import instead of caching those IDs across result batches.
+          if (out.getSchema().getFields().stream().noneMatch(NativeCalcOperator::hasDictionary))
+            cached.outputSchema = out.getSchema();
+        } else {
+          out = VectorSchemaRoot.create(cached.outputSchema, allocator);
+          try {
+            Data.importIntoVectorSchemaRoot(allocator, outArray, out, dictionaries);
+          } catch (Throwable failure) {
+            out.close();
+            throw failure;
+          }
         }
       }
     } finally {
       in.close(); // the input batch is consumed
     }
-    ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(out, keyGroup));
+    emitResult(out, keyGroup);
+  }
+
+  private void emitResult(VectorSchemaRoot result, int keyGroup) {
+    if (result.getRowCount() == 0) {
+      result.close();
+    } else {
+      ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(result, keyGroup));
+    }
   }
 }

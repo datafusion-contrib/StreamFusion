@@ -92,6 +92,14 @@ class MavenDependenciesTest(unittest.TestCase):
                                   also_make=True, pom=Path("checkout with spaces/pom.xml"),
                                   repository=Path("repository with spaces"), artifact=[], model_only=False)
 
+    def test_mediated_artifact_fetch_does_not_reintroduce_excluded_transitives(self):
+        options = self.options()
+        options.artifact = ['org.apache.hive:hive-metastore:2.3.1:jar']
+        options.no_transitive = True
+        with patch.object(PREPARE.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0)) as run:
+            self.assertEqual(0, PREPARE.resolve(options))
+        self.assertIn('-Dtransitive=false', run.call_args.args[0])
+
     def invoke(self, statuses):
         results = [subprocess.CompletedProcess([], status) if isinstance(status, int) else status
                    for status in statuses]

@@ -1,0 +1,71 @@
+diff --git a/src/main/java/tech/streamfusion/operator/TaskOffHeapMemory.java b/src/main/java/tech/streamfusion/operator/TaskOffHeapMemory.java
+index bdb364cfe..5c0642e8f 100644
+--- a/src/main/java/tech/streamfusion/operator/TaskOffHeapMemory.java
++++ b/src/main/java/tech/streamfusion/operator/TaskOffHeapMemory.java
+@@ -270,13 +270,17 @@ public final class TaskOffHeapMemory {
+     }
+   }
+ 
+-  private static synchronized long arrowOwner() {
+-    if (arrowOwner == 0) {
+-      long id = NEXT_OWNER.getAndIncrement();
+-      OWNERS.put(id, new Owner("arrow", "shared Arrow allocator"));
+-      arrowOwner = id;
++  private static long arrowOwner() {
++    long owner = arrowOwner;
++    if (owner != 0) return owner;
++    synchronized (TaskOffHeapMemory.class) {
++      if (arrowOwner == 0) {
++        long id = NEXT_OWNER.getAndIncrement();
++        OWNERS.put(id, new Owner("arrow", "shared Arrow allocator"));
++        arrowOwner = id;
++      }
++      return arrowOwner;
+     }
+-    return arrowOwner;
+   }
+ 
+   private static NativeMemoryLimitException tryReserve(Owner owner, long bytes) {
+diff --git a/src/test/java/tech/streamfusion/operator/TaskOffHeapMemoryTest.java b/src/test/java/tech/streamfusion/operator/TaskOffHeapMemoryTest.java
+index 4f28eda1b..35e8bc2dd 100644
+--- a/src/test/java/tech/streamfusion/operator/TaskOffHeapMemoryTest.java
++++ b/src/test/java/tech/streamfusion/operator/TaskOffHeapMemoryTest.java
+@@ -49,6 +49,38 @@ class TaskOffHeapMemoryTest {
+     assertEquals(0, TaskOffHeapMemory.reservedBytes());
+   }
+ 
++  @Test
++  void concurrentFirstArrowReservationsShareOnePublishedOwner() throws Exception {
++    var threads = java.util.concurrent.Executors.newFixedThreadPool(8);
++    try {
++      for (int round = 0; round < 2; round++) {
++        TaskOffHeapMemory.resetForTests(64);
++        var barrier = new java.util.concurrent.CyclicBarrier(8);
++        var futures = new java.util.ArrayList<java.util.concurrent.Future<?>>();
++        for (int worker = 0; worker < 8; worker++) {
++          futures.add(
++              threads.submit(
++                  () -> {
++                    barrier.await(10, java.util.concurrent.TimeUnit.SECONDS);
++                    TaskOffHeapMemory.reserveArrow(8);
++                    try {
++                      barrier.await(10, java.util.concurrent.TimeUnit.SECONDS);
++                    } finally {
++                      TaskOffHeapMemory.releaseArrow(8);
++                    }
++                    return null;
++                  }));
++        }
++        for (var future : futures) future.get(20, java.util.concurrent.TimeUnit.SECONDS);
++        assertEquals(64, TaskOffHeapMemory.peakBytes());
++        assertEquals(0, TaskOffHeapMemory.reservedBytes());
++      }
++    } finally {
++      threads.shutdownNow();
++      assertTrue(threads.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS));
++    }
++  }
++
+   @Test
+   void spillableStateLeavesHeadroomWithoutPartitioningTheSharedBudget() {
+     TaskOffHeapMemory.resetForTests(32);

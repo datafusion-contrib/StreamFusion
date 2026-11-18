@@ -1,0 +1,418 @@
+{
+  "source": "8666207641964f672f41d9e09308d6db99ffb6a4",
+  "native_tree": "16d4c0052bb61c9a6c783bd03bdafc6c02fe9896",
+  "method": "Local CPU sampling of retained Q8 complete native jobs; diagnostic, no timing comparison",
+  "libraries_sha256": {
+    "libstreamfusion.dylib": "e78e0a2f66b4899943c556c8be43d23c57fa14ff20b78a8988ad0b97d12d9c45",
+    "libstreamfusion_parquet.dylib": "8b87c89e15b90d7afe509d0ccdcf61eda5f92f3b7ee028630e579907a220e2db"
+  },
+  "status": "profiled",
+  "rows": 200000,
+  "backend": "memory",
+  "mini_batch": false,
+  "native_iterations": 6,
+  "cpu_sampler": "async-profiler 4.3, cpu, 10ms, 20-second requested capture",
+  "samples": 11013,
+  "native_operator_samples": 9095,
+  "cpu_collapsed_sha256": "579ff53622d7a7bd2f98200d11518d40690f0f0a170f0918f5c780042d4b34d6",
+  "frames": [
+    {
+      "frame": "tech/streamfusion/operator/ColumnarRecordMetrics.emit",
+      "samples": 7530,
+      "inclusive_percent": 68.37374012530645
+    },
+    {
+      "frame": "tech/streamfusion/operator/NativeCalcOperator.processElement",
+      "samples": 6964,
+      "inclusive_percent": 63.23435939344411
+    },
+    {
+      "frame": "tech/streamfusion/operator/NativeCalcOperator.emitResult",
+      "samples": 6910,
+      "inclusive_percent": 62.744029782983745
+    },
+    {
+      "frame": "tech/streamfusion/hudi/NativeHudiSource$$Lambda$4866.0x00000070023fd718.emitRecord",
+      "samples": 6653,
+      "inclusive_percent": 60.41042404431127
+    },
+    {
+      "frame": "tech/streamfusion/hudi/NativeHudiSource.lambda$createReader$0",
+      "samples": 6653,
+      "inclusive_percent": 60.41042404431127
+    },
+    {
+      "frame": "tech/streamfusion/operator/NativeColumnarWatermarkAssignerOperator.processElement",
+      "samples": 6646,
+      "inclusive_percent": 60.34686279851085
+    },
+    {
+      "frame": "org/apache/arrow/c/Data.exportVectorSchemaRoot",
+      "samples": 3724,
+      "inclusive_percent": 33.81458276582221
+    },
+    {
+      "frame": "org/apache/arrow/memory/RootAllocator.buffer",
+      "samples": 2785,
+      "inclusive_percent": 25.28829565059475
+    },
+    {
+      "frame": "org/apache/arrow/memory/BaseAllocator.buffer",
+      "samples": 2776,
+      "inclusive_percent": 25.20657404885136
+    },
+    {
+      "frame": "org/apache/arrow/c/Data.exportVector",
+      "samples": 2746,
+      "inclusive_percent": 24.93416870970671
+    },
+    {
+      "frame": "org/apache/arrow/c/ArrayExporter.export",
+      "samples": 2746,
+      "inclusive_percent": 24.93416870970671
+    },
+    {
+      "frame": "tech/streamfusion/operator/NativeWindowOperatorCore.processWatermark",
+      "samples": 1537,
+      "inclusive_percent": 13.956233542177428
+    },
+    {
+      "frame": "tech/streamfusion/operator/TaskOffHeapMemory.reserveArrow",
+      "samples": 1421,
+      "inclusive_percent": 12.90293289748479
+    },
+    {
+      "frame": "tech/streamfusion/operator/NativeAllocator$TaskBudgetListener.onPreAllocation",
+      "samples": 1421,
+      "inclusive_percent": 12.90293289748479
+    },
+    {
+      "frame": "org/apache/arrow/memory/BaseAllocator.bufferWithoutReservation",
+      "samples": 1366,
+      "inclusive_percent": 12.403523109052937
+    },
+    {
+      "frame": "org/apache/arrow/memory/BaseAllocator.newAllocationManager",
+      "samples": 1345,
+      "inclusive_percent": 12.212839371651684
+    },
+    {
+      "frame": "org/apache/arrow/memory/BufferLedger.release",
+      "samples": 1335,
+      "inclusive_percent": 12.122037591936802
+    },
+    {
+      "frame": "org/apache/arrow/memory/BufferLedger.decrement",
+      "samples": 1331,
+      "inclusive_percent": 12.08571688005085
+    },
+    {
+      "frame": "org/apache/arrow/memory/AllocationManager.release",
+      "samples": 1331,
+      "inclusive_percent": 12.08571688005085
+    },
+    {
+      "frame": "tech/streamfusion/operator/NativeRowWindowOperatorCore.processWatermark",
+      "samples": 1329,
+      "inclusive_percent": 12.067556524107873
+    },
+    {
+      "frame": "tech/streamfusion/operator/NativeColumnarGlobalWindowAggregateOperator.emitClosedWindows",
+      "samples": 1315,
+      "inclusive_percent": 11.940434032507037
+    },
+    {
+      "frame": "tech/streamfusion/operator/NativeRowWindowOperatorCore.emitFinal",
+      "samples": 1313,
+      "inclusive_percent": 11.92227367656406
+    },
+    {
+      "frame": "tech/streamfusion/Native.calcExpressionWithCachedSchemasAtWatermark",
+      "samples": 1231,
+      "inclusive_percent": 11.177699082902025
+    },
+    {
+      "frame": "org/apache/arrow/c/jni/JniWrapper.exportArray",
+      "samples": 1127,
+      "inclusive_percent": 10.233360573867248
+    },
+    {
+      "frame": "org/apache/arrow/c/Data.importIntoVectorSchemaRoot",
+      "samples": 1059,
+      "inclusive_percent": 9.615908471806048
+    },
+    {
+      "frame": "tech/streamfusion/operator/TaskOffHeapMemory.arrowOwner",
+      "samples": 1047,
+      "inclusive_percent": 9.506946336148188
+    },
+    {
+      "frame": "org/apache/arrow/memory/unsafe/UnsafeAllocationManager$1.create",
+      "samples": 946,
+      "inclusive_percent": 8.589848361027876
+    },
+    {
+      "frame": "org/apache/arrow/memory/unsafe/UnsafeAllocationManager.<init>",
+      "samples": 944,
+      "inclusive_percent": 8.5716880050849
+    },
+    {
+      "frame": "org/apache/arrow/c/ArrowArray.allocateNew",
+      "samples": 933,
+      "inclusive_percent": 8.471806047398529
+    },
+    {
+      "frame": "org/apache/arrow/memory/unsafe/UnsafeAllocationManager.release0",
+      "samples": 906,
+      "inclusive_percent": 8.226641242168347
+    },
+    {
+      "frame": "org/apache/arrow/memory/util/MemoryUtil.freeMemory",
+      "samples": 906,
+      "inclusive_percent": 8.226641242168347
+    },
+    {
+      "frame": "org/apache/arrow/memory/ArrowBuf.close",
+      "samples": 897,
+      "inclusive_percent": 8.144919640424952
+    },
+    {
+      "frame": "org/apache/arrow/vector/VectorSchemaRoot.slice",
+      "samples": 819,
+      "inclusive_percent": 7.43666575864887
+    },
+    {
+      "frame": "org/apache/arrow/c/Data.importIntoVector",
+      "samples": 799,
+      "inclusive_percent": 7.255062199219105
+    },
+    {
+      "frame": "org/apache/arrow/c/ArrayImporter.importArray",
+      "samples": 799,
+      "inclusive_percent": 7.255062199219105
+    },
+    {
+      "frame": "org/apache/arrow/vector/VectorSchemaRoot$$Lambda$4893.0x0000007002430f58.apply",
+      "samples": 751,
+      "inclusive_percent": 6.819213656587669
+    },
+    {
+      "frame": "org/apache/arrow/vector/VectorSchemaRoot.lambda$slice$1",
+      "samples": 747,
+      "inclusive_percent": 6.782892944701716
+    },
+    {
+      "frame": "org/apache/arrow/c/Data.importVectorSchemaRoot",
+      "samples": 731,
+      "inclusive_percent": 6.637610097157904
+    },
+    {
+      "frame": "tech/streamfusion/operator/SplitByKeyGroupOperator.processElement",
+      "samples": 730,
+      "inclusive_percent": 6.628529919186416
+    },
+    {
+      "frame": "org/apache/arrow/memory/AllocationManager.associate",
+      "samples": 692,
+      "inclusive_percent": 6.283483156269863
+    },
+    {
+      "frame": "tech/streamfusion/operator/NativeWindowJoinOperator.processWatermark",
+      "samples": 654,
+      "inclusive_percent": 5.938436393353309
+    },
+    {
+      "frame": "tech/streamfusion/operator/NativeWindowJoinOperator.flush",
+      "samples": 654,
+      "inclusive_percent": 5.938436393353309
+    },
+    {
+      "frame": "org/apache/arrow/memory/LowCostIdentityHashMap.get",
+      "samples": 652,
+      "inclusive_percent": 5.920276037410333
+    },
+    {
+      "frame": "org/apache/arrow/memory/LowCostIdentityHashMap.getModuloHash",
+      "samples": 652,
+      "inclusive_percent": 5.920276037410333
+    },
+    {
+      "frame": "org/apache/arrow/memory/LowCostIdentityHashMap.findIndex",
+      "samples": 652,
+      "inclusive_percent": 5.920276037410333
+    },
+    {
+      "frame": "tech/streamfusion/operator/NativeColumnarLocalWindowAggregateOperator.processElement",
+      "samples": 648,
+      "inclusive_percent": 5.88395532552438
+    },
+    {
+      "frame": "org/apache/arrow/c/ArrayExporter$ExportedArrayPrivateData.close",
+      "samples": 640,
+      "inclusive_percent": 5.811313901752475
+    },
+    {
+      "frame": "org/apache/arrow/memory/AllocationManager.<init>",
+      "samples": 637,
+      "inclusive_percent": 5.784073367838009
+    },
+    {
+      "frame": "org/apache/arrow/util/AutoCloseables.close",
+      "samples": 617,
+      "inclusive_percent": 5.6024698084082445
+    },
+    {
+      "frame": "org/apache/arrow/vector/VectorSchemaRoot.close",
+      "samples": 604,
+      "inclusive_percent": 5.484427494778898
+    },
+    {
+      "frame": "org/apache/arrow/vector/complex/StructVector.close",
+      "samples": 598,
+      "inclusive_percent": 5.429946426949968
+    },
+    {
+      "frame": "org/apache/arrow/c/ArrayImporter.doImport",
+      "samples": 590,
+      "inclusive_percent": 5.3573050031780625
+    },
+    {
+      "frame": "org/apache/arrow/vector/complex/StructVector$NullableStructTransferPair.splitAndTransfer",
+      "samples": 574,
+      "inclusive_percent": 5.2120221556342505
+    },
+    {
+      "frame": "org/apache/arrow/vector/complex/NonNullableStructVector.close",
+      "samples": 563,
+      "inclusive_percent": 5.1121401979478795
+    },
+    {
+      "frame": "org/apache/arrow/vector/BaseValueVector.releaseBuffer",
+      "samples": 557,
+      "inclusive_percent": 5.05765913011895
+    },
+    {
+      "frame": "org/apache/arrow/c/NativeUtil.closeBuffer",
+      "samples": 511,
+      "inclusive_percent": 4.639970943430491
+    },
+    {
+      "frame": "org/apache/arrow/c/ArrayImporter.importChild",
+      "samples": 508,
+      "inclusive_percent": 4.612730409516026
+    },
+    {
+      "frame": "tech/streamfusion/operator/NativeWindowOperatorCore.updateColumnar",
+      "samples": 496,
+      "inclusive_percent": 4.503768273858167
+    },
+    {
+      "frame": "tech/streamfusion/operator/NativeWindowOperatorCore.updateColumnarInternal",
+      "samples": 496,
+      "inclusive_percent": 4.503768273858167
+    },
+    {
+      "frame": "org/apache/arrow/vector/complex/NonNullableStructVector$StructTransferPair.splitAndTransfer",
+      "samples": 483,
+      "inclusive_percent": 4.385725960228821
+    },
+    {
+      "frame": "org/apache/arrow/c/Data.exportSchema",
+      "samples": 464,
+      "inclusive_percent": 4.213202578770544
+    },
+    {
+      "frame": "org/apache/arrow/c/Data.exportField",
+      "samples": 460,
+      "inclusive_percent": 4.176881866884591
+    },
+    {
+      "frame": "org/apache/arrow/c/SchemaExporter.export",
+      "samples": 460,
+      "inclusive_percent": 4.176881866884591
+    },
+    {
+      "frame": "org/apache/arrow/vector/BaseFixedWidthVector.close",
+      "samples": 424,
+      "inclusive_percent": 3.8499954599110144
+    },
+    {
+      "frame": "org/apache/arrow/vector/BaseFixedWidthVector.clear",
+      "samples": 424,
+      "inclusive_percent": 3.8499954599110144
+    },
+    {
+      "frame": "org/apache/arrow/memory/util/MemoryUtil.allocateMemory",
+      "samples": 399,
+      "inclusive_percent": 3.6229910106238084
+    },
+    {
+      "frame": "org/apache/arrow/c/ArrowArray.close",
+      "samples": 332,
+      "inclusive_percent": 3.014619086534096
+    },
+    {
+      "frame": "org/apache/arrow/c/BufferImportTypeVisitor.visit",
+      "samples": 297,
+      "inclusive_percent": 2.6968128575320076
+    },
+    {
+      "frame": "org/apache/arrow/c/BufferImportTypeVisitor.importBuffer",
+      "samples": 292,
+      "inclusive_percent": 2.651411967674566
+    },
+    {
+      "frame": "org/apache/arrow/memory/BaseAllocator.wrapForeignAllocation",
+      "samples": 292,
+      "inclusive_percent": 2.651411967674566
+    },
+    {
+      "frame": "org/apache/arrow/memory/RootAllocator.wrapForeignAllocation",
+      "samples": 292,
+      "inclusive_percent": 2.651411967674566
+    },
+    {
+      "frame": "org/apache/arrow/c/ReferenceCountedArrowArray.unsafeAssociateAllocation",
+      "samples": 292,
+      "inclusive_percent": 2.651411967674566
+    },
+    {
+      "frame": "org/apache/arrow/c/StructVectorLoader.load",
+      "samples": 283,
+      "inclusive_percent": 2.569690365931172
+    }
+  ],
+  "interpretation": "Inclusive overlapping CPU shares across the captured JVM threads. Calc chains include downstream operator work. C Data export remains substantial; this is a diagnostic without matched stock/previous profiles or latency qualification.",
+  "archive": {
+    "url": "https://github.com/jordepic/StreamFusion-contrib/releases/tag/benchmark-evidence-hudi-q8-20261114-866620764",
+    "bundle": {
+      "path": "hudi-q8-profile.tar.gz",
+      "bytes": 1031356,
+      "sha256": "3c1024481cdbb5efd11b1f95663f4b9eec2ad9debfacf47c9a0abd021c8a248f"
+    },
+    "manifest_url": "https://github.com/jordepic/StreamFusion-contrib/releases/download/benchmark-evidence-hudi-q8-20261114-866620764/manifest.json",
+    "verification": "Independently downloaded and verified archive and every member before removing local raw capture."
+  },
+  "configuration": {
+    "rows": 200000,
+    "input_bids": 184000,
+    "parallelism": 4,
+    "source_partitions": 4,
+    "sink_partition_modulus": 4,
+    "checkpoint_ms": 1000,
+    "warmups": 1,
+    "runs": 5,
+    "object_reuse": true,
+    "jdk": "17.0.17+10",
+    "architecture": "aarch64",
+    "available_processors": 10,
+    "heap_max_bytes": 8589934592,
+    "native_task_off_heap_capacity_bytes": 51539607552,
+    "state_backend_checks": []
+  },
+  "hardware": {
+    "cpu_model": "Apple M4",
+    "physical_memory_bytes": 17179869184,
+    "platform": "macOS arm64"
+  }
+}

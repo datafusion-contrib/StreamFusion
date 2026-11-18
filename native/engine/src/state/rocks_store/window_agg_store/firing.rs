@@ -19,6 +19,16 @@ impl RocksWindowAggStore {
                 "window firing requires positive bounds".into(),
             ));
         }
+        if calendar.is_none()
+            && self.next_end_known
+            && self.next_exclusive_end.is_none_or(|end| end > watermark)
+        {
+            return Ok(());
+        }
+        let lower_end = (calendar.is_none() && self.next_end_known)
+            .then_some(self.next_exclusive_end)
+            .flatten();
+        self.next_end_known = false;
         let (closed_ends, metadata_bytes) = if let Some(calendar) = calendar {
             let mut ends = BTreeSet::new();
             for key_group in self.key_groups.clone() {
@@ -73,13 +83,28 @@ impl RocksWindowAggStore {
                 }
                 work.try_resize(overhead)?;
             }
-            let tail = end.map(biased_window_end);
-            let mut merge = MergedKeyGroups::new(
-                &db,
-                self.key_groups.clone(),
-                tail.as_ref().map_or(&[], |tail| tail.as_slice()),
-                compare_key_group_suffix,
-            );
+            let mut merge = if let Some(end) = end {
+                MergedKeyGroups::new(
+                    &db,
+                    self.key_groups.clone(),
+                    &biased_window_end(end),
+                    compare_key_group_suffix,
+                )
+            } else {
+                let ranges = self
+                    .key_groups
+                    .clone()
+                    .map(|group| {
+                        let prefix = group.to_be_bytes().to_vec();
+                        let mut lower = prefix.clone();
+                        if let Some(end) = lower_end {
+                            lower.extend_from_slice(&biased_window_end(end));
+                        }
+                        (lower, super::super::prefix_successor(&prefix))
+                    })
+                    .collect();
+                MergedKeyGroups::from_ranges(&db, ranges, compare_key_group_suffix)
+            };
             let mut rows = Vec::new();
             let mut row_bytes = 0usize;
             while let Some((key, value)) = merge.first() {
@@ -147,7 +172,9 @@ impl RocksWindowAggStore {
                 self.emit_closed_chunk(rows, &mut writes, &work, overhead, row_bytes, consume)?;
             }
         }
-        writes.finish()
+        writes.finish()?;
+        self.next_end_known = calendar.is_none();
+        Ok(())
     }
 
     fn emit_closed_chunk(

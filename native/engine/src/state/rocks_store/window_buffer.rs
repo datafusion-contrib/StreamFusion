@@ -35,6 +35,7 @@ pub(crate) struct RocksWindowBuffer {
     max_parallelism: usize,
     converters: (RetainedRows, RetainedRows),
     next_exclusive_ends: [Option<i64>; 2],
+    next_ends_known: [bool; 2],
     next_seq: [u64; 2],
     timer_deadline: i64,
     generation: i64,
@@ -129,6 +130,7 @@ impl RocksWindowBuffer {
             max_parallelism: config.max_parallelism,
             converters: (converter(&left_schema)?, converter(&right_schema)?),
             next_exclusive_ends: [None, None],
+            next_ends_known: [false, false],
             next_seq: [0, 0],
             timer_deadline: i64::MIN,
             generation: 0,
@@ -156,6 +158,11 @@ impl RocksWindowBuffer {
         let mut encoder = BinaryRowBatchEncoder::new(batch, key_columns, key_timestamp_precisions);
         let mut writes = FlinkWriteBatch::new(&self.db, self.write_batch_size);
         for (index, row) in rows.iter().enumerate() {
+            if self.next_ends_known[table as usize] {
+                let end = window_ends.value(index);
+                let next = &mut self.next_exclusive_ends[table as usize];
+                *next = Some(next.map_or(end, |next| next.min(end)));
+            }
             let key_group = flink_key_group(encoder.hash(index), self.max_parallelism) as i32;
             let seq = self.next_seq[table as usize];
             self.next_seq[table as usize] += 1;
@@ -196,6 +203,14 @@ impl RocksWindowBuffer {
         calendar: Option<&crate::window_calendar::WindowCalendar>,
     ) -> Result<Option<RecordBatch>, DataFusionError> {
         let table = Self::table(left);
+        if calendar.is_none()
+            && self.next_ends_known[table as usize]
+            && self.next_exclusive_ends[table as usize].is_none_or(|end| end > watermark)
+        {
+            return Ok(None);
+        }
+        self.next_ends_known[table as usize] = false;
+        self.next_exclusive_ends[table as usize] = None;
         let mut closed: Vec<(u64, Box<[u8]>)> = Vec::new();
         let deadlines = if let Some(calendar) = calendar {
             let mut ends = std::collections::BTreeSet::new();
@@ -232,9 +247,13 @@ impl RocksWindowBuffer {
                 let seq = u64::from_be_bytes(key[5..].try_into().expect("arrival sequence"));
                 closed.push((seq, value[8..].into()));
                 writes.delete(key)?;
+            } else if calendar.is_none() {
+                let next = &mut self.next_exclusive_ends[table as usize];
+                *next = Some(next.map_or(window_end, |next| next.min(window_end)));
             }
         }
         writes.finish()?;
+        self.next_ends_known[table as usize] = calendar.is_none();
         if closed.is_empty() {
             return Ok(None);
         }
@@ -326,6 +345,7 @@ impl RocksWindowBuffer {
     /// Adopts the deadline a blob import restored (it arrives with the blobs, not from a store
     /// checkpoint); the next checkpoint persists it under the reserved key.
     pub(crate) fn adopt_restored(&mut self, timer_deadline: i64) {
+        self.next_ends_known = [false, false];
         self.timer_deadline = self.timer_deadline.max(timer_deadline);
     }
 
@@ -452,6 +472,62 @@ mod tests {
         let right = buffer.take_closed(false, 100, &schema()).unwrap().unwrap();
         assert_eq!(column(&right, 1), vec![99]);
         assert!(buffer.take_closed(false, 200, &schema()).unwrap().is_none());
+    }
+
+    #[test]
+    fn firing_tracks_earlier_inserts_independently_for_each_side() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut config = test_config("deadline-cache");
+        config.table_dir = directory.path().to_string_lossy().into_owned();
+        let mut buffer = RocksWindowBuffer::create(config, schema(), schema()).unwrap();
+        for left in [false, true] {
+            assert!(buffer.take_closed(left, 0, &schema()).unwrap().is_none());
+            for (end, value) in [(300, 30), (200, 20)] {
+                buffer
+                    .push(
+                        left,
+                        &batch(&[1], &[value]),
+                        &[0],
+                        &[-1],
+                        &Int64Array::from(vec![end]),
+                    )
+                    .unwrap();
+                assert!(buffer.take_closed(left, 100, &schema()).unwrap().is_none());
+            }
+        }
+        for left in [true, false] {
+            assert_eq!(
+                column(
+                    &buffer.take_closed(left, 200, &schema()).unwrap().unwrap(),
+                    1
+                ),
+                vec![20]
+            );
+            assert_eq!(
+                column(
+                    &buffer.take_closed(left, 300, &schema()).unwrap().unwrap(),
+                    1
+                ),
+                vec![30]
+            );
+            assert!(buffer.take_closed(left, 400, &schema()).unwrap().is_none());
+            buffer
+                .push(
+                    left,
+                    &batch(&[1], &[35]),
+                    &[0],
+                    &[-1],
+                    &Int64Array::from(vec![350]),
+                )
+                .unwrap();
+            assert_eq!(
+                column(
+                    &buffer.take_closed(left, 400, &schema()).unwrap().unwrap(),
+                    1
+                ),
+                vec![35]
+            );
+        }
     }
 
     #[test]

@@ -16,6 +16,8 @@ import tech.streamfusion.planner.common.NativePlanDetails;
 public final class StreamPhysicalNativeHudiSink extends StreamPhysicalNativeSingleRel
     implements ColumnarInput {
   private final HudiSinkPlan plan;
+  private final int[] materializationKeys;
+  private final int[] inputUpsertKeys;
 
   StreamPhysicalNativeHudiSink(
       RelOptCluster cluster,
@@ -23,14 +25,20 @@ public final class StreamPhysicalNativeHudiSink extends StreamPhysicalNativeSing
       RelNode input,
       RelDataType output,
       HudiSinkPlan plan,
+      int[] materializationKeys,
+      int[] inputUpsertKeys,
       NativePlanDetails details) {
     super(cluster, traits, input, output, details);
     this.plan = plan;
+    this.materializationKeys = materializationKeys;
+    this.inputUpsertKeys = inputUpsertKeys;
   }
 
   @Override
   public org.apache.calcite.rel.RelWriter explainTerms(org.apache.calcite.rel.RelWriter writer) {
-    return super.explainTerms(writer).item("writeMode", plan.writeMode());
+    return super.explainTerms(writer)
+        .item("writeMode", plan.writeMode())
+        .itemIf("materializer", "native", materializationKeys != null);
   }
 
   @Override
@@ -41,7 +49,14 @@ public final class StreamPhysicalNativeHudiSink extends StreamPhysicalNativeSing
   @Override
   public RelNode copy(RelTraitSet traits, List<RelNode> inputs) {
     return new StreamPhysicalNativeHudiSink(
-        getCluster(), traits, inputs.get(0), outputRowType, plan, planDetails);
+        getCluster(),
+        traits,
+        inputs.get(0),
+        outputRowType,
+        plan,
+        materializationKeys,
+        inputUpsertKeys,
+        planDetails);
   }
 
   @Override
@@ -51,6 +66,8 @@ public final class StreamPhysicalNativeHudiSink extends StreamPhysicalNativeSing
         InputProperty.DEFAULT,
         FlinkTypeFactory$.MODULE$.toLogicalRowType(getRowType()),
         getRelDetailedDescription(),
-        plan);
+        plan,
+        materializationKeys,
+        inputUpsertKeys);
   }
 }
