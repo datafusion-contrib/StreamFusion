@@ -99,6 +99,10 @@ The [bounded Paimon benchmarks](../benchmarks/paimon-batch.md) describe complete
 and the unchanged TPC-H workload with committed Paimon outputs. The [TPC-DS suite](../benchmarks/tpcds.md)
 adds all 103 released Flink variants for 99 templates with Paimon inputs and committed outputs.
 
+Bounded Parquet and ORC readers admit conforming UTF-8 character data. The native bridge verifies
+string values before handing the data to native text kernels, including rows read by the Java
+merge path.
+
 ## Streaming source
 
 Streaming Parquet and ORC reads retain the released Java Paimon client for table/catalog resolution,

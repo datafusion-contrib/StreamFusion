@@ -287,7 +287,8 @@ public class FlinkCollectionRepresentationSqlHarnessTest {
     }
   }
 
-  private static final class GenericContainers implements ScanTableSource {
+  private static final class GenericContainers
+      implements ScanTableSource, tech.streamfusion.planner.Utf8StringSource {
     private final RowType type;
     private final boolean changelog;
     private final boolean binaryMaps;
@@ -296,6 +297,11 @@ public class FlinkCollectionRepresentationSqlHarnessTest {
       this.type = type;
       this.changelog = changelog;
       this.binaryMaps = binaryMaps;
+    }
+
+    @Override
+    public boolean guaranteesUtf8Strings() {
+      return true;
     }
 
     @Override

@@ -102,7 +102,7 @@ class FlinkJsonArrayScalarSqlHarnessTest {
         var env = metrics.environment(new Configuration(), 1, 0);
         var table = StreamTableEnvironment.create(env);
         var serializer = new RowDataSerializer(rowType);
-        table.createTemporaryView("src", env.fromSequence(0, 5002).map(index -> {
+        VerifiedUtf8Fixture.register(table, "src", sourceEnv -> sourceEnv.fromSequence(0, 5002).map(index -> {
           int k = index.intValue();
           RowData row = GenericRowData.of(k,
               nullable && k % 7 == 0 ? null : k % 2 == 0 ? Integer.MIN_VALUE : Integer.MAX_VALUE,
@@ -119,7 +119,7 @@ class FlinkJsonArrayScalarSqlHarnessTest {
                   : strings[k % strings.length].substring(0,
                       Math.min(8, strings[k % strings.length].length()))));
           return binary ? serializer.toBinaryRow(row).copy() : row;
-        }).returns(InternalTypeInfo.of(rowType)));
+        }).returns(InternalTypeInfo.of(rowType)), type);
         var scan = nativeRun ? NativePlanner.install(table) : null;
         var types = table.sqlQuery(sql).getResolvedSchema();
         if (nativeRun) assertEquals(expectedTypes, types); else expectedTypes = types;

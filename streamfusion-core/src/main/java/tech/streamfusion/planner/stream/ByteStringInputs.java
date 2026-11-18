@@ -6,6 +6,7 @@ import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink;
 import tech.streamfusion.planner.ColumnarInput;
+import tech.streamfusion.planner.HostStringInputs;
 
 /**
  * Admits lossless string input only when every byte consumer and the final row exit are verified.
@@ -30,7 +31,16 @@ final class ByteStringInputs {
     int[] columns = calc.byteStringInputColumns();
     if (columns.length == 0) return root;
     var input = ((StreamPhysicalRowDataToArrow) root.getInput(0)).withByteStringColumns(columns);
+    if (calc.hasStringPassthrough()) input = input.withStringCaches();
     return root.copy(root.getTraitSet(), List.of(input));
+  }
+
+  static boolean hasUnverifiedIngress(RelNode root) {
+    if (root instanceof StreamPhysicalRowDataToArrow) {
+      return ((StreamPhysicalRowDataToArrow) root).needsUtf8Input()
+          && !HostStringInputs.guaranteesUtf8(root.getInput(0));
+    }
+    return root.getInputs().stream().anyMatch(ByteStringInputs::hasUnverifiedIngress);
   }
 
   static int[] columns(
@@ -45,7 +55,7 @@ final class ByteStringInputs {
     for (int i = 0; i < projections.length; i++) {
       int root = projections[i];
       boolean bytes =
-          isByteStringProducer(kinds[root], payload[root])
+          (kinds[root] == 0 || isByteStringProducer(kinds[root], payload[root]))
               && SqlTypeFamily.CHARACTER.contains(output.getFieldList().get(i).getType());
       if (visit(root, bytes, kinds, payload, children, input, consumedBytes) < 0) return new int[0];
     }
@@ -81,6 +91,7 @@ final class ByteStringInputs {
       case 98: // SHA384
       case 99: // SHA512
       case 107: // TO_BASE64
+      case 232: // FROM_BASE64
         return true;
       default:
         return false;

@@ -25,6 +25,14 @@ public final class PaimonBatchSource implements NativePlannerExtension.BatchSour
   }
 
   @Override
+  public boolean guaranteesUtf8Strings() {
+    // Both admitted file formats require UTF-8 for character columns. The Arrow bridge verifies
+    // the reader's output before native text kernels can observe these buffers.
+    return "parquet".equals(table.coreOptions().fileFormatString())
+        || "orc".equals(table.coreOptions().fileFormatString());
+  }
+
+  @Override
   @SuppressWarnings("unchecked")
   public Transformation<ArrowBatch> translate(
       PlannerBase planner, Transformation<RowData> input, RowType output, int rows) {

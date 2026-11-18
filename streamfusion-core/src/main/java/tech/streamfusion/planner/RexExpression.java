@@ -5176,6 +5176,8 @@ final class RexExpression implements EncodedExpression {
           return rejectUdfMethod("MAP UDF arguments require the external Java Map conversion");
       }
     }
+    if (SqlTypeFamily.CHARACTER.contains(call.getType()) && eval.getReturnType() != String.class)
+      return rejectUdfMethod("UDF character result has no verified UTF-8 representation");
     if ((resultType == SqlTypeName.ARRAY
             && eval.getReturnType() != defaultExternalClass(call.getType()))
         || (resultType == SqlTypeName.MAP

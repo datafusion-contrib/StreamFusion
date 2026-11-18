@@ -104,7 +104,8 @@ public final class CanonicalFixtureFactory
 
   public static final class TableSource
       implements ScanTableSource,
-          org.apache.flink.table.connector.source.abilities.SupportsSourceWatermark {
+          org.apache.flink.table.connector.source.abilities.SupportsSourceWatermark,
+          tech.streamfusion.planner.Utf8StringSource {
     private final String input;
     private final String ready;
     private final int limit;
@@ -129,6 +130,11 @@ public final class CanonicalFixtureFactory
       this.insertOnly = insertOnly;
       this.upsert = upsert;
       this.type = type;
+    }
+
+    @Override
+    public boolean guaranteesUtf8Strings() {
+      return true;
     }
 
     @Override

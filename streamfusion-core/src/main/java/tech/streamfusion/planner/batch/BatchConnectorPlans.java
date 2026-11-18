@@ -28,9 +28,10 @@ final class BatchConnectorPlans {
   /** Proves the input representation for generated string evaluation, independently of cost. */
   boolean hasNativeUtf8Source(RelNode node) {
     if (!(node instanceof BatchPhysicalTableSourceScan)) return false;
-    for (var provider : providers)
-      if (provider.planBatchSource((BatchPhysicalTableSourceScan) node, config) != null)
-        return true;
+    for (var provider : providers) {
+      var producer = provider.planBatchSource((BatchPhysicalTableSourceScan) node, config);
+      if (producer != null) return producer.guaranteesUtf8Strings();
+    }
     return false;
   }
 

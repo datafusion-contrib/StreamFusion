@@ -22,8 +22,8 @@ import org.testcontainers.utility.DockerImageName;
 /**
  * End-to-end parity tests for the raw native-decode path: a {@code 'format'='raw'} Kafka table
  * decodes each whole message as its single column. {@link NativeParity#assertParity} compares the
- * native decode against Flink's own {@code raw} format for a string column and for fixed-width
- * big-/little-endian numerics. Opt-in via {@code SF_BENCHMARK=true} (Docker for Testcontainers
+ * planned route against Flink's own {@code raw} format. Character messages enter through Flink's
+ * byte-preserving reader, while fixed-width big-/little-endian numerics use native decoding. Opt-in via {@code SF_BENCHMARK=true} (Docker for Testcontainers
  * Kafka).
  */
 @EnabledIfEnvironmentVariable(named = "SF_BENCHMARK", matches = "true")
@@ -32,7 +32,7 @@ class NativeRawDecodeSqlHarnessTest {
   private static final int MESSAGES = 2_000;
 
   @Test
-  void stringMessagesDecodeNativelyWithFlinkParity() throws Exception {
+  void stringMessagesFeedTheNativeEncoderWithoutLosingTheirBytes() throws Exception {
     try (KafkaContainer kafka =
         new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"))) {
       kafka.start();
@@ -41,9 +41,12 @@ class NativeRawDecodeSqlHarnessTest {
       for (int i = 0; i < MESSAGES; i++) {
         messages.add(("message-" + i).getBytes(StandardCharsets.UTF_8));
       }
+      messages.add(new byte[] {(byte) 0xff});
+      messages.add(new byte[] {0x41, (byte) 0xe4});
       produce(brokers, "raw-strings", messages);
       NativeParity.assertParity(
-          environment(brokers, "raw-strings", "payload STRING", ""), "SELECT * FROM t");
+          environment(brokers, "raw-strings", "payload STRING", ""),
+          "SELECT TO_BASE64(payload) FROM t");
     }
   }
 

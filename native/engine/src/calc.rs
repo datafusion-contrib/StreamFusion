@@ -37,9 +37,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_filterGreaterThan<'local>(
         let schema = Arc::new(Schema::new(vec![field]));
         let column_name = schema.field(0).name().clone();
 
-        let mut data =
-            unsafe { from_ffi(ffi_array, &ffi_schema) }.expect("failed to import Arrow array");
-        data.align_buffers();
+        let data =
+            unsafe { import_array_data(ffi_array, &ffi_schema) }.expect("failed to import Arrow array");
         let batch = RecordBatch::try_new(schema.clone(), vec![make_array(data)])
             .expect("failed to build batch");
 
@@ -348,6 +347,13 @@ impl CalcExpression {
                 .flat_map(collect_columns)
                 .map(|column| column.index())
                 .collect();
+            for projection in &projections {
+                if let Some(column) = projection.downcast_ref::<Column>() {
+                    if is_byte_string(schema.field(column.index())) {
+                        projection_input_indices.extend(string_cache_position(schema, column.index()));
+                    }
+                }
+            }
             if let Ok(row_kind) = schema.index_of(ROW_KIND_COLUMN) {
                 projection_input_indices.push(row_kind);
             }
@@ -444,14 +450,25 @@ impl CalcExpression {
             evaluate()
         };
         let mut fields: Vec<Field> = Vec::with_capacity(projections.len());
+        let mut caches = Vec::new();
         for (i, projection) in projections.iter().enumerate() {
             let array = &columns[i];
             let mut field = Field::new(&self.output_names[i], array.data_type().clone(), true);
             if let Some(column) = projection.downcast_ref::<Column>() {
-                field =
-                    field.with_metadata(filtered.schema().field(column.index()).metadata().clone());
+                let index = projection_input_indices[column.index()];
+                let input = filtered.schema_ref().field(column.index());
+                field = field.with_metadata(input.metadata().clone());
+                if is_byte_string(input) {
+                    if let Some(cache) = string_cache_column(&filtered, index) {
+                        caches.push((string_cache_field(i, cache.data_type().clone()), cache.clone()));
+                    }
+                }
             }
             fields.push(field);
+        }
+        for (field, values) in caches {
+            fields.push(field);
+            columns.push(values);
         }
         // Carry the changelog tag through: a Calc transforms each row independently (per-row
         // projection, optional deterministic filter), so a `$row_kind$` column rides through unchanged
@@ -472,6 +489,11 @@ impl CalcExpression {
         )
         .expect("failed to build output")
     }
+}
+
+fn is_byte_string(field: &Field) -> bool {
+    field.data_type() == &DataType::Binary
+        && field.metadata().get("streamfusion.logical_string").is_some_and(|value| value == "1")
 }
 
 fn evaluate_projection(projection: &Arc<dyn PhysicalExpr>, batch: &RecordBatch) -> ArrayRef {
@@ -536,6 +558,51 @@ fn row_udf_output(
 mod row_udf_tests {
     use super::*;
     use arrow::buffer::NullBuffer;
+
+    #[test]
+    fn filtered_byte_string_aliases_keep_their_java_cache() {
+        let text = Arc::new(BinaryArray::from(vec![&[0xff][..], b"skip", b"?"]));
+        let cache = string_cache_array([None, None, Some(&[0xd800][..])]);
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("unused", DataType::Int64, false),
+            Field::new("keep", DataType::Boolean, false),
+            Field::new("text", DataType::Binary, true)
+                .with_metadata([("streamfusion.logical_string".into(), "1".into())].into()),
+            string_cache_field(2, cache.data_type().clone()),
+        ]));
+        let input = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(Int64Array::from(vec![0, 1, 2])),
+                Arc::new(BooleanArray::from(vec![true, false, true])),
+                text,
+                cache,
+            ],
+        )
+        .unwrap();
+        let mut calc = CalcExpression {
+            kinds: vec![0, 0, 0],
+            payload: vec![2, 2, 1],
+            child_counts: vec![0; 3],
+            longs: vec![],
+            doubles: vec![],
+            strings: vec![],
+            projection_roots: vec![0, 1],
+            condition_root: 2,
+            output_names: vec!["original".into(), "alias".into()],
+            compiled: None,
+        };
+        let output = calc.evaluate(input);
+        assert_eq!(output.num_rows(), 2);
+        for column in 0..2 {
+            let bytes = output.column(column).as_any().downcast_ref::<BinaryArray>().unwrap();
+            assert_eq!(bytes.value(0), &[0xff]);
+            assert_eq!(bytes.value(1), b"?");
+            let cache = JavaStringCacheColumn::new(string_cache_column(&output, column).unwrap());
+            assert_eq!(cache.value(0), None);
+            assert_eq!(cache.value(1), Some(&[0xd800][..]));
+        }
+    }
 
     #[test]
     fn aliases_reordered_and_repeated_columns_keep_representation_metadata_and_buffers() {

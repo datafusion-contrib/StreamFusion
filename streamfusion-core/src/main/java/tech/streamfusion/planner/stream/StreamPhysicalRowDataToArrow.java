@@ -94,6 +94,16 @@ public class StreamPhysicalRowDataToArrow extends StreamPhysicalNativeSingleRel
     this.byteStringColumns = byteStringColumns.clone();
   }
 
+  boolean needsUtf8Input() {
+    var fields = getRowType().getFieldList();
+    for (int i = 0; i < fields.size(); i++) {
+      if (java.util.Arrays.binarySearch(byteStringColumns, i) < 0
+          && tech.streamfusion.planner.JsonStringIdentity.containsCharacter(fields.get(i).getType()))
+        return true;
+    }
+    return false;
+  }
+
   StreamPhysicalRowDataToArrow withByteStringColumns(int[] columns) {
     return new StreamPhysicalRowDataToArrow(getCluster(), getTraitSet(), getInput(), carryRowKind,
         prunedType, preserveCollections, preferredBatchRows, jsonDocuments, preserveStringCaches,

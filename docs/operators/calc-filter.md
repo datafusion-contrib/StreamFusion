@@ -1089,13 +1089,15 @@ Tests compare raw bytes with released Flink and require positive NativeCalc cons
 multiple batches, NULLs, embedded zeros, Unicode, nested CONCAT and all-filtered batches.
 
 This first admission requires a final row exit, a direct entry transpose, scalar input fields,
-and no JVM expressions. Character comparisons, direct character passthrough projections,
-other character consumers, nested input types, native columnar producers,
-native sinks, and downstream stateful/relational consumers retain their existing representation.
-Those paths are **not yet certified for arbitrary bytes**; this is not a claim that all STRING
-consumers safely handle malformed UTF-8. They remain tracked in
-[#622](https://github.com/datafusion-contrib/StreamFusion/issues/622) and
-[#498](https://github.com/datafusion-contrib/StreamFusion/issues/498).
+and no JVM expressions. Direct string passthrough can accompany these expressions. Native Calc
+forwards the original byte buffer and optional Java UTF-16 cache with each passthrough output.
+`FROM_BASE64` can also read this representation in final projections. Its decoded result and
+wider compositions follow the existing [FROM_BASE64](#from_base64) rules.
+
+Generic Flink row sources can emit arbitrary string bytes, including strings nested in collections.
+For unsupported compositions or relational consumers, the planner requires a verified UTF-8
+producer at the row boundary or leaves the query on Flink. Further byte-safe consumer coverage
+is tracked in [#498](https://github.com/datafusion-contrib/StreamFusion/issues/498).
 
 The implementation shares the existing string writer's direct segment copy and cached Java-string
 encoding. Ordinary Utf8 concatenation continues to use its existing kernel. Representation selection

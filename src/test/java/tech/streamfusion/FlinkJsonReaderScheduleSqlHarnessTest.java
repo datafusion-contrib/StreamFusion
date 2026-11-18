@@ -84,14 +84,14 @@ class FlinkJsonReaderScheduleSqlHarnessTest {
       var env = metrics.environment(config, 1, 0);
       var table = StreamTableEnvironment.create(env);
       var serializer = new RowDataSerializer(rowType);
-      table.createTemporaryView("src", env.fromSequence(0, 5002).map(index -> {
+      VerifiedUtf8Fixture.register(table, "src", sourceEnv -> sourceEnv.fromSequence(0, 5002).map(index -> {
         int id = index.intValue();
         int sample = id < LEFT.length ? id : 2 + id % (LEFT.length - 2);
         RowData row = GenericRowData.of(id,
             nullable && id % 17 == 2 ? null : StringData.fromString(LEFT[sample]),
             nullable && id % 19 == 3 ? null : StringData.fromString(RIGHT[sample]));
         return binary ? serializer.toBinaryRow(row).copy() : row;
-      }).returns(InternalTypeInfo.of(rowType)));
+      }).returns(InternalTypeInfo.of(rowType)), type);
       var scan = nativeRun ? NativePlanner.install(table) : null;
       var schema = table.sqlQuery(sql).getResolvedSchema();
       if (nativeRun) assertEquals(expectedSchema, schema); else expectedSchema = schema;

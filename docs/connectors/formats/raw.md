@@ -1,6 +1,7 @@
 # Raw
 
-**Status:** Native encode and decode, single physical column only, with the fallbacks below.
+**Status:** Partial. Single-column native encoding and native decoding of variable binary,
+boolean and fixed-width numerics.
 
 `raw` treats one physical column as the entire message body — no framing, no field names on the
 wire. It's the simplest format [Kafka](../kafka.md) supports, and the most tightly parity-pinned:
@@ -27,7 +28,7 @@ A **non-UTF-8 `raw.charset`** stays on Flink on write, the same as on read (belo
 
 Each whole Kafka message becomes the single physical column's value:
 
-- `CHAR`/`VARCHAR` and `VARBINARY` pass through unchanged.
+- `VARBINARY` passes the message bytes through unchanged.
 - `BOOLEAN` reads one byte, `!= 0`.
 - `TINYINT`/`SMALLINT`/`INT`/`BIGINT`/`FLOAT`/`DOUBLE` read an exact-length buffer honoring
   `raw.endianness` (`'little-endian'`/`'big-endian'`, case-insensitive; big-endian is the
@@ -36,9 +37,9 @@ Each whole Kafka message becomes the single physical column's value:
   `ignore-parse-errors`.
 - A null message stays a null field.
 
-One deliberate divergence from Flink: a string column fed invalid UTF-8 bytes fails the native
-decode outright, because Arrow strings must be valid UTF-8, where Flink smuggles the bytes through
-unvalidated as `StringData`.
+Flink decodes `CHAR` and `VARCHAR` messages, including those configured with UTF-8. Its raw
+decoder can return arbitrary bytes as `StringData`. Verified downstream expressions can process
+these values using [byte-preserving string input](../../operators/calc-filter.md#byte-preserving-string-input).
 
 ### Fallbacks
 
@@ -47,8 +48,7 @@ Each of the following is caught at plan time, before the job starts:
 - a schema with **more than one physical column** (`raw` is single-column only; Flink raises its
   own `ValidationException`);
 - an **invalid `raw.charset`/`raw.endianness`** value (again, Flink's own `ValidationException`);
-- a **non-UTF-8 `raw.charset`** — any charset name that resolves to UTF-8 is native; the decode
-  path has no Java charset machinery to fall back on for anything else;
+- a **non-UTF-8 `raw.charset`**;
 - a **`RAW<T>` column** — its bytes belong to a Java `TypeSerializer`, not a wire encoding (see the
   type-level `RAW` exclusion);
 - a **fixed-length `BINARY` column on decode** — Flink passes any message length through verbatim,

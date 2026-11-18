@@ -272,7 +272,14 @@ public class StreamPlanScan implements FlinkOptimizeProgram<StreamOptimizeContex
     // Pass 2 inserts a row↔columnar transpose at each perimeter edge (rowwise source/sink ↔
     // island).
     // Source sharing follows over every admitted root, after per-root fallbacks are settled.
-    return ByteStringInputs.prepare(insertTransitions(substituted), finalOutput);
+    RelNode transitioned = ByteStringInputs.prepare(insertTransitions(substituted), finalOutput);
+    if (ByteStringInputs.hasUnverifiedIngress(transitioned)) {
+      substitutions = previousSubstitutions;
+      rollbackFunctionExecutions(previousFunctionExecutions, previousJvmFunctionOperators);
+      recordIslandFallback(root, "row source STRING has no verified UTF-8 or byte representation");
+      return root;
+    }
+    return transitioned;
   }
 
   private static boolean unconsumedColumnarOutput(RelNode node, boolean columnarConsumer) {
