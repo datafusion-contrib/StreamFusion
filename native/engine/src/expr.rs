@@ -2718,9 +2718,8 @@ impl datafusion::logical_expr::ScalarUDFImpl for JvmUdf {
         }
 
         // The JVM exports the result as a one-field root, i.e. a struct{result}; take that one column.
-        let mut data =
-            unsafe { from_ffi(out_array, &out_schema) }.map_err(|e| exec(e.to_string()))?;
-        data.align_buffers();
+        let data =
+            unsafe { import_array_data(out_array, &out_schema) }.map_err(|e| exec(e.to_string()))?;
         let result = StructArray::from(data);
         if self.row_result
             && (result.len() != rows || result.column(0).data_type() != &self.return_type)

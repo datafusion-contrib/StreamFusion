@@ -1,6 +1,7 @@
 use crate::*;
 use arrow::array::ArrayData;
 use arrow::buffer::{BooleanBuffer, NullBuffer};
+use arrow::error::ArrowError;
 
 /// Takes ownership of a batch the JVM exported through the C Data Interface, swapping in released
 /// placeholders so the producer's release callbacks fire once when the imported data drops.
@@ -263,6 +264,35 @@ pub fn keyed_state_partition_array(
     output.into_raw()
 }
 
+/// Import JVM-owned Arrow buffers without letting unchecked string data reach typed arrays.
+///
+/// # Safety
+///
+/// The C Data structs must satisfy Arrow's buffer layout and ownership requirements.
+pub unsafe fn import_array_data(
+    array: FFI_ArrowArray,
+    schema: &FFI_ArrowSchema,
+) -> Result<ArrayData, ArrowError> {
+    checked_string_data(unsafe { from_ffi(array, schema) }?)
+}
+
+fn checked_string_data(mut data: ArrayData) -> Result<ArrayData, ArrowError> {
+    fn validate_strings(data: &ArrayData) -> Result<(), ArrowError> {
+        if matches!(
+            data.data_type(),
+            DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View
+        ) {
+            // Arrow validates each value's offsets, including boundaries between adjacent values.
+            data.validate_data()?;
+        }
+        data.child_data().iter().try_for_each(validate_strings)
+    }
+
+    data.align_buffers();
+    validate_strings(&data)?;
+    Ok(data)
+}
+
 pub fn import_record_batch(array_address: jlong, schema_address: jlong) -> RecordBatch {
     let ffi_array = unsafe {
         std::ptr::replace(
@@ -279,9 +309,8 @@ pub fn import_record_batch(array_address: jlong, schema_address: jlong) -> Recor
     let metadata = ffi_schema
         .metadata()
         .expect("failed to import Arrow schema metadata");
-    let mut data =
-        unsafe { from_ffi(ffi_array, &ffi_schema) }.expect("failed to import Arrow batch");
-    data.align_buffers();
+    let data =
+        unsafe { import_array_data(ffi_array, &ffi_schema) }.expect("failed to import Arrow batch");
     let mut batch = RecordBatch::from(StructArray::from(data));
     *batch.schema_metadata_mut() = metadata;
     preserve_actual_nulls(batch)
@@ -301,14 +330,14 @@ pub fn import_record_batch_with_schema(array_address: jlong, schema: &SchemaRef)
     let array_children = ffi_array.num_children();
     let array_buffers = ffi_array.num_buffers();
     let data_type = DataType::Struct(schema.fields().clone());
-    let mut data =
-        unsafe { from_ffi_and_data_type(ffi_array, data_type) }.unwrap_or_else(|error| {
+    let data = unsafe { from_ffi_and_data_type(ffi_array, data_type) }
+        .and_then(checked_string_data)
+        .unwrap_or_else(|error| {
             panic!(
                 "failed to import Arrow batch with cached schema {schema:?} \
              (array children={array_children}, buffers={array_buffers}): {error}"
             )
         });
-    data.align_buffers();
     let mut batch = RecordBatch::from(StructArray::from(data));
     *batch.schema_metadata_mut() = schema.metadata().clone();
     preserve_actual_nulls(batch)
@@ -432,6 +461,56 @@ fn rebase_boolean_slices(data: &ArrayData) -> Option<ArrayData> {
 #[cfg(test)]
 mod cached_schema_tests {
     use super::*;
+
+    #[test]
+    fn ffi_import_validates_individual_string_values() {
+        for values in [
+            vec![&[0xff][..]],              // invalid UTF-8
+            vec![&[0x41, 0xe4][..]],        // truncated UTF-8
+            vec![&[0xc3][..], &[0xa9][..]], // valid buffer split within a code point
+        ] {
+            let binary = BinaryArray::from(values);
+            // Only the payload is invalid: the layout is the same for binary and strings.
+            let invalid = unsafe {
+                binary
+                    .into_data()
+                    .into_builder()
+                    .data_type(DataType::Utf8)
+                    .build_unchecked()
+            };
+            let schema = FFI_ArrowSchema::try_from(&DataType::Utf8).unwrap();
+            let array = FFI_ArrowArray::new(&invalid);
+            assert!(unsafe { import_array_data(array, &schema) }.is_err());
+
+            let fields = Fields::from(vec![Field::new("text", DataType::Utf8, true)]);
+            let schema = Arc::new(Schema::new(fields.clone()));
+            let invalid_struct = unsafe {
+                ArrayData::builder(DataType::Struct(fields))
+                    .len(invalid.len())
+                    .add_child_data(invalid)
+                    .build_unchecked()
+            };
+            let mut array = FFI_ArrowArray::new(&invalid_struct);
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                import_record_batch_with_schema(&mut array as *mut _ as jlong, &schema)
+            }));
+            assert!(result.is_err());
+            assert!(array.is_released());
+        }
+    }
+
+    #[test]
+    fn ffi_import_preserves_binary_storage_and_valid_text_buffers() {
+        let binary = BinaryArray::from(vec![&[0xff][..]]);
+        let text = StringArray::from(vec![Some("é\0"), None, Some("")]);
+        for data in [binary.into_data(), text.into_data()] {
+            let schema = FFI_ArrowSchema::try_from(data.data_type()).unwrap();
+            let array = FFI_ArrowArray::new(&data);
+            let imported = unsafe { import_array_data(array, &schema) }.unwrap();
+            assert_eq!(data, imported);
+            assert_eq!(data.buffers()[1].as_ptr(), imported.buffers()[1].as_ptr());
+        }
+    }
 
     #[test]
     fn imported_null_slots_override_only_physical_hints_and_keep_owned_buffers() {
