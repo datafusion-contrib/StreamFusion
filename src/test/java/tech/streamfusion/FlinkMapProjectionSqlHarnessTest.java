@@ -119,7 +119,7 @@ class FlinkMapProjectionSqlHarnessTest {
       table.getConfig().set("streamfusion.transpose.batchRows", "2");
       var type = ROW(FIELD("id", INT()), FIELD("m", MAP(STRING(), BIGINT())));
       var rowType = (org.apache.flink.table.types.logical.RowType) type.getLogicalType();
-      var stream = env.fromSequence(0, 15).map(id -> {
+      VerifiedUtf8Fixture.register(table, "src", sourceEnv -> sourceEnv.fromSequence(0, 15).map(id -> {
         var entries = new LinkedHashMap<Object, Object>();
         entries.put(null, -(long) id);
         for (String key : List.of("Aa", "BB", "\ud800", "😀", "\ue000", ""))
@@ -131,9 +131,7 @@ class FlinkMapProjectionSqlHarnessTest {
         return (org.apache.flink.table.data.RowData)
             org.apache.flink.table.data.GenericRowData.of((int) (long) id,
                 id % 7 == 0 ? null : map);
-      }).returns(org.apache.flink.table.runtime.typeutils.InternalTypeInfo.of(rowType));
-      table.createTemporaryView("src", stream,
-          org.apache.flink.table.api.Schema.newBuilder().fromRowDataType(type).build());
+      }).returns(org.apache.flink.table.runtime.typeutils.InternalTypeInfo.of(rowType)), type);
       return table;
     };
     BuiltinFunctionParity.assertParity(environment,

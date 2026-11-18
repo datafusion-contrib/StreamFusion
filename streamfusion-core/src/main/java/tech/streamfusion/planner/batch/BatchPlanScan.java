@@ -33,6 +33,7 @@ import org.slf4j.LoggerFactory;
 import tech.streamfusion.Native;
 import tech.streamfusion.planner.ColumnarOutput;
 import tech.streamfusion.planner.ExpressionPlanning;
+import tech.streamfusion.planner.HostStringInputs;
 import tech.streamfusion.planner.NativeConfig;
 import tech.streamfusion.planner.common.BoundedArrowTypeCheck;
 import tech.streamfusion.planner.common.CalcOutputTypeCheck;
@@ -142,7 +143,11 @@ public class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext>
       boolean retained) {
     operators.add(node.getClass().getSimpleName());
     if (!scalarRow(node.getRowType())) return decline("batch: non-scalar Arrow boundary");
-    if (node.getInputs().isEmpty()) return true;
+    if (node.getInputs().isEmpty()) {
+      return HostStringInputs.guaranteesUtf8(node)
+          || nativeSources.test(node)
+          || decline("batch: row source STRING has no verified UTF-8 or byte representation");
+    }
     if (!(root && node instanceof BatchPhysicalSink)) {
       if (node instanceof BatchPhysicalCalc) {
         var calc = (BatchPhysicalCalc) node;

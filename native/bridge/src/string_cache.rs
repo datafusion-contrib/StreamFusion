@@ -27,16 +27,14 @@ pub fn string_cache_field(index: usize, ty: DataType) -> Field {
     ]))
 }
 
+pub fn string_cache_position(schema: &Schema, index: usize) -> Option<usize> {
+    schema.fields().iter().position(|field| {
+        is_string_cache_field(field) && string_cache_index(field.name()) == Some(index)
+    })
+}
+
 pub fn string_cache_column(batch: &RecordBatch, index: usize) -> Option<&ArrayRef> {
-    batch
-        .schema()
-        .fields()
-        .iter()
-        .enumerate()
-        .find_map(|(position, field)| {
-            (is_string_cache_field(field) && string_cache_index(field.name()) == Some(index))
-                .then(|| batch.column(position))
-        })
+    string_cache_position(batch.schema_ref(), index).map(|position| batch.column(position))
 }
 
 pub struct JavaStringCacheColumn<'a> {

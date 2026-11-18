@@ -38,6 +38,20 @@ accelerate* — a real gap that could be closed. It is **not** a fallback when F
 the query in streaming (e.g. `RANK`/`DENSE_RANK` Top-N, non-time `ORDER BY`) — matching Flink by
 also not running it is parity, not a gap.
 
+## String representation at input boundaries
+
+Flink's logical `STRING` can contain arbitrary bytes. An Arrow `Utf8` field requires valid
+UTF-8 within each element. Flink's external Java string conversion, including bounded DataStreams,
+SQL values, Flink's datagen, and filesystem scans using Flink's CSV decoder can supply UTF-8 to a
+row transpose. A custom connector can implement `Utf8StringSource` when every available reader mode
+guarantees valid string bytes, including nested string values. Generic `RowData` requires a
+[byte-preserving path](calc-filter.md#byte-preserving-string-input) or planned Flink fallback.
+
+The JNI bridge checks imported string buffers and element boundaries before creating typed
+Arrow arrays, including string values in nested containers and callback results. This check
+reports a producer contract violation. Compatible byte-preserving routes retain Flink's original
+bytes in Arrow Binary.
+
 ## Optional native probe failures
 
 Native admission predicates and fallback diagnostic probes can decline an otherwise valid

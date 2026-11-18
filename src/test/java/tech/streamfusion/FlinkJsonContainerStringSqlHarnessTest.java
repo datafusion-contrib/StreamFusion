@@ -101,7 +101,7 @@ class FlinkJsonContainerStringSqlHarnessTest {
       try (var metrics = new RecoveryExecutionMetrics()) {
         var env = metrics.environment(new Configuration(), 1, 0);
         var table = StreamTableEnvironment.create(env);
-        table.createTemporaryView("src", env.fromSequence(0, 5002).map(index -> {
+        VerifiedUtf8Fixture.register(table, "src", sourceEnv -> sourceEnv.fromSequence(0, 5002).map(index -> {
           int k = index.intValue();
           var text = StringData.fromString(texts[k % texts.length]);
           var a = new GenericArrayData(k % 3 == 0 ? new Integer[] {}
@@ -130,7 +130,7 @@ class FlinkJsonContainerStringSqlHarnessTest {
                   k % 11 == 0 ? null : StringData.fromString("a   ")),
               new GenericArrayData(new int[] {Integer.MIN_VALUE, 0, Integer.MAX_VALUE}));
           return binary ? serializer.toBinaryRow(value).copy() : value;
-        }).returns(InternalTypeInfo.of(type)));
+        }).returns(InternalTypeInfo.of(type)), input);
         var scan = nativeRun ? NativePlanner.install(table) : null;
         var resultTypes = table.sqlQuery(sql).getResolvedSchema();
         if (nativeRun) assertEquals(expectedTypes, resultTypes); else expectedTypes = resultTypes;

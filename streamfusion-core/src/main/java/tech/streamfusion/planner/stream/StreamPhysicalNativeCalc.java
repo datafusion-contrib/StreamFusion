@@ -150,6 +150,15 @@ public class StreamPhysicalNativeCalc extends StreamPhysicalNativeSingleRel
         getInput().getRowType(), getRowType());
   }
 
+  boolean hasStringPassthrough() {
+    for (int i = 0; i < projectionRoots.length; i++) {
+      if (kinds[projectionRoots[i]] == 0
+          && org.apache.calcite.sql.type.SqlTypeFamily.CHARACTER
+              .contains(getRowType().getFieldList().get(i).getType())) return true;
+    }
+    return false;
+  }
+
   boolean preservesCollections() {
     return preserveCollections
         || (udfBinding == null || udfBinding.isEmpty())

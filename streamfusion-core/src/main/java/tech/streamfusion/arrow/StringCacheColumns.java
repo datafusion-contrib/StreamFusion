@@ -81,8 +81,9 @@ public final class StringCacheColumns {
     public void write(RowData row, int position) {
       for (int slot = 0; slot < fields.size(); slot++) {
         int field = fields.get(slot);
+        var value = row.isNullAt(field) ? null : row.getString(field);
         String cache =
-            row.isNullAt(field) ? null : ((BinaryStringData) row.getString(field)).getJavaObject();
+            value instanceof BinaryStringData ? ((BinaryStringData) value).getJavaObject() : null;
         var writer = writers.get(slot);
         if (writer == null && cache != null) writer = allocate(slot, position);
         if (writer != null) writer.write(position, cache);

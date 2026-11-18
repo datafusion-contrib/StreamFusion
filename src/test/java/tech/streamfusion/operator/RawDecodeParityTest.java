@@ -93,10 +93,8 @@ class RawDecodeParityTest {
 
   @Test
   void invalidUtf8StringFailsTheNativeDecodeLoudly() {
-    // The one documented divergence (docs/coverage-and-fallbacks.md): Flink passes invalid UTF-8
-    // through StringData unvalidated, but Arrow strings cannot hold it, so the native decode must
-    // fail the job with a clear message — never silently NULL the value. No Flink referee here;
-    // this pins the native failure itself.
+    // Exercise the defensive decoder check directly. Normal SQL leaves character decoding to
+    // Flink so the original bytes are retained.
     RowType rowType =
         RowType.of(
             new LogicalType[] {new VarCharType(VarCharType.MAX_LENGTH)}, new String[] {"payload"});

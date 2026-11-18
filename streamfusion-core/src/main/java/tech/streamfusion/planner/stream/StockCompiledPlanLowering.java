@@ -37,10 +37,17 @@ import org.apache.flink.table.planner.plan.logical.*;
 import org.apache.flink.table.planner.plan.nodes.exec.*;
 import org.apache.flink.table.planner.plan.nodes.exec.spec.DynamicTableSourceSpec;
 import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecCalc;
+import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecChangelogNormalize;
+import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecDropUpdateBefore;
 import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecExchange;
+import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecMiniBatchAssigner;
 import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecSink;
 import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecTableSourceScan;
+import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecUnion;
+import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecValues;
+import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecWatermarkAssigner;
 import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecWindowAggregate;
+import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecWindowTableFunction;
 import org.apache.flink.table.planner.plan.schema.TableSourceTable;
 import org.apache.flink.table.planner.plan.stats.FlinkStatistic;
 import org.apache.flink.table.planner.plan.utils.ExecNodeMetadataUtil;
@@ -60,6 +67,7 @@ import tech.streamfusion.planner.ArrowRowTypeSupport;
 import tech.streamfusion.planner.ArrowToRowDataExecNode;
 import tech.streamfusion.planner.ExpressionPlanning;
 import tech.streamfusion.planner.FlinkKeyGroupUtils;
+import tech.streamfusion.planner.HostStringInputs;
 import tech.streamfusion.planner.JsonStringIdentity;
 import tech.streamfusion.planner.NativeCalcExecNode;
 import tech.streamfusion.planner.NativeConfig;
@@ -160,6 +168,14 @@ final class StockCompiledPlanLowering {
       retainStringComparisonInputs(copy.getRootNodes());
       List<ExecNode<?>> roots = new ArrayList<>();
       for (ExecNode<?> root : copy.getRootNodes()) roots.add(lower(root));
+      Set<ExecNode<?>> loweredNodes = Collections.newSetFromMap(new IdentityHashMap<>());
+      collectOrdinaryNodes(roots, loweredNodes);
+      for (var node : loweredNodes) {
+        if (unverifiedStringIngress(node)) {
+          recordFallback("row source STRING has no verified UTF-8 or byte representation");
+          return original;
+        }
+      }
       var runtime = new RuntimeGraph(copy.getFlinkVersion(), roots);
       insertShares(runtime);
       return runtime;
@@ -167,6 +183,47 @@ final class StockCompiledPlanLowering {
       throw new TableException(
           "Cannot lower the stock compiled plan for native execution", failure);
     }
+  }
+
+  private boolean unverifiedStringIngress(ExecNode<?> node) throws IOException {
+    return node instanceof RowDataToArrowExecNode
+        && containsCharacter(node.getOutputType())
+        && !guaranteesUtf8(node.getInputEdges().get(0).getSource());
+  }
+
+  private static boolean containsCharacter(LogicalType type) {
+    return type.is(LogicalTypeFamily.CHARACTER_STRING)
+        || type.getChildren().stream().anyMatch(StockCompiledPlanLowering::containsCharacter);
+  }
+
+  private boolean guaranteesUtf8(ExecNode<?> node) throws IOException {
+    if (!containsCharacter(node.getOutputType())
+        || node instanceof ArrowToRowDataExecNode
+        || node instanceof StreamExecValues)
+      return true;
+    if (node instanceof StreamExecTableSourceScan) {
+      var spec = ((StreamExecTableSourceScan) node).getTableSourceSpec();
+      return HostStringInputs.guaranteesUtf8(
+          spec.getScanTableSource(planner.getFlinkContext(), planner.getTypeFactory()));
+    }
+    if (node instanceof StreamExecCalc) {
+      RexNode[] projections =
+          reader.forType(RexNode[].class).readValue(definitions.get(node.getId()).path("projection"));
+      return Arrays.stream(projections).allMatch(HostStringInputs::preservesUtf8)
+          && guaranteesUtf8(node.getInputEdges().get(0).getSource());
+    }
+    if (node instanceof StreamExecChangelogNormalize
+        || node instanceof StreamExecDropUpdateBefore
+        || node instanceof StreamExecExchange
+        || node instanceof StreamExecMiniBatchAssigner
+        || node instanceof StreamExecUnion
+        || node instanceof StreamExecWatermarkAssigner
+        || node instanceof StreamExecWindowTableFunction) {
+      for (ExecEdge edge : node.getInputEdges())
+        if (!guaranteesUtf8(edge.getSource())) return false;
+      return true;
+    }
+    return false;
   }
 
   static final class RuntimeGraph extends ExecNodeGraph {

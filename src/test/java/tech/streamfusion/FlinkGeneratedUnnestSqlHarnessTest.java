@@ -290,8 +290,10 @@ class FlinkGeneratedUnnestSqlHarnessTest {
                             "a",
                             org.apache.flink.table.api.DataTypes.ARRAY(
                                 org.apache.flink.table.api.DataTypes.TIMESTAMP(3))));
-                var source =
-                    env.fromSequence(0, 6)
+                VerifiedUtf8Fixture.register(
+                    table,
+                    "marked",
+                    sourceEnv -> sourceEnv.fromSequence(0, 6)
                         .map(
                             i ->
                                 (org.apache.flink.table.data.RowData)
@@ -311,10 +313,7 @@ class FlinkGeneratedUnnestSqlHarnessTest {
                         .returns(
                             org.apache.flink.table.runtime.typeutils.InternalTypeInfo.of(
                                 (org.apache.flink.table.types.logical.RowType)
-                                    type.getLogicalType()));
-                table.createTemporaryView(
-                    "marked",
-                    source,
+                                    type.getLogicalType())),
                     Schema.newBuilder()
                         .fromRowDataType(type)
                         .watermark("rt", "rt - INTERVAL '1' SECOND")

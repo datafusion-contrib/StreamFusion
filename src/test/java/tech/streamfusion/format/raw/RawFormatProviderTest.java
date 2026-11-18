@@ -34,7 +34,6 @@ class RawFormatProviderTest {
   @Test
   void admitsEverySupportedSingleColumnType() {
     LogicalType[] supported = {
-      new VarCharType(VarCharType.MAX_LENGTH),
       new VarBinaryType(VarBinaryType.MAX_LENGTH),
       new BooleanType(),
       new TinyIntType(),
@@ -67,10 +66,11 @@ class RawFormatProviderTest {
   }
 
   @Test
-  void gatesTheCharsetToUtf8() {
+  void characterSourcesStayOnFlinkEvenWithAnExplicitUtf8Charset() {
     RowType schema = RowType.of(new VarCharType(VarCharType.MAX_LENGTH));
-    assertTrue(supports(schema, Map.of("raw.charset", "UTF-8")));
-    assertTrue(supports(schema, Map.of("raw.charset", "utf8")));
+    assertFalse(supports(schema, Map.of()));
+    assertFalse(supports(schema, Map.of("raw.charset", "UTF-8")));
+    assertFalse(supports(schema, Map.of("raw.charset", "utf8")));
     assertFalse(supports(schema, Map.of("raw.charset", "US-ASCII")));
     assertFalse(supports(schema, Map.of("raw.charset", "ISO-8859-1")));
     assertFalse(supports(schema, Map.of("raw.charset", "not-a-charset")));

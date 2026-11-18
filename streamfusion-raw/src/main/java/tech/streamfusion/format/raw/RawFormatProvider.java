@@ -12,8 +12,9 @@ import tech.streamfusion.format.NativeSchemaMessageDecoder;
 
 /**
  * Native provider for Flink's raw value format: the whole message is the single physical column's
- * value. Admitted natively: CHAR/VARCHAR (UTF-8 charset only), VARBINARY, BOOLEAN, and the
- * fixed-width numerics with either {@code raw.endianness}. Staying on Flink: multi-column schemas
+ * value. Native decoding admits VARBINARY, BOOLEAN, and fixed-width numerics with either
+ * {@code raw.endianness}. Flink decodes character columns because the message can contain
+ * arbitrary bytes. Other fallback cases include multi-column schemas
  * and invalid option values (Flink raises its own ValidationException); {@code RAW<T>} columns
  * (their bytes belong to a Java TypeSerializer); fixed-length BINARY (Flink passes any message
  * length through where Arrow's fixed-size binary enforces the declared one); a non-UTF-8 {@code
@@ -45,9 +46,9 @@ public final class RawFormatProvider implements NativeFormatProvider {
   private static boolean supportedType(RowType schema, boolean encode) {
     switch (schema.getTypeAt(0).getTypeRoot()) {
       case BINARY:
-        return encode;
       case CHAR:
       case VARCHAR:
+        return encode;
       case VARBINARY:
       case BOOLEAN:
       case TINYINT:

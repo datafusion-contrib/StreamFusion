@@ -475,7 +475,17 @@ class PaimonBatchSqlTest {
         String fallbackJob = fallback.getJobClient().orElseThrow().getJobID().toString();
         assertEquals(expected, collect(fallback));
         assertEquals(0, metrics.counterValue(fallbackJob, "nativePaimonSourceRows"));
-        assertEquals(257, metrics.counterValue(fallbackJob, "numInputRows", "RowDataToArrow"));
+        // The stock Paimon reader returns StringData bytes without a verified UTF-8 contract.
+        assertEquals(0, metrics.counterValue(fallbackJob, "numInputRows", "RowDataToArrow"));
+
+        // Keep exercising the stock-to-native boundary with a projection that requires no text.
+        String numericQuery =
+            "SELECT k, COUNT(*), SUM(CAST(id AS BIGINT)) FROM input GROUP BY k ORDER BY k";
+        var numericFallback = environment(disabled, true).executeSql(numericQuery);
+        String numericJob = numericFallback.getJobClient().orElseThrow().getJobID().toString();
+        assertEquals(collect(stock.executeSql(numericQuery)), collect(numericFallback));
+        assertEquals(0, metrics.counterValue(numericJob, "nativePaimonSourceRows"));
+        assertEquals(257, metrics.counterValue(numericJob, "numInputRows", "RowDataToArrow"));
         if (primaryKey) {
           String historical =
               "SELECT v,id FROM input /*+ OPTIONS('scan.snapshot-id'='1') */ ORDER BY id";

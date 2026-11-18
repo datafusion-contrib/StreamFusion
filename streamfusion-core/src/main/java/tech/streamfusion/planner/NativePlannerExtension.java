@@ -39,7 +39,13 @@ public interface NativePlannerExtension {
   }
 
   interface BatchSource
-      extends tech.streamfusion.planner.common.CommonRowDataToArrowExecNode.SourceConversion {}
+      extends tech.streamfusion.planner.common.CommonRowDataToArrowExecNode.SourceConversion,
+          Utf8StringSource {
+    @Override
+    default boolean guaranteesUtf8Strings() {
+      return false;
+    }
+  }
 
   @FunctionalInterface
   interface BatchSink {

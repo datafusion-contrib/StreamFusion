@@ -19,6 +19,10 @@ ARRAY, MAP, MULTISET, ROW, structured/RAW and unverified collection representati
 retain whole-query fallback. Stock sources, constant relations and row sinks may
 remain at the perimeter.
 
+A row source with character fields requires a producer that guarantees valid UTF-8. Sources without
+that guarantee retain stock batch computation. Connectors with native Arrow output declare their
+reader's string contract explicitly before native batch computation can use it.
+
 Row-source expressions requiring original Java UTF-16 string-cache sidecars,
 binary-backed STRING results, and legacy variable-width BINARY projections remain
 outside batch admission. Positively admitted native UTF-8 sources can use the
