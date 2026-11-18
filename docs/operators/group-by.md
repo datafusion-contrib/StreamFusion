@@ -43,7 +43,8 @@ group-aggregate vocabulary from the shared compact protocol. Window factories us
 window vocabulary, so overlapping codes retain their context: group SUM DISTINCT and window
 retracting SUM both remain code 9. Collection, JSON, LISTAGG and ordered-value classifiers share
 those generated identities. Changelog RowKinds, storage widths and numeric compatibility fixtures
-remain separate; the encoded state and operation numbers are unchanged.
+remain separate; the encoded state and operation numbers are unchanged. Field counts and
+absent-column sentinels retain literal metadata values rather than operation identities.
 
 Canonical qualification remains narrower than ordinary native aggregation. A shared released-state
 qualifier verifies the actual Flink aggregate-function class, generated accumulator types, every
