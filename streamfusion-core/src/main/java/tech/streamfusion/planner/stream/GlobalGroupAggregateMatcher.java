@@ -11,6 +11,7 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalG
 import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
 import tech.streamfusion.compat.FlinkCompat;
 import tech.streamfusion.operator.RowDataArrowConverter;
+import tech.streamfusion.planner.common.GroupAggregateKind;
 
 /**
  * Recognizes the global half of a two-phase non-windowed {@code GROUP BY}: it merges the local
@@ -53,7 +54,7 @@ final class GlobalGroupAggregateMatcher {
     for (int i = 0; i < agg.aggCalls().size(); i++) {
       AggregateCall call = agg.aggCalls().apply(i);
       int kind = LocalGroupAggregateMatcher.aggregateKind(call.getAggregation().getKind());
-      if (kind == 42) {
+      if (kind == GroupAggregateKind.JSON_OBJECT_MERGE_ABSENT_ON_NULL) {
         if (!LocalGroupAggregateMatcher.supportedJsonObjectCall(call, agg.localAggInputRowType())
             || offset >= inputType.getFieldCount()
             || !LocalGroupAggregateMatcher.supportedJsonObjectPartial(
@@ -92,7 +93,7 @@ final class GlobalGroupAggregateMatcher {
               && kind != WindowAggregateMatcher.KIND_AVG
               && kind != GroupAggregateMatcher.KIND_SUM_ZERO
               && kind != WindowAggregateMatcher.KIND_SUM
-              && kind != 14
+              && kind != GroupAggregateKind.SINGLE_VALUE
               && kind != WindowAggregateMatcher.KIND_MIN
               && kind != WindowAggregateMatcher.KIND_MAX)) {
         return "global group aggregate: a retracting merge admits COUNT, AVG, SUM0 and"
@@ -154,7 +155,7 @@ final class GlobalGroupAggregateMatcher {
         }
         continue;
       }
-      if (kind == 14) {
+      if (kind == GroupAggregateKind.SINGLE_VALUE) {
         RelDataType result = agg.getRowType().getFieldList().get(grouping.length + i).getType();
         if (call.isDistinct()
             || call.getArgList().size() != 1
@@ -460,7 +461,7 @@ final class GlobalGroupAggregateMatcher {
         kinds[i] = agg.needRetraction() ? 33 : 32;
       } else if (kind == GroupAggregateMatcher.KIND_LISTAGG_APPEND && agg.needRetraction()) {
         kinds[i] = call.getArgList().size() == 2 ? 47 : 46;
-      } else if (kind == 42) {
+      } else if (kind == GroupAggregateKind.JSON_OBJECT_MERGE_ABSENT_ON_NULL) {
         kinds[i] = LocalGroupAggregateMatcher.jsonObjectKind(call);
       } else if (call.isDistinct()) {
         kinds[i] =

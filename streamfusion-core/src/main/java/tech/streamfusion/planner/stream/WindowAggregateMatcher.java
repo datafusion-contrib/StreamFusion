@@ -1,5 +1,6 @@
 package tech.streamfusion.planner.stream;
 
+import tech.streamfusion.planner.common.WindowAggregateKind;
 import static tech.streamfusion.operator.NativeWindowOperatorCore.KIND_HIDDEN_LIVE_COUNT;
 import static tech.streamfusion.operator.NativeWindowOperatorCore.KIND_LIVE_COUNT;
 import static tech.streamfusion.operator.NativeWindowOperatorCore.KIND_RETRACT_COUNT;
@@ -42,18 +43,18 @@ final class WindowAggregateMatcher {
           .booleanType()
           .noDefaultValue();
 
-  static final int KIND_SUM = 0;
+  static final int KIND_SUM = WindowAggregateKind.SUM;
   /** MIN/MAX (the Rust GroupAggState routes these to the Extremes multiset). */
-  static final int KIND_MIN = 1;
-  static final int KIND_MAX = 2;
-  static final int KIND_COUNT = 3;
-  static final int KIND_AVG = 4;
-  static final int KIND_COUNT_DISTINCT = 7;
+  static final int KIND_MIN = WindowAggregateKind.MIN;
+  static final int KIND_MAX = WindowAggregateKind.MAX;
+  static final int KIND_COUNT = WindowAggregateKind.COUNT;
+  static final int KIND_AVG = WindowAggregateKind.AVG;
+  static final int KIND_COUNT_DISTINCT = WindowAggregateKind.COUNT_DISTINCT;
   static final int KIND_SUM_ZERO = GroupAggregateMatcher.KIND_SUM_ZERO;
 
   /** The local half of a two-phase AVG: the widened running sum alone (the count partial is a
    * separate {@link #KIND_COUNT} state); the global divides after merging. */
-  static final int KIND_AVG_PARTIAL_SUM = 8;
+  static final int KIND_AVG_PARTIAL_SUM = WindowAggregateKind.AVG_PARTIAL_SUM;
 
   private WindowAggregateMatcher() {}
 

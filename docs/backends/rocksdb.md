@@ -10,6 +10,18 @@ fails. Canonical readers, working directories and shared native-memory leases st
 cleanup attempt; later failures remain suppressed on the first failure. Operator-owned native
 handles close on the task thread before their shared-memory leases are released.
 
+Native operator construction and recovery use typed Rust lifecycle APIs, following Comet's
+thin JNI adapter pattern. The shared restore description carries checkpoint sources,
+key-group ownership, alignment and legacy partitions. Operator-specific APIs open the stores,
+attach memory accounting, migrate retained state and import partitions before the JNI adapter
+publishes a handle. A failed construction drops its partially built Rust owners normally.
+
+Checkpoint APIs retain each operator's timer and canonical-readiness preconditions. JNI adapters
+convert host arguments, borrow the typed handle, and convert the returned manifest or partitions.
+The existing boundary guard still contains panics and preserves callback throwables; construction,
+processing and checkpoint errors retain their existing Java exception policies. Handle types,
+state-byte metrics, manifest ordering and persisted state formats are unchanged.
+
 Native builds enable `rocksdb-state` by default. Tests that transfer window
 partials between stores exercise memory-to-memory and all RocksDB combinations
 in that build. A `--no-default-features` build exercises only the memory-store

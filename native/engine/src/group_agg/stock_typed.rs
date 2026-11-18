@@ -32,10 +32,12 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             ));
         }
         if self.kinds.is_empty()
-            || self
-                .kinds
-                .iter()
-                .any(|kind| !matches!(kind, 0 | 3 | 4 | 7 | 9 | 10 | 11 | 22 | 40))
+            || self.kinds.iter().any(|kind| {
+                !matches!(
+                    *kind,
+                    0 | 3 | 4 | 7 | 9 | 10 | 11 | 22 | group_aggregate_kind::RETRACTING_DECIMAL_SUM
+                )
+            })
             || self.record_count_column >= 0 && !self.stock_global_merge
             || self.count_columns.iter().enumerate().any(|(i, &column)| {
                 column >= 0 && !(self.stock_global_merge && matches!(self.kinds[i], 0 | 4))
@@ -65,7 +67,10 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
     fn configure_typed(&mut self, kinds: &[i64], append_only: bool) -> Result<(), DataFusionError> {
         self.typed_shape()?;
         if self.kinds != kinds
-            || append_only && self.kinds.contains(&40)
+            || append_only
+                && self
+                    .kinds
+                    .contains(&group_aggregate_kind::RETRACTING_DECIMAL_SUM)
             || self.stock_global_merge
                 && !append_only
                 && (self.record_count_column < 0

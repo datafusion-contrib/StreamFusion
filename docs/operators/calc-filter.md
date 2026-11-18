@@ -51,6 +51,13 @@ with remapped references, including whole-Calc JVM input coordinates; it cannot 
 prepared program. Whole-Calc representation flags remain attached to every logical output field,
 even when one row-valued evaluator root produces several columns. Each constructed operator
 receives its own unopened JVM-function binding.
+The Calc coordinator delegates numeric value proofs, collection/row representation, exact builtin
+routing, temporal formatting and UDF overload selection to semantic owners that do not write
+protocol pools. Shared collection rules use their own shape/type facts, without calling back into
+the encoder. A dedicated
+expression buffer owns node/payload alignment, literal storage, input remapping and exported
+pool snapshots. Admission still preserves short-circuiting, shared UDF evaluation and existing
+native/JVM choices; this separation changes neither the wire format nor supported SQL.
 Batch and stock compiled-plan paths retain their existing, stricter boundary and state admission.
 Processing-time projection fusion prepares its changed candidate separately and retains the
 original admitted plan if fusion is unsupported. Optional-probe failures still yield to later
@@ -78,10 +85,18 @@ the always-on planning log also counts Calc/filter nodes containing JVM function
 Flink's operator metrics use these detailed names as well; select Calc/filter metric groups by the
 `NativeCalc(` or `NativeFilter(` prefix rather than their execution-node class names.
 
-Expression node kinds and primitive cast targets come from one versioned protocol manifest,
-which generates both Java and Rust enums. Native decoding is exhaustive over those kinds, and
-CI checks generation drift and retired-code reuse. The compact pools and existing wire values
+Expression node kinds, primitive cast targets, scalar call and certified-builtin opcodes, and aggregate kinds come from
+one versioned protocol manifest. It generates Java and Rust enums for node/type tags and
+compile-time constants for operation codes used in dispatch. GROUP/OVER and window aggregate
+codes have separate namespaces because some existing values have different meanings in those
+contexts. Native decoding is exhaustive over node kinds, and CI checks generation drift,
+retired-code reuse and every frozen protocol identity. The compact pools and existing wire values
 remain unchanged; this is a planning maintainability change rather than a throughput claim.
+Scalar producer selection, certified callback dispatch and shared aggregate call specifications
+reference those generated names directly. Argument counts, type codes and accumulator widths
+remain separate from operation identities.
+Null-safe reference comparisons use these generated operations and append their boolean
+literal through the same buffer owner as other expressions.
 
 Generated expression code is built entirely in the planner. Serialized Calc/filter bindings
 carry only the generated function, runtime types/schema and user-function references; workers

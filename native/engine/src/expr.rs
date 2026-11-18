@@ -1,4 +1,4 @@
-use crate::expression_protocol::{CastTarget, ExpressionKind};
+use crate::expression_protocol::{certified_op, scalar_op, CastTarget, ExpressionKind};
 use crate::*;
 use arrow::datatypes::TimeUnit;
 
@@ -391,8 +391,8 @@ pub(crate) fn build_expr(
             if kind == ExpressionKind::CertifiedBuiltin {
                 function.certified_builtin = Some((longs[arg + 2], count));
                 let cache_count = match longs[arg + 2] {
-                    11 => 1, // Integer SPLIT_INDEX needs only the source string cache.
-                    12 => 0, // SHA2 hashes bytes without consulting decoded string caches.
+                    certified_op::SPLIT_INDEX_INTEGER => 1, // Integer SPLIT_INDEX needs only the source string cache.
+                    certified_op::SHA2_RUNTIME => 0, // SHA2 hashes bytes without consulting decoded string caches.
                     _ => count,
                 };
                 for index in 0..cache_count {
@@ -648,28 +648,34 @@ fn build_typed_call(
     args: Vec<datafusion::prelude::Expr>,
 ) -> datafusion::prelude::Expr {
     use datafusion::logical_expr::ExprSchemable;
-    if matches!(op, 67 | 94 | 107) {
+    if matches!(
+        op,
+        scalar_op::ASCII | scalar_op::CONCAT_WS | scalar_op::TO_BASE64
+    ) {
         let schema = DFSchema::try_from(Arc::clone(schema)).expect("byte-string input schema");
         if args
             .iter()
             .any(|arg| arg.get_type(&schema).expect("operand type") == DataType::Binary)
         {
             let function = match op {
-                67 => crate::flink_functions::byte_ascii::function(),
-                94 => crate::flink_functions::byte_concat_ws::function(),
-                107 => crate::flink_functions::function(151, args.len()).expect("binary TO_BASE64"),
+                scalar_op::ASCII => crate::flink_functions::byte_ascii::function(),
+                scalar_op::CONCAT_WS => crate::flink_functions::byte_concat_ws::function(),
+                scalar_op::TO_BASE64 => {
+                    crate::flink_functions::function(scalar_op::TO_BASE64_BINARY, args.len())
+                        .expect("binary TO_BASE64")
+                }
                 _ => unreachable!("matched byte-string function"),
             };
             return function.call(args);
         }
     }
-    if op == 3 || (10..=15).contains(&op) {
+    if op == scalar_op::DIVIDE || (scalar_op::GREATER_THAN..=scalar_op::NOT_EQUAL).contains(&op) {
         let schema = DFSchema::try_from(Arc::clone(schema)).expect("comparison input schema");
         let types: Vec<_> = args
             .iter()
             .map(|arg| arg.get_type(&schema).expect("operand type"))
             .collect();
-        let function = if op == 3 {
+        let function = if op == scalar_op::DIVIDE {
             crate::flink_functions::integer_divide::function(&types)
         } else {
             crate::flink_functions::numeric::comparison(op, &types)
@@ -689,11 +695,11 @@ pub(crate) fn build_call(
         return function.call(args);
     }
     match op {
-        93 => {
+        scalar_op::CONCAT => {
             return datafusion::logical_expr::ScalarUDF::new_from_impl(FlinkConcat::new())
                 .call(args);
         }
-        94 => {
+        scalar_op::CONCAT_WS => {
             let mut args = args;
             // Flink accepts a separator alone; DataFusion requires at least one value to concatenate.
             if args.len() == 1 {
@@ -704,21 +710,21 @@ pub(crate) fn build_call(
                 DataType::Utf8,
             ));
         }
-        95..=99 | 143 => {
+        scalar_op::MD5..=scalar_op::SHA512 | scalar_op::SHA1 => {
             let algorithm = match op {
-                95 => HashAlgorithm::Md5,
-                96 => HashAlgorithm::Sha224,
-                97 => HashAlgorithm::Sha256,
-                98 => HashAlgorithm::Sha384,
-                99 => HashAlgorithm::Sha512,
-                143 => HashAlgorithm::Sha1,
+                scalar_op::MD5 => HashAlgorithm::Md5,
+                scalar_op::SHA224 => HashAlgorithm::Sha224,
+                scalar_op::SHA256 => HashAlgorithm::Sha256,
+                scalar_op::SHA384 => HashAlgorithm::Sha384,
+                scalar_op::SHA512 => HashAlgorithm::Sha512,
+                scalar_op::SHA1 => HashAlgorithm::Sha1,
                 _ => unreachable!("matched hash opcode"),
             };
             return datafusion::logical_expr::ScalarUDF::new_from_impl(FlinkHash::new(algorithm))
                 .call(args);
         }
 
-        40 => {
+        scalar_op::CASE => {
             // Searched CASE: [when1, then1, …, else]. The trailing else is the odd operand out.
             let mut args = args;
             let else_expr = (args.len() % 2 == 1).then(|| Box::new(args.pop().expect("case else")));
@@ -731,7 +737,7 @@ pub(crate) fn build_call(
                 None, when_then, else_expr,
             ));
         }
-        58 => {
+        scalar_op::REPLACE => {
             // REPLACE(s, from, to): replace every occurrence of `from` with `to`.
             let mut a = args.into_iter();
             return datafusion::functions::string::expr_fn::replace(
@@ -740,42 +746,42 @@ pub(crate) fn build_call(
                 a.next().expect("replace to"),
             );
         }
-        84 => {
+        scalar_op::ROUND_FLOAT => {
             // ROUND(x) or ROUND(x, scale): opt-in (allowIncompatible) — see the Java encoder.
             return datafusion::functions::math::expr_fn::round(args);
         }
-        86 => {
+        scalar_op::DATE_FORMAT => {
             // DATE_FORMAT(ts, fmt): fmt is the already-translated chrono pattern (see DateFormat).
             return datafusion::logical_expr::ScalarUDF::new_from_impl(DateFormat::new())
                 .call(args);
         }
-        88 => {
+        scalar_op::REGEXP_EXTRACT => {
             // REGEXP_EXTRACT(str, pattern, groupIndex): opt-in (allowIncompatible) — see RegexpExtract.
             return datafusion::logical_expr::ScalarUDF::new_from_impl(RegexpExtract::new())
                 .call(args);
         }
-        89 => {
+        scalar_op::EXTRACT => {
             // EXTRACT(unit FROM ts): unit is a literal chrono field name (see ExtractField).
             return datafusion::logical_expr::ScalarUDF::new_from_impl(ExtractField::new())
                 .call(args);
         }
-        90 => {
+        scalar_op::DATE_FORMAT_LTZ => {
             // DATE_FORMAT(ltz, fmt) with a session zone (opt-in) — see DateFormatLtz. Args: ts, chrono fmt,
             // zone id. Converts the instant to the zone's local wall-clock before formatting.
             return datafusion::logical_expr::ScalarUDF::new_from_impl(DateFormatLtz::new())
                 .call(args);
         }
-        91 => {
+        scalar_op::EXTRACT_LTZ => {
             // EXTRACT(unit FROM ltz) with a session zone (opt-in) — see ExtractFieldLtz. Args: ts, field,
             // zone id. Converts the instant to the zone's local wall-clock before extracting.
             return datafusion::logical_expr::ScalarUDF::new_from_impl(ExtractFieldLtz::new())
                 .call(args);
         }
-        92 => {
+        scalar_op::INTERVAL_SCALE => {
             return datafusion::logical_expr::ScalarUDF::new_from_impl(IntervalScale::new())
                 .call(args);
         }
-        87 => {
+        scalar_op::TIMESTAMP_FROM_MILLIS => {
             return datafusion::logical_expr::create_udf(
                 "flink_timestamp_from_millis",
                 vec![DataType::Int64],
@@ -798,7 +804,7 @@ pub(crate) fn build_call(
             )
             .call(args);
         }
-        57 => {
+        scalar_op::POSITION => {
             // POSITION(sub IN s): operands arrive [sub, s]; strpos takes (string, substring).
             let mut a = args.into_iter();
             let substring = a.next().expect("position substring");
@@ -809,62 +815,74 @@ pub(crate) fn build_call(
             let mut it = args.into_iter();
             let mut next = || it.next().expect("missing operand");
             match op {
-                0 => next() + next(),
-                1 => next() - next(),
-                2 => next() * next(),
-                3 => next() / next(),
-                4 => next() % next(),
-                5 => datafusion::prelude::Expr::Negative(Box::new(next())),
-                10 => next().gt(next()),
-                11 => next().gt_eq(next()),
-                12 => next().lt(next()),
-                13 => next().lt_eq(next()),
-                14 => next().eq(next()),
-                15 => next().not_eq(next()),
-                20 => next().and(next()),
-                21 => next().or(next()),
-                22 => !next(),
-                30 => next().is_null(),
-                31 => next().is_not_null(),
+                scalar_op::ADD => next() + next(),
+                scalar_op::SUBTRACT => next() - next(),
+                scalar_op::MULTIPLY => next() * next(),
+                scalar_op::DIVIDE => next() / next(),
+                scalar_op::MOD => next() % next(),
+                scalar_op::NEGATE => datafusion::prelude::Expr::Negative(Box::new(next())),
+                scalar_op::GREATER_THAN => next().gt(next()),
+                scalar_op::GREATER_OR_EQUAL => next().gt_eq(next()),
+                scalar_op::LESS_THAN => next().lt(next()),
+                scalar_op::LESS_OR_EQUAL => next().lt_eq(next()),
+                scalar_op::EQUAL => next().eq(next()),
+                scalar_op::NOT_EQUAL => next().not_eq(next()),
+                scalar_op::AND => next().and(next()),
+                scalar_op::OR => next().or(next()),
+                scalar_op::NOT => !next(),
+                scalar_op::IS_NULL => next().is_null(),
+                scalar_op::IS_NOT_NULL => next().is_not_null(),
                 // x IS [NOT] TRUE/FALSE — three-valued: a null operand is neither true nor false.
-                32 => next().is_true(),
-                33 => next().is_not_true(),
-                34 => next().is_false(),
-                35 => next().is_not_false(),
-                52 => datafusion::functions::unicode::expr_fn::character_length(next()),
-                54 => datafusion::functions::string::expr_fn::btrim(vec![next()]),
-                60 => datafusion::functions::string::expr_fn::ltrim(vec![next()]),
-                61 => datafusion::functions::string::expr_fn::rtrim(vec![next()]),
-                62 => datafusion::functions::math::expr_fn::abs(next()),
-                63 => datafusion::functions::math::expr_fn::floor(next()),
-                64 => datafusion::functions::math::expr_fn::ceil(next()),
-                66 => datafusion::functions::string::expr_fn::repeat(next(), next()),
+                scalar_op::IS_TRUE => next().is_true(),
+                scalar_op::IS_NOT_TRUE => next().is_not_true(),
+                scalar_op::IS_FALSE => next().is_false(),
+                scalar_op::IS_NOT_FALSE => next().is_not_false(),
+                scalar_op::CHAR_LENGTH => {
+                    datafusion::functions::unicode::expr_fn::character_length(next())
+                }
+                scalar_op::TRIM_WHITESPACE => {
+                    datafusion::functions::string::expr_fn::btrim(vec![next()])
+                }
+                scalar_op::LTRIM_WHITESPACE => {
+                    datafusion::functions::string::expr_fn::ltrim(vec![next()])
+                }
+                scalar_op::RTRIM_WHITESPACE => {
+                    datafusion::functions::string::expr_fn::rtrim(vec![next()])
+                }
+                scalar_op::ABS_FLOAT => datafusion::functions::math::expr_fn::abs(next()),
+                scalar_op::FLOOR_FLOAT => datafusion::functions::math::expr_fn::floor(next()),
+                scalar_op::CEIL_FLOAT => datafusion::functions::math::expr_fn::ceil(next()),
+                scalar_op::REPEAT => datafusion::functions::string::expr_fn::repeat(next(), next()),
                 // Opt-in (allowIncompatible) functions: native results may differ from the host. The Java
                 // encoder admits these only under the per-function flag — see NativeConfig.
-                50 => datafusion::functions::string::expr_fn::upper(next()),
-                51 => datafusion::functions::string::expr_fn::lower(next()),
-                71 => datafusion::functions::math::expr_fn::power(next(), next()),
-                72 => datafusion::functions::math::expr_fn::exp(next()),
-                73 => datafusion::functions::math::expr_fn::ln(next()),
-                74 => datafusion::functions::math::expr_fn::sin(next()),
-                75 => datafusion::functions::math::expr_fn::cos(next()),
-                76 => datafusion::functions::math::expr_fn::tan(next()),
-                77 => datafusion::functions::math::expr_fn::asin(next()),
-                78 => datafusion::functions::math::expr_fn::acos(next()),
-                79 => datafusion::functions::math::expr_fn::atan(next()),
-                80 => datafusion::functions::math::expr_fn::log10(next()),
-                56 => datafusion::prelude::Expr::Like(datafusion::logical_expr::Like::new(
-                    false,
-                    Box::new(next()),
-                    Box::new(next()),
-                    None,
-                    false,
-                )),
+                scalar_op::UPPER => datafusion::functions::string::expr_fn::upper(next()),
+                scalar_op::LOWER => datafusion::functions::string::expr_fn::lower(next()),
+                scalar_op::POWER => datafusion::functions::math::expr_fn::power(next(), next()),
+                scalar_op::EXP => datafusion::functions::math::expr_fn::exp(next()),
+                scalar_op::LN => datafusion::functions::math::expr_fn::ln(next()),
+                scalar_op::SIN => datafusion::functions::math::expr_fn::sin(next()),
+                scalar_op::COS => datafusion::functions::math::expr_fn::cos(next()),
+                scalar_op::TAN => datafusion::functions::math::expr_fn::tan(next()),
+                scalar_op::ASIN => datafusion::functions::math::expr_fn::asin(next()),
+                scalar_op::ACOS => datafusion::functions::math::expr_fn::acos(next()),
+                scalar_op::ATAN => datafusion::functions::math::expr_fn::atan(next()),
+                scalar_op::LOG10 => datafusion::functions::math::expr_fn::log10(next()),
+                scalar_op::LIKE => {
+                    datafusion::prelude::Expr::Like(datafusion::logical_expr::Like::new(
+                        false,
+                        Box::new(next()),
+                        Box::new(next()),
+                        None,
+                        false,
+                    ))
+                }
                 // REVERSE yields a Utf8View (like substr); cast back to Utf8 for the JVM converter.
-                59 => datafusion::prelude::Expr::Cast(datafusion::logical_expr::Cast::new(
-                    Box::new(datafusion::functions::unicode::expr_fn::reverse(next())),
-                    DataType::Utf8,
-                )),
+                scalar_op::REVERSE => {
+                    datafusion::prelude::Expr::Cast(datafusion::logical_expr::Cast::new(
+                        Box::new(datafusion::functions::unicode::expr_fn::reverse(next())),
+                        DataType::Utf8,
+                    ))
+                }
                 other => panic!("unsupported expression op: {other}"),
             }
         }
@@ -2581,7 +2599,9 @@ impl datafusion::logical_expr::ScalarUDFImpl for JvmUdf {
                 }
             }
         }
-        if let Some((operation @ 20..=28, count)) = self.certified_builtin {
+        if let Some((operation @ certified_op::LPAD_EQUAL..=certified_op::OVERLAY_REPLACE, count)) =
+            self.certified_builtin
+        {
             if let Some(output) = crate::flink_functions::string_fusion::evaluate(
                 operation,
                 &args.args[..count],

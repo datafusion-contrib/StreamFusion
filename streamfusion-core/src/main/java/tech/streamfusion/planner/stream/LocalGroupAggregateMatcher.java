@@ -11,6 +11,7 @@ import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalL
 import org.apache.flink.table.planner.plan.utils.ChangelogPlanUtils;
 import scala.collection.Seq;
 import tech.streamfusion.operator.RowDataArrowConverter;
+import tech.streamfusion.planner.common.GroupAggregateKind;
 
 /**
  * Recognizes the local half of a two-phase non-windowed {@code GROUP BY}: a stateless per-batch
@@ -52,17 +53,15 @@ final class LocalGroupAggregateMatcher {
   }
 
   static int aggregateKind(org.apache.calcite.sql.SqlKind kind) {
-    if (kind == org.apache.calcite.sql.SqlKind.JSON_OBJECTAGG) return 42;
+    if (kind == org.apache.calcite.sql.SqlKind.JSON_OBJECTAGG)
+      return GroupAggregateKind.JSON_OBJECT_MERGE_ABSENT_ON_NULL;
     if (kind == org.apache.calcite.sql.SqlKind.LISTAGG)
       return GroupAggregateMatcher.KIND_LISTAGG_APPEND;
-    if (kind == org.apache.calcite.sql.SqlKind.SUM0) return GroupAggregateMatcher.KIND_SUM_ZERO;
-    return kind == org.apache.calcite.sql.SqlKind.SINGLE_VALUE
-        ? 14
-        : WindowAggregateMatcher.aggregateKind(kind);
+    return AggregateCallSpec.scalarKind(kind);
   }
 
   static int jsonObjectKind(AggregateCall call) {
-    return 42
+    return GroupAggregateKind.JSON_OBJECT_MERGE_ABSENT_ON_NULL
         + (tech.streamfusion.compat.JsonRuntimeCompat.LEGACY_SQL_JSON ? 2 : 0)
         + (((org.apache.calcite.sql.fun.SqlJsonObjectAggAggFunction) call.getAggregation())
                     .getNullClause()
@@ -94,14 +93,7 @@ final class LocalGroupAggregateMatcher {
   }
 
   static int partialWidth(AggregateCall call, boolean retracting) {
-    int kind = aggregateKind(call.getAggregation().getKind());
-    if (kind == GroupAggregateMatcher.KIND_LISTAGG_APPEND && retracting) return 1;
-    return kind == GroupAggregateMatcher.KIND_LISTAGG_APPEND
-            || kind == 14
-            || kind == WindowAggregateMatcher.KIND_AVG
-            || isRetractingSum(call, retracting)
-        ? 2
-        : 1;
+    return AggregateCallSpec.accumulatorWidth(call, retracting);
   }
 
   private static int stateWidth(AggregateCall call, boolean retracting) {
@@ -212,8 +204,8 @@ final class LocalGroupAggregateMatcher {
               && retractKind != GroupAggregateMatcher.KIND_SUM_ZERO
               && retractKind != WindowAggregateMatcher.KIND_SUM
               && retractKind != GroupAggregateMatcher.KIND_LISTAGG_APPEND
-              && retractKind != 42
-              && retractKind != 14
+              && retractKind != GroupAggregateKind.JSON_OBJECT_MERGE_ABSENT_ON_NULL
+              && retractKind != GroupAggregateKind.SINGLE_VALUE
               && retractKind != WindowAggregateMatcher.KIND_MIN
               && retractKind != WindowAggregateMatcher.KIND_MAX)) {
         return false;
@@ -228,7 +220,7 @@ final class LocalGroupAggregateMatcher {
         return false;
       }
       int kind = aggregateKind(call.getAggregation().getKind());
-      if (kind == 42) {
+      if (kind == GroupAggregateKind.JSON_OBJECT_MERGE_ABSENT_ON_NULL) {
         if (!supportedJsonObjectCall(call, inputType)
             || offset >= outputType.getFieldCount()
             || !supportedJsonObjectPartial(outputType.getFieldList().get(offset).getType()))
@@ -304,7 +296,7 @@ final class LocalGroupAggregateMatcher {
         }
         continue;
       }
-      if (kind == 14) {
+      if (kind == GroupAggregateKind.SINGLE_VALUE) {
         if (call.getArgList().size() != 1
             || offset + 1 >= outputType.getFieldCount()
             || !supportedSinglePartials(
@@ -596,10 +588,10 @@ final class LocalGroupAggregateMatcher {
   /**
    * Native aggregate kind 7 (COUNT(DISTINCT)); matches the convention in the Rust GroupAggState.
    */
-  static final int KIND_COUNT_DISTINCT = 7;
+  static final int KIND_COUNT_DISTINCT = GroupAggregateKind.COUNT_DISTINCT;
 
   /** Native aggregate kind 9 (SUM(DISTINCT)); matches the convention in the Rust GroupAggState. */
-  static final int KIND_SUM_DISTINCT = 9;
+  static final int KIND_SUM_DISTINCT = GroupAggregateKind.SUM_DISTINCT;
 
   /** Expanded native states. AVG/SINGLE_VALUE use two; LISTAGG emits two partials from one. */
   static int[] kinds(StreamPhysicalLocalGroupAggregate agg) {
@@ -609,14 +601,23 @@ final class LocalGroupAggregateMatcher {
       AggregateCall call = aggCalls.apply(i);
       int kind = aggregateKind(call.getAggregation().getKind());
       if (kind == GroupAggregateMatcher.KIND_LISTAGG_APPEND && call.isDistinct()) {
-        kinds.add(needRetraction(agg) ? 33 : 32);
+        kinds.add(
+            needRetraction(agg)
+                ? GroupAggregateKind.LISTAGG_DISTINCT_RETRACT
+                : GroupAggregateKind.LISTAGG_DISTINCT_APPEND);
       } else if (kind == GroupAggregateMatcher.KIND_LISTAGG_APPEND && needRetraction(agg)) {
-        kinds.add(call.getArgList().size() == 2 ? 47 : 46);
-      } else if (kind == 42) {
+        kinds.add(
+            call.getArgList().size() == 2
+                ? GroupAggregateKind.LISTAGG_MERGE_WITH_SEPARATOR
+                : GroupAggregateKind.LISTAGG_MERGE);
+      } else if (kind == GroupAggregateKind.JSON_OBJECT_MERGE_ABSENT_ON_NULL) {
         kinds.add(jsonObjectKind(call));
       } else if (call.isDistinct()) {
         if (kind == WindowAggregateMatcher.KIND_AVG) {
-          kinds.add(18); // DISTINCT widened sum partial; its value set retains the input type.
+          kinds.add(
+              GroupAggregateKind
+                  .AVG_DISTINCT_PARTIAL_SUM); // DISTINCT widened sum partial; its value set retains
+                                              // the input type.
           kinds.add(KIND_COUNT_DISTINCT);
         } else {
           kinds.add(
@@ -628,10 +629,15 @@ final class LocalGroupAggregateMatcher {
           if (isRetractingSum(call, needRetraction(agg))) kinds.add(KIND_COUNT_DISTINCT);
         }
       } else if (mappedExtreme(agg, i)) {
-        kinds.add(kind == WindowAggregateMatcher.KIND_MIN ? 38 : 39);
-      } else if (kind == 14) {
-        kinds.add(14);
-        kinds.add(21); // SINGLE_VALUE count is INT and includes NULL inputs.
+        kinds.add(
+            kind == WindowAggregateMatcher.KIND_MIN
+                ? GroupAggregateKind.MIN_MAPPED_PARTIAL
+                : GroupAggregateKind.MAX_MAPPED_PARTIAL);
+      } else if (kind == GroupAggregateKind.SINGLE_VALUE) {
+        kinds.add(GroupAggregateKind.SINGLE_VALUE);
+        kinds.add(
+            GroupAggregateKind
+                .SINGLE_VALUE_COUNT); // SINGLE_VALUE count is INT and includes NULL inputs.
       } else if (isRetractingSum(call, needRetraction(agg))) {
         // A zero net contribution count must not erase the bundle's sum adjustment.
         kinds.add(
@@ -688,15 +694,7 @@ final class LocalGroupAggregateMatcher {
     Seq<AggregateCall> aggCalls = agg.aggCalls();
     for (int i = 0; i < aggCalls.size(); i++) {
       AggregateCall call = aggCalls.apply(i);
-      int column =
-          call.getArgList().isEmpty()
-              ? -1
-              : call.getArgList()
-                  .get(
-                      call.getAggregation().getKind()
-                              == org.apache.calcite.sql.SqlKind.JSON_OBJECTAGG
-                          ? 1
-                          : 0);
+      int column = AggregateCallSpec.valueColumn(call);
       columns.add(column);
       if (stateWidth(call, needRetraction(agg)) == 2) {
         columns.add(column);
@@ -723,9 +721,10 @@ final class LocalGroupAggregateMatcher {
                 inputType.getFieldList().get(call.getArgList().get(0)).getType());
         codes.add(code);
         if (stateWidth(call, needRetraction(agg)) == 2) codes.add(code);
-      } else if (kind == GroupAggregateMatcher.KIND_LISTAGG_APPEND || kind == 42) {
+      } else if (kind == GroupAggregateMatcher.KIND_LISTAGG_APPEND
+          || kind == GroupAggregateKind.JSON_OBJECT_MERGE_ABSENT_ON_NULL) {
         codes.add(3);
-      } else if (kind == 14) {
+      } else if (kind == GroupAggregateKind.SINGLE_VALUE) {
         int code =
             GroupAggregateMatcher.retainedValueTypeCode(
                 inputType.getFieldList().get(call.getArgList().get(0)).getType());
@@ -783,13 +782,7 @@ final class LocalGroupAggregateMatcher {
     var columns = new ArrayList<Integer>();
     for (int i = 0; i < agg.aggCalls().size(); i++) {
       var call = agg.aggCalls().apply(i);
-      columns.add(
-          call.getAggregation().getKind() == org.apache.calcite.sql.SqlKind.JSON_OBJECTAGG
-              ? call.getArgList().get(0)
-              : call.getAggregation().getKind() == org.apache.calcite.sql.SqlKind.LISTAGG
-                      && call.getArgList().size() == 2
-                  ? call.getArgList().get(1)
-                  : -1);
+      columns.add(AggregateCallSpec.auxiliaryColumn(call));
       if (stateWidth(call, needRetraction(agg)) == 2) columns.add(-1);
     }
     if (countStarInserted(agg)) columns.add(-1);

@@ -1,6 +1,7 @@
 //! JNI lifecycle for Rust-owned RocksDB state. Java controls Flink lifecycle and file upload;
 //! every state read, write, flush, and compaction stays inside Rust/RocksDB.
 
+use super::rocks_lifecycle::{self as lifecycle, *};
 use super::rocks_store::{retained_rows::RetainedRows, window_memberships::WindowStateCodec};
 use crate::*;
 use jni::objects::{
@@ -8,11 +9,6 @@ use jni::objects::{
 };
 use jni::sys::{jboolean, jdouble, jint, jlong, jobjectArray};
 use jni::JNIEnv;
-
-type RocksGroupAggregator = GroupAggregator<RocksGroupStore>;
-type RocksChangelogNormalizer = ChangelogNormalizer<RocksNormalizerStore>;
-type RocksKeepLastDeduplicator = KeepLastDeduplicator<RocksDedupStore>;
-type RocksUpdatingJoiner = UpdatingJoiner<RocksJoinStore>;
 
 pub(crate) fn read_string(env: &mut JNIEnv, value: &JString) -> String {
     env.get_string(value).expect("jni string").into()
@@ -47,85 +43,44 @@ pub(crate) fn read_restored_partitions(env: &mut JNIEnv, values: &JObjectArray) 
         .collect()
 }
 
-/// Opens an operator's typed store: fresh when no restored sources exist, otherwise merged from
-/// the restored checkpoint directories with this subtask's key-group range.
-#[allow(clippy::too_many_arguments)]
-fn open_store<C: RocksStateCodec>(
+fn read_restore(
     env: &mut JNIEnv,
-    config: RocksStoreConfig,
-    codec: C,
     source_directories: &JObjectArray,
     source_snapshot_tokens: &JObjectArray,
-    key_group_start: jint,
-    key_group_end: jint,
+    key_group_start: i32,
+    key_group_end: i32,
     aligned: jboolean,
-    now_millis: jlong,
-) -> Result<RocksStore<C>, DataFusionError> {
-    let source_dirs: Vec<_> = read_strings(env, source_directories)
+    partitions: Vec<Vec<u8>>,
+) -> Restore {
+    let directories = read_strings(env, source_directories)
         .into_iter()
         .flatten()
-        .collect();
-    let source_tokens: Vec<_> = read_strings(env, source_snapshot_tokens)
+        .collect::<Vec<_>>();
+    let tokens = read_strings(env, source_snapshot_tokens)
         .into_iter()
         .flatten()
         .map(|token| token.parse::<i64>().expect("RocksDB checkpoint generation"))
-        .collect();
-    if source_dirs.is_empty() {
-        RocksStore::create(config, codec)
-    } else {
-        RocksStore::open_merged(
-            config,
-            codec,
-            &source_dirs
-                .into_iter()
-                .zip(source_tokens)
-                .collect::<Vec<_>>(),
-            key_group_start..=key_group_end,
-            aligned != 0,
-            now_millis,
-        )
+        .collect::<Vec<_>>();
+    Restore {
+        sources: directories.into_iter().zip(tokens).collect(),
+        key_groups: key_group_start..=key_group_end,
+        aligned: aligned != 0,
+        partitions,
     }
 }
 
-/// [`open_store`] for two side stores sharing one DB (the updating join's left and right states):
-/// fresh when no restored sources exist, otherwise merged once for both tables.
-#[allow(clippy::too_many_arguments)]
-fn open_store_pair<C: RocksStateCodec>(
-    env: &mut JNIEnv,
-    config: RocksStoreConfig,
-    second_ttl_ms: i64,
-    codecs: (C, C),
-    source_directories: &JObjectArray,
-    source_snapshot_tokens: &JObjectArray,
-    key_group_start: jint,
-    key_group_end: jint,
-    aligned: jboolean,
-    now_millis: jlong,
-) -> Result<(RocksStore<C>, RocksStore<C>), DataFusionError> {
-    let source_dirs: Vec<_> = read_strings(env, source_directories)
-        .into_iter()
-        .flatten()
-        .collect();
-    let source_tokens: Vec<_> = read_strings(env, source_snapshot_tokens)
-        .into_iter()
-        .flatten()
-        .map(|token| token.parse::<i64>().expect("RocksDB checkpoint generation"))
-        .collect();
-    if source_dirs.is_empty() {
-        RocksStore::create_pair(config, second_ttl_ms, codecs)
-    } else {
-        RocksStore::open_merged_pair(
-            config,
-            second_ttl_ms,
-            codecs,
-            &source_dirs
-                .into_iter()
-                .zip(source_tokens)
-                .collect::<Vec<_>>(),
-            key_group_start..=key_group_end,
-            aligned != 0,
-            now_millis,
-        )
+fn runtime_result<'local, T, R: crate::bridge::JniDefault>(
+    env: &mut JNIEnv<'local>,
+    result: Result<T, DataFusionError>,
+    context: &str,
+    convert: impl FnOnce(&mut JNIEnv<'local>, T) -> R,
+) -> R {
+    match result {
+        Ok(value) => convert(env, value),
+        Err(error) => {
+            let _ = env.throw_new("java/lang/RuntimeException", format!("{context}: {error}"));
+            R::jni_default()
+        }
     }
 }
 
@@ -133,14 +88,7 @@ pub(crate) fn manifest_array<'local>(
     env: &mut JNIEnv<'local>,
     manifest: &RocksCheckpointManifest,
 ) -> jobjectArray {
-    let mut lines = Vec::with_capacity(1 + manifest.data_files.len() + manifest.meta_files.len());
-    lines.push(if manifest.snapshot_id < 0 {
-        String::new()
-    } else {
-        manifest.snapshot_id.to_string()
-    });
-    lines.extend(manifest.data_files.iter().map(|f| format!("d:{f}")));
-    lines.extend(manifest.meta_files.iter().map(|f| format!("m:{f}")));
+    let lines = lifecycle::manifest_lines(manifest);
     let array = env
         .new_object_array(lines.len() as i32, "java/lang/String", JObject::null())
         .expect("manifest array");
@@ -243,18 +191,6 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBGroupAggregato
     emit_unchanged_with_ttl: jboolean,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
-        let kinds = read_int_array(&env, &aggregate_kinds);
-        let value_type_codes = read_int_array(&env, &value_types);
-        let values: Vec<_> = value_type_codes
-            .iter()
-            .map(|&code| value_data_type(code))
-            .collect();
-        let codec = GroupStateCodec::new(
-            kinds.clone(),
-            values,
-            read_int_array(&env, &value_columns),
-            read_int_array(&env, &distinct_view_columns),
-        );
         let config = RocksStoreConfig {
             table_dir: read_string(&mut env, &table_directory),
             max_parallelism: max_parallelism as usize,
@@ -262,45 +198,48 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBGroupAggregato
             ttl_ms: state_ttl_millis.max(0),
             shared_resources,
         };
-        let store = open_store(
+        let restored = read_restored_partitions(&mut env, &restored_partitions);
+        let restore = read_restore(
             &mut env,
-            config,
-            codec,
             &source_directories,
             &source_snapshot_tokens,
             key_group_start,
             key_group_end,
             aligned,
-            now_millis,
+            restored,
         );
-        let aggregator = store.and_then(|store| {
-            let mut base = GroupAggregator::new(
-                kinds,
-                value_type_codes,
-                read_int_array(&env, &value_columns),
-                read_columns(&env, &key_columns),
-                generate_update_before != 0,
-            )
-            .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
-            .with_filter_columns(read_int_array(&env, &filter_columns))
-            .with_count_columns(read_int_array(&env, &count_columns))
-            .with_record_count_column(record_count_column as i64)
-            .with_distinct_view_columns(read_int_array(&env, &distinct_view_columns))
-            .with_state_ttl(state_ttl_millis)
-            .with_ttl_emission(emit_unchanged_with_ttl != 0);
-            if mini_batch != 0 {
-                base = base.with_mini_batch();
-            }
-            base.with_backend(store)
-                .with_read_through_budget(memory_budget_bytes)
-        });
-        let aggregator = aggregator.and_then(|mut aggregator| {
-            aggregator.migrate_legacy_snapshot_store(now_millis)?;
-            let restored = read_restored_partitions(&mut env, &restored_partitions);
-            aggregator.import_partitions(&restored, now_millis)?;
-            Ok(aggregator)
-        });
-        boxed_or_throw(&mut env, aggregator)
+        let aggregate_kinds = read_int_array(&env, &aggregate_kinds);
+        let value_types = read_int_array(&env, &value_types);
+        let value_columns = read_int_array(&env, &value_columns);
+        let key_columns = read_columns(&env, &key_columns);
+        let key_timestamp_precisions = read_i32_array(&env, &key_timestamp_precisions);
+        let filter_columns = read_int_array(&env, &filter_columns);
+        let count_columns = read_int_array(&env, &count_columns);
+        let distinct_view_columns = read_int_array(&env, &distinct_view_columns);
+        let generate_update_before = generate_update_before != 0;
+        let mini_batch = mini_batch != 0;
+        let emit_unchanged_with_ttl = emit_unchanged_with_ttl != 0;
+        let result = lifecycle::create_group_aggregator_with_ttl_emission(
+            Storage { config, restore },
+            GroupOptions {
+                aggregate_kinds,
+                value_types,
+                value_columns,
+                key_columns,
+                key_timestamp_precisions,
+                filter_columns,
+                count_columns,
+                distinct_view_columns,
+                record_count_column,
+                generate_update_before,
+                mini_batch,
+                state_ttl_millis,
+                now_millis,
+                memory_budget_bytes,
+                emit_unchanged_with_ttl,
+            },
+        );
+        boxed_or_throw(&mut env, result)
     })
 }
 
@@ -354,19 +293,16 @@ pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBGroupAggre
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
         let snapshot_directory = read_string(&mut env, &snapshot_directory);
-        match unsafe { &mut *(handle as *mut RocksGroupAggregator) }
-            .store_mut()
-            .checkpoint(&snapshot_directory)
-        {
-            Ok(m) => manifest_array(&mut env, &m),
-            Err(e) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("RocksDB checkpoint failed: {e}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+        let result = lifecycle::checkpoint_group_aggregator(
+            unsafe { &mut *(handle as *mut RocksGroupAggregator) },
+            &snapshot_directory,
+        );
+        runtime_result(
+            &mut env,
+            result,
+            "RocksDB checkpoint failed",
+            |env, manifest| manifest_array(env, &manifest),
+        )
     })
 }
 
@@ -380,18 +316,15 @@ pub extern "system" fn Java_tech_streamfusion_Native_snapshotRocksDBGroupAggrega
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
         let aggregator = unsafe { &mut *(handle as *mut RocksGroupAggregator) };
-        match aggregator.canonical_partitions() {
-            Ok(partitions) => {
-                keyed_state_partition_array(&mut env, partitions, "rocksdb-group-aggregate")
-            }
-            Err(error) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("RocksDB canonical snapshot failed: {error}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+        let result = aggregator.canonical_partitions();
+        runtime_result(
+            &mut env,
+            result,
+            "RocksDB canonical snapshot failed",
+            |env, partitions| {
+                keyed_state_partition_array(env, partitions, "rocksdb-group-aggregate")
+            },
+        )
     })
 }
 
@@ -468,34 +401,33 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBChangelogNorma
             ttl_ms: state_ttl_millis.max(0),
             shared_resources,
         };
-        let store = open_store(
+        let restored = read_restored_partitions(&mut env, &restored_partitions);
+        let restore = read_restore(
             &mut env,
-            config,
-            NormalizerStateCodec,
             &source_directories,
             &source_snapshot_tokens,
             key_group_start,
             key_group_end,
             aligned,
-            now_millis,
+            restored,
         );
-        let normalizer = store.and_then(|store| {
-            ChangelogNormalizer::new(
-                read_columns(&env, &key_columns),
-                generate_update_before != 0,
-            )
-            .with_mini_batch(mini_batch != 0)
-            .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
-            .with_state_ttl(state_ttl_millis)
-            .with_backend(store)
-            .with_read_through_budget(memory_budget_bytes)
-        });
-        let normalizer = normalizer.and_then(|mut normalizer| {
-            let restored = read_restored_partitions(&mut env, &restored_partitions);
-            normalizer.import_partitions(&restored, now_millis)?;
-            Ok(normalizer)
-        });
-        boxed_or_throw(&mut env, normalizer)
+        let key_columns = read_columns(&env, &key_columns);
+        let key_timestamp_precisions = read_i32_array(&env, &key_timestamp_precisions);
+        let generate_update_before = generate_update_before != 0;
+        let mini_batch = mini_batch != 0;
+        let result = lifecycle::create_changelog_normalizer(
+            Storage { config, restore },
+            NormalizerOptions {
+                key_columns,
+                key_timestamp_precisions,
+                generate_update_before,
+                mini_batch,
+                state_ttl_millis,
+                now_millis,
+                memory_budget_bytes,
+            },
+        );
+        boxed_or_throw(&mut env, result)
     })
 }
 
@@ -552,19 +484,16 @@ pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBChangelogN
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
         let snapshot_directory = read_string(&mut env, &snapshot_directory);
-        match unsafe { &mut *(handle as *mut RocksChangelogNormalizer) }
-            .store_mut()
-            .checkpoint(&snapshot_directory)
-        {
-            Ok(m) => manifest_array(&mut env, &m),
-            Err(e) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("RocksDB checkpoint failed: {e}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+        let result = lifecycle::checkpoint_changelog_normalizer(
+            unsafe { &mut *(handle as *mut RocksChangelogNormalizer) },
+            &snapshot_directory,
+        );
+        runtime_result(
+            &mut env,
+            result,
+            "RocksDB checkpoint failed",
+            |env, manifest| manifest_array(env, &manifest),
+        )
     })
 }
 
@@ -578,18 +507,15 @@ pub extern "system" fn Java_tech_streamfusion_Native_snapshotRocksDBChangelogNor
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
         let normalizer = unsafe { &mut *(handle as *mut RocksChangelogNormalizer) };
-        match normalizer.canonical_partitions() {
-            Ok(partitions) => {
-                keyed_state_partition_array(&mut env, partitions, "rocksdb-changelog-normalizer")
-            }
-            Err(error) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("RocksDB canonical snapshot failed: {error}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+        let result = normalizer.canonical_partitions();
+        runtime_result(
+            &mut env,
+            result,
+            "RocksDB canonical snapshot failed",
+            |env, partitions| {
+                keyed_state_partition_array(env, partitions, "rocksdb-changelog-normalizer")
+            },
+        )
     })
 }
 
@@ -672,36 +598,31 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBFirstN<'local>
             ttl_ms: ttl.max(0),
             shared_resources,
         };
-        let result = open_store(
+        let restored = read_restored_partitions(&mut env, &restored_partitions);
+        let restore = read_restore(
             &mut env,
-            config,
-            FirstNCodec,
             &source_directories,
             &source_snapshot_tokens,
             key_group_start,
             key_group_end,
             aligned,
-            now,
-        )
-        .and_then(|store| {
-            FirstN::new(
-                read_columns(&env, &partitions),
-                read_i32_array(&env, &precisions),
+            restored,
+        );
+        let partitions = read_columns(&env, &partitions);
+        let precisions = read_i32_array(&env, &precisions);
+        let output_rank = output_rank != 0;
+        let result = lifecycle::create_first_n(
+            Storage { config, restore },
+            FirstNOptions {
+                partitions,
+                precisions,
                 limit,
-                output_rank != 0,
+                output_rank,
                 ttl,
-                store,
-                budget,
-            )
-        })
-        .and_then(|mut ranker| {
-            ranker.rows.set_clock(now);
-            ranker.import_partitions(
-                &read_restored_partitions(&mut env, &restored_partitions),
                 now,
-            )?;
-            Ok(FirstNHandle::Rocks(ranker))
-        });
+                budget,
+            },
+        );
         boxed_or_throw(&mut env, result)
     })
 }
@@ -714,20 +635,17 @@ pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBFirstN<'lo
     snapshot_directory: JString<'local>,
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
-        let path = read_string(&mut env, &snapshot_directory);
-        let FirstNHandle::Rocks(ranker) = (unsafe { &mut *(handle as *mut FirstNHandle) }) else {
-            panic!("first-N checkpoint requires RocksDB state");
-        };
-        match ranker.rows.checkpoint(&path) {
-            Ok(manifest) => manifest_array(&mut env, &manifest),
-            Err(e) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("first-N checkpoint failed: {e}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+        let snapshot_directory = read_string(&mut env, &snapshot_directory);
+        let result = lifecycle::checkpoint_first_n(
+            unsafe { &mut *(handle as *mut FirstNHandle) },
+            &snapshot_directory,
+        );
+        runtime_result(
+            &mut env,
+            result,
+            "first-N checkpoint failed",
+            |env, manifest| manifest_array(env, &manifest),
+        )
     })
 }
 
@@ -766,39 +684,42 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBKeepLastDedupl
             ttl_ms: state_ttl_millis.max(0),
             shared_resources,
         };
-        let store = open_store(
+        let restored = read_restored_partitions(&mut env, &restored_partitions);
+        let restore = read_restore(
             &mut env,
-            config,
-            DedupStateCodec,
             &source_directories,
             &source_snapshot_tokens,
             key_group_start,
             key_group_end,
             aligned,
-            now_millis,
+            restored,
         );
-        let dedup = store.and_then(|store| {
-            KeepLastDeduplicator::new(
-                read_columns(&env, &partition_columns),
-                rt_column as usize,
-                generate_update_before != 0,
-                rowtime_ordered != 0,
-                keep_first != 0,
-            )
-            .with_generate_insert(generate_insert != 0)
-            .with_mini_batch(mini_batch != 0)
-            .with_compact_changes(compact_changes != 0)
-            .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
-            .with_state_ttl(state_ttl_millis)
-            .with_backend(store)
-            .with_read_through_budget(memory_budget_bytes)
-        });
-        let dedup = dedup.and_then(|mut dedup| {
-            let restored = read_restored_partitions(&mut env, &restored_partitions);
-            dedup.import_partitions(&restored, now_millis)?;
-            Ok(dedup)
-        });
-        boxed_or_throw(&mut env, dedup)
+        let partition_columns = read_columns(&env, &partition_columns);
+        let key_timestamp_precisions = read_i32_array(&env, &key_timestamp_precisions);
+        let generate_update_before = generate_update_before != 0;
+        let generate_insert = generate_insert != 0;
+        let rowtime_ordered = rowtime_ordered != 0;
+        let keep_first = keep_first != 0;
+        let mini_batch = mini_batch != 0;
+        let compact_changes = compact_changes != 0;
+        let result = lifecycle::create_keep_last_deduplicator(
+            Storage { config, restore },
+            KeepLastOptions {
+                partition_columns,
+                key_timestamp_precisions,
+                rt_column,
+                generate_update_before,
+                generate_insert,
+                rowtime_ordered,
+                keep_first,
+                mini_batch,
+                compact_changes,
+                state_ttl_millis,
+                now_millis,
+                memory_budget_bytes,
+            },
+        );
+        boxed_or_throw(&mut env, result)
     })
 }
 
@@ -855,19 +776,16 @@ pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBKeepLastDe
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
         let snapshot_directory = read_string(&mut env, &snapshot_directory);
-        match unsafe { &mut *(handle as *mut RocksKeepLastDeduplicator) }
-            .store_mut()
-            .checkpoint(&snapshot_directory)
-        {
-            Ok(m) => manifest_array(&mut env, &m),
-            Err(e) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("RocksDB checkpoint failed: {e}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+        let result = lifecycle::checkpoint_keep_last_deduplicator(
+            unsafe { &mut *(handle as *mut RocksKeepLastDeduplicator) },
+            &snapshot_directory,
+        );
+        runtime_result(
+            &mut env,
+            result,
+            "RocksDB checkpoint failed",
+            |env, manifest| manifest_array(env, &manifest),
+        )
     })
 }
 
@@ -881,18 +799,15 @@ pub extern "system" fn Java_tech_streamfusion_Native_snapshotRocksDBKeepLastDedu
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
         let dedup = unsafe { &mut *(handle as *mut RocksKeepLastDeduplicator) };
-        match dedup.canonical_partitions() {
-            Ok(partitions) => {
-                keyed_state_partition_array(&mut env, partitions, "rocksdb-keep-last-dedup")
-            }
-            Err(error) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("RocksDB canonical snapshot failed: {error}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+        let result = dedup.canonical_partitions();
+        runtime_result(
+            &mut env,
+            result,
+            "RocksDB canonical snapshot failed",
+            |env, partitions| {
+                keyed_state_partition_array(env, partitions, "rocksdb-keep-last-dedup")
+            },
+        )
     })
 }
 
@@ -964,46 +879,6 @@ pub extern "system" fn Java_tech_streamfusion_Native_rocksdbKeepFirstDeduplicato
     })
 }
 
-/// [`open_store`] for the keep-first deduplicator's two-table store: fresh when no restored
-/// sources exist, otherwise merged once with this subtask's key-group range.
-#[allow(clippy::too_many_arguments)]
-fn open_keep_first_dedup_store(
-    env: &mut JNIEnv,
-    config: RocksStoreConfig,
-    schema: SchemaRef,
-    partition_columns: &[usize],
-    source_directories: &JObjectArray,
-    source_snapshot_tokens: &JObjectArray,
-    key_group_start: jint,
-    key_group_end: jint,
-    aligned: jboolean,
-) -> Result<RocksKeepFirstDedupStore, DataFusionError> {
-    let source_dirs: Vec<_> = read_strings(env, source_directories)
-        .into_iter()
-        .flatten()
-        .collect();
-    let source_tokens: Vec<_> = read_strings(env, source_snapshot_tokens)
-        .into_iter()
-        .flatten()
-        .map(|token| token.parse::<i64>().expect("RocksDB checkpoint generation"))
-        .collect();
-    if source_dirs.is_empty() {
-        RocksKeepFirstDedupStore::create(config, schema, partition_columns)
-    } else {
-        RocksKeepFirstDedupStore::open_merged(
-            config,
-            schema,
-            partition_columns,
-            &source_dirs
-                .into_iter()
-                .zip(source_tokens)
-                .collect::<Vec<_>>(),
-            key_group_start..=key_group_end,
-            aligned != 0,
-        )
-    }
-}
-
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBKeepFirstDeduplicator<'local>(
@@ -1028,8 +903,6 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBKeepFirstDedup
     restored_partitions: JObjectArray<'local>,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
-        let partitions = read_columns(&env, &partition_columns);
-        let schema = import_schema(schema_address);
         let config = RocksStoreConfig {
             table_dir: read_string(&mut env, &table_directory),
             max_parallelism: max_parallelism as usize,
@@ -1037,31 +910,32 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBKeepFirstDedup
             ttl_ms: state_ttl_millis.max(0),
             shared_resources,
         };
-        let store = open_keep_first_dedup_store(
+        let restored = read_restored_partitions(&mut env, &restored_partitions);
+        let restore = read_restore(
             &mut env,
-            config,
-            schema,
-            &partitions,
             &source_directories,
             &source_snapshot_tokens,
             key_group_start,
             key_group_end,
             aligned,
+            restored,
         );
-        let restored = read_restored_partitions(&mut env, &restored_partitions);
-        let dedup = store.and_then(|store| {
-            let mut dedup = KeepFirstDeduplicator::new(partitions, rt_column as usize)
-                .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
-                .with_state_ttl(state_ttl_millis)
-                .with_store(store);
-            dedup.migrate_legacy_snapshot_store()?;
-            dedup.import_partitions(&restored)?;
-            if !crate::state::rocks_store::in_frozen_scope() {
-                dedup.adopt_store_ttl(now_millis)?;
-            }
-            dedup.with_read_through_budget(memory_budget_bytes)
-        });
-        boxed_or_throw(&mut env, dedup)
+        let partition_columns = read_columns(&env, &partition_columns);
+        let key_timestamp_precisions = read_i32_array(&env, &key_timestamp_precisions);
+        let schema = import_schema(schema_address);
+        let result = lifecycle::create_keep_first_deduplicator(
+            Storage { config, restore },
+            KeepFirstOptions {
+                partition_columns,
+                key_timestamp_precisions,
+                rt_column,
+                state_ttl_millis,
+                now_millis,
+                memory_budget_bytes,
+                schema,
+            },
+        );
+        boxed_or_throw(&mut env, result)
     })
 }
 
@@ -1117,17 +991,16 @@ pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBKeepFirstD
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
         let snapshot_directory = read_string(&mut env, &snapshot_directory);
-        let dedup = unsafe { &mut *(handle as *mut KeepFirstDeduplicator) };
-        match dedup.store_mut().checkpoint(&snapshot_directory) {
-            Ok(m) => manifest_array(&mut env, &m),
-            Err(e) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("RocksDB checkpoint failed: {e}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+        let result = lifecycle::checkpoint_keep_first_deduplicator(
+            unsafe { &mut *(handle as *mut KeepFirstDeduplicator) },
+            &snapshot_directory,
+        );
+        runtime_result(
+            &mut env,
+            result,
+            "RocksDB checkpoint failed",
+            |env, manifest| manifest_array(env, &manifest),
+        )
     })
 }
 
@@ -1141,18 +1014,15 @@ pub extern "system" fn Java_tech_streamfusion_Native_snapshotRocksDBKeepFirstDed
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
         let dedup = unsafe { &*(handle as *const KeepFirstDeduplicator) };
-        match dedup.canonical_partitions() {
-            Ok(partitions) => {
-                keyed_state_partition_array(&mut env, partitions, "rocksdb-keep-first-dedup")
-            }
-            Err(error) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("RocksDB canonical snapshot failed: {error}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+        let result = dedup.canonical_partitions();
+        runtime_result(
+            &mut env,
+            result,
+            "RocksDB canonical snapshot failed",
+            |env, partitions| {
+                keyed_state_partition_array(env, partitions, "rocksdb-keep-first-dedup")
+            },
+        )
     })
 }
 
@@ -1216,57 +1086,55 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBUpdatingJoiner
             ttl_ms: left_state_ttl_millis.max(0),
             shared_resources,
         };
-        let stores = open_store_pair(
+        let restored = read_restored_partitions(&mut env, &restored_partitions);
+        let restore = read_restore(
             &mut env,
-            config,
-            right_state_ttl_millis.max(0),
-            (JoinStateCodec, JoinStateCodec),
             &source_directories,
             &source_snapshot_tokens,
             key_group_start,
             key_group_end,
             aligned,
-            now_millis,
+            restored,
         );
-        let joiner = stores.and_then(|(left_store, right_store)| {
-            let left = read_columns(&env, &left_keys);
-            let right = read_columns(&env, &right_keys);
-            let left_schema = import_schema(left_schema_address);
-            let right_schema = import_schema(right_schema_address);
-            let predicate = read_join_predicate(
-                &mut env,
-                &pred_kinds,
-                &pred_payload,
-                &pred_child_counts,
-                &pred_longs,
-                &pred_doubles,
-                &pred_strings,
-            );
-            UpdatingJoiner::new(
-                left,
-                right,
-                JoinKind::from_code(join_type),
+        let predicate = read_join_predicate(
+            &mut env,
+            &pred_kinds,
+            &pred_payload,
+            &pred_child_counts,
+            &pred_longs,
+            &pred_doubles,
+            &pred_strings,
+        );
+        let left_keys = read_columns(&env, &left_keys);
+        let right_keys = read_columns(&env, &right_keys);
+        let filter_nulls = read_i32_array(&env, &filter_nulls);
+        let key_timestamp_precisions = read_i32_array(&env, &key_timestamp_precisions);
+        let left_schema = import_schema(left_schema_address);
+        let right_schema = import_schema(right_schema_address);
+        let left_join_key_unique = left_join_key_unique != 0;
+        let right_join_key_unique = right_join_key_unique != 0;
+        let mini_batch = mini_batch != 0;
+        let result = lifecycle::create_updating_joiner(
+            Storage { config, restore },
+            UpdatingJoinOptions {
+                predicate,
+                left_keys,
+                right_keys,
+                filter_nulls,
+                key_timestamp_precisions,
+                join_type,
                 left_schema,
                 right_schema,
-                predicate,
-            )
-            .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
-            .with_filter_nulls(read_i32_array(&env, &filter_nulls))
-            .with_unique_join_keys(left_join_key_unique != 0, right_join_key_unique != 0)
-            .with_mini_batch(mini_batch != 0)
-            .with_state_ttl(left_state_ttl_millis, right_state_ttl_millis)
-            .with_backend(
-                RocksJoinStore::new(left_store, join_type == 0 && mini_batch == 0),
-                RocksJoinStore::new(right_store, join_type == 0 && mini_batch == 0),
-            )
-            .with_read_through_budget(memory_budget_bytes)
-        });
-        let joiner = joiner.and_then(|mut joiner| {
-            let restored = read_restored_partitions(&mut env, &restored_partitions);
-            joiner.import_partitions(&restored, now_millis)?;
-            Ok(joiner)
-        });
-        boxed_or_throw(&mut env, joiner)
+                left_join_key_unique,
+                right_join_key_unique,
+                mini_batch,
+                left_state_ttl_millis,
+                right_state_ttl_millis,
+                now_millis,
+                memory_budget_bytes,
+            },
+        );
+        boxed_or_throw(&mut env, result)
     })
 }
 
@@ -1350,18 +1218,16 @@ pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBUpdatingJo
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
         let snapshot_directory = read_string(&mut env, &snapshot_directory);
-        let joiner = unsafe { &mut *(handle as *mut RocksUpdatingJoiner) };
-        let (left_store, right_store) = joiner.stores_mut();
-        match RocksJoinStore::checkpoint_pair(left_store, right_store, &snapshot_directory) {
-            Ok(m) => manifest_array(&mut env, &m),
-            Err(e) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("RocksDB checkpoint failed: {e}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+        let result = lifecycle::checkpoint_updating_joiner(
+            unsafe { &mut *(handle as *mut RocksUpdatingJoiner) },
+            &snapshot_directory,
+        );
+        runtime_result(
+            &mut env,
+            result,
+            "RocksDB checkpoint failed",
+            |env, manifest| manifest_array(env, &manifest),
+        )
     })
 }
 
@@ -1375,18 +1241,13 @@ pub extern "system" fn Java_tech_streamfusion_Native_snapshotRocksDBUpdatingJoin
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
         let joiner = unsafe { &mut *(handle as *mut RocksUpdatingJoiner) };
-        match joiner.canonical_partitions() {
-            Ok(partitions) => {
-                keyed_state_partition_array(&mut env, partitions, "rocksdb-updating-join")
-            }
-            Err(error) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("RocksDB canonical snapshot failed: {error}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+        let result = joiner.canonical_partitions();
+        runtime_result(
+            &mut env,
+            result,
+            "RocksDB canonical snapshot failed",
+            |env, partitions| keyed_state_partition_array(env, partitions, "rocksdb-updating-join"),
+        )
     })
 }
 
@@ -1447,43 +1308,6 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeRocksDBUpdatingJoiner<
 /// [`open_store_pair`] for the window join's bespoke row buffer: fresh when no restored sources
 /// exist, otherwise merged once for both side tables.
 #[allow(clippy::too_many_arguments)]
-fn open_window_buffer(
-    env: &mut JNIEnv,
-    config: RocksStoreConfig,
-    left_schema: SchemaRef,
-    right_schema: SchemaRef,
-    source_directories: &JObjectArray,
-    source_snapshot_tokens: &JObjectArray,
-    key_group_start: jint,
-    key_group_end: jint,
-    aligned: jboolean,
-) -> Result<RocksWindowBuffer, DataFusionError> {
-    let source_dirs: Vec<_> = read_strings(env, source_directories)
-        .into_iter()
-        .flatten()
-        .collect();
-    let source_tokens: Vec<_> = read_strings(env, source_snapshot_tokens)
-        .into_iter()
-        .flatten()
-        .map(|token| token.parse::<i64>().expect("RocksDB checkpoint generation"))
-        .collect();
-    if source_dirs.is_empty() {
-        RocksWindowBuffer::create(config, left_schema, right_schema)
-    } else {
-        RocksWindowBuffer::open_merged(
-            config,
-            left_schema,
-            right_schema,
-            &source_dirs
-                .into_iter()
-                .zip(source_tokens)
-                .collect::<Vec<_>>(),
-            key_group_start..=key_group_end,
-            aligned != 0,
-        )
-    }
-}
-
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBWindowJoiner<'local>(
@@ -1526,53 +1350,49 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBWindowJoiner<'
             ttl_ms: 0,
             shared_resources,
         };
-        let left_schema = import_schema(left_schema_address);
-        let right_schema = import_schema(right_schema_address);
-        let store = open_window_buffer(
+        let restored = read_restored_partitions(&mut env, &restored_partitions);
+        let restore = read_restore(
             &mut env,
-            config,
-            left_schema.clone(),
-            right_schema.clone(),
             &source_directories,
             &source_snapshot_tokens,
             key_group_start,
             key_group_end,
             aligned,
+            restored,
         );
-        let joiner = store.and_then(|store| {
-            let left = read_columns(&env, &left_keys);
-            let right = read_columns(&env, &right_keys);
-            let predicate = read_join_predicate(
-                &mut env,
-                &pred_kinds,
-                &pred_payload,
-                &pred_child_counts,
-                &pred_longs,
-                &pred_doubles,
-                &pred_strings,
-            );
-            WindowJoiner::new(
-                left,
-                right,
-                left_window_start as usize,
-                left_window_end as usize,
-                right_window_start as usize,
-                right_window_end as usize,
+        let predicate = read_join_predicate(
+            &mut env,
+            &pred_kinds,
+            &pred_payload,
+            &pred_child_counts,
+            &pred_longs,
+            &pred_doubles,
+            &pred_strings,
+        );
+        let left_keys = read_columns(&env, &left_keys);
+        let right_keys = read_columns(&env, &right_keys);
+        let key_timestamp_precisions = read_i32_array(&env, &key_timestamp_precisions);
+        let left_schema = import_schema(left_schema_address);
+        let right_schema = import_schema(right_schema_address);
+        let result = lifecycle::create_window_joiner(
+            Storage { config, restore },
+            WindowJoinOptions {
                 predicate,
-                JoinKind::from_code(join_type),
+                left_keys,
+                right_keys,
+                key_timestamp_precisions,
+                left_window_start,
+                left_window_end,
+                right_window_start,
+                right_window_end,
+                join_type,
                 left_schema,
                 right_schema,
-            )
-            .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
-            .with_store(store)
-            .with_read_through_budget(memory_budget_bytes)
-        });
-        let joiner = joiner.and_then(|mut joiner| {
-            let restored = read_restored_partitions(&mut env, &restored_partitions);
-            joiner.import_partitions(&restored, restored_timer_deadline)?;
-            Ok(joiner)
-        });
-        boxed_or_throw(&mut env, joiner)
+                memory_budget_bytes,
+                restored_timer_deadline,
+            },
+        );
+        boxed_or_throw(&mut env, result)
     })
 }
 
@@ -1650,20 +1470,17 @@ pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBWindowJoin
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
         let snapshot_directory = read_string(&mut env, &snapshot_directory);
-        let joiner = unsafe { &mut *(handle as *mut WindowJoiner) };
-        match joiner
-            .store_mut()
-            .checkpoint(timer_deadline, &snapshot_directory)
-        {
-            Ok(m) => manifest_array(&mut env, &m),
-            Err(e) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("RocksDB checkpoint failed: {e}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+        let result = lifecycle::checkpoint_window_joiner(
+            unsafe { &mut *(handle as *mut WindowJoiner) },
+            timer_deadline,
+            &snapshot_directory,
+        );
+        runtime_result(
+            &mut env,
+            result,
+            "RocksDB checkpoint failed",
+            |env, manifest| manifest_array(env, &manifest),
+        )
     })
 }
 
@@ -1677,18 +1494,13 @@ pub extern "system" fn Java_tech_streamfusion_Native_snapshotRocksDBWindowJoiner
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
         let joiner = unsafe { &mut *(handle as *mut WindowJoiner) };
-        match joiner.canonical_partitions() {
-            Ok(partitions) => {
-                keyed_state_partition_array(&mut env, partitions, "rocksdb-window-join")
-            }
-            Err(error) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("RocksDB canonical snapshot failed: {error}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+        let result = joiner.canonical_partitions();
+        runtime_result(
+            &mut env,
+            result,
+            "RocksDB canonical snapshot failed",
+            |env, partitions| keyed_state_partition_array(env, partitions, "rocksdb-window-join"),
+        )
     })
 }
 
@@ -1737,46 +1549,6 @@ pub extern "system" fn Java_tech_streamfusion_Native_rocksdbIntervalJoinerSuppor
     })
 }
 
-/// [`open_store`] for the interval join's two-table row buffer: fresh when no restored sources
-/// exist, otherwise merged once with this subtask's key-group range.
-#[allow(clippy::too_many_arguments)]
-fn open_interval_buffer(
-    env: &mut JNIEnv,
-    config: RocksStoreConfig,
-    left_schema: SchemaRef,
-    right_schema: SchemaRef,
-    source_directories: &JObjectArray,
-    source_snapshot_tokens: &JObjectArray,
-    key_group_start: jint,
-    key_group_end: jint,
-    aligned: jboolean,
-) -> Result<RocksIntervalBuffer, DataFusionError> {
-    let source_dirs: Vec<_> = read_strings(env, source_directories)
-        .into_iter()
-        .flatten()
-        .collect();
-    let source_tokens: Vec<_> = read_strings(env, source_snapshot_tokens)
-        .into_iter()
-        .flatten()
-        .map(|token| token.parse::<i64>().expect("RocksDB checkpoint generation"))
-        .collect();
-    if source_dirs.is_empty() {
-        RocksIntervalBuffer::create(config, left_schema, right_schema)
-    } else {
-        RocksIntervalBuffer::open_merged(
-            config,
-            left_schema,
-            right_schema,
-            &source_dirs
-                .into_iter()
-                .zip(source_tokens)
-                .collect::<Vec<_>>(),
-            key_group_start..=key_group_end,
-            aligned != 0,
-        )
-    }
-}
-
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBIntervalJoiner<'local>(
@@ -1819,54 +1591,49 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBIntervalJoiner
             ttl_ms: 0,
             shared_resources,
         };
-        let left_schema = import_schema(left_schema_address);
-        let right_schema = import_schema(right_schema_address);
-        let store = open_interval_buffer(
+        let restored = read_restored_partitions(&mut env, &restored_partitions);
+        let restore = read_restore(
             &mut env,
-            config,
-            left_schema.clone(),
-            right_schema.clone(),
             &source_directories,
             &source_snapshot_tokens,
             key_group_start,
             key_group_end,
             aligned,
+            restored,
         );
-        let joiner = store.and_then(|store| {
-            let left = read_columns(&env, &left_keys);
-            let right = read_columns(&env, &right_keys);
-            let predicate = read_join_predicate(
-                &mut env,
-                &pred_kinds,
-                &pred_payload,
-                &pred_child_counts,
-                &pred_longs,
-                &pred_doubles,
-                &pred_strings,
-            );
-            IntervalJoiner::new(
-                left,
-                right,
-                left_time as usize,
-                right_time as usize,
+        let predicate = read_join_predicate(
+            &mut env,
+            &pred_kinds,
+            &pred_payload,
+            &pred_child_counts,
+            &pred_longs,
+            &pred_doubles,
+            &pred_strings,
+        );
+        let left_keys = read_columns(&env, &left_keys);
+        let right_keys = read_columns(&env, &right_keys);
+        let key_timestamp_precisions = read_i32_array(&env, &key_timestamp_precisions);
+        let left_schema = import_schema(left_schema_address);
+        let right_schema = import_schema(right_schema_address);
+        let result = lifecycle::create_interval_joiner(
+            Storage { config, restore },
+            IntervalJoinOptions {
+                predicate,
+                left_keys,
+                right_keys,
+                key_timestamp_precisions,
+                left_time,
+                right_time,
                 lower,
                 upper,
-                predicate,
-                JoinKind::from_code(join_type),
+                join_type,
                 left_schema,
                 right_schema,
-            )
-            .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
-            .with_store(store)
-            .with_read_through_budget(memory_budget_bytes)
-        });
-        let joiner = joiner.and_then(|mut joiner| {
-            joiner.migrate_legacy_snapshot_store()?;
-            let restored = read_restored_partitions(&mut env, &restored_partitions);
-            joiner.import_partitions(&restored, restored_timer_deadline)?;
-            Ok(joiner)
-        });
-        boxed_or_throw(&mut env, joiner)
+                memory_budget_bytes,
+                restored_timer_deadline,
+            },
+        );
+        boxed_or_throw(&mut env, result)
     })
 }
 
@@ -1980,21 +1747,17 @@ pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBIntervalJo
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
         let snapshot_directory = read_string(&mut env, &snapshot_directory);
-        let joiner = unsafe { &mut *(handle as *mut IntervalJoiner) };
-        match joiner.ensure_store_timers().and_then(|_| {
-            joiner
-                .store_mut()
-                .checkpoint(timer_deadline, &snapshot_directory)
-        }) {
-            Ok(m) => manifest_array(&mut env, &m),
-            Err(e) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("RocksDB checkpoint failed: {e}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+        let result = lifecycle::checkpoint_interval_joiner(
+            unsafe { &mut *(handle as *mut IntervalJoiner) },
+            timer_deadline,
+            &snapshot_directory,
+        );
+        runtime_result(
+            &mut env,
+            result,
+            "RocksDB checkpoint failed",
+            |env, manifest| manifest_array(env, &manifest),
+        )
     })
 }
 
@@ -2008,21 +1771,13 @@ pub extern "system" fn Java_tech_streamfusion_Native_snapshotRocksDBIntervalJoin
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
         let joiner = unsafe { &mut *(handle as *mut IntervalJoiner) };
-        match joiner
-            .ensure_store_timers()
-            .and_then(|_| joiner.canonical_partitions())
-        {
-            Ok(partitions) => {
-                keyed_state_partition_array(&mut env, partitions, "rocksdb-interval-join")
-            }
-            Err(error) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("RocksDB canonical snapshot failed: {error}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+        let result = lifecycle::snapshot_interval_joiner(joiner);
+        runtime_result(
+            &mut env,
+            result,
+            "RocksDB canonical snapshot failed",
+            |env, partitions| keyed_state_partition_array(env, partitions, "rocksdb-interval-join"),
+        )
     })
 }
 
@@ -2076,48 +1831,6 @@ pub extern "system" fn Java_tech_streamfusion_Native_rocksdbTemporalJoinerSuppor
     })
 }
 
-/// [`open_store`] for the temporal join's three-table store: fresh when no restored sources
-/// exist, otherwise merged once with this subtask's key-group range.
-#[allow(clippy::too_many_arguments)]
-fn open_temporal_join_store(
-    env: &mut JNIEnv,
-    config: RocksStoreConfig,
-    left_schema: SchemaRef,
-    right_schema: SchemaRef,
-    left_keys: &[usize],
-    source_directories: &JObjectArray,
-    source_snapshot_tokens: &JObjectArray,
-    key_group_start: jint,
-    key_group_end: jint,
-    aligned: jboolean,
-) -> Result<RocksTemporalJoinStore, DataFusionError> {
-    let source_dirs: Vec<_> = read_strings(env, source_directories)
-        .into_iter()
-        .flatten()
-        .collect();
-    let source_tokens: Vec<_> = read_strings(env, source_snapshot_tokens)
-        .into_iter()
-        .flatten()
-        .map(|token| token.parse::<i64>().expect("RocksDB checkpoint generation"))
-        .collect();
-    if source_dirs.is_empty() {
-        RocksTemporalJoinStore::create(config, left_schema, right_schema, left_keys)
-    } else {
-        RocksTemporalJoinStore::open_merged(
-            config,
-            left_schema,
-            right_schema,
-            left_keys,
-            &source_dirs
-                .into_iter()
-                .zip(source_tokens)
-                .collect::<Vec<_>>(),
-            key_group_start..=key_group_end,
-            aligned != 0,
-        )
-    }
-}
-
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBTemporalJoiner<'local>(
@@ -2159,54 +1872,48 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBTemporalJoiner
             ttl_ms: 0,
             shared_resources,
         };
-        let left = read_columns(&env, &left_keys);
-        let right = read_columns(&env, &right_keys);
-        let left_schema = import_schema(left_schema_address);
-        let right_schema = import_schema(right_schema_address);
-        let store = open_temporal_join_store(
+        let restored = read_restored_partitions(&mut env, &restored_partitions);
+        let restore = read_restore(
             &mut env,
-            config,
-            left_schema.clone(),
-            right_schema.clone(),
-            &left,
             &source_directories,
             &source_snapshot_tokens,
             key_group_start,
             key_group_end,
             aligned,
+            restored,
         );
-        let joiner = store.and_then(|store| {
-            let predicate = read_join_predicate(
-                &mut env,
-                &pred_kinds,
-                &pred_payload,
-                &pred_child_counts,
-                &pred_longs,
-                &pred_doubles,
-                &pred_strings,
-            );
-            let mut joiner = TemporalJoiner::new(
-                left,
-                right,
-                left_time as usize,
-                right_time as usize,
-                JoinKind::from_code(join_type),
+        let predicate = read_join_predicate(
+            &mut env,
+            &pred_kinds,
+            &pred_payload,
+            &pred_child_counts,
+            &pred_longs,
+            &pred_doubles,
+            &pred_strings,
+        );
+        let left_keys = read_columns(&env, &left_keys);
+        let right_keys = read_columns(&env, &right_keys);
+        let key_timestamp_precisions = read_i32_array(&env, &key_timestamp_precisions);
+        let left_schema = import_schema(left_schema_address);
+        let right_schema = import_schema(right_schema_address);
+        let result = lifecycle::create_temporal_joiner(
+            Storage { config, restore },
+            TemporalJoinOptions {
+                predicate,
+                left_keys,
+                right_keys,
+                key_timestamp_precisions,
+                left_time,
+                right_time,
+                join_type,
                 left_schema,
                 right_schema,
-                predicate,
-            )
-            .with_state_retention(state_ttl_millis)
-            .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
-            .with_store(store);
-            joiner.migrate_legacy_snapshot_store()?;
-            let restored = read_restored_partitions(&mut env, &restored_partitions);
-            joiner.import_partitions(&restored)?;
-            if !crate::state::rocks_store::in_frozen_scope() {
-                joiner.adopt_store_retention(now_millis)?;
-            }
-            joiner.with_read_through_budget(memory_budget_bytes)
-        });
-        boxed_or_throw(&mut env, joiner)
+                state_ttl_millis,
+                now_millis,
+                memory_budget_bytes,
+            },
+        );
+        boxed_or_throw(&mut env, result)
     })
 }
 
@@ -2287,20 +1994,16 @@ pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBTemporalJo
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
         let snapshot_directory = read_string(&mut env, &snapshot_directory);
-        let joiner = unsafe { &mut *(handle as *mut TemporalJoiner) };
-        match joiner
-            .ensure_canonical_ready()
-            .and_then(|_| joiner.store_mut().checkpoint(&snapshot_directory))
-        {
-            Ok(m) => manifest_array(&mut env, &m),
-            Err(e) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("RocksDB checkpoint failed: {e}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+        let result = lifecycle::checkpoint_temporal_joiner(
+            unsafe { &mut *(handle as *mut TemporalJoiner) },
+            &snapshot_directory,
+        );
+        runtime_result(
+            &mut env,
+            result,
+            "RocksDB checkpoint failed",
+            |env, manifest| manifest_array(env, &manifest),
+        )
     })
 }
 
@@ -2314,18 +2017,13 @@ pub extern "system" fn Java_tech_streamfusion_Native_snapshotRocksDBTemporalJoin
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
         let joiner = unsafe { &*(handle as *const TemporalJoiner) };
-        match joiner.canonical_partitions() {
-            Ok(partitions) => {
-                keyed_state_partition_array(&mut env, partitions, "rocksdb-temporal-join")
-            }
-            Err(error) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("RocksDB canonical snapshot failed: {error}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+        let result = joiner.canonical_partitions();
+        runtime_result(
+            &mut env,
+            result,
+            "RocksDB canonical snapshot failed",
+            |env, partitions| keyed_state_partition_array(env, partitions, "rocksdb-temporal-join"),
+        )
     })
 }
 
@@ -2362,44 +2060,6 @@ pub extern "system" fn Java_tech_streamfusion_Native_rocksdbTemporalSorterSuppor
     })
 }
 
-/// [`open_store`] for the temporal sort's unkeyed row buffer: fresh when no restored sources
-/// exist, otherwise merged once with this subtask's key-group range (always group zero).
-#[allow(clippy::too_many_arguments)]
-fn open_temporal_sort_buffer(
-    env: &mut JNIEnv,
-    config: RocksStoreConfig,
-    schema: SchemaRef,
-    source_directories: &JObjectArray,
-    source_snapshot_tokens: &JObjectArray,
-    key_group_start: jint,
-    key_group_end: jint,
-    aligned: jboolean,
-) -> Result<RocksTemporalSortBuffer, DataFusionError> {
-    let source_dirs: Vec<_> = read_strings(env, source_directories)
-        .into_iter()
-        .flatten()
-        .collect();
-    let source_tokens: Vec<_> = read_strings(env, source_snapshot_tokens)
-        .into_iter()
-        .flatten()
-        .map(|token| token.parse::<i64>().expect("RocksDB checkpoint generation"))
-        .collect();
-    if source_dirs.is_empty() {
-        RocksTemporalSortBuffer::create(config, schema)
-    } else {
-        RocksTemporalSortBuffer::open_merged(
-            config,
-            schema,
-            &source_dirs
-                .into_iter()
-                .zip(source_tokens)
-                .collect::<Vec<_>>(),
-            key_group_start..=key_group_end,
-            aligned != 0,
-        )
-    }
-}
-
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBTemporalSorter<'local>(
@@ -2427,26 +2087,26 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBTemporalSorter
             ttl_ms: 0,
             shared_resources,
         };
-        let store = open_temporal_sort_buffer(
+        let restored = read_restored_partitions(&mut env, &restored_partitions);
+        let restore = read_restore(
             &mut env,
-            config,
-            import_schema(schema_address),
             &source_directories,
             &source_snapshot_tokens,
             key_group_start,
             key_group_end,
             aligned,
+            restored,
         );
-        let sorter = store.and_then(|store| {
-            let mut sorter = TemporalSorter::new(rt_column as usize)
-                .with_store(store)
-                .with_read_through_budget(memory_budget_bytes)?;
-            let restored = read_restored_partitions(&mut env, &restored_partitions);
-            sorter.migrate_legacy_snapshot_store()?;
-            sorter.import_snapshots(&restored)?;
-            Ok(sorter)
-        });
-        boxed_or_throw(&mut env, sorter)
+        let schema = import_schema(schema_address);
+        let result = lifecycle::create_temporal_sorter(
+            Storage { config, restore },
+            TemporalSortOptions {
+                rt_column,
+                memory_budget_bytes,
+                schema,
+            },
+        );
+        boxed_or_throw(&mut env, result)
     })
 }
 
@@ -2498,17 +2158,16 @@ pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBTemporalSo
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
         let snapshot_directory = read_string(&mut env, &snapshot_directory);
-        let sorter = unsafe { &mut *(handle as *mut TemporalSorter) };
-        match sorter.store_mut().checkpoint(&snapshot_directory) {
-            Ok(m) => manifest_array(&mut env, &m),
-            Err(e) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("RocksDB checkpoint failed: {e}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+        let result = lifecycle::checkpoint_temporal_sorter(
+            unsafe { &mut *(handle as *mut TemporalSorter) },
+            &snapshot_directory,
+        );
+        runtime_result(
+            &mut env,
+            result,
+            "RocksDB checkpoint failed",
+            |env, manifest| manifest_array(env, &manifest),
+        )
     })
 }
 
@@ -2520,21 +2179,19 @@ pub extern "system" fn Java_tech_streamfusion_Native_snapshotRocksDBTemporalSort
     _class: JClass<'local>,
     handle: jlong,
 ) -> jni::sys::jbyteArray {
-    crate::bridge::jni_guard(env, move |env| {
+    crate::bridge::jni_guard(env, move |mut env| {
         let sorter = unsafe { &*(handle as *const TemporalSorter) };
-        match sorter.store_snapshot() {
-            Ok(bytes) => env
-                .byte_array_from_slice(&bytes)
-                .expect("failed to allocate sort snapshot array")
-                .into_raw(),
-            Err(error) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("RocksDB canonical snapshot failed: {error}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+        let result = sorter.store_snapshot();
+        runtime_result(
+            &mut env,
+            result,
+            "RocksDB canonical snapshot failed",
+            |env, bytes| {
+                env.byte_array_from_slice(&bytes)
+                    .expect("failed to allocate sort snapshot array")
+                    .into_raw()
+            },
+        )
     })
 }
 
@@ -2557,67 +2214,6 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeRocksDBTemporalSorter<
 /// The Arrow carriage type of a window grouping-key column, from the JVM key-type code: timestamps
 /// keep their existing codec and legacy INT widens to int64. Newly admitted narrow integers,
 /// floating point, TIME, binary and month-interval keys retain their natural Arrow carriage.
-fn window_key_data_type(code: i64) -> DataType {
-    match code {
-        1 => DataType::Float64,
-        6 => DataType::Float32,
-        3 => DataType::Utf8,
-        4 => DataType::Int16,
-        5 => DataType::Int8,
-        7 => DataType::Boolean,
-        8 => DataType::Date32,
-        9 => DataType::Time32(arrow::datatypes::TimeUnit::Millisecond),
-        11 => DataType::Binary,
-        12 => DataType::Int32,
-        1000..=1009 => streamfusion_bridge::timestamp::timestamp_type(),
-        code if code >= 2000 => {
-            let packed = code - 2000;
-            DataType::Decimal128((packed / 100) as u8, (packed % 100) as i8)
-        }
-        _ => DataType::Int64,
-    }
-}
-
-fn window_key_data_types(codes: Vec<i64>, key_descriptor: &[i32]) -> Vec<DataType> {
-    let stock_projection = key_descriptor.first() == Some(&i32::MIN);
-    codes
-        .into_iter()
-        .map(|code| {
-            if stock_projection && code == 2 {
-                DataType::Int32
-            } else {
-                window_key_data_type(code)
-            }
-        })
-        .collect()
-}
-
-#[cfg(test)]
-mod window_key_schema_tests {
-    use super::*;
-
-    #[test]
-    fn stock_window_keys_preserve_int_width_without_changing_legacy_state() {
-        let codes = vec![2, 0, 12, 8, 1003];
-        let legacy = vec![
-            DataType::Int64,
-            DataType::Int64,
-            DataType::Int32,
-            DataType::Date32,
-            streamfusion_bridge::timestamp::timestamp_type(),
-        ];
-        assert_eq!(window_key_data_types(codes.clone(), &[]), legacy);
-        assert_eq!(window_key_data_types(codes.clone(), &[-1; 5]), legacy);
-        let mut stock = legacy;
-        stock[0] = DataType::Int32;
-        assert_eq!(
-            window_key_data_types(codes, &[i32::MIN, -1, -1, -1, -1, 3]),
-            stock
-        );
-        assert!(window_key_data_types(vec![], &[i32::MIN]).is_empty());
-    }
-}
-
 #[no_mangle]
 pub extern "system" fn Java_tech_streamfusion_Native_rocksdbWindowAggregatorSupported<'local>(
     env: JNIEnv<'local>,
@@ -2637,45 +2233,6 @@ pub extern "system" fn Java_tech_streamfusion_Native_rocksdbWindowAggregatorSupp
             && WindowStateCodec::new(&build_aggregates(&kinds, &value_types)).is_ok())
             as jboolean
     })
-}
-
-/// [`open_store`] for the aligned-window aggregate's composite-key store: fresh when no restored
-/// sources exist, otherwise merged once with this subtask's key-group range.
-#[allow(clippy::too_many_arguments)]
-fn open_window_agg_store(
-    env: &mut JNIEnv,
-    config: RocksStoreConfig,
-    state_codec: WindowStateCodec,
-    source_directories: &JObjectArray,
-    source_snapshot_tokens: &JObjectArray,
-    key_group_start: jint,
-    key_group_end: jint,
-    aligned: jboolean,
-) -> Result<RocksWindowAggStore, DataFusionError> {
-    let source_dirs: Vec<_> = read_strings(env, source_directories)
-        .into_iter()
-        .flatten()
-        .collect();
-    let source_tokens: Vec<_> = read_strings(env, source_snapshot_tokens)
-        .into_iter()
-        .flatten()
-        .map(|token| token.parse::<i64>().expect("RocksDB checkpoint generation"))
-        .collect();
-    let key_groups = key_group_start..=key_group_end;
-    if source_dirs.is_empty() {
-        RocksWindowAggStore::create_with_codec(config, state_codec, key_groups)
-    } else {
-        RocksWindowAggStore::open_merged_with_codec(
-            config,
-            state_codec,
-            key_groups,
-            &source_dirs
-                .into_iter()
-                .zip(source_tokens)
-                .collect::<Vec<_>>(),
-            aligned != 0,
-        )
-    }
 }
 
 #[no_mangle]
@@ -2704,11 +2261,6 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBWindowAggregat
     restored_timer_deadline: jlong,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
-        let kinds = read_int_array(&env, &aggregate_kinds);
-        let value_types = read_int_array(&env, &value_types);
-        let key_descriptor = read_i32_array(&env, &key_timestamp_precisions);
-        let key_types = window_key_data_types(read_int_array(&env, &key_types), &key_descriptor);
-        let state_codec = WindowStateCodec::new(&build_aggregates(&kinds, &value_types));
         let config = RocksStoreConfig {
             table_dir: read_string(&mut env, &table_directory),
             max_parallelism: max_parallelism as usize,
@@ -2716,41 +2268,36 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBWindowAggregat
             ttl_ms: 0,
             shared_resources,
         };
-        let store = if rocks_row_supported(&key_types) {
-            state_codec.and_then(|codec| {
-                open_window_agg_store(
-                    &mut env,
-                    config,
-                    codec,
-                    &source_directories,
-                    &source_snapshot_tokens,
-                    key_group_start,
-                    key_group_end,
-                    aligned,
-                )
-            })
-        } else {
-            Err(DataFusionError::Plan(
-                "window key shape not supported by RocksDB".into(),
-            ))
-        };
-        let aggregator = store.and_then(|store| {
-            let mut aggregator = TumblingAggregator::new(
+        let restored = read_restored_partitions(&mut env, &restored_partitions);
+        let restore = read_restore(
+            &mut env,
+            &source_directories,
+            &source_snapshot_tokens,
+            key_group_start,
+            key_group_end,
+            aligned,
+            restored,
+        );
+        let cumulative = cumulative != 0;
+        let value_types = read_int_array(&env, &value_types);
+        let aggregate_kinds = read_int_array(&env, &aggregate_kinds);
+        let key_types = read_int_array(&env, &key_types);
+        let key_timestamp_precisions = read_i32_array(&env, &key_timestamp_precisions);
+        let result = lifecycle::create_window_aggregator(
+            Storage { config, restore },
+            WindowOptions {
                 window_millis,
                 slide_millis,
-                cumulative != 0,
+                cumulative,
                 value_types,
-                kinds,
-            )
-            .with_key_timestamp_precisions(key_descriptor)
-            .with_store(store, key_types)
-            .with_read_through_budget(memory_budget_bytes)?;
-            aggregator.migrate_legacy_snapshot_store()?;
-            let restored = read_restored_partitions(&mut env, &restored_partitions);
-            aggregator.import_partitions(&restored, restored_timer_deadline)?;
-            Ok(aggregator)
-        });
-        boxed_or_throw(&mut env, aggregator)
+                aggregate_kinds,
+                key_types,
+                key_timestamp_precisions,
+                memory_budget_bytes,
+                restored_timer_deadline,
+            },
+        );
+        boxed_or_throw(&mut env, result)
     })
 }
 
@@ -2824,17 +2371,17 @@ pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBWindowAggr
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
         let snapshot_directory = read_string(&mut env, &snapshot_directory);
-        let aggregator = unsafe { &mut *(handle as *mut TumblingAggregator) };
-        match aggregator.checkpoint_store(timer_deadline, &snapshot_directory) {
-            Ok(m) => manifest_array(&mut env, &m),
-            Err(e) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("RocksDB checkpoint failed: {e}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+        let result = lifecycle::checkpoint_window_aggregator(
+            unsafe { &mut *(handle as *mut TumblingAggregator) },
+            timer_deadline,
+            &snapshot_directory,
+        );
+        runtime_result(
+            &mut env,
+            result,
+            "RocksDB checkpoint failed",
+            |env, manifest| manifest_array(env, &manifest),
+        )
     })
 }
 
@@ -2851,18 +2398,13 @@ pub extern "system" fn Java_tech_streamfusion_Native_snapshotRocksDBWindowAggreg
     crate::bridge::jni_guard(env, move |mut env| {
         let aggregator = unsafe { &mut *(handle as *mut TumblingAggregator) };
         let precisions = read_i32_array(&env, &timestamp_precisions);
-        match aggregator.canonical_partitions(max_parallelism as usize, &precisions) {
-            Ok(partitions) => {
-                keyed_state_partition_array(&mut env, partitions, "rocksdb-fixed-window")
-            }
-            Err(error) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("RocksDB canonical snapshot failed: {error}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+        let result = aggregator.canonical_partitions(max_parallelism as usize, &precisions);
+        runtime_result(
+            &mut env,
+            result,
+            "RocksDB canonical snapshot failed",
+            |env, partitions| keyed_state_partition_array(env, partitions, "rocksdb-fixed-window"),
+        )
     })
 }
 
@@ -2903,45 +2445,6 @@ pub extern "system" fn Java_tech_streamfusion_Native_rocksdbSessionAggregatorSup
     })
 }
 
-/// [`open_store`] for the session aggregate's key-major store: fresh when no restored sources
-/// exist, otherwise merged once with this subtask's key-group range.
-#[allow(clippy::too_many_arguments)]
-fn open_session_agg_store(
-    env: &mut JNIEnv,
-    config: RocksStoreConfig,
-    state_codec: WindowStateCodec,
-    source_directories: &JObjectArray,
-    source_snapshot_tokens: &JObjectArray,
-    key_group_start: jint,
-    key_group_end: jint,
-    aligned: jboolean,
-) -> Result<RocksSessionAggStore, DataFusionError> {
-    let source_dirs: Vec<_> = read_strings(env, source_directories)
-        .into_iter()
-        .flatten()
-        .collect();
-    let source_tokens: Vec<_> = read_strings(env, source_snapshot_tokens)
-        .into_iter()
-        .flatten()
-        .map(|token| token.parse::<i64>().expect("RocksDB checkpoint generation"))
-        .collect();
-    let key_groups = key_group_start..=key_group_end;
-    if source_dirs.is_empty() {
-        RocksSessionAggStore::create_with_codec(config, state_codec, key_groups)
-    } else {
-        RocksSessionAggStore::open_merged_with_codec(
-            config,
-            state_codec,
-            key_groups,
-            &source_dirs
-                .into_iter()
-                .zip(source_tokens)
-                .collect::<Vec<_>>(),
-            aligned != 0,
-        )
-    }
-}
-
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBSessionAggregator<'local>(
@@ -2966,11 +2469,6 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBSessionAggrega
     restored_timer_deadline: jlong,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
-        let kinds = read_int_array(&env, &aggregate_kinds);
-        let value_types = read_int_array(&env, &value_types);
-        let key_descriptor = read_i32_array(&env, &key_timestamp_precisions);
-        let key_types = window_key_data_types(read_int_array(&env, &key_types), &key_descriptor);
-        let state_codec = WindowStateCodec::new(&build_aggregates(&kinds, &value_types));
         let config = RocksStoreConfig {
             table_dir: read_string(&mut env, &table_directory),
             max_parallelism: max_parallelism as usize,
@@ -2978,35 +2476,33 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBSessionAggrega
             ttl_ms: 0,
             shared_resources,
         };
-        let store = if rocks_row_supported(&key_types) {
-            state_codec.and_then(|codec| {
-                open_session_agg_store(
-                    &mut env,
-                    config,
-                    codec,
-                    &source_directories,
-                    &source_snapshot_tokens,
-                    key_group_start,
-                    key_group_end,
-                    aligned,
-                )
-            })
-        } else {
-            Err(DataFusionError::Plan(
-                "session key shape not supported by RocksDB".into(),
-            ))
-        };
-        let aggregator = store.and_then(|store| {
-            let mut aggregator = SessionAggregator::new(gap_millis, value_types, kinds)
-                .with_key_timestamp_precisions(key_descriptor)
-                .with_store(store, key_types)
-                .with_read_through_budget(memory_budget_bytes)?;
-            aggregator.migrate_legacy_snapshot_store()?;
-            let restored = read_restored_partitions(&mut env, &restored_partitions);
-            aggregator.import_partitions(&restored, restored_timer_deadline)?;
-            Ok(aggregator)
-        });
-        boxed_or_throw(&mut env, aggregator)
+        let restored = read_restored_partitions(&mut env, &restored_partitions);
+        let restore = read_restore(
+            &mut env,
+            &source_directories,
+            &source_snapshot_tokens,
+            key_group_start,
+            key_group_end,
+            aligned,
+            restored,
+        );
+        let value_types = read_int_array(&env, &value_types);
+        let aggregate_kinds = read_int_array(&env, &aggregate_kinds);
+        let key_types = read_int_array(&env, &key_types);
+        let key_timestamp_precisions = read_i32_array(&env, &key_timestamp_precisions);
+        let result = lifecycle::create_session_aggregator(
+            Storage { config, restore },
+            SessionOptions {
+                gap_millis,
+                value_types,
+                aggregate_kinds,
+                key_types,
+                key_timestamp_precisions,
+                memory_budget_bytes,
+                restored_timer_deadline,
+            },
+        );
+        boxed_or_throw(&mut env, result)
     })
 }
 
@@ -3059,17 +2555,17 @@ pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBSessionAgg
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
         let snapshot_directory = read_string(&mut env, &snapshot_directory);
-        let aggregator = unsafe { &mut *(handle as *mut SessionAggregator) };
-        match aggregator.checkpoint_store(timer_deadline, &snapshot_directory) {
-            Ok(m) => manifest_array(&mut env, &m),
-            Err(e) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("RocksDB checkpoint failed: {e}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+        let result = lifecycle::checkpoint_session_aggregator(
+            unsafe { &mut *(handle as *mut SessionAggregator) },
+            timer_deadline,
+            &snapshot_directory,
+        );
+        runtime_result(
+            &mut env,
+            result,
+            "RocksDB checkpoint failed",
+            |env, manifest| manifest_array(env, &manifest),
+        )
     })
 }
 
@@ -3086,18 +2582,15 @@ pub extern "system" fn Java_tech_streamfusion_Native_snapshotRocksDBSessionAggre
     crate::bridge::jni_guard(env, move |mut env| {
         let aggregator = unsafe { &mut *(handle as *mut SessionAggregator) };
         let precisions = read_i32_array(&env, &timestamp_precisions);
-        match aggregator.canonical_partitions(max_parallelism as usize, &precisions) {
-            Ok(partitions) => {
-                keyed_state_partition_array(&mut env, partitions, "rocksdb-session-window")
-            }
-            Err(error) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("RocksDB canonical snapshot failed: {error}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+        let result = aggregator.canonical_partitions(max_parallelism as usize, &precisions);
+        runtime_result(
+            &mut env,
+            result,
+            "RocksDB canonical snapshot failed",
+            |env, partitions| {
+                keyed_state_partition_array(env, partitions, "rocksdb-session-window")
+            },
+        )
     })
 }
 
@@ -3158,58 +2651,6 @@ pub extern "system" fn Java_tech_streamfusion_Native_rocksdbOverAggregatorSuppor
     })
 }
 
-/// [`open_store`] for the OVER aggregate's multi-table store: fresh when no restored sources
-/// exist, otherwise merged once with this subtask's key-group range.
-#[allow(clippy::too_many_arguments)]
-fn open_over_agg_store(
-    env: &mut JNIEnv,
-    config: RocksStoreConfig,
-    state_types: &[DataType],
-    frame_value_types: &[DataType],
-    distinct_element_types: &[DataType],
-    payload_schema: SchemaRef,
-    source_directories: &JObjectArray,
-    source_snapshot_tokens: &JObjectArray,
-    key_group_start: jint,
-    key_group_end: jint,
-    aligned: jboolean,
-) -> Result<RocksOverAggStore, DataFusionError> {
-    let source_dirs: Vec<_> = read_strings(env, source_directories)
-        .into_iter()
-        .flatten()
-        .collect();
-    let source_tokens: Vec<_> = read_strings(env, source_snapshot_tokens)
-        .into_iter()
-        .flatten()
-        .map(|token| token.parse::<i64>().expect("RocksDB checkpoint generation"))
-        .collect();
-    let key_groups = key_group_start..=key_group_end;
-    if source_dirs.is_empty() {
-        RocksOverAggStore::create(
-            config,
-            state_types,
-            frame_value_types,
-            distinct_element_types,
-            payload_schema,
-            key_groups,
-        )
-    } else {
-        RocksOverAggStore::open_merged(
-            config,
-            state_types,
-            frame_value_types,
-            distinct_element_types,
-            payload_schema,
-            key_groups,
-            &source_dirs
-                .into_iter()
-                .zip(source_tokens)
-                .collect::<Vec<_>>(),
-            aligned != 0,
-        )
-    }
-}
-
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBOverAggregator<'local>(
@@ -3240,15 +2681,6 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBOverAggregator
     restored_partitions: JObjectArray<'local>,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
-        let kinds = read_int_array(&env, &aggregate_kinds);
-        let value_types = read_int_array(&env, &value_types);
-        let values = read_columns(&env, &value_columns);
-        let keys = read_columns(&env, &key_columns);
-        let schema = import_schema(in_schema);
-        let key_types: Vec<DataType> = keys
-            .iter()
-            .map(|&column| schema.field(column).data_type().clone())
-            .collect();
         let config = RocksStoreConfig {
             table_dir: read_string(&mut env, &table_directory),
             max_parallelism: max_parallelism as usize,
@@ -3256,48 +2688,42 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBOverAggregator
             ttl_ms: 0,
             shared_resources,
         };
-        let store =
-            match rocks_over_state_types(&value_types, &kinds, frame_kind as i64, proctime != 0) {
-                Some(state_types) => open_over_agg_store(
-                    &mut env,
-                    config,
-                    &state_types,
-                    &rocks_over_frame_value_types(&value_types, &kinds, frame_kind as i64),
-                    &rocks_over_distinct_element_types(&value_types, &kinds, frame_kind as i64),
-                    schema,
-                    &source_directories,
-                    &source_snapshot_tokens,
-                    key_group_start,
-                    key_group_end,
-                    aligned,
-                ),
-                None => Err(DataFusionError::Plan(
-                    "over shape not supported by RocksDB".into(),
-                )),
-            };
-        let aggregator = store.and_then(|store| {
-            let mut aggregator = OverWindowAggregator::new(
+        let restored = read_restored_partitions(&mut env, &restored_partitions);
+        let restore = read_restore(
+            &mut env,
+            &source_directories,
+            &source_snapshot_tokens,
+            key_group_start,
+            key_group_end,
+            aligned,
+            restored,
+        );
+        let value_types = read_int_array(&env, &value_types);
+        let aggregate_kinds = read_int_array(&env, &aggregate_kinds);
+        let value_columns = read_columns(&env, &value_columns);
+        let key_columns = read_columns(&env, &key_columns);
+        let proctime = proctime != 0;
+        let key_timestamp_precisions = read_i32_array(&env, &key_timestamp_precisions);
+        let schema = import_schema(in_schema);
+        let result = lifecycle::create_over_aggregator(
+            Storage { config, restore },
+            OverOptions {
                 value_types,
-                kinds,
-                rt_column as usize,
-                values,
-                keys,
-                frame_kind as i64,
+                aggregate_kinds,
+                rt_column,
+                value_columns,
+                key_columns,
+                frame_kind,
                 frame_offset,
-                proctime != 0,
-            )
-            .with_state_retention(state_ttl_millis)
-            .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
-            .with_store(store, key_types);
-            aggregator.migrate_legacy_snapshot_store()?;
-            let restored = read_restored_partitions(&mut env, &restored_partitions);
-            aggregator.import_partitions(&restored)?;
-            if !crate::state::rocks_store::in_frozen_scope() {
-                aggregator.adopt_store_retention(now_millis)?;
-            }
-            aggregator.with_read_through_budget(memory_budget_bytes)
-        });
-        boxed_or_throw(&mut env, aggregator)
+                proctime,
+                key_timestamp_precisions,
+                state_ttl_millis,
+                now_millis,
+                memory_budget_bytes,
+                schema,
+            },
+        );
+        boxed_or_throw(&mut env, result)
     })
 }
 
@@ -3351,17 +2777,16 @@ pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBOverAggreg
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
         let snapshot_directory = read_string(&mut env, &snapshot_directory);
-        let aggregator = unsafe { &mut *(handle as *mut OverWindowAggregator) };
-        match aggregator.checkpoint_store(&snapshot_directory) {
-            Ok(m) => manifest_array(&mut env, &m),
-            Err(e) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("RocksDB checkpoint failed: {e}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+        let result = lifecycle::checkpoint_over_aggregator(
+            unsafe { &mut *(handle as *mut OverWindowAggregator) },
+            &snapshot_directory,
+        );
+        runtime_result(
+            &mut env,
+            result,
+            "RocksDB checkpoint failed",
+            |env, manifest| manifest_array(env, &manifest),
+        )
     })
 }
 
@@ -3378,16 +2803,13 @@ pub extern "system" fn Java_tech_streamfusion_Native_snapshotRocksDBOverAggregat
     crate::bridge::jni_guard(env, move |mut env| {
         let aggregator = unsafe { &mut *(handle as *mut OverWindowAggregator) };
         let precisions = read_i32_array(&env, &timestamp_precisions);
-        match aggregator.canonical_partitions(max_parallelism as usize, &precisions) {
-            Ok(partitions) => keyed_state_partition_array(&mut env, partitions, "rocksdb-over"),
-            Err(error) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("RocksDB canonical snapshot failed: {error}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+        let result = aggregator.canonical_partitions(max_parallelism as usize, &precisions);
+        runtime_result(
+            &mut env,
+            result,
+            "RocksDB canonical snapshot failed",
+            |env, partitions| keyed_state_partition_array(env, partitions, "rocksdb-over"),
+        )
     })
 }
 
@@ -3440,11 +2862,6 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBTopNRanker<'lo
     restored_partitions: JObjectArray<'local>,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
-        let partitions = read_columns(&env, &partition_columns);
-        let timestamp_precisions = read_i32_array(&env, &key_timestamp_precisions);
-        let sort = read_sort_columns(&env, &sort_indices, &sort_ascending, &sort_nulls_first);
-        let schema = import_schema(schema_address);
-        let converters = TopNConverters::from_declared(&schema, &partitions, &sort);
         let config = RocksStoreConfig {
             table_dir: read_string(&mut env, &table_directory),
             max_parallelism: max_parallelism as usize,
@@ -3452,55 +2869,44 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBTopNRanker<'lo
             ttl_ms: state_ttl_millis.max(0),
             shared_resources,
         };
-        let store = open_store(
+        let restored = read_restored_partitions(&mut env, &restored_partitions);
+        let restore = read_restore(
             &mut env,
-            config,
-            TopNStateCodec::new(&converters),
             &source_directories,
             &source_snapshot_tokens,
             key_group_start,
             key_group_end,
             aligned,
-            now_millis,
+            restored,
         );
-        let ranker = store.and_then(|store| {
-            if retracting != 0 {
-                RetractableTopNRanker::new(partitions, sort, offset, limit, output_rank_number != 0)
-                    .with_key_timestamp_precisions(timestamp_precisions)
-                    .with_rank_end_column(rank_end_column)
-                    .with_generate_update_before(generate_update_before != 0)
-                    .with_net_diff(net_diff != 0)
-                    .with_state_ttl(state_ttl_millis)
-                    .with_converters(converters)
-                    .with_payload_schema(schema)
-                    .with_backend(store)
-                    .with_read_through_budget(memory_budget_bytes)
-                    .map(RocksTopNHandle::Retract)
-            } else {
-                TopNRanker::new(
-                    partitions,
-                    sort,
-                    limit,
-                    output_rank_number != 0,
-                    net_diff != 0,
-                )
-                .with_key_timestamp_precisions(timestamp_precisions)
-                .with_rank_end_column(rank_end_column)
-                .with_generate_update_before(generate_update_before != 0)
-                .with_state_ttl(state_ttl_millis)
-                .with_converters(converters)
-                .with_payload_schema(schema)
-                .with_backend(store)
-                .with_read_through_budget(memory_budget_bytes)
-                .map(RocksTopNHandle::Append)
-            }
-        });
-        let ranker = ranker.and_then(|mut ranker| {
-            let restored = read_restored_partitions(&mut env, &restored_partitions);
-            ranker.import_partitions(&restored, now_millis)?;
-            Ok(ranker)
-        });
-        boxed_or_throw(&mut env, ranker)
+        let sort = read_sort_columns(&env, &sort_indices, &sort_ascending, &sort_nulls_first);
+        let partition_columns = read_columns(&env, &partition_columns);
+        let key_timestamp_precisions = read_i32_array(&env, &key_timestamp_precisions);
+        let output_rank_number = output_rank_number != 0;
+        let retracting = retracting != 0;
+        let generate_update_before = generate_update_before != 0;
+        let net_diff = net_diff != 0;
+        let schema = import_schema(schema_address);
+        let result = lifecycle::create_top_n_ranker(
+            Storage { config, restore },
+            TopNOptions {
+                sort,
+                partition_columns,
+                key_timestamp_precisions,
+                offset,
+                limit,
+                rank_end_column,
+                output_rank_number,
+                retracting,
+                generate_update_before,
+                net_diff,
+                state_ttl_millis,
+                now_millis,
+                memory_budget_bytes,
+                schema,
+            },
+        );
+        boxed_or_throw(&mut env, result)
     })
 }
 
@@ -3537,13 +2943,6 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBUpdateFastTopN
     restored_partitions: JObjectArray<'local>,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
-        let partitions = read_columns(&env, &partition_columns);
-        let partition_precisions = read_i32_array(&env, &key_timestamp_precisions);
-        let row_keys = read_columns(&env, &row_key_columns);
-        let row_key_precisions = read_i32_array(&env, &row_key_timestamp_precisions);
-        let sort = read_sort_columns(&env, &sort_indices, &sort_ascending, &sort_nulls_first);
-        let schema = import_schema(schema_address);
-        let converters = TopNConverters::from_declared(&schema, &partitions, &sort);
         let config = RocksStoreConfig {
             table_dir: read_string(&mut env, &table_directory),
             max_parallelism: max_parallelism as usize,
@@ -3551,43 +2950,44 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBUpdateFastTopN
             ttl_ms: state_ttl_millis.max(0),
             shared_resources,
         };
-        let store = open_store(
+        let restored = read_restored_partitions(&mut env, &restored_partitions);
+        let restore = read_restore(
             &mut env,
-            config,
-            UpdatableTopNStateCodec::new(&converters),
             &source_directories,
             &source_snapshot_tokens,
             key_group_start,
             key_group_end,
             aligned,
-            now_millis,
+            restored,
         );
-        let ranker = store.and_then(|store| {
-            UpdatableTopNRanker::new(
-                partitions,
-                partition_precisions,
-                row_keys,
-                row_key_precisions,
+        let sort = read_sort_columns(&env, &sort_indices, &sort_ascending, &sort_nulls_first);
+        let partition_columns = read_columns(&env, &partition_columns);
+        let key_timestamp_precisions = read_i32_array(&env, &key_timestamp_precisions);
+        let row_key_columns = read_columns(&env, &row_key_columns);
+        let row_key_timestamp_precisions = read_i32_array(&env, &row_key_timestamp_precisions);
+        let output_rank_number = output_rank_number != 0;
+        let generate_update_before = generate_update_before != 0;
+        let schema = import_schema(schema_address);
+        let result = lifecycle::create_update_fast_top_n_ranker(
+            Storage { config, restore },
+            UpdateFastOptions {
                 sort,
+                partition_columns,
+                key_timestamp_precisions,
+                row_key_columns,
+                row_key_timestamp_precisions,
+                offset,
                 limit,
-                output_rank_number != 0,
-                generate_update_before != 0,
-            )
-            .with_offset(offset)
-            .with_rank_end_column(rank_end_column)
-            .with_state_ttl(state_ttl_millis)
-            .with_converters(converters)
-            .with_payload_schema(schema)
-            .with_backend(store)
-            .with_read_through_budget(memory_budget_bytes)
-            .map(RocksTopNHandle::UpdateFast)
-        });
-        let ranker = ranker.and_then(|mut ranker| {
-            let restored = read_restored_partitions(&mut env, &restored_partitions);
-            ranker.import_partitions(&restored, now_millis)?;
-            Ok(ranker)
-        });
-        boxed_or_throw(&mut env, ranker)
+                rank_end_column,
+                output_rank_number,
+                generate_update_before,
+                state_ttl_millis,
+                now_millis,
+                memory_budget_bytes,
+                schema,
+            },
+        );
+        boxed_or_throw(&mut env, result)
     })
 }
 
@@ -3640,16 +3040,16 @@ pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBTopNRanker
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
         let snapshot_directory = read_string(&mut env, &snapshot_directory);
-        match unsafe { &mut *(handle as *mut RocksTopNHandle) }.checkpoint(&snapshot_directory) {
-            Ok(m) => manifest_array(&mut env, &m),
-            Err(e) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("RocksDB checkpoint failed: {e}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+        let result = lifecycle::checkpoint_top_n_ranker(
+            unsafe { &mut *(handle as *mut RocksTopNHandle) },
+            &snapshot_directory,
+        );
+        runtime_result(
+            &mut env,
+            result,
+            "RocksDB checkpoint failed",
+            |env, manifest| manifest_array(env, &manifest),
+        )
     })
 }
 
@@ -3661,16 +3061,13 @@ pub extern "system" fn Java_tech_streamfusion_Native_snapshotRocksDBTopNRankerPa
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
         let ranker = unsafe { &mut *(handle as *mut RocksTopNHandle) };
-        match ranker.canonical_partitions() {
-            Ok(partitions) => keyed_state_partition_array(&mut env, partitions, "rocksdb-top-n"),
-            Err(error) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("RocksDB canonical snapshot failed: {error}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+        let result = ranker.canonical_partitions();
+        runtime_result(
+            &mut env,
+            result,
+            "RocksDB canonical snapshot failed",
+            |env, partitions| keyed_state_partition_array(env, partitions, "rocksdb-top-n"),
+        )
     })
 }
 
@@ -3747,45 +3144,6 @@ pub extern "system" fn Java_tech_streamfusion_Native_rocksdbWindowRankerSupporte
     })
 }
 
-/// [`open_store`] for the window ranker's composite-key store: fresh when no restored sources
-/// exist, otherwise merged once with this subtask's key-group range.
-#[allow(clippy::too_many_arguments)]
-fn open_window_rank_store(
-    env: &mut JNIEnv,
-    config: RocksStoreConfig,
-    row_types: &[DataType],
-    source_directories: &JObjectArray,
-    source_snapshot_tokens: &JObjectArray,
-    key_group_start: jint,
-    key_group_end: jint,
-    aligned: jboolean,
-) -> Result<RocksWindowRankStore, DataFusionError> {
-    let source_dirs: Vec<_> = read_strings(env, source_directories)
-        .into_iter()
-        .flatten()
-        .collect();
-    let source_tokens: Vec<_> = read_strings(env, source_snapshot_tokens)
-        .into_iter()
-        .flatten()
-        .map(|token| token.parse::<i64>().expect("RocksDB checkpoint generation"))
-        .collect();
-    let key_groups = key_group_start..=key_group_end;
-    if source_dirs.is_empty() {
-        RocksWindowRankStore::create(config, row_types, key_groups)
-    } else {
-        RocksWindowRankStore::open_merged(
-            config,
-            row_types,
-            key_groups,
-            &source_dirs
-                .into_iter()
-                .zip(source_tokens)
-                .collect::<Vec<_>>(),
-            aligned != 0,
-        )
-    }
-}
-
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBWindowRanker<'local>(
@@ -3815,12 +3173,6 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBWindowRanker<'
     restored_timer_deadline: jlong,
 ) -> jlong {
     crate::bridge::jni_guard(env, move |mut env| {
-        let schema = import_schema(schema_address);
-        let row_types: Vec<DataType> = schema
-            .fields()
-            .iter()
-            .map(|field| field.data_type().clone())
-            .collect();
         let config = RocksStoreConfig {
             table_dir: read_string(&mut env, &table_directory),
             max_parallelism: max_parallelism as usize,
@@ -3828,38 +3180,37 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBWindowRanker<'
             ttl_ms: 0,
             shared_resources,
         };
-        let store = open_window_rank_store(
+        let restored = read_restored_partitions(&mut env, &restored_partitions);
+        let restore = read_restore(
             &mut env,
-            config,
-            &row_types,
             &source_directories,
             &source_snapshot_tokens,
             key_group_start,
             key_group_end,
             aligned,
+            restored,
         );
-        let ranker = store.and_then(|store| {
-            let partitions = read_columns(&env, &partition_columns);
-            let sort = read_sort_columns(&env, &sort_indices, &sort_ascending, &sort_nulls_first);
-            WindowRanker::new(
-                window_start_col as usize,
-                window_end_col as usize,
-                partitions,
+        let sort = read_sort_columns(&env, &sort_indices, &sort_ascending, &sort_nulls_first);
+        let partition_columns = read_columns(&env, &partition_columns);
+        let key_timestamp_precisions = read_i32_array(&env, &key_timestamp_precisions);
+        let output_rank_number = output_rank_number != 0;
+        let schema = import_schema(schema_address);
+        let result = lifecycle::create_window_ranker(
+            Storage { config, restore },
+            WindowRankOptions {
                 sort,
+                window_start_col,
+                window_end_col,
+                partition_columns,
+                key_timestamp_precisions,
                 limit,
-                output_rank_number != 0,
-            )
-            .with_key_timestamp_precisions(read_i32_array(&env, &key_timestamp_precisions))
-            .with_store(store, schema)
-            .with_memory_budget(memory_budget_bytes)
-        });
-        let ranker = ranker.and_then(|mut ranker| {
-            let restored = read_restored_partitions(&mut env, &restored_partitions);
-            ranker.migrate_legacy_snapshot_store()?;
-            ranker.import_partitions(&restored, restored_timer_deadline)?;
-            Ok(ranker)
-        });
-        boxed_or_throw(&mut env, ranker)
+                output_rank_number,
+                schema,
+                memory_budget_bytes,
+                restored_timer_deadline,
+            },
+        );
+        boxed_or_throw(&mut env, result)
     })
 }
 
@@ -3912,17 +3263,17 @@ pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBWindowRank
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
         let snapshot_directory = read_string(&mut env, &snapshot_directory);
-        let ranker = unsafe { &mut *(handle as *mut WindowRanker) };
-        match ranker.checkpoint_store(timer_deadline, &snapshot_directory) {
-            Ok(m) => manifest_array(&mut env, &m),
-            Err(e) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("RocksDB checkpoint failed: {e}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+        let result = lifecycle::checkpoint_window_ranker(
+            unsafe { &mut *(handle as *mut WindowRanker) },
+            timer_deadline,
+            &snapshot_directory,
+        );
+        runtime_result(
+            &mut env,
+            result,
+            "RocksDB checkpoint failed",
+            |env, manifest| manifest_array(env, &manifest),
+        )
     })
 }
 
@@ -3936,18 +3287,13 @@ pub extern "system" fn Java_tech_streamfusion_Native_snapshotRocksDBWindowRanker
 ) -> jobjectArray {
     crate::bridge::jni_guard(env, move |mut env| {
         let ranker = unsafe { &*(handle as *const WindowRanker) };
-        match ranker.canonical_partitions() {
-            Ok(partitions) => {
-                keyed_state_partition_array(&mut env, partitions, "rocksdb-window-rank")
-            }
-            Err(error) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("RocksDB canonical snapshot failed: {error}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+        let result = ranker.canonical_partitions();
+        runtime_result(
+            &mut env,
+            result,
+            "RocksDB canonical snapshot failed",
+            |env, partitions| keyed_state_partition_array(env, partitions, "rocksdb-window-rank"),
+        )
     })
 }
 
@@ -3989,24 +3335,18 @@ pub extern "system" fn Java_tech_streamfusion_Native_createRocksDBSnapshotStore<
             ttl_ms: 0,
             shared_resources,
         };
-        let source_dirs: Vec<_> = read_strings(&mut env, &source_directories)
-            .into_iter()
-            .flatten()
-            .collect();
-        let source_tokens: Vec<_> = read_strings(&mut env, &source_snapshot_tokens)
-            .into_iter()
-            .flatten()
-            .map(|token| token.parse::<i64>().expect("RocksDB checkpoint generation"))
-            .collect();
-        let sources: Vec<_> = source_dirs.into_iter().zip(source_tokens).collect();
+        let restore = read_restore(
+            &mut env,
+            &source_directories,
+            &source_snapshot_tokens,
+            key_group_start,
+            key_group_end,
+            aligned,
+            Vec::new(),
+        );
         boxed_or_throw(
             &mut env,
-            RocksSnapshotStore::open_merged(
-                config,
-                &sources,
-                key_group_start..=key_group_end,
-                aligned != 0,
-            ),
+            lifecycle::create_snapshot_store(Storage { config, restore }),
         )
     })
 }
@@ -4019,10 +3359,14 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreRocksDBSnapshotStore
     _class: JClass<'local>,
     handle: jlong,
 ) -> jobjectArray {
-    crate::bridge::jni_guard(env, move |env| {
+    crate::bridge::jni_guard(env, move |mut env| {
         let store = unsafe { &*(handle as *const RocksSnapshotStore) };
-        match store.partitions() {
-            Ok(partitions) => {
+        let result = store.partitions();
+        runtime_result(
+            &mut env,
+            result,
+            "RocksDB restore failed",
+            |env, partitions| {
                 let output = env
                     .new_object_array(partitions.len() as i32, "[B", JObject::null())
                     .expect("snapshot partition array");
@@ -4034,15 +3378,8 @@ pub extern "system" fn Java_tech_streamfusion_Native_restoreRocksDBSnapshotStore
                         .expect("snapshot partition element");
                 }
                 output.into_raw()
-            }
-            Err(error) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("RocksDB restore failed: {error}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+            },
+        )
     })
 }
 
@@ -4079,20 +3416,18 @@ pub extern "system" fn Java_tech_streamfusion_Native_checkpointRocksDBSnapshotSt
                     .expect("snapshot bytes"),
             );
         }
-        match unsafe { &mut *(handle as *mut RocksSnapshotStore) }.checkpoint(
+        let result = lifecycle::checkpoint_snapshot_store(
+            unsafe { &mut *(handle as *mut RocksSnapshotStore) },
             &partitions,
             timer_deadline,
             &snapshot_directory,
-        ) {
-            Ok(manifest) => manifest_array(&mut env, &manifest),
-            Err(error) => {
-                let _ = env.throw_new(
-                    "java/lang/RuntimeException",
-                    format!("RocksDB checkpoint failed: {error}"),
-                );
-                std::ptr::null_mut()
-            }
-        }
+        );
+        runtime_result(
+            &mut env,
+            result,
+            "RocksDB checkpoint failed",
+            |env, manifest| manifest_array(env, &manifest),
+        )
     })
 }
 

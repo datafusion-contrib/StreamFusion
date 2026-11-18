@@ -222,5 +222,1209 @@
       "name": "STRING",
       "code": 6
     }
+  ],
+  "scalarOps": [
+    {
+      "name": "ADD",
+      "code": 0
+    },
+    {
+      "name": "SUBTRACT",
+      "code": 1
+    },
+    {
+      "name": "MULTIPLY",
+      "code": 2
+    },
+    {
+      "name": "DIVIDE",
+      "code": 3
+    },
+    {
+      "name": "MOD",
+      "code": 4
+    },
+    {
+      "name": "NEGATE",
+      "code": 5
+    },
+    {
+      "name": "GREATER_THAN",
+      "code": 10
+    },
+    {
+      "name": "GREATER_OR_EQUAL",
+      "code": 11
+    },
+    {
+      "name": "LESS_THAN",
+      "code": 12
+    },
+    {
+      "name": "LESS_OR_EQUAL",
+      "code": 13
+    },
+    {
+      "name": "EQUAL",
+      "code": 14
+    },
+    {
+      "name": "NOT_EQUAL",
+      "code": 15
+    },
+    {
+      "name": "AND",
+      "code": 20
+    },
+    {
+      "name": "OR",
+      "code": 21
+    },
+    {
+      "name": "NOT",
+      "code": 22
+    },
+    {
+      "name": "IS_NULL",
+      "code": 30
+    },
+    {
+      "name": "IS_NOT_NULL",
+      "code": 31
+    },
+    {
+      "name": "IS_TRUE",
+      "code": 32
+    },
+    {
+      "name": "IS_NOT_TRUE",
+      "code": 33
+    },
+    {
+      "name": "IS_FALSE",
+      "code": 34
+    },
+    {
+      "name": "IS_NOT_FALSE",
+      "code": 35
+    },
+    {
+      "name": "CASE",
+      "code": 40
+    },
+    {
+      "name": "UPPER",
+      "code": 50
+    },
+    {
+      "name": "LOWER",
+      "code": 51
+    },
+    {
+      "name": "CHAR_LENGTH",
+      "code": 52
+    },
+    {
+      "name": "TRIM_WHITESPACE",
+      "code": 54
+    },
+    {
+      "name": "LIKE",
+      "code": 56
+    },
+    {
+      "name": "POSITION",
+      "code": 57
+    },
+    {
+      "name": "REPLACE",
+      "code": 58
+    },
+    {
+      "name": "REVERSE",
+      "code": 59
+    },
+    {
+      "name": "LTRIM_WHITESPACE",
+      "code": 60
+    },
+    {
+      "name": "RTRIM_WHITESPACE",
+      "code": 61
+    },
+    {
+      "name": "ABS_FLOAT",
+      "code": 62
+    },
+    {
+      "name": "FLOOR_FLOAT",
+      "code": 63
+    },
+    {
+      "name": "CEIL_FLOAT",
+      "code": 64
+    },
+    {
+      "name": "SIGN",
+      "code": 65
+    },
+    {
+      "name": "REPEAT",
+      "code": 66
+    },
+    {
+      "name": "ASCII",
+      "code": 67
+    },
+    {
+      "name": "POWER",
+      "code": 71
+    },
+    {
+      "name": "EXP",
+      "code": 72
+    },
+    {
+      "name": "LN",
+      "code": 73
+    },
+    {
+      "name": "SIN",
+      "code": 74
+    },
+    {
+      "name": "COS",
+      "code": 75
+    },
+    {
+      "name": "TAN",
+      "code": 76
+    },
+    {
+      "name": "ASIN",
+      "code": 77
+    },
+    {
+      "name": "ACOS",
+      "code": 78
+    },
+    {
+      "name": "ATAN",
+      "code": 79
+    },
+    {
+      "name": "LOG10",
+      "code": 80
+    },
+    {
+      "name": "CHR",
+      "code": 81
+    },
+    {
+      "name": "ROUND_FLOAT",
+      "code": 84
+    },
+    {
+      "name": "DATE_FORMAT",
+      "code": 86
+    },
+    {
+      "name": "TIMESTAMP_FROM_MILLIS",
+      "code": 87
+    },
+    {
+      "name": "REGEXP_EXTRACT",
+      "code": 88
+    },
+    {
+      "name": "EXTRACT",
+      "code": 89
+    },
+    {
+      "name": "DATE_FORMAT_LTZ",
+      "code": 90
+    },
+    {
+      "name": "EXTRACT_LTZ",
+      "code": 91
+    },
+    {
+      "name": "INTERVAL_SCALE",
+      "code": 92
+    },
+    {
+      "name": "CONCAT",
+      "code": 93
+    },
+    {
+      "name": "CONCAT_WS",
+      "code": 94
+    },
+    {
+      "name": "MD5",
+      "code": 95
+    },
+    {
+      "name": "SHA224",
+      "code": 96
+    },
+    {
+      "name": "SHA256",
+      "code": 97
+    },
+    {
+      "name": "SHA384",
+      "code": 98
+    },
+    {
+      "name": "SHA512",
+      "code": 99
+    },
+    {
+      "name": "STARTS_WITH",
+      "code": 100
+    },
+    {
+      "name": "ENDS_WITH",
+      "code": 101
+    },
+    {
+      "name": "STRPOS",
+      "code": 102
+    },
+    {
+      "name": "LOCATE",
+      "code": 103
+    },
+    {
+      "name": "BIN",
+      "code": 104
+    },
+    {
+      "name": "HEX_INTEGER",
+      "code": 105
+    },
+    {
+      "name": "HEX_STRING",
+      "code": 106
+    },
+    {
+      "name": "TO_BASE64",
+      "code": 107
+    },
+    {
+      "name": "UNHEX",
+      "code": 108
+    },
+    {
+      "name": "GREATEST",
+      "code": 109
+    },
+    {
+      "name": "LEAST",
+      "code": 110
+    },
+    {
+      "name": "INITCAP",
+      "code": 111
+    },
+    {
+      "name": "TRANSLATE",
+      "code": 112
+    },
+    {
+      "name": "TRIM",
+      "code": 113
+    },
+    {
+      "name": "ELT",
+      "code": 114
+    },
+    {
+      "name": "URL_ENCODE",
+      "code": 115
+    },
+    {
+      "name": "OVERLAY",
+      "code": 116
+    },
+    {
+      "name": "URL_DECODE",
+      "code": 117
+    },
+    {
+      "name": "URL_DECODE_ASCII",
+      "code": 118
+    },
+    {
+      "name": "ENCODE",
+      "code": 120
+    },
+    {
+      "name": "DECODE",
+      "code": 121
+    },
+    {
+      "name": "JSON_QUOTE",
+      "code": 122
+    },
+    {
+      "name": "JSON_UNQUOTE",
+      "code": 123
+    },
+    {
+      "name": "SPLIT",
+      "code": 124
+    },
+    {
+      "name": "SUBSTRING",
+      "code": 125
+    },
+    {
+      "name": "LEFT",
+      "code": 126
+    },
+    {
+      "name": "RIGHT",
+      "code": 127
+    },
+    {
+      "name": "LPAD",
+      "code": 128
+    },
+    {
+      "name": "RPAD",
+      "code": 129
+    },
+    {
+      "name": "SPLIT_INDEX",
+      "code": 130
+    },
+    {
+      "name": "TO_DATE",
+      "code": 131
+    },
+    {
+      "name": "QUARTER",
+      "code": 133
+    },
+    {
+      "name": "WEEK",
+      "code": 134
+    },
+    {
+      "name": "DAY_OF_YEAR",
+      "code": 135
+    },
+    {
+      "name": "DAY_OF_WEEK",
+      "code": 136
+    },
+    {
+      "name": "LTRIM",
+      "code": 139
+    },
+    {
+      "name": "RTRIM",
+      "code": 140
+    },
+    {
+      "name": "JSON_VALUE",
+      "code": 141
+    },
+    {
+      "name": "JSON_EXISTS",
+      "code": 142
+    },
+    {
+      "name": "SHA1",
+      "code": 143
+    },
+    {
+      "name": "IS_JSON_VALUE",
+      "code": 144
+    },
+    {
+      "name": "IS_JSON_OBJECT",
+      "code": 145
+    },
+    {
+      "name": "IS_JSON_ARRAY",
+      "code": 146
+    },
+    {
+      "name": "IS_JSON_SCALAR",
+      "code": 147
+    },
+    {
+      "name": "JSON_VALUE_BOOLEAN",
+      "code": 148
+    },
+    {
+      "name": "JSON_VALUE_INTEGER",
+      "code": 149
+    },
+    {
+      "name": "JSON_VALUE_DOUBLE",
+      "code": 150
+    },
+    {
+      "name": "TO_BASE64_BINARY",
+      "code": 151
+    },
+    {
+      "name": "JSON_SERIALIZE",
+      "code": 152
+    },
+    {
+      "name": "JSON_OBJECT",
+      "code": 153
+    },
+    {
+      "name": "TEMPORAL_ROUND",
+      "code": 154
+    },
+    {
+      "name": "TIMESTAMP_MILLIS",
+      "code": 155
+    },
+    {
+      "name": "TIMESTAMP_SUBTRACT_MILLIS",
+      "code": 156
+    },
+    {
+      "name": "TIMESTAMP_SUBTRACT_MONTHS",
+      "code": 157
+    },
+    {
+      "name": "IF_NULL",
+      "code": 158
+    },
+    {
+      "name": "STRING_TO_BOOLEAN",
+      "code": 159
+    },
+    {
+      "name": "TRY_STRING_TO_BOOLEAN",
+      "code": 160
+    },
+    {
+      "name": "INSTR",
+      "code": 161
+    },
+    {
+      "name": "HASH_CODE",
+      "code": 162
+    },
+    {
+      "name": "ARRAY_DISTINCT",
+      "code": 165
+    },
+    {
+      "name": "UUID",
+      "code": 166
+    },
+    {
+      "name": "CARDINALITY",
+      "code": 167
+    },
+    {
+      "name": "TYPE_OF",
+      "code": 168
+    },
+    {
+      "name": "ARRAY_REVERSE",
+      "code": 169
+    },
+    {
+      "name": "ARRAY_SLICE",
+      "code": 170
+    },
+    {
+      "name": "ARRAY_CONSTRUCTOR",
+      "code": 171
+    },
+    {
+      "name": "ARRAY_CONSTRUCTOR_COMPACT_TIMESTAMP",
+      "code": 172
+    },
+    {
+      "name": "UNNEST_EPOCH_MILLIS",
+      "code": 173
+    },
+    {
+      "name": "UNNEST_UTC_DATE",
+      "code": 174
+    },
+    {
+      "name": "UNNEST_UTC_TIME",
+      "code": 175
+    },
+    {
+      "name": "UNNEST_ZONED_DATE",
+      "code": 176
+    },
+    {
+      "name": "UNNEST_ZONED_TIME",
+      "code": 177
+    },
+    {
+      "name": "ARRAY_CONTAINS",
+      "code": 178
+    },
+    {
+      "name": "ARRAY_POSITION",
+      "code": 179
+    },
+    {
+      "name": "ARRAY_MIN",
+      "code": 180
+    },
+    {
+      "name": "ARRAY_MAX",
+      "code": 181
+    },
+    {
+      "name": "ARRAY_APPEND",
+      "code": 182
+    },
+    {
+      "name": "ARRAY_PREPEND",
+      "code": 183
+    },
+    {
+      "name": "ARRAY_REMOVE",
+      "code": 184
+    },
+    {
+      "name": "ARRAY_CONCAT",
+      "code": 185
+    },
+    {
+      "name": "ARRAY_UNION",
+      "code": 186
+    },
+    {
+      "name": "ARRAY_EXCEPT",
+      "code": 187
+    },
+    {
+      "name": "ARRAY_INTERSECT",
+      "code": 188
+    },
+    {
+      "name": "ARRAY_SORT_DEFAULT",
+      "code": 189
+    },
+    {
+      "name": "ELEMENT",
+      "code": 190
+    },
+    {
+      "name": "MAP_FROM_ARRAYS",
+      "code": 191
+    },
+    {
+      "name": "MAP_KEYS",
+      "code": 192
+    },
+    {
+      "name": "MAP_VALUES",
+      "code": 193
+    },
+    {
+      "name": "MAP_ENTRIES",
+      "code": 194
+    },
+    {
+      "name": "MAP_UNION",
+      "code": 195
+    },
+    {
+      "name": "MAP_CONSTRUCTOR",
+      "code": 196
+    },
+    {
+      "name": "ROW_CONSTRUCTOR",
+      "code": 197
+    },
+    {
+      "name": "OBJECT_OF",
+      "code": 198
+    },
+    {
+      "name": "OBJECT_UPDATE",
+      "code": 199
+    },
+    {
+      "name": "ARRAY_JOIN",
+      "code": 200
+    },
+    {
+      "name": "ELEMENT_LEGACY_EXCEPTION",
+      "code": 201
+    },
+    {
+      "name": "JSON_VALUE_JAVA_INPUT",
+      "code": 202
+    },
+    {
+      "name": "YEAR",
+      "code": 203
+    },
+    {
+      "name": "MONTH",
+      "code": 204
+    },
+    {
+      "name": "DAY",
+      "code": 205
+    },
+    {
+      "name": "HOUR",
+      "code": 206
+    },
+    {
+      "name": "MINUTE",
+      "code": 207
+    },
+    {
+      "name": "SECOND",
+      "code": 208
+    },
+    {
+      "name": "CALENDAR_ROUND",
+      "code": 209
+    },
+    {
+      "name": "TIMESTAMP_ARITHMETIC_MILLIS",
+      "code": 210
+    },
+    {
+      "name": "DATE_ARITHMETIC_MILLIS",
+      "code": 211
+    },
+    {
+      "name": "TIME_ARITHMETIC_MILLIS",
+      "code": 212
+    },
+    {
+      "name": "DATE_ARITHMETIC_MONTHS",
+      "code": 213
+    },
+    {
+      "name": "TIMESTAMP_ARITHMETIC_MONTHS",
+      "code": 214
+    },
+    {
+      "name": "TEMPORAL_GREATEST",
+      "code": 215
+    },
+    {
+      "name": "TEMPORAL_LEAST",
+      "code": 216
+    },
+    {
+      "name": "ARRAY_SORT",
+      "code": 217
+    },
+    {
+      "name": "ABS_INTEGER",
+      "code": 218
+    },
+    {
+      "name": "NEGATE_INTEGER",
+      "code": 219
+    },
+    {
+      "name": "ARRAY_UNION_STRUCTURAL",
+      "code": 220
+    },
+    {
+      "name": "BINARY_ROW_CONSTRUCTOR",
+      "code": 221
+    },
+    {
+      "name": "OBJECT_CONSTRUCTOR",
+      "code": 222
+    },
+    {
+      "name": "COLLECTION_STRING_SPLIT",
+      "code": 223
+    },
+    {
+      "name": "ARRAY_TIMSORT",
+      "code": 224
+    },
+    {
+      "name": "MAP_CONSTRUCTOR_BINARY",
+      "code": 225
+    },
+    {
+      "name": "COLLECTION_STRING_LITERAL",
+      "code": 226
+    },
+    {
+      "name": "COLLECTION_STRING_MAP_INPUT",
+      "code": 227
+    },
+    {
+      "name": "STRING_ARRAY_MIN",
+      "code": 228
+    },
+    {
+      "name": "STRING_ARRAY_MAX",
+      "code": 229
+    },
+    {
+      "name": "ROUND_INTEGER",
+      "code": 230
+    },
+    {
+      "name": "TRUNCATE_INTEGER",
+      "code": 231
+    },
+    {
+      "name": "FROM_BASE64",
+      "code": 232
+    },
+    {
+      "name": "BINARY_STARTS_WITH",
+      "code": 235
+    },
+    {
+      "name": "BINARY_ENDS_WITH",
+      "code": 236
+    },
+    {
+      "name": "BINARY_CHARACTER",
+      "code": 237
+    },
+    {
+      "name": "STRING_IS_ALPHA",
+      "code": 238
+    },
+    {
+      "name": "STRING_IS_DIGIT",
+      "code": 239
+    },
+    {
+      "name": "STRING_TO_DECIMAL",
+      "code": 240
+    },
+    {
+      "name": "NUMERIC_IS_ALPHA",
+      "code": 241
+    },
+    {
+      "name": "NUMERIC_IS_DIGIT",
+      "code": 242
+    },
+    {
+      "name": "NUMERIC_TO_DECIMAL",
+      "code": 243
+    },
+    {
+      "name": "BOOLEAN_TO_LOWERCASE_STRING",
+      "code": 244
+    },
+    {
+      "name": "UNNEST_EPOCH_SECONDS",
+      "code": 245
+    },
+    {
+      "name": "UTC_LTZ_CEIL",
+      "code": 246
+    },
+    {
+      "name": "ROUND_POSITION",
+      "code": 247
+    },
+    {
+      "name": "PRINTF_INTEGER",
+      "code": 248
+    },
+    {
+      "name": "UNNEST_EPOCH_PRECISION",
+      "code": 249
+    },
+    {
+      "name": "PRINTF_BOOLEAN_ARGUMENTS",
+      "code": 250
+    },
+    {
+      "name": "DECIMAL_EPOCH_MILLIS",
+      "code": 251
+    },
+    {
+      "name": "DECIMAL_EPOCH_SECONDS",
+      "code": 252
+    },
+    {
+      "name": "JSON_ARRAY",
+      "code": 253
+    },
+    {
+      "name": "JSON_QUERY",
+      "code": 254
+    }
+  ],
+  "groupAggregateKinds": [
+    {
+      "name": "SUM",
+      "code": 0
+    },
+    {
+      "name": "MIN",
+      "code": 1
+    },
+    {
+      "name": "MAX",
+      "code": 2
+    },
+    {
+      "name": "COUNT",
+      "code": 3
+    },
+    {
+      "name": "AVG",
+      "code": 4
+    },
+    {
+      "name": "FIRST_VALUE_LEGACY",
+      "code": 5
+    },
+    {
+      "name": "LAST_VALUE_LEGACY",
+      "code": 6
+    },
+    {
+      "name": "COUNT_DISTINCT",
+      "code": 7
+    },
+    {
+      "name": "AVG_PARTIAL_SUM",
+      "code": 8
+    },
+    {
+      "name": "SUM_DISTINCT",
+      "code": 9
+    },
+    {
+      "name": "MIN_APPEND",
+      "code": 10
+    },
+    {
+      "name": "MAX_APPEND",
+      "code": 11
+    },
+    {
+      "name": "FIRST_VALUE_APPEND",
+      "code": 12
+    },
+    {
+      "name": "LAST_VALUE_APPEND",
+      "code": 13
+    },
+    {
+      "name": "SINGLE_VALUE",
+      "code": 14
+    },
+    {
+      "name": "FIRST_VALUE_RETRACT",
+      "code": 15
+    },
+    {
+      "name": "LAST_VALUE_RETRACT",
+      "code": 16
+    },
+    {
+      "name": "AVG_DISTINCT",
+      "code": 17
+    },
+    {
+      "name": "AVG_DISTINCT_PARTIAL_SUM",
+      "code": 18
+    },
+    {
+      "name": "FIRST_VALUE_DISTINCT",
+      "code": 19
+    },
+    {
+      "name": "LAST_VALUE_DISTINCT",
+      "code": 20
+    },
+    {
+      "name": "SINGLE_VALUE_COUNT",
+      "code": 21
+    },
+    {
+      "name": "SUM_ZERO",
+      "code": 22
+    },
+    {
+      "name": "SUM_ZERO_MERGE",
+      "code": 23
+    },
+    {
+      "name": "LISTAGG_APPEND",
+      "code": 24
+    },
+    {
+      "name": "LISTAGG_RETRACT",
+      "code": 25
+    },
+    {
+      "name": "JSON_ARRAY_ABSENT_ON_NULL",
+      "code": 26
+    },
+    {
+      "name": "JSON_ARRAY_NULL_ON_NULL",
+      "code": 27
+    },
+    {
+      "name": "JSON_OBJECT_ABSENT_ON_NULL",
+      "code": 28
+    },
+    {
+      "name": "JSON_OBJECT_NULL_ON_NULL",
+      "code": 29
+    },
+    {
+      "name": "JSON_OBJECT_LEGACY_ABSENT_ON_NULL",
+      "code": 30
+    },
+    {
+      "name": "JSON_OBJECT_LEGACY_NULL_ON_NULL",
+      "code": 31
+    },
+    {
+      "name": "LISTAGG_DISTINCT_APPEND",
+      "code": 32
+    },
+    {
+      "name": "LISTAGG_DISTINCT_RETRACT",
+      "code": 33
+    },
+    {
+      "name": "SUM_ZERO_DISTINCT",
+      "code": 34
+    },
+    {
+      "name": "MIN_MAPPED_PARTIAL",
+      "code": 38
+    },
+    {
+      "name": "MAX_MAPPED_PARTIAL",
+      "code": 39
+    },
+    {
+      "name": "RETRACTING_DECIMAL_SUM",
+      "code": 40
+    },
+    {
+      "name": "RAW_SUM_PARTIAL",
+      "code": 41
+    },
+    {
+      "name": "JSON_OBJECT_MERGE_ABSENT_ON_NULL",
+      "code": 42
+    },
+    {
+      "name": "JSON_OBJECT_MERGE_NULL_ON_NULL",
+      "code": 43
+    },
+    {
+      "name": "JSON_OBJECT_MERGE_LEGACY_ABSENT_ON_NULL",
+      "code": 44
+    },
+    {
+      "name": "JSON_OBJECT_MERGE_LEGACY_NULL_ON_NULL",
+      "code": 45
+    },
+    {
+      "name": "LISTAGG_MERGE",
+      "code": 46
+    },
+    {
+      "name": "LISTAGG_MERGE_WITH_SEPARATOR",
+      "code": 47
+    },
+    {
+      "name": "COLLECT",
+      "code": 48
+    },
+    {
+      "name": "COLLECT_DISTINCT",
+      "code": 49
+    },
+    {
+      "name": "ARRAY_AGG",
+      "code": 50
+    },
+    {
+      "name": "ARRAY_AGG_DISTINCT",
+      "code": 51
+    },
+    {
+      "name": "ARRAY_AGG_IGNORE_NULLS",
+      "code": 52
+    },
+    {
+      "name": "ARRAY_AGG_DISTINCT_IGNORE_NULLS",
+      "code": 53
+    }
+  ],
+  "windowAggregateKinds": [
+    {
+      "name": "SUM",
+      "code": 0
+    },
+    {
+      "name": "MIN",
+      "code": 1
+    },
+    {
+      "name": "MAX",
+      "code": 2
+    },
+    {
+      "name": "COUNT",
+      "code": 3
+    },
+    {
+      "name": "AVG",
+      "code": 4
+    },
+    {
+      "name": "COUNT_DISTINCT",
+      "code": 7
+    },
+    {
+      "name": "AVG_PARTIAL_SUM",
+      "code": 8
+    },
+    {
+      "name": "RETRACT_SUM",
+      "code": 9
+    },
+    {
+      "name": "RETRACT_COUNT",
+      "code": 10
+    },
+    {
+      "name": "LIVE_COUNT",
+      "code": 11
+    },
+    {
+      "name": "HIDDEN_LIVE_COUNT",
+      "code": 12
+    },
+    {
+      "name": "SUM_ZERO",
+      "code": 22
+    },
+    {
+      "name": "COUNT_DISTINCT_WITH_COUNTS",
+      "code": 43
+    }
+  ],
+  "certifiedOps": [
+    {
+      "name": "REGEXP",
+      "code": 1
+    },
+    {
+      "name": "REGEXP_REPLACE",
+      "code": 2
+    },
+    {
+      "name": "REGEXP_EXTRACT",
+      "code": 3
+    },
+    {
+      "name": "REGEXP_COUNT",
+      "code": 4
+    },
+    {
+      "name": "REGEXP_INSTR",
+      "code": 5
+    },
+    {
+      "name": "REGEXP_SUBSTR",
+      "code": 6
+    },
+    {
+      "name": "LIKE_WITH_ESCAPE",
+      "code": 7
+    },
+    {
+      "name": "SIMILAR",
+      "code": 8
+    },
+    {
+      "name": "PARSE_URL",
+      "code": 9
+    },
+    {
+      "name": "PRINTF",
+      "code": 10
+    },
+    {
+      "name": "SPLIT_INDEX_INTEGER",
+      "code": 11
+    },
+    {
+      "name": "SHA2_RUNTIME",
+      "code": 12
+    },
+    {
+      "name": "TRIM",
+      "code": 13
+    },
+    {
+      "name": "LTRIM",
+      "code": 14
+    },
+    {
+      "name": "RTRIM",
+      "code": 15
+    },
+    {
+      "name": "LPAD_EQUAL",
+      "code": 20
+    },
+    {
+      "name": "RPAD_EQUAL",
+      "code": 21
+    },
+    {
+      "name": "OVERLAY_EQUAL",
+      "code": 22
+    },
+    {
+      "name": "LPAD_NOT_EQUAL",
+      "code": 23
+    },
+    {
+      "name": "RPAD_NOT_EQUAL",
+      "code": 24
+    },
+    {
+      "name": "OVERLAY_NOT_EQUAL",
+      "code": 25
+    },
+    {
+      "name": "LPAD_REPLACE",
+      "code": 26
+    },
+    {
+      "name": "RPAD_REPLACE",
+      "code": 27
+    },
+    {
+      "name": "OVERLAY_REPLACE",
+      "code": 28
+    }
   ]
 }

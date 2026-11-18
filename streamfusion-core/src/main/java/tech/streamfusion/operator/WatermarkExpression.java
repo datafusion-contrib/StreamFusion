@@ -18,9 +18,9 @@ import tech.streamfusion.arrow.TimestampAccessor;
 public final class WatermarkExpression implements Serializable {
   private static final long serialVersionUID = 1L;
 
-  public static final int TIMESTAMP_MILLIS = 155;
-  public static final int SUBTRACT_MILLIS = 156;
-  public static final int SUBTRACT_MONTHS = 157;
+  public static final int TIMESTAMP_MILLIS = tech.streamfusion.planner.common.ScalarOp.TIMESTAMP_MILLIS;
+  public static final int SUBTRACT_MILLIS = tech.streamfusion.planner.common.ScalarOp.TIMESTAMP_SUBTRACT_MILLIS;
+  public static final int SUBTRACT_MONTHS = tech.streamfusion.planner.common.ScalarOp.TIMESTAMP_SUBTRACT_MONTHS;
 
   private final int[] kinds;
   private final int[] payload;

@@ -1178,6 +1178,54 @@ class FlussArrowClientTest {
     }
   }
 
+  @Test
+  void shutdownFailsPendingAcknowledgementsAndReleasesWriterCredit() throws Exception {
+    TablePath path = table("async_close", false, "NONE", "FULL");
+    var full =
+        FlussArrowSchema.wireSchema(connection.getAdmin().getTableInfo(path).get().getRowType());
+    try (var root =
+            VectorSchemaRoot.create(full, tech.streamfusion.operator.NativeAllocator.SHARED);
+        var writer =
+            new FlussArrowClient(
+                cluster.config(),
+                path,
+                full,
+                tech.streamfusion.operator.NativeAllocator.SHARED,
+                false);
+        var reader =
+            new FlussArrowClient(
+                cluster.config(),
+                path,
+                PROJECTION,
+                tech.streamfusion.operator.NativeAllocator.SHARED)) {
+      root.allocateNew();
+      ((BigIntVector) root.getVector(0)).setSafe(0, 1);
+      ((BigIntVector) root.getVector(1)).setSafe(0, 42);
+      root.setRowCount(1);
+      writer.append(root);
+      long inputCredit = tech.streamfusion.operator.TaskOffHeapMemory.reservedBytes();
+      cluster.pauseTablet();
+      try {
+        List<java.util.concurrent.CompletableFuture<Void>> pending = new ArrayList<>();
+        for (int i = 0; i < 12; i++) pending.add(writer.appendAsync(root));
+        assertTrue(pending.stream().noneMatch(java.util.concurrent.CompletableFuture::isDone));
+        assertTrue(tech.streamfusion.operator.TaskOffHeapMemory.reservedBytes() > inputCredit);
+        writer.close();
+        assertTrue(
+            pending.stream()
+                .allMatch(java.util.concurrent.CompletableFuture::isCompletedExceptionally));
+        assertEquals(inputCredit, tech.streamfusion.operator.TaskOffHeapMemory.reservedBytes());
+        assertEquals(42, ((BigIntVector) root.getVector(1)).get(0));
+        assertThrows(java.io.IOException.class, () -> writer.appendAsync(root));
+        writer.close();
+      } finally {
+        cluster.resumeTablet();
+      }
+      assertEquals(
+          List.of("0:42"), read(reader, new TableBucket(writer.tableInfo().getTableId(), 0), 0, 1));
+    }
+  }
+
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
   void addedNullableColumnsReadHistoricalArrowBatches(boolean primaryKey) throws Exception {

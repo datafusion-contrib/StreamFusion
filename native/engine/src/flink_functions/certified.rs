@@ -1,6 +1,7 @@
 //! Batch certificates for builtins with a retained released-Flink evaluator.
 //! A failed certificate never returns a partial batch or guesses at Java behavior.
 
+use crate::expression_protocol::certified_op;
 use arrow::array::{Array, ArrayRef, BooleanArray, Int32Array, Int64Array, StringArray};
 use arrow::datatypes::DataType;
 use std::sync::Arc;
@@ -31,13 +32,13 @@ pub(crate) fn evaluate(
     caches: &[ArrayRef],
     target: &DataType,
 ) -> Option<ArrayRef> {
-    if operation == 12 {
+    if operation == certified_op::SHA2_RUNTIME {
         let [source, bits] = arrays else {
             return None;
         };
         return super::sha2_runtime::evaluate([source, bits]);
     }
-    if operation == 11 {
+    if operation == certified_op::SPLIT_INDEX_INTEGER {
         let [input, separator, index] = arrays else {
             return None;
         };
@@ -63,10 +64,12 @@ pub(crate) fn evaluate(
         }
     }
     match operation {
-        1..=8 => patterns::evaluate(operation, arrays, target),
-        9 => url::evaluate(arrays),
-        10 => printf::evaluate(arrays),
-        13..=15 => trim::evaluate(operation, arrays, caches),
+        certified_op::REGEXP..=certified_op::SIMILAR => {
+            patterns::evaluate(operation, arrays, target)
+        }
+        certified_op::PARSE_URL => url::evaluate(arrays),
+        certified_op::PRINTF => printf::evaluate(arrays),
+        certified_op::TRIM..=certified_op::RTRIM => trim::evaluate(operation, arrays, caches),
         _ => None,
     }
 }

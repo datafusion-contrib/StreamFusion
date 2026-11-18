@@ -15,6 +15,8 @@ mod rocks_io_uring;
 #[cfg(feature = "rocksdb-state")]
 pub(crate) mod rocks_jni;
 #[cfg(feature = "rocksdb-state")]
+pub(crate) mod rocks_lifecycle;
+#[cfg(feature = "rocksdb-state")]
 pub(crate) mod rocks_store;
 #[cfg(feature = "rocksdb-state")]
 pub(crate) use rocks_store::*;

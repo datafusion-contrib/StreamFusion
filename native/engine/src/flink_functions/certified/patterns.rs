@@ -1,4 +1,5 @@
 use super::{integer, number_output, text};
+use crate::expression_protocol::certified_op;
 use arrow::array::{ArrayRef, StringArray};
 use arrow::datatypes::DataType;
 use regex::bytes::{Regex, RegexBuilder};
@@ -18,13 +19,13 @@ pub(super) fn evaluate(op: i64, args: &[ArrayRef], target: &DataType) -> Option<
         }
         let value = text(&args[0], row)?;
         let pattern = text(&args[1], row)?;
-        let escape = if op >= 7 && args.len() == 3 {
+        let escape = if op >= certified_op::LIKE_WITH_ESCAPE && args.len() == 3 {
             Some(text(&args[2], row)?)
         } else {
             None
         };
         let key = (pattern, escape);
-        if op == 7 {
+        if op == certified_op::LIKE_WITH_ESCAPE {
             if !likes.contains_key(&key) {
                 likes.insert(key, Like::compile(pattern, escape)?);
             }
@@ -33,8 +34,8 @@ pub(super) fn evaluate(op: i64, args: &[ArrayRef], target: &DataType) -> Option<
             continue;
         }
         if !cache.contains_key(&key) {
-            let source = if op >= 7 {
-                sql_pattern(pattern, escape, op == 8)?
+            let source = if op >= certified_op::LIKE_WITH_ESCAPE {
+                sql_pattern(pattern, escape, op == certified_op::SIMILAR)?
             } else {
                 compatible_regex(pattern)?
             };
@@ -44,10 +45,16 @@ pub(super) fn evaluate(op: i64, args: &[ArrayRef], target: &DataType) -> Option<
         let mut string = None;
         let first = regex.find(value.as_bytes());
         let number = match op {
-            1 | 7 | 8 => Some(i64::from(first.is_some())),
-            5 => Some(first.map_or(0, |m| m.start() as i64 + 1)),
-            4 | 2 => {
-                let replacement = if op == 2 { text(&args[2], row)? } else { "" };
+            certified_op::REGEXP | certified_op::LIKE_WITH_ESCAPE | certified_op::SIMILAR => {
+                Some(i64::from(first.is_some()))
+            }
+            certified_op::REGEXP_INSTR => Some(first.map_or(0, |m| m.start() as i64 + 1)),
+            certified_op::REGEXP_COUNT | certified_op::REGEXP_REPLACE => {
+                let replacement = if op == certified_op::REGEXP_REPLACE {
+                    text(&args[2], row)?
+                } else {
+                    ""
+                };
                 let mut result = String::new();
                 let mut previous = 0;
                 let mut start = 0;
@@ -58,7 +65,7 @@ pub(super) fn evaluate(op: i64, args: &[ArrayRef], target: &DataType) -> Option<
                     let Some(found) = regex.find_at(value.as_bytes(), start) else {
                         break;
                     };
-                    if op == 2 {
+                    if op == certified_op::REGEXP_REPLACE {
                         result.push_str(&value[previous..found.start()]);
                         result.push_str(replacement);
                         previous = found.end();
@@ -66,7 +73,7 @@ pub(super) fn evaluate(op: i64, args: &[ArrayRef], target: &DataType) -> Option<
                     count += 1;
                     start = found.end() + usize::from(found.start() == found.end());
                 }
-                if op == 2 {
+                if op == certified_op::REGEXP_REPLACE {
                     result.push_str(&value[previous..]);
                     string = Some(result);
                     None
@@ -74,7 +81,7 @@ pub(super) fn evaluate(op: i64, args: &[ArrayRef], target: &DataType) -> Option<
                     Some(count)
                 }
             }
-            3 => {
+            certified_op::REGEXP_EXTRACT => {
                 let index = if args.len() == 3 {
                     integer(&args[2], row)? as i32
                 } else {
@@ -88,7 +95,7 @@ pub(super) fn evaluate(op: i64, args: &[ArrayRef], target: &DataType) -> Option<
                 }
                 None
             }
-            6 => {
+            certified_op::REGEXP_SUBSTR => {
                 string = first.map(|m| value[m.start()..m.end()].to_owned());
                 None
             }

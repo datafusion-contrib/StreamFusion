@@ -16,8 +16,8 @@ class ExpressionProtocolTest(unittest.TestCase):
         for relative, source in GENERATOR["render"](self.manifest).items():
             self.assertEqual(source, (ROOT / relative).read_text(), relative)
 
-    def test_duplicate_names_and_codes_are_rejected_in_both_namespaces(self):
-        for group in ("nodeKinds", "castTargets"):
+    def test_duplicate_names_and_codes_are_rejected_in_each_namespace(self):
+        for group in (*GENERATOR["ENUMS"], *GENERATOR["CODES"]):
             for field in ("name", "code"):
                 broken = copy.deepcopy(self.manifest)
                 broken[group][1][field] = broken[group][0][field]
@@ -29,7 +29,7 @@ class ExpressionProtocolTest(unittest.TestCase):
         broken["nodeKinds"].append({"name": "RETIRED", "code": 10})
         with self.assertRaisesRegex(ValueError, "retired"):
             GENERATOR["render"](broken)
-        for invalid in (-1, "0"):
+        for invalid in (-1, "0", True):
             broken = copy.deepcopy(self.manifest)
             broken["castTargets"][0]["code"] = invalid
             with self.assertRaisesRegex(ValueError, "Invalid"):
@@ -54,6 +54,21 @@ class ExpressionProtocolTest(unittest.TestCase):
         self.assertEqual(21, kinds["DECIMAL_MOD"])
         self.assertEqual(38, kinds["ROW_UDF"])
         self.assertEqual(47, kinds["DECIMAL_IF"])
+
+    def test_all_frozen_wire_identities_survive_protocol_extensions(self):
+        fixture = json.loads((ROOT / "src/test/resources/compact-protocol-v1.json").read_text())
+        for group, frozen in fixture.items():
+            actual = {entry["name"]: entry["code"] for entry in self.manifest[group]}
+            for name, code in frozen.items():
+                self.assertEqual(code, actual.get(name), (group, name))
+
+    def test_aggregate_contexts_keep_their_overlapping_identities(self):
+        group = {entry["name"]: entry["code"] for entry in self.manifest["groupAggregateKinds"]}
+        window = {entry["name"]: entry["code"] for entry in self.manifest["windowAggregateKinds"]}
+        self.assertEqual(9, group["SUM_DISTINCT"])
+        self.assertEqual(9, window["RETRACT_SUM"])
+        self.assertEqual(43, group["JSON_OBJECT_MERGE_NULL_ON_NULL"])
+        self.assertEqual(43, window["COUNT_DISTINCT_WITH_COUNTS"])
 
 
 if __name__ == "__main__":

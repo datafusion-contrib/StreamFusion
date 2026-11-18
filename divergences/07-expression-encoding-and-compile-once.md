@@ -25,10 +25,13 @@ grows toward Comet's scale (nested structs, N-ary functions, casts), switching t
 *wire format* to Protobuf is the natural upgrade — it is a maintainability change,
 not a performance one, since encoding happens once per operator, not per batch.
 
-The node-kind and primitive cast-target vocabularies are defined in
+The node-kind, primitive cast-target, scalar-call, certified-builtin and aggregate vocabularies are defined in
 `native/engine/expression-protocol.json`. `bin/generate-expression-protocol.py` generates the
-Java and Rust enums; CI checks the generated sources and rejects duplicate or reused retired
-codes. The native decoder matches the typed node enum exhaustively. This keeps the existing
+Java and Rust enums for node/type tags and compile-time constants for dispatch codes; CI checks
+the generated sources and rejects duplicate or reused retired codes. A fixed v1 fixture protects
+all assigned identities. GROUP/OVER and window aggregate kinds have separate namespaces: kind 9
+is SUM(DISTINCT) in a group but retractable SUM in a window, and kind 43 has different meanings too.
+The native decoder matches the typed node enum exhaustively. This keeps the existing
 parallel-array payload and every numeric code intact, including legacy interval literals.
 It does not introduce a second expression AST or a new serialization dependency. Add a new
 node kind to the manifest, regenerate both languages, and implement its native match arm.
@@ -55,6 +58,14 @@ scheduling and shared user-function evaluation. Rules do not evaluate operands d
 Unknown configuration or unsupported context retains the existing rejection or generated evaluator;
 other cast families retain their current parity-specific paths. This separates semantic ownership
 from the compact wire encoding without introducing another general expression AST.
+
+Numeric value/range proofs, collection/row representation, builtin exactness selection, temporal formatting and UDF overload
+resolution have separate semantic owners. They cannot access wire storage. The Calc coordinator
+uses their decisions to schedule evaluation and emits through an expression buffer, which alone
+owns the parallel node/literal pools, remapping and exported copies of those pools. This follows Flink's
+separation of call-generation policy and generated output while retaining the compact protocol.
+Collection admission and boundary analysis share their facts directly; they do not depend on
+encoder helpers. The shared type owner supplies nested conversion/type codes to both paths.
 
 ## Compile once, evaluate directly (performance)
 Independent of the wire format: the native side compiles the decoded `Expr` into a

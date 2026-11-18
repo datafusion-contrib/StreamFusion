@@ -115,6 +115,19 @@ Primary-key initial snapshots, batch-mode scans, data-lake hybrid reads, merge e
 point-lookup/limit/count pushdowns and unsupported watermarks retain
 the stock source.
 
+The public Arrow client delegates to separate reader and writer owners. The reader owns
+projection/filter planning, historical wire schemas, remote downloads and fetch decoding;
+the writer owns partition creation, bucket assignment, producer sequences, request coalescing
+and bounded acknowledgement credits. Both borrow a context containing the transport lease,
+table identity, metadata routing and RPC retry policy. Closing either owner does not close
+that shared lease or the caller's Arrow allocator. The client stops producer scheduling before
+closing the reader and transport, then fails outstanding acknowledgements and releases writer
+credits even if transport shutdown fails. Failed initialization releases the acquired lease;
+returned Arrow roots retain their own buffer references through client shutdown. Closing the reader
+also prevents a late remote fetch from starting another downloader.
+This ownership split preserves endpoint admission, wire/RPC requests, retries, changelog and
+offset handling; it introduces no new coverage or throughput claim.
+
 The [client settings audit](fluss-client-settings.md) distinguishes settings delegated to
 the released Java connection from policies implemented by the Arrow reader/writer.
 Connection identity, connect/request timeout, network threads, heap/direct reception,

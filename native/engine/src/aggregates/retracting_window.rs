@@ -1,10 +1,12 @@
 use super::decimal_sum_add;
 use crate::*;
 
-pub(crate) const RETRACT_SUM: i64 = 9;
-pub(crate) const RETRACT_COUNT: i64 = 10;
-pub(crate) const LIVE_COUNT: i64 = 11;
-pub(crate) const HIDDEN_LIVE_COUNT: i64 = 12;
+pub(crate) const RETRACT_SUM: i64 = crate::expression_protocol::window_aggregate_kind::RETRACT_SUM;
+pub(crate) const RETRACT_COUNT: i64 =
+    crate::expression_protocol::window_aggregate_kind::RETRACT_COUNT;
+pub(crate) const LIVE_COUNT: i64 = crate::expression_protocol::window_aggregate_kind::LIVE_COUNT;
+pub(crate) const HIDDEN_LIVE_COUNT: i64 =
+    crate::expression_protocol::window_aggregate_kind::HIDDEN_LIVE_COUNT;
 
 #[derive(Debug)]
 pub(super) struct RetractingDecimalSumAccumulator {

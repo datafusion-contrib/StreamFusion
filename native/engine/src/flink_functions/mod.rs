@@ -1,5 +1,6 @@
 //! Flink scalar registrations and kernels for semantics that differ from DataFusion.
 
+use crate::expression_protocol::scalar_op;
 use arrow::array::{ArrayRef, Int64Array};
 use arrow::datatypes::{
     DataType, Int64Type, TimeUnit, TimestampMicrosecondType, TimestampMillisecondType,
@@ -116,221 +117,255 @@ const HEX_DIGITS: &[u8; 16] = b"0123456789ABCDEF";
 
 pub(crate) fn function(op: i64, arity: usize) -> Option<ScalarUDF> {
     Some(match op {
-        238 => string_classification::alpha(),
-        239 => string_classification::digit(),
-        240 => string_decimal::function(),
-        241 => numeric_classification::alpha(),
-        242 => numeric_classification::digit(),
-        243 => numeric_classification::decimal(),
-        244 => boolean_string::function(),
-        65 => sign::function(),
-        67 => ascii::function(),
-        81 => chr::function(),
-        100 => datafusion::functions::string::starts_with()
+        scalar_op::STRING_IS_ALPHA => string_classification::alpha(),
+        scalar_op::STRING_IS_DIGIT => string_classification::digit(),
+        scalar_op::STRING_TO_DECIMAL => string_decimal::function(),
+        scalar_op::NUMERIC_IS_ALPHA => numeric_classification::alpha(),
+        scalar_op::NUMERIC_IS_DIGIT => numeric_classification::digit(),
+        scalar_op::NUMERIC_TO_DECIMAL => numeric_classification::decimal(),
+        scalar_op::BOOLEAN_TO_LOWERCASE_STRING => boolean_string::function(),
+        scalar_op::SIGN => sign::function(),
+        scalar_op::ASCII => ascii::function(),
+        scalar_op::CHR => chr::function(),
+        scalar_op::STARTS_WITH => datafusion::functions::string::starts_with()
             .as_ref()
             .clone(),
-        101 => datafusion::functions::string::ends_with().as_ref().clone(),
-        235 => binary_boundary::starts_with(),
-        236 => binary_boundary::ends_with(),
-        102 => datafusion::functions::unicode::strpos().as_ref().clone(),
-        103 => ScalarUDF::new_from_impl(locate::FlinkLocate::new()),
-        104 => udf(
+        scalar_op::ENDS_WITH => datafusion::functions::string::ends_with().as_ref().clone(),
+        scalar_op::BINARY_STARTS_WITH => binary_boundary::starts_with(),
+        scalar_op::BINARY_ENDS_WITH => binary_boundary::ends_with(),
+        scalar_op::STRPOS => datafusion::functions::unicode::strpos().as_ref().clone(),
+        scalar_op::LOCATE => ScalarUDF::new_from_impl(locate::FlinkLocate::new()),
+        scalar_op::BIN => udf(
             "flink_bin",
             vec![DataType::Int64],
             DataType::Utf8,
             binary_strings::bin,
         ),
-        105 => udf(
+        scalar_op::HEX_INTEGER => udf(
             "flink_hex_int",
             vec![DataType::Int64],
             DataType::Utf8,
             binary_strings::hex_int,
         ),
-        106 => udf(
+        scalar_op::HEX_STRING => udf(
             "flink_hex_string",
             vec![DataType::Utf8],
             DataType::Utf8,
             |args| binary_strings::encode(args, false),
         ),
-        107 => udf(
+        scalar_op::TO_BASE64 => udf(
             "flink_to_base64",
             vec![DataType::Utf8],
             DataType::Utf8,
             |args| binary_strings::encode(args, true),
         ),
-        108 => udf(
+        scalar_op::UNHEX => udf(
             "flink_unhex",
             vec![DataType::Utf8],
             DataType::Binary,
             binary_strings::unhex,
         ),
-        109 => scalar::extremum(true),
-        110 => scalar::extremum(false),
-        111 => udf(
+        scalar_op::GREATEST => scalar::extremum(true),
+        scalar_op::LEAST => scalar::extremum(false),
+        scalar_op::INITCAP => udf(
             "flink_initcap",
             vec![DataType::Utf8],
             DataType::Utf8,
             scalar::initcap,
         ),
-        112 => udf(
+        scalar_op::TRANSLATE => udf(
             "flink_translate",
             vec![DataType::Utf8; 3],
             DataType::Utf8,
             scalar::translate,
         ),
-        113 => datafusion::functions::string::btrim().as_ref().clone(),
-        114 => scalar::elt_function(arity),
-        115 => udf(
+        scalar_op::TRIM => datafusion::functions::string::btrim().as_ref().clone(),
+        scalar_op::ELT => scalar::elt_function(arity),
+        scalar_op::URL_ENCODE => udf(
             "flink_url_encode",
             vec![DataType::Utf8],
             DataType::Utf8,
             scalar::url_encode,
         ),
-        116 => {
+        scalar_op::OVERLAY => {
             let mut types = vec![DataType::Int64; arity];
             for datatype in types.iter_mut().take(2) {
                 *datatype = DataType::Utf8;
             }
             udf("flink_overlay", types, DataType::Utf8, scalar::overlay)
         }
-        117 => udf(
+        scalar_op::URL_DECODE => udf(
             "flink_url_decode",
             vec![DataType::Utf8],
             DataType::Utf8,
             scalar::url_decode,
         ),
-        118 => udf(
+        scalar_op::URL_DECODE_ASCII => udf(
             "flink_url_decode_ascii",
             vec![DataType::Utf8],
             DataType::Utf8,
             scalar::url_decode_ascii,
         ),
-        120 => encode::function(),
-        121 => decode::function(),
-        122 => json_quote::function(),
-        123 => json_unquote::function(),
-        124 => split::function(),
-        125 => substring::function(arity),
-        126 => left::function(),
-        127 => right::function(),
-        128 => lpad::function(),
-        129 => rpad::function(),
-        130 => split_index::function(),
-        131 => to_date::function(),
-        133 => calendar::function(calendar::Field::Quarter),
-        134 => calendar::function(calendar::Field::Week),
-        135 => calendar::function(calendar::Field::DayOfYear),
-        136 => calendar::function(calendar::Field::DayOfWeek),
-        139 => datafusion::functions::string::ltrim().as_ref().clone(),
-        140 => datafusion::functions::string::rtrim().as_ref().clone(),
-        141 => json_value::function(),
-        142 => json_exists::function(),
-        144 => is_json::function(is_json::JsonType::Value),
-        145 => is_json::function(is_json::JsonType::Object),
-        146 => is_json::function(is_json::JsonType::Array),
-        147 => is_json::function(is_json::JsonType::Scalar),
-        148 => json_value::typed_function(json_value::ReturnType::Boolean),
-        149 => json_value::typed_function(json_value::ReturnType::Integer),
-        150 => json_value::typed_function(json_value::ReturnType::Double),
-        151 => binary_strings::base64_binary(),
-        152 => json_serialize::function(),
-        153 => json_object::function(),
-        154 => temporal_round::function(),
-        155 => timestamp_millis::function(timestamp_millis::Operation::Millis),
-        156 => timestamp_millis::function(timestamp_millis::Operation::SubtractMillis),
-        157 => timestamp_millis::function(timestamp_millis::Operation::SubtractMonths),
-        158 => if_null::function(),
-        159 => string_to_boolean::function(false),
-        160 => string_to_boolean::function(true),
-        161 => instr::function(arity),
-        162 => hash_code::function(),
-        165 => array_distinct::function(),
-        166 => datafusion::functions::string::uuid().as_ref().clone(),
-        167 => cardinality::function(),
-        168 => type_of::function(),
-        169 => array_copy::reverse(),
-        170 => array_slice::function(arity),
-        171 => array_constructor::function(arity, false),
-        172 => array_constructor::function(arity, true),
-        173 => unnest_temporal::function(unnest_temporal::Operation::EpochMillis),
-        174 => unnest_temporal::function(unnest_temporal::Operation::UtcDate),
-        175 => unnest_temporal::function(unnest_temporal::Operation::UtcTime),
-        176 => unnest_temporal::function(unnest_temporal::Operation::ZonedDate),
-        177 => unnest_temporal::function(unnest_temporal::Operation::ZonedTime),
-        178 => array_search::function(true),
-        179 => array_search::function(false),
-        180 => datafusion::functions_nested::min_max::array_min_udf()
+        scalar_op::ENCODE => encode::function(),
+        scalar_op::DECODE => decode::function(),
+        scalar_op::JSON_QUOTE => json_quote::function(),
+        scalar_op::JSON_UNQUOTE => json_unquote::function(),
+        scalar_op::SPLIT => split::function(),
+        scalar_op::SUBSTRING => substring::function(arity),
+        scalar_op::LEFT => left::function(),
+        scalar_op::RIGHT => right::function(),
+        scalar_op::LPAD => lpad::function(),
+        scalar_op::RPAD => rpad::function(),
+        scalar_op::SPLIT_INDEX => split_index::function(),
+        scalar_op::TO_DATE => to_date::function(),
+        scalar_op::QUARTER => calendar::function(calendar::Field::Quarter),
+        scalar_op::WEEK => calendar::function(calendar::Field::Week),
+        scalar_op::DAY_OF_YEAR => calendar::function(calendar::Field::DayOfYear),
+        scalar_op::DAY_OF_WEEK => calendar::function(calendar::Field::DayOfWeek),
+        scalar_op::LTRIM => datafusion::functions::string::ltrim().as_ref().clone(),
+        scalar_op::RTRIM => datafusion::functions::string::rtrim().as_ref().clone(),
+        scalar_op::JSON_VALUE => json_value::function(),
+        scalar_op::JSON_EXISTS => json_exists::function(),
+        scalar_op::IS_JSON_VALUE => is_json::function(is_json::JsonType::Value),
+        scalar_op::IS_JSON_OBJECT => is_json::function(is_json::JsonType::Object),
+        scalar_op::IS_JSON_ARRAY => is_json::function(is_json::JsonType::Array),
+        scalar_op::IS_JSON_SCALAR => is_json::function(is_json::JsonType::Scalar),
+        scalar_op::JSON_VALUE_BOOLEAN => {
+            json_value::typed_function(json_value::ReturnType::Boolean)
+        }
+        scalar_op::JSON_VALUE_INTEGER => {
+            json_value::typed_function(json_value::ReturnType::Integer)
+        }
+        scalar_op::JSON_VALUE_DOUBLE => json_value::typed_function(json_value::ReturnType::Double),
+        scalar_op::TO_BASE64_BINARY => binary_strings::base64_binary(),
+        scalar_op::JSON_SERIALIZE => json_serialize::function(),
+        scalar_op::JSON_OBJECT => json_object::function(),
+        scalar_op::TEMPORAL_ROUND => temporal_round::function(),
+        scalar_op::TIMESTAMP_MILLIS => {
+            timestamp_millis::function(timestamp_millis::Operation::Millis)
+        }
+        scalar_op::TIMESTAMP_SUBTRACT_MILLIS => {
+            timestamp_millis::function(timestamp_millis::Operation::SubtractMillis)
+        }
+        scalar_op::TIMESTAMP_SUBTRACT_MONTHS => {
+            timestamp_millis::function(timestamp_millis::Operation::SubtractMonths)
+        }
+        scalar_op::IF_NULL => if_null::function(),
+        scalar_op::STRING_TO_BOOLEAN => string_to_boolean::function(false),
+        scalar_op::TRY_STRING_TO_BOOLEAN => string_to_boolean::function(true),
+        scalar_op::INSTR => instr::function(arity),
+        scalar_op::HASH_CODE => hash_code::function(),
+        scalar_op::ARRAY_DISTINCT => array_distinct::function(),
+        scalar_op::UUID => datafusion::functions::string::uuid().as_ref().clone(),
+        scalar_op::CARDINALITY => cardinality::function(),
+        scalar_op::TYPE_OF => type_of::function(),
+        scalar_op::ARRAY_REVERSE => array_copy::reverse(),
+        scalar_op::ARRAY_SLICE => array_slice::function(arity),
+        scalar_op::ARRAY_CONSTRUCTOR => array_constructor::function(arity, false),
+        scalar_op::ARRAY_CONSTRUCTOR_COMPACT_TIMESTAMP => array_constructor::function(arity, true),
+        scalar_op::UNNEST_EPOCH_MILLIS => {
+            unnest_temporal::function(unnest_temporal::Operation::EpochMillis)
+        }
+        scalar_op::UNNEST_UTC_DATE => {
+            unnest_temporal::function(unnest_temporal::Operation::UtcDate)
+        }
+        scalar_op::UNNEST_UTC_TIME => {
+            unnest_temporal::function(unnest_temporal::Operation::UtcTime)
+        }
+        scalar_op::UNNEST_ZONED_DATE => {
+            unnest_temporal::function(unnest_temporal::Operation::ZonedDate)
+        }
+        scalar_op::UNNEST_ZONED_TIME => {
+            unnest_temporal::function(unnest_temporal::Operation::ZonedTime)
+        }
+        scalar_op::ARRAY_CONTAINS => array_search::function(true),
+        scalar_op::ARRAY_POSITION => array_search::function(false),
+        scalar_op::ARRAY_MIN => datafusion::functions_nested::min_max::array_min_udf()
             .as_ref()
             .clone(),
-        181 => datafusion::functions_nested::min_max::array_max_udf()
+        scalar_op::ARRAY_MAX => datafusion::functions_nested::min_max::array_max_udf()
             .as_ref()
             .clone(),
-        182 => array_edit::function(false),
-        183 => array_edit::function(true),
-        184 => array_remove::function(),
-        185 => array_concat::function(arity),
-        186 => datafusion::functions_nested::set_ops::array_union_udf()
+        scalar_op::ARRAY_APPEND => array_edit::function(false),
+        scalar_op::ARRAY_PREPEND => array_edit::function(true),
+        scalar_op::ARRAY_REMOVE => array_remove::function(),
+        scalar_op::ARRAY_CONCAT => array_concat::function(arity),
+        scalar_op::ARRAY_UNION => datafusion::functions_nested::set_ops::array_union_udf()
             .as_ref()
             .clone(),
-        187 => array_set::function(false),
-        188 => array_set::function(true),
-        189 => datafusion::functions_nested::sort::array_sort_udf()
+        scalar_op::ARRAY_EXCEPT => array_set::function(false),
+        scalar_op::ARRAY_INTERSECT => array_set::function(true),
+        scalar_op::ARRAY_SORT_DEFAULT => datafusion::functions_nested::sort::array_sort_udf()
             .as_ref()
             .clone(),
-        190 => element::function(false),
-        191 => map_arrays::function(),
-        192 => map_projection::function(0),
-        193 => map_projection::function(1),
-        194 => map_projection::function(2),
-        195 => map_union::function(arity),
-        196 => map_constructor::function(arity),
-        197 => datafusion::functions::core::named_struct().as_ref().clone(),
-        198 => datafusion::functions::core::named_struct().as_ref().clone(),
-        199 => datafusion::functions::core::named_struct().as_ref().clone(),
-        200 => array_join::function(arity),
-        201 => element::function(true),
-        202 => json_value::java_input_function(),
-        203 => calendar::function(calendar::Field::Year),
-        204 => calendar::function(calendar::Field::Month),
-        205 => calendar::function(calendar::Field::Day),
-        206 => calendar::function(calendar::Field::Hour),
-        207 => calendar::function(calendar::Field::Minute),
-        208 => calendar::function(calendar::Field::Second),
-        209 => calendar_round::function(),
-        210 => temporal_arithmetic::function(temporal_arithmetic::Operation::TimestampMillis),
-        211 => temporal_arithmetic::function(temporal_arithmetic::Operation::DateMillis),
-        212 => temporal_arithmetic::function(temporal_arithmetic::Operation::TimeMillis),
-        213 => temporal_arithmetic::function(temporal_arithmetic::Operation::DateMonths),
-        214 => temporal_arithmetic::function(temporal_arithmetic::Operation::TimestampMonths),
-        215 => temporal_extremum::function(arity, true),
-        216 => temporal_extremum::function(arity, false),
-        217 => array_sort::function(arity),
-        218 => abs::function(),
-        219 => negate::function(),
-        220 => array_set::union(),
-        221 => row_constructor::function(true),
-        222 => row_constructor::function(false),
-        223 => collection_string::split(),
-        224 => array_timsort::function(arity),
-        225 => map_constructor::binary_function(arity),
-        226 => collection_string::literal(),
-        227 => collection_string::map_input(),
-        228 => collection_string::extremum(true),
-        229 => collection_string::extremum(false),
-        230 => integral_round::function(false),
-        231 => integral_round::function(true),
-        232 => from_base64::function(),
-        237 => binary_character::function(),
-        245 => unnest_temporal::function(unnest_temporal::Operation::EpochSeconds),
-        246 => temporal_round::utc_ltz_ceil(),
-        247 => round_position::function(),
-        248 => integer_printf::function(),
-        249 => unnest_temporal::function(unnest_temporal::Operation::EpochPrecision),
-        250 => integer_printf::boolean_arguments(),
-        251 => decimal_epoch::function(false),
-        252 => decimal_epoch::function(true),
-        253 => json_array::function(),
-        254 => json_query::function(),
+        scalar_op::ELEMENT => element::function(false),
+        scalar_op::MAP_FROM_ARRAYS => map_arrays::function(),
+        scalar_op::MAP_KEYS => map_projection::function(0),
+        scalar_op::MAP_VALUES => map_projection::function(1),
+        scalar_op::MAP_ENTRIES => map_projection::function(2),
+        scalar_op::MAP_UNION => map_union::function(arity),
+        scalar_op::MAP_CONSTRUCTOR => map_constructor::function(arity),
+        scalar_op::ROW_CONSTRUCTOR => datafusion::functions::core::named_struct().as_ref().clone(),
+        scalar_op::OBJECT_OF => datafusion::functions::core::named_struct().as_ref().clone(),
+        scalar_op::OBJECT_UPDATE => datafusion::functions::core::named_struct().as_ref().clone(),
+        scalar_op::ARRAY_JOIN => array_join::function(arity),
+        scalar_op::ELEMENT_LEGACY_EXCEPTION => element::function(true),
+        scalar_op::JSON_VALUE_JAVA_INPUT => json_value::java_input_function(),
+        scalar_op::YEAR => calendar::function(calendar::Field::Year),
+        scalar_op::MONTH => calendar::function(calendar::Field::Month),
+        scalar_op::DAY => calendar::function(calendar::Field::Day),
+        scalar_op::HOUR => calendar::function(calendar::Field::Hour),
+        scalar_op::MINUTE => calendar::function(calendar::Field::Minute),
+        scalar_op::SECOND => calendar::function(calendar::Field::Second),
+        scalar_op::CALENDAR_ROUND => calendar_round::function(),
+        scalar_op::TIMESTAMP_ARITHMETIC_MILLIS => {
+            temporal_arithmetic::function(temporal_arithmetic::Operation::TimestampMillis)
+        }
+        scalar_op::DATE_ARITHMETIC_MILLIS => {
+            temporal_arithmetic::function(temporal_arithmetic::Operation::DateMillis)
+        }
+        scalar_op::TIME_ARITHMETIC_MILLIS => {
+            temporal_arithmetic::function(temporal_arithmetic::Operation::TimeMillis)
+        }
+        scalar_op::DATE_ARITHMETIC_MONTHS => {
+            temporal_arithmetic::function(temporal_arithmetic::Operation::DateMonths)
+        }
+        scalar_op::TIMESTAMP_ARITHMETIC_MONTHS => {
+            temporal_arithmetic::function(temporal_arithmetic::Operation::TimestampMonths)
+        }
+        scalar_op::TEMPORAL_GREATEST => temporal_extremum::function(arity, true),
+        scalar_op::TEMPORAL_LEAST => temporal_extremum::function(arity, false),
+        scalar_op::ARRAY_SORT => array_sort::function(arity),
+        scalar_op::ABS_INTEGER => abs::function(),
+        scalar_op::NEGATE_INTEGER => negate::function(),
+        scalar_op::ARRAY_UNION_STRUCTURAL => array_set::union(),
+        scalar_op::BINARY_ROW_CONSTRUCTOR => row_constructor::function(true),
+        scalar_op::OBJECT_CONSTRUCTOR => row_constructor::function(false),
+        scalar_op::COLLECTION_STRING_SPLIT => collection_string::split(),
+        scalar_op::ARRAY_TIMSORT => array_timsort::function(arity),
+        scalar_op::MAP_CONSTRUCTOR_BINARY => map_constructor::binary_function(arity),
+        scalar_op::COLLECTION_STRING_LITERAL => collection_string::literal(),
+        scalar_op::COLLECTION_STRING_MAP_INPUT => collection_string::map_input(),
+        scalar_op::STRING_ARRAY_MIN => collection_string::extremum(true),
+        scalar_op::STRING_ARRAY_MAX => collection_string::extremum(false),
+        scalar_op::ROUND_INTEGER => integral_round::function(false),
+        scalar_op::TRUNCATE_INTEGER => integral_round::function(true),
+        scalar_op::FROM_BASE64 => from_base64::function(),
+        scalar_op::BINARY_CHARACTER => binary_character::function(),
+        scalar_op::UNNEST_EPOCH_SECONDS => {
+            unnest_temporal::function(unnest_temporal::Operation::EpochSeconds)
+        }
+        scalar_op::UTC_LTZ_CEIL => temporal_round::utc_ltz_ceil(),
+        scalar_op::ROUND_POSITION => round_position::function(),
+        scalar_op::PRINTF_INTEGER => integer_printf::function(),
+        scalar_op::UNNEST_EPOCH_PRECISION => {
+            unnest_temporal::function(unnest_temporal::Operation::EpochPrecision)
+        }
+        scalar_op::PRINTF_BOOLEAN_ARGUMENTS => integer_printf::boolean_arguments(),
+        scalar_op::DECIMAL_EPOCH_MILLIS => decimal_epoch::function(false),
+        scalar_op::DECIMAL_EPOCH_SECONDS => decimal_epoch::function(true),
+        scalar_op::JSON_ARRAY => json_array::function(),
+        scalar_op::JSON_QUERY => json_query::function(),
         _ => return None,
     })
 }
