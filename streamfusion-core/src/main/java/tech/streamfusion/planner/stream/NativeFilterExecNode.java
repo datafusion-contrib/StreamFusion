@@ -1,6 +1,7 @@
 package tech.streamfusion.planner.stream;
 
 import java.util.Collections;
+import java.util.stream.IntStream;
 import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.table.planner.delegation.PlannerBase;
@@ -68,11 +69,15 @@ public class NativeFilterExecNode extends ExecNodeBase<ArrowBatch>
       PlannerBase planner, ExecNodeConfig config) {
     Transformation<ArrowBatch> input =
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
+    // Repeated input references need unique physical names for subsequent expression compilation.
+    String[] outputNames = IntStream.of(projection).distinct().count() == projection.length
+        ? null
+        : ((RowType) getOutputType()).getFieldNames().toArray(new String[0]);
     return ExecNodeUtil.createOneInputTransformation(
         input,
         createTransformationMeta(TRANSFORMATION, getDescription(), getDescription(), config),
         new NativeFilterOperator(
-            projection, kinds, payload, childCounts, longs, doubles, strings, udfBinding),
+            projection, kinds, payload, childCounts, longs, doubles, strings, udfBinding, outputNames),
         ArrowBatchTypeInformation.INSTANCE,
         input.getParallelism(),
         false);

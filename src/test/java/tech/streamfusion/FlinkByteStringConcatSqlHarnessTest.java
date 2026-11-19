@@ -13,6 +13,7 @@ import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.data.StringData;
+import org.apache.flink.table.data.TimestampData;
 import org.apache.flink.table.data.binary.BinaryStringData;
 import org.apache.flink.table.functions.ScalarFunction;
 import org.apache.flink.table.runtime.typeutils.InternalTypeInfo;
@@ -78,16 +79,33 @@ class FlinkByteStringConcatSqlHarnessTest {
   }
 
   @ParameterizedTest
+  @ValueSource(strings = {"id < 2049", "id < 2049 AND s IS NOT NULL"})
+  void watermarkAndNumericFilterForwardBytes(String predicate) throws Exception {
+    String sql = "SELECT s AS v FROM timed_src WHERE " + predicate;
+    List<String> expected = run(sql, false);
+    assertEquals("/w==", expected.get(0));
+    assertEquals("QeQ=", expected.get(1));
+    assertEquals(expected, run(sql, Route.NATIVE, Result.STRING, "NativeFilter"));
+  }
+
+  @Test
+  void byteOperationsRunAfterWatermarkAssignment() throws Exception {
+    String sql = "SELECT CONCAT(s, '!') AS v FROM timed_src WHERE id >= 2";
+    assertEquals(run(sql, false), run(sql, true));
+  }
+
+  @ParameterizedTest
   @ValueSource(
       strings = {
         "SELECT CONCAT(s, '!') FROM src WHERE s = 'a'",
         "SELECT LOWER(CONCAT(s, '!')) FROM src",
         "SELECT CONCAT(s, '!'), LOWER(t) FROM src",
+        "SELECT LOWER(s) FROM timed_src",
         "SELECT CONCAT(s, '!'), COUNT(*) FROM src GROUP BY CONCAT(s, '!')"
       })
   void unqualifiedConsumersKeepTheStockPlan(String sql) throws Exception {
     try (var metrics = new RecoveryExecutionMetrics()) {
-      var table = source(metrics);
+      var table = source(metrics, sql.contains("timed_src"));
       NativePlanner.install(table);
       String plan = table.explainSql(sql);
       assertFalse(plan.contains("RowDataToArrow"), plan);
@@ -149,15 +167,22 @@ class FlinkByteStringConcatSqlHarnessTest {
   }
 
   private static List<String> run(String sql, Route route, Result result) throws Exception {
+    return run(sql, route, result, "NativeCalc");
+  }
+
+  private static List<String> run(String sql, Route route, Result result, String nativeOperator)
+      throws Exception {
     try (var metrics = new RecoveryExecutionMetrics()) {
-      var table = source(metrics);
+      boolean timed = sql.contains("timed_src");
+      var table = source(metrics, timed);
       table.createTemporarySystemFunction("emit_bytes", EmitBytes.class);
       var scan = route == Route.HOST ? null : NativePlanner.install(table);
       if (route == Route.NATIVE) {
         String plan = table.explainSql(sql);
-        assertTrue(plan.contains("byteStrings="), plan);
-        assertTrue(plan.contains("NativeCalc"), plan);
+        assertTrue(plan.contains("byteStrings="), () -> plan + scan.fallbackReasons());
+        assertTrue(plan.contains(nativeOperator), plan);
         assertTrue(plan.contains("RowDataToArrow"), plan);
+        if (timed) assertTrue(plan.contains("NativeWatermarkAssigner"), plan);
       } else if (route == Route.FALLBACK) {
         String plan = table.explainSql(sql);
         assertFalse(plan.contains("RowDataToArrow"), plan);
@@ -191,7 +216,10 @@ class FlinkByteStringConcatSqlHarnessTest {
         assertTrue(
             scan.functionExecutions().stream().allMatch(execution -> execution.contains("jvm=[]")),
             scan.functionExecutions().toString());
-        RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeCalc");
+        RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), nativeOperator);
+        if (timed) {
+          RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeWatermarkAssigner");
+        }
       }
       return actual;
     }
@@ -203,30 +231,30 @@ class FlinkByteStringConcatSqlHarnessTest {
         : Base64.getEncoder().encodeToString(row.getString(field).toBytes());
   }
 
-  private static StreamTableEnvironment source(RecoveryExecutionMetrics metrics) {
+  private static StreamTableEnvironment source(RecoveryExecutionMetrics metrics, boolean timed) {
     var env = metrics.environment(new org.apache.flink.configuration.Configuration(), 1, 0);
     var table = StreamTableEnvironment.create(env);
-    var type =
-        ROW(
-            FIELD("id", INT()),
-            FIELD("s", STRING()),
-            FIELD("t", STRING()),
-            FIELD("unused", STRING()));
+    var fields = new ArrayList<>(
+        List.of(FIELD("id", INT()), FIELD("s", STRING()), FIELD("t", STRING()),
+            FIELD("unused", STRING())));
+    if (timed) fields.add(FIELD("rt", TIMESTAMP(3)));
+    var type = ROW(fields.toArray(new org.apache.flink.table.api.DataTypes.Field[0]));
     List<RowData> rows = new ArrayList<>();
     for (int i = 0; i < 2053; i++) {
       byte[] value = VALUES[i % VALUES.length];
-      rows.add(
-          GenericRowData.of(
-              i,
-              value == null ? null : BinaryStringData.fromBytes(value),
-              i % 7 == 0 ? null : BinaryStringData.fromBytes(new byte[] {(byte) 0xa9}),
-              BinaryStringData.fromBytes(new byte[] {(byte) 0xff})));
+      var row = new GenericRowData(fields.size());
+      row.setField(0, i);
+      row.setField(1, value == null ? null : BinaryStringData.fromBytes(value));
+      row.setField(2, i % 7 == 0 ? null : BinaryStringData.fromBytes(new byte[] {(byte) 0xa9}));
+      row.setField(3, BinaryStringData.fromBytes(new byte[] {(byte) 0xff}));
+      if (timed) row.setField(4, TimestampData.fromEpochMillis(1000L + i));
+      rows.add(row);
     }
-    table.createTemporaryView(
-        "src",
-        tech.streamfusion.compat.FlinkTestSources.fromData(
-            env, rows, InternalTypeInfo.of((RowType) type.getLogicalType())),
-        Schema.newBuilder().fromRowDataType(type).build());
+    var schema = Schema.newBuilder().fromRowDataType(type);
+    if (timed) schema.watermark("rt", "rt - INTERVAL '1' SECOND");
+    var stream = tech.streamfusion.compat.FlinkTestSources.fromData(
+        env, rows, InternalTypeInfo.of((RowType) type.getLogicalType()));
+    table.createTemporaryView(timed ? "timed_src" : "src", stream, schema.build());
     return table;
   }
 }

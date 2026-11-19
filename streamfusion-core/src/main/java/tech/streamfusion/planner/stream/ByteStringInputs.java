@@ -1,5 +1,7 @@
 package tech.streamfusion.planner.stream;
 
+import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.List;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.type.RelDataType;
@@ -7,32 +9,97 @@ import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink;
 import tech.streamfusion.planner.ColumnarInput;
 import tech.streamfusion.planner.HostStringInputs;
+import tech.streamfusion.planner.common.ExpressionKind;
+import tech.streamfusion.planner.common.ScalarOp;
 
-/**
- * Admits lossless string input only when every byte consumer and the final row exit are verified.
- */
+/** Tracks which logical STRING columns use Arrow Binary through byte-compatible operators. */
 final class ByteStringInputs {
   private ByteStringInputs() {}
 
   static RelNode prepare(RelNode root, boolean finalOutput) {
-    if (root instanceof StreamPhysicalSink && !(root instanceof ColumnarInput)) {
-      RelNode input = prepare(root.getInput(0), true);
+    // Keep the existing final-Calc route, including when its row producer guarantees UTF-8.
+    RelNode direct = prepareFinalCalc(root, finalOutput);
+    if (!hasUnverifiedIngress(direct)) return direct;
+    Prepared prepared = prepareTree(root, finalOutput);
+    if (prepared == null || (!finalOutput && !prepared.byteStrings.isEmpty())) return root;
+    return prepared.node;
+  }
+
+  private static RelNode prepareFinalCalc(RelNode root, boolean finalOutput) {
+    if (root instanceof StreamPhysicalSink && !(root instanceof ColumnarInput)
+        || root instanceof StreamPhysicalArrowToRowData && finalOutput) {
+      RelNode input = prepareFinalCalc(root.getInput(0), true);
       return input == root.getInput(0) ? root : root.copy(root.getTraitSet(), List.of(input));
     }
-    if (!finalOutput) return root;
-    if (root instanceof StreamPhysicalArrowToRowData) {
-      RelNode input = prepare(root.getInput(0), true);
-      return input == root.getInput(0) ? root : root.copy(root.getTraitSet(), List.of(input));
-    }
-    if (!(root instanceof StreamPhysicalNativeCalc)
+    if (!finalOutput || !(root instanceof StreamPhysicalNativeCalc)
         || !(root.getInput(0) instanceof StreamPhysicalRowDataToArrow)) return root;
     var calc = (StreamPhysicalNativeCalc) root;
-    if (((StreamPhysicalRowDataToArrow) root.getInput(0)).preservesCollections()) return root;
-    int[] columns = calc.byteStringInputColumns();
-    if (columns.length == 0) return root;
-    var input = ((StreamPhysicalRowDataToArrow) root.getInput(0)).withByteStringColumns(columns);
+    var input = (StreamPhysicalRowDataToArrow) calc.getInput(0);
+    BitSet columns = scalarStrings(input);
+    if (columns.isEmpty()) return root;
+    var used = new BitSet();
+    if (calc.byteStringOutputs(columns, used) == null || used.isEmpty()) return root;
+    input = input.withByteStringColumns(columns.stream().toArray());
     if (calc.hasStringPassthrough()) input = input.withStringCaches();
     return root.copy(root.getTraitSet(), List.of(input));
+  }
+
+  private static final class Prepared {
+    final RelNode node;
+    final BitSet byteStrings;
+
+    Prepared(RelNode node, BitSet byteStrings) {
+      this.node = node;
+      this.byteStrings = byteStrings;
+    }
+  }
+
+  private static Prepared prepareTree(RelNode node, boolean preserveOutputCaches) {
+    if (node instanceof StreamPhysicalRowDataToArrow) {
+      var transpose = (StreamPhysicalRowDataToArrow) node;
+      if (!transpose.needsUtf8Input() || HostStringInputs.guaranteesUtf8(transpose.getInput()))
+        return new Prepared(node, new BitSet());
+      BitSet columns = scalarStrings(transpose);
+      if (columns.isEmpty()) return null;
+      transpose = transpose.withByteStringColumns(columns.stream().toArray());
+      if (preserveOutputCaches) transpose = transpose.withStringCaches();
+      return new Prepared(transpose, columns);
+    }
+
+    boolean forwardsSchema =
+        node instanceof StreamPhysicalNativeWatermarkAssigner
+            || node instanceof StreamPhysicalNativeMiniBatchAssigner
+            || node instanceof StreamPhysicalNativeDropUpdateBefore;
+    boolean preserveInputCaches =
+        node instanceof StreamPhysicalArrowToRowData
+            || (forwardsSchema && preserveOutputCaches)
+            || node instanceof StreamPhysicalNativeCalc && preserveOutputCaches
+                && ((StreamPhysicalNativeCalc) node).hasStringPassthrough()
+            || node instanceof StreamPhysicalNativeFilter && preserveOutputCaches
+                && ((StreamPhysicalNativeFilter) node).hasStringPassthrough();
+    List<RelNode> inputs = new ArrayList<>(node.getInputs().size());
+    boolean changed = false;
+    BitSet output = new BitSet();
+    for (RelNode input : node.getInputs()) {
+      Prepared prepared = prepareTree(input, preserveInputCaches);
+      if (prepared == null) return null;
+      inputs.add(prepared.node);
+      changed |= prepared.node != input;
+      if (prepared.byteStrings.isEmpty() || node instanceof StreamPhysicalArrowToRowData) continue;
+      if (node instanceof StreamPhysicalNativeCalc) {
+        output =
+            ((StreamPhysicalNativeCalc) node).byteStringOutputs(prepared.byteStrings, new BitSet());
+        if (output == null) return null;
+      } else if (node instanceof StreamPhysicalNativeFilter) {
+        output = ((StreamPhysicalNativeFilter) node).byteStringOutputs(prepared.byteStrings);
+        if (output == null) return null;
+      } else if (forwardsSchema) {
+        output = prepared.byteStrings;
+      } else {
+        return null;
+      }
+    }
+    return new Prepared(changed ? node.copy(node.getTraitSet(), inputs) : node, output);
   }
 
   static boolean hasUnverifiedIngress(RelNode root) {
@@ -43,109 +110,134 @@ final class ByteStringInputs {
     return root.getInputs().stream().anyMatch(ByteStringInputs::hasUnverifiedIngress);
   }
 
-  static int[] columns(
+  private static BitSet scalarStrings(StreamPhysicalRowDataToArrow input) {
+    var columns = new BitSet();
+    if (input.preservesCollections()) return columns;
+    var fields = input.getRowType().getFieldList();
+    for (int i = 0; i < fields.size(); i++) {
+      var type = fields.get(i).getType();
+      // Nested values have a separate representation contract.
+      if (type.isStruct() || type.getComponentType() != null || type.getKeyType() != null)
+        return new BitSet();
+      if (SqlTypeFamily.CHARACTER.contains(type)) columns.set(i);
+    }
+    return columns;
+  }
+
+  static BitSet outputs(
       int[] kinds,
       int[] payload,
       int[] children,
       int[] projections,
       int condition,
-      RelDataType input,
-      RelDataType output) {
-    boolean[] consumedBytes = {false};
+      BitSet input,
+      RelDataType output,
+      BitSet used) {
+    var byteStrings = new BitSet();
     for (int i = 0; i < projections.length; i++) {
-      int root = projections[i];
-      boolean bytes =
-          (kinds[root] == 0 || isByteStringProducer(kinds[root], payload[root]))
-              && SqlTypeFamily.CHARACTER.contains(output.getFieldList().get(i).getType());
-      if (visit(root, bytes, kinds, payload, children, input, consumedBytes) < 0) return new int[0];
+      Expression expression = visit(projections[i], kinds, payload, children, input, used);
+      if (expression == null) return null;
+      if (expression.byteString) {
+        if (!SqlTypeFamily.CHARACTER.contains(output.getFieldList().get(i).getType())) return null;
+        byteStrings.set(i);
+      }
     }
-    if (condition >= 0
-        && visit(condition, false, kinds, payload, children, input, consumedBytes) < 0)
-      return new int[0];
-    if (!consumedBytes[0]) return new int[0];
-    // Nested strings retain their existing representation until all their consumers are qualified.
-    if (input.getFieldList().stream()
-        .anyMatch(
-            field ->
-                field.getType().isStruct()
-                    || field.getType().getComponentType() != null
-                    || field.getType().getKeyType() != null)) return new int[0];
-    return java.util.stream.IntStream.range(0, input.getFieldCount())
-        .filter(i -> SqlTypeFamily.CHARACTER.contains(input.getFieldList().get(i).getType()))
-        .toArray();
+    if (condition >= 0 && !supportsPredicate(condition, kinds, payload, children, input, used))
+      return null;
+    return byteStrings;
   }
 
-  private static boolean isByteStringProducer(int kind, int operation) {
-    return kind == 6 && (operation == 93 || operation == 94);
+  static boolean supportsPredicate(
+      int condition, int[] kinds, int[] payload, int[] children, BitSet input, BitSet used) {
+    Expression predicate = visit(condition, kinds, payload, children, input, used);
+    return predicate != null && !predicate.byteString;
+  }
+
+  private static final class Expression {
+    final int next;
+    final boolean byteString;
+
+    Expression(int next, boolean byteString) {
+      this.next = next;
+      this.byteString = byteString;
+    }
+  }
+
+  private static Expression visit(
+      int node, int[] kinds, int[] payload, int[] children, BitSet input, BitSet used) {
+    ExpressionKind kind = ExpressionKind.fromCode(kinds[node]);
+    if (kind == ExpressionKind.INPUT_REF) {
+      boolean bytes = input.get(payload[node]);
+      if (bytes) used.set(payload[node]);
+      return new Expression(node + 1, bytes);
+    }
+    switch (kind) {
+      case LIT_LONG:
+      case LIT_DOUBLE:
+      case LIT_STRING:
+      case LIT_BOOL:
+      case LIT_NULL:
+      case LIT_INT:
+      case LIT_SMALL:
+      case LIT_TINY:
+      case LIT_INTERVAL:
+      case LIT_DECIMAL:
+      case LIT_FLOAT:
+      case LIT_BINARY:
+      case LIT_TEMPORAL:
+      case LIT_TIMESTAMP:
+      case LIT_TYPED_NULL:
+      case CALL:
+      case CAST:
+      case CAST_NARROW:
+      case CAST_DECIMAL:
+      case DECIMAL_DIVIDE:
+      case DECIMAL_MOD:
+      case DECIMAL_ADD:
+      case DECIMAL_SUBTRACT:
+      case DECIMAL_MULTIPLY:
+      case DECIMAL_ROUND:
+      case DECIMAL_TRUNCATE:
+      case DECIMAL_FLOAT:
+      case INTEGER_TO_STRING:
+        break;
+      default:
+        return null;
+    }
+    int operation = kind == ExpressionKind.CALL ? payload[node] : -1;
+    int next = node + 1;
+    boolean hasByteInput = false;
+    for (int i = 0; i < children[node]; i++) {
+      Expression child = visit(next, kinds, payload, children, input, used);
+      if (child == null) return null;
+      if (child.byteString && !acceptsByteStringInput(operation)) return null;
+      hasByteInput |= child.byteString;
+      next = child.next;
+    }
+    boolean byteResult =
+        operation == ScalarOp.FROM_BASE64
+            || (hasByteInput && (operation == ScalarOp.CONCAT || operation == ScalarOp.CONCAT_WS));
+    return new Expression(next, byteResult);
   }
 
   private static boolean acceptsByteStringInput(int operation) {
     switch (operation) {
-      case 67: // ASCII
-      case 93: // CONCAT
-      case 94: // CONCAT_WS
-      case 95: // MD5
-      case 143: // SHA1
-      case 96: // SHA224
-      case 97: // SHA256
-      case 98: // SHA384
-      case 99: // SHA512
-      case 107: // TO_BASE64
-      case 232: // FROM_BASE64
+      case ScalarOp.IS_NULL:
+      case ScalarOp.IS_NOT_NULL:
+      case ScalarOp.ASCII:
+      case ScalarOp.CONCAT:
+      case ScalarOp.CONCAT_WS:
+      case ScalarOp.MD5:
+      case ScalarOp.SHA1:
+      case ScalarOp.SHA224:
+      case ScalarOp.SHA256:
+      case ScalarOp.SHA384:
+      case ScalarOp.SHA512:
+      case ScalarOp.TO_BASE64:
+      case ScalarOp.FROM_BASE64:
         return true;
       default:
         return false;
-    }
-  }
-
-  private static int visit(
-      int node,
-      boolean acceptsBytes,
-      int[] kinds,
-      int[] payload,
-      int[] children,
-      RelDataType input,
-      boolean[] consumedBytes) {
-    if (kinds[node] == 0) {
-      if (SqlTypeFamily.CHARACTER.contains(input.getFieldList().get(payload[node]).getType())) {
-        if (!acceptsBytes) return -1;
-        consumedBytes[0] = true;
-      }
-      return node + 1;
-    }
-    if (isByteStringProducer(kinds[node], payload[node]) && !acceptsBytes) return -1;
-    switch (kinds[node]) {
-      case 1:
-      case 2:
-      case 3:
-      case 4:
-      case 5:
-      case 7:
-      case 8:
-      case 9:
-      case 22:
-      case 23:
-      case 24:
-      case 29:
-      case 31:
-        return node + 1;
-      case 6:
-        int next = node + 1;
-        for (int i = 0; i < children[node]; i++) {
-          next =
-              visit(
-                  next,
-                  acceptsByteStringInput(payload[node]),
-                  kinds,
-                  payload,
-                  children,
-                  input,
-                  consumedBytes);
-          if (next < 0) return -1;
-        }
-        return next;
-      default:
-        return -1;
     }
   }
 }

@@ -1,11 +1,13 @@
 package tech.streamfusion.planner.stream;
 
+import java.util.BitSet;
 import java.util.List;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelTraitSet;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Calc;
 import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.InputProperty;
@@ -105,6 +107,23 @@ public class StreamPhysicalNativeFilter extends StreamPhysicalNativeSingleRel
     this.doubles = doubles;
     this.strings = strings;
     this.udfBinding = udfBinding;
+  }
+
+  BitSet byteStringOutputs(BitSet input) {
+    if (preservesCollections()
+        || (udfBinding != null && !udfBinding.isEmpty())
+        || !ByteStringInputs.supportsPredicate(0, kinds, payload, childCounts, input, new BitSet()))
+      return null;
+    var output = new BitSet();
+    for (int i = 0; i < projection.length; i++) {
+      if (input.get(projection[i])) output.set(i);
+    }
+    return output;
+  }
+
+  boolean hasStringPassthrough() {
+    return getRowType().getFieldList().stream()
+        .anyMatch(field -> SqlTypeFamily.CHARACTER.contains(field.getType()));
   }
 
   boolean preservesCollections() {

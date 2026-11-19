@@ -9,11 +9,13 @@ import org.apache.arrow.c.Data;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.util.TransferPair;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.table.functions.FunctionContext;
 import tech.streamfusion.Native;
+import tech.streamfusion.arrow.StringCacheColumns;
 import tech.streamfusion.compat.FlinkStreamOperator;
 
 /**
@@ -26,6 +28,7 @@ public class NativeFilterOperator extends FlinkStreamOperator<ArrowBatch>
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
 
   private final int[] projection;
+  private final String[] outputNames;
   private final int[] kinds;
   private final int[] payload;
   private final int[] childCounts;
@@ -48,6 +51,20 @@ public class NativeFilterOperator extends FlinkStreamOperator<ArrowBatch>
       double[] doubles,
       String[] strings,
       NativeUdf.Binding udfBinding) {
+    this(projection, kinds, payload, childCounts, longs, doubles, strings, udfBinding, null);
+  }
+
+  public NativeFilterOperator(
+      int[] projection,
+      int[] kinds,
+      int[] payload,
+      int[] childCounts,
+      long[] longs,
+      double[] doubles,
+      String[] strings,
+      NativeUdf.Binding udfBinding,
+      String[] outputNames) {
+    this.outputNames = outputNames;
     this.projection = projection;
     this.kinds = kinds;
     this.payload = payload;
@@ -137,14 +154,30 @@ public class NativeFilterOperator extends FlinkStreamOperator<ArrowBatch>
     for (int index : projection) {
       remainingUses[index]++;
     }
-    for (int index : projection) {
-      TransferPair pair = filtered.getVector(index).getTransferPair(allocator);
+    for (int field = 0; field < projection.length; field++) {
+      int index = projection[field];
+      var vector = filtered.getVector(index);
+      TransferPair pair =
+          outputNames == null
+              ? vector.getTransferPair(allocator)
+              : vector.getTransferPair(renamed(vector.getField(), outputNames[field]), allocator);
       if (--remainingUses[index] == 0) {
         pair.transfer();
       } else {
         pair.splitAndTransfer(0, filtered.getRowCount());
       }
       columns.add((FieldVector) pair.getTo());
+    }
+    var caches = StringCacheColumns.readers(filtered, filtered.getFieldVectors().size());
+    if (caches != null) {
+      for (int field = 0; field < projection.length; field++) {
+        var cache = caches[projection[field]];
+        if (cache == null) continue;
+        var pair =
+            cache.getTransferPair(renamed(cache.getField(), StringCacheColumns.name(field)), allocator);
+        pair.splitAndTransfer(0, filtered.getRowCount());
+        columns.add((FieldVector) pair.getTo());
+      }
     }
     // Carry the changelog tag: if the (filtered) batch has a $row_kind$ column, append it so the
     // projection stays changelog-safe — the rows were already filtered alongside it. A deterministic
@@ -160,6 +193,10 @@ public class NativeFilterOperator extends FlinkStreamOperator<ArrowBatch>
     VectorSchemaRoot result = new VectorSchemaRoot(columns);
     result.setRowCount(rows);
     return result;
+  }
+
+  private static Field renamed(Field field, String name) {
+    return new Field(name, field.getFieldType(), field.getChildren());
   }
 
   private boolean isIdentity(int columnCount) {
