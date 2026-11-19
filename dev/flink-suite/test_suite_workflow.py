@@ -17,7 +17,7 @@ WORKFLOW = Path(__file__).resolve().parents[2] / ".github/workflows/flink-suite.
 def command(name):
     path = WORKFLOW
     if name in ("Run unchanged upstream suite with StreamFusion", "Require declared runtime audit routes"):
-        path = WORKFLOW.with_name("flink-suite-line.yml")
+        path = WORKFLOW.with_name("flink-suite-jobs.yml")
     lines = path.read_text().splitlines()
     start = lines.index("      - name: " + name)
     start = next(i for i in range(start, len(lines)) if lines[i] == "        run: |") + 1

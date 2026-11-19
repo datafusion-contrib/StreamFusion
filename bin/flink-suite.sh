@@ -351,7 +351,8 @@ if [[ "${FLINK_SUITE_REUSE_BUILD:-false}" == "true" || "${FLINK_SUITE_REUSE_COMM
   echo "Reusing the existing Flink suite and StreamFusion build artifacts..."
 else
   echo "Building the test-JVM planner injection agent..."
-  python3 "${REPO_ROOT}/bin/ci-maven-dependencies.py" --pom "${AGENT_ROOT}/pom.xml" || exit $?
+  python3 "${REPO_ROOT}/bin/ci-maven-dependencies.py" \
+    --pom "${AGENT_ROOT}/pom.xml" --resolve-project || exit $?
   # Surefire discovers the provider and project-version launcher during execution.
   python3 "${REPO_ROOT}/bin/ci-maven-dependencies.py" \
     --artifact org.apache.maven.surefire:surefire-junit-platform:3.5.3 \

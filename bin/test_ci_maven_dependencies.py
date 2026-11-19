@@ -123,6 +123,14 @@ class MavenDependenciesTest(unittest.TestCase):
         self.assertEqual(PREPARE.GOAL, command[-1])
         self.assertFalse({"test", "verify", "package", "install"} & set(command))
 
+    def test_standalone_preparation_resolves_the_mediated_classpath(self):
+        options = self.options()
+        options.resolve_project = True
+        options.profile, options.projects, options.also_make = "", None, False
+        with patch.object(PREPARE.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run:
+            self.assertEqual(0, PREPARE.resolve(options))
+        self.assertEqual([PREPARE.GOAL, PREPARE.PROJECT_GOAL], run.call_args.args[0][-2:])
+
     def test_project_models_retry_without_building_or_resolving_reactor_artifacts(self):
         options = self.options()
         options.model_only = True

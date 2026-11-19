@@ -257,8 +257,9 @@ preallocated start timestamp. The ordinary Java jobs are named **Runtime, connec
 formats** because their selection includes all three; Doris's real-server suite remains a
 separate job. In Actions, **Test suites** groups the primary CI jobs, and **Flink 1.18**
 and **Flink 2.2** group the upstream jobs. Reused coverage skips these named groups before
-expanding their matrices. The upstream group supplies the Flink line in each check name,
-so child jobs use labels such as **Kafka** or **Runtime (shard 2)**. The two required
+expanding their matrices. Each Flink line also has an **Integration tests** group, which
+GitHub can display when upstream preparation fails before it expands the matrix. The group
+supplies the Flink line, so child jobs use labels such as **Kafka** or **Runtime (shard 2)**. The two required
 aggregate check names stay stable.
 
 GitHub cron is best effort: a requested fifteen-minute schedule can be delayed or dropped for
@@ -816,6 +817,9 @@ runs Maven offline after source/sink parity populates the same JDK 17 repository
 forks wait for explicit evidence that each started, so a fixed sleep no longer decides
 whether they overlap. The upstream agent pins the resources and JAR plugins and resolves its
 dependencies and Surefire provider in the bounded setup stage before an offline build.
+The [first qualification](https://github.com/jordepic/StreamFusion-contrib/actions/runs/44518286371/job/135540093866)
+showed that Maven 3.10.0's `go-offline` could leave a selected provided dependency missing.
+Preparation also runs `dependency:resolve` to populate Maven's mediated agent classpath.
 The Flink 1.18 upstream preparation also adds Paimon 2.0.0's remote-resources plugin and
 its dependencies to the transferred Maven repository. Cold preparation and connector source
 builds still need access to released artifacts. Test assertions and test JVMs have no retry policy.

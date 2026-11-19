@@ -12,6 +12,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 ARTIFACT_POM = ROOT / "dev/flink-suite/runtime-dependencies/pom.xml"
 GOAL = "org.apache.maven.plugins:maven-dependency-plugin:3.11.0:go-offline"
+PROJECT_GOAL = "org.apache.maven.plugins:maven-dependency-plugin:3.11.0:resolve"
 ARTIFACT_GOAL = "org.apache.maven.plugins:maven-dependency-plugin:3.11.0:get"
 MODEL_GOAL = "org.apache.maven.plugins:maven-help-plugin:3.5.1:evaluate"
 GRAPH_GOAL = "org.apache.maven.plugins:maven-dependency-plugin:3.11.0:tree"
@@ -52,6 +53,9 @@ def resolve(options):
             if options.model_only else [GOAL])
     if getattr(options, "graph", False):
         goal = [GRAPH_GOAL, "-DoutputType=json", "-DoutputFile=target/ci-maven-graph.json"]
+    if getattr(options, "resolve_project", False):
+        # go-offline visits dependencies separately from Maven's lifecycle mediation.
+        goal.append(PROJECT_GOAL)
     transitive = "false" if getattr(options, "no_transitive", False) else "true"
     commands = ([command + [ARTIFACT_GOAL, "-Dartifact=" + artifact, "-Dtransitive=" + transitive]
                  for artifact in options.artifact] if options.artifact else [command + goal])
@@ -97,6 +101,8 @@ def main():
                             help="Resolve an artifact's original transitive graph in an independent POM")
     resolution.add_argument("--model-only", action="store_true",
                             help="Resolve project models and build extensions before compiling an upstream reactor")
+    resolution.add_argument("--resolve-project", action="store_true",
+                            help="Prepare plugins and the exact mediated classpath of a standalone project")
     resolution.add_argument("--graph", action="store_true",
                             help="Record the mediated dependency graph without compiling reactor artifacts")
     return resolve(parser.parse_args())
