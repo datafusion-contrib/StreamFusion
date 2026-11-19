@@ -46,6 +46,9 @@ mvn -Pflink-1.18 -pl streamfusion-runtime -am clean test
 Use clean outputs when switching Flink lines. The [CI guide](ci.md) describes ordinary runtime
 shards, canonical restore inventories and native execution assertions. Core and deployment units
 execute in the first ordinary shard; runtime shards retain the cross-module invocation inventory.
+Canonical savepoint shards install dependencies with tests skipped, then execute their selected
+recovery cases through the workers. They do not repeat format-provider units using the narrower
+core/JSON/Kafka native payload. All module units still run for every ordinary Flink/JDK pair.
 Shared Java compilation archives include all owners and the utility artifact. A source move is
 not permission to remove an assertion, route check, recovery mode or parameterized invocation.
 

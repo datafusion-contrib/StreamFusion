@@ -890,11 +890,12 @@ jobs. These jobs consume the shared Maven preparation and overlap native work; c
 does not download or wait for a native library. They retain Java/protobuf compilation and
 javadoc checks, then inventory the canonical providers without executing their job bodies.
 The 16 routine consumer shards (40 for explicit exhaustive qualification) require both Java
-preparation and the native producer. The first
-shard in each Flink/JDK cohort executes the reactor dependencies' test lifecycle; the
-remaining shards skip dependency tests. Every shard runs its complete selected runtime
-inventory. This keeps once-per-cohort dependency-test coverage without delaying pure
-compilation behind the runtime queue.
+preparation and the native producer. Each consumer installs its reactor dependencies with
+tests skipped, then runs its complete selected runtime recovery inventory in the workers.
+Core and deployment-module units execute in the first **ordinary runtime** shard for each
+Flink/JDK pair, using the complete test-native payload. Canonical consumers retain the
+core/JSON/Kafka payload; running format-provider units during their dependency installation
+would require unrelated native libraries and duplicate ordinary-shard coverage.
 
 Each preparation uploads a one-day, exact-commit archive of the compiled module classes,
 non-native resources, test classes and their coverage inventory. Native libraries are supplied by
@@ -925,17 +926,18 @@ JARs, compared with 28,625,775 bytes of classes and other resources. Repacking o
 shared Java inputs at gzip level 1 produced 10,387,432 bytes, a 98.7% transfer reduction
 for that artifact. This measures archive size; it does not establish whole-CI savings.
 
-Consumers keep Maven's `test` lifecycle so uninstalled reactor dependencies resolve correctly.
+Consumers first use Maven's `install` lifecycle so the workers resolve the exact reactor dependencies.
 The explicit `sf.ci.precompiledJava=true` profile skips only Java compilation and the already
-completed javadoc check. Surefire remains active through `sf.runtime.tests.skip=false`;
-reactor dependency tests run in shard 1 for the same Flink/JDK pair. Protobuf/resource
-preparation and both Surefire executions retain their usual lifecycle behavior. Ordinary
-local builds and the other CI jobs do not activate this profile. A real three-module Maven
-regression transfers compiled outputs to a fresh consumer, verifies reactor dependency
-resolution and parameterized cases, and requires an intentional selected failure to fail Maven.
-The regression compiles without any native library, checks the first consumer executes
-dependency and runtime tests, then verifies a later consumer skips dependency tests while
-still running every parameterized runtime case.
+completed javadoc check. Installation skips both module and runtime tests. The workers invoke
+both runtime Surefire executions directly with `sf.runtime.tests.skip=false`, their selected
+includes and the ordinary/ORC tag filters. Protobuf/resource preparation retains its usual
+lifecycle behavior. Ordinary local builds and the other CI jobs do not activate this profile.
+Real multi-module Maven regressions transfer compiled outputs to a fresh consumer, verify
+dependency resolution and require intentional selected failures to fail Maven. They also
+execute module units in the ordinary cohort, then run the actual canonical launcher for both
+first and later shards: module units cannot repeat, while all parameterized, nested, inherited,
+disabled and ORC invocation identities match the unpartitioned runtime inventory. The generated
+canonical coverage inventory and per-invocation outcome audit remain required.
 
 The [retained baseline](benchmarks/ci-profile-20261112.json) records every canonical class's
 outcome counts, each cohort's complete inventory and invocation digest, and Actions phase costs.
