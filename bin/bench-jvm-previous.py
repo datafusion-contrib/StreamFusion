@@ -109,7 +109,7 @@ def main():
         native.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / "native/target/release" / library_name, native)
     fixture_hashes = copy_fixtures(ROOT, args.worktree, args.flink_line)
-    profile = "bench" + (",flink-1.18" if args.flink_line == "1.18" else "")
+    profile = "bench,benchmarks" + (",flink-1.18" if args.flink_line == "1.18" else "")
     base = ["mvn", "-B", "-ntp", "-P" + profile, "-pl", "streamfusion-runtime"]
     report = dict(
         runtime_revision=previous,

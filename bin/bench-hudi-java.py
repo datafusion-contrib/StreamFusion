@@ -25,7 +25,7 @@ FIXED = (
     "streamfusion-core/pom.xml", "streamfusion-hudi/pom.xml", "streamfusion-parquet/pom.xml",
     "streamfusion-hudi/src/nexmark", "streamfusion-runtime/src/test/java/tech/streamfusion/NexmarkMatrixBenchmark.java",
     "streamfusion-runtime/src/test/java/tech/streamfusion/NexmarkKafkaBenchmark.java",
-    "streamfusion-runtime/src/test/java/tech/streamfusion/SharedFlinkCluster.java",
+    "streamfusion-test-utils/src/main/java/tech/streamfusion/SharedFlinkCluster.java",
 )
 
 
@@ -119,7 +119,7 @@ def compare(args):
                                "SF_HUDI_BACKENDS": "memory", "SF_HUDI_MINIBATCHES": "false",
                                "TMPDIR": str(temporary)}
                 environment.pop("SF_HUDI_PROFILE", None)
-                command = ["mvn", "-B", "-ntp", "-Phudi,flink-1.18,bench,hudi-nexmark",
+                command = ["mvn", "-B", "-ntp", "-Phudi,flink-1.18,bench,benchmarks,hudi-nexmark",
                            "-pl", "streamfusion-hudi", "-am", "test", "-Dnative.build.skip=true",
                            "-Dnative.test.resource.skip=true", "-Dmaven.javadoc.skip=true",
                            "-Dsf.testForks=1", "-Dsurefire.failIfNoSpecifiedTests=false",

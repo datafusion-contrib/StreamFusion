@@ -69,7 +69,7 @@ def main():
             "micro_warmups": 1, "micro_observations_per_shape": 3,
             "production_handoff": "PaimonSourceMatcher translates retained partition equalities through ability schemas; physical/exec nodes pass the predicate to NativePaimonSource, which calls ReadBuilder.withFilter before creating ContinuousFileStoreSource. NATIVE_PRUNED uses that same released ReadBuilder API and production NativePaimonSplitReader, but applies the predicate directly rather than through SQL planning.",
             "sql_warmups_per_shape": 1,
-            "sql_command": "SF_PAIMON_PARTITION_SQL_BENCHMARK=true SF_PAIMON_PARTITION_ROWS=262144 SF_PAIMON_PARTITION_REPEATS=5 mvn -Pbench,paimon -pl streamfusion-paimon -am -Dnative.build.skip=true -Dtest=PaimonPartitionSqlBenchmark -Dsurefire.failIfNoSpecifiedTests=false test; add SF_PAIMON_PARTITION_REQUIRE_PRUNING=true for the candidate",
+            "sql_command": "SF_PAIMON_PARTITION_SQL_BENCHMARK=true SF_PAIMON_PARTITION_ROWS=262144 SF_PAIMON_PARTITION_REPEATS=5 mvn -Pbench,benchmarks,paimon -pl streamfusion-paimon -am -Dnative.build.skip=true -Dtest=PaimonPartitionSqlBenchmark -Dsurefire.failIfNoSpecifiedTests=false test; add SF_PAIMON_PARTITION_REQUIRE_PRUNING=true for the candidate",
             "sql_boundary": "Job startup, live result-prefix collection, Arrow-to-row output and cancellation; planning/setup/oracle outside timer. Only the all-partitions case collects every initial snapshot row.",
             "limitations": [
                 "Micro NATIVE_PRUNED is a direct read-builder comparison, not a before/after SQL planner run.",

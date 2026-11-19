@@ -68,7 +68,7 @@ def main():
         if not args.profiler_agent.is_file():
             parser.error("profiler agent is absent")
     args.output.mkdir(parents=True, exist_ok=True)
-    profile = "bench" + (",flink-1.18" if args.flink_line == "1.18" else "")
+    profile = "bench,benchmarks" + (",flink-1.18" if args.flink_line == "1.18" else "")
     base = ["mvn", "-B", "-ntp", "-P" + profile, "-pl", "streamfusion-runtime"]
     rows, warmups, runs = (2000, 1, 1) if args.smoke else (2000000, 2, 5)
     report = dict(

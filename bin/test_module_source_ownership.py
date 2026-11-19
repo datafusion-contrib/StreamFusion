@@ -13,7 +13,7 @@ NS = {"m": "http://maven.apache.org/POM/4.0.0"}
 
 
 class ModuleSourceOwnershipTest(unittest.TestCase):
-    def test_runtime_owns_the_shared_test_corpus_and_uses_its_default_java_root(self):
+    def test_runtime_owns_cross_module_tests_and_uses_its_default_java_root(self):
         self.assertFalse((ROOT / "src/test").exists())
         runtime = ET.parse(ROOT / "streamfusion-runtime/pom.xml").getroot()
         self.assertIsNone(runtime.find("m:build/m:testSourceDirectory", NS))
@@ -23,6 +23,20 @@ class ModuleSourceOwnershipTest(unittest.TestCase):
             pom = ET.parse(ROOT / module / "pom.xml").getroot()
             for element in pom.iter():
                 self.assertNotIn("${project.basedir}/../src/test", element.text or "", module)
+
+    def test_test_utilities_do_not_depend_on_a_deployable_module(self):
+        utility = ET.parse(ROOT / "streamfusion-test-utils/pom.xml").getroot()
+        for dependency in utility.findall("m:dependencies/m:dependency", NS):
+            self.assertNotEqual("tech.streamfusion", dependency.findtext("m:groupId", namespaces=NS))
+        for module in ("streamfusion-core", "streamfusion-runtime", "streamfusion-kafka",
+                       "streamfusion-parquet", "streamfusion-orc", "streamfusion-paimon",
+                       "streamfusion-paimon1", "streamfusion-delta", "streamfusion-fluss"):
+            pom = ET.parse(ROOT / module / "pom.xml").getroot()
+            utility_dependencies = [d for d in pom.findall("m:dependencies/m:dependency", NS)
+                                    if d.findtext("m:artifactId", namespaces=NS)
+                                    == "streamfusion-test-utils${streamfusion.artifact.suffix}"]
+            self.assertEqual(1, len(utility_dependencies), module)
+            self.assertEqual("test", utility_dependencies[0].findtext("m:scope", namespaces=NS))
 
     def test_runtime_assembles_artifacts_without_compiling_shared_production_sources(self):
         self.assertFalse(any((ROOT / "src/main").glob("java*")))

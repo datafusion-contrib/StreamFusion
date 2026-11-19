@@ -22,6 +22,17 @@
 
     <dependencies>
         <dependency>
+            <groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-test-utils${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version><scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-core${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version><type>test-jar</type><scope>test</scope>
+        </dependency>
+
+        <dependency>
             <groupId>tech.streamfusion</groupId><artifactId>streamfusion-core${streamfusion.artifact.suffix}</artifactId>
             <version>${project.version}</version>
         </dependency>
@@ -121,8 +132,8 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
             </plugin>
-            <!-- Publish the resource-only development assembly early, then its shared test harness,
-                 so downstream optional connector tests can consume both inside the reactor. -->
+            <!-- Publish the resource-only development assembly and integration fixtures early,
+                 so opt-in connector benchmarks can consume them inside the reactor. -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
@@ -136,8 +147,8 @@
                     </execution>
                     <execution>
                         <id>test-jar</id>
-                        <!-- Publish reusable parity and Nexmark test environments for downstream
-                             connector suites on the same early-reactor schedule as the main JAR. -->
+                        <!-- Shared correctness and Nexmark fixture contracts remain available to local
+                             connector benchmark profiles on the early reactor schedule. -->
                         <phase>process-test-classes</phase>
                         <goals><goal>test-jar</goal></goals>
                     </execution>

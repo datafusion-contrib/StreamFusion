@@ -161,7 +161,7 @@ def run(args):
             environment.pop(name, None)
         if diagnostic is not None:
             environment["SF_MATRIX_QUERIES"] = args.diagnostic_queries
-        command = ["mvn", "-B", "-ntp", "-Phudi,flink-1.18,bench,hudi-nexmark",
+        command = ["mvn", "-B", "-ntp", "-Phudi,flink-1.18,bench,benchmarks,hudi-nexmark",
                    "-pl", "streamfusion-hudi", "-am", "test", "-Dnative.build.skip=true",
                    "-Dnative.test.resource.skip=true", "-Dmaven.javadoc.skip=true", "-Dsf.testForks=1",
                    "-Dsurefire.failIfNoSpecifiedTests=false", "-Dtest=NexmarkHudiBenchmark",

@@ -12,13 +12,10 @@ import org.junit.jupiter.api.extension.BeforeAllCallback;
 import org.junit.jupiter.api.extension.BeforeEachCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import tech.streamfusion.compat.FlinkTestContexts;
-import tech.streamfusion.operator.NativeAllocator;
-import tech.streamfusion.operator.TaskOffHeapMemory;
 
 /**
- * Starts one MiniCluster on demand per launcher session, with fresh execution contexts
- * and native leak checks for every test. Launcher-session ownership closes the cluster when the
- * test run ends.
+ * Starts one MiniCluster on demand per launcher session, with fresh execution contexts and native
+ * leak checks for every test. Launcher-session ownership closes the cluster when the test run ends.
  */
 public final class SharedFlinkCluster
     implements BeforeAllCallback, AfterAllCallback, BeforeEachCallback, AfterEachCallback {
@@ -45,7 +42,7 @@ public final class SharedFlinkCluster
     config.set(TaskManagerOptions.TASK_OFF_HEAP_MEMORY, MemorySize.parse("48g"));
     // Direct operator test harnesses expose an empty mock TaskManager configuration. Initialize
     // the same process-wide authority here before either a harness or the shared MiniCluster opens.
-    TaskOffHeapMemory.initialize(config);
+    initializeResources(config);
     // Fail fast, never loop: checkpointing enables Flink's default infinite fixed-delay restarts,
     // under which a deterministically failing job restarts forever while collect() polls — a
     // silent multi-hour hang where a test failure should be. A real deployment tunes its own
@@ -74,7 +71,7 @@ public final class SharedFlinkCluster
   @Override
   public void beforeAll(ExtensionContext context) throws Exception {
     var cluster = session(context);
-    if (lazyStart()) TaskOffHeapMemory.initialize(configuration().getConfiguration());
+    if (lazyStart()) initializeResources(configuration().getConfiguration());
     else start(cluster);
   }
 
@@ -84,7 +81,7 @@ public final class SharedFlinkCluster
 
   private static void start(SessionCluster cluster) throws Exception {
     cluster.start();
-    TaskOffHeapMemory.initialize(cluster.getMiniCluster().getConfiguration());
+    initializeResources(cluster.getMiniCluster().getConfiguration());
   }
 
   @Override
@@ -110,46 +107,17 @@ public final class SharedFlinkCluster
     assertNativeMemoryReleased(context.getDisplayName());
   }
 
-  /**
-   * Asserts the native side is quiescent after every test, turning the whole suite into a standing
-   * leak audit: every native handle created over JNI must have been closed (a live handle is Rust
-   * memory the JVM's tooling cannot see), and the shared Arrow FFI allocator must hold zero bytes
-   * (a nonzero balance is an unclosed {@code VectorSchemaRoot} or a dropped C Data release
-   * callback, in either transfer direction — imports are registered as foreign allocations). The
-   * task pool must also release every reservation, including native state outside Arrow.
-   *
-   * <p>Task cleanup can trail the job result by a moment (source fetcher threads close
-   * asynchronously), so the check polls briefly before failing; when clean it costs one JNI call
-   * per loaded library.
-   */
   static void assertNativeMemoryReleased(String scenario) throws InterruptedException {
-    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-    String handles = NativeExtensionLoader.liveNativeHandles();
-    long allocated = NativeAllocator.SHARED.getAllocatedMemory();
-    long reserved = TaskOffHeapMemory.reservedBytes();
-    while ((!handles.isEmpty() || allocated != 0 || reserved != 0)
-        && System.nanoTime() < deadline) {
-      // Records a failed job dropped in flight are freed by the ArrowBatch cleaner backstop, which
-      // only runs once a GC notices they are unreachable — nudge it rather than waiting one out.
-      System.gc();
-      Thread.sleep(20);
-      handles = NativeExtensionLoader.liveNativeHandles();
-      allocated = NativeAllocator.SHARED.getAllocatedMemory();
-      reserved = TaskOffHeapMemory.reservedBytes();
-    }
-    if (!handles.isEmpty() || allocated != 0 || reserved != 0) {
-      throw new AssertionError(
-          "native memory outstanding after "
-              + scenario
-              + ": live native handles ["
-              + handles
-              + "], Arrow allocator holds "
-              + allocated
-              + " bytes, task pool reserves "
-              + reserved
-              + " bytes\n"
-              + NativeAllocator.SHARED.toVerboseString());
-    }
+    for (var audit : Resources.AUDITS) audit.assertReleased(scenario);
+  }
+
+  private static void initializeResources(Configuration configuration) {
+    for (var audit : Resources.AUDITS) audit.initialize(configuration);
+  }
+
+  private static final class Resources {
+    private static final java.util.List<TestResourceAudit> AUDITS =
+        TestResourceAudit.load(SharedFlinkCluster.class.getClassLoader());
   }
 
   @Override

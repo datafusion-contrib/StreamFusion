@@ -6,6 +6,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
+from benchmark_test_sources import fixture_source
+
 
 SPEC = importlib.util.spec_from_file_location(
     "bench_jvm_previous", Path(__file__).with_name("bench-jvm-previous.py")
@@ -52,7 +54,7 @@ class HistoricalFixturesTest(unittest.TestCase):
                 for relative, checksum in hashes.items():
                     copied = (worktree / relative).read_bytes()
                     source_relative = Path(relative).relative_to(layout or ".")
-                    self.assertEqual((BENCH.ROOT / "streamfusion-runtime" / source_relative).read_bytes(), copied)
+                    self.assertEqual(fixture_source(BENCH.ROOT, source_relative.relative_to("src/test")).read_bytes(), copied)
                     self.assertEqual(hashlib.sha256(copied).hexdigest(), checksum)
                 self.assertEqual("historical runtime\n", production.read_text())
                 self.assertEqual(

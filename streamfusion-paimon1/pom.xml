@@ -19,11 +19,15 @@
     <dependencies>
         <dependency>
             <groupId>tech.streamfusion</groupId>
-            <artifactId>streamfusion-runtime${streamfusion.artifact.suffix}</artifactId>
-            <version>${project.version}</version>
-            <type>test-jar</type>
-            <scope>test</scope>
+            <artifactId>streamfusion-test-utils${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version><scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-core${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version><type>test-jar</type><scope>test</scope>
+        </dependency>
+
         <dependency>
             <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-kafka${streamfusion.artifact.suffix}</artifactId>
@@ -217,7 +221,6 @@
                                         <include>**/PaimonSourceSqlTest.java</include>
                                         <include>**/PaimonBatchSqlTest.java</include>
                                         <include>**/PaimonBatchEncodingTest.java</include>
-                                        <include>**/PaimonBatchOperationsBenchmark.java</include>
                                         <include>**/PaimonOperatorDescriptionTest.java</include>
                                         <include>**/PaimonSplitWatermarksTest.java</include>
                                         <include>**/PaimonFetcherLifecycleTest.java</include>
@@ -227,7 +230,6 @@
                                         <include>**/PaimonCompactionMergeEngineTest.java</include>
                                         <include>**/PaimonMaintenanceTest.java</include>
                                         <include>**/PaimonCompactionFailureTest.java</include>
-                                        <include>**/PaimonCompactionBenchmark.java</include>
                                         <include>**/PaimonCompactionTestAdapter.java</include>
                                         <include>**/PaimonTimestampSqlTest.java</include>
                                     </includes>
@@ -291,6 +293,35 @@
         </plugins>
     </build>
     <profiles>
+        <profile>
+            <id>benchmarks</id>
+            <build><plugins>
+            <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-resources-plugin</artifactId>
+                <executions><execution>
+                    <id>shared-paimon-performance-sources</id><phase>generate-test-sources</phase>
+                    <goals><goal>copy-resources</goal></goals>
+                    <configuration>
+                        <outputDirectory>${project.build.directory}/generated-test-sources/paimon-benchmarks</outputDirectory>
+                        <resources><resource>
+                            <directory>${project.basedir}/../streamfusion-paimon/src/benchmark/java</directory>
+                            <filtering>false</filtering><includes>
+                                <include>**/PaimonBatchOperationsBenchmark.java</include>
+                                <include>**/PaimonCompactionBenchmark.java</include>
+                            </includes>
+                        </resource></resources>
+                    </configuration>
+                </execution></executions>
+            </plugin><plugin>
+                <groupId>org.codehaus.mojo</groupId><artifactId>build-helper-maven-plugin</artifactId>
+                <executions><execution>
+                    <id>legacy-paimon-performance-sources</id><phase>generate-test-sources</phase>
+                    <goals><goal>add-test-source</goal></goals>
+                    <configuration><sources>
+                        <source>${project.build.directory}/generated-test-sources/paimon-benchmarks</source>
+                    </sources></configuration>
+                </execution></executions>
+            </plugin></plugins></build>
+        </profile>
         <profile>
             <id>tpcds</id>
             <dependencies><dependency>

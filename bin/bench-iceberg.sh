@@ -47,7 +47,7 @@ if pathlib.Path('/proc/cpuinfo').exists():
 (output / 'environment.json').write_text(json.dumps(metadata, indent=2) + '\n')
 PY
 export SF_ICEBERG_BENCHMARK=true SF_ICEBERG_RELEASE_CONFIRMED=true
-mvn -B -ntp -f "${REPO_ROOT}/pom.xml" -Piceberg,iceberg-nexmark,bench \
+mvn -B -ntp -f "${REPO_ROOT}/pom.xml" -Piceberg,iceberg-nexmark,bench,benchmarks \
   -pl streamfusion-iceberg -am -Dtest=IcebergNexmarkBenchmark \
   -Dsurefire.failIfNoSpecifiedTests=false -Dmaven.javadoc.skip=true -Dnative.build.skip=true \
   "-Dnative.resource.directory=${staged}" "-Dsf.extraJvmArgs=-Djava.library.path='${staged}' -Xmx${SF_ICEBERG_JAVA_HEAP:-4g}" \
