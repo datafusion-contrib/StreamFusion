@@ -1098,7 +1098,9 @@ that produces a different representation, such as ASCII. The planner can then ad
 native operators that only see the resulting ordinary Arrow columns. Surviving byte-backed
 STRING columns can leave through the final row exit. Admission requires scalar input fields and
 compatible non-JVM expressions wherever a Calc receives these columns. Passthrough projections
-preserve the original bytes and their optional Java UTF-16 caches.
+preserve the original bytes and their optional Java UTF-16 caches. A filter that projects the
+same column under multiple names stores those names separately from the deployed filter's
+existing serialized configuration.
 `FROM_BASE64` can also read this representation in final projections. Its decoded result and
 wider compositions follow the existing [FROM_BASE64](#from_base64) rules.
 

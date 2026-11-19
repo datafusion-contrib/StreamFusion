@@ -23,6 +23,7 @@ import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.VarCharType;
 import org.apache.flink.types.RowKind;
+import org.apache.flink.util.InstantiationUtil;
 import org.junit.jupiter.api.Test;
 import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.arrow.ByteStringTransport;
@@ -158,10 +159,21 @@ class NativeFilterOperatorTest {
     var cold = BinaryStringData.fromBytes(bytes);
     var transpose =
         new RowDataToArrowOperator(inputType, 3, true, null, true, schema.serializeAsMessage());
+    var aliased =
+        new NativeAliasedFilterOperator(
+            new int[] {1, 0, 0},
+            new int[] {6, 0, 7},
+            new int[] {10, 1, 0},
+            new int[] {2, 0, 0},
+            new long[] {20},
+            new double[0],
+            new String[0],
+            NativeUdf.Binding.EMPTY,
+            new String[] {"v", "first", "second"});
+    var deployed = InstantiationUtil.clone(aliased, getClass().getClassLoader());
     try (var entry = new OneInputStreamOperatorTestHarness<RowData, ArrowBatch>(transpose);
         var filter = new OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch>(
-            numericFilter(new int[] {1, 0, 0}, new String[] {"v", "first", "second"}),
-            new ArrowBatchSerializer())) {
+            deployed, new ArrowBatchSerializer())) {
       entry.setup(new ArrowBatchSerializer());
       filter.setup(new ArrowBatchSerializer());
       entry.open();
@@ -194,7 +206,7 @@ class NativeFilterOperatorTest {
     }
   }
 
-  private static NativeFilterOperator numericFilter(int[] projection, String[] outputNames) {
+  private static NativeFilterOperator numericFilter(int[] projection) {
     return new NativeFilterOperator(
         projection,
         new int[] {6, 0, 7},
@@ -203,8 +215,7 @@ class NativeFilterOperatorTest {
         new long[] {20},
         new double[] {},
         new String[] {},
-        NativeUdf.Binding.EMPTY,
-        outputNames);
+        NativeUdf.Binding.EMPTY);
   }
 
   private static List<RowData> filter(
@@ -214,7 +225,7 @@ class NativeFilterOperatorTest {
       RowType outputType,
       boolean withRowKind)
       throws Exception {
-    NativeFilterOperator operator = numericFilter(projection, null);
+    NativeFilterOperator operator = numericFilter(projection);
     List<RowData> result = new ArrayList<>();
     try (BufferAllocator allocator = new RootAllocator();
         OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch> harness =

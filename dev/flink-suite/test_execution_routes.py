@@ -37,6 +37,9 @@ class RuntimeRoutesTest(unittest.TestCase):
                  {'NativeCalcOperator': 3}, 'unclassified'),
                 ([self.SOURCE, self.CALC, 'tech.streamfusion.operator.NativeFilterOperator', self.SINK],
                  {'NativeCalcOperator': 3}, 'unclassified'),
+                ([self.SOURCE, routes.ALIASED_FILTER_OPERATOR, self.SINK],
+                 {'NativeFilterOperator': 3}, 'native'),
+                ([self.SOURCE, routes.ALIASED_FILTER_OPERATOR, self.SINK], {}, 'unclassified'),
                 ([self.SOURCE, 'tech.streamfusion.operator.RowDataToArrowOperator', self.CALC,
                   'tech.streamfusion.operator.ArrowToRowDataOperator', self.SINK],
                  {'NativeCalcOperator': 3}, 'native')):

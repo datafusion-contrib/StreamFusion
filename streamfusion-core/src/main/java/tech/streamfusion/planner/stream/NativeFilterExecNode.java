@@ -15,6 +15,7 @@ import org.apache.flink.table.planner.plan.nodes.exec.utils.ExecNodeUtil;
 import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.ArrowBatchTypeInformation;
+import tech.streamfusion.operator.NativeAliasedFilterOperator;
 import tech.streamfusion.operator.NativeFilterOperator;
 import tech.streamfusion.operator.NativeUdf;
 
@@ -70,14 +71,24 @@ public class NativeFilterExecNode extends ExecNodeBase<ArrowBatch>
     Transformation<ArrowBatch> input =
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
     // Repeated input references need unique physical names for subsequent expression compilation.
-    String[] outputNames = IntStream.of(projection).distinct().count() == projection.length
-        ? null
-        : ((RowType) getOutputType()).getFieldNames().toArray(new String[0]);
+    NativeFilterOperator operator =
+        IntStream.of(projection).distinct().count() == projection.length
+            ? new NativeFilterOperator(
+                projection, kinds, payload, childCounts, longs, doubles, strings, udfBinding)
+            : new NativeAliasedFilterOperator(
+                projection,
+                kinds,
+                payload,
+                childCounts,
+                longs,
+                doubles,
+                strings,
+                udfBinding,
+                ((RowType) getOutputType()).getFieldNames().toArray(new String[0]));
     return ExecNodeUtil.createOneInputTransformation(
         input,
         createTransformationMeta(TRANSFORMATION, getDescription(), getDescription(), config),
-        new NativeFilterOperator(
-            projection, kinds, payload, childCounts, longs, doubles, strings, udfBinding, outputNames),
+        operator,
         ArrowBatchTypeInformation.INSTANCE,
         input.getParallelism(),
         false);

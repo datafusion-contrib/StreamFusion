@@ -27,8 +27,9 @@ import tech.streamfusion.compat.FlinkStreamOperator;
 public class NativeFilterOperator extends FlinkStreamOperator<ArrowBatch>
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
 
+  private static final long serialVersionUID = -1446464953855280087L;
+
   private final int[] projection;
-  private final String[] outputNames;
   private final int[] kinds;
   private final int[] payload;
   private final int[] childCounts;
@@ -51,20 +52,6 @@ public class NativeFilterOperator extends FlinkStreamOperator<ArrowBatch>
       double[] doubles,
       String[] strings,
       NativeUdf.Binding udfBinding) {
-    this(projection, kinds, payload, childCounts, longs, doubles, strings, udfBinding, null);
-  }
-
-  public NativeFilterOperator(
-      int[] projection,
-      int[] kinds,
-      int[] payload,
-      int[] childCounts,
-      long[] longs,
-      double[] doubles,
-      String[] strings,
-      NativeUdf.Binding udfBinding,
-      String[] outputNames) {
-    this.outputNames = outputNames;
     this.projection = projection;
     this.kinds = kinds;
     this.payload = payload;
@@ -150,6 +137,7 @@ public class NativeFilterOperator extends FlinkStreamOperator<ArrowBatch>
       return filtered;
     }
     List<FieldVector> columns = new ArrayList<>(projection.length + 1);
+    String[] outputNames = outputNames();
     int[] remainingUses = new int[filtered.getFieldVectors().size()];
     for (int index : projection) {
       remainingUses[index]++;
@@ -193,6 +181,10 @@ public class NativeFilterOperator extends FlinkStreamOperator<ArrowBatch>
     VectorSchemaRoot result = new VectorSchemaRoot(columns);
     result.setRowCount(rows);
     return result;
+  }
+
+  protected String[] outputNames() {
+    return null;
   }
 
   private static Field renamed(Field field, String name) {

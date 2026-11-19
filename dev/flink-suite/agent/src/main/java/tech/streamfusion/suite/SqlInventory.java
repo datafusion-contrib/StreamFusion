@@ -270,7 +270,7 @@ public final class SqlInventory {
 
   public static synchronized void completed(Object operator, int rows) {
     if (rows <= 0 || !tracked(operator)) return;
-    String name = operator.getClass().getSimpleName();
+    String name = NativeExecution.operatorKind(operator);
     active.nativeWork.merge(name, (long) rows, Long::sum);
     String job = OPERATORS.get(operator).job();
     Map<String, Long> work =
