@@ -19,9 +19,11 @@ if [[ ${1:-test} == prepare ]]; then
   resolver=(python3 "${REPO_ROOT}/bin/ci-maven-dependencies.py"
     --repository "${ICEBERG_MAVEN_REPO}")
   "${resolver[@]}" --resolve-project --pom "${STOCK_POM}" --define "flink.version=${FLINK_VERSION}"
-  "${resolver[@]}" --pom "${REPO_ROOT}/pom.xml" \
-    --profile iceberg,iceberg-upstream --projects streamfusion-iceberg --also-make \
-    --define "flink.version=${FLINK_VERSION}"
+  reactor=(--pom "${REPO_ROOT}/pom.xml" --profile iceberg,iceberg-upstream
+    --projects streamfusion-iceberg --also-make --define "flink.version=${FLINK_VERSION}")
+  "${resolver[@]}" "${reactor[@]}"
+  python3 "${REPO_ROOT}/bin/ci_maven_cache.py" complete-graph \
+    --repository "${ICEBERG_MAVEN_REPO}" -- "${reactor[@]}"
   "${resolver[@]}" \
     --artifact org.apache.maven.surefire:surefire-junit-platform:3.5.3 \
     --artifact org.apache.maven.surefire:surefire-junit-platform:3.2.5 \

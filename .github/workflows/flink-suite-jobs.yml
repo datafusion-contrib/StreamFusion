@@ -63,7 +63,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .flink-suite/iceberg-m2
-          key: iceberg-upstream-m2-${{ runner.os }}-${{ runner.arch }}-jdk17-${{ steps.iceberg-maven-version.outputs.value }}-${{ matrix.version }}-${{ hashFiles('**/pom.xml', 'bin/iceberg-suite.sh', 'bin/ci-maven-dependencies.py', 'dev/flink-suite/settings.xml') }}
+          key: iceberg-upstream-m2-${{ runner.os }}-${{ runner.arch }}-jdk17-${{ steps.iceberg-maven-version.outputs.value }}-${{ matrix.version }}-${{ hashFiles('**/pom.xml', 'bin/iceberg-suite.sh', 'bin/ci-maven-dependencies.py', 'bin/ci_maven_cache.py', 'dev/flink-suite/settings.xml') }}
           restore-keys: |
             iceberg-upstream-m2-${{ runner.os }}-${{ runner.arch }}-jdk17-${{ steps.iceberg-maven-version.outputs.value }}-${{ matrix.version }}-
       - name: Prepare the released Iceberg dependency classpaths

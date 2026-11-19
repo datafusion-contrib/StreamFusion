@@ -849,8 +849,10 @@ repository. A cold hosted run failed before the first test when Maven could not 
 `maven-resources-plugin:3.5.0`. The Iceberg job now prepares and caches a separate Maven
 repository for its stock fixture and native reactor, then runs both offline. Both phases use the
 published Flink planner. The shared upstream Flink repository contains a source-built planner at
-the same coordinates.
-[Iceberg resolution failure](https://github.com/jordepic/StreamFusion-contrib/actions/jobs/135592271862)
+the same coordinates. Preparation resolves the native reactor's mediated dependency graph too.
+The generic offline goal alone left Avro 1.11.4 absent even though the stock suite passed.
+[Iceberg resources plugin failure](https://github.com/jordepic/StreamFusion-contrib/actions/jobs/135592271862)
+[Iceberg native dependency failure](https://github.com/jordepic/StreamFusion-contrib/actions/jobs/135767760077)
 
 Shared runtime shards use the same offline Maven resolution mode exercised by the preparation smoke
 test. An archived Flink 1.18 shard reported an unresolved file in Surefire's provider classpath

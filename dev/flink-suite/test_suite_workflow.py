@@ -28,6 +28,31 @@ def command(name):
 
 
 class SuiteWorkflowTest(unittest.TestCase):
+    def test_iceberg_prepares_the_mediated_native_reactor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            python = root / "python3"
+            python.write_text('#!/bin/bash\nprintf "%s\n" "$@" done\n')
+            python.chmod(0o755)
+            runner = WORKFLOW.parents[2] / "bin/iceberg-suite.sh"
+            result = subprocess.run(
+                ["bash", str(runner), "prepare"],
+                env={**os.environ, "FLINK_VERSION": "2.2.1", "FLINK_SUITE_ROOT": str(root),
+                     "PATH": str(root) + os.pathsep + os.environ["PATH"]},
+                capture_output=True, text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            stock, native, graph, providers, end = result.stdout.split("done\n")
+            self.assertFalse(end)
+            reactor = ["--pom", str(WORKFLOW.parents[2] / "pom.xml"), "--profile", "iceberg,iceberg-upstream",
+                       "--projects", "streamfusion-iceberg", "--also-make", "--define", "flink.version=2.2.1"]
+            repository = ["--repository", str(root / "iceberg-m2")]
+            self.assertIn("--resolve-project", stock.splitlines())
+            self.assertEqual(repository + reactor, native.splitlines()[1:])
+            self.assertTrue(graph.splitlines()[0].endswith("/bin/ci_maven_cache.py"))
+            self.assertEqual(["complete-graph", *repository, "--", *reactor], graph.splitlines()[1:])
+            self.assertIn("org.apache.maven.surefire:surefire-junit-platform:3.5.3", providers.splitlines())
+
     def test_iceberg_uses_the_released_repository_offline_for_both_phases(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
