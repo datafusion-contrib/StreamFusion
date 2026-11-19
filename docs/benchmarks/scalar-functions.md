@@ -11273,6 +11273,25 @@ The [coverage contract](../operators/calc-filter.md#byte-preserving-string-input
 plan shape admitted by these measurements; broader representation work remains in
 [#622](https://github.com/datafusion-contrib/StreamFusion/issues/622).
 
+### Byte-backed strings through a streaming watermark
+
+`ByteStringConcatPipelineBenchmark` also measures a streaming watermark followed by either a
+numeric filter that forwards the original STRING or a filter and `CONCAT(s, '!')`. Both queries
+include a RowData source and a blackhole row sink. The input has two million 16-byte strings,
+with an invalid first byte every 1,000 rows, and the numeric predicate retains half the rows.
+StreamFusion's route includes both transposes, native watermark assignment, and the native
+filter or Calc. The benchmark asserts the Binary route and positive native consumption.
+The same queries used stock execution under the final-Calc-only ingress policy in #673.
+
+These release runs used Flink 2.2.1, JDK 17.0.17, the system allocator and parallelism one on an
+Apple M4. Each cohort alternated engines for three warmup pairs and five measured pairs.
+The times are complete-job seconds, reported as median (min–max).
+
+| Query after watermark assignment | Flink | StreamFusion |
+|---|---:|---:|
+| Numeric filter and passthrough | 0.484 (0.480–0.487) | 0.385 (0.378–0.394) |
+| Numeric filter and CONCAT | 0.528 (0.522–0.530) | 0.346 (0.340–0.351) |
+
 ### Byte-preserving CONCAT_WS
 
 The same prepared-input fixture also compares `CONCAT_WS(',', s, '!')` and a runtime separator

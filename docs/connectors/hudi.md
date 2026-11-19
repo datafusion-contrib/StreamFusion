@@ -354,7 +354,8 @@ and Nexmark harness separately require native Hudi source/sink execution.
 Stock Hudi row scans that expose unverified character columns need a verified
 byte-preserving consumer to enter a native plan. Otherwise the planner keeps the
 affected branch in Flink. The released Hudi 1.2.1 corpus records this explicit
-fallback in 186 of its 349 enabled invocations. The stock and accelerated runs
+fallback in 184 of its 349 enabled invocations. Two Debezium JSON invocations can retain
+native UPDATE_BEFORE filtering when their string columns are carried as Binary. The stock and accelerated runs
 keep the same results and test coverage, and the audit still requires positive
 work for the native operators that run.
 

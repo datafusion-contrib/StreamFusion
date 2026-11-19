@@ -55,8 +55,9 @@ their own supported idle-timeout behavior; this restriction applies only to the 
 assigner.
 
 The assigner can follow a columnar producer or a rowwise source leaf. The transition pass inserts
-the source-edge transpose when needed; the whole query still has to satisfy the
-[all-or-nothing island rule](index.md#the-all-or-nothing-island).
+the source-edge transpose when needed. The assigner can forward byte-backed STRING columns
+through an admitted native pipeline because the watermark reads only the rowtime column.
+The whole query still has to satisfy the [all-or-nothing island rule](index.md#the-all-or-nothing-island).
 
 Watermarks pushed into a source use the same expression admission and candidate evaluation. Source
 generators start at `Long.MIN_VALUE` and ignore NULL candidates, matching Flink's pushed generator.

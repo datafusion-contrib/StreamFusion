@@ -1,6 +1,7 @@
 package tech.streamfusion.planner.stream;
 
 import java.util.Collections;
+import java.util.stream.IntStream;
 import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.table.planner.delegation.PlannerBase;
@@ -14,6 +15,7 @@ import org.apache.flink.table.planner.plan.nodes.exec.utils.ExecNodeUtil;
 import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.ArrowBatchTypeInformation;
+import tech.streamfusion.operator.NativeAliasedFilterOperator;
 import tech.streamfusion.operator.NativeFilterOperator;
 import tech.streamfusion.operator.NativeUdf;
 
@@ -68,11 +70,25 @@ public class NativeFilterExecNode extends ExecNodeBase<ArrowBatch>
       PlannerBase planner, ExecNodeConfig config) {
     Transformation<ArrowBatch> input =
         (Transformation<ArrowBatch>) getInputEdges().get(0).translateToPlan(planner);
+    // Repeated input references need unique physical names for subsequent expression compilation.
+    NativeFilterOperator operator =
+        IntStream.of(projection).distinct().count() == projection.length
+            ? new NativeFilterOperator(
+                projection, kinds, payload, childCounts, longs, doubles, strings, udfBinding)
+            : new NativeAliasedFilterOperator(
+                projection,
+                kinds,
+                payload,
+                childCounts,
+                longs,
+                doubles,
+                strings,
+                udfBinding,
+                ((RowType) getOutputType()).getFieldNames().toArray(new String[0]));
     return ExecNodeUtil.createOneInputTransformation(
         input,
         createTransformationMeta(TRANSFORMATION, getDescription(), getDescription(), config),
-        new NativeFilterOperator(
-            projection, kinds, payload, childCounts, longs, doubles, strings, udfBinding),
+        operator,
         ArrowBatchTypeInformation.INSTANCE,
         input.getParallelism(),
         false);

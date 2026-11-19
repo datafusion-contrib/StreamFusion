@@ -19,6 +19,14 @@ batches. The header adjustment retains Arrow vectors, physical types and field m
 not transpose rows or copy column buffers. Downstream bounded operators therefore see one schema
 when input aliases differ, including when `UNION` adds a deduplication aggregate.
 
+## Byte-backed STRING
+
+A streaming UNION ALL can forward Arrow Binary for logical STRING when every branch carries
+the same byte-backed column positions. If those columns reach a row exit, each branch must
+produce them in a Calc without forwarding a Java string cache. This covers byte results from
+CONCAT and other qualified byte operations. A union of Binary and Utf8 for the same logical
+column, or a potentially cached string forwarded to the row exit, retains Flink evaluation.
+
 ## Final JSON_VALUE projections
 
 Direct character JSON_VALUE projections can feed a final UNION ALL and row sink when the JSON

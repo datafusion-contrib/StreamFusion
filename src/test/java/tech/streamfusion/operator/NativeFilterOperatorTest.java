@@ -1,6 +1,8 @@
 package tech.streamfusion.operator;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -13,13 +15,18 @@ import org.apache.flink.streaming.util.OneInputStreamOperatorTestHarness;
 import org.apache.flink.table.data.GenericArrayData;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
+import org.apache.flink.table.data.binary.BinaryStringData;
 import org.apache.flink.table.types.logical.ArrayType;
 import org.apache.flink.table.types.logical.BigIntType;
 import org.apache.flink.table.types.logical.IntType;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
+import org.apache.flink.table.types.logical.VarCharType;
 import org.apache.flink.types.RowKind;
+import org.apache.flink.util.InstantiationUtil;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.arrow.ArrowConversion;
+import tech.streamfusion.arrow.ByteStringTransport;
 
 class NativeFilterOperatorTest {
   private static final RowType SCHEMA =
@@ -135,6 +142,82 @@ class NativeFilterOperatorTest {
     assertEquals(8, rows.get(2).getLong(2));
   }
 
+  @Test
+  void repeatedByteStringProjectionPreservesOriginalBytesAndJavaCache() throws Exception {
+    RowType inputType =
+        RowType.of(
+            new LogicalType[] {new VarCharType(), new IntType()}, new String[] {"s", "v"});
+    RowType outputType =
+        RowType.of(
+            new LogicalType[] {new IntType(), new VarCharType(), new VarCharType()},
+            new String[] {"v", "first", "second"});
+    var schema = ByteStringTransport.inputSchema(ArrowConversion.toArrowSchema(inputType),
+        new int[] {0});
+    var bytes = new byte[] {(byte) 0xff};
+    var cached = BinaryStringData.fromBytes(bytes);
+    String decoded = cached.toString();
+    var cold = BinaryStringData.fromBytes(bytes);
+    var transpose =
+        new RowDataToArrowOperator(inputType, 3, true, null, true, schema.serializeAsMessage());
+    var aliased =
+        new NativeAliasedFilterOperator(
+            new int[] {1, 0, 0},
+            new int[] {6, 0, 7},
+            new int[] {10, 1, 0},
+            new int[] {2, 0, 0},
+            new long[] {20},
+            new double[0],
+            new String[0],
+            NativeUdf.Binding.EMPTY,
+            new String[] {"v", "first", "second"});
+    var deployed = InstantiationUtil.clone(aliased, getClass().getClassLoader());
+    try (var entry = new OneInputStreamOperatorTestHarness<RowData, ArrowBatch>(transpose);
+        var filter = new OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch>(
+            deployed, new ArrowBatchSerializer())) {
+      entry.setup(new ArrowBatchSerializer());
+      filter.setup(new ArrowBatchSerializer());
+      entry.open();
+      filter.open();
+
+      entry.processElement(new StreamRecord<>(GenericRowData.of(cold, 10)));
+      entry.processElement(new StreamRecord<>(GenericRowData.of(cached, 30)));
+      entry.processElement(new StreamRecord<>(GenericRowData.of(cold, 40)));
+      for (var record : entry.extractOutputStreamRecords()) {
+        filter.processElement(new StreamRecord<>(record.getValue()));
+      }
+      var batches = filter.extractOutputStreamRecords();
+      assertEquals(1, batches.size());
+      try (var root = batches.get(0).getValue().root()) {
+        assertEquals(2, root.getRowCount());
+        assertEquals("first", root.getVector(1).getName());
+        assertEquals("second", root.getVector(2).getName());
+        assertTrue(ByteStringTransport.isString(root.getSchema().getFields().get(1)));
+        assertTrue(ByteStringTransport.isString(root.getSchema().getFields().get(2)));
+        var reader = ArrowConversion.createArrowReader(root, outputType);
+        for (int column = 1; column <= 2; column++) {
+          var warmValue = (BinaryStringData) reader.read(0).getString(column);
+          assertArrayEquals(bytes, warmValue.toBytes());
+          assertEquals(decoded, warmValue.getJavaObject());
+          var coldValue = (BinaryStringData) reader.read(1).getString(column);
+          assertArrayEquals(bytes, coldValue.toBytes());
+          assertNull(coldValue.getJavaObject());
+        }
+      }
+    }
+  }
+
+  private static NativeFilterOperator numericFilter(int[] projection) {
+    return new NativeFilterOperator(
+        projection,
+        new int[] {6, 0, 7},
+        new int[] {10, 1, 0},
+        new int[] {2, 0, 0},
+        new long[] {20},
+        new double[] {},
+        new String[] {},
+        NativeUdf.Binding.EMPTY);
+  }
+
   private static List<RowData> filter(
       int[] projection,
       List<RowData> rows,
@@ -142,16 +225,7 @@ class NativeFilterOperatorTest {
       RowType outputType,
       boolean withRowKind)
       throws Exception {
-    NativeFilterOperator operator =
-        new NativeFilterOperator(
-            projection,
-            new int[] {6, 0, 7},
-            new int[] {10, 1, 0},
-            new int[] {2, 0, 0},
-            new long[] {20},
-            new double[] {},
-            new String[] {},
-            NativeUdf.Binding.EMPTY);
+    NativeFilterOperator operator = numericFilter(projection);
     List<RowData> result = new ArrayList<>();
     try (BufferAllocator allocator = new RootAllocator();
         OneInputStreamOperatorTestHarness<ArrowBatch, ArrowBatch> harness =

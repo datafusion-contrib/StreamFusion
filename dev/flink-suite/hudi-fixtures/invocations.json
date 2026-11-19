@@ -2437,16 +2437,14 @@
       "native_work": {},
       "fallback_reasons": [
         "Hudi sink: MOR Arrow writes require explicit SIMPLE bucket writers, Parquet logs, no metadata table, changelog storage or rewrite services",
-        "Hudi source: Only Hudi Parquet snapshot Source V2 reads are admitted",
-        "row source STRING has no verified UTF-8 or byte representation"
+        "Hudi source: Only Hudi Parquet snapshot Source V2 reads are admitted"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteAndReadDebeziumJson(org.apache.hudi.table.ITTestHoodieDataSource$ExecMode)]/[test-template-invocation:#2]": {
       "native_work": {},
       "fallback_reasons": [
         "Hudi sink: MOR Arrow writes require explicit SIMPLE bucket writers, Parquet logs, no metadata table, changelog storage or rewrite services",
-        "Hudi source: Only Hudi Parquet snapshot Source V2 reads are admitted",
-        "row source STRING has no verified UTF-8 or byte representation"
+        "Hudi source: Only Hudi Parquet snapshot Source V2 reads are admitted"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testWriteAndReadParMiddle(org.apache.hudi.table.ITTestHoodieDataSource$ExecMode)]/[test-template-invocation:#1]": {

@@ -1057,9 +1057,10 @@ see [release measurements](../benchmarks/scalar-functions.md#runtime-sha2-widths
 
 ### Byte-preserving string input
 
-A final native Calc immediately above a row-to-Arrow transpose can carry STRING inputs as Arrow
-Binary when every character input consumer has a verified byte contract: `CONCAT` / `||`,
-`CONCAT_WS`, `MD5`, `SHA1`, `SHA224`, `SHA256`, `SHA384`, `SHA512`, `TO_BASE64`, or `ASCII`.
+A streaming native Calc can carry STRING inputs as Arrow Binary when every consumer has a
+verified byte contract. Supported operations include direct projection, `IS NULL`,
+`IS NOT NULL`, `CONCAT` / `||`, `CONCAT_WS`, `MD5`, `SHA1`, `SHA224`, `SHA256`,
+`SHA384`, `SHA512`, `TO_BASE64`, and `ASCII`.
 Nested concatenations, runtime separators, character constants and simple
 independent numeric projections/filters are supported. These hashes consume the original bytes and return
 valid ASCII hex. Untyped NULL arrays and literals also produce typed STRING NULL results, including
@@ -1088,9 +1089,18 @@ Truncated `41E4` produces `41E421`; neither is replaced with `EFBFBD`.
 Tests compare raw bytes with released Flink and require positive NativeCalc consumption, including
 multiple batches, NULLs, embedded zeros, Unicode, nested CONCAT and all-filtered batches.
 
-This first admission requires a final row exit, a direct entry transpose, scalar input fields,
-and no JVM expressions. Direct string passthrough can accompany these expressions. Native Calc
-forwards the original byte buffer and optional Java UTF-16 cache with each passthrough output.
+At an unverified row ingress, the planner tracks byte-backed STRING columns through compatible
+Calcs and native filters, watermark and mini-batch assigners, UPDATE_BEFORE filters, and UNION ALL
+when every branch has the same byte-backed column positions and no surviving passthrough can
+expose a Java cache across the union. A numeric filter can forward
+a STRING unchanged. A projection can drop a byte-backed column or consume it in an operation
+that produces a different representation, such as ASCII. The planner can then admit other
+native operators that only see the resulting ordinary Arrow columns. Surviving byte-backed
+STRING columns can leave through the final row exit. Admission requires scalar input fields and
+compatible non-JVM expressions wherever a Calc receives these columns. Passthrough projections
+preserve the original bytes and their optional Java UTF-16 caches. A filter that projects the
+same column under multiple names stores those names separately from the deployed filter's
+existing serialized configuration.
 `FROM_BASE64` can also read this representation in final projections. Its decoded result and
 wider compositions follow the existing [FROM_BASE64](#from_base64) rules.
 
@@ -1101,7 +1111,7 @@ is tracked in [#498](https://github.com/datafusion-contrib/StreamFusion/issues/4
 
 The implementation shares the existing string writer's direct segment copy and cached Java-string
 encoding. Ordinary Utf8 concatenation continues to use its existing kernel. Representation selection
-is deliberately limited to the qualified plan shape while broader consumers are adapted.
+is decided during planning and remains consistent across batches.
 See the [prepared and complete-job measurements](../benchmarks/scalar-functions.md#byte-preserving-concat)
 for its performance relative to stock Flink and the existing Utf8 path.
 

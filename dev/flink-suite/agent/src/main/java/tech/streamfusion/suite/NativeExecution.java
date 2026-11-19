@@ -234,11 +234,18 @@ public final class NativeExecution {
     }
   }
 
+  static String operatorKind(Object operator) {
+    Class<?> type = operator.getClass();
+    return type.getName().equals("tech.streamfusion.operator.NativeAliasedFilterOperator")
+        ? type.getSuperclass().getSimpleName()
+        : type.getSimpleName();
+  }
+
   public static synchronized void opened(Object operator) {
     SqlInventory.opened(operator);
     if (active != null) {
       OPERATORS.putIfAbsent(operator, active);
-      String kind = operator.getClass().getSimpleName();
+      String kind = operatorKind(operator);
       active.opened.add(kind);
       if (kind.equals("NativeColumnarJvmGroupOperator")
           && Boolean.getBoolean("streamfusion.flink-suite.canonical")) {
@@ -391,15 +398,13 @@ public final class NativeExecution {
     synchronized (NativeExecution.class) {
       Scope scope = OPERATORS.get(operator);
       if (scope != null && scope == active) {
+        String kind = operatorKind(operator);
         Long imported = scope.managedGroupImports.get(operator);
         if (imported != null && scope.resumedManagedGroups.add(operator))
-          scope.importedRows.merge(operator.getClass().getSimpleName(), imported, Long::sum);
-        scope.rows.merge(operator.getClass().getSimpleName(), (long) rows, Long::sum);
+          scope.importedRows.merge(kind, imported, Long::sum);
+        scope.rows.merge(kind, (long) rows, Long::sum);
         String contract = CONTRACTS.get(scope.test).get(scope.variant);
-        if (operator
-                .getClass()
-                .getSimpleName()
-                .equals("NativeColumnarGlobalWindowAggregateOperator")
+        if (kind.equals("NativeColumnarGlobalWindowAggregateOperator")
             && (contract.contains("_Slice") || contract.contains("_Final"))) {
           try {
             boolean finalWindow =

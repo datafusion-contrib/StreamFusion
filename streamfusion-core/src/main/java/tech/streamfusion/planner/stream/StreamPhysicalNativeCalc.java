@@ -1,5 +1,6 @@
 package tech.streamfusion.planner.stream;
 
+import java.util.BitSet;
 import java.util.List;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelTraitSet;
@@ -144,10 +145,10 @@ public class StreamPhysicalNativeCalc extends StreamPhysicalNativeSingleRel
     return udfBinding != null && udfBinding.hasUserFunctions();
   }
 
-  int[] byteStringInputColumns() {
-    if (udfBinding != null && !udfBinding.isEmpty()) return new int[0];
-    return ByteStringInputs.columns(kinds, payload, childCounts, projectionRoots, conditionRoot,
-        getInput().getRowType(), getRowType());
+  BitSet byteStringOutputs(BitSet input, BitSet used) {
+    if (preservesCollections() || udfBinding != null && !udfBinding.isEmpty()) return null;
+    return ByteStringInputs.outputs(
+        kinds, payload, childCounts, projectionRoots, conditionRoot, input, getRowType(), used);
   }
 
   boolean hasStringPassthrough() {

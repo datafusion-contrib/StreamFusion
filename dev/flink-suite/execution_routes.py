@@ -62,6 +62,7 @@ SINK_OPERATORS = {
     'org.apache.flink.streaming.runtime.operators.sink.SinkWriterOperator',
     'org.apache.flink.table.runtime.operators.sink.SinkOperator',
 }
+ALIASED_FILTER_OPERATOR = 'tech.streamfusion.operator.NativeAliasedFilterOperator'
 NATIVE_OPERATORS = {
     'tech.streamfusion.operator.' + name for name in (
         'NativeBatchSortOperator', 'NativeBatchAggregateOperator', 'NativeBatchJoinOperator',
@@ -73,7 +74,7 @@ NATIVE_OPERATORS = {
         'NativeColumnarTableFunctionOperator',
         'NativeColumnarUpdatingJoinOperator', 'NativeColumnarTopNOperator',
         'NativeColumnarGlobalWindowAggregateOperator')
-}
+} | {ALIASED_FILTER_OPERATOR}
 BATCH_NATIVE_OPERATORS = {
     'tech.streamfusion.operator.' + name for name in (
         'NativeCalcOperator', 'NativeFilterOperator', 'NativeBatchSortOperator',
@@ -225,7 +226,10 @@ def job_route(result, row=None):
     if not host <= host_classes:
         return 'unclassified'
     work = result.get('native_work', {})
-    expected = {name.rsplit('.', 1)[1] for name in native}
+    expected = {
+        'NativeFilterOperator' if name == ALIASED_FILTER_OPERATOR else name.rsplit('.', 1)[1]
+        for name in native
+    }
     if confirmed_failure:
         if (not set(work) <= expected
                 or graph['job_type'] == 'BATCH' and not native <= BATCH_NATIVE_OPERATORS):

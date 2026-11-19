@@ -14,3 +14,9 @@ The Arrow bridge checks the string leaves of imported data, including nested con
 dictionary values. Arrow validates offsets and element boundaries, so adjacent byte slices each
 have to be valid strings even when their combined buffer is valid UTF-8. Conforming buffers retain
 their existing ownership and storage.
+
+For a streaming row entrance with unverified strings, the planner follows the Binary
+representation through qualified Calcs and operators that forward the input schema.
+Logical types stay unchanged. An unrecognized consumer may use ordinary Arrow types
+once a Calc has dropped or consumed all byte-backed columns. A surviving byte-backed STRING
+leaves the native plan through the Flink row exit.

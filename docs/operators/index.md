@@ -50,7 +50,9 @@ guarantees valid string bytes, including nested string values. Generic `RowData`
 The JNI bridge checks imported string buffers and element boundaries before creating typed
 Arrow arrays, including string values in nested containers and callback results. This check
 reports a producer contract violation. Compatible byte-preserving routes retain Flink's original
-bytes in Arrow Binary.
+bytes in Arrow Binary. In streaming plans, byte-backed columns can flow through compatible
+Calcs and forwarding operators. The planner checks each consumer and can continue with ordinary
+native operators once projections remove the remaining byte-backed columns.
 
 ## Optional native probe failures
 
