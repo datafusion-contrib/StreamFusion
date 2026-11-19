@@ -43,7 +43,8 @@ public final class NestedRepresentation {
     return field.getType() instanceof ArrowType.Struct
         && (field.getChildren().size() == 2 || field.getChildren().size() == 3)
         && "1".equals(field.getChildren().get(0).getMetadata().get(STRING))
-        && field.getChildren().get(0).getType() instanceof ArrowType.Utf8
+        && (field.getChildren().get(0).getType() instanceof ArrowType.Utf8
+            || ByteStringTransport.isString(field.getChildren().get(0)))
         && field.getChildren().get(0).getName().equals("utf8")
         && field.getChildren().get(1).getName().equals("java")
         && field.getChildren().get(1).getType() instanceof ArrowType.List;

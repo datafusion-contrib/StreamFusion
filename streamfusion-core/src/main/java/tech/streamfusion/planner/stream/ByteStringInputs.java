@@ -20,7 +20,7 @@ final class ByteStringInputs {
     // Keep the existing final-Calc route, including when its row producer guarantees UTF-8.
     RelNode direct = prepareFinalCalc(root, finalOutput);
     if (!hasUnverifiedIngress(direct)) return direct;
-    Prepared prepared = prepareTree(root, finalOutput);
+    Prepared prepared = prepareTree(root, finalOutput, finalOutput);
     if (prepared == null || (!finalOutput && !prepared.byteStrings.isEmpty())) return root;
     return prepared.node;
   }
@@ -35,6 +35,7 @@ final class ByteStringInputs {
         || !(root.getInput(0) instanceof StreamPhysicalRowDataToArrow)) return root;
     var calc = (StreamPhysicalNativeCalc) root;
     var input = (StreamPhysicalRowDataToArrow) calc.getInput(0);
+    if (input.preservesCollections()) return root;
     BitSet columns = scalarStrings(input);
     if (columns.isEmpty()) return root;
     var used = new BitSet();
@@ -47,14 +48,21 @@ final class ByteStringInputs {
   private static final class Prepared {
     final RelNode node;
     final BitSet byteStrings;
+    final boolean representedStrings;
 
     Prepared(RelNode node, BitSet byteStrings) {
+      this(node, byteStrings, false);
+    }
+
+    Prepared(RelNode node, BitSet byteStrings, boolean representedStrings) {
       this.node = node;
       this.byteStrings = byteStrings;
+      this.representedStrings = representedStrings;
     }
   }
 
-  private static Prepared prepareTree(RelNode node, boolean preserveOutputCaches) {
+  private static Prepared prepareTree(
+      RelNode node, boolean preserveOutputCaches, boolean exitsToRows) {
     if (node instanceof StreamPhysicalRowDataToArrow) {
       var transpose = (StreamPhysicalRowDataToArrow) node;
       if (!transpose.needsUtf8Input() || HostStringInputs.guaranteesUtf8(transpose.getInput()))
@@ -62,8 +70,10 @@ final class ByteStringInputs {
       BitSet columns = scalarStrings(transpose);
       if (columns.isEmpty()) return null;
       transpose = transpose.withByteStringColumns(columns.stream().toArray());
-      if (preserveOutputCaches) transpose = transpose.withStringCaches();
-      return new Prepared(transpose, columns);
+      if (preserveOutputCaches && !transpose.preservesCollections()) {
+        transpose = transpose.withStringCaches();
+      }
+      return new Prepared(transpose, columns, transpose.preservesCollections());
     }
 
     boolean union = node instanceof StreamPhysicalNativeUnion;
@@ -81,14 +91,17 @@ final class ByteStringInputs {
     List<RelNode> inputs = new ArrayList<>(node.getInputs().size());
     boolean changed = false;
     BitSet output = null;
+    boolean represented = false;
+    boolean inputExitsToRows = node instanceof StreamPhysicalArrowToRowData;
     for (RelNode input : node.getInputs()) {
-      Prepared prepared = prepareTree(input, preserveInputCaches);
+      Prepared prepared = prepareTree(input, preserveInputCaches, inputExitsToRows);
       if (prepared == null) return null;
       inputs.add(prepared.node);
       changed |= prepared.node != input;
       if (union) {
         // Downstream operators may compile against the first batch's physical column types.
-        if (output != null && !output.equals(prepared.byteStrings)) return null;
+        if (prepared.representedStrings || output != null && !output.equals(prepared.byteStrings))
+          return null;
         // A stock union can serialize its inputs and clear Java caches. Only admit surviving
         // byte results here when their producing Calc created them without a cache.
         if (preserveOutputCaches
@@ -101,33 +114,40 @@ final class ByteStringInputs {
       if (prepared.byteStrings.isEmpty() || node instanceof StreamPhysicalArrowToRowData) continue;
       if (node instanceof StreamPhysicalNativeCalc) {
         var calc = (StreamPhysicalNativeCalc) node;
-        output = calc.byteStringOutputs(prepared.byteStrings, new BitSet());
+        output = prepared.representedStrings ? null
+            : calc.byteStringOutputs(prepared.byteStrings, new BitSet());
         if (output == null) {
           // The generated evaluator must see the original bytes and any original Java cache.
-          Prepared originalText = preserveInputCaches ? prepared : prepareTree(input, true);
+          Prepared originalText = preserveInputCaches ? prepared
+              : prepareTree(input, true, inputExitsToRows);
           if (originalText == null) return null;
           output = new BitSet();
-          var adaptive = calc.withAdaptiveText(originalText.node, originalText.byteStrings, output);
+          var adaptive = calc.withAdaptiveText(originalText.node, originalText.byteStrings,
+              originalText.representedStrings, output, exitsToRows);
           return adaptive == null ? null : new Prepared(adaptive, output);
         }
       } else if (node instanceof StreamPhysicalNativeFilter) {
         var filter = (StreamPhysicalNativeFilter) node;
-        output = filter.byteStringOutputs(prepared.byteStrings);
+        output = prepared.representedStrings ? null : filter.byteStringOutputs(prepared.byteStrings);
         if (output == null) {
-          Prepared originalText = preserveInputCaches ? prepared : prepareTree(input, true);
+          Prepared originalText = preserveInputCaches ? prepared
+              : prepareTree(input, true, inputExitsToRows);
           if (originalText == null) return null;
           output = new BitSet();
-          var adaptive = filter.withAdaptiveText(originalText.node, originalText.byteStrings, output);
+          var adaptive = filter.withAdaptiveText(originalText.node, originalText.byteStrings,
+              originalText.representedStrings, output, exitsToRows);
           return adaptive == null ? null : new Prepared(adaptive, output);
         }
       } else if (forwardsSchema) {
         output = prepared.byteStrings;
+        represented = prepared.representedStrings;
       } else {
         return null;
       }
     }
     BitSet byteStrings = output == null ? new BitSet() : output;
-    return new Prepared(changed ? node.copy(node.getTraitSet(), inputs) : node, byteStrings);
+    return new Prepared(changed ? node.copy(node.getTraitSet(), inputs) : node, byteStrings,
+        represented);
   }
 
   static boolean hasUnverifiedIngress(RelNode root) {

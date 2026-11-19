@@ -131,6 +131,14 @@ class FlinkByteStringConcatSqlHarnessTest {
     assertEquals(run(sql, false), run(sql, Route.ADAPTIVE, Result.STRING));
   }
 
+  @ParameterizedTest
+  @ValueSource(strings = {"'a'", "''", "delim"})
+  void mixedSplitPreservesNestedBytesAndJavaStrings(String separator) throws Exception {
+    tech.streamfusion.compat.FlinkTestCapabilities.requireSqlFunction("SPLIT");
+    String sql = "SELECT SPLIT(s, " + separator + ") AS v FROM src";
+    assertEquals(run(sql, Route.HOST, Result.STRING_ARRAY), run(sql, Route.ADAPTIVE, Result.STRING_ARRAY));
+  }
+
   @Test
   void seededTextFilterKeepsOneGeneratedEvaluatorAcrossBatches() throws Exception {
     String sql = "SELECT LOWER(s) AS v FROM src WHERE RAND(42) < 0.5";
@@ -192,6 +200,7 @@ class FlinkByteStringConcatSqlHarnessTest {
 
   private enum Result {
     STRING,
+    STRING_ARRAY,
     INTEGER,
     PASSTHROUGH
   }
@@ -234,7 +243,8 @@ class FlinkByteStringConcatSqlHarnessTest {
               table.sqlQuery(sql),
               (result == Result.PASSTHROUGH
                       ? ROW(FIELD("original", STRING()), FIELD("v", STRING()))
-                      : ROW(FIELD("v", result == Result.INTEGER ? INT() : STRING())))
+                      : ROW(FIELD("v", result == Result.INTEGER ? INT()
+                          : result == Result.STRING_ARRAY ? ARRAY(STRING()) : STRING())))
                   .bridgedTo(RowData.class));
       var actual = new ArrayList<String>();
       try (var results =
@@ -245,6 +255,16 @@ class FlinkByteStringConcatSqlHarnessTest {
                       return rawString(row, 0) + ":" + rawString(row, 1);
                     if (result == Result.INTEGER && !row.isNullAt(0))
                       return Integer.toString(row.getInt(0));
+                    if (result == Result.STRING_ARRAY && !row.isNullAt(0)) {
+                      var array = row.getArray(0);
+                      var values = new ArrayList<String>();
+                      for (int i = 0; i < array.size(); i++) {
+                        var value = array.getString(i);
+                        values.add(Base64.getEncoder().encodeToString(value.toBytes()) + ":"
+                            + java.util.Arrays.toString(value.toString().chars().toArray()));
+                      }
+                      return values.toString();
+                    }
                     return rawString(row, 0);
                   })
               .returns(org.apache.flink.api.common.typeinfo.Types.STRING)
@@ -283,7 +303,7 @@ class FlinkByteStringConcatSqlHarnessTest {
     var table = StreamTableEnvironment.create(env);
     var fields = new ArrayList<>(
         List.of(FIELD("id", INT()), FIELD("s", STRING()), FIELD("t", STRING()),
-            FIELD("unused", STRING())));
+            FIELD("unused", STRING()), FIELD("delim", STRING())));
     if (timed) fields.add(FIELD("rt", TIMESTAMP(3)));
     var type = ROW(fields.toArray(new org.apache.flink.table.api.DataTypes.Field[0]));
     List<RowData> rows = new ArrayList<>();
@@ -294,7 +314,8 @@ class FlinkByteStringConcatSqlHarnessTest {
       row.setField(1, value == null ? null : BinaryStringData.fromBytes(value));
       row.setField(2, i % 7 == 0 ? null : BinaryStringData.fromBytes(new byte[] {(byte) 0xa9}));
       row.setField(3, BinaryStringData.fromBytes(new byte[] {(byte) 0xff}));
-      if (timed) row.setField(4, TimestampData.fromEpochMillis(1000L + i));
+      row.setField(4, BinaryStringData.fromBytes(i % 2 == 0 ? new byte[] {'a'} : new byte[0]));
+      if (timed) row.setField(5, TimestampData.fromEpochMillis(1000L + i));
       rows.add(row);
     }
     var schema = Schema.newBuilder().fromRowDataType(type);

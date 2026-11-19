@@ -126,13 +126,15 @@ public class StreamPhysicalNativeFilter extends StreamPhysicalNativeSingleRel
     return output;
   }
 
-  StreamPhysicalNativeCalc withAdaptiveText(RelNode input, BitSet byteStrings, BitSet outputs) {
+  StreamPhysicalNativeCalc withAdaptiveText(
+      RelNode input, BitSet byteStrings, boolean representedStrings, BitSet outputs,
+      boolean exitsToRows) {
     if (sourceCalc == null || !input.getRowType().equals(sourceCalc.getProgram().getInputRowType()))
       return null;
     var encoded = CalcMatcher.encode(sourceCalc);
     return encoded == null ? null
         : new StreamPhysicalNativeCalc(sourceCalc, input, encoded)
-            .withAdaptiveText(input, byteStrings, outputs);
+            .withAdaptiveText(input, byteStrings, representedStrings, outputs, exitsToRows);
   }
 
   boolean hasStringPassthrough() {

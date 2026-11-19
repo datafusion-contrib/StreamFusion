@@ -59,13 +59,16 @@ public class StreamPhysicalNativeCalc extends StreamPhysicalNativeSingleRel
     final NativeUdf.Binding fallback;
     final long[] fallbackLongs;
     final boolean generatedOnly;
+    final boolean rowExit;
 
-    AdaptiveText(int[] inputs, int[] outputs, EncodedExpression fallback, boolean generatedOnly) {
+    AdaptiveText(int[] inputs, int[] outputs, EncodedExpression fallback, boolean generatedOnly,
+        boolean rowExit) {
       this.inputs = inputs;
       this.outputs = outputs;
       this.fallback = fallback.udfBinding();
       this.fallbackLongs = fallback.longs();
       this.generatedOnly = generatedOnly;
+      this.rowExit = rowExit;
     }
   }
 
@@ -193,13 +196,27 @@ public class StreamPhysicalNativeCalc extends StreamPhysicalNativeSingleRel
         kinds, payload, childCounts, projectionRoots, conditionRoot, input, getRowType(), used);
   }
 
-  StreamPhysicalNativeCalc withAdaptiveText(RelNode input, BitSet byteStrings, BitSet outputs) {
-    if (sourceCalc == null || hasUserFunctions()) return null;
+  StreamPhysicalNativeCalc withAdaptiveText(
+      RelNode input, BitSet byteStrings, boolean representedStrings, BitSet outputs,
+      boolean exitsToRows) {
+    if (sourceCalc == null || sourceProgram.getExprList().stream()
+        .anyMatch(ExpressionPlanning::containsUserFunction)) return null;
     var needed = ByteStringInputs.utf8Inputs(
         kinds, payload, childCounts, projectionRoots, conditionRoot, byteStrings);
+    if (representedStrings) {
+      for (int column : ExpressionPlanning.referencedInputs(kinds, payload)) {
+        if (byteStrings.get(column)) needed.set(column);
+      }
+    }
     if (needed.isEmpty()) return null;
+    boolean rowExit = representedStrings || preservesCollections();
+    for (var field : outputRowType.getFieldList()) {
+      var type = field.getType();
+      rowExit |= !SqlTypeFamily.CHARACTER.contains(type) && JsonStringIdentity.containsCharacter(type);
+    }
+    if (rowExit && !exitsToRows) return null;
     var fallback = ExpressionPlanning.encodeByteBackedHostCalc(sourceCalc);
-    if (fallback == null || fallback.udfBinding().hasUserFunctions()) return null;
+    if (fallback == null) return null;
     for (int i = 0; i < outputRowType.getFieldCount(); i++) {
       if (fallback.isVariableBinaryProjection(i)) return null;
     }
@@ -212,13 +229,11 @@ public class StreamPhysicalNativeCalc extends StreamPhysicalNativeSingleRel
       }
       fallback = fallback.remapInputs(originalInputMapping);
     }
-    for (int i = 0; i < outputRowType.getFieldCount(); i++) {
-      var type = outputRowType.getFieldList().get(i).getType();
-      if (SqlTypeFamily.CHARACTER.contains(type)) {
-        outputs.set(i);
-      } else if (JsonStringIdentity.containsCharacter(type)) {
-        // The adaptive result writer only retags top-level StringData as Binary.
-        return null;
+    if (!rowExit) {
+      for (int i = 0; i < outputRowType.getFieldCount(); i++) {
+        if (SqlTypeFamily.CHARACTER.contains(outputRowType.getFieldList().get(i).getType())) {
+          outputs.set(i);
+        }
       }
     }
     // A volatile call site such as RAND(seed) must retain one evaluator across every batch.
@@ -230,7 +245,7 @@ public class StreamPhysicalNativeCalc extends StreamPhysicalNativeSingleRel
         longs, doubles, strings, projectionRoots, conditionRoot, outputNames, udfBinding,
         sourceProgram, preserveCollections, planDetails, sourceCalc, originalInputMapping,
         new AdaptiveText(needed.stream().toArray(), outputs.stream().toArray(), fallback,
-            generatedOnly));
+            generatedOnly, rowExit));
   }
 
   boolean hasStringPassthrough() {
@@ -322,7 +337,7 @@ public class StreamPhysicalNativeCalc extends StreamPhysicalNativeSingleRel
           FlinkTypeFactory$.MODULE$.toLogicalRowType(getRowType()),
           kinds, payload, childCounts, longs, doubles, strings, projectionRoots, conditionRoot,
           outputNames, udfBinding, adaptiveText.inputs, adaptiveText.outputs, adaptiveText.fallback,
-          adaptiveText.fallbackLongs, adaptiveText.generatedOnly);
+          adaptiveText.fallbackLongs, adaptiveText.generatedOnly, adaptiveText.rowExit);
     }
     return new NativeCalcExecNode(
         ShortcutUtils.unwrapTableConfig(this),

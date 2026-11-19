@@ -6,6 +6,8 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Calc;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.RexBuilder;
+import org.apache.calcite.rex.RexCall;
+import org.apache.calcite.rex.RexFieldAccess;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexProgram;
 import tech.streamfusion.operator.EncodedPredicate;
@@ -59,6 +61,16 @@ public final class ExpressionPlanning {
 
   public static EncodedExpression encodeByteBackedHostCalc(Calc calc) {
     return RexExpression.encodeHostCalc(calc, "unverified UTF-8 text input", true);
+  }
+
+  public static boolean containsUserFunction(RexNode expression) {
+    if (expression instanceof RexFieldAccess) {
+      return containsUserFunction(((RexFieldAccess) expression).getReferenceExpr());
+    }
+    if (!(expression instanceof RexCall)) return false;
+    var call = (RexCall) expression;
+    return tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator()) != null
+        || call.getOperands().stream().anyMatch(ExpressionPlanning::containsUserFunction);
   }
 
   public static EncodedExpression encodeUnnestOperand(Calc calc) {

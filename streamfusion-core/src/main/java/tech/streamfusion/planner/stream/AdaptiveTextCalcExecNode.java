@@ -17,13 +17,14 @@ final class AdaptiveTextCalcExecNode extends NativeCalcExecNode {
   private final NativeUdf.Binding fallback;
   private final long[] fallbackLongs;
   private final boolean generatedOnly;
+  private final boolean rowExit;
 
   AdaptiveTextCalcExecNode(
       ReadableConfig config, String description, RowType inputType, RowType outputType,
       int[] kinds, int[] payload, int[] childCounts, long[] longs, double[] doubles,
       String[] strings, int[] projectionRoots, int conditionRoot, String[] outputNames,
       NativeUdf.Binding udfBinding, int[] textInputs, int[] stringOutputs,
-      NativeUdf.Binding fallback, long[] fallbackLongs, boolean generatedOnly) {
+      NativeUdf.Binding fallback, long[] fallbackLongs, boolean generatedOnly, boolean rowExit) {
     super(config, InputProperty.DEFAULT, outputType, description, kinds, payload, childCounts,
         longs, doubles, strings, projectionRoots, conditionRoot, outputNames, udfBinding);
     this.textInputs = textInputs;
@@ -33,6 +34,7 @@ final class AdaptiveTextCalcExecNode extends NativeCalcExecNode {
     this.fallback = fallback;
     this.fallbackLongs = fallbackLongs;
     this.generatedOnly = generatedOnly;
+    this.rowExit = rowExit;
   }
 
   @Override
@@ -42,6 +44,6 @@ final class AdaptiveTextCalcExecNode extends NativeCalcExecNode {
       NativeUdf.Binding binding) {
     return new AdaptiveTextCalcOperator(kinds, payload, childCounts, longs, doubles, strings,
         projectionRoots, conditionRoot, outputNames, binding, textInputs, stringOutputs,
-        inputType, outputType, fallback, fallbackLongs, generatedOnly);
+        inputType, outputType, fallback, fallbackLongs, generatedOnly, rowExit);
   }
 }

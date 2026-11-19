@@ -2,6 +2,7 @@ package tech.streamfusion.arrow.writers;
 
 import java.util.function.BiFunction;
 import org.apache.arrow.vector.TinyIntVector;
+import org.apache.arrow.vector.VarBinaryVector;
 import org.apache.arrow.vector.VarCharVector;
 import org.apache.arrow.vector.complex.ListVector;
 import org.apache.arrow.vector.complex.StructVector;
@@ -29,9 +30,13 @@ public final class NestedStringWriter<T> extends ArrowFieldWriter<T> {
     this.getter = getter;
     cache = (ListVector) vector.getChild("java");
     cacheWriter = new Utf16Cache.Writer(cache);
-    utf8 = VarCharWriter.forRow((VarCharVector) vector.getChild("utf8"));
+    var bytes = vector.getChild("utf8");
+    utf8 = bytes instanceof VarBinaryVector
+        ? VarCharWriter.forRow((VarBinaryVector) bytes)
+        : VarCharWriter.forRow((VarCharVector) bytes);
     copyClass = (TinyIntVector) vector.getChild("array_copy_class");
-    jsonDocument = "1".equals(vector.getField().getMetadata().get(NestedRepresentation.JSON_DOCUMENT));
+    jsonDocument = bytes instanceof VarCharVector
+        && "1".equals(vector.getField().getMetadata().get(NestedRepresentation.JSON_DOCUMENT));
   }
 
   public static NestedStringWriter<RowData> forRow(StructVector vector) {

@@ -359,12 +359,16 @@ A SIMD scan checks the bytes and each value boundary. Consecutive valid rows wit
 original Java string cache can reuse the same Arrow buffers with a temporary
 `Utf8` schema and run through the existing native Calc. Malformed rows and rows with an
 observable Java cache use the generated Flink evaluator over the original bytes. Ranges
-run in input order, preserve changelog tags, and write string results as Arrow Binary.
+run in input order and preserve changelog tags. A downstream columnar Calc receives a
+consistent Binary schema for scalar string results.
 Calcs that require a single generated evaluator across batches use that evaluator directly
 on the bytes. Their plans show `byteBackedFlinkEval=[true]`.
 
-The adapter uses the existing expression and boundary checks for nested input, user-defined
-functions, stateful operators and compiled plans. See the
+At a final row exit the adapter also supports collection results such as `SPLIT`.
+The generated evaluator writes string leaves as Binary with the original Java caches
+where Flink exposes them. The row reader consumes either lane's result directly.
+The adapter uses the existing expression and boundary checks for nested input,
+intermediate represented results, user-defined functions, stateful operators and compiled plans. See the
 [release measurements](../benchmarks/scalar-functions.md#on-demand-utf-8-validation).
 
 Generic Flink row sources can emit arbitrary string bytes, including strings nested in collections.

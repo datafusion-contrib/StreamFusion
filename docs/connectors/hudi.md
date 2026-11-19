@@ -351,13 +351,14 @@ cases retain their original legacy-source and row-result choices, so many Hudi
 boundaries correctly stay stock while native Calcs execute. The expanded tests
 and Nexmark harness separately require native Hudi source/sink execution.
 
-Stock Hudi row scans that expose unverified character columns need a verified
-byte-preserving consumer to enter a native plan. Otherwise the planner keeps the
-affected branch in Flink. The released Hudi 1.2.1 corpus records this explicit
-fallback in 184 of its 349 enabled invocations. Two Debezium JSON invocations can retain
-native UPDATE_BEFORE filtering when their string columns are carried as Binary. The stock and accelerated runs
-keep the same results and test coverage, and the audit still requires positive
-work for the native operators that run.
+Stock Hudi row scans can supply unverified character columns as Binary to
+byte-preserving consumers and supported streaming Calc text expressions. The shared
+[UTF-8 adapter](../operators/calc-filter-strings.md#on-demand-utf8-for-text-expressions)
+removes the unverified-string fallback from 14 released Hudi 1.2.1 invocations,
+bringing its count to 170 of the 349 enabled invocations. The connector records its
+own source and sink admission decisions. Two Debezium JSON invocations can retain
+native UPDATE_BEFORE filtering over Binary strings. The audit checks stock results
+and counts native Calc work on validated row ranges.
 
 A full native replay after the earlier batch-admission change passed all 349
 enabled upstream cases. The change added 99 requirements for positive native

@@ -727,8 +727,7 @@
       },
       "fallback_reasons": [
         "Hudi sink: MOR Arrow writes require explicit SIMPLE bucket writers, Parquet logs, no metadata table, changelog storage or rewrite services",
-        "Hudi source ability is not admitted: ReadingMetadataSpec",
-        "row source STRING has no verified UTF-8 or byte representation"
+        "Hudi source ability is not admitted: ReadingMetadataSpec"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestDynamicBucketStreamWrite]/[test-template:testBucketScalesUpWithContinuousWrites(org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#2]": {
@@ -737,8 +736,7 @@
       },
       "fallback_reasons": [
         "Hudi sink: MOR Arrow writes require explicit SIMPLE bucket writers, Parquet logs, no metadata table, changelog storage or rewrite services",
-        "Hudi source ability is not admitted: ReadingMetadataSpec",
-        "row source STRING has no verified UTF-8 or byte representation"
+        "Hudi source ability is not admitted: ReadingMetadataSpec"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestDynamicBucketStreamWrite]/[test-template:testInsertOverwrite(org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#1]": {
@@ -764,8 +762,7 @@
       "fallback_reasons": [
         "Hudi sink: MOR Arrow writes require explicit SIMPLE bucket writers, Parquet logs, no metadata table, changelog storage or rewrite services",
         "Hudi source ability is not admitted: ReadingMetadataSpec",
-        "Hudi source: Only Hudi Parquet snapshot Source V2 reads are admitted",
-        "row source STRING has no verified UTF-8 or byte representation"
+        "Hudi source: Only Hudi Parquet snapshot Source V2 reads are admitted"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestDynamicBucketStreamWrite]/[test-template:testWriteAndBootstrapFromRecordIndex(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#2]": {
@@ -775,8 +772,7 @@
       "fallback_reasons": [
         "Hudi sink: MOR Arrow writes require explicit SIMPLE bucket writers, Parquet logs, no metadata table, changelog storage or rewrite services",
         "Hudi source ability is not admitted: ReadingMetadataSpec",
-        "Hudi source: Only Hudi Parquet snapshot Source V2 reads are admitted",
-        "row source STRING has no verified UTF-8 or byte representation"
+        "Hudi source: Only Hudi Parquet snapshot Source V2 reads are admitted"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestDynamicBucketStreamWrite]/[test-template:testWriteAndBootstrapFromRecordIndex(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#3]": {
@@ -786,8 +782,7 @@
       "fallback_reasons": [
         "Hudi sink: MOR Arrow writes require explicit SIMPLE bucket writers, Parquet logs, no metadata table, changelog storage or rewrite services",
         "Hudi source ability is not admitted: ReadingMetadataSpec",
-        "Hudi source: Only Hudi Parquet snapshot Source V2 reads are admitted",
-        "row source STRING has no verified UTF-8 or byte representation"
+        "Hudi source: Only Hudi Parquet snapshot Source V2 reads are admitted"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestDynamicBucketStreamWrite]/[test-template:testWriteAndBootstrapFromRecordIndex(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#4]": {
@@ -797,8 +792,7 @@
       "fallback_reasons": [
         "Hudi sink: MOR Arrow writes require explicit SIMPLE bucket writers, Parquet logs, no metadata table, changelog storage or rewrite services",
         "Hudi source ability is not admitted: ReadingMetadataSpec",
-        "Hudi source: Only Hudi Parquet snapshot Source V2 reads are admitted",
-        "row source STRING has no verified UTF-8 or byte representation"
+        "Hudi source: Only Hudi Parquet snapshot Source V2 reads are admitted"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[method:tesQueryWithPartitionBucketIndexPruning()]": {
@@ -2054,59 +2048,67 @@
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testStreamReadFilterByPartition(org.apache.hudi.common.model.HoodieTableType, boolean, boolean)]/[test-template-invocation:#1]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "Hudi source: Only Hudi Parquet snapshot Source V2 reads are admitted",
-        "row source STRING has no verified UTF-8 or byte representation"
+        "Hudi source: Only Hudi Parquet snapshot Source V2 reads are admitted"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testStreamReadFilterByPartition(org.apache.hudi.common.model.HoodieTableType, boolean, boolean)]/[test-template-invocation:#2]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "Hudi source: Hudi source option is not admitted: read.streaming.skip_compaction",
-        "row source STRING has no verified UTF-8 or byte representation"
+        "Hudi source: Hudi source option is not admitted: read.streaming.skip_compaction"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testStreamReadFilterByPartition(org.apache.hudi.common.model.HoodieTableType, boolean, boolean)]/[test-template-invocation:#3]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "Hudi source: Only Hudi Parquet snapshot Source V2 reads are admitted",
-        "row source STRING has no verified UTF-8 or byte representation"
+        "Hudi source: Only Hudi Parquet snapshot Source V2 reads are admitted"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testStreamReadFilterByPartition(org.apache.hudi.common.model.HoodieTableType, boolean, boolean)]/[test-template-invocation:#4]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "Hudi source: Hudi source option is not admitted: read.streaming.skip_compaction",
-        "row source STRING has no verified UTF-8 or byte representation"
+        "Hudi source: Hudi source option is not admitted: read.streaming.skip_compaction"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testStreamReadFilterByPartition(org.apache.hudi.common.model.HoodieTableType, boolean, boolean)]/[test-template-invocation:#5]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "Hudi source: Only Hudi Parquet snapshot Source V2 reads are admitted",
-        "row source STRING has no verified UTF-8 or byte representation"
+        "Hudi source: Only Hudi Parquet snapshot Source V2 reads are admitted"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testStreamReadFilterByPartition(org.apache.hudi.common.model.HoodieTableType, boolean, boolean)]/[test-template-invocation:#6]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "Hudi source: Hudi source option is not admitted: read.streaming.skip_compaction",
-        "row source STRING has no verified UTF-8 or byte representation"
+        "Hudi source: Hudi source option is not admitted: read.streaming.skip_compaction"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testStreamReadFilterByPartition(org.apache.hudi.common.model.HoodieTableType, boolean, boolean)]/[test-template-invocation:#7]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "Hudi source: Only Hudi Parquet snapshot Source V2 reads are admitted",
-        "row source STRING has no verified UTF-8 or byte representation"
+        "Hudi source: Only Hudi Parquet snapshot Source V2 reads are admitted"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testStreamReadFilterByPartition(org.apache.hudi.common.model.HoodieTableType, boolean, boolean)]/[test-template-invocation:#8]": {
-      "native_work": {},
+      "native_work": {
+        "NativeCalcOperator": 1
+      },
       "fallback_reasons": [
-        "Hudi source: Hudi source option is not admitted: read.streaming.skip_compaction",
-        "row source STRING has no verified UTF-8 or byte representation"
+        "Hudi source: Hudi source option is not admitted: read.streaming.skip_compaction"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testStreamReadFromSpecifiedCommitWithChangelog(org.apache.hudi.common.table.cdc.HoodieCDCSupplementalLoggingMode, boolean)]/[test-template-invocation:#1]": {
