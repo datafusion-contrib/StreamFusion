@@ -664,7 +664,9 @@ fn build_typed_call(
         if types.contains(&DataType::Binary) {
             let function = match op {
                 scalar_op::ASCII => crate::flink_functions::byte_ascii::function(),
-                scalar_op::CHAR_LENGTH => crate::flink_functions::byte_string_text::length_function(),
+                scalar_op::CHAR_LENGTH => {
+                    crate::flink_functions::byte_string_text::length_function()
+                }
                 scalar_op::CONCAT_WS => crate::flink_functions::byte_concat_ws::function(),
                 scalar_op::POSITION => {
                     crate::flink_functions::byte_string_text::position_function(types)
