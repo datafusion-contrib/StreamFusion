@@ -47,6 +47,7 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: maven
+          cache-dependency-path: dev/flink-suite/agent/pom.xml
       - name: Restore the isolated suite Maven repository and wrapper
         id: maven-cache
         uses: actions/cache/restore@v4

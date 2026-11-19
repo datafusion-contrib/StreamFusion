@@ -69,6 +69,7 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: maven
+          cache-dependency-path: dev/flink-suite/delta-legacy/pom.xml
       - name: Run unchanged legacy Delta SQL tests against released Flink 1.18
         run: |
           set -o pipefail

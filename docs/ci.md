@@ -661,19 +661,21 @@ the reactor's `bench` profile, and verifies JNI/package boundaries before Maven 
 the source/sink parity phase and the upstream SQL phase pass `-Dnative.build.skip=true`
 and reuse those libraries. Previously each Maven module invoked Cargo with a different
 package selection: the successful main run on 2026-10-20 performed seven release builds,
-recompiling DataFusion three times. The JVM limits and single-fork upstream SQL execution stay the same. Cargo's compilation timings are retained with the test evidence.
+recompiling DataFusion three times. The JVM limits and single-fork upstream SQL execution
+stay the same. Cargo's compilation timings are retained with the test evidence.
 
 The released Paimon 1.0.0
-`AppendOnlyTableITCase#testReadUnwareBucketTableWithRebalanceShuffle` only checks the
-first two rows across four parallel readers. It writes four identical pairs, so the unordered
-read can deliver two copies of the same value first. The November 12
-[compatibility failure](https://github.com/datafusion-contrib/StreamFusion/actions/runs/43142691276/job/130933174381)
-received two copies of `+I[1]`. The compatibility workflow excludes just that method via
-`SF_PAIMON1_QUARANTINE_REBALANCE_PREFIX`. Local runs and explicit `SF_PAIMON1_TESTS`
-selections still run the original method. Four local stock repeats on Flink 1.18.1 and
-JDK 17 passed, so the archived ordering did not reproduce locally. The parity phase checks
-all eight row values and their multiplicities across the same four parallel readers after both stock and accelerated
-writes. The scan with consumer retention continues to use the released stock source.
+`AppendOnlyTableITCase#testReadUnwareBucketTableWithRebalanceShuffle` only checks the first two
+rows across four parallel readers. It writes four identical pairs, so the unordered read can
+deliver two copies of the same value first. The November 12 compatibility run received two
+copies of `+I[1]`. Four local stock repeats on Flink 1.18.1 and JDK 17 passed.
+[November 12 failure log](https://github.com/datafusion-contrib/StreamFusion/actions/runs/43142691276/job/130933174381)
+
+The compatibility workflow excludes that method via `SF_PAIMON1_QUARANTINE_REBALANCE_PREFIX`.
+Local runs and explicit `SF_PAIMON1_TESTS` selections still run the original method. The parity
+phase checks all eight row values and their multiplicities across the same four parallel readers
+after both stock and accelerated writes. The scan with consumer retention uses the released stock
+source.
 
 Default-enabled paths need positive native-route assertions. Fixed-size-binary compatibility
 tests construct that legacy physical schema explicitly rather than changing global feature
@@ -807,22 +809,31 @@ the effect on both JDKs and the optimized image job.
 ## Maven dependencies
 
 On the November 19 submission of PR #675, separate jobs failed during Maven plugin resolution
-before reaching their SQL assertions. The [main Paimon compatibility run](https://github.com/datafusion-contrib/StreamFusion/actions/runs/44512986175)
-received HTTP 429 while starting a standalone Surefire probe. The [fork upstream run](https://github.com/liuyongvs/StreamFusion/actions/runs/44480446131/attempts/1)
-could not resolve the agent's default JAR plugin or Paimon 2.0.0's remote-resources plugin.
-The latter two jobs passed on the same commit after retry.
+before reaching their SQL assertions. The main Paimon compatibility run received HTTP 429 while
+starting a standalone Surefire probe. The fork upstream run could not resolve the agent's default
+JAR plugin or Paimon 2.0.0's remote-resources plugin. Those two jobs passed on the same commit after
+retry.
+[Canonical Paimon run](https://github.com/datafusion-contrib/StreamFusion/actions/runs/44512986175)
+[Fork upstream first attempt](https://github.com/liuyongvs/StreamFusion/actions/runs/44480446131/attempts/1)
 
-The Paimon 1.0 fork-isolation probe uses the reactor's dependency and plugin versions and
-runs Maven offline after source/sink parity populates the same JDK 17 repository. The two
-forks wait for explicit evidence that each started, so a fixed sleep no longer decides
-whether they overlap. The upstream agent pins the resources and JAR plugins and resolves its
+The Paimon 1.0 fork-isolation probe uses the reactor's dependency and plugin versions and runs Maven
+offline after source/sink parity populates the same JDK 17 repository. The two forks synchronize on
+evidence that both started. The upstream agent pins the resources and JAR plugins and resolves its
 dependencies and Surefire provider in the bounded setup stage before an offline build.
-The [first qualification](https://github.com/jordepic/StreamFusion-contrib/actions/runs/44518286371/job/135540093866)
-showed that Maven 3.10.0's `go-offline` could leave a selected provided dependency missing.
-Preparation also runs `dependency:resolve` to populate Maven's mediated agent classpath.
-The Flink 1.18 upstream preparation also adds Paimon 2.0.0's remote-resources plugin and
-its dependencies to the transferred Maven repository. Cold preparation and connector source
-builds still need access to released artifacts. Test assertions and test JVMs have no retry policy.
+
+Maven 3.10.0's `go-offline` left a selected provided dependency missing in the first qualification.
+Preparation also runs `dependency:resolve` to populate Maven's mediated agent classpath. Both
+hosted Flink lines then built the agent and ran its tests.
+[Initial agent failure](https://github.com/jordepic/StreamFusion-contrib/actions/runs/44518286371/job/135540093866)
+[Corrected agent preparation](https://github.com/jordepic/StreamFusion-contrib/actions/runs/44519201597)
+
+The Flink 1.18 upstream preparation adds Paimon 2.0.0's remote-resources plugin and its dependencies
+to the transferred Maven repository. The legacy Delta audit also resolves its plugins, mediated
+classpath and Surefire provider before the offline test command. The agent and Delta each key their
+Maven cache to their own standalone POM, so unrelated POM edits leave their cache keys stable. Cold
+preparation and connector source builds still need access to released artifacts. Retries are confined
+to dependency preparation.
+[Legacy Delta setup failure](https://github.com/jordepic/StreamFusion-contrib/actions/runs/44519201597/job/135543262820)
 
 The upstream execution-evidence agent is a separate JDK 17 development tool. Its standalone
 POM pins the compiler plugin to 3.13.0 so Maven 3.8 also honors `maven.compiler.release=17`
