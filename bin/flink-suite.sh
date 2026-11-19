@@ -475,6 +475,16 @@ if [[ "${FLINK_SUITE_REUSE_BUILD:-false}" != "true" ]]; then
     fi
   fi
 fi
+
+prepare_delta_maven() {
+  python3 "${REPO_ROOT}/bin/ci-maven-dependencies.py" --resolve-project \
+    --pom "${DELTA_TEST_POM}" --repository "${SUITE_MAVEN_REPO}" \
+    --define "flink.version=${FLINK_VERSION}" --define "delta.version=${DELTA_VERSION}" || return $?
+  python3 "${REPO_ROOT}/bin/ci-maven-dependencies.py" --repository "${SUITE_MAVEN_REPO}" \
+    --artifact org.apache.maven.surefire:surefire-junit-platform:3.5.3 \
+    --artifact org.junit.platform:junit-platform-launcher:1.11.4
+}
+
 python3 "${REPO_ROOT}/bin/check-flink-suite-classpath.py" "${CLASSPATH_FILE}" "${FLINK_LINE}" || exit $?
 if [[ "${SUITE_MODE}" == "prepare" ]]; then
   python3 "${REPO_ROOT}/bin/check-flink-suite-unshaded.py" \
@@ -491,18 +501,19 @@ if [[ "${SUITE_MODE}" == "prepare" ]]; then
     --artifact "org.junit.platform:junit-platform-launcher:${test_runtime_platform_version}"
     --artifact "org.apache.httpcomponents:httpclient:4.4.1"
     --artifact "org.apache.paimon:paimon-vfs-hadoop:${PAIMON_VERSION}"
+    --artifact "org.apache.maven.plugins:maven-remote-resources-plugin:1.7.0"
   )
   if [[ "${FLINK_LINE}" == "2.2" ]]; then
     test_runtime_artifacts+=(
       --artifact "org.apache.maven.surefire:surefire-junit-platform:3.2.5"
       --artifact "org.junit.platform:junit-platform-launcher:1.13.3"
       --artifact "org.apache.maven.plugins:maven-surefire-plugin:3.5.3"
-      --artifact "org.apache.maven.surefire:surefire-junit-platform:3.5.3"
       --artifact "org.apache.maven.plugins:maven-resources-plugin:3.5.0"
     )
-  else
-    # The Flink 1.18 Paimon source build uses its own release parent and lifecycle.
-    test_runtime_artifacts+=(--artifact "org.apache.maven.plugins:maven-remote-resources-plugin:1.7.0")
+  fi
+  if [[ "${KAFKA_CONNECTOR_VERSION}" == "3.2.0" ]]; then
+    # Kafka 3.2 loads this published parent before it can compile any of its fixtures.
+    test_runtime_artifacts+=(--artifact "org.apache.flink:flink-connector-parent:1.0.0:pom")
   fi
   (
     cd "${FLINK_ROOT}" &&
@@ -511,6 +522,10 @@ if [[ "${SUITE_MODE}" == "prepare" ]]; then
         --repository "${SUITE_MAVEN_REPO}" \
         "${test_runtime_artifacts[@]}"
   ) || exit $?
+  if [[ "${FLINK_LINE}" == "2.2" ]]; then
+    echo "Preparing the modern Delta test dependencies before transferring the Maven repository..."
+    prepare_delta_maven || exit $?
+  fi
   echo "Verifying the prepared upstream test runtime without downloads..."
   flink_mvn ${FLINK_TARGET_PROFILE:+-P${FLINK_TARGET_PROFILE}} -B -ntp -o -s "${MAVEN_SETTINGS}" \
     -Dmaven.repo.local="${SUITE_MAVEN_REPO}" -pl flink-table/flink-table-planner -Dfast \
@@ -603,6 +618,9 @@ MAVEN_TEST_ARGS=(
   -Dflink.forkCountUnitTest="${FLINK_SUITE_UNIT_FORKS:-2}" \
   -Dflink.forkCountITCase="${FLINK_SUITE_IT_FORKS:-1}"
 )
+if [[ "${SUITE_MODE}" == "runtime" && "${FLINK_SUITE_REUSE_COMMON_BUILD:-false}" == "true" ]]; then
+  MAVEN_TEST_ARGS+=(-o -gs "${MAVEN_SETTINGS}")
+fi
 if [[ "${SUITE_MODE}" == "runtime" || "${SUITE_MODE}" == "diagnostic" ]]; then
   MAVEN_TEST_ARGS+=(
     -Dmaven.ext.class.path="${AGENT_JAR}"
@@ -669,7 +687,10 @@ MAVEN_TEST_ARGS+=("${TEST_GOAL}")
 if [[ "${SUITE_MODE}" == "kafka" ]]; then
   kafka_mvn "${MAVEN_TEST_ARGS[@]}"
 elif [[ "${SUITE_MODE}" == "delta" ]]; then
-  mvn "${MAVEN_TEST_ARGS[@]}"
+  if [[ "${FLINK_SUITE_REUSE_COMMON_BUILD:-false}" != "true" ]]; then
+    prepare_delta_maven || exit $?
+  fi
+  mvn -o -gs "${MAVEN_SETTINGS}" "${MAVEN_TEST_ARGS[@]}"
 elif [[ "${SUITE_MODE}" == "paimon" ]]; then
   mvn "${MAVEN_TEST_ARGS[@]}"
   paimon_status=$?

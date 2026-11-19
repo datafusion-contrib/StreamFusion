@@ -126,10 +126,12 @@ class MavenDependenciesTest(unittest.TestCase):
     def test_standalone_preparation_resolves_the_mediated_classpath(self):
         options = self.options()
         options.resolve_project = True
+        options.define = ["flink.version=2.2.0", "delta.version=4.4.0"]
         options.profile, options.projects, options.also_make = "", None, False
         with patch.object(PREPARE.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run:
             self.assertEqual(0, PREPARE.resolve(options))
-        self.assertEqual([PREPARE.GOAL, PREPARE.PROJECT_GOAL], run.call_args.args[0][-2:])
+        self.assertEqual(["-Dflink.version=2.2.0", "-Ddelta.version=4.4.0",
+                          PREPARE.GOAL, PREPARE.PROJECT_GOAL], run.call_args.args[0][-4:])
 
     def test_project_models_retry_without_building_or_resolving_reactor_artifacts(self):
         options = self.options()

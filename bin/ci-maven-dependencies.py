@@ -49,6 +49,7 @@ def resolve(options):
         command.extend(["-f", str(options.pom)])
     if options.repository:
         command.append("-Dmaven.repo.local=" + str(options.repository))
+    command.extend("-D" + definition for definition in getattr(options, "define", ()))
     goal = ([MODEL_GOAL, "-Dexpression=project.id", "-DforceStdout"]
             if options.model_only else [GOAL])
     if getattr(options, "graph", False):
@@ -94,6 +95,8 @@ def main():
     parser.add_argument("--pom", type=Path)
     parser.add_argument("--repository", type=Path)
     parser.add_argument("--maven", default="mvn")
+    parser.add_argument("--define", action="append", default=[], metavar="PROPERTY=VALUE",
+                        help="Set the same model property used by the eventual Maven build")
     parser.add_argument("--no-transitive", action="store_true",
                         help="Fetch exact artifacts from an already mediated dependency closure")
     resolution = parser.add_mutually_exclusive_group()

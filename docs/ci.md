@@ -827,9 +827,24 @@ hosted Flink lines then built the agent and ran its tests.
 [Initial agent failure](https://github.com/jordepic/StreamFusion-contrib/actions/runs/44518286371/job/135540093866)
 [Corrected agent preparation](https://github.com/jordepic/StreamFusion-contrib/actions/runs/44519201597)
 
-The Flink 1.18 upstream preparation adds Paimon 2.0.0's remote-resources plugin and its dependencies
-to the transferred Maven repository. The legacy Delta audit also resolves its plugins, mediated
-classpath and Surefire provider before the offline test command. The agent and Delta each key their
+Both upstream preparation jobs add the released Paimon reactor's remote-resources plugin and its
+dependencies to the transferred Maven repository. The Kafka 3.2 build also starts with its released
+connector parent in the repository. Modern Delta resolves the exact standalone fixture model, its
+lifecycle plugins and its test provider in shared preparation, then executes the fixture offline.
+Manual modern Delta runs prepare the same model using the requested Delta and Flink versions before
+executing it. These paths address artifact resolution errors that occurred before any test started.
+[Modern Delta](https://github.com/jordepic/StreamFusion-contrib/actions/jobs/135321855577)
+[Paimon 2.2 lane](https://github.com/jordepic/StreamFusion-contrib/actions/jobs/135321855717)
+[Kafka 3.2](https://github.com/jordepic/StreamFusion-contrib/actions/jobs/135322241767)
+
+Shared runtime shards use the same offline Maven resolution mode exercised by the preparation smoke
+test. An archived Flink 1.18 shard reported an unresolved file in Surefire's provider classpath
+before the test fork started. Its exact missing artifact could not be recovered from the log.
+The shard remains required.
+[Surefire startup failure](https://github.com/jordepic/StreamFusion-contrib/actions/jobs/134969018725)
+
+The legacy Delta audit resolves its plugins, mediated classpath and Surefire provider before the
+offline test command. The agent and Delta each key their
 Maven cache to their own standalone POM, so unrelated POM edits leave their cache keys stable. Cold
 preparation and connector source builds still need access to released artifacts. Retries are confined
 to dependency preparation.
