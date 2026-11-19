@@ -837,6 +837,13 @@ executing it. These paths address artifact resolution errors that occurred befor
 [Paimon 2.2 lane](https://github.com/jordepic/StreamFusion-contrib/actions/jobs/135321855717)
 [Kafka 3.2](https://github.com/jordepic/StreamFusion-contrib/actions/jobs/135322241767)
 
+The Kafka 5.0 release supplies its own Maven wrapper. The common Flink preparation runs
+that wrapper while resolving the released connector model and transfers the downloaded Maven
+distribution with the other prepared tools. Kafka 3.2 has no wrapper and keeps using its
+Flink line's already prepared Maven. A cold Flink 2.2 consumer previously failed downloading
+Kafka's Maven 3.8.6 before test compilation.
+[Kafka wrapper failure](https://github.com/jordepic/StreamFusion-contrib/actions/jobs/135767759975)
+
 The released Iceberg comparison previously started both Maven builds in the runner's default
 repository. A cold hosted run failed before the first test when Maven could not resolve
 `maven-resources-plugin:3.5.0`. The Iceberg job now prepares and caches a separate Maven

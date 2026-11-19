@@ -42,6 +42,52 @@ class KafkaMavenTest(unittest.TestCase):
                  "-pl", "flink-connector-kafka", "test"], result.stdout.splitlines(),
             )
 
+    def test_prepare_resolves_the_kafka_model_with_its_released_wrapper(self):
+        source = RUNNER.read_text()
+        start = source.index('if [[ "${SUITE_MODE}" == "kafka" ||\n')
+        end = source.index('if [[ "${SUITE_MODE}" == "paimon" ]]; then', start)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            kafka = root / "kafka checkout"
+            (kafka / ".git").mkdir(parents=True)
+            for name, contents in (
+                ("git", '#!/bin/bash\nexit 0\n'),
+                ("python3", '#!/bin/bash\nprintf "%s\n" "$MAVEN_USER_HOME" "$PWD" "$@"\nexit "$RESOLVE_STATUS"\n'),
+            ):
+                executable = root / name
+                executable.write_text(contents)
+                executable.chmod(0o755)
+            wrapper = kafka / "mvnw"
+            wrapper.touch()
+            expected = [
+                "Preparing the released Kafka Maven wrapper and connector model...",
+                str(root / "wrapper home"), str(kafka), str(RUNNER.parents[1] / "bin/ci-maven-dependencies.py"),
+                "--maven", "./mvnw", "--model-only", "--repository", str(root / "isolated m2"),
+                "--pom", str(kafka / "flink-connector-kafka/pom.xml"), "--define", "flink.version=2.2.1",
+            ]
+            for mode, version, executable, status in (
+                ("prepare", "3.2.0", True, 0),
+                ("prepare", "5.0.0", False, 0),
+                ("prepare", "5.0.0", True, 0),
+                ("prepare", "5.0.0", True, 17),
+                ("kafka", "5.0.0", True, 0),
+            ):
+                with self.subTest(mode=mode, version=version, executable=executable, resolve_status=status):
+                    wrapper.chmod(0o755 if executable else 0o644)
+                    result = subprocess.run(
+                        ["bash", "-c", source[start:end]],
+                        env={**os.environ, "SUITE_MODE": mode, "KAFKA_CONNECTOR_ROOT": str(kafka),
+                             "KAFKA_CONNECTOR_VERSION": version, "FLINK_VERSION": "2.2.1",
+                             "SUITE_MAVEN_USER_HOME": str(root / "wrapper home"),
+                             "SUITE_MAVEN_REPO": str(root / "isolated m2"),
+                             "REPO_ROOT": str(RUNNER.parents[1]), "RESOLVE_STATUS": str(status),
+                             "PATH": str(root) + os.pathsep + os.environ["PATH"]},
+                        capture_output=True, text=True,
+                    )
+                    self.assertEqual(status, result.returncode, result.stderr)
+                    prepare_wrapper = mode == "prepare" and version != "3.2.0" and executable
+                    self.assertEqual(expected if prepare_wrapper else [], result.stdout.splitlines())
+
     def test_wrapperless_release_uses_pinned_flink_maven_and_propagates_failure(self):
         self.invoke(False)
 

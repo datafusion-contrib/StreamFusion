@@ -272,7 +272,9 @@ if [[ -n "$(git -C "${FLINK_ROOT}" status --short)" ]]; then
   exit 2
 fi
 
-if [[ "${SUITE_MODE}" == "kafka" ]]; then
+# Kafka 3.2 has no wrapper to prepare. Its suite uses the prepared Flink Maven.
+if [[ "${SUITE_MODE}" == "kafka" ||
+      ( "${SUITE_MODE}" == "prepare" && "${KAFKA_CONNECTOR_VERSION}" != "3.2.0" ) ]]; then
   if [[ ! -d "${KAFKA_CONNECTOR_ROOT}/.git" ]]; then
     git clone --depth 1 --branch "${KAFKA_CONNECTOR_TAG}" \
       https://github.com/apache/flink-connector-kafka.git "${KAFKA_CONNECTOR_ROOT}" || exit $?
@@ -281,6 +283,15 @@ if [[ "${SUITE_MODE}" == "kafka" ]]; then
     echo "The upstream Kafka connector checkout is not clean: ${KAFKA_CONNECTOR_ROOT}" >&2
     echo "Use a new FLINK_SUITE_ROOT or clean that disposable checkout manually." >&2
     exit 2
+  fi
+  if [[ "${SUITE_MODE}" == "prepare" && -x "${KAFKA_CONNECTOR_ROOT}/mvnw" ]]; then
+    echo "Preparing the released Kafka Maven wrapper and connector model..."
+    (
+      cd "${KAFKA_CONNECTOR_ROOT}" &&
+        MAVEN_USER_HOME="${SUITE_MAVEN_USER_HOME}" python3 "${REPO_ROOT}/bin/ci-maven-dependencies.py" \
+          --maven ./mvnw --model-only --repository "${SUITE_MAVEN_REPO}" \
+          --pom "${KAFKA_CONNECTOR_ROOT}/flink-connector-kafka/pom.xml" --define "flink.version=${FLINK_VERSION}"
+    ) || exit $?
   fi
 fi
 
