@@ -2410,3 +2410,45 @@ are small, with overlapping ranges in most cases; the change establishes byte pr
 without a material measured execution regression. Select `sha2_224`, `sha2_256`, `sha2_384` or
 `sha2_512` as the example's fifth argument. Runtime, NULL and illegal widths keep their prior
 routing; SQL regressions cover both row-evaluation and initialization failures.
+
+## On-demand UTF-8 validation {#on-demand-utf-8-validation}
+
+The prepared-input comparison uses 1,024-row batches of 29, 197, and 773 bytes per
+non-null value. Inputs contain ASCII, three-byte Unicode characters, or Unicode with
+the first byte changed to `FF` on two rows per batch. Every 31st value is NULL.
+`CHAR_LENGTH` counts code points and `POSITION('match' IN s)` searches for the five-byte
+suffix present on half the rows. The Java driver times released Flink over prepared
+GenericRowData and BinaryRowData. The previous StreamFusion planner used the same Flink
+expressions for these unverified inputs. The Rust driver times production Calc over
+equivalent Arrow Binary batches, including validation and result consumption. These measurements
+exclude initial JNI entry, Arrow export and transposes.
+
+The release run used Apple M4, Flink 2.2.1, JDK 17.0.17, Rust 1.95 and mimalloc.
+Each trial consumes 262,144 results, with five warmups and seven measured trials per
+configuration. The two stock controls and production Calc returned matching checksums
+in all 18 configurations. Median nanoseconds per row for mixed batches, with the
+observed minimum and maximum in parentheses:
+
+| Function | Bytes | Flink GenericRowData | Flink BinaryRowData | StreamFusion Binary |
+| --- | ---: | ---: | ---: | ---: |
+| CHAR_LENGTH | 29 | 28.02 (19.01–29.64) | 29.04 (28.27–37.56) | 23.00 (22.88–23.17) |
+| CHAR_LENGTH | 197 | 81.79 (81.40–86.47) | 69.67 (68.52–84.49) | 33.77 (33.61–34.11) |
+| CHAR_LENGTH | 773 | 221.09 (220.77–221.66) | 220.33 (211.73–222.48) | 133.10 (132.70–133.56) |
+| POSITION | 29 | 36.65 (35.87–37.49) | 36.81 (34.97–42.13) | 35.53 (35.41–35.63) |
+| POSITION | 197 | 138.85 (137.50–142.09) | 139.74 (135.55–144.08) | 50.06 (49.79–50.27) |
+| POSITION | 773 | 470.95 (468.23–472.25) | 465.31 (464.13–467.89) | 145.72 (145.59–146.20) |
+
+The 29-byte mixed cases have overlapping ranges with at least one stock control.
+For all-valid ASCII and Unicode, median stock/native ratios were 2.70–10.65 for
+CHAR_LENGTH and 1.32–22.02 for POSITION across widths and stock row representations.
+These prepared timings measure expression execution on matching inputs.
+
+Run both drivers on the same idle host. Their checksums should agree for each input.
+
+```sh
+cargo build --manifest-path native/Cargo.toml --locked --release --features mimalloc \
+  -p streamfusion --example byte_string_text
+native/target/release/examples/byte_string_text 256 5 7
+SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench,benchmarks \
+  -Dtest=CertifiedScalarBenchmark#byteBackedText -Dsurefire.failIfNoSpecifiedTests=false
+```

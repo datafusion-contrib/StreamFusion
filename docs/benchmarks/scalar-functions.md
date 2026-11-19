@@ -945,3 +945,7 @@ Existing bookmarks remain valid. Follow a section to its topic page.
 <a id="byte-backed-strings-through-a-streaming-watermark"></a>
 
 [Byte-backed strings through a streaming watermark](scalar-functions-strings.md#byte-backed-strings-through-a-streaming-watermark)
+
+<a id="on-demand-utf-8-validation"></a>
+
+[On-demand UTF-8 validation](scalar-functions-strings.md#on-demand-utf-8-validation)

@@ -296,7 +296,8 @@ see [release measurements](../benchmarks/scalar-functions.md#runtime-sha2-widths
 ### Byte-preserving string input {#byte-preserving-string-input}
 
 A streaming native Calc can carry STRING inputs as Arrow Binary when every consumer has a
-verified byte contract. Supported operations include direct projection, `IS NULL`,
+verified byte contract or a compatible text path. Supported byte operations include direct
+projection, `IS NULL`,
 `IS NOT NULL`, `CONCAT` / `||`, `CONCAT_WS`, `MD5`, `SHA1`, `SHA224`, `SHA256`,
 `SHA384`, `SHA512`, `TO_BASE64`, and `ASCII`.
 Nested concatenations, runtime separators, character constants and simple
@@ -306,6 +307,16 @@ empty batches. TO_BASE64 also consumes the original bytes and returns valid ASCI
 can feed text predicates or another expression within the Calc.
 ASCII reads only the first byte and sign-extends it like Flink's Java byte; empty strings yield zero
 and NULL remains NULL. Its integer output can also be used in a native filter over malformed input.
+`CHAR_LENGTH` / `CHARACTER_LENGTH` and two-argument `POSITION(needle IN s)` also accept
+byte-backed strings. Only these text consumers check UTF-8. An ASCII length batch uses the
+Arrow offsets directly. For other inputs, a SIMD check plus a check of each value boundary
+can give the operator a zero-copy Arrow `Utf8` view. On a mixed batch the operator checks
+each value it needs. It uses Unicode code points for valid values and Flink's leading-byte
+stepping for malformed ones. For example, malformed `E0 51 51` has length 1, and neither
+`51` is a POSITION match because neither begins a character in Flink's representation.
+An empty search string has position 1, a miss has position 0, and NULL propagates.
+The batch keeps its Binary schema, original bytes and any retained Java string caches.
+See the [prepared release comparison](../benchmarks/scalar-functions.md#on-demand-utf-8-validation).
 SHA2 with a literal width of 224, 256, 384 or 512 lowers to the matching digest and has the same byte
 contract. Runtime, NULL and invalid SHA2 widths retain their existing representation and error path;
 they are not included in this arbitrary-byte admission.
@@ -315,8 +326,8 @@ batches. `EXPLAIN` identifies the input columns with `byteStrings=[...]`. There 
 
 The SQL type remains STRING. The transpose copies the original `StringData` bytes into a Binary
 vector marked `streamfusion.logical_string=1`; the native concatenation kernels consume bytes directly,
-preserve their NULL rules, and return Binary to the final row exit. No UTF-8 validation, replacement decode,
-or JVM callback is needed. The exit can borrow Binary-backed string bytes for synchronous consumers,
+preserve their NULL rules, and return Binary to the final row exit without scanning strings for UTF-8.
+The exit can borrow Binary-backed string bytes for synchronous consumers,
 with the same ownership rule as Utf8. CONCAT output is byte-backed without a Java string cache,
 matching Flink's concatenation helpers. `CONCAT_WS` returns NULL only when its separator is NULL;
 it skips NULL values but retains empty values and their separators. A separator alone, or only

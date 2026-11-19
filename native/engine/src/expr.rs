@@ -650,16 +650,25 @@ fn build_typed_call(
     use datafusion::logical_expr::ExprSchemable;
     if matches!(
         op,
-        scalar_op::ASCII | scalar_op::CONCAT_WS | scalar_op::TO_BASE64
+        scalar_op::ASCII
+            | scalar_op::CHAR_LENGTH
+            | scalar_op::CONCAT_WS
+            | scalar_op::POSITION
+            | scalar_op::TO_BASE64
     ) {
         let schema = DFSchema::try_from(Arc::clone(schema)).expect("byte-string input schema");
-        if args
+        let types: Vec<_> = args
             .iter()
-            .any(|arg| arg.get_type(&schema).expect("operand type") == DataType::Binary)
-        {
+            .map(|arg| arg.get_type(&schema).expect("operand type"))
+            .collect();
+        if types.contains(&DataType::Binary) {
             let function = match op {
                 scalar_op::ASCII => crate::flink_functions::byte_ascii::function(),
+                scalar_op::CHAR_LENGTH => crate::flink_functions::byte_string_text::length_function(),
                 scalar_op::CONCAT_WS => crate::flink_functions::byte_concat_ws::function(),
+                scalar_op::POSITION => {
+                    crate::flink_functions::byte_string_text::position_function(types)
+                }
                 scalar_op::TO_BASE64 => {
                     crate::flink_functions::function(scalar_op::TO_BASE64_BINARY, args.len())
                         .expect("binary TO_BASE64")

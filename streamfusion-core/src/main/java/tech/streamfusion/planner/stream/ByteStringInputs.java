@@ -239,6 +239,8 @@ final class ByteStringInputs {
       case ScalarOp.IS_NULL:
       case ScalarOp.IS_NOT_NULL:
       case ScalarOp.ASCII:
+      case ScalarOp.CHAR_LENGTH:
+      case ScalarOp.POSITION:
       case ScalarOp.CONCAT:
       case ScalarOp.CONCAT_WS:
       case ScalarOp.MD5:
