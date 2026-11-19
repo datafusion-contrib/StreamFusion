@@ -12,7 +12,8 @@ The operator discards only UPDATE_BEFORE (byte 1), retaining the order and value
 UPDATE_AFTER (2) and DELETE (3). Missing row-kind metadata means INSERT. All SQL columns, nested
 values, hidden representation companions and retained row kinds use the same selection mask.
 Routing and per-row lineage remain aligned. Flink's check that the output must not require
-UPDATE_BEFORE is preserved.
+UPDATE_BEFORE is preserved. In a streaming plan with byte-backed STRING columns, the same
+selection retains their original bytes and optional Java string caches.
 
 The operator consumes and emits Arrow batches. Batches with no UPDATE_BEFORE rows pass through
 unchanged without JNI, allocation or a data-buffer copy; fully discarded batches release their

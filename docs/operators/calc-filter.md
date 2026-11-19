@@ -1090,7 +1090,9 @@ Tests compare raw bytes with released Flink and require positive NativeCalc cons
 multiple batches, NULLs, embedded zeros, Unicode, nested CONCAT and all-filtered batches.
 
 At an unverified row ingress, the planner tracks byte-backed STRING columns through compatible
-Calcs and native filters, watermark and mini-batch assigners, and UPDATE_BEFORE filters. A numeric filter can forward
+Calcs and native filters, watermark and mini-batch assigners, UPDATE_BEFORE filters, and UNION ALL
+when every branch has the same byte-backed column positions and no surviving passthrough can
+expose a Java cache across the union. A numeric filter can forward
 a STRING unchanged. A projection can drop a byte-backed column or consume it in an operation
 that produces a different representation, such as ASCII. The planner can then admit other
 native operators that only see the resulting ordinary Arrow columns. Surviving byte-backed

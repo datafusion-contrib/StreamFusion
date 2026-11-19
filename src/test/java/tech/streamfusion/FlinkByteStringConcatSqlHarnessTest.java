@@ -101,6 +101,8 @@ class FlinkByteStringConcatSqlHarnessTest {
         "SELECT LOWER(CONCAT(s, '!')) FROM src",
         "SELECT CONCAT(s, '!'), LOWER(t) FROM src",
         "SELECT LOWER(s) FROM timed_src",
+        "SELECT CONCAT(s, '!') FROM src WHERE id = 0 "
+            + "UNION ALL SELECT CAST('ok' AS STRING) FROM (VALUES (0))",
         "SELECT CONCAT(s, '!'), COUNT(*) FROM src GROUP BY CONCAT(s, '!')"
       })
   void unqualifiedConsumersKeepTheStockPlan(String sql) throws Exception {
@@ -119,15 +121,15 @@ class FlinkByteStringConcatSqlHarnessTest {
   }
 
   @Test
-  void stringsPreserveBytesAcrossAnUnverifiedUnionBoundary() throws Exception {
+  void unionAllPreservesBytesWhenBothBranchesUseBinary() throws Exception {
     String sql =
         "SELECT CONCAT(s, '!') AS v FROM src WHERE id < 100 "
             + "UNION ALL SELECT CONCAT(t, '!') AS v FROM src WHERE id < 100";
     var expected = run(sql, false);
-    var fallback = run(sql, Route.FALLBACK, Result.STRING);
+    var actual = run(sql, Route.NATIVE, Result.STRING);
     expected.sort(String::compareTo);
-    fallback.sort(String::compareTo);
-    assertEquals(expected, fallback);
+    actual.sort(String::compareTo);
+    assertEquals(expected, actual);
   }
 
   @Test
@@ -183,6 +185,7 @@ class FlinkByteStringConcatSqlHarnessTest {
         assertTrue(plan.contains(nativeOperator), plan);
         assertTrue(plan.contains("RowDataToArrow"), plan);
         if (timed) assertTrue(plan.contains("NativeWatermarkAssigner"), plan);
+        if (sql.contains("UNION ALL")) assertTrue(plan.contains("NativeUnion"), plan);
       } else if (route == Route.FALLBACK) {
         String plan = table.explainSql(sql);
         assertFalse(plan.contains("RowDataToArrow"), plan);

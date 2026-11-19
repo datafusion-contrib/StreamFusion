@@ -66,8 +66,9 @@ final class ByteStringInputs {
       return new Prepared(transpose, columns);
     }
 
+    boolean union = node instanceof StreamPhysicalNativeUnion;
     boolean forwardsSchema =
-        node instanceof StreamPhysicalNativeWatermarkAssigner
+        union || node instanceof StreamPhysicalNativeWatermarkAssigner
             || node instanceof StreamPhysicalNativeMiniBatchAssigner
             || node instanceof StreamPhysicalNativeDropUpdateBefore;
     boolean preserveInputCaches =
@@ -79,12 +80,24 @@ final class ByteStringInputs {
                 && ((StreamPhysicalNativeFilter) node).hasStringPassthrough();
     List<RelNode> inputs = new ArrayList<>(node.getInputs().size());
     boolean changed = false;
-    BitSet output = new BitSet();
+    BitSet output = null;
     for (RelNode input : node.getInputs()) {
       Prepared prepared = prepareTree(input, preserveInputCaches);
       if (prepared == null) return null;
       inputs.add(prepared.node);
       changed |= prepared.node != input;
+      if (union) {
+        // Downstream operators may compile against the first batch's physical column types.
+        if (output != null && !output.equals(prepared.byteStrings)) return null;
+        // A stock union can serialize its inputs and clear Java caches. Only admit surviving
+        // byte results here when their producing Calc created them without a cache.
+        if (preserveOutputCaches
+            && !prepared.byteStrings.isEmpty()
+            && (!(input instanceof StreamPhysicalNativeCalc)
+                || ((StreamPhysicalNativeCalc) input).hasStringPassthrough())) return null;
+        output = prepared.byteStrings;
+        continue;
+      }
       if (prepared.byteStrings.isEmpty() || node instanceof StreamPhysicalArrowToRowData) continue;
       if (node instanceof StreamPhysicalNativeCalc) {
         output =
@@ -99,7 +112,8 @@ final class ByteStringInputs {
         return null;
       }
     }
-    return new Prepared(changed ? node.copy(node.getTraitSet(), inputs) : node, output);
+    BitSet byteStrings = output == null ? new BitSet() : output;
+    return new Prepared(changed ? node.copy(node.getTraitSet(), inputs) : node, byteStrings);
   }
 
   static boolean hasUnverifiedIngress(RelNode root) {
