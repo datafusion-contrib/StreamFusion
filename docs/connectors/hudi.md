@@ -354,11 +354,11 @@ and Nexmark harness separately require native Hudi source/sink execution.
 Stock Hudi row scans can supply unverified character columns as Binary to
 byte-preserving consumers and supported streaming Calc text expressions. The shared
 [UTF-8 adapter](../operators/calc-filter-strings.md#on-demand-utf8-for-text-expressions)
-removes the unverified-string fallback from 14 released Hudi 1.2.1 invocations,
-bringing its count to 170 of the 349 enabled invocations. The connector records its
-own source and sink admission decisions. Two Debezium JSON invocations can retain
-native UPDATE_BEFORE filtering over Binary strings. The audit checks stock results
-and counts native Calc work on validated row ranges.
+removes the unverified-string planner fallback from 64 released Hudi 1.2.1
+invocations, bringing its count to 120 of the 349 enabled invocations. The audit
+checks stock results and records increased native Calc work in 14 invocations.
+The connector records its own source and sink admission decisions. Two Debezium
+JSON invocations can retain native UPDATE_BEFORE filtering over Binary strings.
 
 A full native replay after the earlier batch-admission change passed all 349
 enabled upstream cases. The change added 99 requirements for positive native
