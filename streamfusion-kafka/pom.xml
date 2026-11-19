@@ -26,6 +26,18 @@
         <dependency><groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-core${streamfusion.artifact.suffix}</artifactId>
             <version>${project.version}</version><type>test-jar</type><scope>test</scope></dependency>
+        <dependency><groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-json${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-raw${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-avro${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-avro-confluent-registry${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version><scope>test</scope></dependency>
 
         <dependency>
             <groupId>tech.streamfusion</groupId>

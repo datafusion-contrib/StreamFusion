@@ -27,6 +27,12 @@ and after every test, preserving native handle, Arrow allocator and task reserva
 Missing providers fail explicitly instead of silently disabling the leak audit. This direction
 keeps core, utilities and optional connectors acyclic.
 
+Module-owned provider tests declare the format implementations they exercise with test scope.
+Kafka's translator tests install the JSON, raw, Avro and Avro Confluent Registry providers this
+way, retaining their original present/absent-provider assertions without adding formats to the
+deployable Kafka artifact. Run these units through the reactor (`-pl streamfusion-kafka -am`)
+so their format providers are built before the tests.
+
 Ordinary Java and protobuf paths stay module-relative. A build-helper source set adds exactly
 one Flink line. Rust compatibility tests include the unchanged frozen state and ordering bytes
 from runtime resources. Legacy `.sst` and `.bin` fixtures retain their original bytes; regenerating
