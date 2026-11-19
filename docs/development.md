@@ -85,6 +85,8 @@ all dated measurements, rejected results and relative evidence links.
 Keep SQL inventory compressed snapshots, structured measurements, reproduction tools and
 rejected design decisions in Git. Generate inventory downloads during documentation publication.
 Historical logs and plans use the [verified artifact workflow](benchmarks/evidence.md#maintaining-the-evidence).
-[#674](https://github.com/datafusion-contrib/StreamFusion/issues/674) also tracks the remaining
-historical-report schema migration.
+[Versioned report references](benchmarks/report-schema.md) remove embedded historical plan bodies
+while preserving byte-identical JSON downloads for existing public consumers.
+
+[#674](https://github.com/datafusion-contrib/StreamFusion/issues/674) tracks this organization work.
 It changes test ownership and documentation packaging, without claiming SQL or throughput gains.
