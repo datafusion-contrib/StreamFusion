@@ -171,6 +171,8 @@ class TestRuntimePreparationTest(unittest.TestCase):
                                              "org.apache.maven.plugins:maven-surefire-plugin:3.5.3",
                                              "org.apache.maven.surefire:surefire-junit-platform:3.5.3",
                                              "org.apache.maven.plugins:maven-resources-plugin:3.5.0"])
+                        else:
+                            expected.append("org.apache.maven.plugins:maven-remote-resources-plugin:1.7.0")
                         self.assertEqual(expected, artifacts)
                         self.assertEqual(1 if status or probe_status else 2, len(invocations))
                         self.assertEqual(not (status or probe_status), "build is ready" in result.stdout)

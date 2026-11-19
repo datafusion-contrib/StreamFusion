@@ -12,8 +12,10 @@ import org.apache.flink.table.api.DataTypes;
 import org.apache.flink.table.api.Schema;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.types.Row;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import tech.streamfusion.planner.NativePlanner;
 
 class LegacyPaimonValueParityTest {
@@ -239,6 +241,59 @@ class LegacyPaimonValueParityTest {
       twins.add(result);
     }
     assertEquals(twins.get(0), twins.get(1));
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  @Timeout(120)
+  void parallelUnawareBucketScanReturnsEveryCommittedRow(boolean accelerated) throws Exception {
+    var warehouse = Files.createTempDirectory(tempDir, "paimon1-unaware").toUri().toString();
+    var writerEnv = StreamExecutionEnvironment.getExecutionEnvironment();
+    writerEnv.setParallelism(1);
+    var writer = StreamTableEnvironment.create(writerEnv);
+    catalog(writer, warehouse);
+    writer.executeSql(
+        "CREATE TABLE t (id INT, data STRING) WITH ('bucket'='-1', 'consumer-id'='test',"
+            + " 'consumer.expiration-time'='365 d', 'target-file-size'='1 B',"
+            + " 'source.split.target-size'='1 B', 'scan.parallelism'='4')");
+    var input =
+        writerEnv.fromCollection(
+            List.of(Row.of(1, "AAA"), Row.of(2, "BBB")),
+            Types.ROW_NAMED(new String[] {"id", "data"}, Types.INT, Types.STRING));
+    writer.createTemporaryView("input_rows", writer.fromDataStream(input));
+    String insert = "INSERT INTO t SELECT * FROM input_rows";
+    if (accelerated) {
+      var plan = NativePlanner.install(writer);
+      assertTrue(writer.explainSql(insert).contains("NativePaimon"), plan::explainSummary);
+    }
+    for (int write = 0; write < 4; write++) {
+      writer.executeSql(insert).await();
+    }
+
+    var readerEnv = StreamExecutionEnvironment.getExecutionEnvironment();
+    readerEnv.setRuntimeMode(RuntimeExecutionMode.STREAMING);
+    readerEnv.setParallelism(4);
+    var reader = StreamTableEnvironment.create(readerEnv);
+    catalog(reader, warehouse);
+    String select = "SELECT id FROM t";
+    if (accelerated) {
+      var plan = NativePlanner.install(reader);
+      reader.explainSql(select);
+      assertTrue(
+          plan.fallbackReasons().stream().anyMatch(r -> r.contains("consumer retention")),
+          plan::explainSummary);
+    }
+    List<String> observed = new ArrayList<>();
+    try (var records = reader.executeSql(select).collect()) {
+      for (int row = 0; row < 8; row++) {
+        assertTrue(records.hasNext(), "The scan ended before reading all four commits");
+        observed.add(records.next().toString());
+      }
+    }
+    observed.sort(String::compareTo);
+    assertEquals(
+        List.of("+I[1]", "+I[1]", "+I[1]", "+I[1]", "+I[2]", "+I[2]", "+I[2]", "+I[2]"),
+        observed);
   }
 
   private static void catalog(StreamTableEnvironment sql, String path) {

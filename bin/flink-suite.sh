@@ -351,7 +351,13 @@ if [[ "${FLINK_SUITE_REUSE_BUILD:-false}" == "true" || "${FLINK_SUITE_REUSE_COMM
   echo "Reusing the existing Flink suite and StreamFusion build artifacts..."
 else
   echo "Building the test-JVM planner injection agent..."
-  mvn -B -ntp -s "${MAVEN_SETTINGS}" -f "${AGENT_ROOT}/pom.xml" "-Dsuite.agent.output=${AGENT_OUTPUT}" package || exit $?
+  python3 "${REPO_ROOT}/bin/ci-maven-dependencies.py" --pom "${AGENT_ROOT}/pom.xml" || exit $?
+  # Surefire discovers the provider and project-version launcher during execution.
+  python3 "${REPO_ROOT}/bin/ci-maven-dependencies.py" \
+    --artifact org.apache.maven.surefire:surefire-junit-platform:3.5.3 \
+    --artifact org.junit.platform:junit-platform-launcher:1.10.2 || exit $?
+  mvn -B -ntp -o -s "${MAVEN_SETTINGS}" -gs "${MAVEN_SETTINGS}" \
+    -f "${AGENT_ROOT}/pom.xml" "-Dsuite.agent.output=${AGENT_OUTPUT}" package || exit $?
 
   echo "Building the pinned Flink planner and its reactor dependencies..."
   (
@@ -493,6 +499,9 @@ if [[ "${SUITE_MODE}" == "prepare" ]]; then
       --artifact "org.apache.maven.surefire:surefire-junit-platform:3.5.3"
       --artifact "org.apache.maven.plugins:maven-resources-plugin:3.5.0"
     )
+  else
+    # The Flink 1.18 Paimon source build uses its own release parent and lifecycle.
+    test_runtime_artifacts+=(--artifact "org.apache.maven.plugins:maven-remote-resources-plugin:1.7.0")
   fi
   (
     cd "${FLINK_ROOT}" &&

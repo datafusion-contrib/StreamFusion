@@ -89,7 +89,7 @@ class SuiteWorkflowTest(unittest.TestCase):
                     report.write_text(saved)
 
     def test_final_gate_rejects_failed_cancelled_and_unexpected_skipped_jobs(self):
-        dependencies = ("plan", "upstream-line", "legacy-delta-audit")
+        dependencies = ("plan", "upstream-flink-22", "upstream-flink-118", "legacy-delta-audit")
         for inventory in (False, True):
             for dependency in dependencies:
                 for state in ("success", "failure", "cancelled", "skipped"):

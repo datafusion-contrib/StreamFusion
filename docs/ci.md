@@ -255,7 +255,11 @@ includes prerequisite builds as well as runner queueing; it is not labelled
 as pure runner wait. Queued jobs do not acquire a fictitious execution time from GitHub's
 preallocated start timestamp. The ordinary Java jobs are named **Runtime, connectors and
 formats** because their selection includes all three; Doris's real-server suite remains a
-separate job. Full workflow results continue to control the required gates.
+separate job. In Actions, **Test suites** groups the primary CI jobs, and **Flink 1.18**
+and **Flink 2.2** group the upstream jobs. Reused coverage skips these named groups before
+expanding their matrices. The upstream group supplies the Flink line in each check name,
+so child jobs use labels such as **Kafka** or **Runtime (shard 2)**. The two required
+aggregate check names stay stable.
 
 GitHub cron is best effort: a requested fifteen-minute schedule can be delayed or dropped for
 hours. Fork workflow completions do not trigger `workflow_run` in the canonical repository,
@@ -656,8 +660,19 @@ the reactor's `bench` profile, and verifies JNI/package boundaries before Maven 
 the source/sink parity phase and the upstream SQL phase pass `-Dnative.build.skip=true`
 and reuse those libraries. Previously each Maven module invoked Cargo with a different
 package selection: the successful main run on 2026-10-20 performed seven release builds,
-recompiling DataFusion three times. The test selections, JVM limits and single-fork SQL
-execution stay the same. Cargo's compilation timings are retained with the test evidence.
+recompiling DataFusion three times. The JVM limits and single-fork upstream SQL execution stay the same. Cargo's compilation timings are retained with the test evidence.
+
+The released Paimon 1.0.0
+`AppendOnlyTableITCase#testReadUnwareBucketTableWithRebalanceShuffle` only checks the
+first two rows across four parallel readers. It writes four identical pairs, so the unordered
+read can deliver two copies of the same value first. The November 12
+[compatibility failure](https://github.com/datafusion-contrib/StreamFusion/actions/runs/43142691276/job/130933174381)
+received two copies of `+I[1]`. The compatibility workflow excludes just that method via
+`SF_PAIMON1_QUARANTINE_REBALANCE_PREFIX`. Local runs and explicit `SF_PAIMON1_TESTS`
+selections still run the original method. Four local stock repeats on Flink 1.18.1 and
+JDK 17 passed, so the archived ordering did not reproduce locally. The parity phase checks
+all eight row values and their multiplicities across the same four parallel readers after both stock and accelerated
+writes. The scan with consumer retention continues to use the released stock source.
 
 Default-enabled paths need positive native-route assertions. Fixed-size-binary compatibility
 tests construct that legacy physical schema explicitly rather than changing global feature
@@ -789,6 +804,21 @@ timings rather than a paired full-suite speedup measurement. The existing CI mat
 the effect on both JDKs and the optimized image job.
 
 ## Maven dependencies
+
+On the November 19 submission of PR #675, separate jobs failed during Maven plugin resolution
+before reaching their SQL assertions. The [main Paimon compatibility run](https://github.com/datafusion-contrib/StreamFusion/actions/runs/44512986175)
+received HTTP 429 while starting a standalone Surefire probe. The [fork upstream run](https://github.com/liuyongvs/StreamFusion/actions/runs/44480446131/attempts/1)
+could not resolve the agent's default JAR plugin or Paimon 2.0.0's remote-resources plugin.
+The latter two jobs passed on the same commit after retry.
+
+The Paimon 1.0 fork-isolation probe uses the reactor's dependency and plugin versions and
+runs Maven offline after source/sink parity populates the same JDK 17 repository. The two
+forks wait for explicit evidence that each started, so a fixed sleep no longer decides
+whether they overlap. The upstream agent pins the resources and JAR plugins and resolves its
+dependencies and Surefire provider in the bounded setup stage before an offline build.
+The Flink 1.18 upstream preparation also adds Paimon 2.0.0's remote-resources plugin and
+its dependencies to the transferred Maven repository. Cold preparation and connector source
+builds still need access to released artifacts. Test assertions and test JVMs have no retry policy.
 
 The upstream execution-evidence agent is a separate JDK 17 development tool. Its standalone
 POM pins the compiler plugin to 3.13.0 so Maven 3.8 also honors `maven.compiler.release=17`

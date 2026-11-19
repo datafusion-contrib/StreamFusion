@@ -27,8 +27,8 @@ class ProfileCiTest(unittest.TestCase):
                                "completed_at": f"2026-11-07T00:{end}:00Z"}]}
         jobs = [job("Shared debug native libraries", "00", "01"),
                 job("Canonical savepoint jobs A", "02", "07"),
-                job("Canonical savepoint jobs B", "04", "09", "failure"),
-                job("Prepare canonical Java (Flink 2.2, JDK 17)", "01", "02")]
+                job("Test suites / Canonical savepoints (Flink 2.2, JDK 17, shard 2)", "04", "09", "failure"),
+                job("Test suites / Prepare canonical Java (Flink 2.2, JDK 17)", "01", "02")]
         result = profile.summarize(run, jobs)
         self.assertEqual(540, result["elapsed_seconds"])
         self.assertEqual(720, result["runner_seconds"])
