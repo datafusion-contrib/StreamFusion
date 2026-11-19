@@ -28,6 +28,36 @@ def command(name):
 
 
 class SuiteWorkflowTest(unittest.TestCase):
+    def test_iceberg_uses_the_released_repository_offline_for_both_phases(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            suite = root / "isolated suite"
+            payload = suite / "2.2/streamfusion-source/native/target/debug"
+            payload.mkdir(parents=True)
+            for library in ("streamfusion", "streamfusion_iceberg"):
+                (payload / f"lib{library}.so").touch()
+            maven = root / "mvn"
+            maven.write_text('#!/bin/bash\nprintf "%s\n" "$@" done\n[[ "$*" != *iceberg,iceberg-upstream* ]] || exit 73\n')
+            maven.chmod(0o755)
+            runner = WORKFLOW.parents[2] / "bin/iceberg-suite.sh"
+            result = subprocess.run(
+                ["bash", str(runner)],
+                env={**os.environ, "FLINK_VERSION": "2.2.1", "FLINK_SUITE_ROOT": str(suite),
+                     "FLINK_SUITE_REUSE_COMMON_BUILD": "true",
+                     "PATH": str(root) + os.pathsep + os.environ["PATH"]},
+                capture_output=True, text=True,
+            )
+            self.assertEqual(73, result.returncode, result.stderr)
+            stock, native, end = result.stdout.split("done\n")
+            self.assertFalse(end)
+            for invocation in (stock, native):
+                args = invocation.splitlines()
+                self.assertIn("-o", args)
+                self.assertIn(f"-Dmaven.repo.local={suite / 'iceberg-m2'}", args)
+                self.assertEqual("test", args[-1])
+            self.assertIn("dev/flink-suite/iceberg/pom.xml", stock)
+            self.assertIn("-Piceberg,iceberg-upstream", native)
+
     def test_group_runs_every_suite_and_preserves_any_failure(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -837,6 +837,14 @@ executing it. These paths address artifact resolution errors that occurred befor
 [Paimon 2.2 lane](https://github.com/jordepic/StreamFusion-contrib/actions/jobs/135321855717)
 [Kafka 3.2](https://github.com/jordepic/StreamFusion-contrib/actions/jobs/135322241767)
 
+The released Iceberg comparison previously started both Maven builds in the runner's default
+repository. A cold hosted run failed before the first test when Maven could not resolve
+`maven-resources-plugin:3.5.0`. The Iceberg job now prepares and caches a separate Maven
+repository for its stock fixture and native reactor, then runs both offline. Both phases use the
+published Flink planner. The shared upstream Flink repository contains a source-built planner at
+the same coordinates.
+[Iceberg resolution failure](https://github.com/jordepic/StreamFusion-contrib/actions/jobs/135592271862)
+
 Shared runtime shards use the same offline Maven resolution mode exercised by the preparation smoke
 test. An archived Flink 1.18 shard reported an unresolved file in Surefire's provider classpath
 before the test fork started. Its exact missing artifact could not be recovered from the log.
