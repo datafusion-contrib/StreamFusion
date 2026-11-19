@@ -77,9 +77,14 @@ Operator and connector pages describe current support. Benchmark reports describ
 revision, configuration and measurement boundary. Follow the [evidence index](benchmarks/evidence.md)
 for complete comparisons, component diagnostics, interrupted runs and rejected experiments.
 
+The Calc and scalar benchmark indexes link topic pages and retain every published section anchor.
+`dev/docs/published-anchors.json` records their original destinations, including duplicate-heading
+suffixes. The anchor check validates both old bookmarks and new targets. Topic moves preserve
+all dated measurements, rejected results and relative evidence links.
+
 Keep SQL inventory compressed snapshots, structured measurements, reproduction tools and
 rejected design decisions in Git. Generate inventory downloads during documentation publication.
 Historical logs and plans use the [verified artifact workflow](benchmarks/evidence.md#maintaining-the-evidence).
 [#674](https://github.com/datafusion-contrib/StreamFusion/issues/674) also tracks the remaining
-documentation topic and historical-report schema migration.
+historical-report schema migration.
 It changes test ownership and documentation packaging, without claiming SQL or throughput gains.

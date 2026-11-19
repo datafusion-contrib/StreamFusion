@@ -34,6 +34,7 @@ jobs:
       - run: pip install 'mkdocs>=1.6,<2' mkdocs-material
       - run: python3 -m unittest discover -s dev/flink-suite -p test_render_sql_inventory.py
       - run: python3 -m unittest discover -s dev -p test_benchmark_artifacts.py
+      - run: python3 -m unittest discover -s dev/docs -p 'test_*.py'
       - run: mkdocs build --strict
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

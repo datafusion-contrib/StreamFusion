@@ -34,6 +34,7 @@ theme:
     - search.suggest
 
 markdown_extensions:
+  - attr_list
   - tables
   - admonition
   - pymdownx.details
