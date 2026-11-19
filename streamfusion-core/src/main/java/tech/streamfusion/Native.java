@@ -943,6 +943,9 @@ public final class Native {
 
   public static native void closeLocalGroupAggregator(long handle);
 
+  /** Returns the row numbers whose selected Arrow Binary strings fail strict UTF-8 validation. */
+  public static native int[] invalidUtf8Rows(long inputArray, long inputSchema, int[] columns);
+
   /**
    * Compiles an encoded Calc — an optional condition tree plus the projection trees, sharing one
    * set of pools, with each tree's root in {@code projectionRoots}/{@code conditionRoot} — into a

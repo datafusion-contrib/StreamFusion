@@ -17,7 +17,9 @@ public final class ByteStringTransport {
     var fields = new ArrayList<>(schema.getFields());
     for (int column : columns) {
       Field original = fields.get(column);
-      if (!(original.getType() instanceof ArrowType.Utf8) || original.getDictionary() != null) {
+      if (!(original.getType() instanceof ArrowType.Utf8
+              || original.getType() instanceof ArrowType.Binary)
+          || original.getDictionary() != null) {
         throw new IllegalArgumentException("Byte string transport requires a plain string field");
       }
       var metadata = new HashMap<>(original.getMetadata());
@@ -35,5 +37,25 @@ public final class ByteStringTransport {
   public static boolean isString(Field field) {
     return field.getType() instanceof ArrowType.Binary
         && "1".equals(field.getMetadata().get(METADATA_KEY));
+  }
+
+  /** Schema for the same buffers after the indicated byte-backed arrays have been validated. */
+  public static Schema utf8Schema(Schema schema, int[] columns) {
+    var fields = new ArrayList<>(schema.getFields());
+    for (int column : columns) {
+      Field original = fields.get(column);
+      if (!(original.getType() instanceof ArrowType.Binary) || original.getDictionary() != null) {
+        throw new IllegalArgumentException("UTF-8 view requires a byte-backed STRING field");
+      }
+      var metadata = new HashMap<>(original.getMetadata());
+      metadata.remove(METADATA_KEY);
+      fields.set(
+          column,
+          new Field(
+              original.getName(),
+              new FieldType(original.isNullable(), ArrowType.Utf8.INSTANCE, null, metadata),
+              original.getChildren()));
+    }
+    return new Schema(fields, schema.getCustomMetadata());
   }
 }

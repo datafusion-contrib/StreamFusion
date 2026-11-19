@@ -29,6 +29,8 @@ import tech.streamfusion.planner.common.ExpressionKind;
  */
 public class NativeCalcOperator extends FlinkStreamOperator<ArrowBatch>
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
+  // Keep the deployment identity from before adaptive Calc exposed its evaluation entry point.
+  private static final long serialVersionUID = -2187588754439798802L;
 
   private final int[] kinds;
   private final int[] payload;
@@ -86,6 +88,8 @@ public class NativeCalcOperator extends FlinkStreamOperator<ArrowBatch>
 
   private InputProjection inputProjection(Schema schema) {
     if (!udfBinding.isEmpty()
+        || schema.getFields().stream().anyMatch(field ->
+            "v1".equals(field.getMetadata().get(tech.streamfusion.arrow.StringCacheColumns.METADATA_KEY)))
         || Arrays.stream(kinds)
             .anyMatch(
                 kind -> kind == ExpressionKind.UDF.code() || kind == ExpressionKind.ROW_UDF.code()))
@@ -232,6 +236,11 @@ public class NativeCalcOperator extends FlinkStreamOperator<ArrowBatch>
       emitResult(result, keyGroup);
       return;
     }
+    emitResult(evaluateNative(in), keyGroup);
+  }
+
+  /** Consumes the input root and returns the owned result of the encoded Calc. */
+  protected final VectorSchemaRoot evaluateNative(VectorSchemaRoot in) throws Exception {
     // The input batch's buffers belong to the upstream operator's allocator; the C Data export must
     // use that allocator (buffers associate only within one allocator root). The operator's own
     // allocator owns only the imported result.
@@ -312,10 +321,10 @@ public class NativeCalcOperator extends FlinkStreamOperator<ArrowBatch>
     } finally {
       in.close(); // the input batch is consumed
     }
-    emitResult(out, keyGroup);
+    return out;
   }
 
-  private void emitResult(VectorSchemaRoot result, int keyGroup) {
+  protected final void emitResult(VectorSchemaRoot result, int keyGroup) {
     if (result.getRowCount() == 0) {
       result.close();
     } else {

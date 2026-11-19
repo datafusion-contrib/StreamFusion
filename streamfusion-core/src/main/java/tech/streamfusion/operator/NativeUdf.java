@@ -666,6 +666,13 @@ public final class NativeUdf {
     }
   }
 
+  static FlinkExpressionFunction generatedRowCalc(int id) {
+    Registered udf = REGISTRY.get(id);
+    if (udf == null || udf.returnType != TYPE_ROW || udf.generated == null)
+      throw new IllegalStateException("adaptive Calc requires a bound generated evaluator");
+    return udf.generated;
+  }
+
   private static VectorSchemaRoot evaluateRowCalc(
       Registered udf, int id, VectorSchemaRoot in, int[] columns) {
     List<FieldVector> inputs = new ArrayList<>(columns.length);

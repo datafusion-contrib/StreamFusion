@@ -97,10 +97,6 @@ class FlinkByteStringConcatSqlHarnessTest {
   @ParameterizedTest
   @ValueSource(
       strings = {
-        "SELECT CONCAT(s, '!') FROM src WHERE s = 'a'",
-        "SELECT LOWER(CONCAT(s, '!')) FROM src",
-        "SELECT CONCAT(s, '!'), LOWER(t) FROM src",
-        "SELECT LOWER(s) FROM timed_src",
         "SELECT CONCAT(s, '!') FROM src WHERE id = 0 "
             + "UNION ALL SELECT CAST('ok' AS STRING) FROM (VALUES (0))",
         "SELECT CONCAT(s, '!'), COUNT(*) FROM src GROUP BY CONCAT(s, '!')"
@@ -114,10 +110,48 @@ class FlinkByteStringConcatSqlHarnessTest {
     }
   }
 
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "SELECT LOWER(CONCAT(s, '!')) AS v FROM src WHERE id <> -1",
+        "SELECT LOWER(s) AS v FROM timed_src",
+        "SELECT TRIM(s) AS v FROM src",
+        "SELECT REPLACE(s, 'a', 'é') AS v FROM src",
+        "SELECT CONCAT(TO_BASE64(t), REPLACE(s, 'a', 'b')) AS v FROM src",
+        "SELECT REPEAT(s, 2) AS v FROM src",
+        "SELECT REVERSE(s) AS v FROM src WHERE id % 10 NOT IN (1, 2)",
+        "SELECT SPLIT_INDEX(s, 'a', 0) AS v FROM src",
+        "SELECT LPAD(s, 5, 'x') AS v FROM src WHERE id % 10 NOT IN (1, 2)",
+        "SELECT REGEXP_REPLACE(s, 'a', 'x') AS v FROM src",
+        "SELECT s AS v FROM src WHERE s LIKE 'a%'",
+        "SELECT CONCAT(s, '!') AS v FROM src WHERE s = 'abc'",
+        "SELECT SUBSTRING(s, 1, 1) AS v FROM src WHERE id % 10 <> 2"
+      })
+  void mixedTextKeepsBothRoutesInTheSameCalc(String sql) throws Exception {
+    assertEquals(run(sql, false), run(sql, Route.ADAPTIVE, Result.STRING));
+  }
+
   @Test
-  void unsupportedCompositionUsesStockBeforeStringBytesEnterArrow() throws Exception {
-    String sql = "SELECT LOWER(CONCAT(s, '!')) AS v FROM src WHERE id <> -1";
-    assertEquals(run(sql, false), run(sql, Route.FALLBACK, Result.STRING));
+  void seededTextFilterKeepsOneGeneratedEvaluatorAcrossBatches() throws Exception {
+    String sql = "SELECT LOWER(s) AS v FROM src WHERE RAND(42) < 0.5";
+    assertEquals(run(sql, false), run(sql, Route.EXACT, Result.STRING));
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"REVERSE(s)", "SUBSTRING(s, 1, 1)"})
+  void truncatedTextRetainsFlinkResultsOrFailure(String expression) {
+    String sql = "SELECT " + expression + " AS v FROM src WHERE id < 3";
+    assertEquals(outcome(sql, Route.HOST), outcome(sql, Route.ADAPTIVE));
+  }
+
+  private static Object outcome(String sql, Route route) {
+    try {
+      return run(sql, route, Result.STRING);
+    } catch (Exception failure) {
+      Throwable cause = failure;
+      while (cause.getCause() != null) cause = cause.getCause();
+      return cause.getClass();
+    }
   }
 
   @Test
@@ -151,6 +185,8 @@ class FlinkByteStringConcatSqlHarnessTest {
   private enum Route {
     HOST,
     NATIVE,
+    ADAPTIVE,
+    EXACT,
     FALLBACK
   }
 
@@ -179,11 +215,13 @@ class FlinkByteStringConcatSqlHarnessTest {
       var table = source(metrics, timed);
       table.createTemporarySystemFunction("emit_bytes", EmitBytes.class);
       var scan = route == Route.HOST ? null : NativePlanner.install(table);
-      if (route == Route.NATIVE) {
+      if (route == Route.NATIVE || route == Route.ADAPTIVE || route == Route.EXACT) {
         String plan = table.explainSql(sql);
         assertTrue(plan.contains("byteStrings="), () -> plan + scan.fallbackReasons());
         assertTrue(plan.contains(nativeOperator), plan);
         assertTrue(plan.contains("RowDataToArrow"), plan);
+        if (route == Route.ADAPTIVE) assertTrue(plan.contains("onDemandUtf8=[true]"), plan);
+        if (route == Route.EXACT) assertTrue(plan.contains("byteBackedFlinkEval=[true]"), plan);
         if (timed) assertTrue(plan.contains("NativeWatermarkAssigner"), plan);
         if (sql.contains("UNION ALL")) assertTrue(plan.contains("NativeUnion"), plan);
       } else if (route == Route.FALLBACK) {
@@ -223,6 +261,12 @@ class FlinkByteStringConcatSqlHarnessTest {
         if (timed) {
           RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeWatermarkAssigner");
         }
+      } else if (route == Route.ADAPTIVE || route == Route.EXACT) {
+        assertTrue(scan.fallbackReasons().isEmpty(), scan.fallbackReasons().toString());
+        if (route == Route.ADAPTIVE) assertTrue(metrics.counterValue("validatedTextRows") > 0, sql);
+        else assertEquals(0, metrics.counterValue("validatedTextRows"), sql);
+        assertTrue(metrics.counterValue("flinkTextRows") > 0, sql);
+        RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), nativeOperator);
       }
       return actual;
     }

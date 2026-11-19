@@ -100,12 +100,26 @@ final class ByteStringInputs {
       }
       if (prepared.byteStrings.isEmpty() || node instanceof StreamPhysicalArrowToRowData) continue;
       if (node instanceof StreamPhysicalNativeCalc) {
-        output =
-            ((StreamPhysicalNativeCalc) node).byteStringOutputs(prepared.byteStrings, new BitSet());
-        if (output == null) return null;
+        var calc = (StreamPhysicalNativeCalc) node;
+        output = calc.byteStringOutputs(prepared.byteStrings, new BitSet());
+        if (output == null) {
+          // The generated evaluator must see the original bytes and any original Java cache.
+          Prepared originalText = preserveInputCaches ? prepared : prepareTree(input, true);
+          if (originalText == null) return null;
+          output = new BitSet();
+          var adaptive = calc.withAdaptiveText(originalText.node, originalText.byteStrings, output);
+          return adaptive == null ? null : new Prepared(adaptive, output);
+        }
       } else if (node instanceof StreamPhysicalNativeFilter) {
-        output = ((StreamPhysicalNativeFilter) node).byteStringOutputs(prepared.byteStrings);
-        if (output == null) return null;
+        var filter = (StreamPhysicalNativeFilter) node;
+        output = filter.byteStringOutputs(prepared.byteStrings);
+        if (output == null) {
+          Prepared originalText = preserveInputCaches ? prepared : prepareTree(input, true);
+          if (originalText == null) return null;
+          output = new BitSet();
+          var adaptive = filter.withAdaptiveText(originalText.node, originalText.byteStrings, output);
+          return adaptive == null ? null : new Prepared(adaptive, output);
+        }
       } else if (forwardsSchema) {
         output = prepared.byteStrings;
       } else {
@@ -126,7 +140,6 @@ final class ByteStringInputs {
 
   private static BitSet scalarStrings(StreamPhysicalRowDataToArrow input) {
     var columns = new BitSet();
-    if (input.preservesCollections()) return columns;
     var fields = input.getRowType().getFieldList();
     for (int i = 0; i < fields.size(); i++) {
       var type = fields.get(i).getType();
@@ -165,6 +178,40 @@ final class ByteStringInputs {
       int condition, int[] kinds, int[] payload, int[] children, BitSet input, BitSet used) {
     Expression predicate = visit(condition, kinds, payload, children, input, used);
     return predicate != null && !predicate.byteString;
+  }
+
+  static BitSet utf8Inputs(
+      int[] kinds, int[] payload, int[] children, int[] projections, int condition, BitSet input) {
+    var needed = new BitSet();
+    var bytes = new BitSet();
+    for (int root : projections) {
+      markUtf8Inputs(root, kinds, payload, children, input, needed, bytes);
+      bytes.clear();
+    }
+    if (condition >= 0) markUtf8Inputs(condition, kinds, payload, children, input, needed, bytes);
+    return needed;
+  }
+
+  private static int markUtf8Inputs(
+      int node, int[] kinds, int[] payload, int[] children,
+      BitSet input, BitSet needed, BitSet resultBytes) {
+    ExpressionKind kind = ExpressionKind.fromCode(kinds[node]);
+    if (kind == ExpressionKind.INPUT_REF) {
+      if (input.get(payload[node])) resultBytes.set(payload[node]);
+      return node + 1;
+    }
+    int next = node + 1;
+    if (children[node] == 0) return next;
+    var arguments = new BitSet();
+    for (int i = 0; i < children[node]; i++)
+      next = markUtf8Inputs(next, kinds, payload, children, input, needed, arguments);
+    int operation = kind == ExpressionKind.CALL ? payload[node] : -1;
+    if (operation == ScalarOp.CONCAT || operation == ScalarOp.CONCAT_WS) {
+      resultBytes.or(arguments);
+    } else if (!acceptsByteStringInput(operation)) {
+      needed.or(arguments);
+    }
+    return next;
   }
 
   private static final class Expression {

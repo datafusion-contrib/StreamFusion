@@ -57,6 +57,10 @@ public final class ExpressionPlanning {
     return RexExpression.encodeHostCalc(calc, reason);
   }
 
+  public static EncodedExpression encodeByteBackedHostCalc(Calc calc) {
+    return RexExpression.encodeHostCalc(calc, "unverified UTF-8 text input", true);
+  }
+
   public static EncodedExpression encodeUnnestOperand(Calc calc) {
     return RexExpression.encodeUnnestOperand(calc);
   }

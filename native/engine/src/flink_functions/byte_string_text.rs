@@ -45,6 +45,16 @@ fn utf8_view(input: &BinaryArray) -> Option<StringArray> {
     })
 }
 
+/// Mark the rows that cannot safely be exposed as Utf8. Include non-empty null spans because
+/// the retained Arrow text view also requires its unused bytes to satisfy the UTF-8 invariant.
+pub(crate) fn mark_invalid_utf8(input: &BinaryArray, invalid: &mut [bool]) {
+    if utf8_view(input).is_none() {
+        for (row, invalid) in invalid.iter_mut().enumerate() {
+            *invalid |= simdutf8::basic::from_utf8(input.value(row)).is_err();
+        }
+    }
+}
+
 enum TextColumn<'a> {
     Utf8(&'a StringArray),
     Validated(StringArray),
@@ -208,6 +218,17 @@ mod tests {
         let input = BinaryArray::from_vec(vec![b"\xc3".as_slice(), b"\xa9"]);
         assert!(std::str::from_utf8(input.value_data()).is_ok());
         assert!(utf8_view(&input).is_none());
+    }
+
+    #[test]
+    fn batch_validation_combines_invalid_rows_from_required_columns() {
+        let first = BinaryArray::from_vec(vec!["é".as_bytes(), b"\xc3", b"\xa9", b""]);
+        let next = BinaryArray::from_iter([Some(b"\xff".as_slice()), None, Some(b"a"), Some(b"b")]);
+        let mut invalid = [false; 4];
+        mark_invalid_utf8(&first, &mut invalid);
+        assert_eq!(invalid, [false, true, true, false]);
+        mark_invalid_utf8(&next, &mut invalid);
+        assert_eq!(invalid, [true, true, true, false]);
     }
 
     #[test]

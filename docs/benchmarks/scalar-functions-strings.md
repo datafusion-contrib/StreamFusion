@@ -2452,3 +2452,24 @@ native/target/release/examples/byte_string_text 256 5 7
 SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench,benchmarks \
   -Dtest=CertifiedScalarBenchmark#byteBackedText -Dsurefire.failIfNoSpecifiedTests=false
 ```
+
+### Conversion-inclusive streaming text
+
+A separate release job ran `REPLACE(s, 'a', 'b')` after a streaming watermark and
+numeric filter. It uses Flink 2.2.1, JDK 17.0.17 and the Apple M4 host above. The row
+source emits 500,000 192-byte strings with `FF` in the first byte every 1,000 rows.
+The filter keeps half of the rows, and the job retains both row/Arrow conversions
+and the blackhole row sink. Native metrics confirm rows ran through both the
+existing Calc and the generated Flink evaluator. The previous planner uses stock Flink
+for this job.
+
+Two warmups and five interleaved trials gave 0.244 s (0.240–0.248 s) for Flink and
+0.182 s (0.177–0.185 s) for StreamFusion. This job includes startup and establishes
+the result for this workload and malformed-row distribution.
+
+```sh
+SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench,benchmarks \
+  -Dtest=ByteStringConcatPipelineBenchmark#mixedTextThroughWatermarkToRowSink \
+  -Dsurefire.failIfNoSpecifiedTests=false -Dbyte.concat.rows=500000 \
+  -Dbyte.concat.width=192 -Dbyte.concat.warmups=2 -Dbyte.concat.runs=5
+```
