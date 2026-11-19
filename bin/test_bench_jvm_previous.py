@@ -6,6 +6,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
+from benchmark_test_sources import fixture_source
+
 
 SPEC = importlib.util.spec_from_file_location(
     "bench_jvm_previous", Path(__file__).with_name("bench-jvm-previous.py")
@@ -16,9 +18,11 @@ SPEC.loader.exec_module(BENCH)
 
 class HistoricalFixturesTest(unittest.TestCase):
     def test_each_released_line_copies_its_context_dependency_and_records_its_hash(self):
-        for line in ("1.18", "2.2"):
-            with self.subTest(line=line), tempfile.TemporaryDirectory() as directory:
+        for line, layout in ((line, layout) for line in ("1.18", "2.2")
+                             for layout in ("", "streamfusion-runtime/")):
+            with self.subTest(line=line, layout=layout), tempfile.TemporaryDirectory() as directory:
                 worktree = Path(directory)
+                (worktree / layout / "src/test/java").mkdir(parents=True)
                 production = worktree / "src/main/java/Runtime.java"
                 production.parent.mkdir(parents=True)
                 production.write_text("historical runtime\n")
@@ -26,30 +30,31 @@ class HistoricalFixturesTest(unittest.TestCase):
                 hashes = BENCH.copy_fixtures(BENCH.ROOT, worktree, line)
 
                 expected = {
-                    f"src/test/java/tech/streamfusion/{name}" for name in BENCH.FIXTURES
+                    f"{layout}src/test/java/tech/streamfusion/{name}" for name in BENCH.FIXTURES
                 }
                 helper = (
-                    f"src/test/java-flink{line}/tech/streamfusion/compat/"
+                    f"{layout}src/test/java-flink{line}/tech/streamfusion/compat/"
                     "FlinkTestContexts.java"
                 )
                 counter_reporter = (
-                    "src/test/java/org/apache/flink/runtime/testutils/"
+                    f"{layout}src/test/java/org/apache/flink/runtime/testutils/"
                     "RetainedCounterReporter.java"
                 )
                 self.assertEqual(expected | {helper, counter_reporter}, set(hashes))
                 self.assertIn(
                     "new org.apache.flink.runtime.testutils.RetainedCounterReporter()",
-                    (worktree / "src/test/java/tech/streamfusion/RecoveryExecutionMetrics.java")
+                    (worktree / layout / "src/test/java/tech/streamfusion/RecoveryExecutionMetrics.java")
                     .read_text(),
                 )
                 self.assertIn(
                     "tech.streamfusion.compat.FlinkTestContexts.setForLocalTests(",
-                    (worktree / "src/test/java/tech/streamfusion/RecoveryExecutionMetrics.java")
+                    (worktree / layout / "src/test/java/tech/streamfusion/RecoveryExecutionMetrics.java")
                     .read_text(),
                 )
                 for relative, checksum in hashes.items():
                     copied = (worktree / relative).read_bytes()
-                    self.assertEqual((BENCH.ROOT / relative).read_bytes(), copied)
+                    source_relative = Path(relative).relative_to(layout or ".")
+                    self.assertEqual(fixture_source(BENCH.ROOT, source_relative.relative_to("src/test")).read_bytes(), copied)
                     self.assertEqual(hashlib.sha256(copied).hexdigest(), checksum)
                 self.assertEqual("historical runtime\n", production.read_text())
                 self.assertEqual(

@@ -70,7 +70,7 @@ if [[ "${SF_DORIS_REUSE:-false}" != true ]]; then
 fi
 
 if [[ "$mode" == benchmark ]]; then
-  SF_DORIS_BENCH=true mvn -B -ntp -Pbench,doris,doris-it -pl streamfusion-doris -am test \
+  SF_DORIS_BENCH=true mvn -B -ntp -Pbench,benchmarks,doris,doris-it -pl streamfusion-doris -am test \
     -Dsf.testForks=1 -Dnative.build.skip="${SF_DORIS_NATIVE_BUILD_SKIP:-false}" \
     -Dsurefire.failIfNoSpecifiedTests=false -Dtest=DorisConnectorBenchmark \
     '-Dsf.extraJvmArgs=-Xmx2g -Dsf.doris.benchmark.profile=release -Duser.timezone=UTC' "$@" \

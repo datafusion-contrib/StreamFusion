@@ -16,16 +16,16 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 JAVA = (
-    "src/main/java/tech/streamfusion/operator/NativeCalcOperator.java",
-    "src/main/java/tech/streamfusion/operator/TaskOffHeapMemory.java",
+    "streamfusion-core/src/main/java/tech/streamfusion/operator/NativeCalcOperator.java",
+    "streamfusion-core/src/main/java/tech/streamfusion/operator/TaskOffHeapMemory.java",
     "streamfusion-hudi/src/main/java/tech/streamfusion/planner/stream/HudiSinkMatcher.java",
 )
 FIXED = (
     "native", "rust-toolchain.toml", ".cargo", ".github/actions/setup-rust", "pom.xml",
     "streamfusion-core/pom.xml", "streamfusion-hudi/pom.xml", "streamfusion-parquet/pom.xml",
-    "streamfusion-hudi/src/nexmark", "src/test/java/tech/streamfusion/NexmarkMatrixBenchmark.java",
-    "src/test/java/tech/streamfusion/NexmarkKafkaBenchmark.java",
-    "src/test/java/tech/streamfusion/SharedFlinkCluster.java",
+    "streamfusion-hudi/src/nexmark", "streamfusion-runtime/src/test/java/tech/streamfusion/NexmarkMatrixBenchmark.java",
+    "streamfusion-runtime/src/test/java/tech/streamfusion/NexmarkKafkaBenchmark.java",
+    "streamfusion-test-utils/src/main/java/tech/streamfusion/SharedFlinkCluster.java",
 )
 
 
@@ -74,7 +74,7 @@ def compare(args):
     if git("diff", "--name-only", args.baseline, head, "--", *FIXED):
         raise ValueError("Baseline must use identical native inputs and benchmark harness")
     changed = set(git("diff", "--name-only", args.baseline, head, "--",
-                      "src/main", "streamfusion-hudi/src/main").splitlines())
+                      "streamfusion-core/src/main", "streamfusion-hudi/src/main").splitlines())
     if changed - set(JAVA):
         raise ValueError(f"Unverified Java changes in baseline: {sorted(changed - set(JAVA))}")
     if not changed:
@@ -119,7 +119,7 @@ def compare(args):
                                "SF_HUDI_BACKENDS": "memory", "SF_HUDI_MINIBATCHES": "false",
                                "TMPDIR": str(temporary)}
                 environment.pop("SF_HUDI_PROFILE", None)
-                command = ["mvn", "-B", "-ntp", "-Phudi,flink-1.18,bench,hudi-nexmark",
+                command = ["mvn", "-B", "-ntp", "-Phudi,flink-1.18,bench,benchmarks,hudi-nexmark",
                            "-pl", "streamfusion-hudi", "-am", "test", "-Dnative.build.skip=true",
                            "-Dnative.test.resource.skip=true", "-Dmaven.javadoc.skip=true",
                            "-Dsf.testForks=1", "-Dsurefire.failIfNoSpecifiedTests=false",

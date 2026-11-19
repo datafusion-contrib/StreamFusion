@@ -8,7 +8,9 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'dev'))
 sys.path.insert(0, str(ROOT / 'dev/flink-suite'))
 from benchmark_artifacts import fetch
+from benchmark_reports import SCHEMA_KEY, original_report
 from render_sql_inventory import load_inventories, render_exports
+import json
 
 
 def on_files(files, config):
@@ -28,4 +30,17 @@ def on_files(files, config):
         if existing is not None:
             files.remove(existing)
         files.append(File.generated(config, src_uri, abs_src_path=path))
+    # Keep published JSON downloads byte-compatible with their original string-valued plans.
+    reports = ROOT / 'target/docs-generated/reports'
+    for path in (ROOT / 'docs/benchmarks/results').glob('*.json'):
+        if SCHEMA_KEY not in json.loads(path.read_text()):
+            continue
+        target = reports / path.name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(original_report(path, evidence, ROOT / 'target/benchmark-artifacts'))
+        src_uri = path.relative_to(ROOT / 'docs').as_posix()
+        existing = files.get_file_from_path(src_uri)
+        if existing is not None:
+            files.remove(existing)
+        files.append(File.generated(config, src_uri, abs_src_path=target))
     return files

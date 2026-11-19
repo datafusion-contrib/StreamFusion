@@ -926,7 +926,7 @@ fn range_map_tracks_pending_capacity_restore_conventions_and_cleanup() {
 #[test]
 fn cached_running_string_reductions_match_released_heap_operator_traces() {
     let oracle: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../src/test/resources/over-string-cache-oracle.json"
+        "../../../../streamfusion-runtime/src/test/resources/over-string-cache-oracle.json"
     ))
     .unwrap();
     let text = [

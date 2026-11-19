@@ -532,7 +532,7 @@ mod tests {
     #[test]
     fn mutations_match_jdk_removal_resize_and_reinsertion_order() {
         let fixtures: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../../src/test/resources/java-map-removal-order.json"
+            "../../../../streamfusion-runtime/src/test/resources/java-map-removal-order.json"
         ))
         .unwrap();
         for case in fixtures.as_array().unwrap() {
@@ -571,7 +571,7 @@ mod tests {
     #[test]
     fn matches_released_flink_binary_group_fixtures() {
         let fixtures: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../../src/test/resources/group-map-order.json"
+            "../../../../streamfusion-runtime/src/test/resources/group-map-order.json"
         ))
         .unwrap();
         for case in fixtures.as_array().unwrap() {

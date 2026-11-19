@@ -14,6 +14,7 @@ import tempfile
 
 
 MODULES = (
+    "streamfusion-test-utils",
     "streamfusion-core", "streamfusion-json", "streamfusion-kafka", "streamfusion-csv",
     "streamfusion-raw", "streamfusion-avro", "streamfusion-avro-confluent-registry",
     "streamfusion-protobuf", "streamfusion-parquet", "streamfusion-orc", "streamfusion-runtime",

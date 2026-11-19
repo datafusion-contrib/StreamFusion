@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "StreamFusion historical benchmark report with plan evidence",
+  "type": "object",
+  "required": ["_evidence_schema"],
+  "properties": {
+    "_evidence_schema": {
+      "type": "object",
+      "required": ["version", "original"],
+      "properties": {
+        "version": {"const": 2},
+        "original": {"type": "string", "pattern": "^docs/benchmarks/"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": {"$ref": "#/$defs/value"},
+  "$defs": {
+    "plan": {
+      "type": "object",
+      "required": ["$plan"],
+      "properties": {
+        "$plan": {
+          "type": "object",
+          "required": ["path", "pointer", "sha256"],
+          "properties": {
+            "path": {"type": "string", "pattern": "^docs/benchmarks/"},
+            "pointer": {"type": "string", "pattern": "^/"},
+            "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "value": {
+      "anyOf": [
+        {"type": ["string", "number", "boolean", "null"]},
+        {"type": "array", "items": {"$ref": "#/$defs/value"}},
+        {"$ref": "#/$defs/plan"},
+        {
+          "type": "object",
+          "not": {"required": ["$plan"]},
+          "additionalProperties": {"$ref": "#/$defs/value"}
+        }
+      ]
+    }
+  }
+}

@@ -18,11 +18,15 @@
     <dependencies>
         <dependency>
             <groupId>tech.streamfusion</groupId>
-            <artifactId>streamfusion-runtime${streamfusion.artifact.suffix}</artifactId>
-            <version>${project.version}</version>
-            <type>test-jar</type>
-            <scope>test</scope>
+            <artifactId>streamfusion-test-utils${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version><scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-core${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version><type>test-jar</type><scope>test</scope>
+        </dependency>
+
         <dependency>
             <groupId>tech.streamfusion</groupId>
             <artifactId>streamfusion-kafka${streamfusion.artifact.suffix}</artifactId>
@@ -170,6 +174,15 @@
         </plugins>
     </build>
     <profiles>
+        <profile>
+            <id>benchmarks</id>
+            <dependencies><dependency>
+                <groupId>tech.streamfusion</groupId>
+                <artifactId>streamfusion-runtime${streamfusion.artifact.suffix}</artifactId>
+                <version>${project.version}</version><type>test-jar</type><scope>test</scope>
+            </dependency></dependencies>
+        </profile>
+
         <profile>
             <id>tpcds</id>
             <dependencies><dependency>

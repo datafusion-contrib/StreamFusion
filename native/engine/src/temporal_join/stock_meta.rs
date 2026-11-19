@@ -175,8 +175,9 @@ impl StockTemporalMeta {
 mod tests {
     use super::*;
 
-    const TRACE: &str =
-        include_str!("../../../../src/test/resources/canonical-temporal-metadata.tsv");
+    const TRACE: &str = include_str!(
+        "../../../../streamfusion-runtime/src/test/resources/canonical-temporal-metadata.tsv"
+    );
     fn number(value: &str) -> Option<i64> {
         (value != "-").then(|| value.parse().unwrap())
     }

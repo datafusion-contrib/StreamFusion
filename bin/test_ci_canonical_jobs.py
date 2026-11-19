@@ -56,12 +56,14 @@ root = Path(__file__).parent.parent
 args = sys.argv[1:]
 if "install" in args:
     assert "-am" in args
+    assert "-DskipTests=true" in args
     assert "-Dsf.runtime.tests.skip=true" in args
     if os.environ.get("PREP_FAIL"): sys.exit(17)
     (root / "prepared").touch()
 else:
     assert (root / "prepared").exists()
     assert "-am" not in args
+    assert "-Dsf.runtime.tests.skip=false" in args
     assert "surefire:test@default-test" in args and "surefire:test@orc-tests" in args
     assert "-Dsf.testForks=1" in args and "-Dsf.testReuseForks=false" in args
     includes = Path(next(a.split("=", 1)[1] for a in args if a.startswith("-Dsf.runtime.testIncludesFile=")))
@@ -73,6 +75,20 @@ else:
 ''')
         binary.chmod(0o755)
         return includes, names, {"PATH": str(binary.parent) + os.pathsep + os.environ["PATH"]}
+
+    def test_first_and_later_shards_prepare_without_tests_and_run_every_selected_class(self):
+        for shard in (1, 2):
+            with self.subTest(shard=shard), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                includes, names, environment = self.fixture(root)
+                manifest = json.loads(includes.with_suffix(".json").read_text())
+                manifest["shard"] = shard
+                includes.with_suffix(".json").write_text(json.dumps(manifest))
+                with patch.dict(os.environ, environment):
+                    code = jobs.run(root, includes, "canonical-kafka", "2.2", 4, "-Xmx1g")
+                self.assertEqual(0, code)
+                self.assertEqual({name.rsplit("/", 1)[-1] + ".java.done" for name in names},
+                                 {path.name for path in root.glob("*.done")})
 
     def test_a_worker_failure_retains_all_other_completed_lanes(self):
         with tempfile.TemporaryDirectory() as directory:

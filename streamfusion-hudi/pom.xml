@@ -110,6 +110,11 @@
             <dependencies>
                 <dependency>
                     <groupId>tech.streamfusion</groupId>
+                    <artifactId>streamfusion-test-utils${streamfusion.artifact.suffix}</artifactId>
+                    <version>${project.version}</version><scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>tech.streamfusion</groupId>
                     <artifactId>streamfusion-core${streamfusion.artifact.suffix}</artifactId>
                     <version>${project.version}</version>
                     <type>test-jar</type>

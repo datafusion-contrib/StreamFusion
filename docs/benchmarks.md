@@ -5,6 +5,12 @@ component measurements, profiles and superseded experiments. Each recorded resul
 applies to its stated revision and environment; current support is documented on
 the [operator](operators/index.md) and [connector](connectors/index.md) pages.
 
+For current local Java performance runs, select `-Pbench,benchmarks`: `bench` chooses release
+native libraries, while `benchmarks` adds the performance source set. Dated reports retain their
+original commands and paths as provenance; add the `benchmarks` profile when reproducing those
+commands against the current checkout. Plan-only coverage keeps its existing explicit profiles.
+See [test ownership and source sets](development.md#performance-source-sets).
+
 ## Methodology
 
 - **Small functionality admission.** Flink starts in Java on prebuilt `RowData`;

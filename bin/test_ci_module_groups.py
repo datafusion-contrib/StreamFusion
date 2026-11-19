@@ -17,7 +17,7 @@ NS = {'m': 'http://maven.apache.org/POM/4.0.0'}
 
 
 def module_tags():
-    return {tag for source in (ROOT / 'src/test').rglob('*.java')
+    return {tag for module in ROOT.glob('streamfusion-*') for source in (module / 'src/test').rglob('*.java')
             for tag in re.findall(r'@Tag\("(streamfusion-[^\"]+)"\)', source.read_text())}
 
 

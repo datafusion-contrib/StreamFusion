@@ -15,6 +15,7 @@ import uuid
 import xml.etree.ElementTree as ET
 
 import ci_runtime_test_shards as shards
+import ci_canonical_jobs as canonical
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -216,8 +217,8 @@ class RuntimeTestShardsTest(unittest.TestCase):
 
     def test_audit_artifact_producers_are_pinned(self):
         producers = {
-            path.relative_to(ROOT / "src/test/java").with_suffix("").as_posix()
-            for path in (ROOT / "src/test/java").rglob("*.java")
+            path.relative_to(ROOT / "streamfusion-runtime/src/test/java").with_suffix("").as_posix()
+            for path in (ROOT / "streamfusion-runtime/src/test/java").rglob("*.java")
             if '"sql-audit"' in path.read_text()
         }
         self.assertEqual(producers, shards.AUDIT_CLASSES)
@@ -238,13 +239,13 @@ class RuntimeTestShardsTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, installed, ignore_errors=True)
         with tempfile.TemporaryDirectory(prefix="canonical-lanes-") as directory:
             reactor = Path(directory)
-            owner, consumer = reactor / "owner", reactor / "runtime"
+            owner, consumer = reactor / "owner", reactor / "streamfusion-runtime"
             owner.mkdir()
             consumer.mkdir()
             header = '<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion>'
             (reactor / "pom.xml").write_text(header + f'''
 <groupId>{group}</groupId><artifactId>reactor</artifactId><version>1</version><packaging>pom</packaging>
-<modules><module>owner</module><module>runtime</module></modules>
+<modules><module>owner</module><module>streamfusion-runtime</module></modules>
 <properties><maven.compiler.release>11</maven.compiler.release><sf.testForks>4</sf.testForks>
 <sf.testReuseForks>false</sf.testReuseForks><sf.runtime.tests.skip>false</sf.runtime.tests.skip>
 <sf.orc.test.groups>streamfusion-orc</sf.orc.test.groups></properties>
@@ -259,7 +260,7 @@ class RuntimeTestShardsTest(unittest.TestCase):
 <build><plugins><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-jar-plugin</artifactId>
 <version>3.4.1</version><executions><execution><id>default-jar</id><phase>process-classes</phase>
 <goals><goal>jar</goal></goals></execution></executions></plugin></plugins></build></project>''')
-            (consumer / "pom.xml").write_text(header + parent_ref + f'''<artifactId>runtime</artifactId>
+            (consumer / "pom.xml").write_text(header + parent_ref + f'''<artifactId>streamfusion-runtime</artifactId>
 <dependencies><dependency><groupId>{group}</groupId><artifactId>owner</artifactId><version>1</version>
 </dependency></dependencies><build><plugins>''' + plain(plugin) + "</plugins></build>"
                 + plain(runtime.find("m:profiles", NS)) + "</project>")
@@ -326,7 +327,7 @@ void outside() throws Exception { Probe.record("outer"); }
                     report.unlink()
                 return cases
 
-            run("-pl", "runtime", "-am", "test")
+            run("-pl", "streamfusion-runtime", "-am", "test")
             baseline = reports()
             self.assertEqual(9, sum(baseline.values()))
             self.assertEqual(1, sum(count for (_, _, skipped), count in baseline.items() if skipped))
@@ -337,7 +338,7 @@ void outside() throws Exception { Probe.record("outer"); }
             (owner / "target/owner-ran").unlink()
             owner_source.write_text("invalid source: the installed owner must use precompiled classes")
             (source / "Probe.java").write_text("invalid source: lane execution must not compile")
-            run("-pl", "runtime", "-am", "install", "-Dsf.ci.precompiledJava=true",
+            run("-pl", "streamfusion-runtime", "-am", "install", "-Dsf.ci.precompiledJava=true",
                 "-Dsf.runtime.tests.skip=true", "-DskipTests=false")
             owner_jar = installed / "owner/1/owner-1.jar"
             self.assertTrue(owner_jar.is_file())
@@ -358,7 +359,7 @@ void outside() throws Exception { Probe.record("outer"); }
                 output.write_text("".join(name + ".java\n" for name in lane))
                 inputs.append(output)
             with ThreadPoolExecutor(max_workers=4) as executor:
-                futures = [executor.submit(run, "-pl", "runtime", "surefire:test@default-test",
+                futures = [executor.submit(run, "-pl", "streamfusion-runtime", "surefire:test@default-test",
                                            "surefire:test@orc-tests", "-Dsf.testForks=1",
                                            "-Dsf.testReuseForks=false", "-Dsf.runtime.tests.skip=false",
                                            f"-DtempDir=surefire-lane-{index}",
@@ -370,6 +371,23 @@ void outside() throws Exception { Probe.record("outer"); }
             self.assertEqual(baseline, reports())
             self.assertEqual(expected_markers, {path.name for path in selected.iterdir()})
             self.assertEqual(frozen, artifact_state())
+
+            # Module units already ran in the ordinary cohort. Repeating them would
+            # fail CREATE_NEW above; canonical workers must still execute every case.
+            for shard in (1, 2):
+                with self.subTest(canonical_shard=shard):
+                    for path in selected.iterdir():
+                        path.unlink()
+                    includes = reactor / f"canonical-{shard}.txt"
+                    includes.write_text("".join(name + ".java\n" for name in candidates))
+                    includes.with_suffix(".json").write_text(json.dumps({
+                        "suite": "canonical", "flink_line": "2.2", "shard": shard,
+                        "inventory_sha256": "fixture", "classes": candidates,
+                    }))
+                    self.assertEqual(0, canonical.run(reactor, includes,
+                        "ci-precompiled-java", "2.2", 4, "-Xmx128m"))
+                    self.assertEqual(baseline, reports())
+                    self.assertEqual(expected_markers, {path.name for path in selected.iterdir()})
 
     def test_real_maven_partition_matches_unpartitioned_tags_nested_and_parameterized_tests(self):
         parent = ET.parse(ROOT / "pom.xml")

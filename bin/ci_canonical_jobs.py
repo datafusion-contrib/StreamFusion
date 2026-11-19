@@ -48,11 +48,11 @@ def selections(includes, workers, line, inventory=None, coverage="full"):
     return manifest["shard"], directory, entries
 
 
-def prepare_command(profiles, shard, workers, jvm_args, extra):
+def prepare_command(profiles, workers, jvm_args, extra):
     return ["mvn", "-B", "-ntp", "-P" + profiles, "-pl", "streamfusion-runtime", "-am",
             "install", "-Dnative.build.skip=true", "-Dsf.protobuf.checkStaleness=true",
             "-Dsf.ci.precompiledJava=true", "-Dmaven.javadoc.skip=true",
-            "-DskipTests=" + str(shard != 1).lower(), "-Dsf.runtime.tests.skip=true",
+            "-DskipTests=true", "-Dsf.runtime.tests.skip=true",
             "-Dsf.testForks=" + str(workers), "-Dsf.testReuseForks=false",
             "-Dsf.extraJvmArgs=" + jvm_args, *extra]
 
@@ -67,10 +67,10 @@ def worker_command(profiles, includes, jvm_args, extra):
 
 
 def run(root, includes, profiles, line, workers, jvm_args, extra=(), inventory=None, coverage="full"):
-    shard, directory, entries = selections(includes, workers, line, inventory, coverage)
+    _, directory, entries = selections(includes, workers, line, inventory, coverage)
     if inventory:
         extra = [*extra, "-Dsf.canonical.coverage=" + coverage]
-    subprocess.run(prepare_command(profiles, shard, workers, jvm_args, extra),
+    subprocess.run(prepare_command(profiles, workers, jvm_args, extra),
                    cwd=root, check=True)
     processes = []
     with ExitStack() as stack:

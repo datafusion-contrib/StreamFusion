@@ -13,6 +13,13 @@ spec.loader.exec_module(bench)
 
 
 class HudiJavaComparisonTest(unittest.TestCase):
+    def test_comparison_reads_owned_production_and_benchmark_sources(self):
+        for source in bench.JAVA:
+            self.assertTrue((bench.ROOT / source).is_file(), source)
+        for source in bench.FIXED:
+            if source.endswith(".java"):
+                self.assertTrue((bench.ROOT / source).is_file(), source)
+
     def test_missing_or_duplicate_trials_cannot_pass(self):
         report = {"status": "passed", "observations": []}
         with self.assertRaisesRegex(ValueError, "trial identities"):
@@ -42,7 +49,7 @@ class HudiJavaComparisonTest(unittest.TestCase):
             def git(*args):
                 if args[0] == "rev-parse":
                     return "b" * 40
-                if args[:4] == ("diff", "--name-only", "a" * 40, "b" * 40) and args[-2:] == ("src/main", "streamfusion-hudi/src/main"):
+                if args[:4] == ("diff", "--name-only", "a" * 40, "b" * 40) and args[-2:] == ("streamfusion-core/src/main", "streamfusion-hudi/src/main"):
                     return "\n".join(bench.JAVA)
                 return ""
 

@@ -17,11 +17,15 @@
   <dependencies>
     <dependency>
       <groupId>tech.streamfusion</groupId>
-      <artifactId>streamfusion-runtime${streamfusion.artifact.suffix}</artifactId>
-      <version>${project.version}</version>
-      <type>test-jar</type>
-      <scope>test</scope>
+      <artifactId>streamfusion-test-utils${streamfusion.artifact.suffix}</artifactId>
+      <version>${project.version}</version><scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>tech.streamfusion</groupId>
+      <artifactId>streamfusion-core${streamfusion.artifact.suffix}</artifactId>
+      <version>${project.version}</version><type>test-jar</type><scope>test</scope>
+    </dependency>
+
     <dependency>
       <groupId>tech.streamfusion</groupId>
       <artifactId>streamfusion-core${streamfusion.artifact.suffix}</artifactId>
@@ -110,6 +114,15 @@
           </resource>
         </resources>
       </build>
+    </profile>
+
+    <profile>
+      <id>benchmarks</id>
+      <dependencies><dependency>
+        <groupId>tech.streamfusion</groupId>
+        <artifactId>streamfusion-runtime${streamfusion.artifact.suffix}</artifactId>
+        <version>${project.version}</version><type>test-jar</type><scope>test</scope>
+      </dependency></dependencies>
     </profile>
   </profiles>
 </project>

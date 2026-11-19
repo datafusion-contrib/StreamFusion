@@ -13,6 +13,14 @@
     <artifactId>streamfusion-core${streamfusion.artifact.suffix}</artifactId>
     <name>StreamFusion Core</name>
 
+    <dependencies>
+        <dependency>
+            <groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-test-utils${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version><scope>test</scope>
+        </dependency>
+    </dependencies>
+
     <build>
         <plugins>
             <plugin>
@@ -34,6 +42,10 @@
                 <artifactId>maven-jar-plugin</artifactId>
                 <version>3.4.1</version>
                 <executions>
+                    <execution>
+                        <id>core-test-resources</id><phase>process-test-classes</phase>
+                        <goals><goal>test-jar</goal></goals>
+                    </execution>
                     <!-- The loader copies this artifact during process-resources. Produce the
                          unshaded input before the core shade execution, then let shade replace
                          it in the same lifecycle phase. -->
@@ -76,26 +88,29 @@
         <profile>
             <id>iceberg-nexmark</id>
             <build>
-                <testResources><testResource><directory>${project.basedir}/src/iceberg-nexmark/resources</directory></testResource></testResources>
+                <testResources>
+                    <testResource><directory>${project.basedir}/src/test/resources</directory></testResource>
+                    <testResource><directory>${project.basedir}/src/iceberg-nexmark/resources</directory></testResource>
+                </testResources>
                 <plugins>
                     <plugin><groupId>org.codehaus.mojo</groupId><artifactId>build-helper-maven-plugin</artifactId>
-                        <executions><execution><id>iceberg-benchmark-test-sources</id><phase>generate-test-sources</phase><goals><goal>add-test-source</goal></goals><configuration><sources><source>${project.basedir}/../src/test/java</source></sources></configuration></execution></executions>
+                        <executions><execution><id>iceberg-benchmark-test-sources</id><phase>generate-test-sources</phase><goals><goal>add-test-source</goal></goals><configuration><sources>
+                            <source>${project.basedir}/../streamfusion-runtime/src/test/java</source>
+                            <source>${project.basedir}/../streamfusion-runtime/src/test/java-flink${flink.line}</source>
+                        </sources></configuration></execution></executions>
                     </plugin>
                     <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId>
                         <configuration><testIncludes>
                             <testInclude>tech/streamfusion/NexmarkBenchmark.java</testInclude>
                             <testInclude>tech/streamfusion/NexmarkMatrixBenchmark.java</testInclude>
                             <testInclude>tech/streamfusion/NexmarkKafkaBenchmark.java</testInclude>
-                            <testInclude>tech/streamfusion/SharedFlinkCluster.java</testInclude>
+                            <testInclude>tech/streamfusion/NativeTestResourceAudit.java</testInclude>
                             <testInclude>tech/streamfusion/TestLookupTableFactory.java</testInclude>
                             <testInclude>tech/streamfusion/proto/**</testInclude>
                         </testIncludes></configuration>
                     </plugin>
                     <plugin><groupId>org.xolstice.maven.plugins</groupId><artifactId>protobuf-maven-plugin</artifactId>
-                        <configuration><protoTestSourceRoot>${project.basedir}/../src/test/proto</protoTestSourceRoot></configuration>
-                    </plugin>
-                    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-jar-plugin</artifactId>
-                        <executions><execution><id>iceberg-benchmark-corpus</id><phase>process-test-classes</phase><goals><goal>test-jar</goal></goals></execution></executions>
+                        <configuration><protoTestSourceRoot>${project.basedir}/../streamfusion-runtime/src/test/proto</protoTestSourceRoot></configuration>
                     </plugin>
                 </plugins>
             </build>
@@ -104,6 +119,7 @@
             <id>hudi-nexmark</id>
             <build>
                 <testResources>
+                    <testResource><directory>${project.basedir}/src/test/resources</directory></testResource>
                     <testResource>
                         <directory>${project.basedir}/src/iceberg-nexmark/resources</directory>
                     </testResource>
@@ -121,8 +137,8 @@
                                 </goals>
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/../src/test/java</source>
-                                        <source>${project.basedir}/../src/test/java-flink${flink.line}</source>
+                                        <source>${project.basedir}/../streamfusion-runtime/src/test/java</source>
+                                        <source>${project.basedir}/../streamfusion-runtime/src/test/java-flink${flink.line}</source>
                                     </sources>
                                 </configuration>
                             </execution>
@@ -136,9 +152,7 @@
                                 <testInclude>tech/streamfusion/NexmarkBenchmark.java</testInclude>
                                 <testInclude>tech/streamfusion/NexmarkMatrixBenchmark.java</testInclude>
                                 <testInclude>tech/streamfusion/NexmarkKafkaBenchmark.java</testInclude>
-                                <testInclude>tech/streamfusion/SharedFlinkCluster*.java</testInclude>
-                                <testInclude>tech/streamfusion/compat/FlinkTestContexts.java</testInclude>
-                                <testInclude>tech/streamfusion/SortedOutput.java</testInclude>
+                                <testInclude>tech/streamfusion/NativeTestResourceAudit.java</testInclude>
                                 <testInclude>tech/streamfusion/TestLookupTableFactory.java</testInclude>
                                 <testInclude>tech/streamfusion/proto/**</testInclude>
                             </testIncludes>
@@ -148,21 +162,8 @@
                         <groupId>org.xolstice.maven.plugins</groupId>
                         <artifactId>protobuf-maven-plugin</artifactId>
                         <configuration>
-                            <protoTestSourceRoot>${project.basedir}/../src/test/proto</protoTestSourceRoot>
+                            <protoTestSourceRoot>${project.basedir}/../streamfusion-runtime/src/test/proto</protoTestSourceRoot>
                         </configuration>
-                    </plugin>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-jar-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>hudi-benchmark-corpus</id>
-                                <phase>process-test-classes</phase>
-                                <goals>
-                                    <goal>test-jar</goal>
-                                </goals>
-                            </execution>
-                        </executions>
                     </plugin>
                 </plugins>
             </build>

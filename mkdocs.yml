@@ -34,6 +34,7 @@ theme:
     - search.suggest
 
 markdown_extensions:
+  - attr_list
   - tables
   - admonition
   - pymdownx.details
@@ -122,6 +123,7 @@ nav:
   - Memory management: memory-management.md
   - Native metric parity: metrics-parity.md
   - CI setup: ci.md
+  - Test ownership and repository contents: development.md
   - Upstream Flink suite: upstream-flink-suite.md
   - Upstream SQL inventory: sql-inventory/index.md
   - Portable SQL audit: sql-parity-audit.md

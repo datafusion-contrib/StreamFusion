@@ -12,6 +12,8 @@ import shutil
 import subprocess
 from types import SimpleNamespace
 
+from benchmark_test_sources import copy_test_sources
+
 ROOT = Path(__file__).resolve().parents[1]
 PREVIOUS = "b965b8bf0c97450f6971f20db0fe6abc6bbac8ae"
 FIXTURES = [
@@ -22,26 +24,20 @@ FIXTURES = [
 ]
 
 
-def git(*args):
-    return subprocess.check_output(["git", *args], cwd=ROOT, text=True).strip()
+def git(*args, cwd=None):
+    return subprocess.check_output(["git", *args], cwd=ROOT if cwd is None else cwd, text=True).strip()
 
 
 def copy_fixtures(source, worktree, flink_line):
-    fixtures = [Path("src/test/java/tech/streamfusion") / name for name in FIXTURES]
+    fixtures = [Path("java/tech/streamfusion") / name for name in FIXTURES]
     fixtures.append(
-        Path("src/test/java/org/apache/flink/runtime/testutils/RetainedCounterReporter.java")
+        Path("java/org/apache/flink/runtime/testutils/RetainedCounterReporter.java")
     )
     fixtures.append(
-        Path(f"src/test/java-flink{flink_line}")
+        Path(f"java-flink{flink_line}")
         / "tech/streamfusion/compat/FlinkTestContexts.java"
     )
-    hashes = {}
-    for relative in fixtures:
-        target = worktree / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source / relative, target)
-        hashes[str(relative)] = hashlib.sha256(target.read_bytes()).hexdigest()
-    return hashes
+    return copy_test_sources(source, worktree, fixtures)
 
 
 def main():
@@ -113,7 +109,7 @@ def main():
         native.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / "native/target/release" / library_name, native)
     fixture_hashes = copy_fixtures(ROOT, args.worktree, args.flink_line)
-    profile = "bench" + (",flink-1.18" if args.flink_line == "1.18" else "")
+    profile = "bench,benchmarks" + (",flink-1.18" if args.flink_line == "1.18" else "")
     base = ["mvn", "-B", "-ntp", "-P" + profile, "-pl", "streamfusion-runtime"]
     report = dict(
         runtime_revision=previous,
@@ -122,7 +118,7 @@ def main():
         java=version,
         fixture_sha256=fixture_hashes,
         fixture_worktree_dirty=bool(
-            git("status", "--porcelain", "--", *fixture_hashes)
+            git("status", "--porcelain", "--", *fixture_hashes, cwd=args.worktree)
         ),
         reused_identical_native_inputs=same_native,
         smoke=args.smoke,

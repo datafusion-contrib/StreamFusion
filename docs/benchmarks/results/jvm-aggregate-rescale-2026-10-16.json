@@ -34,7 +34,13 @@
             "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=127}"
           ],
           "sourceOffset": 256,
-          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$3*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[7], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[6])\n   +- NativeCalc(reuseBarrier=[5])\n      +- RowDataToArrow(reuseBarrier=[4])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$3*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$3*]], fields=[k, amount, text_value])\n",
+          "plan": {
+            "$plan": {
+              "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+              "pointer": "/records/0/stages/0/plan",
+              "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+            }
+          },
           "recovery": [
             {
               "restoredOffsets": [],
@@ -109,7 +115,13 @@
             "2:KeyGroupRange{startKeyGroup=86, endKeyGroup=127}"
           ],
           "sourceOffset": 512,
-          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$5*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[22], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[21])\n   +- NativeCalc(reuseBarrier=[20])\n      +- RowDataToArrow(reuseBarrier=[19])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$5*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$5*]], fields=[k, amount, text_value])\n",
+          "plan": {
+            "$plan": {
+              "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+              "pointer": "/records/0/stages/1/plan",
+              "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+            }
+          },
           "recovery": [
             {
               "restoredOffsets": [
@@ -201,7 +213,13 @@
             "1:KeyGroupRange{startKeyGroup=64, endKeyGroup=127}"
           ],
           "sourceOffset": 768,
-          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$7*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[37], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[36])\n   +- NativeCalc(reuseBarrier=[35])\n      +- RowDataToArrow(reuseBarrier=[34])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$7*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$7*]], fields=[k, amount, text_value])\n",
+          "plan": {
+            "$plan": {
+              "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+              "pointer": "/records/0/stages/2/plan",
+              "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+            }
+          },
           "recovery": [
             {
               "restoredOffsets": [
@@ -283,7 +301,13 @@
         },
         "keyGroupRanges": [],
         "sourceOffset": 768,
-        "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$1*]])\n\n== Optimized Physical Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$1*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$1*]], fields=[k, amount, text_value])\n",
+        "plan": {
+          "$plan": {
+            "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+            "pointer": "/records/0/reference/plan",
+            "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+          }
+        },
         "recovery": [
           {
             "restoredOffsets": [],
@@ -351,7 +375,13 @@
             "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=127}"
           ],
           "sourceOffset": 256,
-          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$11*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[52], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[51])\n   +- NativeCalc(reuseBarrier=[50])\n      +- RowDataToArrow(reuseBarrier=[49])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$11*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$11*]], fields=[k, amount, text_value])\n",
+          "plan": {
+            "$plan": {
+              "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+              "pointer": "/records/1/stages/0/plan",
+              "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+            }
+          },
           "recovery": [
             {
               "restoredOffsets": [],
@@ -426,7 +456,13 @@
             "2:KeyGroupRange{startKeyGroup=86, endKeyGroup=127}"
           ],
           "sourceOffset": 512,
-          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$13*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[67], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[66])\n   +- NativeCalc(reuseBarrier=[65])\n      +- RowDataToArrow(reuseBarrier=[64])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$13*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$13*]], fields=[k, amount, text_value])\n",
+          "plan": {
+            "$plan": {
+              "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+              "pointer": "/records/1/stages/1/plan",
+              "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+            }
+          },
           "recovery": [
             {
               "restoredOffsets": [
@@ -518,7 +554,13 @@
             "1:KeyGroupRange{startKeyGroup=64, endKeyGroup=127}"
           ],
           "sourceOffset": 768,
-          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$15*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[82], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[81])\n   +- NativeCalc(reuseBarrier=[80])\n      +- RowDataToArrow(reuseBarrier=[79])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$15*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$15*]], fields=[k, amount, text_value])\n",
+          "plan": {
+            "$plan": {
+              "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+              "pointer": "/records/1/stages/2/plan",
+              "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+            }
+          },
           "recovery": [
             {
               "restoredOffsets": [
@@ -600,7 +642,13 @@
         },
         "keyGroupRanges": [],
         "sourceOffset": 768,
-        "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$9*]])\n\n== Optimized Physical Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$9*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$9*]], fields=[k, amount, text_value])\n",
+        "plan": {
+          "$plan": {
+            "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+            "pointer": "/records/1/reference/plan",
+            "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+          }
+        },
         "recovery": [
           {
             "restoredOffsets": [],
@@ -694,7 +742,13 @@
             "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=127}"
           ],
           "sourceOffset": 256,
-          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$19*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[97], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[96])\n   +- NativeCalc(reuseBarrier=[95])\n      +- RowDataToArrow(reuseBarrier=[94])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$19*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$19*]], fields=[k, amount, text_value])\n",
+          "plan": {
+            "$plan": {
+              "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+              "pointer": "/records/2/stages/0/plan",
+              "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+            }
+          },
           "recovery": [
             {
               "emittedWatermarks": [],
@@ -784,7 +838,13 @@
             "2:KeyGroupRange{startKeyGroup=86, endKeyGroup=127}"
           ],
           "sourceOffset": 512,
-          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$21*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[112], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[111])\n   +- NativeCalc(reuseBarrier=[110])\n      +- RowDataToArrow(reuseBarrier=[109])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$21*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$21*]], fields=[k, amount, text_value])\n",
+          "plan": {
+            "$plan": {
+              "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+              "pointer": "/records/2/stages/1/plan",
+              "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+            }
+          },
           "recovery": [
             {
               "emittedWatermarks": [],
@@ -867,7 +927,13 @@
             "1:KeyGroupRange{startKeyGroup=64, endKeyGroup=127}"
           ],
           "sourceOffset": 768,
-          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$23*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[127], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[126])\n   +- NativeCalc(reuseBarrier=[125])\n      +- RowDataToArrow(reuseBarrier=[124])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$23*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$23*]], fields=[k, amount, text_value])\n",
+          "plan": {
+            "$plan": {
+              "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+              "pointer": "/records/2/stages/2/plan",
+              "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+            }
+          },
           "recovery": [
             {
               "emittedWatermarks": [],
@@ -915,7 +981,13 @@
         },
         "keyGroupRanges": [],
         "sourceOffset": 768,
-        "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$17*]])\n\n== Optimized Physical Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$17*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$17*]], fields=[k, amount, text_value])\n",
+        "plan": {
+          "$plan": {
+            "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+            "pointer": "/records/2/reference/plan",
+            "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+          }
+        },
         "recovery": [
           {
             "emittedWatermarks": [],
@@ -1007,7 +1079,13 @@
             "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=127}"
           ],
           "sourceOffset": 256,
-          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$27*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[142], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[141])\n   +- NativeCalc(reuseBarrier=[140])\n      +- RowDataToArrow(reuseBarrier=[139])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$27*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$27*]], fields=[k, amount, text_value])\n",
+          "plan": {
+            "$plan": {
+              "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+              "pointer": "/records/3/stages/0/plan",
+              "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+            }
+          },
           "recovery": [
             {
               "emittedWatermarks": [],
@@ -1097,7 +1175,13 @@
             "2:KeyGroupRange{startKeyGroup=86, endKeyGroup=127}"
           ],
           "sourceOffset": 512,
-          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$29*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[157], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[156])\n   +- NativeCalc(reuseBarrier=[155])\n      +- RowDataToArrow(reuseBarrier=[154])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$29*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$29*]], fields=[k, amount, text_value])\n",
+          "plan": {
+            "$plan": {
+              "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+              "pointer": "/records/3/stages/1/plan",
+              "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+            }
+          },
           "recovery": [
             {
               "emittedWatermarks": [],
@@ -1180,7 +1264,13 @@
             "1:KeyGroupRange{startKeyGroup=64, endKeyGroup=127}"
           ],
           "sourceOffset": 768,
-          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$31*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[172], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[171])\n   +- NativeCalc(reuseBarrier=[170])\n      +- RowDataToArrow(reuseBarrier=[169])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$31*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$31*]], fields=[k, amount, text_value])\n",
+          "plan": {
+            "$plan": {
+              "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+              "pointer": "/records/3/stages/2/plan",
+              "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+            }
+          },
           "recovery": [
             {
               "emittedWatermarks": [],
@@ -1228,7 +1318,13 @@
         },
         "keyGroupRanges": [],
         "sourceOffset": 768,
-        "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$25*]])\n\n== Optimized Physical Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$25*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$25*]], fields=[k, amount, text_value])\n",
+        "plan": {
+          "$plan": {
+            "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+            "pointer": "/records/3/reference/plan",
+            "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+          }
+        },
         "recovery": [
           {
             "emittedWatermarks": [],
@@ -1327,7 +1423,13 @@
             "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=127}"
           ],
           "sourceOffset": 256,
-          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$3*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[7], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[6])\n   +- NativeCalc(reuseBarrier=[5])\n      +- RowDataToArrow(reuseBarrier=[4])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$3*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$3*]], fields=[k, amount, text_value])\n",
+          "plan": {
+            "$plan": {
+              "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+              "pointer": "/records/4/stages/0/plan",
+              "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+            }
+          },
           "recovery": [
             {
               "injectedOffsets": [],
@@ -1418,7 +1520,13 @@
             "2:KeyGroupRange{startKeyGroup=86, endKeyGroup=127}"
           ],
           "sourceOffset": 512,
-          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$5*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[22], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[21])\n   +- NativeCalc(reuseBarrier=[20])\n      +- RowDataToArrow(reuseBarrier=[19])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$5*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$5*]], fields=[k, amount, text_value])\n",
+          "plan": {
+            "$plan": {
+              "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+              "pointer": "/records/4/stages/1/plan",
+              "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+            }
+          },
           "recovery": [
             {
               "injectedOffsets": [],
@@ -1502,7 +1610,13 @@
             "1:KeyGroupRange{startKeyGroup=64, endKeyGroup=127}"
           ],
           "sourceOffset": 768,
-          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$7*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[37], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[36])\n   +- NativeCalc(reuseBarrier=[35])\n      +- RowDataToArrow(reuseBarrier=[34])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$7*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$7*]], fields=[k, amount, text_value])\n",
+          "plan": {
+            "$plan": {
+              "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+              "pointer": "/records/4/stages/2/plan",
+              "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+            }
+          },
           "recovery": [
             {
               "injectedOffsets": [],
@@ -1551,7 +1665,13 @@
         },
         "keyGroupRanges": [],
         "sourceOffset": 768,
-        "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$1*]])\n\n== Optimized Physical Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$1*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$1*]], fields=[k, amount, text_value])\n",
+        "plan": {
+          "$plan": {
+            "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+            "pointer": "/records/4/reference/plan",
+            "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+          }
+        },
         "recovery": [
           {
             "injectedOffsets": [],
@@ -1644,7 +1764,13 @@
             "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=127}"
           ],
           "sourceOffset": 256,
-          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$11*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[52], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[51])\n   +- NativeCalc(reuseBarrier=[50])\n      +- RowDataToArrow(reuseBarrier=[49])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$11*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$11*]], fields=[k, amount, text_value])\n",
+          "plan": {
+            "$plan": {
+              "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+              "pointer": "/records/5/stages/0/plan",
+              "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+            }
+          },
           "recovery": [
             {
               "injectedOffsets": [],
@@ -1735,7 +1861,13 @@
             "2:KeyGroupRange{startKeyGroup=86, endKeyGroup=127}"
           ],
           "sourceOffset": 512,
-          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$13*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[67], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[66])\n   +- NativeCalc(reuseBarrier=[65])\n      +- RowDataToArrow(reuseBarrier=[64])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$13*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$13*]], fields=[k, amount, text_value])\n",
+          "plan": {
+            "$plan": {
+              "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+              "pointer": "/records/5/stages/1/plan",
+              "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+            }
+          },
           "recovery": [
             {
               "injectedOffsets": [],
@@ -1819,7 +1951,13 @@
             "1:KeyGroupRange{startKeyGroup=64, endKeyGroup=127}"
           ],
           "sourceOffset": 768,
-          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$15*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[82], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[81])\n   +- NativeCalc(reuseBarrier=[80])\n      +- RowDataToArrow(reuseBarrier=[79])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$15*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$15*]], fields=[k, amount, text_value])\n",
+          "plan": {
+            "$plan": {
+              "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+              "pointer": "/records/5/stages/2/plan",
+              "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+            }
+          },
           "recovery": [
             {
               "injectedOffsets": [],
@@ -1868,7 +2006,13 @@
         },
         "keyGroupRanges": [],
         "sourceOffset": 768,
-        "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$9*]])\n\n== Optimized Physical Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$9*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$9*]], fields=[k, amount, text_value])\n",
+        "plan": {
+          "$plan": {
+            "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+            "pointer": "/records/5/reference/plan",
+            "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+          }
+        },
         "recovery": [
           {
             "injectedOffsets": [],
@@ -1953,7 +2097,13 @@
               "restoredOffsets": []
             }
           ],
-          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$3*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[7], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[6])\n   +- NativeCalc(reuseBarrier=[5])\n      +- RowDataToArrow(reuseBarrier=[4])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$3*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$3*]], fields=[k, amount, text_value])\n",
+          "plan": {
+            "$plan": {
+              "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+              "pointer": "/records/6/stages/0/plan",
+              "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+            }
+          },
           "sourceOffset": 256,
           "keyGroupRanges": [
             "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=127}"
@@ -2027,7 +2177,13 @@
               ]
             }
           ],
-          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$5*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[22], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[21])\n   +- NativeCalc(reuseBarrier=[20])\n      +- RowDataToArrow(reuseBarrier=[19])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$5*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$5*]], fields=[k, amount, text_value])\n",
+          "plan": {
+            "$plan": {
+              "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+              "pointer": "/records/6/stages/1/plan",
+              "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+            }
+          },
           "sourceOffset": 512,
           "keyGroupRanges": [
             "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=42}",
@@ -2119,7 +2275,13 @@
               ]
             }
           ],
-          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$7*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[37], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[36])\n   +- NativeCalc(reuseBarrier=[35])\n      +- RowDataToArrow(reuseBarrier=[34])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$7*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$7*]], fields=[k, amount, text_value])\n",
+          "plan": {
+            "$plan": {
+              "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+              "pointer": "/records/6/stages/2/plan",
+              "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+            }
+          },
           "sourceOffset": 768,
           "keyGroupRanges": [
             "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=63}",
@@ -2198,7 +2360,13 @@
             "restoredOffsets": []
           }
         ],
-        "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$1*]])\n\n== Optimized Physical Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$1*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$1*]], fields=[k, amount, text_value])\n",
+        "plan": {
+          "$plan": {
+            "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+            "pointer": "/records/6/reference/plan",
+            "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+          }
+        },
         "sourceOffset": 768,
         "keyGroupRanges": [],
         "cleanup": {
@@ -2266,7 +2434,13 @@
               "restoredOffsets": []
             }
           ],
-          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$11*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[52], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[51])\n   +- NativeCalc(reuseBarrier=[50])\n      +- RowDataToArrow(reuseBarrier=[49])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$11*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$11*]], fields=[k, amount, text_value])\n",
+          "plan": {
+            "$plan": {
+              "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+              "pointer": "/records/7/stages/0/plan",
+              "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+            }
+          },
           "sourceOffset": 256,
           "keyGroupRanges": [
             "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=127}"
@@ -2340,7 +2514,13 @@
               ]
             }
           ],
-          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$13*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[67], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[66])\n   +- NativeCalc(reuseBarrier=[65])\n      +- RowDataToArrow(reuseBarrier=[64])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$13*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$13*]], fields=[k, amount, text_value])\n",
+          "plan": {
+            "$plan": {
+              "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+              "pointer": "/records/7/stages/1/plan",
+              "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+            }
+          },
           "sourceOffset": 512,
           "keyGroupRanges": [
             "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=42}",
@@ -2432,7 +2612,13 @@
               ]
             }
           ],
-          "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$15*]])\n\n== Optimized Physical Plan ==\nNativeJvmGroup(reuseBarrier=[82], grouping=[[0]])\n+- NativeColumnarExchange(reuseBarrier=[81])\n   +- NativeCalc(reuseBarrier=[80])\n      +- RowDataToArrow(reuseBarrier=[79])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$15*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nNativeJvmGroup(grouping=[[0]])\n+- NativeColumnarExchange\n   +- NativeCalc\n      +- RowDataToArrow(fields=[3])\n         +- TableSourceScan(table=[[*anonymous_datastream_source$15*]], fields=[k, amount, text_value])\n",
+          "plan": {
+            "$plan": {
+              "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+              "pointer": "/records/7/stages/2/plan",
+              "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+            }
+          },
           "sourceOffset": 768,
           "keyGroupRanges": [
             "0:KeyGroupRange{startKeyGroup=0, endKeyGroup=63}",
@@ -2511,7 +2697,13 @@
             "restoredOffsets": []
           }
         ],
-        "plan": "== Abstract Syntax Tree ==\nLogicalAggregate(group=[{0}], EXPR$1=[test_aggregate($1)], EXPR$2=[COUNT($2)], EXPR$3=[view_aggregate($1)])\n+- LogicalProject(k=[$0], $f1=[CAST($1):BIGINT], text_value=[$2])\n   +- LogicalTableScan(table=[[*anonymous_datastream_source$9*]])\n\n== Optimized Physical Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$9*]], fields=[k, amount, text_value])\n\n== Optimized Execution Plan ==\nGroupAggregate(groupBy=[k], select=[k, test_aggregate_RETRACT($f1) AS EXPR$1, COUNT_RETRACT(text_value) AS EXPR$2, view_aggregate_RETRACT($f1) AS EXPR$3])\n+- Exchange(distribution=[hash[k]])\n   +- Calc(select=[k, CAST(amount AS BIGINT) AS $f1, text_value])\n      +- TableSourceScan(table=[[*anonymous_datastream_source$9*]], fields=[k, amount, text_value])\n",
+        "plan": {
+          "$plan": {
+            "path": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json",
+            "pointer": "/records/7/reference/plan",
+            "sha256": "b4f06f5c08b493e2951d3121ce42d7063cf30a17591e540cc1cb7b87184af929"
+          }
+        },
         "sourceOffset": 768,
         "keyGroupRanges": [],
         "cleanup": {
@@ -2545,5 +2737,9 @@
       "scenario": "rocksdb",
       "passed": true
     }
-  ]
+  ],
+  "_evidence_schema": {
+    "version": 2,
+    "original": "docs/benchmarks/embedded-plans-20261119/jvm-aggregate-rescale-2026-10-16.json"
+  }
 }

@@ -9,4723 +9,543 @@ Use this page for the current admission rules. For a specific question, start at
 
 | Topic | Sections |
 | --- | --- |
-| Routing and failure semantics | [Overview](#admission-and-routing), [failure order](#failure-order-across-rows), [declared-type guard](#declared-type-guard) |
-| Basic types | [Casts](#casts), [decimal arithmetic](#decimal-arithmetic), [integer division](#integer-division) |
-| Strings and JSON | [String functions](#string-and-calendar-functions), [SQL/JSON](#sqljson-evaluation), [case folding and regex](#case-folding-regex) |
-| User functions and collections | [Scalar UDFs](#user-scalar-functions), [collection expressions](#collection-expressions), [subscripts](#collection-subscripts) |
-| Time and version compatibility | [Temporal functions](temporal-functions.md), [Flink 1.18](#flink-118-compatibility) |
+| Routing and failure semantics | [Overview](calc-filter-routing.md#admission-and-routing), [failure order](calc-filter-routing.md#failure-order-across-rows), [declared-type guard](calc-filter-routing.md#declared-type-guard) |
+| Basic types | [Casts](calc-filter-numeric.md#casts), [decimal arithmetic](calc-filter-numeric.md#decimal-arithmetic), [integer division](calc-filter-numeric.md#integer-division) |
+| Strings and JSON | [String functions](calc-filter-strings.md#string-and-calendar-functions), [SQL/JSON](calc-filter-strings.md#sqljson-evaluation), [case folding and regex](calc-filter-strings.md#case-folding-regex) |
+| User functions and collections | [Scalar UDFs](calc-filter-jvm-collections.md#user-scalar-functions), [collection expressions](calc-filter-strings.md#collection-expressions), [subscripts](calc-filter-jvm-collections.md#collection-subscripts) |
+| Time and version compatibility | [Temporal functions](temporal-functions.md), [Flink 1.18](calc-filter-temporal.md#flink-118-compatibility) |
 
 The [evidence index](../benchmarks/evidence.md) separates recorded performance
 comparisons and experiments from these current coverage rules.
 
-## Admission and routing
-
-Stock compiled-plan lowering keeps a Calc on its released owner if serialized input-reference
-types differ from the captured physical input types. This includes interval qualifier metadata
-that changes representation through plan serialization. The guarded fallback avoids constructing
-an invalid Rex program; neighboring qualified stateful operators retain their own bindings.
-
-`Calc` (Flink's fused projection + filter node) and standalone filters are where per-row expression
-evaluation happens, so their admission is expression-level rather than shape-level: the operator
-itself always has a native form, but it only runs natively if **every** expression node inside it —
-every function call, cast, and operator in the projection and the predicate — is one the native
-expression engine admits. One un-admitted node anywhere in the `Calc` declines the whole node,
-which (per the [all-or-nothing island rule](index.md#the-all-or-nothing-island)) drags the entire
-query back to Flink, not just that node.
-
-`Calc` is also one of the changelog-aware operators (alongside `GROUP BY`, the regular join, a CDC
-source, `UNION ALL`, `Expand`, and changelog normalize) exempt from the insert-only guard — a
-retracting/updating input doesn't disqualify it by itself. A union may alternate insert-only Arrow
-batches and batches carrying a row-kind column; Calc caches each schema separately and preserves
-those row kinds through projections and filters. Row-to-Arrow boundaries also retain actual
-retractions received from a source that advertised insert-only output.
-An empty input or a filter that selects no rows emits no data record; its Arrow
-result is released immediately. Watermarks still propagate, and zero-column
-batches with a positive row count retain their rows and changelog kinds.
-Programs without JVM bindings export only referenced top-level input columns and
-the changelog column through C Data. JVM-bound programs keep their original
-positional input schema. This changes transport work, not expression admission.
-
-The streaming Calc and filter rules prepare their expression plans once for
-one candidate; a Calc also prepares its declared-result-type check. Construction and fallback diagnostics consume that same admission decision;
-explaining a declined Calc or filter does not repeat expression generation or optional native probes.
-A declined standalone filter passes to general Calc admission without repeating its predicate probe.
-Ordinary streaming, bounded batch and stock compiled-plan Calc lowering share an immutable
-Calc specification for the native result-type contract. Its expression pools, output names and
-representation requirements are fixed after admission. Input pruning creates a separate expression
-with remapped references, including whole-Calc JVM input coordinates; it cannot alter a sibling's
-prepared program. Whole-Calc representation flags remain attached to every logical output field,
-even when one row-valued evaluator root produces several columns. Each constructed operator
-receives its own unopened JVM-function binding.
-The Calc coordinator delegates numeric value proofs, collection/row representation, exact builtin
-routing, temporal formatting and UDF overload selection to semantic owners that do not write
-protocol pools. Shared collection rules use their own shape/type facts, without calling back into
-the encoder. A dedicated
-expression buffer owns node/payload alignment, literal storage, input remapping and exported
-pool snapshots. Admission still preserves short-circuiting, shared UDF evaluation and existing
-native/JVM choices; this separation changes neither the wire format nor supported SQL.
-Batch and stock compiled-plan paths retain their existing, stricter boundary and state admission.
-Processing-time projection fusion prepares its changed candidate separately and retains the
-original admitted plan if fusion is unsupported. Optional-probe failures still yield to later
-rules, while failures constructing an admitted operator propagate.
-
-Planning logs the final function-engine assignments for admitted Calc/filter operators at INFO
-by default, including Calcs admitted while lowering a stock compiled plan. Repeated identical
-assignments within a pass are combined with their occurrence count. Distinct SQL function, UDF
-and cast calls appear under `native` or `jvm`; casts are retained because they can select JVM
-evaluation, while arithmetic, comparison and boolean operators are omitted. A mixed node can
-list functions in both groups; a whole-Calc
-generated evaluator lists every function under `jvm` and retains the reason that selected
-row-at-a-time Flink evaluation. Ordinary `EXPLAIN` and submitted Calc/filter names also retain
-Flink's original `select` and `where` expressions and show these final assignments as
-`nativeFunctions=[...]` and `jvmFunctions=[...]`, even with simplified operator names enabled.
-When evaluators are registered, batch EXPLAIN also shows `jvmExpressions` (the
-registration count), `jvmEvaluation` (scalar bridges or whole-Calc evaluation),
-and `jvmExpressionDetails` for generated scalar expressions. Arithmetic and
-comparison bridges can exist even when the named `jvmFunctions` list is empty.
-These fields describe available evaluators, not measured callback invocations;
-certified native paths may retain a JVM evaluator for exceptional inputs.
-No diagnostic flag is required for these plan attributes. The acceleration summary returned by
-`PhysicalPlanScan.explainSummary()` includes the function assignments and JVM selection reasons;
-the always-on planning log also counts Calc/filter nodes containing JVM functions.
-Flink's operator metrics use these detailed names as well; select Calc/filter metric groups by the
-`NativeCalc(` or `NativeFilter(` prefix rather than their execution-node class names.
-
-Expression node kinds, primitive cast targets, scalar call and certified-builtin opcodes, and aggregate kinds come from
-one versioned protocol manifest. It generates Java and Rust enums for node/type tags and
-compile-time constants for operation codes used in dispatch. GROUP/OVER and window aggregate
-codes have separate namespaces because some existing values have different meanings in those
-contexts. Native decoding is exhaustive over node kinds, and CI checks generation drift,
-retired-code reuse and every frozen protocol identity. The compact pools and existing wire values
-remain unchanged; this is a planning maintainability change rather than a throughput claim.
-Scalar producer selection, certified callback dispatch and shared aggregate call specifications
-reference those generated names directly. Argument counts, type codes and accumulator widths
-remain separate from operation identities.
-Null-safe reference comparisons use these generated operations and append their boolean
-literal through the same buffer owner as other expressions.
-
-Generated expression code is built entirely in the planner. Serialized Calc/filter bindings
-carry only the generated function, runtime types/schema and user-function references; workers
-do not need Flink's planner or Calcite classes to deserialize or execute them. The runtime
-function keeps its existing serialized class name and fields, but its constructors and methods
-no longer refer to code generators. Temporal precision helpers also use the runtime compatibility
-layer rather than linking execution back to the planner.
-
-`GeneratedExpressionRuntimeIsolationTest` starts fresh worker JVMs with the planner and Calcite
-artifacts removed from their classpaths. It covers scalar and complete-row generation, processing
-time close/reopen, temporal parsing, and a SQL-planned Calc factory restored through `StreamConfig`.
-It also checks strict-cast failures without the planner. The SQL case exercises casts, regex
-predicates, user-function lifecycle, empty Arrow batches and preserved changelog row kinds.
-This is a deployment-correctness regression, not a throughput optimization.
-
-Filter projections can repeat input columns, including nullable and nested values. Each repeated
-reference owns a retained Arrow view until the final reference transfers the source buffers,
-so releasing the input cannot erase another projected copy or its changelog row kind.
-
-The rest of this page is the exact admission list: what's unconditionally native, what's native by
-default via a JVM upcall (and why that's not a fallback), what's opt-in, and what's a straight
-fallback.
-
-- **Unsupported function/operator** outside the admitted set normally declines the whole Calc.
-  A [SQL/JSON Calc](#sqljson-evaluation) or a Calc containing the collection-returning string
-  functions below can instead use Flink generation for its complete program,
-  subject to the host code generator and the verified batch bridge types.
-
-## Nested Java scalar results
-
-`streamfusion.experimental.nestedScalarUdfs` enables synchronous external Java `Row`
-arguments and results, using Flink's complete generated Calc evaluator through the existing batch
-bridge. It defaults to true under the accepted UDF performance exception; explicit false
-retains the preceding transport and whole-query fallback. Computed ROW-valued programs and filters use whole-Calc generation,
-including SQL ROW constructors and comparisons, so physical metadata never becomes a logical SQL
-field. Input-reference columns carried beside unrelated scalar work keep the existing native path;
-whole-Calc generation is required when an expression produces or consumes a ROW value. Recursive
-external ROW/ARRAY/List/MAP conversions, including primitive and ROW-array results, use the
-[verified conversion boundary](#recursive-external-scalar-conversions) below. Nested fixed BINARY
-uses the transport described below. Custom inference may select those verified conversions;
-explicit and delegating default inference remain admitted. Specialization, internal Java
-conversion classes and signatures outside that whitelist retain whole-query fallback.
-Existing logical-type, expression and producer/consumer guards continue to apply.
-
-The earlier default-inference increment changed planning admission, not runtime conversion or ownership.
-The released Calc generator retains resolved types, NULLs, named Row field mapping, nested
-RowKinds, Java STRING contents, callback order and immediate ownership of mutable results.
-Its initial selection passed 48 checks on released Flink 2.2.1 and 47 on Flink 1.18.1 with JDK 17
-and the release/mimalloc native library. One existing ARRAY_SORT check is N/A on 1.18;
-all 18 checks passed on both lines. These cover explicit/delegating inference,
-shared-call, retention, failure and heap/RocksDB recovery alongside the existing nested
-scalar controls. Populated admitted cases require consumed native Calc input. Custom internal
-RowData remains an explicit whole-query fallback control; alternate external List children now
-use the recursive conversion qualification below.
-`InferredNestedScalarBenchmark` retains complete stock/previous/native jobs and both transposes;
-this coverage uses the accepted UDF performance exception without an acceleration claim.
-The earlier combined temporal/primitive/inference selection passed 255 checks on 2.2.1 and 254
-on 1.18.1, plus the existing ARRAY_SORT N/A, with zero failures/errors.
-Existing delegating ARRAY/MAP inference regressions also require native Calc input with
-matching values and resolved types; their internal `MapData` alternative retains fallback.
-
-Flink's released converters own external callback inputs and normalize mutable results before the
-next invocation. This retains named-row field mapping, reusable ROW/array results, NULLs, Java
-string conversion and callback failures. No generic-array conversion shortcut is enabled: a
-profiled experiment reduced allocations but changed Unicode ARRAY_SORT results.
-
-### Recursive external scalar conversions
-
-Synchronous scalar calls use the actual argument and result DataTypes selected by released
-Flink inference. Generated calls delegate method/overload/varargs validation, external conversion
-and evaluation to Flink, including when the Java method returns `Object` or an annotated List.
-The verified directions match the JVM table-function conversion rules:
-
-- External `Row` and `Map` interface conversions recurse through every field, key and value.
-- ARRAY arguments/results admit Java object arrays and supported primitive arrays. Arguments
-  also admit the `List` interface; results additionally admit List implementations, including
-  nested custom implementations and their actual `toArray` behavior.
-- Children may be ARRAY/List/ROW/MAP recursively, with the documented boolean, signed numeric,
-  decimal, character, binary, date/time/timestamp and interval leaves. Verified primitive and
-  JDBC/boxed temporal bridges may occur beneath these containers. Primitive leaves require
-  the released NOT NULL signature.
-
-Before the released argument converter, the shared adapter repairs copied `Object[]` into the
-required internal array class, recursively through ROW and aligned MAP key/value arrays. It
-preserves actual NULL slots and RowKinds and does not replace Flink's converters. ROW calls
-select preserving collection transport only when their nested logical types require it;
-existing nullable scalar-array field projections retain their preceding native route.
-
-Primitive DATE/TIME int[] and interval int[]/long[] results require an enclosing ARRAY/List or
-MAP converter that serializes them first. Results reached only through ROW retain fallback
-because later released copies can reject that backing. TIME/long[] and LTZ/int[]/long[] retain
-matching released failure controls on fallback. Concrete List arguments retain released planning
-rejection; internal ArrayData/MapData/RowData, MULTISET/STRUCTURED/RAW signatures and specialized
-functions remain outside this whitelist.
-
-Within a generated Calc, Flink retains external values until all predicates and projections
-finish, including shared calls and nested functions. Across operators, a producer may retain
-primitive/boxed array backing or binary leaves that a later callback can also retain. Owned
-Arrow output cannot reproduce those Java aliases. Scalar/table chains therefore use the shared
-producer/argument guard and retain whole-query fallback for such aliases. ARRAY/List/MAP
-converters that serialize non-identity children establish the verified copying boundary;
-paired retaining-consumer controls require native work for those admitted chains. Unverified
-stateful consumers, exchanges and columnar sinks retain the existing representation guards.
-
-The conversion matrix checks 1,134 signatures on each released Flink line with independent
-stock/native values and resolved types, NULLs, empty containers, nested RowKinds and mutable
-results. Additional checks cover concrete signatures, overloads/varargs, exact floating-bit
-observers, shared/retained calls, short-circuiting, lifecycle/failures, every changelog kind,
-repeated heap/native-RocksDB recovery and task-JVM deployment. The shared adapter is also
-serialized into a fresh worker without Flink planner or Calcite artifacts. Each populated
-admitted query requires consumed NativeCalc work; safe mixed scalar/table chains require both
-operators. Flink 1.18 rejects untyped NULL in the verified nested CASE fixtures; explicit failure
-controls pin that validation, while typed NULLs verify successful short-circuiting on both lines.
-
-The consolidated local selection after integration with current production passes 2,277 checks
-on Flink 2.2.1 and 2,276 checks on 1.18.1, with its one existing ARRAY_SORT capability skip.
-This includes 176 mixed scalar/container cases per line, exercising primitive/temporal
-arguments and scalar results alongside recursive arguments. The unchanged upstream Calc and
-table-function execution contracts remain part of the required full fork workflow.
-
-The [complete-job record](../benchmarks/results/jvm-recursive-scalars-rebased-2026-11-04.json) retains
-all 168 trials, including warmups, and the separately paired stock controls for previous
-production `624cbd7e`. That checkout has unchanged production code and only the new fixture and
-benchmark overlays. Both checkouts use the same release/mimalloc native library, Temurin 17,
-Apple M4, one task, 2 GiB heap, 1,024-row Arrow batches, Arrow IPC for local exchanges, JVM UTC
-and session America/New_York. Each case/revision/line runs in a separate serial JVM with two
-warmup pairs and five measured alternating engine pairs. All 262,144 runtime payloads are
-fresh, cycling 48 logical shapes; source generation is included in timing. EXPLAIN is symmetric
-and outside timing. Both transposes, released conversions, JNI, owned output and the blackhole
-row sink remain in the complete job.
-
-Seconds are median (minimum–maximum):
-
-| Flink / boundary | Stock | Previous fallback | Candidate |
-| --- | ---: | ---: | ---: |
-| 1.18.1 / `list/row:default-STRING:both` | 0.461162 (0.455096–0.462044) | 0.453978 (0.447643–0.460726) | 0.684589 (0.680930–0.687352) |
-| 1.18.1 / `row/primitive:primitive-DOUBLE:both` | 0.478104 (0.476085–0.480573) | 0.479264 (0.469668–0.480655) | 0.613123 (0.610577–0.618799) |
-| 1.18.1 / `row/custom/map:default-DECIMAL(38,18):result` | 0.758683 (0.735057–0.799432) | 0.746120 (0.737385–0.766570) | 1.221537 (1.197329–1.521920) |
-| 2.2.1 / `list/row:default-STRING:both` | 0.469785 (0.463296–0.473863) | 0.450527 (0.444817–0.456875) | 0.705300 (0.697150–0.867304) |
-| 2.2.1 / `row/primitive:primitive-DOUBLE:both` | 0.486453 (0.476910–0.491680) | 0.486247 (0.481284–0.493673) | 0.634913 (0.633328–0.642800) |
-| 2.2.1 / `row/custom/map:default-DECIMAL(38,18):result` | 0.747586 (0.744495–0.754269) | 0.740942 (0.735807–0.749522) | 1.204868 (1.200834–1.207984) |
-
-All candidate medians are slower than stock and preceding fallback. These short jobs retain
-startup/JIT and all unfavorable samples. This is conversion coverage under the accepted UDF
-performance exception, with no standalone acceleration claim. The record also retains total
-Maven invocation time separately from each complete-job interval; compilation, JVM launch and
-symmetric EXPLAIN/setup remain outside the trial timer.
-
-The [earlier record](../benchmarks/results/jvm-recursive-scalars-2026-11-04.json) retains all
-168 pre-integration trials against `0f5fc167`, including the substantial Flink 1.18 variability
-and drift between its paired stock controls. Those raw revision ratios do not isolate the
-feature's cost. Both records retain their original native-library and fixture hashes.
-
-Reproduce an individual candidate case after building the released native profile:
-
-```bash
-SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime -am \
-  -Dtest=RecursiveScalarBenchmark -Dsf.testForks=1 \
-  '-Dsf.extraJvmArgs=-Xmx2g -Duser.timezone=UTC' \
-  -Dboundary.rows=262144 -Dboundary.warmups=2 -Dboundary.runs=5 \
-  '-Drecursive.scalar.bench.signatures=list/row:default-STRING:both' test
-```
-
-Use `-Pbench,flink-1.18` for the other released line. Overlay the same benchmark/fixtures onto
-`624cbd7e` and set `-Dboundary.expectNative=false` for the actual previous fallback control.
-Remaining JVM contracts stay in [#237](https://github.com/datafusion-contrib/StreamFusion/issues/237).
-
-A tagged nullable Int8 Arrow child carries each SQL ROW's `RowKind` outside its logical ordinals.
-Missing/NULL metadata reads as INSERT; nested non-INSERT kinds remain visible to Java callbacks.
-Key encoding writes the kind into Flink's BinaryRow header without consuming another logical type
-descriptor. UNNEST excludes it from SQL columns, and sort keys normalize only its comparison value
-while retaining actual kinds in output payloads. The generated Calc's outer projection container
-has no extra kind child. File/message schemas omit nested kind sidecars; they are not SQL
-fields. Parquet, ORC, Paimon and Iceberg project execution batches onto those logical fields
-while retaining value buffers, and file/message decoders request the logical schema. This does
-not drop a top-level changelog column. File-loaded nested ROWs have INSERT kind, as in Flink. Configure the flag consistently in planner and task JVMs; this changes
-the physical struct schema. See the [transport decision](https://github.com/datafusion-contrib/StreamFusion/blob/fix/237-nested-scalar-results/divergences/nested-row-kind-transport.md).
-
-Under the same default-enabled flag, BINARY values use length-delimited Arrow binary storage.
-Released Flink callbacks can return bytes shorter or longer than their declared `BINARY(n)`;
-the transport preserves those actual bytes and the resolved SQL type without padding or
-truncation. This applies at the input, nested ROW/ARRAY fields and extracted scalar results.
-Native fixed-size binary vectors are still readable as bytes. The disabled flag retains the
-existing fixed-size mapping and nested admission restrictions. Legacy variable-width casts
-still fall back across the previously restricted native boundaries. Binary ELT has its own
-default-enabled option and Rust-side functionality gate, described below; complete-job costs
-remain separate diagnostics.
-
-[Nested BINARY validation](../benchmarks/results/nested-fixed-binary-coverage-2026-10-16.json)
-retains initial 65-case selections on both lines (six compatibility skips on 1.18), followed
-by 16 passes per line with expanded NULL-field cases. Tests cover runtime lengths 0/1/4 and
-oversized payloads through 4,097 bytes, all nested kinds, mutable ROW/array outputs, extracted
-fields, scalar consumers, grouping, exact released BinaryRow bytes/hashes and nullable arrays.
-Default selections pass 23 cases with two skips on 2.2 and 18 with seven skips on 1.18.
-Thirty selected native Criterion smokes exercise sliced nullable nested binary handoffs and
-key hashing. These are correctness checks. The follow-up below adds BINARY recovery and
-separate-JVM deployment coverage; representative runtime speed comparisons remain deferred.
-Default nested callback admission follows the accepted UDF performance exception. Binary ELT
-default admission follows its separate Rust-side functionality gate.
-
-The experiment has no throughput admission. [Java CPU/allocation and symbolized Rust profiles](../benchmarks/results/nested-scalar-rejected-array-conversion-2026-10-16.json)
-identify conversion work; their timings include observed external activity and are excluded from
-performance claims. Default admission follows the accepted UDF performance exception. These diagnostics and the
-correctness/cross-JVM checks below do not establish acceleration.
-#237 stays open.
-
-[Release validation evidence](../benchmarks/results/nested-scalar-coverage-2026-10-16.json)
-retains 71 opt-in checks on Flink 2.2.1 and 68 passes with three compatibility skips on 1.18.1.
-Default-off regressions pass 105 checks with one opt-in-only skip on 2.2.1 and 100 with six skips
-on 1.18.1. The native fixtures cover production handoffs, key bytes/hash descriptors, ordering and
-inner/left ARRAY-of-ROW UNNEST; their smoke execution does not establish throughput.
-
-Eight additional [checkpoint/recovery checks](../benchmarks/results/nested-scalar-recovery-2026-10-16.json)
-pass on the two released lines. Memory and native RocksDB deployments at parallelism one
-and three enable object reuse and fail twice, only after source checkpoints at offsets
-12 and 32 complete. Recovered native identity and mutable-transform callbacks match the
-uninterrupted stock result multiset and resolved schema, including nested RowKinds, NULLs
-and long Unicode values. Native consumed-row counters and exact source restore offsets
-are asserted. This verifies task recovery with a consistently configured JVM flag.
-
-Four [separate-JVM deployment checks](../benchmarks/results/nested-scalar-remote-2026-10-16.json)
-also pass across both released lines at parallelism one and three. The SQL planner submits
-stock/native jobs over REST to a child JVM containing a TaskManager. That JVM records all
-5,003 native input rows, with a PID distinct from the planner's; complete results and schemas
-match stock, including nested kinds and mutable callback outputs across batches. The initial run explicitly enabled the flag in both JVMs. Current default-admission
-checks also pass without setting it in either JVM. Child shutdown verifies native-handle, Arrow-allocation and task
-reservation cleanup. This checks callback registration and metadata across JVMs on one host;
-it does not combine remote process termination with checkpoint recovery or validate differing
-planner/task flags. The maintainer initially accepted shipping this implementation with a false default on
-October 16 despite its measured whole-job regressions, with optimization deferred.
-
-Reproduce the complete-job benchmark from a clean released build (add `-Pflink-1.18` for that
-compatibility line). Every shape uses two warmup pairs and five measured pairs by default;
-EXPLAIN and per-job cluster setup precede the clock, while both transposes and production IPC
-remain inside execution. The benchmark includes nested identity/transform cases and a primitive
-Rust calculation control; it checks consumed native rows and zero native work in stock plans.
-
-The [matched runtime comparison](../benchmarks/nested-scalars.md) additionally builds the
-immutable previous StreamFusion runtime, retains its own stock controls and compares narrow
-and wide nested values. Separate Java/native CPU and Java allocation profiles cover both
-runtimes; profile durations are excluded. The completed release matrix records regressions; it is not a claim of acceleration.
-
-```bash
-SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime -am \
-  -Dtest=NestedScalarBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
-  -Dnative.resource.directory="${PWD}/native/target/release" \
-  '-Dsf.benchmarkJvmArgs=-Xmx2g -Dstreamfusion.exchange.zeroCopyLocal=false' \
-  "-Dsf.extraJvmArgs=-Djava.library.path=${PWD}/native/target/release -Dstreamfusion.experimental.nestedScalarUdfs=true" \
-  test
-```
-
-[Current default-admission validation](../benchmarks/results/jvm-feature-defaults-2026-10-19.json)
-records both released Flink lines, the carried-ROW routing regression and fix, separate-JVM
-checks, 794 native engine passes (two ignored), and file-boundary checks. Parquet footer
-assertions require exactly the declared nested fields; buffer-address and lifetime assertions
-verify the retained file view. These checks establish correctness, not a throughput win.
-
-## Failure order across rows
-
-Calc evaluates independent expressions in column batches. It does not switch the entire
-filter and projection list to JVM evaluation merely because several expressions can fail.
-When several rows or projections would throw, the first reported exception may differ from
-stock Flink. This diagnostic difference is accepted to retain native batch execution.
-
-Successful values, declared types, NULLs and conditional short-circuiting remain unchanged.
-The condition still selects rows before projections run, and empty/all-filtered batches do
-not evaluate projections. Individual expressions retain their normal native or host-exact
-implementation; a necessary JVM expression no longer pulls unrelated native expressions
-into a whole-Calc callback. Shared stateful or nondeterministic UDFs still retain the
-existing generated schedule because their call order affects values and lifecycle.
-
-Regression tests require failure when invalid expressions are reached, rather than choosing
-the same winner among competing failures. They also verify successful filters, NULLs,
-untaken branches, nested inputs and independent binary-backed STRING projections.
-Selected integer division errors are checked by cause and evaluation phase: the JVM's
-`ArithmeticException` and the Rust engine's division-by-zero error both fail the native job.
-
-## FROM_UNIXTIME literal formats
-
-Integer epoch seconds and constant numeric patterns (`yyyy`, `MM`, `dd`, `HH`, `mm`, `ss`,
-quoted literals) execute in Rust for fixed-offset zones and regional zones with finite
-historical offset tables, including `Asia/Shanghai`. Planning serializes the running JDK's
-`java.util.TimeZone` offsets, so execution needs neither per-row JVM callbacks nor a second
-native time-zone database. This preserves JDK-specific historical behavior, including the
-pre-1900 raw offset, former daylight-saving transitions, the Gregorian calendar cutover,
-BC dates and Java long multiplication overflow.
-The finite table also includes the running JDK's final synthetic raw-offset boundary.
-Its date is discovered using `TimeZone.getOffset`, covering both the older 2037 and
-newer 2100 boundaries (including `Africa/Windhoek`) without reflective module access.
-JobManagers and TaskManagers must use matching formatter locales and JDK time-zone rules.
-
-Zones with recurring future rules, unverified regional TimeZone implementations, dynamic or
-unsupported patterns, non-Gregorian/default numbering locales and other unverified signatures
-retain the Flink evaluator. Existing
-fixed-zone plans retain their encoded format. In an admitted regional zone, composing the
-formatter with SUBSTR, integer/string CAST, constant nonzero integer division and LPAD
-keeps the date/hour/quarter-hour partition projection entirely native. Output formatting
-reuses one scratch string per batch and reuses the formatted value for consecutive equal
-epoch seconds; it does not change the SQL expression or its substring/cast semantics.
-See [correctness and performance evidence](../benchmarks/native-sync-calc.md) for the
-complete date-partition expression, wide-row parity checks and both timing boundaries.
-
-## LIKE ESCAPE and SIMILAR TO
-
-Direct input/literal LIKE ESCAPE and SIMILAR TO calls have a certified Rust batch path.
-The certificate requires ASCII inputs whose original Java UTF-16 cache agrees with the
-Arrow bytes. LIKE admits valid one-character ESCAPE values; SIMILAR admits ordinary literals,
-`%`, `_`, `.`, anchors, grouping, alternation and simple quantifiers. Character classes,
-POSIX names, counted/adjacent quantifiers, special Java groups and special SIMILAR escape characters
-(`[]()|^-+*_%?{}:.$` and backslash) retain Flink evaluation. `%` includes
-newlines, whereas `_` and `.` follow Java's line-terminator exclusions.
-
-An uncertified batch runs the retained Flink evaluator, including its invalid-pattern failures.
-Original UTF-16 sidecars travel with those arguments. AND/OR consumers remain fused so
-short-circuited rows do not evaluate invalid patterns. Empty filtered batches do not evaluate
-projections. Existing two-argument LIKE admission is unchanged.
-
-The retained evaluator preserves original literal operands and Flink's constant-pattern
-specializations, including its distinct constant versus dynamic empty-ESCAPE behavior.
-Released Flink 2.2 accepts the verified literal empty-escape forms; 1.18 rejects them during
-planning. The regression compares independent executions and checks that same 1.18 rejection.
-
-[Prepared kernel and complete-job measurements](../benchmarks/native-certified-scalars.md)
-retain the stock and previous-implementation controls and their timing limits.
-
-## Generated processing time
-
-An unobserved PROCTIME indicator uses Flink's typed physical NULL representation. Native Calc
-preserves that marker; PROCTIME_MATERIALIZE reads the existing execution clock when SQL observes
-the value. Logical stock types remain unchanged. Retained state must not receive an eagerly
-materialized clock value, because later changelog retractions must match the saved row. Empty
-and all four changelog row kinds have direct placeholder/materialization checks, with observed
-native times bounded by actual execution. Complete-job coverage includes the
-[retracting-rank handoffs](top-n.md#retained-processing-time-indicators-in-retracting-rank).
-
-Generated scalar expressions and complete-row Calc evaluators bind processing time to the owning
-Calc or Filter task's live `ProcessingTimeService` during operator open. Flink's generated
-`PROCTIME_MATERIALIZE` access therefore works inside CASE/COALESCE selections and predicates,
-including complete-row evaluation needed for shared function state or representation contracts.
-Simple TIMESTAMP_LTZ COALESCE selections over input columns, NULLs and processing-time clocks
-with widening precision casts use the existing native CASE path at precisions above three.
-No UDF or other nondeterministic/fallible expression enters this path. More complex expressions
-retain Flink generation where required by their function or representation contract. Multiple
-independent failure sites alone do not require complete-row generation. A lower Calc containing only input references and a lazy
-PROCTIME indicator can fuse into this consumer; filters, other computations and remapped input
-coordinates keep their existing boundaries.
-
-The clock is read when the generated expression executes; no timestamp or running service is
-stored in the serialized plan. Close releases the evaluator's clock reference, and a restored or
-reopened binding uses its new task's service. Pure expressions still work in local unit contexts;
-evaluating generated processing time without a bound runtime clock reports an error.
-
-Controlled-clock tests cover CASE at TIMESTAMP_LTZ precision 0/3/6/9, preserving non-NULL input
-fractions and using Flink's declared casts for materialized clock values. Native Calc and Filter
-operator tests cover successive clocks, empty/all-filtered batches and INSERT/UPDATE/DELETE
-row kinds. Independent SQL jobs on both released Flink lines compare types and stable input
-branches, check clock values against each job's execution interval, and require actual native
-consumption across multiple Arrow batches. Precision-6/9 COALESCE and precision-3/6/9 CASE cover native selection and
-generated scalar execution alongside independent fallible projections in UTC, Asia/Shanghai and America/Los_Angeles.
-
-Released Flink 2.2.1 rejects the direct precision-3 COALESCE form combining a nullable timestamp
-and materialized PROCTIME with a generated argument-nullability mismatch. Its valid CASE form
-and precision-9 COALESCE are used for the SQL comparisons; this runtime binding does not alter
-host SQL validation or repair that separate host code-generation error.
-
-Release comparisons and the remaining 4.1% sustained-filter limitation are recorded in
-[the optimization ledger](../optimizations/identity-expression-passthroughs.md#processing-time-indicators).
-
-## COALESCE
-
-`COALESCE` retains the first non-NULL operand without evaluating it again. When an operand
-contains a scalar UDF, a volatile expression, or a known potentially failing native expression
-(such as a strict STRING-to-INT cast), the complete COALESCE expression uses Flink's
-generated code through the existing columnar JVM bridge. This preserves call counts, nullable
-results and Flink's evaluation of later operands inside native Calc, including failures from
-operands hoisted by host code generation. This includes casts hoisted from later operands
-even when an earlier operand is non-NULL. Other pure expressions retain their
-existing native CASE lowering. Runtime tests cover INT/STRING stateful UDFs, predicates, nested
-expressions, seeded random calls and multiple batches, including NOT NULL output constraints.
-
-## IF
-
-`IF(condition, then_value, else_value)` is admitted by resolved built-in identity. A true
-condition selects the first value; false or NULL selects the second. Pure branches whose
-types already match Flink's result type use the existing native searched-CASE expression,
-so unselected branches are not evaluated. Empty filtered batches skip the projection.
-
-Mixed integer/DECIMAL and DECIMAL branches also use native selection when both branches are direct
-inputs/literals, fit the resolved DECIMAL integral capacity, require no scale reduction and resolve
-to a noncompact DECIMAL result (precision greater than 18).
-The typed Arrow selector converts only each row's selected value to that resolved precision/scale.
-It avoids filtered input batches, separate cast columns and a result merge. Unlike GREATEST/LEAST,
-released IF checks the selected branch's NULL flag before conversion, so verified nullable
-DECIMAL metadata changes remain native here. Typed NULLs and TRUE/FALSE/NULL conditions retain
-their branch selection. The [qualification](../benchmarks/scalar-functions.md#mixed-exact-if)
-records stock/actual-previous/native measurements and complete jobs with both transposes.
-
-Mixed normalization to a compact result retains generated evaluation: even the fused selector
-remains slower than released Flink for the measured compact control. Matching-type compact
-branches continue to use the existing native CASE path.
-Other branch normalization, scalar UDFs and volatile calls use the existing generated-expression
-bridge inside native Calc. Computed/unverified mixed branches, narrowing and scale reduction
-retain generated evaluation.
-This retains Flink's branch casts, call counts and code-generation evaluation order. A
-user-defined function named IF retains its own implementation. Unsupported children retain
-the existing admission rules. SQL parity tests cover exact numerics, strings, temporal and
-binary values, nullable conditions, nested expressions, errors and multiple batches.
-The admitted result types are BOOLEAN, numeric, character, DATE, TIME, TIMESTAMP,
-TIMESTAMP_LTZ and binary.
-BOOLEAN branches preserve TRUE/FALSE/NULL conditions, nullable results, nested predicates and
-unselected failing branches across batches. TIMESTAMP_LTZ uses the same selection paths:
-matching branch types select native timestamp values, while mixed precisions retain Flink's
-generated branch casts. Its regression matrix covers precisions 0/3/6/9 in UTC,
-Asia/Shanghai and America/Los_Angeles, pre-epoch fractions, DST transitions, nullable and
-nested selections, unselected/selected errors, empty filtered batches and native Calc work
-across 5,003 rows. Complex IF result types retain fallback.
-
-The TIMESTAMP_LTZ release benchmark on Linux x86-64 (Intel i7-12650H, JDK 17,
-released Flink 2.2.1, mimalloc) uses 2,000,000 runtime rows, NULL every seventh row,
-parallelism 1, two warmups and five interleaved measurements per engine. The source
-emits rows and the sink is `blackhole`; the harness asserts native Calc and both transposes.
-
-| TIMESTAMP_LTZ(9) workload | Flink median (s) | Native median (s) | Flink/native |
-| --- | ---: | ---: | ---: |
-| Identity control | 0.277110 | 0.963528 | 0.288x |
-| `IF(ts IS NULL, CAST(TO_TIMESTAMP_LTZ(0,3) AS TIMESTAMP_LTZ(9)), ts)` | 0.292844 | 1.008045 | 0.291x |
-
-These standalone row-fed measurements show no speedup. The similar identity-control cost
-supports retaining this small admission extension for native pipeline composition, with no
-new timestamp evaluator or buffer-ownership machinery. Reproduce with `ScalarFunctionBenchmark`,
-`-Pbench`, `-Dscalar.functions=IF_TIMESTAMP_LTZ`, `-Dscalar.rows=2000000`,
-`-Dscalar.nullEvery=7`, `-Dscalar.warmup=2`, and `-Dscalar.runs=5`, setting `SF_BENCHMARK=true`.
-
-The release benchmark below measures this coverage change against the previous full Flink
-fallback, using `ScalarFunctionBenchmark` on Apple Silicon/JDK 17 with mimalloc,
-parallelism 1, 2,000,000 runtime rows, NULL every seventh row, two warmups and five
-interleaved measurements per engine. Both row/Arrow transposes are asserted; the string
-payload budget is 264 bytes. Medians in seconds:
-
-| Expression | Flink | Native | Flink/native |
-| --- | ---: | ---: | ---: |
-| String identity control | 0.667389 | 0.947148 | 0.705x |
-| BIGINT identity control | 0.272022 | 0.406177 | 0.670x |
-| `IF(s IS NULL, 'missing', s)` | 0.731814 | 2.237345 | 0.327x |
-| `IF(n > 0, n, CAST(0 AS BIGINT))` | 0.298706 | 0.453794 | 0.658x |
-
-These short row-fed pipelines are slower than Flink. This is expression coverage that
-allows IF to remain within a larger native pipeline, not a standalone speed improvement;
-no larger-pipeline gain is established by these measurements. Reproduce with:
-
-```bash
-SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
-  -Dtest=ScalarFunctionBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
-  -Dscalar.functions=IF_STRING,IF_BIGINT -Dscalar.rows=2000000 \
-  -Dscalar.nullEvery=7 -Dscalar.warmup=2 -Dscalar.runs=5
-```
-
-## IFNULL
-
-`IFNULL(value, replacement)` runs natively with Flink's resolved common operand type and
-result nullability, including STRING/VARCHAR, INT/BIGINT and DECIMAL. NULL selects the
-replacement; an empty string is a value. Typed NULLs and nested calls retain their resolved types.
-Both arguments are evaluated once before selection, matching Flink's scalar function: an error
-in the replacement still fails the query when the first argument is non-NULL. This differs from
-short-circuiting `COALESCE`/`CASE`, so IFNULL uses a separate eager columnar kernel. Selection
-uses Arrow validity and preserves decimal precision/scale; an all-valid input reuses its array.
-
-Eager evaluation applies only to rows that pass the Calc filter. When a batch has no
-surviving rows, Calc builds correctly typed empty output columns without evaluating
-projections, including scalar replacement expressions such as `1 / 0`. A zero-row input
-also skips condition evaluation. Changelog tags retain their empty column and schema.
-For example, `SELECT IFNULL(id, 1 / 0) FROM src WHERE id = 99` returns no rows when all
-runtime ids are `2`, `0` or NULL; it still fails if a row survives the filter.
-
-Admission checks the resolved built-in definition. A registered user function named IFNULL keeps
-its own implementation through the existing scalar-UDF bridge. Unsupported child expressions
-still retain their normal fallback rules. SQL tests cover values, schemas, exception behavior,
-volatile argument evaluation, all-filtered batches, and an IFNULL projection/filter composed
-with native Top-1.
-
-## UUID
-
-The zero-argument built-in `UUID()` runs in native Calc using DataFusion's volatile UUID v4
-batch implementation. It returns one lowercase, hyphenated UUID per evaluated row, with Flink's
-declared `CHAR(36) NOT NULL` result type. Values are independent across rows, batches and call
-sites; independent engine executions are not expected to generate equal identifiers. Empty
-inputs and all-filtered batches produce no UUID rows. Conditional expressions retain their
-selection and NULL behavior.
-
-Admission checks the resolved builtin identity and its zero-argument CHAR(36) signature.
-A registered scalar function named UUID retains its own implementation and existing scalar-UDF
-routing, including fallback for unverified signatures.
-This supports the string-returning SQL function, not a new UUID logical data type or overload.
-
-Release full-job diagnostic on Apple M4 Pro, JDK 17/Flink 2.2.1: two million rows, parallelism 1,
-two warmups and five interleaved trials per engine, bounded rowwise integer source and blackhole
-CHAR(36) sink. Native Calc and both transposes are asserted. Median times are 0.737s stock
-Flink (0.730-0.742s), 0.726s previous native-enabled fallback (0.721-0.747s), and 0.334s native
-UUID (0.331-0.335s): 2.21x versus stock and 2.17x versus fallback. Startup is included;
-this is not an isolated sustained-throughput claim. Raw trials, environment and command are in
-[`uuid-2026-10-15.json`](../benchmarks/results/uuid-2026-10-15.json). The integer input does not
-use the scalar benchmark's text-width setting. Criterion separately covers batch sizes 0/16/1024/16384.
-
-A pure `SELECT UUID()` projection is also checked after every input column is pruned, at
-1/127/1,024-row batch boundaries with 5,003 runtime rows. Direct Calc checks retain row counts
-for no-column batches and preserve each input changelog tag. Mixed CASE/COALESCE regressions
-also verify nullable results and independent values; existing string-identity COALESCE paths
-continue through released Flink evaluation inside the island, as shown in function diagnostics.
-
-## RAND and RAND_INTEGER
-
-`RAND()`, `RAND(seed)`, `RAND_INTEGER(bound)` and `RAND_INTEGER(seed, bound)` run in Rust.
-Flink's resolved seed and bound arguments must be INT; other input widths use Flink's normal
-overload validation. RAND returns DOUBLE in `[0, 1)` and RAND_INTEGER returns INT in `[0, bound)`.
-NULL arguments return NULL without advancing the stream. An evaluated non-positive bound fails.
-
-Literal seeds use Java's 48-bit random algorithm and retain a separate stream per call site across
-batches. A column-dependent seed initializes a fresh generator per row, matching Flink's generated
-code. Unseeded calls produce execution-time streams; their individual values are not expected to
-match an independent Flink run. All forms are volatile and produce one result per input row, even
-with only literal arguments. CASE evaluates selected branches only. A RAND_INTEGER under AND/OR
-requires a positive literal bound; other bounds retain Flink's row short-circuiting through fallback.
-As with Flink's generated random fields, stream state belongs to the running operator instance,
-not keyed checkpoint state.
-
-Floating-point unary negation also runs natively, including `-RAND(seed)`, and preserves signed
-zero, infinities, NaN and NULL. Verified integer and DECIMAL unary negation also runs in Rust;
-the [exact unary coverage](#exact-unary-and-integral-functions) describes the admitted producers
-and the composed expressions that retain Flink-generated evaluation inside native Calc.
-
-Release diagnostic on Apple M1 Max, JDK 17/Flink 2.2.1: two million rows, parallelism 1,
-two warmups and five interleaved trials, with rowwise source/sink and both transposes asserted:
-
-| Expression | Flink median | Native median | Flink/native |
-|---|---:|---:|---:|
-| `RAND(42)` | 0.554077s | 0.723574s | 0.766x |
-| `RAND(n)` | 0.562129s | 0.728834s | 0.771x |
-| `RAND_INTEGER(42, 100)` | 0.546426s | 0.734758s | 0.744x |
-
-These isolated projections are slower than Flink; the same integer-source identity control is
-0.546138s versus 0.706594s. This addition keeps random expressions inside larger native islands,
-without claiming a standalone speedup. Reproduce with the `bench` profile and
-`ScalarFunctionBenchmark#individualFunctions`, selecting `RAND_LITERAL,RAND_DYNAMIC,RAND_INTEGER_LITERAL`.
-
-## Type and database metadata
-
-These functions are enabled by default; set
-`streamfusion.experimental.metadataExpressions=false` to disable them. The maintainer accepted
-the slower standalone row-source projections on 2026-10-17; the
-[release comparison](../benchmarks/scalar-functions.md#extended-function-coverage) includes both
-standalone projections and aggregate pipelines.
-
-`TYPEOF(value[, force_serializable])` admits Flink's resolved type strings, including
-nullability and nested types. References and literals become a native string constant;
-computed arguments remain evaluated before selecting the constant, so errors, volatile calls
-and UDF invocations are still evaluated. Summary and serialization spelling come from the running
-Flink logical type. A registered user function named TYPEOF keeps its own implementation.
-The entry transpose follows the encoded expression's actual dependencies, so a type-only
-reference does not materialize the referenced value. Generated JVM expressions still retain
-every argument they evaluate.
-
-`CURRENT_DATABASE()` captures Flink's query-level database context as a native string
-constant. Changing the current database affects subsequent queries. A bare expression
-without that context falls back rather than assuming a default database.
-
-Runtime-source SQL checks compare stock/native values, result schemas, quoted database
-names, nested types, registered functions and failing TYPEOF arguments. Native metadata constants
-require identifiers that can be represented as valid UTF-8; an unpaired UTF-16 surrogate in a type
-field name or database name keeps the complete Calc on Flink. Metadata ordering consumers retain
-the existing Java/serialized string-order gate.
-
-## User scalar functions
-
-Table API plans that retain an `AS` wrapper around a scalar expression currently fall back with
-`Calc: unsupported function/operator: AS`. This includes upstream constructor-state, inline and
-non-static object UDF projection fixtures; ordinary SQL aliases that the planner removes are
-unaffected. The execution audit pins both these host routes and the native routes for rich UDF
-job parameters, combined functions and code-generation splitting. Alias admission remains part
-of the [coverage backlog](https://github.com/datafusion-contrib/StreamFusion/issues/110).
-
-Flink 1.18's deprecated `registerFunction` scalar wrapper is admitted alongside the modern
-function definition. Both use the same signature and specialization gates,
-and preserve the registered instance's constructor state, job parameters and open/close lifecycle.
-Legacy wrapper subclasses that specialize functions during code generation stay on Flink.
-
-Java `ScalarFunction` calls use the existing columnar JVM bridge: Arrow argument columns enter
-the function once per batch and an Arrow result column returns to the native island. Supported
-external Java types are `String`, boxed/primitive numeric and boolean values, `BigDecimal` for
-`DECIMAL(p,s)`, and `byte[]` for `VARBINARY`/`BYTES`. Overload resolution must be unambiguous.
-External Java `Row`, `Map`, List and verified Java-array signatures use the default-enabled generated paths described
-below. Scalar-only fixed-size `BINARY`, root MULTISET, and alternate Java
-conversion classes outside the verified mappings retain fallback. TIMESTAMP/TIMESTAMP_LTZ
-and DATE/TIME signatures have the default-enabled generated path described below.
-
-Non-folded zero-argument scalar UDF calls retain Flink because the generic JVM bridge signature
-does not admit them. Flink can constant-fold deterministic calls before native planning. The
-separately resolved UUID builtin uses its own niladic signature.
-
-Functions implementing Flink's `SpecializedFunction` also fall back. Their implementation must
-be created with the resolved call types and Flink's code-generation context; invoking the
-registered, unspecialized instance through the native bridge can produce incorrect results.
-
-`DECIMAL` UDF projections use Flink's `DecimalData.fromBigDecimal`: declared scale, `HALF_UP`,
-and NULL on precision overflow, including precision 38. Trailing zeros survive the round trip.
-Consumers and predicates also run inside native Calc/filter islands. Their complete expression is
-compiled with Flink's expression generator and invoked through the same Arrow batch bridge, so
-its external null flag and internal decimal conversion stay together. An overflowing non-null
-`BigDecimal` can therefore project NULL while `IS NULL` returns false, exactly as in Flink.
-
-The generated expression preserves CASE/COALESCE decisions, nested UDF reuse of the external
-BigDecimal, arithmetic and conversion exceptions, and the declared function signatures. It does
-not replace the external null flag with Arrow validity. These expressions execute on the JVM;
-the surrounding island stays columnar and the existing UDF type/specialization gates still apply.
-Generated and direct calls share function instances and a single task lifecycle, including after
-serialization. Code generation and runtime initialization use Flink's user-code classloader.
-
-`VARBINARY` uses raw bytes, preserving empty values, embedded zeros, arbitrary non-text bytes, and
-NULL. Results are copied into Arrow before the next row is evaluated. A Calc with multiple
-binary UDF calls, including nested calls and calls shared between predicates and projections,
-uses Flink's generated code for the **complete row**. This preserves call order and shared mutable
-arrays until every result field has been evaluated. For example, if `shared(id)` reuses its own
-four-byte buffer, `SELECT shared(id), shared(id + 1)` retains the second call's bytes in both
-columns, exactly as Flink does. Copying each call immediately would change that result.
-
-The generated Calc evaluates its predicate before projections and returns one nullable Arrow
-struct per input row through the existing batch bridge. A NULL struct drops the row; NULL
-fields remain ordinary output values. Native Calc selects the matching changelog tags and
-exposes the struct's child columns to the next columnar operator. Zero-column projections,
-zero-argument functions, and fully filtered batches preserve their row counts. Function identity,
-serialization, lifecycle and exceptions use the same task binding as other scalar calls.
-
-This complete-row path executes on the JVM, including sibling expressions. It admits only
-inputs and outputs supported by the scalar bridge: primitive numeric/boolean, character,
-BINARY/VARBINARY, DECIMAL, date/time/timestamp and interval values. Fixed BINARY result
-projections use this row path to retain their declared Arrow width. Collection and nested ROW inputs
-or outputs use the default-enabled nested scalar option above and its verified recursive
-ROW/ARRAY/List/MAP boundary. Unsupported UDF signatures and specialized functions still fall back. Temporal
-columns and builtin expressions are supported here; temporal **user-function signatures** retain
-the separate signature checks below. The path preserves columnar operator boundaries and avoids a separate
-host Calc between native operators; it does not turn Java UDFs into Rust kernels.
-
-The release/mimalloc diagnostic for `SELECT id, shared(id), shared(id + 1)` measured
-**0.342965s Flink / 0.694285s native** (0.494× Flink/native), using one million generated rows,
-parallelism one, two warmups and five alternating measured trials per engine. The native plan
-includes both RowData→Arrow and Arrow→RowData transposes and the same rowwise blackhole sink.
-The isolated projection is slower: this extension preserves correctness and enables composition
-with neighboring native operators, with no standalone speedup claimed. Reproduce with
-`SF_BENCHMARK=true mvn -Pbench -pl :streamfusion-runtime -am -Dtest=SharedBinaryUdfBenchmark
--Dsurefire.failIfNoSpecifiedTests=false test`.
-
-Registered scalar functions take precedence over builtin names, including in nested expressions
-and filters. A function registered as `UPPER`, for example, invokes the registered Java function
-through the bridge. Unsupported signatures fall back using the same UDF admission rules.
-Within an operator, call sites sharing a function instance share one `open`/`close` lifecycle,
-including calls in both projections and predicates. Separate instances retain separate lifecycles.
-Serialization preserves shared references; task-local registrations retain each call's signature.
-Failed initialization releases earlier registrations and successfully opened functions, and a
-failing `close` does not prevent cleanup of the remaining instances.
-
-Runtime parity tests cover mixed projections, repeated decimal calls, nullable precision-38
-values, scale normalization, overflow and its pre-conversion nullness, nested external values,
-conditional consumers, exception parity, typed NULL arguments, shadowed builtin names, shared
-lifecycle-dependent functions, and 5,003-row inputs. C Data tests
-cover sliced inputs, output survival after input release, shared-array mutation after export,
-and reclamation of Arrow allocations after success or a partially written row result fails.
-Shared binary SQL regressions compare ordered raw changelogs against released Flink and require
-executed native Calc metrics, including nested calls, conditional evaluation, distinct instances,
-NULL/empty buffers, zero-argument stateful calls and multi-batch inputs.
-
-With `streamfusion.calc.sharedStatefulUdf.enabled=true`, non-deterministic scalar function
-identifiers used at multiple call sites select Flink's generated evaluator for the complete Calc:
-its predicate and projections execute together in row order. This option now defaults to **true**
-under the maintainer-approved UDF performance exception.
-Explicit `false` retains the shared-call host fallback; slower UDF execution is accepted for
-correct coverage without a standalone acceleration claim. Existing complete-row binary and other
-already admitted generated expressions keep their existing admission.
-This covers INT, BIGINT and STRING results, nested calls, CASE/COALESCE branches and repeated
-calls that Flink reuses. The existing column-at-a-time shared-call guard remains in place;
-shared functions are admitted through the complete-row path rather than bypassing that guard.
-One registered function instance has one open/close lifecycle, and separate instances stay
-separate. The same specialization, signature, result conversion and nested-type restrictions
-apply before generation; unsupported forms still fall back.
-
-Single calls, independent instances and deterministic scalar functions retain their existing
-admission. Binary buffer aliasing remains governed by the complete-row binary rules above.
-
-Already-admitted complete JVM Calcs with primitive numeric/boolean arguments and ordinary
-nonempty numeric/boolean/character outputs can evaluate directly over the borrowed Arrow input and write
-flat Arrow outputs inside the columnar operator. This avoids sending a batch to Rust only to call
-the same complete generated program back on the JVM. It applies only to batches without a
-RowKind column; changelog batches and represented, binary, decimal or temporal layouts retain
-the existing bridge. Zero-column outputs and string arguments also retain their existing path. Predicates,
-projections and shared function calls still execute together in Flink's row order, with one
-function lifecycle. Empty results and exceptional partial outputs release their Arrow buffers.
-`directPrimitiveCalcRows` counts input rows actually evaluated by this path.
-
-The [historical release comparison](../optimizations/udf-columnar-upcall.md#complete-generated-calcs-with-primitive-inputs)
-reduced the then-opt-in INT/BIGINT/STRING job times by about 28%/32%/10%. These isolated jobs
-remain slower than stock Flink. Default admission now follows the accepted UDF exception;
-the [bounded shared-call optimization](../optimizations/udf-columnar-upcall.md#generated-batch-loops-for-shared-stateful-calls)
-adds a generated batch loop for numeric/boolean programs while retaining the existing row
-evaluator, writer and admission rules. STRING-result programs keep the existing direct row loop.
-Older serialized evaluators retain row evaluation. Both Flink lines pass 223 focused checks and
-six isolated-worker checks; final release trials and their variability are linked from the
-optimization page. These complete jobs still trail stock Flink.
-
-Runtime tests compare ordered values, types, every changelog tag and invocation counts, including
-nullable inputs/results, nested and conditional calls, all-filtered and empty inputs, exceptions,
-5,003-row sources and balanced task lifecycle. Native operator metrics establish actual consumption.
-
-Release end-to-end measurements retain both transposes and a rowwise blackhole sink. At five
-million rows, paired medians for two shared calls were 0.457/0.843 s stock/native for INT,
-0.453/0.833 s for BIGINT, and 1.064/1.558 s for STRING. Native throughput is about 0.54× stock
-for the integers and 0.68× for strings. One-million-row comparisons also retain the previous
-fallback; all completed trials are in the [structured results](../benchmarks/results/shared-stateful-scalar-2026-10-14.json).
-The report's `raw_log` paths retrieve the exact original log bodies through the
-[evidence archive](../benchmarks/evidence.md#source-repository-and-archived-run-outputs).
-A diagnostic CPU profile records 972 JVM-callback, 2,433 entry-transpose and 673 exit-transpose
-samples among 6,769 total samples. These inclusive stack counts overlap; they identify boundary
-and callback work, not an additive cost breakdown. The row evaluator already reuses its input
-row and batches JNI calls. The bounded [boundary investigation](../optimizations/calc-schema-once-c-data.md#cache-calc-output-schemas)
-caches immutable Calc output schemas; broader conversion and ownership work is deferred there.
-No standalone speedup is claimed for this historical UDF workload. Default UDF admission supports composition with surrounding native operators,
-whose performance must be measured for the complete query.
-
-
-### Temporal scalar functions
-
-`streamfusion.calc.temporalUdf.enabled=true` admits verified scalar signatures using
-`LocalDate` for DATE, `LocalTime` for TIME, `LocalDateTime` for TIMESTAMP and `Instant`
-for TIMESTAMP_LTZ arguments/results. Precision
-0/3/6/9 is preserved through the existing full-range millisecond/nanosecond Arrow representation.
-The complete Calc uses Flink's generated code and released external/internal converters, including
-its predicate and sibling projections. This retains calendar fields for TIMESTAMP, absolute time
-for LTZ, declared result types, NULL callbacks, shared function order and one task lifecycle.
-Results remain Arrow columns for downstream native operators, including GROUP BY.
-
-DATE/TIME use the released epoch-day/millisecond-of-day converters, including negative dates,
-leap dates, midnight, end of day, NULL containers and nullable results. SQL TIME signatures
-must match the released planner's TIME(0) normalization; native admission does not make an
-inferred TIME(9) or explicitly incompatible TIME(3) signature executable. Runtime millisecond
-values are preserved. Alternate `java.sql.Date`/`java.sql.Time` conversion classes retain fallback.
-Runtime tests compare types and values across batches, lazy/filtered calls, shared state and
-heap/RocksDB recovery, and require NativeCalc to consume input. These Java functions retain
-the accepted UDF performance exception; this coverage does not claim a speedup.
-
-The `UdfTypeBoundaryBenchmark` release diagnostic (Apple M4 Pro, Flink 2.2.1/JDK 11,
-parallelism one, 262,144 rows, 1,024-row batches, both transposes and blackhole row sink)
-uses two warmups and five alternating stock/native pairs. DATE job medians are 0.092154s
-stock (0.079492-0.101028s) and 0.132566s native (0.127392-0.137835s); TIME job medians
-are 0.095451s stock (0.089436-0.097501s) and 0.143299s native (0.126271-0.148375s).
-The previous behavior used stock fallback. These short complete-job timings include startup
-and establish callback costs, not sustained acceleration. Run with `-Pbench` and
-`SF_BENCHMARK=true`; input counts and repetitions use the `boundary.*` test properties.
-
-The option now defaults to **true** under the accepted UDF performance exception.
-Explicit `false` reports `temporal scalar UDF execution is explicitly disabled`. Builtin temporal
-expressions retain their current native coverage. Specialized functions, unsupported conversion
-classes (including alternate timestamp result classes), fixed BINARY signatures and nested UDF
-types retain their own gates. Other expression contexts keep their existing admission rules.
-
-The runtime suite covers UTC, America/Los_Angeles and Asia/Shanghai; negative epochs, year 1/9999,
-DST-adjacent values, all four precisions, NULL/empty/fully filtered input, selected failures,
-shared call-site order, lifecycle and grouping consumers. Native Calc input/output counters are
-asserted. Direct C Data tests cover sliced nullable timestamp vectors and output ownership after
-input release. See the [measured limits](#temporal-scalar-conversion)
-and the [current conversion measurements](../optimizations/udf-columnar-upcall.md#complete-temporal-calc-batches).
-
-#### Temporal scalar conversion
-
-Release+mimalloc on Flink 2.2.1/JDK 17, Core i7-12650H, 2 GiB heap, parallelism one,
-2M runtime rows and 1,024-row batches, precision 9/UTC, two warmups and five alternating
-stock/native pairs. The source cycles through eight precomputed temporal values (one NULL).
-Complete jobs retain both transposes, production IPC and the rowwise blackhole sink; plans and
-native Calc counters are asserted.
-
-| Projection | Stock median (range), s | Opt-in median (range), s |
-| --- | ---: | ---: |
-| TIMESTAMP and LTZ identity | 0.623 (0.607–0.641) | 0.875 (0.856–1.001) |
-| TIMESTAMP to text | 0.964 (0.960–0.974) | 0.994 (0.987–1.079) |
-| LTZ to epoch milliseconds | 0.562 (0.553–0.600) | 0.671 (0.660–0.673) |
-
-The previous correct fallback measured 0.524/0.858/0.478 s, with paired stock controls
-0.511/0.864/0.479 s. These are separate JVMs with control drift; they do not isolate an
-optimization gain. The original opt-in callback path is slower than stock in all three fixtures.
-These historical timings claim no standalone acceleration. Default coverage is now enabled
-under the UDF exception. The
-[raw results](../benchmarks/results/temporal-udf-2026-10-15.json) retain every warmup and
-measured trial, the previous fallback, initial prototype, and rejected experiments.
-
-A 5M-row JFR diagnostic points to general result Arrow writers and perimeter row conversion.
-Removing one outer result-row wrapper and reusing the exit StreamRecord both passed correctness
-checks but failed to improve complete-job time. Timestamp binary exits, unrolled batch result
-writes, inline Calc evaluation inside that loop and bulk timestamp component validity also failed
-performance admission. A direct typed-output kernel likewise passed correctness checks but
-still lost to stock, including a variant that writes timestamp components directly. None is retained. See the
-[rejected experiments](https://github.com/datafusion-contrib/StreamFusion/blob/main/.claude/wontdos/364-temporal-row-output-shortcuts.md).
-The [current direct-batch comparisons](../optimizations/udf-columnar-upcall.md#complete-temporal-calc-batches)
-cover both released Flink lines, cardinalities eight/16,384, ordinary ID columns and a surrounding
-native GROUP BY. Standalone projections take 11.2–31.0% less time than the preceding callback;
-grouped jobs show no consistent gain. Stock Flink remains faster for identity and epoch, while
-the text fixtures beat stock. Correctness-verified UDF admission does not require a speedup.
-
-A direct Java Arrow-batch path removes the Rust round trip when the entire Calc
-is already generated JVM code and its input columns contain timestamps, optionally alongside
-BOOLEAN, TINYINT, SMALLINT, INT, BIGINT, FLOAT or DOUBLE columns. This path now
-defaults on under the accepted UDF performance exception. Changelog-tagged input, other argument
-expressions, and results requiring representation metadata retain the existing callback.
-The task-local function binding carries the verified input-column mapping; runtime code does
-not decode the expression ABI. Predicate evaluation, function lifecycle and row-major call
-order use the same released Flink evaluator.
-
-Timestamp output sharing additionally defers writes
-for unconditional, timestamp-only projections of matching width. Every function still runs.
-A byte-equal result column retains the input buffers; the first changed value materializes its
-unchanged prefix and all subsequent values. Preinitialized Arrow fields preserve timestamp
-component metadata through transfers. Sharing also requires a common allocator root; inputs
-from another root use owned copies. Other result shapes use the ordinary flat Arrow writer.
-The existing system properties `streamfusion.experimental.directTemporalCalc` and
-`streamfusion.experimental.temporalAliases` both default to true. Explicit false selects the
-previous callback or disables output sharing, respectively; neither changes verified type coverage.
-`streamfusion.calc.temporalUdf.enabled=false` remains the stock-Flink control.
-
-In a historical unprofiled 2M-row repeat with the configuration above, direct batches plus timestamp
-aliasing measured identity **0.651 s versus stock 0.645 s**, text **0.830 versus 0.969 s**, and
-epoch conversion **0.536 versus 0.570 s**. The identity result still misses performance admission;
-these separate JVMs also do not establish an improvement against the previous correct fallback.
-All trials and raw CPU/allocation profiles are retained in the results artifact. CPU profiling
-covers both Java and symbolized Rust frames with async-profiler 4.0, a 2 ms software CPU timer
-and DWARF native unwinding. It identifies Arrow FFI/ownership work in the old Rust path and
-extra Java TimestampData allocation at callback input and row exit in the improved path.
-Profiled job durations are excluded from acceleration claims. See the
-[optimization and profiling details](../optimizations/udf-columnar-upcall.md#complete-temporal-calc-batches).
-
-Two further profile-guided timestamp reuse experiments were rejected. A bounded value cache
-reduced sampled timestamp accessor allocations to about 15.7 MB, and local Arrow-batch value
-hints eliminated them in a separate 5M-row profile. Both still lost to paired stock on identity
-at cardinalities eight and 16,384; a reusable row-reader variant also lost. These allocation
-results cover 25M rows per engine and are sampled Java bytes, not Rust heap or peak memory.
-Neither implementation is retained. The raw artifact records all measured arrays, available
-warmups, missing-log limitations and compressed CPU/allocation stacks. Three-pair diagnostics
-and drifting stock controls do not establish an improvement between variants.
-
-A matching `perimeter` benchmark case projects `t, z` directly from the same source, without UDFs.
-Each pair of cases runs in one JVM with the resources and repeated-trial method above:
-
-| Rows / projection | Stock median, s | Unchanged opt-in median, s |
-| --- | ---: | ---: |
-| 2M / direct temporal columns | 0.569 | 0.628 |
-| 2M / temporal identity UDFs | 0.627 | 0.845 |
-| 5M / direct temporal columns | 1.292 | 1.496 |
-| 5M / temporal identity UDFs | 1.415 | 2.055 |
-
-Both perimeter conversion and callback work remain material. The cases execute sequentially;
-subtracting these medians is a diagnostic, not an exact operator-cost measurement. A separate
-32-second JFR at 2 ms sampling and stack depth 128 records 3,083 native-task and 2,379 stock-task
-execution samples. Timestamp materialization and Arrow writers are prominent on native threads.
-Compiled stacks can end before their callers, and native-method samples include blocked I/O;
-these are profiling clues rather than an additive CPU breakdown. The raw artifact retains the
-sample counts and profiled trials separately from unprofiled performance results.
-A separate JVM compilation log confirms that the generated evaluator already inlines the Arrow
-timestamp getters, temporal converters and identity functions. Surrounding bridge calls sometimes
-remain separate compiled methods. Those decisions alone do not establish an optimization: the
-inline batch experiment still loses in complete jobs.
-
-JNI-checked release qualification passes **163 focused checks on each of Flink 2.2.1 and
-1.18.1**. This includes direct temporal evaluation at all four precisions in UTC,
-America/Los_Angeles and Asia/Shanghai, shared call order, selected failures, mutable-result
-changes, retained output, both allocator-root cases, key groups and alternating insert/changelog
-batches. Both the previous-callback and copy-only execution controls also pass.
-Reproduce the benchmark with:
-
-```sh
-SF_BENCHMARK=true mvn test -Pbench -pl streamfusion-runtime -am \
-  -Dtest=TemporalUdfBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
-  -Dtemporal.rows=2000000 -Dtemporal.warmup=2 -Dtemporal.runs=5 \
-  -Dsf.extraJvmArgs=-Xmx2g
-```
-
-`-Dtemporal.cardinality=16384` selects a precomputed runtime corpus with distinct seconds and
-precision-aligned fractional nanoseconds, every eighth value NULL. The default cardinality of
-eight retains the full-range calendar, negative-epoch and timezone boundary corpus above.
-
-The benchmark rotates stock Flink, the preceding production JNI callback, current direct batches
-and explicit stock fallback in each trial. `-Dtemporal.cases=pipeline` measures timestamp UDFs
-feeding native GROUP BY and asserts work in both operators. `-Dtemporal.engines=FLINK,NATIVE`
-selects only the stock/current pair. `-Dtemporal.cases=mixed` keeps an ordinary ID column beside
-the timestamp results. Every complete native job retains both transposes.
-
-Use `-Dtemporal.cases=perimeter,identity -Dtemporal.rows=5000000` for the matching control.
-For JFR, compile first and run `mvn surefire:test@default-test` with the same profile and test
-properties: the ordinary `test` lifecycle also launches a separate ORC test JVM, which would
-overwrite a shared recording filename after the benchmark completes.
-
-
-## String ordering
-
-General relational character-string comparisons (`<`, `<=`, `>`, `>=`) fall back, including
-inside CASE and casts. One direct comparison is proven representation-independent: both
-operands are qualified primitive ASCII PRINTF results or ASCII/NULL character literals, with
-at least one formatter. The six built-in `=`, `<>`, `<`, `<=`, `>`, `>=` comparisons then use
-native kernels, including native filters; arbitrary STRING inputs and composed consumers
-retain their existing guards. Built-in operator identity is required.
-
-Flink compares retained Java strings by UTF-16 code units,
-but serialized strings by UTF-8 bytes. These orders disagree for some supplementary Unicode
-characters. Arrow retains the UTF-8 value without the Java-representation information needed
-to select Flink's order, so admission cannot safely depend on the column's SQL type alone.
-Outside the proven formatter subset, the gate also applies to ASCII/BMP inputs and serialized
-sources because the planner cannot prove every runtime operand's representation and range. Equality and inequality
-(`=`, `<>`) remain native; this gate does not change Top-N's serialized sort order.
-
-## String concatenation and hashes
-
-These functions run entirely in Rust by default, in projections, predicates, and nested expressions.
-The ordinary text path requires valid UTF-8; arbitrary Flink string bytes have the narrower
-verified transport described below ([remaining coverage](https://github.com/datafusion-contrib/StreamFusion/issues/622)).
-
-| Function | Native behavior and admission |
-|---|---|
-| `CONCAT(s, ...)`, `s \|\| t` | Character-string arguments; any NULL argument makes the result NULL. Empty strings are preserved. |
-| `CONCAT_WS(separator, ...)` | A literal or column separator; a NULL separator makes the result NULL. NULL values are skipped, empty strings are preserved, and no values or all-NULL values produce an empty string. |
-| `MD5(s)` | Lowercase hexadecimal MD5 of the string's UTF-8 bytes; NULL input produces NULL. |
-| `SHA1(s)` | Lowercase hexadecimal SHA-1 of the character string's UTF-8 bytes; NULL input produces NULL. |
-| `SHA224(s)`, `SHA256(s)`, `SHA384(s)`, `SHA512(s)` | Lowercase hexadecimal SHA-2 of the UTF-8 bytes; NULL input produces NULL. |
-| `SHA2(s, bit_length)` | Literal 224/256/384/512 retains the fixed-width kernel. Direct STRING/INT inputs or literals also use a verified runtime-width kernel; a NULL argument returns NULL. |
-
-A direct runtime INT width dispatches 224/256/384/512 to the existing RustCrypto digests.
-`CAST(NULL AS INT)` is admitted and produces NULL without discarding evaluation of the
-source expression. Non-NULL invalid runtime widths retain the released Flink evaluator and
-JDK unsupported-algorithm exception. Computed arguments and other resolved runtime widths
-retain generated evaluation; there is no new switch. Hashing reads the original UTF-8 bytes,
-as Flink's BinaryStringData hash does, so a decoded Java string cache does not change the
-digest. Literal values are checked exactly, including `BIGINT`, without truncating to 32 bits;
-unsupported non-NULL literal widths retain their existing fallback.
-For example, `SHA2(s, CAST(4294967520 AS BIGINT))` falls back and retains Flink's unsupported-algorithm
-failure instead of being treated as SHA-224. Flink 2.2 does not expose hash
-overloads with an explicit character set. Binary/collection concatenation is outside this
-character-string admission.
-
-`CONCAT` computes Flink's strict NULL propagation from the input validity bitmaps, without
-re-evaluating its arguments. Batches without NULL results use DataFusion's kernel directly; batches
-with NULL results append only surviving rows. The masked path builds from whole valid strings;
-the delegated path retains DataFusion's output validation. The Utf8 `CONCAT_WS` path delegates to DataFusion.
-Hashes use the released RustCrypto libraries used by
-DataFusion and Comet, writing lowercase hex directly into presized UTF-8 Arrow buffers without intermediate
-binary or string-view columns or per-row heap allocations. See [string copy reduction](../optimizations/string-copy-reduction.md).
-SQL parity tests cover NULLs, empty strings, embedded zero bytes, Unicode, long inputs, nested
-calls, filters, valid BIGINT widths, runtime/NULL widths, conditional and empty-batch behavior,
-and oversized bit-length fallback. The runtime kernel has a compiled-Calc no-callback witness;
-see [release measurements](../benchmarks/scalar-functions.md#runtime-sha2-widths).
-
-### Byte-preserving string input
-
-A streaming native Calc can carry STRING inputs as Arrow Binary when every consumer has a
-verified byte contract. Supported operations include direct projection, `IS NULL`,
-`IS NOT NULL`, `CONCAT` / `||`, `CONCAT_WS`, `MD5`, `SHA1`, `SHA224`, `SHA256`,
-`SHA384`, `SHA512`, `TO_BASE64`, and `ASCII`.
-Nested concatenations, runtime separators, character constants and simple
-independent numeric projections/filters are supported. These hashes consume the original bytes and return
-valid ASCII hex. Untyped NULL arrays and literals also produce typed STRING NULL results, including
-empty batches. TO_BASE64 also consumes the original bytes and returns valid ASCII. These results
-can feed text predicates or another expression within the Calc.
-ASCII reads only the first byte and sign-extends it like Flink's Java byte; empty strings yield zero
-and NULL remains NULL. Its integer output can also be used in a native filter over malformed input.
-SHA2 with a literal width of 224, 256, 384 or 512 lowers to the matching digest and has the same byte
-contract. Runtime, NULL and invalid SHA2 widths retain their existing representation and error path;
-they are not included in this arbitrary-byte admission.
-Raw concatenation output still requires a byte-capable parent or the final row exit.
-The planner selects this representation before execution; the schema does not change between
-batches. `EXPLAIN` identifies the input columns with `byteStrings=[...]`. There is no new setting.
-
-The SQL type remains STRING. The transpose copies the original `StringData` bytes into a Binary
-vector marked `streamfusion.logical_string=1`; the native concatenation kernels consume bytes directly,
-preserve their NULL rules, and return Binary to the final row exit. No UTF-8 validation, replacement decode,
-or JVM callback is needed. The exit can borrow Binary-backed string bytes for synchronous consumers,
-with the same ownership rule as Utf8. CONCAT output is byte-backed without a Java string cache,
-matching Flink's concatenation helpers. `CONCAT_WS` returns NULL only when its separator is NULL;
-it skips NULL values but retains empty values and their separators. A separator alone, or only
-NULL values after it, produces an empty string for a non-NULL separator.
-
-For example, a runtime STRING containing `FF` produces `FF21` for `CONCAT(s, '!')`.
-Truncated `41E4` produces `41E421`; neither is replaced with `EFBFBD`.
-Tests compare raw bytes with released Flink and require positive NativeCalc consumption, including
-multiple batches, NULLs, embedded zeros, Unicode, nested CONCAT and all-filtered batches.
-
-At an unverified row ingress, the planner tracks byte-backed STRING columns through compatible
-Calcs and native filters, watermark and mini-batch assigners, UPDATE_BEFORE filters, and UNION ALL
-when every branch has the same byte-backed column positions and no surviving passthrough can
-expose a Java cache across the union. A numeric filter can forward
-a STRING unchanged. A projection can drop a byte-backed column or consume it in an operation
-that produces a different representation, such as ASCII. The planner can then admit other
-native operators that only see the resulting ordinary Arrow columns. Surviving byte-backed
-STRING columns can leave through the final row exit. Admission requires scalar input fields and
-compatible non-JVM expressions wherever a Calc receives these columns. Passthrough projections
-preserve the original bytes and their optional Java UTF-16 caches. A filter that projects the
-same column under multiple names stores those names separately from the deployed filter's
-existing serialized configuration.
-`FROM_BASE64` can also read this representation in final projections. Its decoded result and
-wider compositions follow the existing [FROM_BASE64](#from_base64) rules.
-
-Generic Flink row sources can emit arbitrary string bytes, including strings nested in collections.
-For unsupported compositions or relational consumers, the planner requires a verified UTF-8
-producer at the row boundary or leaves the query on Flink. Further byte-safe consumer coverage
-is tracked in [#498](https://github.com/datafusion-contrib/StreamFusion/issues/498).
-
-The implementation shares the existing string writer's direct segment copy and cached Java-string
-encoding. Ordinary Utf8 concatenation continues to use its existing kernel. Representation selection
-is decided during planning and remains consistent across batches.
-See the [prepared and complete-job measurements](../benchmarks/scalar-functions.md#byte-preserving-concat)
-for its performance relative to stock Flink and the existing Utf8 path.
-
-### Utf8 concatenation and hash diagnostics
-
-The earlier Utf8-path throughput diagnostics compare stock Flink against native execution with a
-rowwise generated source, both row/Arrow transposes, and a blackhole sink. They assert those native
-plan boundaries and use one warmup followed by the best of three complete job runs at parallelism 1.
-They are function diagnostics, separate from the Nexmark headline benchmark:
-
-```sh
-SF_BENCHMARK=true SF_ROWS=2000000 mvn -pl :streamfusion-runtime test -Pbench \
-  '-Dnative.cargo.args=build --release --features mimalloc' \
-  '-Dtest=ThroughputBenchmark#stringConcatThroughput+stringHashThroughput'
-
-SF_BENCHMARK=true SF_ROWS=2000000 mvn -pl :streamfusion-runtime test -Pbench \
-  '-Dnative.cargo.args=build --release --features mimalloc' \
-  '-Dtest=ThroughputBenchmark#nullableStringConcatThroughput'
-```
-
-Measured on Apple M4 Pro with JDK 17 on 2026-09-08, using the core-only release build above and
-2 million rows whose strings cycle through `s0` to `s7`. The nullable diagnostic adds a 1 KiB
-literal prefix and a CASE argument that makes 75% of results NULL. The two commands run in
-separate JVMs:
-
-| Diagnostic | Flink | StreamFusion | Throughput ratio |
-|---|---:|---:|---:|
-| `CONCAT` and `CONCAT_WS` projections | 0.566 s | 0.733 s | 0.77x |
-| MD5 and SHA-2 projections | 4.141 s | 2.211 s | 1.87x |
-| Nullable `CONCAT`, 1 KiB prefix | 0.390 s | 0.613 s | 0.64x |
-
-The short-concatenation ratio changed from 0.94x in the first patchset to 0.77x here,
-but native time was effectively unchanged (0.736 s to 0.733 s). Flink's baseline moved
-from 0.691 s to 0.566 s, an approximately 18% decrease. The ratio change is within
-the observed run-to-run baseline variance, not evidence of a native regression;
-these separate runs do not establish a precise change in relative performance.
-
-Both standalone concatenation cases remain slower than Flink. Their admission is useful for keeping
-larger queries fully native; these results retain the regressions alongside the hashing gain.
-Against the previous native implementation on the same upstream revision, hashing throughput
-improved by about 47% and nullable concatenation by about 16%; short concatenation was essentially
-unchanged. The [optimization ledger](../optimizations/string-copy-reduction.md#calc-construct-only-the-final-string-buffers)
-records the before/after native times.
-Both engines are timed through planning, source generation, and job completion; the native path
-also includes both transposes. These are end-to-end diagnostics on this machine rather than
-isolated kernel timings.
-
-## HASH_CODE
-
-`HASH_CODE(value)` runs as a native scalar for CHAR/VARCHAR, BOOLEAN, integral types,
-FLOAT/DOUBLE, DECIMAL, DATE, TIME and plain TIMESTAMP. NULL remains NULL. The result
-matches Flink's SQL function: strings use Java UTF-16 hashing and wrapping absolute
-value, BIGINT folds its high and low words, DECIMAL includes the declared scale, and
-TIMESTAMP retains milliseconds and nanoseconds within the millisecond. This function
-does not change the hash used internally by native exchanges or keyed state.
-
-Admission checks Flink's resolved operator identity; a user function named HASH_CODE
-keeps its own implementation. Binary, complex types and TIMESTAMP_LTZ are outside this
-scalar admission. SQL parity tests cover integer boundaries, Unicode and embedded NUL,
-the negative minimum string hash, precision-38 decimals with several scales, NULLs,
-filters, and timestamps outside Arrow's nanosecond epoch range.
-
-Supporting this scalar removes the HASH_CODE Calc blocker in split-distinct plans.
-The remaining window layouts still fall back and are tracked in
-[#166](https://github.com/datafusion-contrib/StreamFusion/issues/166).
-
-Release/mimalloc benchmark on Apple Silicon/JDK 17, parallelism 1, 2,000,000
-runtime rows, NULL every seventh row, two warmups and five interleaved measured
-runs per engine. Both row/Arrow transposes are asserted; strings use a 264-byte
-payload budget. Medians in seconds:
-
-| Expression | Flink | Native | Flink/native |
-| --- | ---: | ---: | ---: |
-| String identity control | 0.759980 | 1.373877 | 0.553x |
-| BIGINT identity control | 0.251243 | 0.424932 | 0.591x |
-| DECIMAL identity control | 0.256370 | 0.626968 | 0.409x |
-| `HASH_CODE(s)` | 0.700423 | 1.217803 | 0.575x |
-| `HASH_CODE(n)` on BIGINT | 0.274135 | 0.421497 | 0.650x |
-| `HASH_CODE(n)` on DECIMAL | 0.303444 | 0.451720 | 0.672x |
-
-Standalone row-fed hashing is slower than Flink. This change removes an expression
-admission blocker so hashes can compose within native pipelines; these measurements
-do not establish a speedup for a larger pipeline or split-distinct aggregation.
-
-```bash
-SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
-  -Dtest=ScalarFunctionBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
-  -Dscalar.functions=HASH_CODE_STRING,HASH_CODE_BIGINT,HASH_CODE_DECIMAL \
-  -Dscalar.rows=2000000 -Dscalar.nullEvery=7 -Dscalar.warmup=2 -Dscalar.runs=5
-```
-
-## Declared-type guard
-
-Admitting every node in a tree is not the same as producing the type Flink declared for the tree:
-the result type of an arithmetic or function call is decided by DataFusion's coercion rules when
-the expression is compiled, and those do not always agree with Calcite's. `FLOAT * DECIMAL`, for
-example, is `DOUBLE` to Flink but single precision to DataFusion. The columnar boundary builds
-Flink's column vectors from the Arrow batch it is handed, so a disagreement used to surface as a
-`ClassCastException` on the first row read, after the job had started.
-
-The planner therefore compiles the encoded `Calc` at planning time — types only, no data — against
-the Arrow schema of its input and checks that the boundary would read each projection's inferred
-Arrow type as its declared column (and that the condition is `BOOLEAN`). "Read as" is the reader's
-own rule, not byte-equality of Arrow types: timestamps and times may carry any unit or zone, since
-the column vectors convert on read. New temporal expressions nevertheless preserve the engine's
-canonical two-component timestamp and millisecond TIME storage for downstream operators. Every other type — width, decimal precision and scale, string
-encoding, nested element types — must match exactly. Any disagreement, or a tree DataFusion cannot
-coerce at all, is a plain fallback whose recorded reason names the column and both types, e.g.
-`projection `EXPR$0` evaluates natively as FloatingPoint(SINGLE) but the plan declares DOUBLE`. Such
-a reason is a real gap to close (either the encoder should carry the width Flink uses, as it does
-for narrow integer literals, or the tree should be cast to the declared type), not a query to
-rewrite. This check requires the native library in the planning JVM, which the standard deployment
-already provides (see [Deployment](../deployment.md)).
-
-Typed NULL literals retain their declared Arrow type, including BOOLEAN, integer widths,
-DECIMAL precision/scale, fixed-width binary, and nested ARRAY/MAP/ROW/MULTISET fields.
-STRING and temporal NULLs retain their existing representations, including component-based
-TIMESTAMP/TIMESTAMP_LTZ storage. This also covers NULLs produced by constant folding, such
-as a MAP lookup with a literal NULL search key. These projections can share native Calc
-with runtime arithmetic or supported collection accesses without disabling the type guard.
-Nested field names and nullability are carried in a standard Arrow IPC schema during
-expression setup; no per-row schema serialization or host callback is needed.
-
-A release/mimalloc end-to-end diagnostic on Apple M4 Pro, JDK 17 and Flink 2.2.1 used
-2,000,000 rows at parallelism 1, two warmups and five interleaved trials per engine.
-`SELECT id + 1, CAST(NULL AS DECIMAL(38,18))` took 0.235819 s on Flink and 0.392874 s
-natively (0.600x); replacing the NULL type with `MAP<STRING, ARRAY<DECIMAL(38,18)>>`
-took 0.251582 s and 0.416719 s (0.604x). Both row/Arrow transposes are included and
-asserted. This small projection is slower natively; the change closes a type-coverage gap
-so folded NULLs can remain inside larger native islands, and claims no standalone speedup.
-Reproduce with `SF_BENCHMARK=true mvn -Pbench -pl :streamfusion-runtime test -Dtest=TypedNullBenchmark`.
-
-## Collection subscripts
-
-ARRAY subscripts accept runtime INT expressions with Flink's one-based indexing. A NULL
-container/index, zero, negative or out-of-range runtime index returns NULL. Literal indexes below
-one remain on Flink's path so its plan-time validation error is preserved. Elements keep their
-declared types, including DECIMAL, TIMESTAMP/LTZ and nested ARRAY/MAP/ROW values.
-
-MAP lookup accepts literal keys and runtime integer, decimal, character, boolean, binary, date,
-time and timestamp keys. It returns the first matching value and preserves nested output types.
-A NULL lookup key/container or a missing key returns NULL. Dynamic floating-point and collection
-keys remain on Flink. Runtime keys are evaluated once per row as an Arrow column; the lookup
-compares column entries directly without converting each value to a JVM object.
-The runtime search type must match the MAP key type, including decimal precision/scale and
-timestamp precision (character widths may differ). Mixed key types fall back so native coercion
-cannot narrow an integer or round a decimal search value into an incorrect match.
-
-Flink's BinaryMap lookup reads primitive stored NULL slots without checking their null bit when
-the search key is non-NULL: strings/binary read as empty, numbers/date/time as zero, boolean as
-false, and compact timestamps as epoch. Native lookup preserves this behavior, including the
-order between NULL and explicit empty/zero keys. A NULL search key still returns NULL.
-
-MAP keys declared nullable fall back when they use DECIMAL precision above 18 or timestamp
-precision above 3: Flink's non-compact NULL slots have different read/error behavior. A MAP with
-these key types declared NOT NULL remains eligible. This restriction applies to literal as well
-as runtime searches. Runtime NULL search keys and NULL containers are still supported.
-
-When Flink folds a constant NULL subscript into a typed NULL projection, it retains its native
-Arrow type, including nested collection values. Folded NULLs can compose with runtime lookups.
-
-`DynamicCollectionBenchmark` measures this path with a release native build (`-Pbench`), 2 million
-rows, parallelism 1, two warmups and five interleaved trials. Both row/Arrow transposes and the
-blackhole sink are included. Containers have three entries, every eighth container is NULL, and
-runtime indexes/keys include NULLs, misses and invalid array positions.
-
-| Expression | Flink median | Native median | Flink / native |
-| --- | ---: | ---: | ---: |
-| ARRAY runtime index | 0.304111s | 0.505128s | 0.602x |
-| MAP runtime key | 0.813771s | 1.040418s | 0.782x |
-
-Standalone lookup is slower than Flink. This coverage keeps expressions available inside an
-existing native pipeline; these measurements do not establish an end-to-end speedup.
-
-## Integer division
-
-Integer `/` truncates toward zero and wraps `MIN_VALUE / -1` back to `MIN_VALUE`,
-matching Java. A non-NULL dividend divided by zero fails the job. A NULL operand
-produces NULL, including a NULL dividend with a zero divisor.
-
-Integer `/`, `MOD`, and `%` inside `AND` or `OR` stay native when the divisor is a nonzero
-integer literal and their operands contain no fallible division. Other divisor shapes fall back
-at planning time, including in projections, filters, and nested expressions. DataFusion's batch
-evaluation may run division on rows whose guard Flink short-circuits. Constant-divisor filters such
-as `event_type = 2 AND MOD(bid.auction, 2) = 0` are safe even when the nested ROW is NULL.
-CASE result branches stay native because
-CASE selects rows before evaluating them. Floating division remains native under boolean
-operators because zero divisors produce IEEE infinity/NaN instead of an exception.
-
-## SIGN
-
-INT/BIGINT SIGN returns `-1`, `0` or `1` in the input's resolved integer width, including
-at INT_MIN and BIGINT_MIN. Direct inputs, typed literals, recursive lossless integer widening,
-nested admitted SIGN calls and recursively verified integer addition/subtraction/multiplication
-use Arrow unary kernels without JVM computation. Every arithmetic node keeps its resolved
-width and Java overflow wrapping. Input values
-remain owned by the input; result values are allocated and sliced validity is shared. Explicit
-TINYINT/SMALLINT-to-INT/BIGINT widening is covered. Direct TINYINT/SMALLINT SIGN retains
-released Flink's generated-code compilation failure (the numeric result cannot be assigned to `byte/short`).
-Division, remainder, narrowing casts and other unverified producers retain the complete generated SIGN
-program so overflow, NULLs, lazy branches and selected failures do not change.
-This replaces computation inside an already-admitted native Calc without adding a switch.
-See the [release measurements and limits](../benchmarks/scalar-functions.md#integral-sign).
-The [arithmetic-producer comparison](../benchmarks/scalar-functions.md#integer-sign-over-arithmetic)
-retains stock and previous controls, slower tiny batches and complete jobs with both transposes.
-
-DECIMAL SIGN uses a typed Decimal128 kernel for `p > s`, and for precision 19 through 38
-when `p = s`. Direct inputs, typed literals/NULLs, same-scale lossless precision widening
-and nested admitted SIGN calls retain the resolved precision and scale without JVM evaluation.
-DECIMAL-only addition/subtraction/multiplication trees over those producers also remain
-native through SIGN. Verified ABS/unary-minus producers, including alternating unary trees
-and their admitted arithmetic, also compose through SIGN. Every arithmetic node retains its
-resolved precision/scale and overflow NULL. This SIGN-specific proof still excludes compact
-`DECIMAL(p,p)` intermediates even if
-an enclosing arithmetic operation or widening could normalize them.
-For `p > s`, the result is scaled `-1`, `0` or `1`. For noncompact `DECIMAL(p,p)`, nonzero
-values become NULL, zero remains scaled zero, and input NULLs remain NULL, matching released
-Flink. NOT NULL basic-type final consumers of that noncompact NULL-producing SIGN retain the
-complete generated projection write rule: stock can write `false`, `-1` or an empty string
-instead of exposing the intermediate NULL. Nullable consumers and retained NULL/truth tests
-keep their existing native rules; direct DECIMAL results still reach ERROR/DROP enforcement.
-This repairs [#584](https://github.com/datafusion-contrib/StreamFusion/issues/584) without
-changing the SIGN kernel or claiming new acceleration. Division, remainder, mixed numeric
-operands, precision narrowing, rescaling and other unverified producers and compact
-`DECIMAL(p,p)` SIGN keep complete generated evaluation. Widening a compact SIGN intermediate
-does not make it eligible. Array evaluation allocates result values without mutating the
-input; ordinary-decimal validity is shared and noncompact `p = s` derives result validity.
-See the [DECIMAL SIGN measurements](../benchmarks/scalar-functions.md#decimal-sign).
-The [arithmetic-producer qualification](../benchmarks/scalar-functions.md#decimal-sign-over-arithmetic)
-also covers noncompact zero-integral-width inputs, nullable BOOLEAN consumers and complete
-jobs with both transposes. Character CAST/TRY_CAST retain their separate producer proof;
-the new arithmetic SIGN admission does not make every enclosing conversion JVM-free.
-The separate [unary-producer qualification](../benchmarks/scalar-functions.md#decimal-sign-over-verified-unary-producers-2026-11-05)
-retains compact SIGN guards, final defaults/NULL flags and NOT NULL enforcement while
-comparing stock and the actual preceding generated evaluator.
-
-For compact `DECIMAL(p,p)` with precision 1 through 18, STRING/CHAR/VARCHAR CAST
-and DECIMAL CASE/IF consumers keep SIGN and its enclosing scalar expression in one generated
-evaluator. Flink's conditional branch conversion can reject the compact SIGN's out-of-precision
-value and return NULL; a separate native selection must not skip that conversion.
-Released Flink retains `1` or `-1` with the original scale even though those values exceed
-the declared precision; reconstructing that intermediate before character formatting would
-incorrectly produce NULL.
-Compact direct SIGN results and null predicates keep generated evaluation; TRY_CAST retains
-its existing fallback. Noncompact precision 19 through 38 computes the released NULL result
-for nonzero `DECIMAL(p,p)` SIGN in Rust.
-Conditional branches, filters and the existing decimal-rounding representation guards still
-apply. These guards repair [#536](https://github.com/datafusion-contrib/StreamFusion/issues/536)
-and [#547](https://github.com/datafusion-contrib/StreamFusion/issues/547).
-Remaining producer and compact-decimal native coverage is tracked in
-[#491](https://github.com/datafusion-contrib/StreamFusion/issues/491) and
-[#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
-
-FLOAT/DOUBLE SIGN returns the input for signed zero and NaN, and `-1` or `1` for
-nonzero values, including infinities. NULL remains NULL. The result keeps the input's
-floating width; dividing by `SIGN(-0.0)` therefore retains negative infinity.
-
-## Floating comparisons
-
-FLOAT/DOUBLE `=`, `<>`, `<`, `<=`, `>`, and `>=` use Java primitive comparisons in
-projections and filters. Positive and negative zero compare equal. NaN compares unequal to
-every value, including itself; all four relational comparisons involving NaN return FALSE.
-NULL propagates. Mixed primitive numeric operands use Java's FLOAT/DOUBLE promotion.
-These scalar rules are separate from grouping-key equality and sort ordering.
-
-## Casts
-
-Primitive integer/string, Boolean/string and binary/string cast families resolve through shared
-semantic rules. Each family keeps its admission, native lowering, possible row failure and output
-representation together. Short-circuit analysis and ASCII or binary-width proofs consult those
-same families rather than independently recognizing casts. TRY_CAST still catches conversion
-failures only: a fallible argument retains Flink evaluation before the conversion. Decimal,
-temporal and collection casts keep their existing exact kernels or generated evaluators.
-This organization changes no coverage, configuration or runtime wire code.
-
-`CAST` and `TRY_CAST` from a direct BOOLEAN input or literal to STRING, bounded VARCHAR or CHAR use a
-native Arrow formatter. Both also admit recursively verified BOOLEAN-only NOT, AND, OR,
-IS NULL, IS NOT NULL, IS TRUE, IS NOT TRUE, IS FALSE and IS NOT FALSE operands; their
-inputs must be BOOLEAN references/literals or the same failure-free logical operations.
-Both additionally admit integer `=`, `<>`, `<`, `<=`, `>` and `>=` comparisons inside that
-logical proof. Each comparison operand must be an integer reference/literal or the verified
-wrapping-arithmetic, lossless-widening and integral-rounding tree described below. This removes
-the formatting evaluator without dropping comparison inputs. The same verified integer operands
-also admit IS NULL/IS NOT NULL, including the optimizer's expansion of nullable comparisons.
-For character targets, the same proof additionally admits integer-to-BOOLEAN TRY_CAST
-over those verified integer operands and DECIMAL-to-BOOLEAN TRY_CAST over direct inputs
-or literals, including surrounding logical and NULL checks. Direct same-type DECIMAL
-comparisons and DECIMAL input/literal NULL checks also qualify for character consumers.
-This character-consumer extension does not change the separate BOOLEAN-to-integer proof.
-The formatting operation is total for these BOOLEAN values; TRY_CAST still preserves
-failures while evaluating unverified operands. Computed/mixed-type DECIMAL comparisons, character, floating,
-temporal, division, remainder and stateful comparison operands keep their existing routes.
-Modern mode emits uppercase `TRUE`/`FALSE`, truncates VARCHAR/CHAR
-and pads bounded CHAR with spaces. Legacy mode emits lowercase `true`/`false` and ignores
-the target's length and padding. NULL remains NULL in both modes. BOOLEAN formatting cannot
-produce a conversion error, so TRY_CAST reuses the CAST kernel. Other computed operands retain
-generated Flink evaluation or their existing short-circuit fallback, preserving failures,
-laziness and shared function calls.
-Wrapping a failing or stateful producer in a logical operator does not admit it through
-the proof above.
-When the encoder has no cast-mode configuration, TRY_CAST also retains generated evaluation.
-The [bitmap word technique](../optimizations/boolean-word-blocks.md) avoids per-row string
-objects and copies common spellings eight values at a time. See the
-[CAST](../benchmarks/scalar-functions.md#boolean-cast-to-character) and
-[TRY_CAST measurements](../benchmarks/scalar-functions.md#boolean-try_cast-to-character),
-including small batches and unfavorable full jobs.
-Logical-operand CAST and TRY_CAST have separate
-[CAST](../benchmarks/scalar-functions.md#boolean-cast-over-logical-operands) and
-[TRY_CAST qualification](../benchmarks/scalar-functions.md#boolean-try_cast-over-logical-operands),
-separate from direct-input formatting and existing planner simplifications.
-
-Verified BOOLEAN CASE forms can already run without evaluators after released-planner
-rewrites. For example, `CAST(CASE WHEN b THEN n<0 WHEN b IS NULL THEN n=1 ELSE NOT b END
-AS STRING)` and the corresponding TRY_CAST reduce to existing logical/integer-comparison
-trees. The [runtime route record](../benchmarks/results/boolean-case-existing-routes-2026-11-03.json)
-covers five CASE shapes, including nested cases and NULL branches, each cast to STRING,
-VARCHAR(1/3) and CHAR(4/8), in modern/legacy modes and nullable/NOT NULL inputs. All sixteen
-invocations across released Flink 1.18.1/2.2.1 and JDK 11/17 compare complete 5,003-row maps
-and resolved schemas, require consumed NativeCalc work and empty JVM evaluators. No planner
-or kernel change is needed for these existing rewrites; this supplies no new performance
-claim. CASE shapes and producers that do not reduce to the verified tree retain their
-existing routes, including failing/stateful and other comparison families tracked in
-[#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
-
-Native, unconditionally, with no host involvement:
-
-- **Widening numeric** — integer→wider integer, integer→float/double, float→double.
-- **Narrowing integer→integer and float/double→integer** — a purpose-built `NarrowingCast` kernel
-  reproduces Flink's primitive Java cast semantics exactly: two's-complement wraparound for an
-  integer source, and saturation to INT/BIGINT followed by low-bit narrowing for a float source. Arrow's own
-  cast kernel can't do this — it errors on overflow instead of wrapping/saturating.
-  Integer inputs map their original typed value buffer in one pass and retain its immutable
-  validity buffer, without allocating an intermediate i64 column. Decimal/floating conversion
-  paths keep their separate semantics.
-- **DECIMAL → TINYINT/SMALLINT/INT/BIGINT** — truncate toward zero, then keep the destination's
-  low bits, matching Flink's BigDecimal `longValue()` followed by the Java integer cast.
-  Overflow wraps rather than saturating or producing NULL; NULL input remains NULL.
-  This also admits casts above DECIMAL aggregates such as `CAST(AVG(d) AS BIGINT)`.
-- **DECIMAL → FLOAT/DOUBLE** and **ARRAY<DECIMAL> → ARRAY<FLOAT/DOUBLE>** — retain Flink's
-  intermediate double conversion, including compact-decimal division and final FLOAT narrowing.
-  This can differ from rounding a decimal directly to FLOAT. Array casts convert the element
-  buffers and preserve offsets, empty arrays, nullable containers/elements and declared types.
-  Other changes of collection element type still require a separately supported cast.
-- **`CAST(d AS STRING)` and `TRY_CAST(d AS STRING)` for DECIMAL** — a native Decimal128
-  formatter retains scale and trailing zeros, including zero and precision-38 coefficients.
-  It uses ordinary decimal notation, so `DECIMAL(38,38)` with unscaled value 1 becomes
-  `0.00000000000000000000000000000000000001`, without passing through floating point.
-  NULL stays NULL. Modern and legacy modes share this unbounded STRING conversion.
-  TRY_CAST reuses the same non-failing formatting operation; it does not suppress failures
-  while computing an operand. Both CAST and TRY_CAST also admit direct DECIMAL inputs/literals to bounded
-  VARCHAR/CHAR: modern mode truncates or pads the ASCII decimal text through native LEFT/RPAD;
-  legacy mode ignores target length. CHAR with maximum INT length is not padded, matching
-  released Flink. Both casts also admit verified alternating DECIMAL ABS and unary-minus trees,
-  and same-scale precision widening before or after those operators. Their released-Flink result
-  precision/scale stays unchanged, so the same formatter and ASCII width kernels apply. This
-  computed-operand proof excludes failures while evaluating the operand; TRY_CAST does not catch
-  such failures. Both casts additionally admit DECIMAL-only addition, subtraction and
-  multiplication trees, including already verified unary inputs. Every arithmetic node keeps its
-  resolved precision/scale, and overflow stays SQL NULL. CAST requires a nullable computed source
-  and character result. TRY_CAST's character result is nullable, so it also admits NOT NULL
-  arithmetic inputs and retains overflow NULL instead of CAST's empty projection default.
-  TRY_CAST additionally admits verified ABS/unary-minus wrappers over these arithmetic trees,
-  including alternating unary trees and arithmetic containing those wrappers. Its nullable
-  character result normalizes arithmetic NULLs before consumers such as IS NULL observe them;
-  this verified boundary does not require the whole projection's default-value evaluator.
-  Ordinary CAST keeps its existing arithmetic/unary producer and final-default rules.
-  NOT NULL arithmetic CAST retains the generated projection contract described below;
-  division/remainder, mixed numeric operands and other producers keep their preceding routes.
-  Unknown length configuration and other computed DECIMAL operands retain their existing
-  evaluator/admission rules. In particular,
-  rounding-result metadata guards still apply;
-  this does not replace their host-exact consumers. See the
-  [direct DECIMAL formatting measurements](../benchmarks/scalar-functions.md#decimal-to-string)
-  and unary [CAST](../benchmarks/scalar-functions.md#decimal-unary-cast-to-character) /
-  [TRY_CAST measurements](../benchmarks/scalar-functions.md#decimal-unary-try_cast-to-character),
-  and arithmetic [CAST](../benchmarks/scalar-functions.md#nullable-decimal-arithmetic-cast-to-character) /
-  [TRY_CAST measurements](../benchmarks/scalar-functions.md#decimal-arithmetic-try_cast-to-character).
-- **`CHAR`/`VARCHAR` → `VARCHAR`** when the target length is ≥ the source length — an unpadded
-  no-op (e.g. the common `COALESCE(s, 'x')` pattern).
-- **Widening timestamp precision** within `TIMESTAMP` or within `TIMESTAMP_LTZ` — Arrow stores both
-  at nanosecond precision at the columnar boundary, so widening the Flink declaration is a no-op.
-- **`→ DECIMAL` from an exact source** — a `DECIMAL` or integer input, rescaled `HALF_UP`
-  before checking the target precision. Overflow produces SQL `NULL`, including a carry caused
-  by rounding (`999.995` cast to `DECIMAL(5,2)`), scale increases, and integer inputs. NULLs remain
-  visible to surrounding expressions and filters. The result stays an Arrow `Decimal128` column.
-
-Integer narrowing keeps the low bits, matching Java wraparound. FLOAT/DOUBLE to INT or
-BIGINT truncates toward zero, saturates at the destination bounds, and maps NaN to zero.
-FLOAT/DOUBLE to TINYINT or SMALLINT first performs that INT conversion, then keeps the
-low 8 or 16 bits. Thus `128.75` becomes TINYINT `-128`, and positive infinity becomes
-TINYINT/SMALLINT `-1`. NULL remains NULL for every target.
-
-### STRING/VARCHAR/CHAR to BOOLEAN
-
-`CAST(s AS BOOLEAN)` uses a native Arrow Boolean builder. It accepts `t`, `true`, `y`,
-`yes`, `1` as TRUE and `f`, `false`, `n`, `no`, `0` as FALSE, ignoring ASCII case.
-It does not trim whitespace; empty strings, other numeric values and Unicode lookalikes
-are invalid. NULL remains NULL. Flink's resolved result type/nullability is retained.
-
-With the default cast behavior an invalid token fails the query with Flink's `TableException`
-and parse message preserved through JNI, including for a NOT NULL source.
-With `table.exec.legacy-cast-behaviour=ENABLED` it produces NULL. For a NOT NULL
-source, Flink retains a NOT NULL result declaration even in legacy mode; the existing
-sink enforcer therefore rejects or drops malformed rows according to its ERROR/DROP setting.
-Both outcomes are tested against Flink. CASE can skip
-an unselected failing cast. Default-mode casts nested under AND/OR still fall back so
-that Flink's row short-circuiting suppresses errors on unselected rows; legacy-mode
-casts can compose under AND/OR because malformed input returns NULL. A bare expression
-encoder without table configuration declines this cast instead of guessing the mode.
-`TRY_CAST(s AS BOOLEAN)` uses the same native parser with NULL on invalid input,
-independently of legacy mode. It composes under NOT, COALESCE, AND/OR and filters.
-When its input expression can fail, the existing generated-expression callback preserves
-Flink's input evaluation errors: TRY_CAST only catches conversion failures. The reverse
-BOOLEAN-to-character casts follow the direct-input and generated paths described above.
-
-### Integer TRY_CAST
-
-TRY_CAST between TINYINT, SMALLINT, INT and BIGINT reuses the existing native primitive
-cast kernels for verified inputs/literals, integer arithmetic, lossless widening and
-admitted rounding producers. Widening is exact; narrowing retains the low destination bits,
-matching Flink's primitive Java cast. Integer overflow wraps rather than becoming NULL.
-Input NULL stays NULL and the resolved TRY_CAST nullability is retained in both modern and
-legacy cast modes. Same-type expressions may be removed by the released planner.
-
-Every producer must be failure-free. Division, narrowing producers and other unverified
-trees retain their preceding fallback, including failures while evaluating an operand,
-untaken CASE branches and empty filtered batches. No conversion error is possible in the
-admitted integer subset, so TRY_CAST can reuse CAST without an exception-catching callback.
-The [integer TRY_CAST qualification](../benchmarks/scalar-functions.md#integer-try_cast)
-retains initial/final kernel measurements, actual previous stock fallback, complete jobs and
-shared CAST controls. Other scalar TRY_CAST pairs remain governed by their separate coverage below and
-[#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
-
-### BOOLEAN-to-integer TRY_CAST
-
-TRY_CAST from verified BOOLEAN inputs/literals, logical trees, NULL checks and integer
-comparisons to TINYINT/SMALLINT/INT/BIGINT uses the existing native primitive CAST.
-TRUE becomes 1, FALSE becomes 0 and NULL stays NULL, in both cast modes. This follows
-Flink's BooleanToNumeric rule and the same DataFusion-compatible primitive path used by
-Comet; there is no conversion error to catch. The resolved TRY_CAST type/nullability stays
-unchanged. Ordinary BOOLEAN-to-integer CAST already lowers to Flink's native-encodable
-CASE tree and needs no new admission.
-
-Division and other unverified/failing/stateful BOOLEAN producers retain fallback, including
-their operand failures, lazy branches and empty filtered batches. Other target families
-and reverse TRY_CAST conversions are covered separately below.
-The [release qualification](../benchmarks/scalar-functions.md#boolean-to-integer-try_cast)
-retains actual preceding fallback, independent stock, tiny controls and complete jobs.
-
-### Integer-to-BOOLEAN TRY_CAST
-
-TRY_CAST from verified TINYINT/SMALLINT/INT/BIGINT input, arithmetic, widening and rounding
-trees to BOOLEAN uses a native comparison against a zero of the input's resolved width.
-Every nonzero integer, including signed minima, becomes TRUE; zero becomes FALSE and NULL
-stays NULL in both cast modes. This follows Flink's NumericToBoolean rule; ordinary CAST
-already lowers to this comparison through released planning. Conversion cannot fail.
-
-Division and other unverified/failing/stateful producers keep the preceding fallback,
-including operand failures, lazy branches and all-filtered batches. Verified character
-consumers of the new BOOLEAN result are covered below; other source families retain
-their preceding coverage.
-The [release qualification](../benchmarks/scalar-functions.md#integer-to-boolean-try_cast)
-retains actual preceding fallback, independent stock, tiny controls and complete jobs.
-
-### Character consumers of integer truth
-
-CAST and TRY_CAST of the verified integer-to-BOOLEAN TRY_CAST result to
-STRING/VARCHAR(n)/CHAR(n) reuse the existing native BOOLEAN formatter. The shared
-producer proof also permits surrounding logical/NULL checks inside these character casts;
-it does not extend the separately qualified integer-target cast proof or admit a failing
-or otherwise unverified integer producer. Modern/legacy
-spelling, VARCHAR truncation, CHAR padding and resolved output/nullability are unchanged.
-Ordinary integer-to-BOOLEAN CAST already has a released comparison rewrite.
-The [release qualification](../benchmarks/scalar-functions.md#character-consumers-of-integer-truth)
-retains actual preceding evaluation, independent stock, tiny controls and complete jobs.
-
-### DECIMAL-to-BOOLEAN TRY_CAST
-
-TRY_CAST from a direct DECIMAL input or literal to BOOLEAN compares with a DECIMAL zero
-of the same precision and scale in Rust. Every nonzero value is TRUE, zero is FALSE and
-NULL stays NULL in modern and legacy modes. This follows Flink's NumericToBoolean rule
-and Comet's same-type zero-comparison structure; no floating conversion or rescaling is
-needed. Logical/NULL checks, filters and nullable CASE consumers retain their native
-comparison path. Verified character consumers are covered below; other BOOLEAN producer
-families keep their separate formatting proof.
-
-Computed DECIMAL producers retain their preceding routes, including arithmetic overflow,
-selected failures, lazy branches and all-filtered batches. Ordinary CAST already reduces
-to a native comparison when the source precision exceeds its scale. Released Flink rejects
-ordinary DECIMAL(p,p)-to-BOOLEAN CAST while constructing its zero literal; that planning
-failure remains unchanged. TRY_CAST for that same source type is independently supported.
-The [release qualification](../benchmarks/scalar-functions.md#decimal-to-boolean-try_cast)
-retains actual preceding fallback, independent stock, tiny batches and complete jobs.
-
-### Character consumers of decimal truth
-
-CAST and TRY_CAST of a verified direct DECIMAL-to-BOOLEAN TRY_CAST result to
-STRING/VARCHAR(n)/CHAR(n) reuse the existing native BOOLEAN formatter. Surrounding
-verified logical/NULL checks are admitted inside these character casts. Modern/legacy
-spelling, VARCHAR truncation, CHAR padding, NULLs and resolved output types are unchanged.
-The same-type decimal zero comparison retains the source precision/scale.
-
-This extends only the character-consumer proof. Nested integer-target TRY_CAST,
-unverified DECIMAL arithmetic and failing/stateful producers retain their preceding routes.
-Direct DECIMAL comparison consumers have their separate proof below; arbitrary comparison
-operands do not qualify.
-Released ordinary DECIMAL(p,p)-to-BOOLEAN CAST still fails during planning.
-The [release qualification](../benchmarks/scalar-functions.md#character-consumers-of-decimal-truth)
-retains actual preceding evaluation, independent stock, tiny controls and complete jobs.
-
-### Character consumers of direct decimal predicates
-
-CAST and TRY_CAST to STRING/VARCHAR(n)/CHAR(n) keep comparisons of direct DECIMAL
-inputs/literals in the native BOOLEAN formatter when both operands have identical
-precision and scale. Equality, inequality and all four ordered comparisons qualify,
-along with direct DECIMAL IS NULL/IS NOT NULL and verified logical/NULL wrappers.
-The NULL checks also cover released-planner rewrites of nullable comparison predicates.
-No decimal-to-floating conversion, rescaling or generated evaluator is needed for these
-character consumers. Modern/legacy spelling, truncation, padding and NULLs are preserved.
-
-The released ordinary DECIMAL-to-BOOLEAN CAST rewrite consequently qualifies inside
-these character casts when precision exceeds scale. Ordinary DECIMAL(p,p) CAST retains
-its released planning failure. Computed, failing, stateful and mixed-type decimal
-operands retain their preceding routes. Integer-target TRY_CAST and bounded-position
-condition proofs stay separate; this character extension does not expand them.
-
-The [release qualification](../benchmarks/scalar-functions.md#character-consumers-of-direct-decimal-predicates)
-retains actual preceding evaluator controls, independent stock, tiny batches and full jobs.
-
-### Integer/string casts
-
-`CAST` and `TRY_CAST` between `STRING`/`VARCHAR`/`CHAR` and
-`TINYINT`/`SMALLINT`/`INT`/`BIGINT` use native Arrow kernels without a JVM callback.
-Parsing removes only leading/trailing ASCII spaces, accepts an optional sign and ASCII
-digits, and truncates fractional decimal text toward zero after validating every digit.
-Like Flink, `.`, `+.`, and `-.9` yield zero. Tabs, newlines, Unicode whitespace/digits,
-exponents, internal spaces and additional decimal points are invalid. Values outside the
-target integer range fail; this string conversion does not wrap like an integer narrowing cast.
-
-NULL input remains NULL. Ordinary CAST fails on invalid input in default mode; TRY_CAST
-and legacy-mode CAST return NULL. CASE suppresses an unselected failing cast. Default CAST
-inside AND/OR stays on Flink to preserve row short-circuiting; TRY_CAST and legacy CAST
-can compose natively. NOT NULL sink enforcement remains Flink's ERROR/DROP policy.
-Native integer-parse failures preserve Flink's `NumberFormatException` and parse message
-through JNI. Successful results and NULL-on-error policies match as well.
-
-Integer formatting writes canonical decimal text from a reusable stack buffer directly into
-Arrow offsets/values, sharing sliced input validity. It preserves signed minima and zero.
-`VARCHAR(n)` truncates to `n` characters; `CHAR(n)` also pads shorter results with spaces.
-Legacy mode leaves the formatted text unchanged regardless of the declared length, matching
-Flink. Other TRY_CAST pairs, except the integer, BOOLEAN and temporal forms described here and
-the binary, DECIMAL and collection forms below, still fall back. Bare encoders without table configuration
-decline mode-dependent casts. See the [kernel ledger](../optimizations/scalar-function-kernels.md)
-for the release benchmark against the previous host-cast path.
-
-Boolean TRY_CAST regression coverage also verifies native routing in ordinary projections,
-filter predicates and CASE consumers, including strings that parse to NULL.
-
-### Temporal TRY_CAST
-
-Standalone DATE, TIME and TIMESTAMP/TIMESTAMP_LTZ TRY_CAST use verified parsing fast paths
-inside the existing JVM batch callback. DATE accepts four-digit years and one- or two-digit
-month/day fields. TIMESTAMP accepts `yyyy-MM-dd HH:mm:ss` with an optional 1–9 digit fraction,
-including Flink's SMART normalization of days 29–31 and zero-fraction `24:00:00`. The result
-retains the declared precision and the same Java local-time and zone conversion as Flink.
-Other formats and year zero use the released Flink parser. Modern-mode composed character
-children execute their generated code exactly once, outside the conversion failure handler.
-Legacy mode retains generated DATE conversion and only the direct-input timestamp fast path.
-TIME recognizes `HH:mm:ss` with optional 1–3 fractional digits and applies the released
-version's logical-type precision rule: Flink 2.2 truncates while 1.18 preserves parsed milliseconds.
-Complete-row evaluators retain Flink's generated conversion. See
-[temporal parsing measurements](../optimizations/host-exact-builtins-upcall.md#canonical-timestamp-try_cast).
-
-`TRY_CAST` from STRING/VARCHAR/CHAR to DATE, TIME, TIMESTAMP and TIMESTAMP_LTZ
-uses the existing columnar callback, with the exact temporal subsets above and Flink's
-generated conversion for other cases. Malformed text and rejected conversions return NULL;
-errors in the input expression still propagate. Flink 1.18.1 accepts `24:00:00` as an internal TIME but throws
-`DateTimeException` during external collection; native execution preserves that failure.
-Flink 2.2.1 returns NULL for the same TRY_CAST. CASE and filters suppress unselected failing expressions. Default and legacy
-cast modes use their configured Flink rules. TIMESTAMP_LTZ interprets local text in the
-configured table time zone, including DST gaps and overlaps.
-
-Runtime-source parity covers DATE, TIME(0/3), TIMESTAMP(0/3/6/9) and
-TIMESTAMP_LTZ(0/3/6/9), NULL and NOT NULL character inputs, invalid dates, year/range
-boundaries, pre-epoch nanoseconds, UTC, Asia/Shanghai and America/Los_Angeles.
-Multi-batch tests verify NativeCalc input/output counters as well as values.
-Binary TRY_CAST is described separately below.
-
-The initial, pre-optimization release+mimalloc benchmark on Flink 2.2.1/JDK 17, Linux x86_64
-(Core i7-12650H), used 2,000,000 row-fed records, NULL every seventh row, two warmups and five alternating
-trials. NativeCalc and both row/Arrow transposes are required by the harness. Median
-elapsed seconds (ratio = Flink/native):
-
-| Query | Flink | Native island | Ratio |
-|---|---:|---:|---:|
-| Boolean-text identity | 0.413 | 0.687 | 0.600x |
-| Timestamp-text identity | 0.404 | 0.652 | 0.620x |
-| TRY_CAST to BOOLEAN | 0.411 | 0.560 | 0.733x |
-| TRY_CAST to TIMESTAMP(9) | 3.073 | 3.982 | 0.772x |
-| TRY_CAST to TIMESTAMP_LTZ(9) | 3.123 | 4.003 | 0.780x |
-
-These initial standalone results were slower than stock Flink. Cached timestamp writers and
-the canonical parser now improve the timestamp cases; see the [current measurements](../optimizations/host-exact-builtins-upcall.md#canonical-timestamp-try_cast).
-Boolean TRY_CAST remains slower in these complete-job measurements; its native route preserves
-released Flink evaluation and these results do not establish standalone acceleration.
-The parser fast path does not establish a speedup for noncanonical formats or composed expressions.
-
-### Binary casts and fixed-width generated expressions
-
-`CAST(binary_value AS STRING)` and `TRY_CAST(binary_value AS STRING)` use a native
-UTF-8 decoder on both released Flink lines. BINARY and VARBINARY inputs retain their
-actual bytes, including fixed padding, embedded zeros and sliced validity. Well-formed
-UTF-8 shares Arrow values/offsets/NULLs; fixed-size inputs construct offsets without copying
-their bytes. Malformed input uses the running JDK's released UTF-8 replacement contract:
-`ED A0 80`, for example, becomes one U+FFFD rather than three. This conversion is distinct
-from raw `FROM_BASE64` STRING transport and never exposes malformed Arrow Utf8.
-
-The unbounded conversion has the same decoding behavior in modern and legacy cast modes.
-Legacy bounded CHAR/VARCHAR casts also use this kernel because the released rule ignores
-their length. Modern bounded targets apply Flink's rule to the decoded text in the same
-kernel: VARCHAR(n) keeps at most n UTF-16 units and CHAR(n) also pads with spaces. This is
-not truncation by Unicode code points; a cut through a surrogate pair writes `?`, the UTF-8
-that Flink produces for the isolated high surrogate. Rows whose UTF-8 length already fits
-VARCHAR(n), and ASCII rows of exactly n bytes for CHAR(n), share the decoded Arrow buffers.
-Inside a Calc, consumers of a modern bounded result, such as LIKE, comparisons, CASE or
-another cast, would observe the original Java String; they keep the generated Flink
-expression around the cast, which recomputes the conversion itself.
-TRY_CAST catches conversion failures, not failures while computing its operand; binary UTF-8
-decoding itself replaces malformed input instead of throwing, so bounded TRY_CAST uses the
-same native conversion without catching operand errors. CASE remains lazy and an
-empty filtered batch never evaluates the cast.
-
-Admitted value-only consumers such as length, HEX, equality, LIKE and re-encoding compose
-with the native conversion. Existing string-ordering and representation-sensitive trim
-rules remain in force. A decoded STRING feeding another relational operator retains
-fallback so its original Java-backed representation cannot be lost before a comparator
-observes it; a CAST delayed until the final projection by the released optimizer does not
-cross that boundary. The remaining relational-boundary scope is tracked in
-[#493](https://github.com/datafusion-contrib/StreamFusion/issues/493). Bounded-target
-measurements, including slower 16-row batches, are in the
-[scalar benchmark record](../benchmarks/scalar-functions.md#modern-bounded-charvarchar-targets).
-
-CAST and TRY_CAST from STRING/VARCHAR/CHAR or BINARY/VARBINARY to BINARY/VARBINARY
-use a native byte-copy kernel when their operands do not require Flink's rowwise error handling.
-Default-mode BINARY(n) zero-pads or truncates
-raw bytes to exactly n bytes. VARBINARY(n) only truncates on Flink 2.2. Flink 1.18's
-binary-to-binary rule also pads a variable target when the declared input width is
-larger than that target. Native planning composes the existing padding kernel with
-its variable-binary output conversion to preserve that released behavior and the
-resolved VARBINARY type. Character-to-VARBINARY casts keep their truncation rule.
-Character inputs use their UTF-8 bytes, including embedded zeros and multibyte
-sequences cut at a byte boundary.
-NULLs and declared result types are preserved. Failures in the operand expression still
-propagate; CASE and filters suppress unselected failing expressions.
-
-Generated expressions can read fixed-size Arrow binary vectors through the existing
-batch callback. Native casts produce their declared fixed-size Arrow columns directly. Binary ELT
-uses the default-enabled route described under [raw payload boundaries](#binary-elt-and-raw-payload-boundaries),
-with the older complete-job measurements retained as diagnostics. Other fixed BINARY result
-projections use the generated row's declared schema, so default-mode results can feed another
-native operator, including grouping. Nested ARRAY/ROW callback arguments and results use the
-[verified nested scalar transport](#nested-java-scalar-results); custom Java conversion classes
-retain their signature gates.
-
-Legacy casts leave the input byte length unchanged even when the SQL result declares
-BINARY(n). Their final projections use the existing variable-binary representation, as
-Flink 1.18 ENCODE does. Fused scalar consumers and row sinks preserve all bytes; a legacy
-fixed-width result crossing another operator boundary or entering a native columnar sink
-falls back before execution. The reported reason starts with `legacy binary variable bytes`.
-
-Runtime-source tests cover widths 1/2/4/16, NULLs, zero padding, truncation, non-text bytes,
-typed literals, ELT selection, short-circuiting, and 5,003-row inputs. Bridge tests cover
-sliced fixed/variable vectors, output ownership after input closure, and allocator balance.
-Binary ELT SQL tests require native execution by default and separately verify the
-explicit false override, including nested compositions and empty selections.
-Separate binary STARTSWITH/ENDSWITH tests still require native execution.
-
-[Low-cardinality grouped-count measurements](../optimizations/scalar-function-kernels.md#binary-keys-composed-with-grouped-counts)
-show 19–35% less native time at 2M rows and 22–26% less at 5M for binary-cast and
-ELT keys, retaining both transposes. These historical composed measurements are separate
-from the Rust-side functionality gate used for current binary ELT default admission.
-The admitted binary-cast composed workloads are faster than Flink;
-the [synchronous entry optimization](../optimizations/projection-pruning-transpose.md#borrowing-at-the-synchronous-consumer)
-also makes the measured non-null standalone STRING-to-BINARY cast faster than both baselines.
-Standalone ELT and the sustained BINARY identity control remain slower. This does not establish
-a speedup for arbitrary binary projections or high-cardinality grouping.
-
-The original callback-only release+mimalloc measurements on Flink 2.2.1/JDK 17,
-Linux x86_64 (Core i7-12650H), use 2,000,000 row-fed records, NULL every seventh row, two warmups and five alternating
-trials. The harness requires NativeCalc and both row/Arrow transposes. Median seconds:
-
-| Query | Flink | Native island | Flink/native |
-|---|---:|---:|---:|
-| String identity (264-byte payload) | 0.825 | 1.194 | 0.691x |
-| BINARY(16) identity | 0.323 | 0.536 | 0.603x |
-| TRY_CAST string to BINARY(16) | 0.840 | 1.852 | 0.454x |
-| Dynamic ELT over BINARY(16) | 0.335 | 0.682 | 0.491x |
-
-Those callback-only standalone cases are slower than stock Flink. The native kernels remove
-the callback for the admitted casts; their current measurements and remaining
-performance gap are recorded in the [kernel ledger](../optimizations/scalar-function-kernels.md#binary-casts-and-selection).
-
-```bash
-SF_BENCHMARK=true mvn -Pbench -pl streamfusion-runtime -am test \
-  -Dtest=ScalarFunctionBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
-  -Dscalar.functions=TRY_STRING_TO_BOOLEAN,TRY_STRING_TO_TIMESTAMP,TRY_STRING_TO_TIMESTAMP_LTZ \
-  -Dscalar.functions=TRY_STRING_TO_FIXED_BINARY,ELT_FIXED_BINARY \
-  -Dscalar.rows=2000000 -Dscalar.nullEvery=7 -Dscalar.warmup=2 -Dscalar.runs=5
-```
-
-### DECIMAL from proven integer text
-
-In ordinary Calc, `CAST(CAST(n AS STRING) AS DECIMAL(p,s))` and the corresponding
-TRY_CAST combinations use the exact numeric decimal kernel when the inner CAST/TRY_CAST
-formats a verified total signed integer producer and `p-s` is at least 3, 5, 10 or 19
-for its resolved TINYINT, SMALLINT, INT or BIGINT width. For example, BIGINT text fits
-`DECIMAL(22,3)`. Integer arithmetic, lossless widening and admitted integer rounding
-producers retain their resolved widths before conversion. NULLs, declared scale,
-nullable result schemas, modern/legacy mode, conditional consumers and empty batches
-remain exact; the intermediate text and released parser are not evaluated.
-
-This proof requires unbounded STRING. Ordinary source strings, bounded CHAR/VARCHAR,
-insufficient integral capacity, fallible/stateful or unverified producers and UNNEST
-keep their preceding routes. The released decimal parser has precision- and byte-length-
-dependent behavior, so this does not admit arbitrary text parsing or DECIMAL text
-roundtrips. Some ordinary CAST forms already simplify to native numeric casts in Flink;
-they are existing controls, not newly accelerated signatures. Unreduced TRY_CAST forms
-require the explicit producer/capacity proof.
-The [separate qualification](../benchmarks/scalar-functions.md#decimal-from-proven-integer-text)
-retains actual preceding routes, tiny/full-job losses and exact source/runtime provenance.
-
-### DECIMAL TRY_CAST
-
-Outside the proven integer-text subset, `TRY_CAST` from STRING/VARCHAR/CHAR to DECIMAL
-uses Flink's generated conversion through the
-existing columnar callback. Malformed text and conversion failures become NULL; failures in
-operand expressions still propagate. Default and legacy modes follow the configured host rules.
-DECIMAL-to-DECIMAL TRY_CAST reuses the native exact rescaling kernel, including HALF_UP and
-NULL on narrowing overflow. Tests cover precision 38, invalid text, signs/exponents, whitespace,
-filters, conditional consumers, grouping and aggregation across multiple batches.
-
-Direct DECIMAL input references and literals also format to STRING/VARCHAR/CHAR through the
-native formatter described above. It preserves scale, plain notation and NULLs in modern
-and legacy modes without a JVM evaluator. Modern bounded targets truncate/pad; legacy ignores length.
-Verified ABS/unary-minus trees and same-scale precision widening also stay native. The DECIMAL-only
-addition/subtraction/multiplication proof also formats through TRY_CAST with nullable or NOT NULL
-sources, including verified ABS/unary-minus wrappers over those arithmetic trees. Its character
-result remains nullable and arithmetic overflow remains SQL NULL. Other
-computed DECIMAL operands keep their previous rules; in particular, TRY_CAST does not catch an
-error raised while computing its input. See the direct [TRY_CAST comparison](../benchmarks/scalar-functions.md#decimal-to-string-try_cast)
-and [arithmetic qualification](../benchmarks/scalar-functions.md#decimal-arithmetic-try_cast-to-character).
-
-Already-evaluated internal Flink decimals cross Arrow without another precision check. Flink's
-compact text parser can retain a rounding carry (`999.995` to DECIMAL(5,2) yields `1000.00`);
-the bridge preserves that internal unscaled value and its non-NULL status. External BigDecimal
-UDF returns still undergo the declared precision/scale conversion. This follows Comet's generated
-compact-decimal output pattern; the host-specific contract is recorded in
-[exact decimal results](https://github.com/datafusion-contrib/StreamFusion/blob/main/divergences/38-exact-decimal-result-types.md).
-
-### The host-exact JVM upcall
-
-A second group of casts is **native by default, and this is not a fallback** — it's a real JNI call
-back into Flink's own cast machinery (`CastExecutor`/`CastRuleProvider`) for the one column being
-cast, with the rest of the expression tree still evaluated natively around it:
-
-- **FLOAT/DOUBLE ↔ string**, **string → DECIMAL**, and **computed DECIMAL → character**.
-  Direct DECIMAL inputs/literals use the native formatter for CAST and TRY_CAST to STRING/VARCHAR/CHAR.
-  Both casts also keep verified ABS/unary-minus trees and same-scale precision widening native;
-  CAST also keeps the nullable DECIMAL-only addition/subtraction/multiplication proof above native;
-  TRY_CAST admits the same arithmetic proof with nullable or NOT NULL inputs.
-  TRY_CAST also admits verified ABS/unary-minus wrappers over that arithmetic and resolves
-  overflow NULLs before basic consumers; ordinary CAST keeps its separate default/producer rules.
-  Other computed DECIMAL producers retain the host route or their existing fallback.
-  For CAST of an unverified NOT NULL computed DECIMAL, the complete enclosing projection or
-  condition stays in one generated evaluator. This retains Flink's separate value and NULL flag
-  until the original consumer observes them. For example, overflowing `DECIMAL(38,18)` multiplication
-  followed by a final `CAST(d*d AS STRING)` writes an empty string, while the same cast in a
-  WHERE comparison still carries a NULL flag. A nullable source or TRY_CAST returns SQL NULL.
-  Modern bounded CHAR/VARCHAR casts also retain the empty default on overflow, without padding
-  it. A nested CONCAT can instead produce an actual NULL and still reaches the sink's ERROR/DROP
-  constraint enforcer. These are generated Flink behaviors, not a global NULL-to-empty rewrite.
-  This correctness path uses the existing columnar JVM bridge; unrelated projections and verified
-  unary expressions keep their existing execution routes. It does not add JVM-free arithmetic formatting coverage
-  or make a performance claim. See [the overflow reproducer](https://github.com/datafusion-contrib/StreamFusion/issues/577).
-- **Narrowing a `VARCHAR`** (truncation).
-- **String to `CHAR(n)`** (space-padding).
-- **`→ DECIMAL` from a `float`/`double`.**
-
-These four are deliberately routed through the host rather than reimplemented, because the host's
-output isn't just "a reasonable float-to-string conversion" — it's a specific, JDK-version-dependent
-rendering (trailing-zero handling, the scientific-notation threshold, trim semantics), and an
-unparsable string input must fail the job exactly the way the host's default cast does. Running the
-upcall makes the result byte-identical to Flink by construction instead of by reimplementation, at
-the cost of one JNI round-trip per cast column rather than per row family. (The Kafka text sinks
-already carry a probed native port of the legacy `Double.toString` spelling; moving the
-float-to-string `CAST` onto that port instead of the upcall is a separate, tracked follow-up.)
-
-NOT NULL BOOLEAN, integer, approximate numeric and character projections containing
-NOT NULL DECIMAL arithmetic, potentially overflowing exact-numeric DECIMAL casts or
-noncompact `DECIMAL(p,p)` SIGN also keep their complete generated expression and original
-projection write rule. These operations can set a runtime NULL flag even when the resolved
-input is NOT NULL. Released Flink can then
-write a separate result term, such as
-`false` for a comparison, `-1` for a DECIMAL-to-INT/BIGINT cast, or an empty string for
-a comparison cast to STRING. A split Arrow evaluation instead exposes NULL and incorrectly
-fails or drops the row at the sink constraint enforcer. This includes enclosing
-comparison/NOT/logical/CASE and cast consumers, under modern and legacy cast modes.
-Nullable projections and WHERE conditions keep their NULL flags, and selected
-division-by-zero still fails. Direct overflowing DECIMAL outputs still reach ERROR/DROP
-enforcement; defaults are not substituted globally. Only affected projections use this
-correctness path. No option or acceleration claim is introduced. See
-[the arithmetic reproducer](https://github.com/datafusion-contrib/StreamFusion/issues/581),
-[the explicit CAST reproducer](https://github.com/datafusion-contrib/StreamFusion/issues/582)
-and [the SIGN reproducer](https://github.com/datafusion-contrib/StreamFusion/issues/584).
-The CAST proof covers integer-to-DECIMAL conversions whose target cannot hold the source
-type's full integral range, and DECIMAL conversions that reduce integral capacity or can
-round into an extra integral digit without room for that carry. For example, `99.5` from
-`DECIMAL(3,1)` overflows `DECIMAL(2,0)` after rounding. Conversions with sufficient integral
-capacity, including an extra digit for rounding when needed, retain their existing native
-execution. Retained IS NULL/IS NOT NULL and truth-test consumers resolve the NULL flag
-themselves, so they do not require the CAST/SIGN protection. A truth test rewritten by
-Flink into an ordinary comparison still needs the comparison's projection contract.
-FLOAT/DOUBLE-to-DECIMAL casts also retain this protection because their values can exceed
-the target precision. Direct TRY_CAST retains its nullable result and preceding route.
-
-Host cast executors compile under Flink's cast-rule library loader, restoring the calling
-thread's context loader afterward. Flink's shared Janino expression cache does not include a
-loader key; setting only the cast context's loader still lets Janino retain a per-job loader.
-The scoped compilation loader prevents later jobs' exceptional casts from accessing a
-retired safety-wrapper loader. A two-job regression closes the first loader before exercising
-the cached expression's error path in the second job.
-
-With `table.exec.legacy-cast-behaviour=ENABLED`, the verified basic pairs remain native:
-STRING/CHAR/VARCHAR to DECIMAL; BOOLEAN or DECIMAL to CHAR/VARCHAR; and character to
-character. Other STRING-to-DECIMAL inputs use Flink's complete generated expression, including
-its catch-on-conversion-failure contract: malformed strings and overflow become NULL.
-Setting only the cast executor's legacy flag would still throw for malformed strings.
-BOOLEAN uses the native formatter's legacy lowercase spelling within its verified operand scope.
-Computed DECIMAL rendering uses the configured host executor, while direct DECIMAL inputs/literals
-use Rust for CAST and TRY_CAST to STRING/VARCHAR/CHAR.
-Legacy character casts preserve the original text without applying default
-projection trimming or padding, including empty, overlength and surrogate-containing
-strings. Sink length and NOT NULL enforcement remain separate downstream contracts.
-Legacy FLOAT/DOUBLE to DECIMAL is admitted by default. A direct unary cast first tries a native
-batch kernel: adjacent binary floating values, multiplied by an exact power of ten with outward
-rounding, bound every round-tripping decimal representation the running JDK could choose. Only
-when both bounds round to the same HALF_UP integer does the kernel use that result, with the
-declared precision check. Scale above 18, scaled magnitude at least 2^52, ambiguous rounding,
-NaN and infinity retain the complete released Flink expression for the entire batch. Numeric
-arguments then borrow Arrow rows and decimal results retain internal DecimalData. The host widens
-FLOAT to DOUBLE before decimal conversion, rounds with the target scale, returns NULL on precision
-overflow, and raises NumberFormatException for NaN/infinity in both modes. Selection and empty
-filtered batches suppress conversions for rows that do not reach the projection. The conversion
-uses the JVM inside native Calc whenever the batch cannot use the proven native kernel.
-CHAR to DOUBLE is also admitted by default in legacy mode, including NULL on malformed
-text. Whitespace, padding, exponents, signed zero, NaN/infinity and over/underflow retain the running
-host's parser behavior. The complete mixed DECIMAL ROUND projection remains native, including its
-CHAR(8) sort-key conversion. Mixed projections keep each expression's selected implementation; a runtime DECIMAL-only control
-verifies ROUND independently.
-VARCHAR-to-floating and CHAR-to-FLOAT legacy casts remain unverified
-and fall back. An unknown cast setting also falls back.
-
-Direct legacy CHAR-to-DOUBLE casts parse ordinary ASCII decimal text in native batches using
-the same correctly-rounded binary64 conversion as Java. Hexadecimal text, numeric suffixes,
-special values, Unicode and malformed input retain the complete released Flink expression for
-the batch, including legacy NULL-on-failure behavior. Composed operands are never mistaken for
-direct reads. Multiple fallible expressions keep their normal columnar schedule. These paths
-require no additional setting and preserve
-`table.exec.legacy-cast-behaviour`. See the release measurements
-for [floating DECIMAL](../benchmarks/basic-type-coverage.md#legacy-floating-decimal-casts-2026-10-16)
-and [CHAR to DOUBLE](../benchmarks/basic-type-coverage.md#legacy-char-to-double-casts-2026-10-16).
-
-Generated cast executors initialize with a valid value of the declared input type, including
-`CHAR`/`VARCHAR NOT NULL`. Startup does not evaluate an illegal NULL input; actual malformed
-runtime values still fail according to Flink's cast rules.
-
-### Still falling back
-
-Unverified legacy host-cast pairs and other pairs not listed above. Temporal casts use Flink-generated
-expressions; see [temporal functions](temporal-functions.md).
-
-`FlinkLegacyBasicCastSqlHarnessTest` compares both cast settings against independently
-executed stock Flink. It covers runtime NULLs, malformed and overflowing strings,
-rounding, CASE/filter consumers, character lengths/Unicode, NOT NULL with DROP, and
-two successive recoveries with HashMap and native RocksDB. The complete-job release
-measurements and their limits are recorded in
-[basic type coverage measurements](../benchmarks/basic-type-coverage.md).
-
-## Decimal arithmetic
-
-Mixed DECIMAL/integer arithmetic retains the selected Flink release's implicit conversions
-inside the native kernels. Flink 1.18 first converts each non-DECIMAL operand to the result's
-precision and scale; an overflowing implicit conversion raises its `NullPointerException`.
-For example, `DECIMAL(38,37) / BIGINT` fails when the divisor is 10, although the quotient
-could fit. This also applies to AVG's final sum/count projection. Flink 2.2 converts integers
-at their own precision and scale and permits that division. Both paths preserve original
-operand NULL guards, unselected branches and empty batches. Ordinary result overflow still
-returns NULL. No JVM callback or configuration switch is required for these conversions.
-
-When both operands are DECIMAL arrays, addition/subtraction/multiplication use typed
-Arrow iterators with an exact output capacity. This bypasses per-row input-type dispatch
-and inapplicable legacy integer-cast checks, while keeping each node's resolved
-precision/scale, rounding, overflow NULL and sliced validity. Scalar broadcasting and
-mixed integer operands retain the checked path. See the
-[typed-array implementation and measurements](../optimizations/scalar-function-kernels.md#typed-decimal-arithmetic).
-
-### Integer FLOOR / CEIL / CEILING
-
-Single-argument FLOOR, CEIL and CEILING over TINYINT, SMALLINT, INT and BIGINT preserve the input
-value, resolved width and NULL. Verified direct inputs, typed literals, nested admitted
-integer rounding and recursive lossless integer widening reuse the operand's
-native expression without a JVM evaluator or
-floating-point conversion. This preserves signed minima and BIGINT values above 2^53.
-FLOOR and CEIL/CEILING also admit recursively verified integer addition, subtraction and
-multiplication; each node retains its resolved width and Java wrapping overflow.
-Division, remainder, narrowing and unverified producers retain the enclosing
-generated rounding program, including its selected failures, lazy branches and empty-batch behavior.
-DECIMAL and temporal rounding keep their separate contracts below.
-
-Runtime regressions require consumed native work over 5,003 rows per integer width and
-`jvm=[]` for admitted queries on both supported Flink lines and JDK 11/17. Prepared 1,024-row
-release controls beat stock and the preceding callback; 16-row and complete row-source
-jobs retain the measured limits in [Integer FLOOR](../benchmarks/scalar-functions.md#integer-floor)
-and [Integer CEIL / CEILING](../benchmarks/scalar-functions.md#integer-ceil-ceiling).
-The [FLOOR arithmetic controls](../benchmarks/scalar-functions.md#integer-floor-over-arithmetic)
-and [CEIL arithmetic controls](../benchmarks/scalar-functions.md#integer-ceil-over-arithmetic)
-separately qualify the composed integer producers and retain complete-job costs.
-
-### Single-argument integer ROUND
-
-`ROUND(value)` over TINYINT, SMALLINT, INT and BIGINT also returns the integer unchanged.
-Verified direct inputs, typed literals, recursive lossless widening and nested admitted
-integer rounding reuse the native operand expression without a JVM evaluator, a floating
-conversion or a new values buffer. Signed minima, exact BIGINTs, NULLs and resolved widths
-are preserved. Recursively verified integer addition, subtraction and multiplication also
-run natively with their resolved intermediate widths and Java wrapping overflow.
-Division, remainder, narrowing and other unverified producers retain their complete
-generated rounding program. Explicit positions use the bounded native path below;
-unverified positions retain generated evaluation, including extreme-position failures.
-DECIMAL and floating ROUND are unchanged.
-[Release measurements](../benchmarks/scalar-functions.md#single-argument-integer-round)
-retain the slower small-batch and complete-job controls as well as the bulk-batch gains.
-The [arithmetic producer measurements](../benchmarks/scalar-functions.md#integer-round-over-arithmetic)
-separately cover computed integer operands, including their explicit-position forms.
-
-### Integer ROUND with a literal position
-
-Integer `ROUND(value, literal_position)` runs in Rust for TINYINT, SMALLINT, INT and BIGINT
-with INT positions from -38 through 38, or a typed NULL position. Direct inputs/literals,
-recursive lossless widening, nested admitted integer rounding and recursively verified
-integer addition/subtraction/multiplication retain their declared width.
-Ties round away from zero; an overflowing rounded value wraps to the resolved Java width,
-including BIGINT values beyond 2^53 and rounding to 10^19. Nonnegative positions share the
-input array, a NULL position folds to typed NULLs only after the operand proof excludes
-failures, and negative positions allocate values
-while sharing sliced validity. The input remains unchanged.
-
-The kernel follows Comet's native-width/widened integer split, with Flink's HALF_UP and
-wrapping contract. It does not use floating point. Unverified runtime positions, literals outside -38..38,
-division, remainder, narrowing and other unverified producers retain generated evaluation. In particular,
-released Flink throws for nonzero `ROUND(value, 2147483647)` while zero returns zero;
-the ordinary nonnegative-position identity must not erase that behavior. CASE and empty
-filtered batches retain their existing evaluation guards. This changes computation inside
-an already-admitted Calc and adds no configuration switch.
-[Release measurements](../benchmarks/scalar-functions.md#integer-round-with-a-literal-position)
-include both Flink lines, the actual previous scalar callback, slower small-batch controls
-and a complete job retaining both transposes.
-The [computed-operand controls](../benchmarks/scalar-functions.md#integer-round-over-arithmetic)
-cover wrapping arithmetic, literal positions, NULL folding and complete jobs with position -1.
-
-### Integer ROUND with a bounded runtime position
-
-`ROUND(value, CASE WHEN condition THEN position ELSE position END)` also runs in Rust
-when every result is an INT literal in -38..38 or NULL, including nested CASE results.
-Conditions must consist of direct/literal BOOLEAN values, logical/null predicates or
-comparisons of recursively verified integer operands. The value uses the same verified
-integer producer tree as literal-position ROUND. Each row retains its original integer
-width, HALF_UP ties, wrapping overflow and selected NULL position.
-
-The planner proves every condition and result failure-free before emitting a typed position
-selector. It picks the first TRUE condition in one Arrow pass; NULL conditions behave as
-false. ROUND consumes that INT column without the generic CASE filter/scatter machinery
-or a JVM evaluator. Empty filtered batches remain empty. No configuration switch or JNI
-contract changes are needed. Arbitrary position columns, out-of-range results,
-division/remainder, narrowing, stateful or other unverified conditions/producers retain the
-complete generated expression. TRUNCATE has the separate verified subset below.
-The [runtime-position measurements](../benchmarks/scalar-functions.md#integer-round-with-a-bounded-runtime-position)
-retain the initial slower prototype, batch qualification and conversion-inclusive jobs.
-
-Integer ROUND also admits total runtime INT positions bounded by the built-in GREATEST
-and LEAST, for example `ROUND(value, GREATEST(-38, LEAST(position, 38)))`.
-The planner computes conservative intervals through both extrema and CASE, and requires
-every non-NULL result to stay in -38..38. NULL-only branches do not enlarge an interval;
-NULL arguments still propagate through extrema. Every argument must be verified total,
-even when another argument guarantees NULL. Wrapping integer arithmetic is conservatively
-treated as the full INT range before clamping, rather than assuming mathematical bounds.
-CASE branches may contain these clamped arrays and use the existing typed selector.
-Same-name catalog functions, unbounded/one-sided ranges and failing or unverified producers
-keep their preceding routes. Epoch precision keeps its separate 0/3 proof.
-This extension changes only planning and reuses existing Arrow extrema, selection and
-rounding kernels. Its [separate qualification](../benchmarks/scalar-functions.md#integer-round-with-clamped-runtime-positions)
-compares stock with the actual preceding encoder on the identical release runtime.
-
-### Single-argument integer TRUNCATE
-
-`TRUNCATE(value)` over INT and BIGINT preserves the integer, its resolved width and NULL.
-Verified direct inputs, typed literals, recursive lossless widening and nested admitted
-integer rounding reuse the native operand expression without a JVM evaluator or a new
-values buffer. Recursively verified integer addition/subtraction/multiplication also run
-natively, preserving every intermediate width and Java wrapping overflow.
-This removes released Flink's DECIMAL(38,18) intermediate only when the
-default zero scale provably leaves every input unchanged, including signed minima and
-exact BIGINTs above 2^53. Explicit positions use the bounded native path below;
-unverified positions and producers retain the complete generated program, including
-its overflow and exception behavior. DECIMAL and floating
-TRUNCATE retain their separate paths. TINYINT/SMALLINT TRUNCATE still preserves released
-Flink's generated-compilation failure; explicitly widening them to INT/BIGINT is supported.
-[Release measurements](../benchmarks/scalar-functions.md#single-argument-integer-truncate)
-compare stock, the previous JVM route and candidate at both batch and complete-job boundaries.
-The [computed-operand controls](../benchmarks/scalar-functions.md#integer-truncate-over-arithmetic)
-also cover wrapping arithmetic and jobs with both transposes.
-
-### Integer TRUNCATE with a literal position
-
-`TRUNCATE(value, literal_position)` over INT and BIGINT executes an Arrow primitive kernel
-for INT positions -38..38, including a typed NULL. Its verified producers are direct
-inputs/literals, lossless widening, nested admitted integer rounding and recursively verified
-integer addition/subtraction/multiplication.
-Negative positions truncate toward zero using integer remainder; a power larger than the
-input width yields zero. Nonnegative positions share the input buffers, NULL positions
-fold to typed NULLs after the operand proof excludes failures, and other results allocate
-values while retaining sliced validity.
-This removes Flink's DECIMAL(38,18) intermediate only in the verified domain, preserving
-resolved widths, signed minima and exact large BIGINTs without JVM computation.
-
-Unverified runtime/extreme positions, division, remainder, narrowing and other unverified producers keep their
-complete generated expression. In particular, nonzero input with position -2147483648
-keeps Flink's Underflow exception. Direct TINYINT/SMALLINT signatures still preserve
-released Flink's generated-compilation failure; explicit widening is supported. Conditional
-branches and empty filtered batches retain their guards. No configuration switch is added.
-[Release measurements](../benchmarks/scalar-functions.md#integer-truncate-with-a-literal-position)
-compare stock and the actual preceding scalar callback, including both transposes in
-complete jobs.
-The [arithmetic controls](../benchmarks/scalar-functions.md#integer-truncate-over-arithmetic)
-add computed operands, bounded positions and failure-safe NULL folding.
-
-### Integer TRUNCATE with a bounded runtime position
-
-INT/BIGINT `TRUNCATE(value, position)` reuses the
-[bounded CASE proof](#integer-round-with-a-bounded-runtime-position), typed position selector
-and exact integer kernel. On the literal-branch CASE path, every position result is a
-literal in -38..38 or NULL, including nested CASE; every condition and value producer
-must satisfy the failure-free proof. Negative positions truncate toward zero without a
-DECIMAL(38,18) JVM intermediate.
-The selected NULL, input NULL, resolved width, integer overflow in verified producers,
-STRING/epoch consumers and empty-batch contracts remain exact.
-
-Arbitrary columns, out-of-range results, failing/stateful conditions and other unverified
-producers retain their complete generated expression. Direct TINYINT/SMALLINT TRUNCATE
-retains released Flink's compilation failure; explicit widening to INT/BIGINT is supported.
-No Rust implementation, opcode, JNI, transport or switch is added by this extension.
-The [TRUNCATE qualification](../benchmarks/scalar-functions.md#integer-truncate-with-a-bounded-runtime-position)
-compares both releases with stock and the actual preceding encoder, retaining tiny and
-conversion-inclusive complete-job controls.
-
-INT/BIGINT TRUNCATE also accepts positions conservatively bounded through built-in
-GREATEST/LEAST and CASE, for example `TRUNCATE(value, GREATEST(-38, LEAST(position, 38)))`.
-It reuses ROUND's interval/totality proof and existing extrema/selection kernels; the
-rounding kernel retains its toward-zero branch. NULL-only branches and independent value/
-position NULLs preserve their existing behavior. One-sided/unbounded/out-of-range positions,
-failing/unverified producers and same-name catalog functions keep their preceding routes.
-Direct TINYINT/SMALLINT signatures retain their released failure. The
-[clamped TRUNCATE qualification](../benchmarks/scalar-functions.md#integer-truncate-with-clamped-runtime-positions)
-uses its own actual preceding encoder, stock/native measurements and complete-job controls.
-
-### Exact unary and integral functions
-
-TINYINT, SMALLINT, INT and BIGINT ABS use a Rust Arrow unary kernel for direct inputs,
-typed literals, recursive lossless integer widening, nested admitted ABS calls and
-recursively verified integer addition, subtraction and multiplication of those producers.
-Each arithmetic node retains its resolved integer width and Java overflow wrapping;
-no floating conversion or JVM arithmetic callback is introduced. Same-width integer
-result casts share their Arrow array instead of widening and reconstructing it.
-Both nullable and NOT NULL inputs retain their width. NULL propagates; the minimum negative
-value remains negative, matching Flink's `SqlFunctionUtils.abs` and Java narrowing/wrapping
-rather than DataFusion's checked integer ABS. Input buffers and sliced validity remain owned
-by the input; the kernel allocates the result values and shares validity without a JVM callback.
-Division, remainder, casts outside that whitelist, DECIMAL arithmetic and other unverified
-ABS producers retain the enclosing generated Flink evaluation. This replaces
-computation inside an already-admitted Calc and introduces no configuration switch.
-See the [release controls and small-batch limits](../benchmarks/scalar-functions.md#integral-abs).
-The [arithmetic-producer controls](../benchmarks/scalar-functions.md#integer-abs-over-arithmetic)
-also retain the initially slower native implementation and the cost of the removed casts.
-
-Integer unary minus on direct TINYINT/SMALLINT/INT/BIGINT inputs, typed literals, lossless
-integer widening, nested admitted negation and recursively verified integer addition,
-subtraction and multiplication executes a Rust Arrow kernel without a JVM
-evaluator. It retains the resolved width and wraps each signed minimum to itself, including
-scalar literals: verified expressions containing input references reuse DataFusion's physical negative
-expression, while literal-rooted chains use wrapping scalar dispatch. DataFusion 54's ordinary
-negative expression checks scalar overflow, so it cannot represent both contracts alone.
-NULLs, sliced validity and ownership
-are preserved. The function route diagnostic includes unary minus; runtime witnesses require
-its native route and consumed batches, rather than interpreting an empty function list as
-evidence. Division, remainder, narrowing, DECIMAL arithmetic and other unverified producers retain generated evaluation
-with their enclosing negation. [Release measurements](../benchmarks/scalar-functions.md#integral-unary-minus)
-compare prepared inputs with stock and the previous callback, and separately report the
-complete row-source job with both transposes.
-
-The [arithmetic-producer controls](../benchmarks/scalar-functions.md#integer-unary-minus-over-arithmetic)
-also cover both constant operand orders through production JNI on JDK 11/17, including
-empty batches, broadcast cardinality and output ownership after the input closes.
-
-DECIMAL ABS also uses the exact Rust kernel for direct input references, typed literals,
-nested admitted ABS, recursive precision widening at the same scale and recursively
-verified DECIMAL-only addition, subtraction and multiplication of those producers. It preserves
-the declared precision (1 through 38), scale, NULLs and sliced validity; it never converts
-through floating point. Like Comet's decimal ABS, the kernel transforms the unscaled i128
-and explicitly retains its Arrow decimal type. Each arithmetic node retains its own
-resolved precision/scale and overflow NULL. Division, remainder, mixed numeric operands,
-rescaling, precision narrowing and other unverified producers
-retain the enclosing generated expression. Existing
-value-dependent FLOOR/CEIL and runtime-scale rounding guards still apply before this matcher.
-The [DECIMAL ABS measurements](../benchmarks/scalar-functions.md#decimal-abs) compare
-stock, previous callback and native execution at prepared and complete-job boundaries.
-The [arithmetic-producer controls](../benchmarks/scalar-functions.md#decimal-abs-over-arithmetic)
-measure ABS through a nullable BOOLEAN consumer. NOT NULL basic-type final projections
-still retain their generated default/NULL-flag contract described above; direct DECIMAL
-overflow retains ERROR/DROP enforcement.
-Character CAST/TRY_CAST keep their separate producer whitelist: admitting arithmetic
-ABS does not by itself make every enclosing character conversion JVM-free. Remaining
-conversion signatures are tracked in [#492](https://github.com/datafusion-contrib/StreamFusion/issues/492).
-
-ABS also admits verified negative DECIMAL producers, including `ABS(-d)`, negative
-subtrees of the existing arithmetic proof and same-scale widening. Leading verified
-negations are omitted: every valid DECIMAL coefficient has an exact negation, so ABS
-retains the same value, precision, scale and NULL without the intermediate array.
-The same verified proof also admits negation over ABS, such as `-ABS(d)` and
-`ABS(-ABS(d))`, and alternating trees of both operators. Fallible/unverified producers
-retain generated evaluation. STRING and numeric-epoch
-consumers retain their own separate proofs; the latter accepts total unary/widening
-trees but excludes arithmetic. The [release qualification](../benchmarks/scalar-functions.md#decimal-abs-over-negative-producers-2026-11-05)
-records prepared and complete-job comparisons against stock and the preceding evaluator.
-The separate [negation-over-ABS qualification](../benchmarks/scalar-functions.md#decimal-negation-over-absolute-values-2026-11-05)
-records the later alternating-tree admission. Character-consumer guards remain separate:
-`TRY_CAST(-ABS(d*d) AS CHAR(48))` now uses the verified arithmetic formatter, while
-ordinary CAST over unverified unary/arithmetic producers retains generated evaluation.
-The separate [TRY_CAST qualification](../benchmarks/scalar-functions.md#decimal-unary-arithmetic-try_cast-to-character-2026-11-05)
-records the nullable-result boundary and its stock/preceding fallback comparisons.
-
-DECIMAL unary minus admits direct inputs/literals, recursive same-scale precision widening,
-nested admitted negation/ABS and DECIMAL-only addition/subtraction/multiplication over those
-producers. Every arithmetic node retains its own resolved precision/scale and overflow NULL.
-It uses Arrow's decimal numeric negation for arrays and direct i128 scalar dispatch,
-retaining precision, scale and NULL without a JVM evaluator. All legal DECIMAL extrema
-have a representable negation. Division, remainder, mixed numeric operands, rescaling,
-narrowing and other unverified producers retain their whole generated expression; existing rounding
-metadata guards remain unchanged. See the
-[DECIMAL unary-minus controls](../benchmarks/scalar-functions.md#decimal-unary-minus).
-The [arithmetic-producer controls](../benchmarks/scalar-functions.md#decimal-negation-over-arithmetic)
-measure negation through a nullable BOOLEAN consumer. Final NOT NULL basic-type defaults,
-direct DECIMAL ERROR/DROP enforcement and the separate character CAST/TRY_CAST producer
-whitelist retain their contracts; this arithmetic proof does not extend every enclosing cast.
-
-DECIMAL SIGN uses the bounded native coverage described above. Unverified integer rounding
-producers and positions use the same path, including per-row ROUND/TRUNCATE positions.
-TINYINT/SMALLINT TRUNCATE
-retains the host compilation
-failure described under exact floating math below. This retains resolved widths, decimal precision/scale, NULL handling,
-and Java overflow behavior. Adjacent supported
-host expressions fuse before crossing the Arrow boundary. These are host-evaluated functions
-inside a columnar native Calc, not pure-Rust kernels.
-
-Compact `DECIMAL(p,p)` SIGN and its affected character CAST stay in one generated evaluator,
-preserving the intermediate sign before an Arrow boundary can revalidate its precision.
-This is the preserving boundary shipped in [#542](https://github.com/datafusion-contrib/StreamFusion/pull/542)
-for [#536](https://github.com/datafusion-contrib/StreamFusion/issues/536), described under
-[SIGN](#sign). Noncompact DECIMAL(19,19)/(38,38) retain released Flink's NULL sign
-results for nonzero values. The native ABS/negation producer whitelist does not admit SIGN;
-its character-consumer fusion and rounding guards remain in force.
-
-DECIMAL FLOOR/CEIL/CEILING run inside verified scalar consumers using one fused generated
-expression, so the intermediate decimal does not cross Arrow before its consumer executes.
-This covers STRING and integral casts, predicates, nested selections, and DECIMAL results whose
-precision is normalized by a non-identity cast, exact arithmetic or Flink's IF branch casts.
-Precision 12/18/19/20/38, positive/negative/exact/NULL values, large precision-38 values,
-selected and unselected failures, empty filtered batches and native work over 5,003 rows
-are covered by the runtime regressions.
-
-Direct rounded DECIMAL results and decimal-preserving consumers such as ABS or COALESCE retain
-fallback: Flink's FLOOR/CEIL return a decimal with value-dependent precision, which can fail the
-released host's binary-writer precision assertion. Normalizing it at an Arrow boundary would hide
-that host behavior. The same gate applies to whole-Calc generated execution, including JSON
-compositions. Collection and ROW consumers of DECIMAL FLOOR/CEIL remain outside the verified
-scalar boundary. Existing floating-point gates and decimal TRUNCATE/ROUND kernels are unchanged.
-
-Release+mimalloc measurements on Linux x86-64 (Intel i7-12650H, JDK 17, Flink 2.2.1),
-with two million runtime rows, NULL every seventh row, parallelism 1, two warmups and
-five interleaved measurements per engine, include the row source, blackhole sink and
-both asserted transposes:
-
-| DECIMAL(38,9) workload | Flink median (s) | Native median (s) | Flink/native |
-| --- | ---: | ---: | ---: |
-| Identity control | 0.276592 | 0.578956 | 0.478x |
-| `CAST(FLOOR(n) AS STRING)` | 0.600918 | 1.028703 | 0.584x |
-| `CAST(CEIL(n) AS STRING)` | 0.621295 | 1.035432 | 0.600x |
-
-These standalone projections are slower than Flink. The extension retains columnar pipeline
-composition using the existing JVM evaluator; no standalone speedup is claimed. Reproduce with
-`ScalarFunctionBenchmark`, `SF_BENCHMARK=true`, `-Pbench`,
-`-Dscalar.functions=DECIMAL_FLOOR_STRING,DECIMAL_CEIL_STRING`, `-Dscalar.rows=2000000`,
-`-Dscalar.nullEvery=7`, `-Dscalar.warmup=2`, and `-Dscalar.runs=5`.
-
-### Decimal ROUND, TRUNCATE and literals
-
-`ROUND(decimal_column[, literal_integer_scale])` runs with compatibility overrides disabled.
-It rounds ties away from zero (HALF_UP), preserves NULLs and Flink's inferred result precision,
-scale and nullability, and returns NULL when rounding exceeds the result precision. Negative
-positions round the integral part. A position at or above the source scale preserves its value
-and scale rather than appending zeroes. A NULL position returns a typed NULL.
-
-Positions from -38 upward use a prepared native decimal kernel. More negative literal positions
-use Flink's own decimal rounding through the existing columnar JVM upcall, so extreme BigDecimal
-scale/range exceptions match the host instead of being silently clamped to zero. These calls
-remain inside native Calc, but fall back when nested under AND/OR to preserve row short-circuiting.
-CASE can skip an unselected failing branch. BIGINT scale arguments retain an explicit
-planner fallback; float/double ROUND uses exact generated evaluation by default, with the existing approximate Rust opt-in.
-
-Runtime INT scales for ROUND and TRUNCATE run inside native Calc when a verified scalar
-consumer encloses the rounding. A standalone STRING cast on direct decimal and INT columns
-uses native batch rounding and per-row decimal formatting; a batch with non-NULL positions
-below -38 uses the existing Flink evaluator. Other complete expressions use Flink-generated
-evaluation, so integer casts, comparisons, predicates, nested rounding, CASE/COALESCE and
-explicit decimal normalization see the original runtime precision and scale. Arithmetic,
-nonidentity DECIMAL casts and IF can normalize the result before it crosses Arrow.
-Negative/NULL scales, scale expansion, precision 38, input errors and AND/OR/CASE
-short-circuiting retain released Flink behavior. Positions at or above the input scale
-leave the input unchanged; extreme negative positions can throw BigDecimal's scale errors.
-
-Direct runtime-scale DECIMAL outputs, decimal-preserving selections/sign operations, and
-complex outputs remain on Flink. Its serializer can reinterpret the internal unscaled
-integer using the declared scale: for DECIMAL(20,3) `123.456` and scale 2, direct ROUND and
-TRUNCATE collect as `12.346` and `12.345`, while their STRING consumers yield `123.46` and
-`123.45`. Scale 1 changes the internal precision and triggers the host binary-writer
-assertion with assertions enabled. Tests preserve both behaviors through explicit fallback,
-including when a JSON expression would otherwise select complete-row generation.
-
-A release+mimalloc comparison of the direct STRING consumers on Flink 2.2.1/JDK 17,
-with two million row-fed records, measured native ROUND at 0.634 s versus Flink's 0.690 s,
-and native TRUNCATE at 0.635 s versus 0.694 s. At five million rows, ROUND measured
-1.458 s versus 1.605 s and TRUNCATE 1.463 s versus 1.576 s. Both transposes and the row sink
-remain in these measurements. These results apply to the direct decimal/INT column shape; composed
-expressions retain generated evaluation. See the [method, variability and prior implementation
-comparison](../optimizations/udf-columnar-upcall.md#decimal-runtime-scale-consumers).
-
-`TRUNCATE(decimal_column[, literal_integer_scale])` uses the same native fixed-width
-kernel with rounding toward zero. Positive, zero and negative positions preserve Flink's
-resolved precision/scale and NULL behavior; a position at or above the source scale retains
-the input value. Positions below -38 use Flink's generated expression through the columnar
-callback, including its extreme-scale errors. They retain the same AND/OR short-circuit
-restriction as ROUND. Runtime INT scales use the generated scalar-consumer path above. A standalone STRING cast of ROUND/TRUNCATE on direct decimal and INT columns uses native batch rounding and formatting, with released-function fallback for batches containing extreme negative positions. Other compositions retain generated evaluation. The direct STRING consumer measurements above include the full native island.
-Integer TRUNCATE inputs outside the verified single-argument INT/BIGINT path use the
-generated path described under exact numeric functions;
-floating-point inputs use the exact generated path below. SQL tests cover
-precision 38, multiple batches, filters, CASE, COALESCE and aggregate consumers, including
-projections that combine and nest truncation with DECIMAL-to-FLOAT/DOUBLE casts.
-
-Decimal planner literals are rescaled HALF_UP to their declared scale before encoding their
-unscaled integer. A precision overflow becomes a typed decimal NULL. This handles constant-folded
-casts whose stored value retains more fractional digits than its resolved DECIMAL type.
-
-### Arithmetic operators
-
-**Native and byte-exact by default, with the boolean short-circuit restriction below.**
-
-- `+`/`-`/`*` whose result type is `DECIMAL` (e.g. Nexmark q1's `0.908 * price`) use fused native
-  kernels with Flink's resolved result precision and scale. Operands stay `Decimal128` or signed
-  integers; intermediates use checked i128 arithmetic and widen to i256 when needed. The result
-  is rounded `HALF_UP` before checking precision and writing one `Decimal128` column. Overflow
-  produces SQL `NULL`, including in `IS NULL`, CASE, filters, and group keys. A wide intermediate
-  does not discard a result that fits after rounding.
-- **Division** (`/`) uses Flink's decimal rounding rather than Arrow's: the quotient is
-  computed to 38 *significant* digits with `HALF_UP` rounding (matching `BigDecimal`'s
-  `MathContext(38, HALF_UP)`), then rescaled to the declared `DECIMAL(p, s)` with `HALF_UP` again —
-  producing `NULL` when the result would exceed `p` digits, and failing the job on division by zero,
-  all exactly as the host does.
-- **Modulo** (`MOD`, `%`) computes the exact signed remainder with Flink's `MathContext(38)`
-  constraint on the integral quotient. A quotient that needs more than 38 significant digits
-  after removing trailing zeroes fails the job with `Division impossible`; for example,
-  `DECIMAL(38,0)` value `10^37` modulo `DECIMAL(38,38)` value `3 * 10^-38`. A large quotient
-  consisting of a power of ten remains valid. The remainder is rescaled `HALF_UP`, with NULL on
-  result-precision overflow and job failure on a zero divisor.
-
-Decimal `/`, `MOD` and `%` nested under `AND` or `OR` fall back at planning time.
-DataFusion 54 can evaluate an operand for rows Flink skips in a mixed boolean batch,
-exposing division-by-zero or `Division impossible` errors on unevaluated rows.
-For example, `guard_value OR MOD(a, b) = 0` must skip MOD on rows whose guard is TRUE.
-This restriction applies to projections and filters, including nested expressions.
-Direct arithmetic and CASE result branches remain native; CASE selects the rows to
-evaluate before running the decimal kernel. Evaluated invalid operands still fail the job.
-
-Flink can retain a `NOT NULL` result declaration from non-nullable operands even
-when decimal arithmetic overflows. The physical Arrow result of a generated Calc permits
-those runtime NULLs while the SQL result type stays unchanged. Flink's downstream constraint
-enforcer remains responsible for its configured policy: ERROR fails the job and DROP discards
-only the violating row. Arrow validation does not preempt that policy, including in a Calc
-whose multiple divisions select complete-row evaluation.
-
-The old `decimalArithmetic.approximate` flag is retired entirely: the float/double→`DECIMAL` cast it
-used to gate now runs host-exact through the cast upcall above.
-
-## String and calendar functions
-
-The following list describes admission and fallback. Per-function Flink/native timings and
-workload details are on the [scalar function benchmark page](../benchmarks/scalar-functions.md).
-
-Admission requires verified semantics; it does not promise a speedup for every isolated query.
-Retained coverage with slower standalone results is a precursor to the concrete optimizations
-in this PR: scalar parameter reuse, direct output construction, primitive extrema, and shared
-text scans. Cheap expressions can also remain inside a larger native Calc without another
-host boundary. This is not a measured whole-query speedup claim. STARTSWITH/ENDSWITH remain
-native for this composition benefit; their standalone regressions are documented in the
-benchmark results and do not disable otherwise verified expressions.
-
-### STARTSWITH
-
-On released Flink 2.2, binary `STARTSWITH` uses a native byte-comparison kernel for
-literal and runtime BINARY/VARBINARY operands, including mixtures of the two. It never
-decodes bytes as text. Empty prefixes match every non-NULL input; a longer prefix does
-not match, and either NULL operand returns NULL. Fixed-width bytes retain their padding;
-the comparison creates variable offsets without copying their values buffer. SQL casts
-that produce those bytes retain their separately documented admission rules. Scalar
-operands are evaluated once rather than expanded to a full batch. Sliced inputs retain
-their offsets and validity; empty filtered batches do not evaluate projections.
-These binary overloads are absent from released Flink 1.18 and are not an additional
-StreamFusion SQL extension. Binary ENDSWITH uses the same byte contract at the suffix boundary.
-
-Two character arguments, literal or column. Matches a literal prefix, including Unicode and
-empty strings; any NULL argument returns NULL. Wildcard characters have no special meaning.
-
-### ENDSWITH
-
-On released Flink 2.2, BINARY/VARBINARY arguments use the native byte-comparison kernel
-described under STARTSWITH, comparing the trailing bytes. Empty suffixes, longer needles,
-NULLs, arbitrary byte values, fixed padding, scalar arguments and slices follow the same
-rules. No generated JVM evaluator is bound for either binary comparison. Released Flink
-1.18 does not register these binary overloads.
-
-Two character arguments with the same NULL and type rules as STARTSWITH. Matches a literal
-suffix; an empty suffix matches every non-NULL string. Wildcards have no special meaning.
-
-### INSTR
-
-`INSTR(string, needle[, start[, occurrence]])` supports two character strings and optional
-TINYINT/SMALLINT/INT start and occurrence arguments, including runtime columns. Positions
-are 1-based Unicode codepoints; missing matches return zero. A positive start searches
-forward, a negative start searches backward from the end, and zero returns zero. Matches
-can overlap. Defaults are start 1 and occurrence 1.
-
-Any NULL argument returns NULL before validating start/occurrence. A non-positive occurrence
-fails the query, even when start is zero. `INT_MIN` start also fails: its negation overflows
-in Flink's recursive reverse search; native reports the failure without recursive stack
-exhaustion. For an empty needle and positive occurrence, positive start returns 1 and negative
-start returns the string's codepoint length plus 1, even for starts outside the string.
-Zero start still returns zero.
-
-Two-argument calls continue using DataFusion's Unicode position kernel. Extended forms use
-forward/reverse byte search at codepoint boundaries, preserving overlapping matches without
-allocating reversed strings. Built-in admission uses the resolved SQL operator; user functions
-named INSTR retain their own behavior. BIGINT start/occurrence arguments remain unsupported.
-Extended calls under AND/OR stay native only when a literal start excludes `INT_MIN` and a
-literal/default occurrence is positive; otherwise Flink retains row short-circuiting for errors.
-
-### LOCATE
-
-Both LOCATE(needle, s) and LOCATE(needle, s, start) are native. Character inputs and TINYINT/SMALLINT/INTEGER starts are admitted; BIGINT starts fall back without narrowing. Positions count Unicode codepoints. Empty needles return 1 for every non-NULL start. Zero/negative starts search from the beginning, except INTEGER minimum: start - 1 wraps to maximum, matching Flink. Out-of-range starts return zero; any NULL argument returns NULL.
-
-### ASCII
-
-Character input returns its first UTF-8 byte widened as a signed Java byte, not a Unicode
-code point. Empty strings return zero and NULL propagates. For example, `ASCII('é') = -61`.
-The native kernel preserves these rules in projections, predicates and group keys.
-
-### CHR
-
-Integer inputs use Flink's low-byte rule: negative values return an empty string;
-non-negative values produce the character at `value & 255`, including the NUL character
-when the low byte is zero. NULL propagates. All four signed integer widths are native;
-`CHR(353)` returns `a`, rather than the character at Unicode code point 353.
-
-### BIN
-
-TINYINT, SMALLINT, INTEGER, and BIGINT inputs are admitted. Returns binary digits without leading zeros; zero is `0`. Negative values have 64 two's-complement digits even for narrow input types. NULL returns NULL. Folded string NULL literals retain their declared type.
-
-### HEX
-
-Integer and character inputs are admitted. All four signed integer widths preserve Long.toHexString behavior: no leading zeros, uppercase digits, and 16 digits for negative values. Character strings encode their UTF-8 bytes as uppercase hex. NULL returns NULL.
-
-### TO_BASE64
-
-Character strings and binary columns are encoded as padded RFC 4648 Base64 without line wrapping.
-Strings use their UTF-8 bytes; binary inputs preserve every byte, including invalid UTF-8.
-Both overloads share the direct-output encoder. Empty input stays empty and NULL propagates.
-VARBINARY and fixed-size BINARY inputs and literals are native, including typed NULLs.
-Fixed inputs use their physical bytes: the encoder accepts both length-delimited Arrow Binary
-and FixedSizeBinary without changing widths. Non-legacy CAST/TRY_CAST applies the requested
-truncation or zero padding before encoding; legacy casts preserve their actual byte lengths,
-even when these differ from the declared BINARY width. Binary selection and character-to-binary
-casts can feed the same encoder. This does not remove the remaining intermediate fixed-BINARY
-boundary restrictions tracked in [#235](https://github.com/datafusion-contrib/StreamFusion/issues/235).
-
-### FROM_BASE64
-
-Final scalar `FROM_BASE64` projections decode CHAR, VARCHAR, VARBINARY and fixed BINARY inputs
-natively, without a scalar JVM callback. Arrow Utf8 input buffers are viewed as bytes without
-decoding them; Arrow Binary and FixedSizeBinary are consumed directly. Empty input stays empty
-and NULL propagates. The decoder matches the released JDK basic decoder used by Flink: standard
-alphabet, optional padding and accepted nonzero unused tail bits. Whitespace, URL-safe alphabet
-characters, malformed units and trailing data after padding raise `IllegalArgumentException`
-with the JDK diagnostics, including signed-byte hexadecimal values. Complete groups use the
-released SIMD decoder; the last group and invalid-input diagnostics follow Flink's rules.
-
-Decoded STRING values may contain arbitrary bytes. Final scalar STRING projections therefore
-travel as Arrow Binary and are read as Flink StringData without UTF-8 normalization. Consumers such as
-comparison, length, casts and re-encoding fuse in Flink before Arrow export. Sensitive STRING
-results crossing another relational operator, feeding a native columnar sink, or contained in
-whole-Calc complex outputs retain fallback rather than exposing invalid Arrow Utf8. Row sinks
-can consume the final decoded bytes through the Arrow-to-RowData transpose. Unselected branches
-retain lazy generated evaluation; an all-filtered batch never invokes the decoder. These
-consumer and relational restrictions remain tracked in
-[#498](https://github.com/datafusion-contrib/StreamFusion/issues/498).
-
-### IS_DECIMAL, IS_DIGIT and IS_ALPHA
-
-`IS_ALPHA` and `IS_DIGIT` on character arguments use native Arrow kernels. They return non-nullable FALSE
-for NULL or empty input and require every UTF-16 `char` to satisfy the actual worker JDK's
-`Character.isLetter` or `Character.isDigit`, respectively. Supplementary letters/digits therefore
-return FALSE, as do isolated surrogates, combining marks and replacement characters. `IS_DIGIT`
-accepts BMP decimal digits such as Arabic-Indic and fullwidth digits, but rejects signs,
-decimal points, superscripts and Roman numerals. These kernels do not use Rust's Unicode version
-or code-point classification. ASCII letters/digits have specialized byte fast paths.
-
-Each JVM copies its own 8 KiB BMP property bitmap once per classifier when first compiled;
-workers obtain their own tables rather than inheriting the planner JDK's classification.
-JNI setup uses a bounded local-reference frame and retains only immutable Rust bytes. Batch
-and row evaluation make no JVM calls. Replacing an isolated surrogate with `?` cannot change
-these predicates, because both fail the letter/digit tests; existing sensitive-expression and arbitrary
-binary STRING boundaries retain their separate admission rules. Already-generated operands
-may still contain their own JVM evaluators.
-`IS_ALPHA`, `IS_DIGIT` and `IS_DECIMAL` also run natively for direct TINYINT, SMALLINT, INT, BIGINT and
-DECIMAL inputs/literals. `IS_ALPHA` returns nonnullable FALSE, including runtime/literal
-NULLs. `IS_DIGIT` and `IS_DECIMAL` return nonnullable TRUE for integers regardless of sign, including
-runtime/literal NULLs; they return FALSE for internal `DecimalData`, including NULL. Released
-Flink boxes primitive defaults for nullable integers and does not treat `DecimalData` as a
-Java Number. These are the observed SQL/codegen semantics on both released Flink lines.
-The native call keeps the input in the expression. Recursively proven failure-free integer
-trees (the bounded integer-rounding producer proof) fold to their type-based result without
-evaluating unused intermediates. Division, remainder,
-narrowing, UDFs and unverified producers retain generated evaluation of the complete call,
-so exceptions and state changes are not discarded. Folded results are not evidence
-of executed predicate-kernel work. Conditional branches and empty filtered batches retain
-their existing guards. Floating classification signatures and other unqualified object
-overloads remain generated.
-The [classification measurements](../benchmarks/scalar-functions.md#string-is_alpha)
-include stock Flink and the actual previous callback as well as complete row-source jobs.
-The [digit measurements](../benchmarks/scalar-functions.md#string-is_digit) cover the separate
-digit corpora and preserve small-batch and complete-job costs.
-The [numeric alpha measurements](../benchmarks/scalar-functions.md#numeric-is_alpha)
-separate predicate execution, bounded folds, tiny batches and full jobs with both transposes.
-The [numeric digit measurements](../benchmarks/scalar-functions.md#numeric-is_digit)
-qualify that overload separately, including its integer-NULL and internal-DECIMAL behavior.
-The [numeric decimal measurements](../benchmarks/scalar-functions.md#numeric-is_decimal)
-retain independent predicate, fold, small-batch and complete-job controls.
-
-`IS_DECIMAL` on character arguments also runs in a native Arrow kernel, with nonnullable
-FALSE for NULL/empty strings. Its released meaning is successful Java integer, long or
-double parsing, not a Decimal SQL type check. Native ASCII lexical parsing accepts signs,
-fractions, decimal/hexadecimal exponents, floating suffixes, NaN and Infinity, including
-overflow to infinity. Only leading/trailing characters at or below U+0020 are trimmed on
-the double path. Non-ASCII integers require every UTF-16 unit to have a worker-JDK radix-10
-digit value and the signed result to fit BIGINT, without trimming. ASCII integers beyond
-BIGINT still succeed through double syntax, whereas Unicode-digit overflow fails.
-
-The worker snapshots a separate 32 KiB packed radix-10 digit-value table once. No row/batch
-JVM calls or floating conversion are needed to answer the predicate. Unqualified
-noncharacter overloads retain generated evaluation. Operand failures and conditional/
-empty-batch rules remain unchanged. See the [decimal classification measurements](../benchmarks/scalar-functions.md#string-is_decimal).
-
-### UNHEX
-
-Character inputs produce BYTES. Either hex letter case is accepted; invalid bytes, whitespace, `0x` prefixes, and non-ASCII digits return NULL. Empty input produces empty bytes. Flink validates but discards an odd leading digit, emitting zero: `UNHEX('A') = 00`, `UNHEX('ABC') = 00 BC`. Folded binary constants carry bytes directly as typed binary literals, including fixed BINARY values and typed NULLs.
-
-### GREATEST
-
-Integers, BOOLEAN and matching-precision/scale DECIMAL retain their Rust kernels and strict NULL
-propagation. Mixed exact-numeric GREATEST also uses explicit casts to Flink's resolved DECIMAL
-type before the existing extrema kernel when every argument is a direct input or literal,
-integer capacity is sufficient and no DECIMAL loses scale. A DECIMAL argument whose metadata
-changes must be NOT NULL: released Flink can dereference it before checking its NULL flag.
-Nullable DECIMAL metadata changes, scale reduction and unverified producers retain generated
-evaluation. Verified ASCII primitive-text GREATEST/LEAST use the Rust subset below. Other
-character results, mixed exact numerics, TIMESTAMP and TIMESTAMP_LTZ use
-Flink-generated expressions through the batch JVM bridge, preserving coercions and nanoseconds.
-Runtime strings use that bridge when the Calc reads an external DataStream whose conversion
-produces Java-backed strings. Unknown or binary-backed input representations retain fallback:
-Flink can use UTF-16 ordering before serialization and byte ordering afterward. Floating-point
-extrema retain fallback.
-
-[Release qualification](../benchmarks/scalar-functions.md#mixed-exact-greatest) retains
-stock/previous/native comparisons, slower tiny batches and complete jobs with both transposes.
-
-The genuine built-in also executes in Rust when every character operand is an ASCII/NULL
-literal, a total verified integer/BOOLEAN cast to unbounded STRING, qualified primitive
-ASCII PRINTF (2.2), or qualified locale-independent UPPER/LOWER of those producers. Both
-modern and legacy cast spellings are preserved. Matching Boolean-text casts select their
-strict Boolean extremum before formatting once; mixed casing keeps text comparison.
-The typed UTF-8 kernel propagates any argument NULL and shares buffers for uniform winners.
-This proof does not admit bounded/unverified/fallible producers, ordinary source strings,
-Unicode literals, or same-name catalog functions. The
-[primitive-text qualification](../benchmarks/scalar-functions.md#primitive-text-greatest)
-records bulk gains, tiny/full-job losses and actual preceding routes.
-
-### LEAST
-
-Uses the same numeric kernels, generated-expression paths and source string-representation
-gates as GREATEST, with strict NULL propagation and minimum comparison. It also admits
-the same proven ASCII primitive-text producers, matching Boolean-word literals and
-locale-independent case results described above. BOOLEAN extrema combine Arrow value
-bitmaps directly while independently unioning argument NULLs; no comparison/zip arrays
-or per-row scalar expansion are needed. A scalar false absorbs LEAST and a scalar true
-absorbs GREATEST while preserving strict NULL propagation.
-The [independent LEAST qualification](../benchmarks/scalar-functions.md#primitive-text-least)
-compares its actual preceding encoder and runtime against stock, retains tiny/full-job
-losses, and reruns both extrema against released Flink. Verified mixed exact-numeric LEAST uses
-the same lossless casts to Flink's resolved DECIMAL type. It retains the same nullable-metadata,
-scale-reduction and producer guards; it does not remove Flink's nullable-conversion failures.
-The [separate qualification](../benchmarks/scalar-functions.md#mixed-exact-least) records
-stock/previous/native measurements, slower small batches and complete-job variability.
-
-### INITCAP
-
-Character strings only. Only ASCII letters and digits form words; every other character separates words and is preserved. NULL returns NULL. This follows Flink rather than DataFusion word boundaries.
-
-### TRANSLATE
-
-Three character arguments. Mappings use Unicode codepoints, not graphemes. The first duplicate mapping wins, but duplicates consume target positions. Missing target characters delete; a NULL target acts as empty. NULL/empty `from` leaves the source unchanged. A NULL source returns NULL.
-
-### BTRIM
-
-One-argument space trimming and two-argument character-set trimming with a literal set retain
-their Rust kernels. Empty sets preserve the input and NULL propagates. Per-row sets use Flink's
-generated evaluator when the Calc reads a proven external Java-string conversion. Unknown or
-binary-backed representations retain fallback because Flink can change set behavior after an
-exchange when the first set character is a space.
-
-### TRIM
-
-The SQL `TRIM([BOTH | LEADING | TRAILING] [characters] FROM s)` forms are native with
-a literal trim set, including Unicode, empty and NULL sets. The default set is the ASCII
-space, not all whitespace. These forms reuse BTRIM/LTRIM/RTRIM's character-set kernels.
-Runtime trim sets are also admitted when the Calc reads a proven external Java-string
-conversion, with the same representation gate as BTRIM. Direct input/literal operands use
-a Rust batch kernel when every non-null string is ASCII, its original Java UTF-16 cache
-agrees with those bytes, and every evaluated trim set is nonempty. All three directions
-interpret the operand as a character set, not a regular expression. NULL propagates.
-
-Unicode, empty sets, computed operands and scalar consumers retain a fused generated Flink
-evaluator. In particular, an empty set's outcome can depend on its decoded-cache state;
-the Rust certificate declines the complete batch instead of normalizing that state.
-Filters and CASE suppress unselected failures, and all-filtered batches skip projections.
-Unknown or binary-backed source representations still fall back under
-[#508](https://github.com/datafusion-contrib/StreamFusion/issues/508).
-See the [SQL TRIM release measurements](../benchmarks/scalar-functions.md#runtime-sql-trim).
-
-### ELT
-
-The binary-result overload uses a native columnar selector. Dynamic INT indices retain
-one-based selection, out-of-range NULLs and NULL operands. Multiple binary result columns retain
-independent byte arrays across rows and batches. Fixed-length BINARY arguments and results
-are admitted alongside BYTES; embedded zero/high bytes remain binary. Expressions requiring
-Flink's rowwise exception or shared-function ordering retain the generated callback.
-
-An INTEGER index and character alternatives are admitted. The index is 1-based; out-of-range and NULL indices return NULL. Only the selected alternative's NULL matters. Other index types fall back: Flink casts its boxed index to Integer after its bounds check. Explicit casts to INTEGER follow the existing cast rules.
-
-Binary ELT runs by default, including fixed-declaration inputs whose raw payload lengths
-differ from their SQL widths. Explicit false overrides retain tested stock execution; the
-unverified BIGINT-index overload keeps its fallback check.
-
-### URL_ENCODE
-
-Character strings use Java form encoding: space becomes `+`, ASCII alphanumerics and `-_. *` are preserved apart from space, and other UTF-8 bytes use uppercase percent escapes. NULL returns NULL.
-
-### OVERLAY
-
-Character strings and integer positions, widened to BIGINT without losing bits. Preserves Java UTF-16 positions, length narrowing/overflow, and substring errors. Non-positive or beyond-end starts return the source; zero/negative lengths omit the suffix. Any NULL argument returns NULL.
-
-A standalone final projection keeps the native kernel: split surrogate pairs encode as `?`
-at final output, matching Flink. Direct equality/inequality against a string literal and
-REPLACE with single-character ASCII search/replacement literals have a
-[conditional Rust fusion path](../optimizations/native-string-fusion.md). Producer arguments
-must be direct inputs, literals or losslessly widened integer inputs. The Rust path retains
-UTF-16 cuts until after the consumer; overflowing indexes retain the exact Flink evaluator.
-REPLACE also retains that evaluator for non-ASCII original Java caches or producer literals. Other consumers,
-including LIKE and surrounding CASE expressions, fuse through the batch JVM bridge.
-Sensitive character
-results crossing another relational operator retain the shared STRING identity fallback;
-[issue #519](https://github.com/datafusion-contrib/StreamFusion/issues/519) tracks that boundary.
-
-### PARSE_URL
-
-Direct input/literal calls use a certified Rust path for ASCII hierarchical `http://`
-and `https://` URLs with a nonempty ordinary host, optional user info and numeric port.
-Raw case, dot segments, percent escapes, `+`, absent/empty components and the first literal
-query-key occurrence are preserved. Components and query keys can vary per row. Keys containing
-`&`, IPv6, other protocols, whitespace, unusual authorities and non-ASCII batches retain Java URL
-parsing. No URL normalization or query decoding is substituted. Composed generated consumers
-retain their existing exact route.
-
-### PRINTF
-
-On Flink 2.2, ASCII literal formats of at most 512 characters have a JVM-free path when
-all arguments are verified integer inputs/literals, arithmetic, lossless widening or
-admitted integer rounding trees, or BOOLEAN inputs/literals and verified logical/integer-comparison
-trees. Integer and BOOLEAN arguments may be mixed. Supported conversions are `%s`/`%S`, `%d`, `%x`/`%X`,
-`%o`, `%b`/`%B` and `%%`, including argument indices/reuse, alignment, sign/zero padding and string
-precision. Width and precision are bounded at 256. The planner checks the running JDK's
-flags/indexing and argument-type rules during planning with `Locale.US`; data rows execute only the Arrow formatter.
-Explicit index zero retains its preceding route because JDK 11 accepts it while JDK 17 rejects it.
-NULL arguments retain their formatted `null`/`NULL` text, including precision and padding.
-For `%b`/`%B`, every non-NULL integer, including zero, formats as `true`/`TRUE`;
-NULL formats as `false`/`FALSE`. Precision and space padding apply to those words.
-BOOLEAN objects instead format their actual true/false value with `%b`/`%B`; NULL also
-formats as false/FALSE. Their `%s`/`%S` conversion uses true/false words, with null/NULL for
-NULL inputs. Integer formatting does not interpret zero as SQL FALSE. Boolean arguments
-at numeric conversions or invalid boolean-format flags retain Flink's NULL result through
-their preceding route, including the running JDK's index-zero behavior.
-Signed widths and two's-complement formatting remain exact. All child producers must be
-failure-free even when the format does not use an argument.
-
-Unbounded STRING CAST/TRY_CAST of those verified total integer producers can also feed
-this path. The planner validates the format against the logical STRING argument before
-eliding its intermediate text: `%s`/`%S` and `%b`/`%B` have the same result when the
-underlying integer is formatted directly. Numeric conversions such as `%d`/`%x` remain
-invalid for the STRING argument, including index/reuse rules and NULL-specific formatter
-behavior on the preceding route. Bounded CHAR/VARCHAR, BOOLEAN/DECIMAL text casts and
-unverified or failing producers retain their existing paths. In particular, casting BOOLEAN
-false to STRING would make `%b` true; that cast is not elided. The resulting ASCII proof
-also applies to the direct length/comparison consumers below. See the
-[integer-text qualification](../benchmarks/scalar-functions.md#integer-text-producers-for-printf).
-
-The same verified BOOLEAN producer proof used by character casts also applies to PRINTF:
-integer-to-BOOLEAN TRY_CAST over total integer producers, direct DECIMAL-to-BOOLEAN TRY_CAST,
-direct DECIMAL comparisons with matching precision/scale, and their verified logical/NULL
-wrappers. Ordinary DECIMAL-to-BOOLEAN CAST benefits from its existing comparison rewrite
-where released Flink supports it; DECIMAL(p,p) retains its released planning failure.
-Computed/mixed DECIMAL predicates, failing/stateful producers, and unverified string consumers
-keep their preceding routes. This shares the proof without widening integer-target or
-rounding-position admission.
-The [numeric BOOLEAN producer qualification](../benchmarks/scalar-functions.md#numeric-boolean-producers-for-printf)
-records exact previous-encoder controls, prepared trials and complete jobs.
-The [BOOLEAN/mixed-integer qualification](../benchmarks/scalar-functions.md#boolean-object-and-mixed-integer-printf)
-retains the slower shared-loop prototypes, final old-native integer and certified DECIMAL controls,
-allocation diagnostics and complete jobs with both transposes.
-
-This path borrows the literal format and reuses row/conversion buffers, appending each
-result to Arrow directly. It binds no JVM evaluator. Dynamic/non-ASCII formats, unverified
-STRING/DECIMAL/other arguments, other conversions, larger widths/precision and unverified
-producers retain their existing paths. Direct built-in CHAR_LENGTH and CHARACTER_LENGTH over
-this verified primitive formatter also bind no JVM evaluator: its ASCII result has identical
-byte, character and UTF-16 length. The producer proof includes the numeric BOOLEAN subset above.
-This does not bypass a catalog UDF with the same name. Dynamic/non-ASCII/invalid formats,
-character conversions, unverified producers and relational boundaries retain
-their existing representation guards. The
-[length-consumer qualification](../benchmarks/scalar-functions.md#length-of-primitive-ascii-printf)
-records stock, actual-previous and native controls. Flink 1.18 still rejects PRINTF,
-which that release does not provide.
-
-Direct six-way built-in comparisons of qualified primitive formatter results against another
-such result or ASCII/NULL character literals also bind no JVM evaluator. ASCII compares
-identically under Flink's cached Java UTF-16 and serialized UTF-8 representations. At least
-one operand must be the formatter; arbitrary character inputs, non-ASCII literals, unverified
-formatters/producers and enclosing consumers retain their preceding paths. This includes
-native predicates filtering formatted values, without widening the general string ordering
-gate. See the [comparison qualification](../benchmarks/scalar-functions.md#comparisons-of-primitive-ascii-printf).
-The [integer-format qualification](../benchmarks/scalar-functions.md#integer-printf-with-a-literal-format)
-retains both release controls, stock/actual-previous/native measurements and the initial
-prototype that did not improve over every existing certified path.
-The separate [integer boolean-format qualification](../benchmarks/scalar-functions.md#integer-boolean-printf-formats)
-replays the actual preceding encoder and whole runtime, retaining independent stock and
-shared numeric-format controls.
-
-Other direct input/literal calls have a certified Rust path for ASCII formats and arguments:
-STRING/integer/DECIMAL `%s`, signed integer `%d`, two's-complement `%x`/`%X`/`%o`, ASCII integer
-`%c`/`%C` over TINYINT/SMALLINT/INT, integer `%b`/`%B`, `%%`, argument indices/reuse, width, string precision,
-alignment and sign/zero padding. BIGINT character conversions retain the formatter, which
-rejects non-NULL Long arguments.
-BOOLEAN-object arguments outside the verified literal-format path retain their released evaluator.
-DECIMAL `%s`/`%S` conversion uses `DecimalData.toString()`'s plain fixed-scale text,
-including leading/trailing zeros: DECIMAL(19,19) with unscaled value 1 renders as
-`0.0000000000000000001`, and zero as `0.0000000000000000000`. Formatter string precision
-and width apply to that exact text; scientific notation would change both projections and
-predicates. The released SQL evaluator passes internal `DecimalData`, so DECIMAL numeric
-formats such as `%f`, `%d` and `%x` retain Flink's NULL result rather
-than introducing BigDecimal formatting. Non-ASCII, temporal/hash/floating formats and unverified
-flags retain Flink's Locale.US formatter; invalid formats still return NULL.
-
-Certificates apply to complete batches. Retained evaluator descriptors indicate that a call
-**may** use Java, not that a certified batch performed an upcall. Unverified string consumers
-still fuse with PRINTF because character formatting can produce isolated UTF-16 surrogates. A sensitive
-string crossing another operator retains the existing representation-protection fallback.
-
-The [DECIMAL formatting regression record](../benchmarks/results/decimal-printf-plain-2026-11-05.json)
-compares 78 precision/scale combinations with released Flink 2.2.1 on JDK 11/17,
-including NULLs, dynamic formats, string precision/width and empty filtered batches.
-All 230 focused invocations and 920 release Rust core tests pass; the 1.18 controls
-verify that this release does not provide PRINTF. This repairs already admitted
-certified behavior without broadening JVM-free admission or claiming a new speedup.
-
-### URL_DECODE
-
-One character argument is native. Form decoding preserves JDK UTF-8 replacement grouping and returns NULL for malformed escapes. The planner selects the runtime JDK rule: JDK 17/21 (and pre-25 runtimes) use Integer.parseInt, accepting signed one-digit escapes and BMP Unicode hex digits; JDK 25+ uses ASCII-only HexFormat rules.
-
-The JDK rule is selected on the JobManager during planning, so the JobManager and TaskManagers must use the same URL-decoding rule (pre-25 or 25+); mixed JDK groups can produce results that differ from Flink on the TaskManager.
-
-### ENCODE
-
-Character input and a literal UTF-8, US-ASCII, ISO-8859-1, UTF-16, UTF-16BE, or UTF-16LE
-charset (including JDK aliases). Returns BYTES, preserves NULL, and replaces unmappable
-characters with `?` in ASCII/Latin-1. UTF-16 emits a big-endian BOM for non-empty strings;
-UTF-16BE/LE emit no BOM. Empty strings produce empty bytes in all six charsets.
-On Flink 2.2, other literal charsets fall back. A runtime character expression for the charset runs through
-Flink's generated evaluator in the native Calc's batch JVM bridge. It uses the TaskManager
-JDK's charset implementations and aliases, including non-UTF charsets, without a Rust
-charset-name approximation. Runtime charset kernels are not independently encoded: the complete
-Calc uses the generated program and its binary/string representation checks, including consumers
-of charsets that produce isolated UTF-16 surrogates. On Flink 2.2, Calcs using only the six verified literal
-charsets retain their Rust kernels. NULL arguments return NULL; illegal or unsupported runtime names
-raise Flink's `UnsupportedEncodingException` only when the expression is evaluated. Flink 1.18
-declares direct ENCODE results as BINARY(1); its generated Calc carries the complete bytes as
-Arrow Binary at final projections (see [legacy representation](#legacy-encode-result-representation)).
-
-### DECODE
-
-Binary input and the same six literal charsets as ENCODE. UTF-8 uses the JDK's replacement
-grouping for malformed sequences; ASCII replaces each non-ASCII byte; Latin-1 maps all bytes.
-UTF-16 detects and consumes an initial BOM, defaulting to big-endian without one. UTF-16BE/LE
-use their fixed byte order and retain the BOM as a character. Malformed surrogate pairs and
-odd trailing bytes follow JDK UnicodeDecoder grouping, including consuming a high surrogate
-and a following non-low code unit together. The planner probes the runtime UTF-16 decoder and
-encodes its U+FFFE rule: JDK 11 replaces this code unit with U+FFFD, while JDK 17 preserves it.
-This does not change initial BOM detection or fixed-endian U+FEFF preservation. JobManagers
-and TaskManagers must use the same decoding rules. NULL stays NULL. Other literal charsets fall back.
-
-Runtime charset expressions use the same generated evaluator as ENCODE, preserving JDK
-replacement grouping, aliases and runtime errors. CASE branches, NULL arguments and rows removed
-by a filter retain Flink's evaluation behavior. Charsets such as CESU-8 can produce isolated
-UTF-16 surrogates: comparisons, LIKE and other consumers remain fused with DECODE before Arrow
-conversion. A potentially sensitive string crossing another operator retains the existing
-string-identity fallback; direct final projections and consumers within the Calc are supported.
-
-`FlinkDynamicCharsetSqlHarnessTest` checks released Flink 2.2.1 and 1.18.1 with runtime sources:
-standard and extended JDK charsets, aliases, NULLs, malformed sequences, CESU-8 surrogates,
-filtered and empty batches, untaken CASE branches, and invalid-name exceptions.
-
-A local ARM64/JDK 17 diagnostic on Flink 2.2.1 (2026-09-24) used the release native build with
-mimalloc, 2,000,000 rows, 264-byte Unicode text, NULLs every seventh row, and per-row UTF-8,
-UTF-16LE and windows-1252 names. One warmup precedes three interleaved measured trials; the
-runtime source, row sink and both row/Arrow transposes remain in the measured path.
-
-| Runtime expression | Flink median (s) | Native Calc median (s) | Flink/native |
-|---|---|---|---|
-| ENCODE | 1.438 | 2.821 | 0.510x |
-| DECODE | 1.212 | 2.013 | 0.602x |
-
-Both standalone expressions are slower through the batch JVM bridge. This path adds semantic
-coverage and keeps an otherwise supported pipeline inside a native island; it is not a charset
-conversion speedup. The six literal-charset Rust kernels remain available.
-
-Generated expressions now bypass per-row reflection while invoking the same Flink evaluator.
-The [bridge optimization measurements](../optimizations/udf-columnar-upcall.md#direct-generated-expression-dispatch)
-show a larger isolated dispatch benefit, a modest dynamic ENCODE whole-job improvement and no
-material DECODE improvement. These expressions still execute on the JVM, with unchanged charset,
-surrogate, NULL and exception behavior; native Calc admission is not a Rust charset implementation.
-
-```sh
-SF_BENCHMARK=true mvn test -Pbench -pl streamfusion-runtime -am \
-  '-Dtest=ScalarFunctionBenchmark#individualFunctions' -Dsurefire.failIfNoSpecifiedTests=false \
-  -Dscalar.functions=ENCODE_DYNAMIC,DECODE_DYNAMIC -Dscalar.warmup=1 -Dscalar.runs=3 \
-  -Dscalar.unicode=true -Dscalar.nullEvery=7
-```
-
-### SQL/JSON evaluation
-
-SQL/JSON first tries the verified native expressions below. When a Calc containing JSON
-cannot be encoded through that route, StreamFusion generates its complete filter and
-projection list with released Flink code through the batch JVM bridge. Native fast paths
-remain unchanged; new grammar does not require another Rust parser extension. EXPLAIN
-marks the generated route with `jsonEvaluation=[JVM]`. A native Calc marker identifies the
-columnar operator, not the language evaluating its JSON expressions.
-
-The generated route covers JSON_QUERY outside its definite-path projection gate below,
-dynamic JSON_VALUE/JSON_QUERY paths, recursive
-descent, filters, slices, multi-selectors, path functions, and invalid paths handled by
-Flink's policies. It also admits additional JSON_STRING/JSON_OBJECT/JSON_ARRAY scalar types and nested
-constructors, dynamic defaults, nullable-boolean consumers, and short-circuited error or
-typed-conversion expressions that the native encoder declines. JSON_VALUE with `ERROR ON EMPTY`
-or `ERROR ON ERROR` always uses this generated route, including direct projections, so its
-exception class, message and policy precedence match Flink. A mixed Calc moves together
-to preserve Flink's row order, shared UDF instances, filter-before-projection behavior and
-Jackson buffer history. There is one JSON JVM callback per Arrow batch per Calc; row
-iteration happens inside that callback. Rejected rows and changelog tags share a filter mask
-before Arrow validates nonnullable result fields.
-
-Referenced inputs and projected outputs can carry character, binary, boolean, numeric/decimal,
-date/time, interval, supported timestamp types, and recursively nested ARRAY/ROW/MAP/MULTISET
-values with those leaves. The broader MAP/MULTISET boundary requires non-null keys/elements,
-matching the Arrow map key representation, with the existing character MAP exception below. Nullable map values, outer containers and nested array/row values
-remain supported. Nested arguments use Flink internal views over the imported Arrow batch; generated
-results are copied into owned Arrow output vectors before that batch closes. SQL/JSON programs
-preserve cached Java UTF-16 strings through that boundary without widening the existing container
-type gates. In particular, an isolated surrogate member name must remain distinct from `?` until
-after JSON member selection, duplicate-key resolution and serialization. The callback still
-crosses JNI once per batch, including multi-column results and filtering.
-The existing character-key/character-value MAP boundary remains admitted. Other MAP
-keys and MULTISET elements must be declared non-null; nullable forms retain fallback,
-including inside ARRAY/ROW. Nested fixed BINARY leaves retain their existing restriction.
-Programs containing admitted collection functions or runtime constructors can instead use the
-broader [generated collection route](#collection-expressions), including `ROW(m)` with a typed MAP.
-Its representation and boundary gates apply to the complete program. These collection-preserving
-programs also admit nullable MULTISET elements inside ROW/ARRAY constructors; standalone
-JSON_STRING retains the non-null-element gate above.
-Constructing containers internally is allowed when the resulting boundary types are
-admitted. Unsupported host code generation
-and UDF signatures retain explicit fallback. Flink 2.2.1 rejects dynamic JSON_EXISTS paths;
-that host failure is preserved. No configuration opt-in is required.
-
-`JSON_EXISTS(... UNKNOWN ON ERROR) IS TRUE` retains Flink's boxed-null unboxing failure.
-Failure-parity tests require the exception class, row-evaluation phase, native route and no output.
-They capture JVM-generated NPE messages before the next execution and validate `booleanValue`
-when details are present; JDK version alone does not guarantee helpful NPE diagnostics. The same
-SQL and stable assertions are exercised with helpful messages disabled, without a fallback or skip.
-
-The JSON string identity gate below still applies, including to JSON_QUERY. Non-Calc
-expression contexts, such as residual join predicates, retain their existing narrower
-native/fused-expression admission. JSON connector decoding is unaffected. This is general
-coverage, not a JSON speed optimization: the [release comparison](../benchmarks/scalar-functions.md#sqljson-jvm-bridge-prototype-2026-09-18)
-rejected replacing the measured native fast paths wholesale. The [nested-boundary comparison](../benchmarks/scalar-functions.md#nested-sqljson-batch-boundaries-2026-09-19)
-also measured slower row-fed execution (0.85× array serialization and 0.54× a nested result).
-The following function sections
-describe those retained fast paths and call out when the generated Calc extends them.
-
-### JSON_QUERY
-
-Final VARCHAR projections over a direct character field or literal use Rust for verified literal
-definite paths: root, member names (including quoted/escaped names), and signed array indexes.
-The default WITHOUT ARRAY WRAPPER, CONDITIONAL ARRAY WRAPPER and UNCONDITIONAL ARRAY WRAPPER are
-native, with NULL, EMPTY ARRAY or EMPTY OBJECT independently specified ON EMPTY and ON ERROR.
-Strict/lax mode, SQL NULLs, JSON null, missing selections, wrong-type selections, duplicate members
-and validation of unselected values retain the released Flink behavior. Empty filtered batches
-do not evaluate the projection.
-
-The reader validates the document with the shared Jackson runtime profile, then serializes the
-selected tree into Arrow. It does not return a raw JSON substring: 2.2 sorts member names by their
-original Java UTF-16 units; 1.18 retains insertion order, including the original position of a
-replaced key. The last duplicate name wins on both lines. Strings use Jackson-compatible escapes,
-and numeric spelling follows the selected Flink line (1.18 Double or 2.2 BigDecimal semantics).
-The input string carrier preserves cached UTF-16 through selection and member ordering; replacement of
-isolated surrogates happens at the final UTF-8 output boundary. There is no JVM JSON evaluator on
-this route. The existing per-batch JNI synchronization of Jackson recycler metadata remains.
-Wide compatible integer/boolean/null documents write directly from the existing recycled SIMD
-tape. Floating-point nodes, Unicode escape spelling, oversized tapes/documents and Jackson
-edge cases retain the exact reader and a flat arena for the selected tree. Both paths apply
-the same ordering, duplicate-key, wrapper and error-policy rules.
-
-Multiple unconditional reader projections over direct character fields/literals preserve
-row-major Jackson buffer history while evaluating Arrow columns. Calc prepares each reader's
-per-row capacity in projection order, then each kernel uses that capacity for its row. Ordinary
-short documents avoid per-row capacity-table allocation. The readers share one batch JNI
-metadata acquisition/release and publish the final capacity; no document/result is evaluated
-by the JVM. SQL NULLs and filtered-out rows do not grow the buffer, and empty filtered batches
-skip the entire schedule.
-
-On Flink 2.2, multiple readers with JSON calls in the condition, computed document inputs or
-non-final/conditional consumers retain generated row-major evaluation. A native parser combined
-with a JVM evaluator also retains that route because a callback can change shared recycler
-state. These restrictions protect successful values near Jackson's numeric token limits,
-independently of competing exception order. They apply to JSON_VALUE, JSON_EXISTS and IS JSON
-as well as JSON_QUERY. The scoped correctness repair is tracked in
-[#608](https://github.com/datafusion-contrib/StreamFusion/issues/608); remaining native coverage
-is part of [#506](https://github.com/datafusion-contrib/StreamFusion/issues/506).
-Flink 1.18 lacks the later token-limit interaction and retains its previous admission for
-computed/conditional readers; compatible direct reader projections can share the batch metadata.
-Mixed expressions whose kernels cannot consume the represented string carrier stay generated;
-their types are checked during encoding, before physical-plan substitution.
-
-Dynamic/NULL paths, wildcards, index/member unions, slices, recursive descent, filters, path
-functions, ERROR policies, computed document inputs, ARRAY return types, unverified container
-boundaries in other projections, and non-final string
-consumers retain the generated route. The intermediate STRING identity restriction remains the
-same as JSON_VALUE, including non-final operator boundaries. Non-Calc expression encoders do not
-admit this new JSON_QUERY kernel.
-
-### JSON_QUOTE
-
-Character input, including NULL. Matches Flink 2.2.1's actual spelling: slash is escaped, non-ASCII values use lowercase Unicode escapes, and supplementary characters emit a full code-point escape followed by a low-surrogate escape. Unlisted ASCII controls are retained.
-
-### JSON_UNQUOTE
-
-One character argument is native. Valid quoted values are unescaped with Flink/Jackson first-token validation; invalid input is preserved and NULL propagates. A truncated Unicode escape after a valid first token fails the job, matching Flink 2.2.1's uncaught bounds exception. A truncated escape inside the first token is invalid JSON and is preserved.
-
-Scalar consumers use the fused JVM expression path, and strings passed to another operator
-fall back under the [JSON_VALUE identity restrictions](#json_value).
-
-### JSON_STRING
-
-One character, BOOLEAN, TINYINT, SMALLINT, INTEGER, BIGINT, or DECIMAL scalar is native by default.
-SQL NULL returns SQL NULL; other scalars serialize to JSON text. Strings use Jackson's
-escaping: quote/backslash and ASCII controls are escaped, other controls use uppercase
-`\u00XX`, and slashes and Unicode remain unescaped. Integer widths retain their exact
-decimal spelling. Output is written directly into the Arrow string builder.
-
-DECIMAL retains its declared scale and trailing zeros, using Jackson's BigDecimal spelling:
-`1.2300` remains `1.2300`, while sufficiently small values use scientific notation
-(`0.000000100` becomes `1.00E-7`). Precision and scale through 38 are native, including NULLs.
-
-Final Calc projections over direct ARRAY/ROW input columns also serialize in Rust. Containers
-may nest through 32 levels with nullable elements/fields and character, BOOLEAN, TINYINT,
-SMALLINT, INTEGER or BIGINT leaves. Flink 2.2 additionally admits DECIMAL leaves; 1.18's
-different decimal normalization retains generated evaluation. Outer containers may be nullable
-or NOT NULL. Empty arrays and nested NULLs retain their distinct JSON spelling. ROW members
-sort by Java UTF-16 field-name order on both released lines; nested changelog metadata is not
-serialized. The schema and escaped keys are prepared once per batch, and values write directly
-to the Arrow output without a JSON tree or JVM evaluator.
-
-Computed/intermediate container operands, nonnullable nested elements/fields, depth above 32,
-MAP/MULTISET, additional leaf types, and ROW names containing unpaired surrogates, ASCII controls,
-quotes or backslashes retain generated evaluation. Existing owned-string and relational-boundary
-identity gates still apply. Disabling collection expressions retains the preceding generated route.
-Plans that combine string-container serialization with cache-observing comparisons or other
-representation-sensitive outputs retain generated evaluation. Flink's serializer materializes
-the original strings; for example, `JSON_STRING(a), ARRAY_MAX(a)` can change which string wins
-when the same ARRAY contains cold UTF-8 strings. This is successful-value behavior, not exception
-ordering, and is checked in both projection orders.
-Additional scalar inputs and direct nested JSON_OBJECT, JSON_ARRAY and JSON(value) calls also
-use the generated Calc, preserving Flink's raw-JSON handling. JSON_STRING applied to an ordinary
-string column containing JSON text quotes it normally. No compatibility opt-in is needed.
-
-NULL values must have a supported scalar type, for example `CAST(NULL AS STRING)`.
-An operand whose type remains SQL NULL falls back: Flink's JSON node generator cannot
-serialize that type. The same typed-NULL rule applies to JSON_OBJECT values.
-
-### JSON_OBJECT
-
-Literal, non-null character keys with character, BOOLEAN, TINYINT, SMALLINT, INTEGER,
-BIGINT, or DECIMAL scalar values are native. DECIMAL uses the same scale-preserving
-formatting as JSON_STRING, including scientific notation. Keys must contain well-formed
-Unicode. The default NULL ON NULL writes JSON null values; ABSENT ON NULL skips them. Duplicate keys retain
-the last inserted value, so an absent NULL does not overwrite an earlier non-null value.
-Objects with no surviving entries produce `{}`, never SQL NULL.
-
-Keys are sorted in Java UTF-16 order, matching Flink's Jackson serializer even when BMP
-and supplementary characters mix. Keys and values use the same escaping as JSON_STRING.
-Each batch reuses escaped keys and scalar parameters while writing directly to Arrow.
-
-Dynamic/NULL keys, additional scalar value types, and direct nested JSON_OBJECT, JSON_ARRAY
-or JSON(value) expressions use the generated Calc, including the host's failures. An ordinary string containing JSON text is quoted.
-No compatibility opt-in is needed.
-
-### JSON_ARRAY
-
-Flat arrays of character, BOOLEAN, TINYINT, SMALLINT, INTEGER and BIGINT scalar arguments
-execute in Rust. DECIMAL precision/scale through 38 is also native on Flink 2.2, sharing
-the exact scale-preserving/scientific rendering of JSON_STRING. Released 1.18's different
-decimal rendering retains the generated evaluator. Argument order and repeated values
-are preserved. The default ABSENT ON NULL omits SQL NULL elements; explicit NULL ON NULL
-writes JSON nulls. Empty or entirely omitted arrays return `[]`, never SQL NULL. NULL
-arguments must retain a supported scalar type.
-
-The kernel prepares typed column views and scalar arguments once per batch, then writes
-each result directly into the Arrow string builder with the existing Jackson-compatible
-scalar serializer. It handles sliced validity, constant/column mixtures and empty inputs
-without building per-row JSON trees or calling the JVM. Ordinary scalar consumers and
-CASE-selected strings remain ordinary string values. Direct nested JSON_OBJECT, JSON_ARRAY
-and JSON(value) arguments retain the generated route because Flink inserts these as raw
-JSON. Other scalar/container types also retain their existing routes. Remaining JSON
-kernel coverage is tracked by [#506](https://github.com/datafusion-contrib/StreamFusion/issues/506).
-
-The [scalar-array qualification](../benchmarks/scalar-functions.md#flat-scalar-json_array-2026-11-06)
-records both released lines/JDKs, actual consumed Rust execution, previous-path controls
-and release measurements. All 36 prepared bulk cells beat stock by 1.90-5.86x; the seven
-million-row jobs retain both perimeter transposes and take 0.603-0.723 of stock elapsed
-time. These results apply to the measured flat scalar shapes, not all SQL/JSON expressions.
-
-### IS JSON
-
-`s IS JSON [VALUE | OBJECT | ARRAY | SCALAR]` and their `IS NOT JSON` forms are native
-for character input. Omitting the type means VALUE. Results are non-nullable: SQL NULL
-and invalid JSON return FALSE (TRUE for the negated form). The JSON literal `null` is
-a valid VALUE and SCALAR, but is neither an OBJECT nor an ARRAY.
-
-Parsing matches Flink 2.2.1's Jackson first-document validation, including trailing
-content, token boundaries, escaped surrogates, and limits in every nested field.
-It shares the streaming/SIMD reader and JDK profiles described below; no compatibility
-opt-in is needed. This validates the document directly, without applying JSON path policies.
-
-### JSON_VALUE
-
-The direct Rust kernel is enabled by default for the following verified shapes; no compatibility
-opt-in is needed. `ERROR ON EMPTY` and `ERROR ON ERROR` use the generated Calc so failures retain
-Flink's exact exception class and message. Outside a Calc, these throwing policies stay on the host.
-The fused JVM consumer path below retains Flink's own selector and policy rules.
-
-Character input with a non-null literal path is native for the following selectors.
-Definite paths support `$`,
-dot members such as `$.user.name`, bracket members such as `$['user name']`, and signed
-32-bit array indexes such as `$.users[0].name` and `$.users[-1].name`. Negative indexes count
-from the array end: `-1` selects the last element, while `-0` is index zero. Leading zeros
-are accepted, and an index beyond either end follows the normal missing-path policies.
-Dot names also accept numeric names, punctuation and well-formed Unicode, including literal
-controls: `$.order-id.123` and `$.a*b` select literal object keys. A dot name ends at `.` or `[`,
-and `(` starts function syntax, which remains on Flink. ASCII spaces are invalid within the name,
-and a leading `*` is a wildcard selector rather than a literal member.
-Backslashes in dot names are literal: `$.a\u0061` selects the key `a\u0061`, without decoding
-the escape. The planner canonically quotes these names for the existing native reader.
-Bracket names use single or double quotes and
-accept well-formed Unicode, spaces and punctuation, including the other quote character.
-Empty bracket names (`$['']` and `$[""]`) select the empty object key, including in nested
-member/index paths. They remain distinct from a name containing a space (`$[' ']`).
-Member names are case-sensitive. Escaped document keys are compared as UTF-16 code units,
-so unpaired surrogates remain distinct from a literal `?` or replacement character, including
-when duplicate members occur before or after them. Quoted names also accept escaped quotes,
-backslashes, slashes, `\b`, `\f`, `\n`, `\r`, `\t`, and four-hex-digit `\u` escapes.
-Unicode escapes may encode controls (including NUL) or paired surrogates; decoding happens
-once, so `\\u0061` names the literal six-character key `\u0061`, not `a`. Escaped quotes
-and brackets remain part of the member name. The planner uses Flink's released Jayway
-unescaper and sends a canonical JSON-escaped name to Rust; both native readers select
-against the decoded name without a per-row JVM call.
-An escaped character without a special meaning loses only its backslash,
-as in released Flink: `\q` names `q`, `\x61` names `x61`, and `\*` names the literal `*`.
-This is not hexadecimal decoding or wildcard selection. Both quote styles have executed
-parity coverage for every printable ASCII escape, ASCII controls and representative Unicode
-characters, including strict/lax and error policies. Backslashes before literal Unicode or
-control characters preserve those characters: `\用户` selects `用户`, and a backslash before
-a literal newline selects a newline in the member name. The decoded name must still be
-well-formed Unicode; the existing canonical encoding carries control characters safely to Rust.
-Recursive descent, filters, slices, member-name unions, invalid/incomplete Unicode
-escapes, unescaped ASCII controls inside bracket-quoted names,
-unpaired surrogates and dynamic paths fall back. Quoted `'*'` is an ordinary member name,
-not a wildcard.
-
-**Wildcards** (`$.*`, `$[*]`, `$.a[-1][*]`) compose with native member/index selectors,
-including continuations such as `$.a[*].b[-1]` and repeated wildcards such as `$[*][*].b`.
-ASCII spaces inside their brackets are accepted (`$[ * ]`). Both spellings select object values
-or array elements.
-Flink returns a collection even for zero or one matches: JSON_EXISTS is TRUE for that collection,
-JSON_VALUE uses ON EMPTY in lax mode, and JSON_VALUE uses ON ERROR in strict mode. A scalar or
-JSON null reached by the wildcard yields an empty collection; root JSON null still fails to
-construct a path context. Missing properties or wrong-type steps before the first wildcard are errors
-in strict mode and empty collections in lax mode. Out-of-range indexes before the wildcard
-instead produce an empty collection in both modes. Malformed documents retain the existing
-strict/lax parsing policy, including validation of fields outside the selected path. After a
-wildcard, missing or wrong-type member/index branches are skipped and the result remains a
-collection, even when all branches are skipped.
-
-The native readers track that collection result without allocating its elements, since neither
-JSON_VALUE nor JSON_EXISTS exposes them. SQL parity covers empty/single/multiple matches,
-scalar/null inputs, nested signed indexes, duplicate ancestors, escaped names, typed defaults,
-all error policies, predicates and independent definite/wildcard projections. Retained operator
-metrics verify 5,003 rows entering and leaving native Calc. Recursive descent, filters, slices,
-member-name unions, path functions and branching JSON_QUERY use the generated Calc described above.
-
-The wildcard benchmark reads `$.a[*]` from 32-element arrays with 264 bytes of padding.
-Release/mimalloc on an Apple M1 Max, one million rowwise inputs, two warmups and five alternating
-trials measured **3.869019s / 1.573674s** for JSON_VALUE (Flink/native, **2.459×**) and
-**3.164764s / 1.439500s** for JSON_EXISTS (**2.199×**). JSON_VALUE uses lax mode with an
-`'empty'` ON EMPTY default. The same-source identity control measured 0.458588s / 0.834914s
-(0.549×). Both transposes and the rowwise blackhole sink are included. Reproduce with
-`ScalarFunctionBenchmark#individualFunctions`, `-Pbench`,
-`-Dscalar.functions=JSON_VALUE_WILDCARD,JSON_EXISTS_WILDCARD`,
-`-Dscalar.rows=1000000 -Dscalar.bytes=264 -Dscalar.warmup=2 -Dscalar.runs=5`, and
-`SF_BENCHMARK=true`.
-
-**Array-index unions** (`$[0,2,-1]`, `$.a[0,0]`) are native for JSON_VALUE and JSON_EXISTS.
-Each index uses ASCII decimal digits and must fit signed INT; leading zeros, negative zero,
-duplicates and ASCII spaces around commas are accepted. Trailing U+0000–U+0020 controls after the final index follow the
-same rule as a single index. Empty entries, plus signs, controls between entries, mixed member/index
-selectors and out-of-range index literals retain fallback.
-
-A union always produces a collection, including duplicate indexes and zero or one matches.
-JSON_EXISTS therefore returns TRUE for a successful collection; JSON_VALUE applies ON EMPTY
-in lax mode or ON ERROR in strict mode. Unlike a wildcard, the first union requires an array:
-a scalar, object or nested null at that step is an error in strict mode and an empty collection
-in lax mode. Missing members before the union follow the same policy; an out-of-range preceding
-single index skips its branch and returns an empty collection in either mode. Root JSON null
-and malformed documents keep their separate context/parse policies.
-
-Unions compose with members, single indexes, wildcards and further unions. Once a wildcard or
-union has branched, missing or wrong-type continuation steps skip that branch without changing
-the collection result. Both native readers validate the complete document and path, retain
-last-duplicate-member behavior, and avoid materializing selected elements. Released-Flink SQL
-parity covers these combinations and error/default policies; counters require 5,003 rows to
-enter and leave native Calc with independent union, wildcard and definite selections.
-
-The union benchmark selects `$.a[0,16,-1]` from the same 32-element arrays with 264 bytes of
-padding. Release/mimalloc on an Apple M1 Max, one million rowwise inputs, two warmups and five
-alternating trials measured **2.058325s / 1.551007s** for JSON_VALUE (Flink/native, **1.327
-&times;**) and **1.919062s / 1.464042s** for JSON_EXISTS (**1.311 &times;**). The matching
-no-expression baseline was **0.431934s / 0.840174s**. All timings include the row source,
-row sink and both transposes; the baseline is reported separately, without subtraction.
-Reproduce with `mvn -pl :streamfusion-runtime -am -Pbench
--Dtest=ScalarFunctionBenchmark#individualFunctions -Dsurefire.failIfNoSpecifiedTests=false test`,
-`-Dscalar.functions=JSON_VALUE_INDEX_UNION,JSON_EXISTS_INDEX_UNION`,
-`-Dscalar.rows=1000000 -Dscalar.bytes=264 -Dscalar.warmup=2 -Dscalar.runs=5`, and
-`SF_BENCHMARK=true`.
-
-ASCII spaces around a bracket member or index are native, for example `$[ 'user' ][ -01 ]`.
-Trailing ASCII spaces after a complete path are also accepted. After an array index's final
-digit and before its closing `]`, the planner also removes any sequence of characters U+0000
-through U+0020, matching Jayway's `String.trim()` on the index expression. Thus `$[1\t\n ]`
-(where `\t` and `\n` stand for literal tab and newline) uses the same native selector as `$[1]`.
-This works with negative indexes, leading zeros and nested paths. Before the index, only ASCII
-spaces are admitted; controls within digits, before an index, or after a bracket step still
-fall back. DEL, non-breaking space and other Unicode whitespace also remain
-outside this index suffix grammar.
-
-The planner removes only these verified syntactic characters; spaces inside quoted names
-remain significant. An explicit case-insensitive `strict`/`lax` prefix accepts Flink's
-mode-separating whitespace. Tabs and newlines within or at the end of a dot member are literal
-key characters, including `$.a\t` (where `\t` is a literal tab). Leading whitespace without a mode
-and unsupported whitespace after other tokens stay on Flink. General whitespace trimming
-would change the selected value. Runtime tests exercise every ASCII control
-suffix against released Flink, preserve strict/lax and error policies, and verify 5,003 rows
-consumed and emitted by native Calc. Normalized literal paths register no JVM UDF callback.
-The dot-member matrix also compares every admitted ASCII character, representative Unicode,
-nested paths, duplicate keys, missing/null/scalar/container values and malformed unselected
-fields. It verifies error policies, typed conversion failures, and 5,003 rows through native
-Calc; literal-path encoding registers no JVM callback.
-Remaining path extensions are tracked in
-[#91](https://github.com/datafusion-contrib/StreamFusion/issues/91).
-
-The dot-member benchmark selects `$.order-id.123.a\tb` (a literal tab in the final name)
-from documents with 264 bytes of padding. Release/mimalloc on an Apple M1 Max, one million
-rowwise inputs, two warmups and five alternating trials measured **1.099021s / 0.968465s**
-for JSON_VALUE (Flink/native, 1.135×) and **1.051865s / 0.788609s** for JSON_EXISTS (1.334×).
-The same-source identity control measured 0.373978s / 0.660353s (0.566×). Both transposes and
-the rowwise blackhole sink are included. Reproduce with `ScalarFunctionBenchmark#individualFunctions`,
-`-Pbench -Dscalar.functions=JSON_VALUE_DOT_MEMBER,JSON_EXISTS_DOT_MEMBER`,
-`-Dscalar.rows=1000000 -Dscalar.bytes=264 -Dscalar.warmup=2 -Dscalar.runs=5`, and
-`SF_BENCHMARK=true`.
-
-The trailing-index-control benchmark selects `$.a[31\t\n ]` from 32-element arrays with
-264 bytes of padding. Release/mimalloc, one million rowwise inputs, two warmups and five
-alternating trials measured **1.705216s / 1.665379s** for JSON_VALUE (Flink/native, 1.024×)
-and **1.672195s / 1.480013s** for JSON_EXISTS (1.130×). The same-source identity control
-measured 0.465055s / 0.861789s (0.540×). Both transposes and the rowwise blackhole sink are
-included. Reproduce with `ScalarFunctionBenchmark#individualFunctions`, the `bench` profile,
-`-Dscalar.functions=JSON_VALUE_INDEX_WHITESPACE,JSON_EXISTS_INDEX_WHITESPACE`,
-`-Dscalar.rows=1000000 -Dscalar.bytes=264 -Dscalar.warmup=2 -Dscalar.runs=5`, and
-`SF_BENCHMARK=true`.
-
-Empty-name SQL regressions execute against released Flink with native Calc assertions,
-covering both quote styles, bracket spaces, nested objects/arrays, duplicate ancestors,
-missing/null/scalar/container values, strict/lax policies, typed RETURNING, independent
-paths and invalid unselected fields, plus explicit fallback for downstream string grouping.
-Native reader tests also verify
-selection on both the streaming parser and SIMD tape.
-
-Escaped-name regressions execute both quote styles against released Flink, including every
-admitted escape, nested negative indexes, duplicate members, missing/null/scalar/container
-values, strict/lax policies, typed RETURNING and conversion failures, complete-document
-validation, independent selections across batches, and explicit fallback for unverified
-escapes. Direct projections are checked to register no JVM expression binding.
-
-The escaped-path scalar benchmark selects nested backslash/newline member names from
-1 million rowwise documents with 264 bytes of padding. On an Apple M1 Max, release +
-`mimalloc`, two warmups and five interleaved trials, JSON_VALUE took 1.016908 s on Flink
-and 0.936989 s natively (1.085×); JSON_EXISTS took 0.969056 s and 0.742654 s (1.305×).
-Both native transposes and the rowwise blackhole sink are included. The source-matched
-identity control took 0.384798 s / 0.653999 s (Flink/native), so these are full-pipeline
-measurements, not isolated parser timings. Reproduce with `ScalarFunctionBenchmark`,
-`-Pbench -Dscalar.functions=JSON_VALUE_ESCAPED_PATH,JSON_EXISTS_ESCAPED_PATH`,
-`-Dscalar.rows=1000000 -Dscalar.bytes=264 -Dscalar.warmup=2 -Dscalar.runs=5` and
-`SF_BENCHMARK=true`.
-
-The printable-ASCII escape extension uses the same native member reader after planning.
-With the same release/mimalloc settings, 1 million rows and 264 bytes of padding, selecting
-`$["u\ser"]["na\me"]` measured 1.075870 s / 0.776419 s for JSON_VALUE (Flink/native,
-1.386×) and 1.070222 s / 0.690900 s for JSON_EXISTS (1.549×). The source-matched identity
-control measured 0.378125 s / 0.645387 s (0.586×). Two warmups and five interleaved trials
-include both transposes and the rowwise sink, with no competing local builds or tests.
-Use `-Dscalar.functions=JSON_VALUE_NONSTANDARD_ESCAPE,JSON_EXISTS_NONSTANDARD_ESCAPE`
-with the benchmark options above to reproduce.
-
-The escaped-Unicode variant selects `$["\用户"]["\姓.\名"]` from the same row-fed
-Unicode-member fixture. With release/mimalloc, 1 million rows, 264 bytes of padding,
-two warmups and five interleaved trials, JSON_VALUE measured 1.346831 s / 1.055570 s
-(Flink/native, 1.276×), and JSON_EXISTS measured 1.322327 s / 0.961161 s (1.376×).
-The source-matched identity control measured 0.636006 s / 0.939120 s (0.677×).
-Both transposes and the row sink remain included. Use
-`-Dscalar.functions=JSON_VALUE_UNICODE_ESCAPE,JSON_EXISTS_UNICODE_ESCAPE` to reproduce.
-
-Negative-index regressions cover nested arrays, minimum signed indexes, negative zero, leading
-zeros, all strict/lax policies, typed RETURNING and conversion failures, complete-document
-validation, and independent selections across multiple batches. The SIMD reader uses its existing
-array lengths; the streaming reader counts a negatively indexed array before selecting from it,
-without building a JSON object tree or retaining every element. Both are Rust paths with no
-generated-expression UDF binding for direct projections.
-
-The default return type and explicit `RETURNING VARCHAR(n)` are native; Flink 2.2.1 does
-not truncate this function's result to `n`. `RETURNING BOOLEAN`, `INTEGER` and `DOUBLE`
-are also native with the following exact Flink object-type rules:
-
-| RETURNING | Accepted selected scalar | Supported literal DEFAULT |
-|---|---|---|
-| VARCHAR(n) | String, boolean or number converted to Jackson's text | Non-null character literal |
-| BOOLEAN | JSON boolean | Non-null BOOLEAN literal |
-| INTEGER | JSON integer token within signed 32-bit range | Non-null INTEGER literal |
-| DOUBLE | JSON number with a decimal point or exponent (Jackson BigDecimal) | Not admitted |
-
-`NULL` and `ERROR` behaviors are supported independently for ON EMPTY and ON ERROR.
-Other default types, NULL defaults and non-literal defaults use the generated Calc. DOUBLE
-defaults retain Flink's generated Double/DecimalData-to-BigDecimal conversion failures.
-Selected scalar type mismatches fail the job **outside ON ERROR**, matching Flink: a quoted
-`"12"` is not an INTEGER, `1.0` is not an INTEGER, and `1` is not a DOUBLE. Decimal-to-double
-conversion preserves rounding, infinity and underflow; a decimal zero has no negative sign.
-The [host failure reproducer](../upstream-flink-suite.md#expected-host-failures-in-sql-parity-audits)
-checks these conversion errors without native planning or the audit source adapter.
-
-A BOOLEAN form with either NULL policy is admitted only as a direct projection. Flink 2.2.1
-can unbox its boxed NULL result without checking the null flag in a bare WHERE condition,
-truth predicate or CASE condition, failing the job. Such compositions use the generated Calc and preserve that failure.
-BOOLEAN forms with non-null DEFAULT or ERROR for both policies can compose natively.
-Typed JSON_VALUE calls nested under AND/OR use the generated Calc: DataFusion may evaluate the
-unneeded side on some rows, exposing a scalar conversion failure that Flink short-circuits.
-CASE result branches retain native admission and evaluate only selected conversions.
-VARCHAR calls and their consumers use the fused JVM path described below, preserving Flink's
-AND/OR short-circuiting even with an ERROR policy.
-
-The default path mode is **strict**. Missing members, selected JSON nulls, malformed JSON,
-and selected containers invoke ON ERROR in strict mode. In lax mode these invoke ON EMPTY,
-except a document containing the JSON literal `null`, which invokes ON ERROR in either mode.
-SQL NULL input always returns SQL NULL. ERROR ON EMPTY fails directly, even with a default
-ON ERROR. Duplicate members keep the last value, decimal text retains Jackson's BigDecimal
-scale/exponent spelling, and unpaired escaped surrogates become `?` in UTF-8 output.
-Consumers of a STRING `JSON_VALUE` or `JSON_UNQUOTE` result execute together in one
-Flink-generated expression through the batch UDF bridge. Equality, inequality, LIKE, CASE,
-filters, nested scalar calls and scalar UDFs therefore observe the original Java UTF-16 value:
-an unpaired surrogate remains distinct from a literal `?`. Constant-folded JSON results containing
-unpaired surrogates receive the same treatment. These expressions run inside columnar Calc/filter,
-but their fused scalar computation runs on the JVM. Only the final result enters Arrow.
-
-Direct JSON string projections retain the Rust kernel. Direct character JSON_VALUE projections
-with a column input may also feed final UNION ALL forwarding into a row sink. Native parsing
-retains the original input Java cache, including raw surrogate member names, then produces
-ordinary UTF-8 to match Flink's serialized fan-in edge. A sink-side UTF-16 capture verifies this
-boundary separately from result collection. See [Union](union.md#final-json_value-projections)
-for the verified scope and representation restrictions.
-
-Other Calcs projecting a JSON-derived STRING (including nested character fields) into another
-operator make the whole query fall back, with
-the reason `JSON string identity requires a final projection or a fused scalar consumer`. This
-includes grouping, DISTINCT, joins and sorting on those results, and intermediate optimizer blocks
-whose output is not final. The gate is conservative even when a particular document contains no
-surrogates or a scalar transformation happens to remove them. Final projections are allowed;
-non-string consumer results, such as a comparison or integer CASE, can feed native aggregation.
-Arrow strings always contain valid UTF-8; final-output replacement is never used to justify
-intermediate expression parity.
-
-JSON_VALUE scalar-conversion failures preserve Flink's ClassCastException, naming the source
-Java scalar class and the requested target class. This includes integer tokens returned as
-BOOLEAN or DOUBLE, and out-of-range integer tokens returned as INTEGER. The exception remains
-outside ON ERROR handling, matching released Flink 2.2.1. A typed DataFusion error reaches the
-JNI boundary without parsing messages or calling the JVM on successful rows. JSON ERROR policy
-failures retain the existing NativeException wrapper; their diagnostic parity is not established.
-
-### JSON_EXISTS
-
-Enabled by default for the following verified shapes; no compatibility opt-in is needed.
-
-Character input and the same literal path grammar as JSON_VALUE are native. Supports FALSE
-(the default), TRUE, UNKNOWN and ERROR ON ERROR. A selected scalar or container, including an
-empty object/array, returns TRUE. Lax missing paths and selected JSON nulls return FALSE;
-strict missing/null paths invoke ON ERROR. Malformed JSON invokes ON ERROR in strict mode
-and returns FALSE in lax mode. A document containing the JSON literal `null` invokes ON ERROR
-in both modes. SQL NULL input returns SQL NULL.
-
-UNKNOWN ON ERROR uses the native path only as a direct projection; its other contexts use
-the generated Calc to preserve the same boxed-null behavior as BOOLEAN JSON_VALUE. ERROR
-ON ERROR under AND/OR also uses the generated Calc to preserve row short-circuiting. The default FALSE policy and TRUE ON ERROR
-remain native in predicates and nested expressions.
-
-Admitted ERROR ON ERROR calls use Flink's `SqlJsonUtils` through the existing columnar JVM
-upcall. This preserves its `TableRuntimeException` and exact parser/path diagnostic, including
-the missing member's path, while the surrounding expression stays in the native island.
-FALSE, TRUE and UNKNOWN policies continue to use the Rust parser.
-
-These JSON functions use native first-document parsing and validate unselected fields too.
-Admission first probes the shaded Jackson runtime once per class loader: Flink 2.2 requires
-Jackson 2.18.2 and its default thread-local recycler pool; Flink 1.18 requires Jackson 2.14.2
-on JDK 11 or 17 and thread-local buffer recycling. Both require successful buffer acquisition, cross-factory
-reuse and release. Missing methods/classes, a different version or pool,
-or probe failure decline the native parser for JSON_VALUE, JSON_QUERY, JSON_EXISTS and IS JSON; Calc
-can use Flink generation when the host runtime and batch boundary types support it.
-JobManagers and TaskManagers must use the same verified shaded Jackson runtime.
-The 2.2 profile admits JDK 11, 17, 21, 24 and 25, selecting the corresponding Unicode version for
-Jackson's token-termination rules (Unicode 10.0 on JDK 11 and 13.0 on JDK 17); other JDKs use Flink generation in Calc. The profile is selected on the
-JobManager, so TaskManagers must use the same JSON parsing rules. Jackson 2.18.2's resource limits
-(1000 nesting levels, 1000 number digits, 20 million UTF-16 string units, 50,000 member-name
-units) also apply to unselected values. Its numeric boundary has a buffer-dependent exception:
-the slow parser can accept an extra digit. Native evaluation uses the task thread's actual
-Jackson input-buffer capacity and preserves its growth, including invalid input and SIMD
-parsing. A batch exchanges this capacity through JNI; documents and results remain native. The 1.18
-profile uses the same reader on JDK 11 and JDK 17, with Double numeric semantics and without the newer
-token/depth limits. Deep legacy nesting grows the native stack as needed.
-See the [SQL/JSON parser note](https://github.com/datafusion-contrib/StreamFusion/blob/main/divergences/32-sql-json-definite-paths.md)
-and [per-function benchmarks](../benchmarks/scalar-functions.md).
-
-### Collection expressions
-
-The following extensions are enabled by default. Set
-`streamfusion.experimental.collectionExpressions=false` to disable them. The maintainer accepted
-the measured standalone regressions on 2026-10-17;
-[collection representation work](../optimizations/collection-representation-work.md) records
-the measured boundary improvements and remaining standalone costs.
-Existing admitted collection subscripts and Boolean/integer ARRAY_DISTINCT retain their ordinary paths.
-
-| Functions | Execution inside NativeCalc |
-| --- | --- |
-| Collection CAST / TRY_CAST | Rust recursive conversion for nullable signed-integer/DECIMAL ARRAY elements, STRING-to-integer arrays, numeric-to-BOOLEAN arrays, integer-key MULTISET conversions, and nullable STRING/integer-key MAPs with numeric values. Numeric/BOOLEAN/DECIMAL arrays format to STRING/CHAR/VARCHAR in Rust. Other verified container conversions retain generated Flink evaluation; see the bounds below |
-| SPLIT with dynamic, empty or NULL separator | Rust represented-STRING kernel; literal whole separators, strict NULLs and Java UTF-16 unit splitting for an empty separator. The existing non-empty literal separator retains its ordinary Rust path |
-| ARRAY_REVERSE, ARRAY_SLICE | Rust kernels for nullable elements, including represented STRING/ROW/MAP-bearing values. Reverse retains the original array category for zero/singleton arrays; slice retains it for a complete range. Copied ranges preserve string caches and nested RowKinds while recording their new generic containing array. NOT NULL elements, fixed BINARY and unverified consumers retain generated evaluation |
-| CARDINALITY on ARRAY/MAP | Rust outer-offset count, returning INT; NULL container produces NULL |
-| ARRAY_CONTAINS, ARRAY_POSITION | Rust scans for matching BOOLEAN/integer/DECIMAL or represented STRING element/needle types with nullable elements. STRING comparisons use original UTF-16 only when both operands have Java caches, otherwise their encoded bytes. Non-NULL literal or nonnullable CONTAINS needles retain Flink evaluation; DECIMAL arrays with such needles require whole-Calc fallback. Unverified consumers and fallible arguments retain generated evaluation |
-| ARRAY_MIN, ARRAY_MAX | Released DataFusion Rust kernels for nullable integer/DECIMAL elements; native represented-STRING reductions preserve Flink's cache-dependent ordering and first retained value. Other types, NOT NULL elements, unverified consumers and fallible arguments retain the generated program |
-| ARRAY_APPEND, ARRAY_PREPEND | Rust offset-based copying for nullable BOOLEAN/integer/DECIMAL and represented STRING arrays with a matching element, including NULL. Original UTF-16 caches survive in copied STRING elements; fallible arguments and unverified consumers retain generated evaluation |
-| ARRAY_REMOVE | Rust stable selection for matching nullable BOOLEAN/integer/DECIMAL and represented STRING arrays; removes every matching element, including NULL when the needle is NULL. STRING equality preserves original Java-cache identity; other signatures retain generated evaluation |
-| ARRAY_CONCAT | Rust concatenation for matching nullable BOOLEAN/integer/DECIMAL and represented STRING arrays; any NULL operand returns NULL. Copied STRING elements retain their original caches; other signatures retain generated evaluation |
-| ARRAY_UNION | Released DataFusion Rust kernel for matching nullable BOOLEAN/integer/DECIMAL arrays; a native represented-STRING kernel preserves cache-sensitive equality. Both retain first-occurrence order and one NULL element; either NULL container returns NULL |
-| ARRAY_EXCEPT | Rust stable set difference for matching nullable BOOLEAN/integer/DECIMAL and represented STRING arrays, retaining the first left-side occurrence of each value absent on the right, with NULL treated as a value; either NULL array returns NULL |
-| ARRAY_INTERSECT | Rust stable intersection for matching nullable BOOLEAN/integer/DECIMAL and represented STRING arrays; distinct matches follow left-side order even when the left array is shorter. STRING equality retains Java caches; NULL is a value and either NULL container returns NULL |
-| ARRAY_SORT | Proven short/distinct nullable integer/DECIMAL arrays retain released DataFusion for non-NULL constant flags and the typed batch kernel for runtime/NULL flags. Other integer/DECIMAL and represented STRING arrays use native TimSort at any length, including runtime/NULL Boolean flags. Preserves the released comparator, stable identities and invalid-comparator exception; other types, fallible operands and unverified consumers remain generated |
-| ARRAY_JOIN | Rust UTF-8 join for total nullable string arrays and string options, including strict explicit NULL replacement; co-projected sensitive values and unverified consumers remain generated |
-| ELEMENT | Rust extraction for nullable BOOLEAN/integer/DECIMAL and represented STRING arrays; NULL/empty arrays return NULL, a singleton retains its exact element representation, longer arrays raise the selected Flink line's exception with the released message. Fallible operands and unverified consumers retain generated evaluation |
-| MAP_FROM_ARRAYS | Rust construction for nullable BOOLEAN/integer/DECIMAL and represented STRING key/value arrays, preserving duplicate and NULL keys, entry order and strict parent NULLs; mismatched lengths retain Flink's typed exception; other signatures remain generated |
-| MAP_KEYS | Rust shared-key view for total maps with nullable BOOLEAN/integer/DECIMAL keys and values. A final direct input-reference projection additionally admits verified nullable keys/values containing STRING, temporal or nested ARRAY/MAP/ROW values, retaining their represented children. Existing nullable BINARY-key/basic-value projections retain length-delimited transport. NOT NULL primitive key arrays and unverified representations retain generated evaluation |
-| MAP_VALUES | Rust shared-value view under the same verified map-projection admission; a value-only Calc with no condition or sensitive co-projection need not preserve the unused keys' Java caches. Direct VARCHAR-key projections also admit nullable BINARY values through the length-delimited transport |
-| MAP_ENTRIES | Rust shared entry-row list under the verified MAP_KEYS/MAP_VALUES input-projection admission, including nullable nested key/value types. Fresh entry rows have INSERT kind; nested values retain their own RowKinds and string caches. Unverified consumers retain generated evaluation |
-| MAP_UNION | Rust stable gather for total nullable basic maps or nullable STRING keys with basic/STRING values, preserving right duplicates, left-only NULL rules and empty-right identity; other signatures remain generated |
-| Runtime ARRAY[...] | Rust construction for matching nullable BOOLEAN/integer/DECIMAL/DATE/TIME/TIMESTAMP/LTZ elements and total arguments. STRING arrays additionally admit literal/input-reference elements, retaining literal UTF-16 units (including isolated surrogates) and original input caches. Other projected signatures retain the generated program; UNNEST retains its existing wider scalar admission |
-| Runtime MAP[...] | Rust construction for total nullable basic pairs and STRING/one-level ROW-bearing pairs with distinct literal/input key expressions. Preserves binary STRING/ROW identity; 1.18 represented constructors use input order for its nondeterministic grouping. Repeated/fallible key expressions and unverified types remain generated |
-| Runtime ROW(...) | Rust construction for total BOOLEAN/integer/DECIMAL/STRING fields, preserving binary ROW semantics; other fields and unverified consumers remain generated |
-| OBJECT_OF | Rust construction for validated metadata and total basic/STRING fields, preserving generic object STRING caches; other signatures remain generated |
-| OBJECT_UPDATE | Native field selection for one unshared inline basic/STRING OBJECT_OF in the complete Calc and atomic literal/input values; shared objects and other signatures remain generated |
-
-Representation-sensitive operations outside the verified native kernels use the generated route
-for the complete filter and projection, preserving NULLs, empty filtered batches, shared function
-invocation order and released Flink overloads. Native STRING collection kernels retain the marked
-UTF-8/optional UTF-16 representation; they do not normalize isolated surrogates before comparisons.
-The existing final-row-sink and unverified-producer/state/consumer guards remain in force.
-It retains Arrow batch inputs/outputs and production JNI costs. A NativeCalc containing these
-functions does **not** imply that its scalar work executes in Rust; the function-engine diagnostic
-reports the assignment, including ARRAY/MAP/ROW constructors. Programs with user scalar
-functions retain their existing admission gates.
-
-Basic-type ARRAY_CONTAINS and ARRAY_POSITION scan the flattened values and offsets without
-constructing per-row arrays or invoking the JVM. Admitted scalar needles remain scalar instead of
-being broadcast across the batch. NULL arrays produce NULL; CONTAINS can match a NULL needle to a NULL
-element, whereas POSITION returns NULL for a NULL needle. POSITION returns the first one-based
-position as INT, or zero when absent. DECIMAL equality compares the exact unscaled value at the
-resolved precision and scale. Mixed element/needle types and potentially failing arguments retain
-Flink evaluation; NOT NULL-element and sensitive-string gates still apply to the complete Calc.
-Flink derives CONTAINS' element getter from the needle's type, including nullability. A non-NULL
-literal or nonnullable needle can therefore change the behavior of NULL array elements. These
-CONTAINS signatures retain Flink evaluation. For DECIMAL, the Arrow-backed JVM view also differs
-from the binary array's unchecked getter, so the complete Calc falls back to stock Flink. Tests
-compare both successful results and released-version exceptions, including all-filtered inputs.
-The [optimization evidence](../optimizations/native-array-search.md) compares these paths with
-stock Flink and the prior generated evaluator, including the remaining standalone regressions.
-
-ARRAY_MIN and ARRAY_MAX directly reuse DataFusion 54's released typed kernels for TINYINT,
-SMALLINT, INT, BIGINT and DECIMAL arrays with nullable elements. They ignore NULL elements;
-NULL arrays, empty arrays and arrays containing only NULL return a nullable result of the
-declared element type, preserving DECIMAL precision and scale. The released implementation
-dispatches once per batch, scans short lists directly and uses Arrow's integer/decimal reduction
-for lists of at least 32 elements. Both paths preserve exact integer and unscaled DECIMAL ordering.
-Strings, floating values, temporal elements, nested values, NOT NULL-element arrays and fallible
-operands retain their existing Flink evaluation. BOOLEAN extrema remain a Flink validation error.
-The existing collection switch and whole-Calc representation safeguards still apply.
-Availability still follows the released Flink catalog: Flink 1.18 has ARRAY_MAX but no ARRAY_MIN;
-native registration does not introduce a SQL function missing from the host release.
-
-An ARRAY materialized solely for [UNNEST](unnest-correlate.md) can use released DataFusion's scalar
-array constructor because the container's generic/binary identity does not escape that consumer.
-The admitted scalar element types preserve raw floating values and the released timestamp writer's
-compact/expanded storage rules. BIGINT millisecond epoch conversion and TIMESTAMP_LTZ-to-DATE/TIME
-casts also have native kernels in that operand context, with SQL epoch bounds and per-version TIME
-truncation preserved. Non-UTC offsets come from JDK ZoneRules through the batch bridge and are
-cached between transitions, preserving historical and daylight-saving behavior. This total lookup
-does not trigger whole-Calc row evaluation. Independent JVM calls keep their scalar batch bridge;
-shared stateful calls retain their invocation-order safeguards.
-Ordinary projected arrays of verified nullable basic and temporal elements reuse the same
-constructor; floating, NOT NULL-element, character and representation-sensitive projected
-arrays retain generated evaluation.
-
-Primitive bridge types and recursively supported ARRAY/MAP/ROW values are admitted, including
-nullable typed map keys, decimal and timestamp values. Generated ARRAY/ROW containers and nullable MAP
-values support fixed BINARY leaves through the length-delimited transport described above;
-NOT NULL fixed BINARY MAP keys/values are verified on Flink 2.2 and remain excluded on 1.18;
-unpaired UTF-16 field names remain excluded. STRUCTURED results from inline OBJECT_OF/OBJECT_UPDATE are supported;
-external STRUCTURED inputs use the [verified built-in collection boundary](#external-structured-collection-inputs). Unsupported host signatures or generated programs
-fall back during planning.
-
-Generated collection evaluation admits nullable MAP values declared BINARY(n) while retaining their actual
-byte lengths, including lengths outside the declaration. In generated evaluation, MAP_VALUES,
-MAP_ENTRIES, MAP_UNION, map casts and character formatting use released Flink; casts keep its padding,
-truncation and legacy rules. Nested scalar callbacks use the same verified map conversion.
-NOT NULL fixed BINARY MAP values use the generated route on Flink 2.2 and remain on stock Flink
-on 1.18: released 1.18 can distinguish a NULL
-slot from the empty bytes returned by an unchecked getter while formatting the same input.
-This support requires `streamfusion.experimental.nestedScalarUdfs=true` (the default) so the Arrow
-boundary uses length-delimited bytes. Disabling collection expressions or that transport retains
-fallback for the new collection signatures; scalar callbacks retain their separate UDF controls.
-Runtime-source parity covers STRING, integer, BYTES and ROW keys, NULL keys/values/containers,
-empty maps, actual payloads from zero to 4097 bytes and generated callback composition. NativeCalc
-consumption is required on both supported releases. Representation-sensitive MAP outputs retain
-the existing state/exchange/native-writer gates; this adds no retained-row equality.
-A direct final MAP_VALUES of an input-reference MAP with VARCHAR keys and nullable BINARY values
-uses the existing Rust shared-buffer view. Other collection consumers retain generated evaluation.
-The length-delimited transport is also required for the Rust view so actual widths survive.
-[Release complete-job measurements](../benchmarks/scalar-functions.md#fixed-binary-map-values)
-compare the Rust view, generated evaluator, stock Flink and previous fallback under the accepted
-collection-extension tradeoff.
-
-Nullable BINARY(n) MAP keys also use the same length-delimited generated bridge. Runtime-source
-regressions verify NULL/empty maps, duplicate binary contents, actual widths outside the declaration,
-map casts, direct formatting, entry/array consumers, shared binary inputs and all input changelog kinds.
-Tests use ordered internal source entries because external byte-array keys have identity hashes.
-Both CAST and TRY_CAST keep released key/value conversion behavior; returned maps retain their
-logical entries even when a narrowing cast produces equal key bytes. Flink's generated map casts
-use Java HashMap, so binary-key cast iteration can depend on object identity; it is not an ordered-map
-contract. Direct input-map formatting is compared in its original entry order. NOT NULL binary keys
-and values use the verified generated route on Flink 2.2, described below; on 1.18 they retain
-fallback. External STRUCTURED inputs follow the separate built-in collection boundary below; unverified representation boundaries retain fallback.
-On released 1.18, CASE returning a binary array can fail in Flink's own compiler; the explicit
-failure/fallback contract remains. No absent catalog function is introduced on either line.
-A direct final MAP_KEYS projection of an input-reference map with nullable BINARY keys and nullable
-BOOLEAN/integer/DECIMAL values uses the existing Rust shared-child view. Other key consumers retain
-generated evaluation. The default length-delimited transport must remain enabled for actual widths.
-[Release comparisons](../benchmarks/scalar-functions.md#fixed-binary-map-keys) record costs and the
-bounded optimization investigation.
-
-Nested strings carry their UTF-8 bytes and optional original Java UTF-16 cache. Nested ROW values
-carry a marked change-kind child outside their SQL ordinals. These preserve supplementary/BMP
-ordering, isolated surrogates and non-INSERT nested rows. Represented arrays first pass through the released serializer and record its generic/binary copy
-category. Readers restore that category, including whether repeated string getters share Java
-caches. NOT NULL elements use an explicit carrier so a NULL first slot cannot hide that category.
-The extended schemas belong only to generated collection programs and are serialized to tasks.
-Other operators and connector schemas keep their ordinary layouts.
-
-The UTF-16 units move with checked bulk copies, preserving malformed surrogates. Optional scalar
-cache sidecars appear only in batches with a present Java cache; absent sidecars mean binary-only
-strings. A cache first seen later in the batch retains NULL entries for the earlier rows.
-
-String/ROW/MAP-bearing and NOT NULL-element array results currently require a final projection,
-a fused consumer or a verified generated [UNNEST](unnest-correlate.md) consumer.
-They fall back before stateful, ordering or exchange boundaries that have not verified this
-representation. Sensitive inputs from other columnar producers also retain fallback until their
-cache/kind contract is verified, including an ordinary native Calc or transpose without the
-explicit representation layout. Arrays of nullable primitive elements can continue through ordinary native
-operators. Representation-sensitive final results require a row sink or a native writer with a
-verified collection canonicalization contract. The Doris Arrow writer declares that capability;
-other native sink rewrites with extended layouts retain whole-query fallback until verified.
-Nullable primitive array results keep ordinary native sinks. These are representation gates
-even when the experimental option is enabled.
-
-Generated UNNEST outputs can additionally carry an owned binary payload for nested binary ROWs.
-The helper is marked Arrow metadata outside SQL field ordinals and survives IPC. Readers retain
-BinaryRowData versus NestedRowData copy behavior; generic ROWs retain their string caches and
-serializer semantics. An immediate exit transpose can use the payload in Flink's binary projection
-only when every non-null ROW in that batch has a verified binary payload. Missing or generic
-payloads keep the ordinary reader path.
-
-ARRAY_SLICE uses inclusive, one-based Flink bounds. Negative positions count from the end;
-zero normalizes to the first element. NULL containers or bounds produce NULL. Whole slices retain
-the original arrays; partial slices copy contiguous child ranges. CARDINALITY counts outer array
-elements, including NULL entries, rather than flattening nested arrays; map entries include NULL
-values and repeated keys. MULTISET retains released Flink's validation/code-generation behavior.
-
-Flink 1.18.1 lacks ARRAY_APPEND, ARRAY_PREPEND, ARRAY_SORT,
-ARRAY_MIN, MAP_UNION, OBJECT_OF and OBJECT_UPDATE. The remaining signatures are checked on
-both supported releases; absent functions are explicitly N/A, not counted as native coverage.
-Binary-key map projection checks use ordered internal input: external Java byte-array keys have
-identity hashes, so independently deserialized external maps can have different iteration orders
-before either engine evaluates the function. The checks compare the resulting arrays in order.
-
-Earlier direct extrema and map-projection experiments were slower than Flink and remain
-recorded in the [extrema investigation](https://github.com/datafusion-contrib/StreamFusion/blob/main/.claude/wontdos/234-array-extrema.md)
-and [map investigation](https://github.com/datafusion-contrib/StreamFusion/blob/main/.claude/wontdos/234-map-array-projections.md).
-The earlier extrema prototype's broad standalone admission remains rejected: its historical
-Linux short-array regression is not invalidated by newer macOS measurements. Matching nullable
-integer/DECIMAL extrema now use released DataFusion inside the already-admitted experimental
-extension, with [current before/after evidence](../optimizations/native-array-search.md#integer-and-decimal-array-extrema)
-and the remaining standalone limits retained. The map-projection prototype remains unused.
-Generated routes remain enabled under the accepted performance tradeoff and do not establish
-standalone acceleration.
-[Issue #234](https://github.com/datafusion-contrib/StreamFusion/issues/234) tracks remaining
-collection aggregates, cast signatures and representation boundaries outside this extension.
-
-### Exact numeric ARRAY CAST and TRY_CAST
-
-Standalone CAST and TRY_CAST between arrays of TINYINT, SMALLINT, INT, BIGINT and DECIMAL evaluate
-in Rust. Every array level must have nullable elements, with matching nesting depth. This uses
-the existing default-enabled collection option; no additional switch is required. Other verified
-standalone ARRAY-to-ARRAY, MAP-to-MAP, MULTISET-to-MULTISET and ROW-to-ROW casts now enter the same generated Flink
-program used when a collection constructor or function is present. STRING, floating, temporal
-and NOT NULL-element conversions keep Flink's conversion rules and resolved types. The bridge's
-type gates and the representation-boundary restrictions above still apply; external STRUCTURED inputs use the verified built-in collection boundary below. Flink 1.18 NOT NULL fixed BINARY MAP keys/values remain excluded. Direct BINARY MULTISET
-elements use the verified boundary below; NOT NULL elements remain guarded on Flink 1.18.
-The existing DECIMAL-to-FLOAT/DOUBLE ARRAY CAST also retains its Rust path.
-
-Signed-integer MULTISET element casts execute in Rust using the released default HashMap
-iteration schedule. Other MULTISET casts retain Flink's generated map-shaped evaluator and the existing Arrow
-`MAP<element,INT NOT NULL>` transport. Nullable elements and containers, multiplicities, empty
-multisets, narrowing collisions, nested ROW/ARRAY elements and DECIMAL conversion retain the
-released rules, including legacy formatting and whole-container TRY_CAST failures. Counts are
-carried without recomputing, merging or expanding them. Flink's generated cast keeps its map construction and collision semantics; no new multiset
-aggregation implementation is implied.
-Runtime sources require consumed NativeCalc work on both supported releases, including all
-four input changelog kinds, filtered/CASE paths and empty batches. Direct BINARY elements
-use the length-delimited generated boundary below. MULTISET outputs use the same final row-sink/fused-consumer restriction as
-MAP outputs; unverified state, exchange, ordering and native-writer boundaries still fall back.
-A verified integer/BOOLEAN or [DATE/TIME COLLECT](group-by.md#date-and-time-collection-elements) producer can feed this preserving Calc through its existing map-shaped
-output; character aggregate results and other unverified aggregate representations retain fallback.
-Verified character grouping fields retain the released serialized-key representation through these
-consumers; their pre-group Java caches do not become grouped output caches.
-The updating MAP/MULTISET payload extension in
-[#437](https://github.com/datafusion-contrib/StreamFusion/issues/437) remains deferred.
-[Release comparisons](../benchmarks/scalar-functions.md#multiset-casts) document the accepted
-collection tradeoff and the two-pass optimization limit. COLLECT and ARRAY_AGG remain separate
-[aggregate coverage](group-by.md).
-
-The conversion follows the recursive list structure used by Comet, preserving NULL containers,
-NULL elements and the resolved target schema. Integer widening uses Arrow; integer narrowing
-and DECIMAL conversion reuse StreamFusion's released-Flink scalar rules. Narrowing wraps low
-bits, DECIMAL-to-integer truncates toward zero before narrowing, and DECIMAL rescaling uses
-HALF_UP with overflow represented by a NULL element. Empty arrays remain empty. Arrow slices
-convert only their referenced child range, rebasing offsets instead of repeatedly converting
-the complete shared child buffer.
-
-Arguments that can fail per row retain Flink evaluation. The numeric cast itself is total;
-it must not introduce eager evaluation of an unselected or filtered input expression.
-Numeric TRY_CAST uses the same total numeric conversion, including overflow-to-NULL DECIMAL elements;
-it does not catch errors raised while evaluating its input. STRING-to-integer ARRAY casts also execute in Rust. TRY_CAST and legacy CAST make the complete
-outer result array NULL when any visible element fails, including within nested arrays; strict
-CAST preserves the scalar conversion exception. Hidden children under NULL containers are never
-converted. Numeric-to-BOOLEAN elements compare against zero. The complete Calc retains filter/CASE short-circuiting and
-input evaluation errors, including with legacy cast behavior enabled. Other element conversions retain the verified generated path. Nonnullable elements and fallible
-input expressions retain their existing guards.
-The released upstream ARRAY<BIGINT> cast fixtures preserve their original assertions. The two
-Flink 1.18.1 invocations consume native Calc input with `jvmFunctions=[]`; their input is an
-inline array constructor. The three Flink 2.2.1 invocations still fall back because their input
-wrapper is an ARRAY-returning scalar UDF. Dedicated runtime-source regressions independently
-require consumed NativeCalc input and an empty JVM-function diagnostic on both releases.
-Upstream fixture fallback is not counted as native CAST evidence.
-
-The [release-mode functionality measurements](../benchmarks/scalar-functions.md#exact-numeric-array-casts)
-compare the same prepared data with stock Flink and the previous StreamFusion fallback.
-The new generated standalone casts and SPLIT signatures have separate
-[conversion-inclusive measurements](../benchmarks/scalar-functions.md#standalone-collection-programs).
-
-### Collection casts to character types
-
-Nullable integer/DECIMAL/BOOLEAN ARRAY elements, including nested arrays, format to STRING, VARCHAR
-and CHAR in Rust. Other ARRAY, MAP, MULTISET and ROW character casts retain the generated program. Flink supplies brackets, map entry
-order, nested formatting, NULL spellings, CHAR padding and VARCHAR truncation for the selected
-legacy-cast setting. Bounded casts count Java UTF-16 units, including truncation between surrogate
-halves; the represented string result preserves those Java units. CAST and TRY_CAST retain NULL
-containers, filtered/CASE short-circuiting and errors from evaluating their input. Runtime tests
-require consumed NativeCalc input on both supported releases, including all four outer changelog
-kinds and generic/binary collection representations. Unverified state, exchange and native-writer
-boundaries and Flink 1.18 NOT NULL fixed BINARY MAP keys/values still fall back. External STRUCTURED inputs follow the separate verified boundary below.
-These casts share the accepted collection-extension performance tradeoff; see the
-[conversion-inclusive character-cast measurements](../benchmarks/scalar-functions.md#collection-character-casts).
-
-### ARRAY_DISTINCT
-
-Boolean and integer (`TINYINT`, `SMALLINT`, `INT`, `BIGINT`) arrays use typed kernels following
-DataFusion's ordered membership and batch-gather structure. Boolean membership uses two bits;
-integer arrays of at most eight elements use a bounded stack search with a
-collision-checked fingerprint, and larger integer arrays use a reusable hash set. The first occurrence of each value is retained,
-including one NULL element. NULL containers remain NULL and empty arrays remain
-empty. The result preserves the element width, field metadata, and nullability. Boolean equality
-compares values; string equality compares UTF-8 bytes without trimming or Unicode normalization.
-Nullable VARCHAR/STRING and CHAR arrays now use the represented STRING kernel. It compares
-original UTF-16 units when both values have Java caches and encoded bytes otherwise, preserving
-isolated-surrogate identity. A retained-candidate scan preserves this potentially nontransitive equality. Stable first-occurrence selection retains the entire original value;
-copy-category metadata records the generic result array. Floating, decimal, temporal, binary and
-nested element types retain the generated route for verified bridges.
-Runtime SQL parity checks pass against released Flink 2.2.1.
-[Whole-job measurements](../benchmarks/scalar-functions.md#integer-array_distinct-2026-09-28)
-show large-array gains and small-array sensitivity to run-to-run variation. With
-[synchronous entry borrowing](../optimizations/projection-pruning-transpose.md#borrowing-at-the-synchronous-consumer),
-the nullable width-eight Boolean diagnostic also beats stock and previous production in two
-ten-million-row candidate runs. The earlier UTF-8-only STRING prototype remains disabled;
-represented STRING execution is a separate implementation under the maintainer's two-pass
-optimization agreement for [#505](https://github.com/datafusion-contrib/StreamFusion/issues/505).
-
-### SPLIT
-
-Character input and a literal non-empty separator use the Rust kernel. The separator is literal
-text, including regex metacharacters. NULL input returns NULL, empty input returns an empty array,
-and leading/repeated/trailing separators retain empty tokens.
-
-Dynamic, empty and NULL separators use the default-enabled represented native kernel. NULL input or
-separator returns NULL. An empty separator splits Java UTF-16 units, including the two surrogate
-halves of a supplementary character. The represented collection output retains those units
-and their Java string caches through fused consumers and the final row projection. Unverified
-stateful, ordering, exchange and native-writer boundaries retain planning fallback. Disabling
-`streamfusion.experimental.collectionExpressions` retains fallback for these new signatures and
-does not disable the existing non-empty literal Rust path.
-An empty separator can also populate a source StringData object's Java cache. A Calc that combines
-such materialization with cache-sensitive comparisons of original character-bearing inputs stays
-on the generated route, preserving aliases and evaluation order. Comparisons of the newly
-produced SPLIT array alone, such as ARRAY_DISTINCT(SPLIT(s,'')), remain native.
-SPLIT is absent from the released Flink 1.18.1 catalog, so this SQL coverage is N/A on that line.
-Temporary user functions named SPLIT keep their own signatures and the ordinary UDF admission
-rules; builtin separator checks do not apply to them.
-
-### SUBSTRING
-
-SUBSTRING/SUBSTR accepts dynamic TINYINT, SMALLINT, or INT starts and optional lengths. Positive positions are one-based, zero starts at the first character, negative positions count from the end, and a position before the beginning returns empty. Negative length returns NULL; input NULLs propagate.
-
-### LEFT
-
-Character input with a dynamic TINYINT, SMALLINT, or INT count. Non-positive counts return empty, large counts return the full string, and NULL propagates. Counts measure Unicode code points.
-
-### RIGHT
-
-Character input with a dynamic TINYINT, SMALLINT, or INT count. Non-positive counts return empty, large counts return the full string, and NULL propagates. Counts measure Unicode code points.
-
-### LPAD
-
-STRING, dynamic INT-width length, and literal or dynamic STRING padding. NULL, negative length, or empty padding returns NULL; zero length otherwise returns empty. Flink 2.2.1 counts UTF-16 units, including truncation through surrogate pairs.
-
-Standalone final LPAD/RPAD projections retain their native kernels. Direct equality/inequality
-against a string literal and REPLACE with single-character ASCII search/replacement literals
-have a [conditional Rust fusion path](../optimizations/native-string-fusion.md). This path
-requires direct input/literal producer arguments (or lossless integer widening). Equality
-also handles growth by comparing the literal's UTF-16 length and repeating padding period
-without constructing the padded string. Growing REPLACE maps one whole padding period,
-copies repetitions directly into the final Arrow buffer and consumes the partial UTF-16
-period without encoding split surrogates early. Equality supports
-original Unicode Java caches; REPLACE retains Flink for non-ASCII caches or producer literals. Dynamic consumers,
-other replacements, LIKE, and surrounding CASE expressions retain generated Flink evaluation
-through the batch JVM bridge. Both paths preserve isolated surrogates. For example, padding a supplementary
-character to one UTF-16 unit does not equal the literal `?`, even though both encode to `?`
-at final output. The original input string caches are retained; NULL and all-filtered empty
-batches preserve Flink behavior. A padding result crossing an intermediate relational operator
-retains the shared STRING identity fallback until that boundary can carry the exact value
-([issue #519](https://github.com/datafusion-contrib/StreamFusion/issues/519)).
-
-### RPAD
-
-Same input and boundary rules as LPAD, with padding appended on the right. Dynamic lengths and padding are admitted, with Flink 2.2.1 UTF-16 counting.
-
-### SPLIT_INDEX
-
-Character separators and TINYINT/SMALLINT/INTEGER indices may be dynamic. Indices are zero-based; negative/out-of-range indices, empty input, or any NULL produce NULL. Whole separators preserve empty tokens. An empty separator uses Java Character.isWhitespace, including tabs and line separators but excluding non-breaking spaces. BIGINT indices with character separators fall back.
-
-The resolved `(STRING, INT, INT)` overload has a cache-aware Rust path for direct
-input/literal arguments. The integer delimiter denotes one character in 1..255;
-other values return NULL. It scans only to the requested field, preserving empty
-tokens, and supports non-ASCII UTF-8 and equivalent original Java UTF-16 caches.
-A non-equivalent original cache (for example an isolated surrogate encoded as
-`?`), computed operands and unverified resolved widths retain the exact Flink
-evaluator. This uses the existing per-batch certificate without a new switch.
-See the [release measurements](../benchmarks/scalar-functions.md#integer-delimiter-split-index).
-
-Generated scalar helpers keep operand computations within the same Flink evaluator, retaining
-intermediate StringData representation. For a computed empty trim set, Flink 2.2.1 can throw
-an arithmetic exception while the empty value is binary-only, but succeeds after its Java string
-has been decoded and cached. The shared empty-string singleton makes this depend on prior use in
-the JVM. Native evaluation preserves the host representation and matches either outcome; parity
-checks compare the live host outcome rather than assuming that every computed empty set fails.
-A separate regression check uses a fresh empty value to verify both representation states.
-Regular correctness-test forks use `-XX:-OmitStackTraceInFastThrow` so repeated implicit
-exceptions retain the messages and stack frames needed to compare their evaluation phase.
-Without it, HotSpot can turn the same arithmetic failure into a stackless exception with no
-message after warmup, creating a second test-order dependency. The `bench` profile leaves
-this test-only setting empty and retains normal JVM exception optimization.
-
-### Temporal parsing, extraction and rounding
-
-`TO_DATE`, `TO_TIMESTAMP`, all `TO_TIMESTAMP_LTZ` overloads, calendar fields, and temporal
-`FLOOR`/`CEIL` now have expression implementations. Formatted parsing and recurring-DST LTZ
-calendar fields use Flink's own generated code. Timestamp results retain the complete millisecond/fraction pair and run
-by default. Direct integer epoch inputs to `TO_TIMESTAMP_LTZ` with literal precision
-0 or 3 execute in Rust; TINYINT/SMALLINT/INT widen losslessly before the existing
-BIGINT kernel. Verified integer arithmetic, widening and rounding trees also use these
-kernels in ordinary Calc; the computed child retains its resolved integer width before
-widening. Ordinary Calc also evaluates verified runtime INT precision CASE trees through
-a batch kernel selecting seconds/milliseconds when every result is 0, 3 or NULL and conditions
-are total admitted BOOLEAN/integer trees. Arbitrary precision columns, invalid/unverified
-leaves, fallible conditions, division, narrowing, unknown producers and string/formatted signatures retain
-their existing routes, as does UNNEST admission. Ordinary Calc also admits direct/literal
-DECIMAL epochs at literal precision 0/3: truncate toward zero, wrap to signed 64 bits,
-wrap seconds-to-milliseconds multiplication, then check the final millisecond range.
-Verified alternating DECIMAL ABS/negation chains and same-scale widening also execute natively.
-Arithmetic, narrowing/scale changes and runtime DECIMAL precision retain generated evaluation. The integer
-original-unit range check must not be applied to this distinct released DECIMAL overload.
-Flink 2.2 single-argument numeric `TO_TIMESTAMP_LTZ` uses the same verified integer/DECIMAL
-producer proofs at its released default precision 3. Flink 1.18's validation rejection,
-unverified producers and existing UNNEST routes remain intact.
-See the complete [temporal function inventory](temporal-functions.md).
-Direct/literal LTZ FLOOR/CEIL in fixed-zero session zones also runs in Rust for DAY/HOUR
-on both releases and MINUTE/SECOND/MILLISECOND on 2.2. The latter three forms retain
-released 1.18's code-generation failure. LTZ CEIL uses a dedicated signed-remainder
-kernel that discards fractional nanos; ordinary TIMESTAMP rounding stays unchanged.
-UTC FLOOR also consumes verified total built-in integer epoch conversions, with literal
-0/3 or separately proven runtime CASE precision 0/3/NULL, using those same release-supported
-units and the existing Rust kernels. CEIL/CEILING accepts the same producer proof; fixed-unit
-CEIL reuses plain-timestamp rounding only because numeric epochs have zero fractions and
-bounded milliseconds that exclude its differing overflow cases. General LTZ inputs retain
-their dedicated kernel. Other computed timestamp producers and
-nonzero/regional zones retain their existing routes. See [computed UTC FLOOR](temporal-functions.md#native-utc-floor-over-integer-epochs).
-
-In fixed zero-offset sessions, ordinary Calc FLOOR/CEIL/CEILING additionally compose genuine verified
-DECIMAL epochs: direct fields/literals, total ABS/negation chains and same-scale widening
-at literal precision 0/3 or the 2.2 default. Decimal truncation, signed-long/seconds wrapping
-and final millisecond bounds remain distinct from integer bounds. YEAR/MONTH/DAY/HOUR
-qualify on both releases, with MINUTE/SECOND/MILLISECOND on 2.2. The 1.18 default-signature
-rejection and sub-hour initialization failures remain unchanged. CEIL preserves the
-calendar rules and reuses bounded-epoch fixed-unit rounding because verified DECIMAL
-epochs have zero fractional nanos and final milliseconds far from long overflow.
-Runtime DECIMAL precision, binary arithmetic/narrowing/rescaling, unverified
-producers, other zones/units and UNNEST keep their existing routes. See
-[DECIMAL UTC FLOOR](temporal-functions.md#native-utc-floor-over-decimal-epochs) and
-[DECIMAL UTC CEIL](temporal-functions.md#native-utc-ceil-over-decimal-epochs).
-
-### LTRIM
-
-One-argument space trimming and literal Unicode sets retain their Rust kernels. Per-row sets
-use the same generated evaluator and source-representation gate as BTRIM. Empty sets preserve
-the input and NULL propagates.
-
-### RTRIM
-
-Uses the same literal kernels and per-row set admission as LTRIM, trimming from the right.
-
-## Case folding & regex
-
-`REGEXP_EXTRACT_ALL` and `STR_TO_MAP` use Flink-generated evaluation. ARRAY/MAP results use
-the whole-Calc batch JVM route with owned Arrow output vectors; scalar consumers can stay in
-one generated expression. Capture groups, unmatched optional groups, empty matches, invalid
-patterns/indices, NULL containers/elements, regex map delimiters, duplicate keys and missing
-values follow released Flink. Filters run before projections, including all-filtered batches.
-ARRAY and MAP lookups and cardinality inside the Calc retain the host's internal values.
-Character results from these functions crossing another relational operator retain the string
-identity fallback, as do whole-Calc character outputs containing arbitrary Base64-decoded bytes.
-The operator remains columnar; these functions themselves execute on the JVM.
-
-REGEXP, REGEXP_REPLACE, REGEXP_COUNT, REGEXP_INSTR and REGEXP_SUBSTR use Flink-generated
-expressions through the batch JVM bridge for literal and per-row patterns. Java lookaround,
-backreferences, UTF-16 positions, empty matches, literal replacement strings, invalid-pattern
-behavior and resolved INT/BOOLEAN/STRING types are retained. AND/OR consumers fuse with these
-calls to preserve Flink evaluation order. Direct input/literal calls also have a certified Rust batch path, including REGEXP_EXTRACT.
-It accepts ASCII text/patterns, ordinary literals, dot, simple classes, grouping/alternation,
-`*`/`+`, and verified ASCII escapes. Anchors, lookaround, backreferences, Unicode properties,
-counted/lazy/possessive quantifiers, repeated capture groups and uncertain class syntax retain
-Java. Empty matches advance like Matcher.find, including the empty match following a nonempty
-one; replacement text is literal, not a capture expansion. Compilation is shared by equal
-patterns within a batch. Non-ASCII batches and mismatching original UTF-16 caches retain Java.
-REGEXP_EXTRACT_ALL and STR_TO_MAP remain generated collection expressions; see
-[issue #495](https://github.com/datafusion-contrib/StreamFusion/issues/495).
-
-**Verified primitive UPPER/LOWER.** Both released lines execute `UPPER`/`LOWER` directly in
-Rust for unbounded `CAST`/`TRY_CAST` to STRING of proven total integer or BOOLEAN expressions. On
-Flink 2.2 this also includes the qualified primitive ASCII `PRINTF` producer when its
-literal format contains no lowercase `i` for UPPER or uppercase `I` for LOWER.
-Primitive conversions themselves cannot write `i`/`I`; all admitted output therefore has
-the same case result under every worker locale, with or without a Java cache. Signed
-integer text has no letters and reuses the
-native CAST result without a second scan or output buffer; BOOLEAN text writes its final
-case directly. Formatter output uses the existing Arrow case kernel.
-The built-in operator identity is checked, NULLs
-and empty batches are retained, and there is no bound JVM evaluator for these calls.
-Bounded character casts, failing/unverified producers, ordinary STRING inputs, other
-formatting contracts and unverified dependent consumers retain their existing paths. This is a
-producer-specific proof, not general Unicode casing support. See the
-[UPPER](../benchmarks/scalar-functions.md#primitive-text-upper) and
-[LOWER](../benchmarks/scalar-functions.md#primitive-text-lower) qualifications and complete-job limits.
-
-Built-in CHAR_LENGTH and CHARACTER_LENGTH also consume these qualified UPPER/LOWER results
-directly in Rust. The same producer/locale proof guarantees ASCII, so UTF-8 codepoint and
-Java UTF-16 lengths agree. This includes proven integer/BOOLEAN text, direct DECIMAL truth/
-predicate BOOLEAN text, and qualified Flink 2.2 PRINTF compositions. Signed integer case
-conversion still reuses its CAST result; the length consumer adds no JVM evaluator or
-transport change. Bounded casts, general Unicode, locale-sensitive formats, fallible
-producers and further dependent expressions retain their existing routes. The
-[case-length qualification](../benchmarks/scalar-functions.md#length-of-proven-primitive-case-results)
-retains separate stock, actual-prior and native controls.
-
-**Default compatibility path.** Other `UPPER`/`LOWER` calls use Flink-generated scalar
-expressions through the columnar JVM bridge. Original Java UTF-16 caches are passed beside the UTF-8 arguments;
-an absent cache remains a binary-only string. This distinction matters even for ASCII:
-under a Turkish or Azerbaijani runtime JVM locale, Java-backed `LOWER('I')` produces dotless i,
-while Flink's cold binary ASCII path produces ordinary i. Dependent consumers remain in the
-same generated scalar expression. Other projections and the Calc operator remain columnar;
-this is a correctness path, not a pure-Rust case-conversion acceleration. See
-[issue #494](https://github.com/datafusion-contrib/StreamFusion/issues/494) for remaining native
-Unicode coverage. Uncertified `REGEXP_EXTRACT` retains its JVM regex evaluator.
-
-Each of these also has a faster **pure-Rust** alternative — Rust's own case folding, and the `regex`
-crate — that is **opt-in** under
-`-Dstreamfusion.expression.<NAME>.allowIncompatible=true` (or the blanket flag; see
-[Configuration](../configuration.md)). It's opt-in rather than default because it can diverge from
-the JVM behavior on non-ASCII case folding and on advanced regex features (backreferences,
-lookaround, some Unicode character classes) — real correctness differences, not just a performance
-trade-off, which is why parity comes first by default.
-
-An explicit REGEXP_EXTRACT incompatible opt-in keeps its existing direct native opcode and
-literal/index admission rules; the exact batch certificate applies to the default route.
-
-Neither path falls back to the host for a supported argument type. What *does* fall back: a
-non-string argument, or — specifically on the pure-native (opt-in) `REGEXP_EXTRACT` — a non-literal
-pattern or index.
-
-## Date/time
-
-The [temporal functions page](temporal-functions.md) lists every supported scalar family, clock,
-watermark and window helper, with the exact range and runtime-context gates. Temporal expressions
-use Flink's code through the batched JVM upcall unless a verified Rust kernel already exists.
-Adjacent temporal calls fuse into one upcall, retaining intermediate TimestampData values inside
-Flink rather than converting each one to an Arrow timestamp.
-
-`DATE_FORMAT` and `EXTRACT` retain their existing opt-in Rust LTZ paths. Dynamic patterns, additional
-extraction fields and other temporal functions use Flink's implementation. Timestamp-producing
-expressions run by default with the full Flink millisecond range and fractional nanos.
-Plain-TIMESTAMP numeric `DATE_FORMAT` also handles Java quoted literals, doubled quotes and
-escaped literal percents natively. Optional sections and unsupported or invalid Java pattern
-syntax keep generated Flink evaluation, preserving output, failures and empty-batch laziness.
-Direct TIMESTAMP_LTZ columns and verified total integer/DECIMAL epoch producers in ordinary Calc reuse
-this exact renderer in fixed zero-offset sessions. Integer producers compose the existing
-width, arithmetic/rounding and original-unit bounds proof at literal precision 0/3, verified
-runtime INT CASE precision 0/3/NULL, and Flink 2.2's default precision. Verified DECIMAL fields,
-literals, total ABS/negation chains and same-scale widening compose at literal precision 0/3
-or the 2.2 default, preserving DECIMAL truncation, signed-long/seconds wrapping and final
-millisecond bounds. Runtime DECIMAL precision, other zones and unverified
-derived producers keep their existing generated routes, including arithmetic DECIMAL epochs and general
-timestamp CASE/casts. Flink 1.18 retains its validation rejection of single-argument numeric
-epochs. See the [composition qualification](../benchmarks/scalar-functions.md#utc-date_format-over-verified-integer-epochs-2026-11-05).
-The [DECIMAL qualification](../benchmarks/scalar-functions.md#utc-date_format-over-verified-decimal-epochs-2026-11-05)
-records its independent correctness/performance scope and retained small-batch and complete-job costs.
-
-## POWER and SQRT
-
-`POWER` (including Flink's lowering of `SQRT`) runs inside native Calc by default through
-Flink-generated JVM code in the existing batch UDF bridge. The resolved primitive/DECIMAL
-overload uses Flink's own conversion and `Math.pow`, preserving exact deterministic results,
-signed zeros, NaN, infinities, overflow/underflow and NULL propagation. Nested powers can fuse
-into one generated expression. The surrounding operator remains columnar; the power operation
-itself executes on the JVM. The Rust alternative remains available under
-`streamfusion.expression.POWER.allowIncompatible=true` or the blanket flag.
-
-## Exact floating math
-
-EXP, LN, LOG10, SIN, COS, TAN, ASIN, ACOS, ATAN, COSH, SINH, TANH, COT, ATAN2,
-DEGREES, RADIANS, LOG (one or two arguments) and LOG2 run inside native Calc by default
-through Flink-generated evaluation in the existing batch JVM bridge. Resolved numeric
-overloads, including integer and DECIMAL operands, use the selected released Flink line's
-own conversions and math functions. This preserves deterministic last-bit results, signed
-zero, NaN, infinities, domain results and NULL behavior.
-
-Non-DECIMAL ROUND and INT/BIGINT TRUNCATE use generated evaluation outside the verified
-single-argument integer and bounded literal-position ROUND/TRUNCATE paths above. FLOAT TRUNCATE also uses generated evaluation,
-including runtime INT scales.
-Independently emitted DOUBLE TRUNCATE uses an exact
-[bounded shortcut](../optimizations/host-exact-builtins-upcall.md#bounded-double-truncate):
-for magnitudes from 1 through 1e9 and scales -6 through 6, outward-rounded bounds must
-prove the same truncated decimal integer before arithmetic replaces decimal conversion.
-Ambiguous boundaries, other values/scales, and row-fused expressions retain Flink's
-implementation. NULLs, conditional short-circuiting and declared types are unchanged. FLOAT/DOUBLE
-ROUND retains Flink's BigDecimal-based HALF_UP semantics; every TRUNCATE path preserves
-Flink's decimal rounding-toward-zero result.
-TINYINT/SMALLINT TRUNCATE falls back: released Flink generates an invalid narrowing
-assignment for these signatures, and the stock job also fails during initialization.
-Non-finite values that fail in Flink fail on the native route with the same root exception.
-Supported surrounding expressions fuse into the generated evaluator, preserving CASE and
-filter short-circuiting for unselected failing calls. DECIMAL ROUND/TRUNCATE keep their
-separate admission rules above.
-
-These are JVM-evaluated functions inside a columnar operator. Existing Rust alternatives for
-EXP, LN, SIN, COS, TAN, ASIN, ACOS, ATAN, LOG10 and floating ROUND remain opt-in through
-`-Dstreamfusion.expression.<NAME>.allowIncompatible=true` or the blanket flag. Those paths
-can differ from Java Math at the last bit, or from Flink's decimal-based floating rounding;
-the flags are unnecessary for exact default execution. The new COSH/SINH/TANH/COT/ATAN2,
-DEGREES/RADIANS/LOG/LOG2 paths always use generated evaluation.
-
-Release+mimalloc diagnostic on an Intel Core i7-12650H under Linux/WSL, JDK 17,
-Flink 2.2.1 (2026-09-27): two million numeric runtime rows, one-seventh NULLs, parallelism 1,
-two warmups and five measured runs in alternating engine order. The matched numeric identity
-control, both Arrow transposes and a rowwise blackhole sink remain in the measured path.
-
-A [grouped integer-SUM benchmark](../optimizations/host-exact-builtins-upcall.md#composition-with-grouped-integer-sums) shows 16–24% less native elapsed time than Flink at 2M and 5M rows for TAN, COSH and floating TRUNCATE, retaining both transposes. This gain applies to those composed queries; standalone math remains slower. A separate admission ablation confirms that these compositions previously fell back entirely to Flink and were slower than the current native plans. Grouped nullable/extreme-value parity cases pass on Flink 1.18 and 2.2.
-
-The original measurements below are historical. A subsequent [CPU-profile investigation](../optimizations/host-exact-builtins-upcall.md#exact-floating-math-remaining-performance-limits) tested borrowed inputs, primitive batch evaluation and simplified rounding. None established a whole-job improvement; the prototypes were removed. The current default
-retains released Flink evaluation inside native Calc, with standalone costs reported separately
-from the composed-query improvements above.
-
-
-| Expression | Flink median (s) | Native median (s) | Flink/native ratio |
-|---|---:|---:|---:|
-| Numeric identity | 0.293 | 0.429 | 0.685x |
-| Exact TAN | 0.367 | 0.643 | 0.571x |
-| Exact COSH | 0.337 | 0.534 | 0.631x |
-| DOUBLE TRUNCATE with runtime INT scale | 0.782 | 0.939 | 0.833x |
-
-These standalone queries are slower than Flink. The generated path is retained to keep exact
-math inside larger native pipelines using the existing bridge; it introduces no new operator
-or boundary. It does not establish a floating-math speedup. Reproduce with:
-
-```sh
-SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench \
-  -Dtest=ScalarFunctionBenchmark \
-  -Dscalar.functions=TAN_EXACT,COSH_EXACT,FLOAT_TRUNCATE_EXACT \
-  -Dscalar.rows=2000000 -Dscalar.nullEvery=7 -Dscalar.warmup=2 -Dscalar.runs=5
-```
-
-## Literal/arity guards
-
-A number of otherwise-admitted functions decline when called with an argument shape the native
-implementation can't handle, even though the function itself is supported:
-
-- An **unsupported literal type** anywhere in the expression.
-- **`TRIM`, `BTRIM`, `LTRIM`, `RTRIM`** — per-row sets require the documented
-  external-Java-string admission; unknown or binary-backed representations retain fallback.
-- **`POSITION`** — a `FROM` start offset.
-- **`CURRENT_WATERMARK`** — requires a Calc watermark context; unsupported in standalone join or UNNEST residuals.
-- **Collection subscripts:** non-INT ARRAY indexes and literal indexes below one; runtime MAP keys
-  of floating, collection or mismatched types; nullable non-compact decimal/timestamp MAP keys.
-  See the [collection contract](#collection-subscripts).
-- **Wrong arity** for any otherwise-admitted function.
-
-See [Configuration](../configuration.md) for the full `allowIncompatible` flag surface referenced
-throughout this page.
-
-## Generated helper performance
-
-The table below is historical. Direct certified regex, LIKE ESCAPE, PARSE_URL and PRINTF
-subsets now avoid Java; see the [2026-10-26 comparison](../benchmarks/native-certified-scalars.md)
-for current measurements and remaining evaluator routes. Verified DECIMAL SIGN also now uses
-the [typed native kernel](../benchmarks/scalar-functions.md#decimal-sign); its historical
-generated-helper row below does not describe the new implementation.
-Direct BOOLEAN character CAST also now uses the
-[native formatter](../benchmarks/scalar-functions.md#boolean-cast-to-character);
-the BOOLEAN-to-STRING row remains historical callback evidence.
-
-The generated functions above extend the expressions that can stay inside a columnar island.
-They are correctness/coverage work, not standalone scalar speedups: Flink still evaluates each
-row inside the batch callback. A release-only diagnostic on Apple M4 Pro on 2026-09-21 used 200,000 rows,
-64-byte text/binary payloads, parallelism 1, one warmup and three alternating measured runs per
-engine. Matched-source identity controls and both row/Arrow transposes remain in the measured
-path. Every query verifies native Calc admission before timing.
-
-| Expression workload | Flink seconds | Native seconds | Throughput ratio |
-|---|---:|---:|---:|
-| BIGINT ABS | 0.094 | 0.117 | 0.806x |
-| DECIMAL SIGN | 0.096 | 0.153 | 0.630x |
-| Runtime STRING GREATEST | 0.103 | 0.145 | 0.709x |
-| BOOLEAN IF | 0.095 | 0.104 | 0.911x |
-| BOOLEAN to STRING | 0.093 | 0.110 | 0.844x |
-| LIKE ESCAPE | 0.106 | 0.132 | 0.799x |
-| REGEXP_COUNT | 0.138 | 0.171 | 0.808x |
-| PARSE_URL | 0.134 | 0.174 | 0.771x |
-| PRINTF BIGINT | 0.168 | 0.184 | 0.913x |
-| Dynamic BTRIM | 0.117 | 0.178 | 0.659x |
-| IS_ALPHA | 0.096 | 0.136 | 0.706x |
-| Binary STARTSWITH | 0.089 | 0.131 | 0.681x |
-| REGEXP_EXTRACT_ALL | 0.200 | 0.279 | 0.718x |
-
-These short local timings measure the cost of the new coverage. They do not establish a gain
-for an entire native pipeline, and every standalone workload here is slower than Flink. The
-bridge is retained to allow composition with existing native operators; future performance
-claims require measuring that complete pipeline. Reproduce with `ScalarFunctionBenchmark`
-under `-Pbench`, `SF_BENCHMARK=true`, `-Dscalar.rows=200000 -Dscalar.bytes=64` and
-`-Dscalar.warmup=1 -Dscalar.runs=3`, selecting the corresponding `scalar.functions` names.
-
-The IS_ALPHA row records the previous generated evaluator. Current native alpha/digit
-coverage and paired measurements are documented in the classification section and scalar
-benchmark page; this historical table does not describe their current implementation.
-
-## Flink 1.18 compatibility
-
-The 1.18 development build uses the shared native SQL/JSON reader with its verified Jackson
-2.14.2 profile on JDK 11 or 17. Decimal JSON constructors retain the whole-Calc JVM route, once per
-Arrow batch, to preserve that release's decimal spelling. See
-[Flink line compatibility](../flink-compatibility.md) for host-only syntax differences.
-
-### Legacy ENCODE result representation
-
-On Flink 1.18, SQL `ENCODE` reports `BINARY(1)` despite returning variable-length bytes.
-The shared generated Calc evaluator keeps its original expressions and external schema, but
-uses Arrow Binary for affected scalar output columns. This preserves charset resolution,
-nulls, byte arrays, casts and row/projection evaluation order without changing ordinary fixed
-BINARY columns. Final projections and fused scalar consumers accelerate; an affected fixed-width
-result crossing into another operator or a native sink falls back before execution. Casting the
-result to BYTES establishes a normal variable-length boundary.
-
-## Flink 1.18 mixed timestamp comparison compatibility
-
-The installed planner supplies the mixed `TIMESTAMP`/`TIMESTAMP_LTZ` comparison coercion
-missing from Flink 1.18's code generator. It casts the lower-precision operand to the other
-operand's type; equal precision casts the left operand to the right type. Existing casts
-introduced by SQL validation are retained, including their precision and timezone semantics.
-The cast uses Flink's session timezone handling and preserves NULL behavior, including
-`IS DISTINCT FROM` and `IS NOT DISTINCT FROM`. Precision 0, 3, 6, and 9 and DST overlap inputs
-are covered by SQL parity tests.
-
-This compatibility normalization also applies when an installed planner has native
-substitutions disabled, so rowwise Flink execution can run the same mixed comparison.
-The Flink 2.2 line uses its released code generator's existing coercion.
-
-### Exact DOUBLE TRUNCATE
-
-`TRUNCATE` with a DOUBLE operand/result and an optional INT scale uses a generated evaluator
-through the existing Arrow-batch JVM scalar bridge. It borrows the imported Arrow rows, avoiding
-reflective argument-column materialization. A bounded shortcut brackets the scaled value using outward-rounded adjacent
-doubles. Only when both bounds truncate to the same exactly representable integer does it avoid
-Flink's decimal conversion. The accepted shortcut domain uses scales -6 through 6 and
-`abs(value) <= 1e15 / 10^max(scale,0)`, keeping the coefficient bounded while
-allowing larger values at coarser scales. The repeated large-domain whole-job comparisons beat stock and previous StreamFusion;
-values below one include a half-unit scale-18 decimal rounding margin in their bounds.
-For nonnegative scales, an integral power-of-two-scaled operand additionally proves the value
-already has at most the requested fractional decimal digits, so it returns unchanged.
-At ambiguous nonnegative scales, an integral decimal-scaled coefficient whose division
-round-trips to the input proves a canonical bounded decimal-grid identity. Remaining
-ambiguous bounded values use the same canonical decimal text as released Flink, retaining
-its scale-18 HALF_UP rounding carry before truncation without constructing decimal objects.
-Values outside this bounded signature use released Flink `struncate`. This retains
-NULLs, signed-zero results, nonfinite behavior, extreme positions and errors. FLOAT and other
-unverified signatures retain their existing gates. An omitted scale is generated as primitive
-INT zero without another Arrow argument. No incompatible opt-in is used.
-
-Generated scalar consumers substitute only verified DOUBLE invocations, retaining released
-NULL guards and operand evaluation. Whole-row consumers bind verified DOUBLE TRUNCATE calls
-to the same helper through Flink's released scalar-function bridge; other overloads and
-original expression types remain intact. The released generated Criterion control explicitly
-disables this substitution. CASE and COALESCE retain generated row evaluation when this callback can throw.
-AND/OR consumers containing verified exact floating calls retain generated row evaluation
-inside native Calc. Selected nonfinite operands fail like released Flink; unselected operands
-retain its short-circuit behavior. Programs with multiple failing evaluations retain the
-existing row-order gate. Nullable COALESCE and nested TRUNCATE samples beat stock and previous production behavior.
-Later scale-dependent bounds also improve the measured large-domain consumers. See the [consumer results](../optimizations/host-exact-builtins-upcall.md#generated-consumer-evaluation)
-for retained trials and validation limits, and the [scale-dependent bound results](../optimizations/scalar-function-kernels.md#scale-dependent-double-truncate-domain-prototype)
-for the later accepted large-domain optimization.
-
-`FollowupExpressionPlanTest` checks runtime-source SQL planning for fixed binary casts,
-Boolean ARRAY_DISTINCT, and DOUBLE TRUNCATE including consumer evaluation and exception behavior. It requires native
-Calc and both transposes without starting a job. Plan checks supplement, rather than replace,
-runtime parity and performance checks. The admitted plans run on each released Flink line.
-Binary ELT retains explicit-false runtime fallback witnesses; STRING ARRAY_DISTINCT now has default-enabled
-generated-program parity coverage under the accepted collection performance tradeoff. Seven in-process Arrow/JNI ownership tests and three DOUBLE TRUNCATE
-helper/admission tests pass on each line.
-Two generated-evaluator checks additionally validate omitted and dynamic scales, NULLs, bits
-and errors on each released line. Exception-message correctness runs retain
-`-XX:-OmitStackTraceInFastThrow`; the `bench` profile normally clears that correctness flag.
-
-Nonfinite DOUBLE TRUNCATE consumer checks compare independent released Flink and native executions, including matching failures when Flink evaluates an otherwise guarded operand. SQL AND/OR optimizations must not be assumed to suppress evaluation.
-
-The recovered release revision passes the complete 54-check selected suite on Flink 1.18.1
-with four unavailable-ELT checks skipped, and the corresponding Flink 2.2.1 checks pass.
-Eleven DOUBLE TRUNCATE runtime checks and nine Boolean/string ARRAY_DISTINCT checks pass on
-both released lines. These are historical correctness results. Binary ELT now uses the
-Rust-side functionality gate described below. STRING ARRAY_DISTINCT subsequently gained the
-represented native kernel described above; fixed binary casts, Boolean ARRAY_DISTINCT,
-and the bounded DOUBLE TRUNCATE helper remain admitted.
-
-
-The maintainer accepted shipping the verified broader SQL/JSON MAP/MULTISET boundary
-on October 16 while deferring performance improvements. Historical MAP whole-job results
-remain slower than stock Flink; see the [recorded measurements](../benchmarks/scalar-functions.md#map-sqljson-batch-boundaries-2026-09-19).
-This acceptance does not widen nullable-key, fixed-BINARY or non-Calc admission.
-
-
-### Binary ELT and raw payload boundaries
-
-`streamfusion.experimental.binaryElt` defaults to `true` in planner and task JVMs and admits
-verified INTEGER-indexed binary `ELT` arguments/results. Explicit false retains stock execution. Safe selections
-use the existing native binary kernel with a length-delimited result. Expressions requiring
-released Flink evaluation keep the generated path, including conditional/failing operands.
-The unverified BIGINT-index overload remains on Flink. No Rust production kernel changes.
-
-The flag uses Arrow Binary for SQL BINARY(n), because released Flink can carry raw bytes
-whose length differs from the declaration. SQL types remain BINARY(n). Existing fixed-width
-Arrow results remain readable through this transport. NULL/bounds semantics, selected raw
-bytes, literal selection, grouping, object reuse and batch boundaries are covered by
-`FlinkVariableBinaryEltSqlHarnessTest` and the existing binary SQL selections. The original
-October 16 opt-in evidence is retained below. Default admission now follows the agreed
-Rust/Arrow versus Java/RowData functionality gate; historical slower standalone measurements
-above remain visible as conversion-inclusive diagnostics.
-
-Nested BINARY checkpoint and separate-JVM checks extend the parent fixtures with raw lengths
-0–4097, NULL rows/fields/array elements, all nested RowKinds and mutable callback outputs.
-They use memory/nativeRocksDB at parallelism1/3 with repeated completed-checkpoint failures,
-and separate planner/worker JVMs with5003 runtime rows. Current validation results are
-recorded with this extension; performance is a separate deferred contract.
-
-[The extension evidence](../benchmarks/results/binary-selection-recovery-2026-10-16.json)
-records33 focused binary SQL and12 recovery/remote passes on Flink2.2. Its default mode
-passes26 checks with4 opt-in method skips. Flink1.18 passes26 with19 expected ELT catalog
-availability skips, including all8 recovery and4 remote cases. Across both lines this adds
-8 binary recovery and4 binary remote cases alongside the parent STRING cases. All native
-worker input counts equal5003, and children exit cleanly. These local correctness checks
-use a pinned existing release payload; required CI rebuilds current native code. No duration
-is throughput evidence. Combined remote process failure/recovery and inconsistent flags
-remain unverified.
-
-### Operator-format performance admission, 2026-10-19
-
-[The admission audit](../benchmarks/feature-admission-2026-10-19.md) excludes perimeter
-transposes and compares the same logical BinaryRowData/Arrow inputs. Shared stateful INT,
-BIGINT and STRING evaluators still do not establish a repeatable win; temporal identity,
-text and epoch UDFs remain slower. Their earlier opt-ins stayed off at that revision.
-A mixed temporal direct-evaluation
-candidate reduced native time but still lost to Flink and was rejected. Existing diagnostic
-execution switches retain their prior contracts. Collection and metadata feature switches
-already default on and do not block coverage. The earlier full-job timings remain diagnostic
-evidence rather than the small-functionality admission gate.
-
-
-The maintainer subsequently clarified the gate: small-functionality timing begins inside Rust
-with Arrow already imported, while Flink starts in Java with RowData. The earlier Java-wrapper
-operator measurements remain diagnostics. Correct UDF execution is explicitly allowed to be
-slower, so shared stateful and temporal scalar coverage now defaults on. No faster UDF execution
-is claimed. Explicit false overrides, unsupported signatures and semantic safeguards remain.
-
-
-The default-admission change passes 79 affected checks on each released Flink line (2.2.1 and
-1.18.1), covering shared order, balanced lifecycle, failure parity and exact temporal types.
-Both explicit false overrides retain stock execution.
-
-Type-preserving planner `AS` labels are compile-time names. The native expression encoder
-evaluates their value operand directly when the result type exactly matches it. This also
-keeps Table API window-result aliases inside a native island. Labels that change the declared
-type do not use this passthrough.
-
-### Binary ELT default admission, 2026-10-20
-
-The verified INTEGER-indexed binary selector now runs without an opt-in. Explicit
-`streamfusion.experimental.binaryElt=false` restores stock execution, independently of the
-nested-scalar flag. Planner and worker use the same default helper. CI exercises this default
-without forcing the flag. The unverified index overloads and representation guards
-retain their existing routes.
-
-The small-functionality gate uses Flink's production generated Calc on prebuilt BinaryRowData
-and StreamFusion's production expression program inside Rust on prebuilt Arrow. Both prewarm
-the same 1,024-row prefix outside timing, then process the same logical rows. Timings include
-allocation, native execution and equivalent format-native output consumption; input preparation,
-initial import/final export and perimeter JNI/transposes are excluded. Full byte values and
-INSERT RowKinds are checked separately against native output, including NULL/empty values,
-invalid/NULL indices, embedded zero/high bytes and 4,097-byte payloads despite BINARY(4).
-
-Five warmups and nine measured trials produce these medians and measured ranges:
-
-| Rows / nominal byte width | Flink ms (range) | Rust ms (range) | Flink/Rust |
-| --- | ---: | ---: | ---: |
-| 16,384 / 4 | 1.311 (1.003–2.805) | 0.116 (0.115–0.133) | 11.34× |
-| 262,144 / 64 | 12.850 (12.493–31.510) | 2.614 (2.479–2.947) | 4.92× |
-| 131,072 / 256 | 15.538 (9.964–34.765) | 2.159 (2.021–2.493) | 7.20× |
-
-All three profiles win by 4.92–11.34×. The previous default used this same stock Calc at the
-measured boundary. No kernel optimization was needed to pass the agreed gate. Earlier slower
-conversion-inclusive jobs remain above; these operation measurements are not complete-job claims.
-[Raw trials, hashes and validation](../benchmarks/results/binary-elt-defaults-2026-10-20.json)
-retain every sample and preliminary diagnostics.
-
-Default validation selects 55 unique checks on each released line: all pass on Flink 2.2;
-Flink 1.18 passes 36 with 19 expected catalog-availability skips; ELT is absent from that release. Eight recovery and
-four separate-worker-JVM cases pass on each line. Explicit false passes 23 checks with four
-disabled coverage methods; binary default execution with nested callbacks explicitly disabled
-passes seven checks. All 1,104 existing release Criterion fixtures pass. These correctness
-checks do not imply faster JVM callbacks.
-
-Reproduce the stock half with `BinaryEltAdmissionBenchmark -Dbinary.admission.export=fixture.arrow`
-under `-Pbench` and `SF_BENCHMARK=true`. The compiled release `binary_elt` example accepts
-`fixture.arrow 5 9 output.arrow`; `-Dbinary.admission.rustOutput=output.arrow` verifies stock
-results against every native output byte before relying on its measurements.
-
-
-### Map lookup after retained-row operators
-
-Logical MAP `ITEM` retains an explicit map tag when a preceding Top-N, regular join or first-N
-operator stores maps as physical Arrow Lists. Literal and dynamic key lookup use the same borrowed
-entry offsets/key/value view for physical Maps and tagged Lists; integer map keys cannot be
-misinterpreted as one-based array positions. Existing compact timestamp-key and nullable-key
-compatibility guards remain in effect. ARRAY subscript behavior is unchanged.
-
-Retained MAP/MULTISET output reaching an unverified native Arrow sink uses the existing row-sink
-route. Direct external Java MAP scalar callbacks use the verified generated path below;
-retained-row carriage alone does not expand callback conversion coverage.
-
-
-### Java ARRAY scalar signatures
-
-The default-enabled `streamfusion.experimental.nestedScalarUdfs` option admits top-level
-external Java ARRAY scalar arguments and results with verified scalar leaves and recursive
-ARRAY/List/ROW/MAP children. Java object arrays, supported primitive arrays, external List
-arguments and List implementation results use the [recursive whitelist](#recursive-external-scalar-conversions).
-Custom inference and annotations may select those conversions. MULTISET/STRUCTURED/RAW,
-internal classes, specialized functions and unverified conversion classes retain fallback.
-
-On released Flink 1.18.1, CASE selecting a `byte[][]` ARRAY-of-BYTES UDF result or the input
-array fails in the host's generated Java allocation (`'{' expected instead of '['`). The
-suite asserts that same host failure and generation fallback, rather than skipping it or
-claiming CASE coverage on that line. Single/nested calls, CARDINALITY and filters retain
-positive NativeCalc work on both lines; the CASE fixture also executes natively on Flink 2.2.1.
-
-The complete Calc uses the existing generated Arrow batch callback. Flink's copy of a nullable
-columnar array can have an `Object[]` backing even when the user method expects `Integer[]`.
-The converter restores the typed internal backing, recursively through ARRAY/ROW/MAP, before
-invoking the released external converter. It retains NULL versus empty arrays, NULL elements,
-Java string code units, owned retained arguments and the released result conversion. It does
-not replace array evaluation with Rust user-function execution.
-
-Runtime tests cover BOOLEAN, TINYINT, SMALLINT, INT, BIGINT, FLOAT/DOUBLE, DECIMAL(38,18), STRING,
-DATE, TIME(0), TIMESTAMP(9), TIMESTAMP_LTZ(9), BYTES and nested INT arrays. Consumers include
-CARDINALITY, nested UDFs, CASE and filters. Reused mutable outputs, shared state/lifecycle, retained inputs after batch release,
-empty/all-filtered input, failures and heap/RocksDB recovery are verified against stock Flink.
-Each populated admitted query requires consumed NativeCalc work; existing collection
-representation guards continue to restrict unverified state/exchange consumers. Scalar
-results from ARRAY arguments can compose with native scalar operators.
-
-The release `UdfTypeBoundaryBenchmark` diagnostic uses Apple M4 Pro, Flink 2.2.1/JDK 11,
-262,144 rows, 1,024-row batches, parallelism one, both transposes and a blackhole row sink.
-After two warmups, five alternating pairs yield INT-array medians of 0.080996s stock
-(0.074598-0.093563s) and 0.139827s native (0.128676-0.145702s). DECIMAL-array medians
-are 0.241181s stock (0.227901-0.247675s) and 0.361928s native (0.358151-0.383200s).
-The prior route was stock fallback. These short jobs include startup; they document conversion
-costs under the accepted UDF exception and make no sustained-acceleration claim. Reproduce
-with `-Pbench`, `SF_BENCHMARK=true` and `-Dtest=UdfTypeBoundaryBenchmark#arrayCompleteJobs`.
-
-### Fixed BINARY MULTISET elements
-
-CAST/TRY_CAST and character formatting admit direct BINARY(n) MULTISET elements through the
-existing generated Flink evaluator and Arrow MAP<element,INT NOT NULL> transport. Nullable
-elements run on both released lines; NOT NULL elements run on 2.2. Flink 1.18 NOT NULL
-binary elements retain fallback because unchecked NULL getters can expose empty bytes where
-its original container preserves NULL spelling. Declared SQL widths remain unchanged, while
-transport retains actual byte lengths. The existing nested-scalar length-delimited option
-must remain enabled. No accumulator, state codec or ownership protocol is added.
-
-Fixed-binary MULTISET CASE expressions also use released generated evaluation: selected
-branches retain Flink's implicit binary casts, including padding observed on 1.18. Direct
-native selection would skip that transformation. Disabled collection/length-delimited options
-keep this CASE on stock Flink; direct native selection is rejected. This does not change ordinary scalar CASE.
-Runtime internal sources verify NULL/empty parents and elements, lengths0–6 and4097 despite
-BINARY(4), zero/negative multiplicities, colliding cast keys, all four changelog kinds,
-legacy/current cast rules, CHAR/VARCHAR bounds, filtered/empty batches, CASE and nested
-ARRAY/ROW consumers. CAST and TRY_CAST preserve input arithmetic failures and conditional
-short-circuiting. Formatting checks use ordered internal inputs; casts that allocate new
-byte-array map keys can have identity-dependent HashMap iteration, so their map results are
-compared as maps rather than claiming a deterministic formatted order. Native checks require consumed Calc work; 1.18 NOT NULL forms and disabled
-length-delimited/collection options require fallback.
-
-Unverified state, exchange and native-writer boundaries retain the represented-collection
-restrictions. This does not enable updating retained MULTISET payloads deferred in
-[#437](https://github.com/datafusion-contrib/StreamFusion/issues/437).
-[Release comparisons and bounded profiles](../benchmarks/scalar-functions.md#fixed-binary-multiset-elements)
-retain conversion and source/sink costs without a standalone acceleration claim.
-
-### NOT NULL fixed BINARY map leaves
-
-Flink 2.2 admits MAP keys and values declared BINARY(n) NOT NULL through the existing
-length-delimited generated evaluator. Either or both leaves may be NOT NULL. MAP_KEYS,
-MAP_VALUES, MAP_ENTRIES, MAP_UNION, CAST/TRY_CAST, character formatting and composed array
-consumers keep released Flink evaluation. This does not widen the Rust shared-child view's
-nullable-element whitelist. Flink 1.18 retains planning-time fallback: its unchecked NULL
-binary getters can expose empty bytes where the original map preserves NULL formatting.
-The same release capability already governs NOT NULL binary MULTISET elements.
-
-Runtime-source regressions exercise both GenericMapData and released-serializer BinaryMapData,
-NULL/empty parents, actual NULL leaves despite declared NOT NULL hints, lengths zero through
-six and 4097 despite BINARY(4), all four changelog kinds, legacy/current casts, CHAR/VARCHAR
-bounds, CASE and empty filtered batches. Each populated admitted query requires consumed
-NativeCalc work. Retained Java Map callbacks preserve owned inputs and shared function state
-across closed batches for both source representations. The callbacks also retain verified
-stock behavior on 1.18; they do not add a new conversion protocol.
-
-The default collection and nested-scalar length-delimited options must remain enabled for the
-new collection functions. Disabling either retains Flink evaluation of those functions; unrelated
-native projections can still execute. Existing final-projection/fused-consumer restrictions and
-unverified state, exchange, ordering and native-writer guards remain. No retained-payload support
-is added for [#437](https://github.com/datafusion-contrib/StreamFusion/issues/437).
-[Release comparisons and two bounded profiles](../benchmarks/scalar-functions.md#not-null-fixed-binary-map-leaves)
-document complete-job costs under the accepted collection tradeoff.
-
-### Java MAP scalar signatures
-
-The default-enabled `streamfusion.experimental.nestedScalarUdfs` option also admits synchronous
-external `java.util.Map` scalar arguments and results. The whole Calc runs as a Flink-generated
-program through the existing batch callback, preserving predicate/projection order, shared
-function instances, lifecycle, Java failures and declared public conversions. Results are copied
-before another invocation can mutate a reused Map; retained external arguments remain owned after
-the Arrow batch lease ends. No Rust implementation of the user's Java function is implied.
-
-Verified shapes include nullable string/integer maps, recursively nested ARRAY/ROW/MAP values,
-BOOLEAN/DECIMAL, FLOAT/DOUBLE, DATE/TIME, DECIMAL/TIMESTAMP, interval and ROW-key maps. NULL
-containers, keys and values, empty maps, signed zero, NaN/infinity, precision-38 decimals,
-pre-epoch nanoseconds and nested RowKinds are covered. These are resolved Flink signatures:
-nested TIME resolves to TIME(0), and the interval fixture uses INTERVAL MONTH/SECOND(3).
-Runtime millisecond TIME values are preserved. Root DATE/TIME UDF signatures use the temporal
-path. NOT NULL fixed BINARY map leaves use the verified generated boundary on Flink 2.2 and retain
-fallback on 1.18. Custom inference may select the verified recursive external conversions;
-arbitrary conversion classes and internal classes retain their signature gates.
-
-Scalar results from MAP arguments can feed native aggregation. MAP results can compose with
-lookup, CARDINALITY, CASE, predicates and a final row sink, including callbacks lifted above
-Top-N. A richer computed MAP cannot enter an unverified state/exchange boundary; this guard
-also applies when builtin collection expressions are disabled. Updating retained MAP payloads
-still have the independent [correctness restriction](top-n.md#retained-mapmultiset-payload-qualification).
-Explicit `nestedScalarUdfs=false` restores MAP-signature fallback. Correct UDF execution is an
-accepted performance exception; [job costs](../benchmarks/scalar-functions.md#map-scalar-callback-costs)
-include both perimeter transposes and make no standalone acceleration claim.
-
-`TYPEOF` inspects the declared operand type without evaluating its value. A ROW-valued
-operand under `TYPEOF` alone does not request whole-Calc ROW materialization or widen another
-expression's admission. Composed exact DOUBLE `TRUNCATE` calls register their actual function
-definition with Flink's bridging SQL function, preserving runtime implementation discovery.
-
-### Verified native map keys
-
-Within the collection extension, MAP_KEYS evaluates in Rust for total MAP operands
-whose keys and values are nullable BOOLEAN, integer or DECIMAL. Parent NULLs,
-NULL keys, duplicates and entry order survive as a shared Arrow list view. Direct input maps additionally admit nullable verified nested/string key and value types. Other
-signatures and fallible arguments retain generated Flink evaluation. This does not change default
-collection admission or the standalone conversion limitations recorded in the
-[collection representation ledger](../optimizations/collection-representation-work.md).
-
-Direct final projections of input-reference MAPs with STRING/VARCHAR keys and nullable
-BOOLEAN/integer/DECIMAL values also use these shared views. Key and entry outputs preserve
-the represented string buffers. A value-only Calc without a condition or sensitive
-co-projection can omit the unused keys' Java caches. Composed consumers and unverified
-state, exchange and sink boundaries retain their existing representation guards.
-
-MAP_VALUES uses the same verified map-projection admission and shared-buffer view, selecting the value child without changing NULLs or entry order.
-
-MAP_ENTRIES uses the same verified map-projection admission and reuses entry children
-as a list of nullable key/value rows, preserving order and parent NULLs. Consumers
-that inspect row representation or RowKind retain generated evaluation. A direct
-projection creates fresh INSERT-kind entry rows, so it does not require the
-whole-Calc ROW metadata callback. This exception applies only to the verified
-basic maps, verified nullable nested input maps and native one-level ROW-bearing MAP
-constructors. Unverified ROW-valued consumers keep the generated callback.
-
-MAP_UNION folds verified total basic maps and nullable STRING-key maps with basic/STRING values
-left to right, propagating any NULL
-parent. Each nonempty right map emits all its entries first; unmatched non-NULL
-left keys are deduplicated, while all left NULL-key entries survive when the
-right map has no NULL key. An empty right map leaves the left duplicates intact.
-Typed hash membership and Arrow gathering avoid per-entry JVM objects. Variadic,
-sliced, empty and duplicate/NULL-key cases have production-kernel fixtures.
-
-Runtime MAP constructors use released Arrow array construction plus the nullable
-map carrier for total nullable basic keys/values. Keys must be distinct literal
-or input-reference expressions. Runtime equal keys remain separate entries;
-repeated/generated key expressions retain Flink evaluation because its constructor
-deduplicates generated expressions rather than runtime key values. Fallible
-operands also remain generated, including discarded value-expression cases.
-STRING-bearing constructors and one-level ROW keys/values also run natively. Their STRING fields
-become cold binary strings, and nested rows retain the binary category and RowKind required by
-Flink's BinaryMapData construction. Flink 1.18's generated-expression grouping order varies
-between independently compiled identical queries. Represented constructors use input order on
-that line; deterministic 2.2 construction preserves input order exactly. The older primitive-only
-multi-entry 1.18 constructor path retains generation. Repeated key expressions, fallible operands
-and released narrow-integer compilation failures retain their existing guards.
-
-Constant MAP constructors, MAP_FROM_ARRAYS, MAP_UNION and MAP casts retain the complete
-nullable-key entry-list field when returned as a scalar. This includes its physical MAP
-marker and resolved decimal precision/scale; broadcasting a constant must not turn the
-carrier into an ordinary ARRAY of rows. The unchanged upstream mixed-precision decimal MAP
-case and focused constant/runtime-source regressions exercise this boundary.
-
-The UPDATE_BEFORE row filter retains the exact input Arrow fields after filtering. Arrow
-Java may rename list children during C Data import; restoring the original schema over the
-owned result vectors keeps UTF-16 carriers compatible with native literals and constructors.
-
-Basic MAP_ENTRIES projections keep their existing native fresh-row route, including
-MAP_FROM_ARRAYS with the same array on both sides. Existing fallible-operand guards remain.
-
-ROW constructors with total BOOLEAN/integer/DECIMAL and STRING fields reuse DataFusion's
-released named-struct builder, sharing field arrays. Fields retain their SQL
-names and nullable values; the constructed row itself is present with INSERT
-row kind. STRING fields lose their Java caches, matching binary ROW construction. These fresh basic rows and their scalar field projections bypass the
-whole-Calc ROW metadata callback. Other fields and representation-dependent row
-consumers remain generated; nested ROW arguments still trigger metadata handling.
-
-OBJECT_OF with validated class/field metadata and total basic fields reuses the
-released named-struct builder. Runtime values and field order match Flink's fresh
-GenericRowData construction; metadata validation still belongs to Flink planning.
-STRING fields also run natively and preserve their Java caches in the fresh generic object.
-Nested/temporal fields and fallible operands retain generated evaluation.
-
-OBJECT_UPDATE admits only one unshared inline basic/STRING OBJECT_OF construction in the
-complete Calc, with literal/input-reference field values and literal field names.
-It folds the field choices into the released named-struct builder. Flink still
-validates field names and rejects repeated update names during planning. Shared objects, runtime structured inputs,
-nested updates and non-atomic values retain generated evaluation to preserve
-Flink's in-place mutation, aliases, evaluation order and random/UDF effects.
-
-ARRAY_JOIN evaluates total nullable string arrays in Rust, skipping NULL elements
-in its two-argument form and propagating an explicit NULL replacement in its
-three-argument form. Every input is materialized separately to UTF-8 bytes before
-joining, as in Flink concatWs. Empty/all-skipped arrays yield an empty string.
-Runtime separators/replacements and isolated UTF-16 source surrogates have parity
-fixtures. A Calc that also projects original sensitive values or uses an unverified
-string/collection consumer retains generated evaluation, preserving their Java
-representation. Other array element types/nullability and fallible operands stay
-generated. DataFusion's explicit NULL replacement skips elements, so it is not a
-direct substitute for this Flink kernel.
-
-ELEMENT preserves the selected released line's exception: Flink 1.18 throws
-java.lang.RuntimeException for multiple elements, whereas Flink 2.2 throws
-TableRuntimeException. The compatibility profile selects that native variant;
-empty, NULL and singleton arrays keep identical values on both lines.
-
-Flink 1.18 ELEMENT over TINYINT/SMALLINT retains stock fallback: the released
-host's narrow-result conditional does not compile in Janino. The parity tests
-retain this host compilation failure rather than asserting a successful value.
-
-Flink 1.18 ARRAY constructors with TINYINT/SMALLINT elements keep stock fallback:
-the released generated array initializer calls narrow writers with int literals
-and fails Janino compilation. Tests compare that released initialization failure;
-Flink 2.2 retains native construction for these verified element types.
-
-Flink 1.18 MAP constructors with TINYINT/SMALLINT keys or values keep stock
-fallback because the released binary-array initializer does not compile. Direct
-map inputs and map projection kernels retain their independently verified narrow
-type support. Flink 2.2 retains native basic MAP construction.
-
-Flink 1.18 ROW constructors containing TINYINT/SMALLINT fields keep stock fallback
-for the released narrow-writer initialization failure. The SQL tests assert that
-failure for the constructed row and field-access forms; Flink 2.2 still evaluates
-verified basic rows in Rust.
-
-Native map-producing collection expressions retain the row-sink requirement. Their
-nullable-key map-list carrier is an internal batch representation, not a verified
-Parquet MAP encoding; a native sink must not consume it as an ordinary Arrow MAP.
-
-Native ROW-bearing collection results retain the existing row-sink requirement as
-well. Arrow field sharing inside Calc does not widen connector admission for Java
-row representation, RowKind, or nested copy semantics.
-
-Unary MAP_UNION accepts an ordinary map or the nullable-key map-list carrier and
-returns the verified carrier by sharing entry children, offsets and validity.
-This preserves the declared native type as well as Flink's unchanged contents.
-
-### Native container cast bounds
-
-The [remaining collection measurements](../benchmarks/native-collections.md) compare stock
-Flink, the previous evaluator and these native kernels with both row/Arrow transposes. Slower
-cases ship under the maintainer's explicit two-pass agreement for #505; native execution does
-not imply a complete-job speedup.
-
-MAP casts admit nullable STRING keys whose character type is unchanged, or signed-integer keys
-cast to another signed-integer type, with nullable numeric or numeric-to-BOOLEAN values. STRING
-values cast to signed integers and nested nullable numeric ARRAY values use the same child
-conversion. New maps use Flink's Java HashMap iteration schedule: the first equal key object
-survives, the last value wins, and target integer keys are rehashed after conversion. Generated MAP input-field access takes a binary serializer snapshot before a call. Native
-MAP-reference operands reproduce its cold nested strings and binary row/array categories using
-owned Arrow views. Computed MAP operands retain their original caches through identity key casts. Integer MULTISET element casts use the same schedule
-and retain INT occurrence counts. Nonnullable element/key/value constraints, richer casts and
-representation-sensitive mixed consumers retain their verified generated path.
-
-
-A MAP_FROM_ARRAYS call with different operands remains a potential length-error site. Placing
-it inside CAST and MAP_KEYS, for example, retains the complete generated Calc under the existing
-fallible-operand guard. The direct MAP_FROM_ARRAYS kernel still runs in Rust and preserves its
-released length exception. A NativeCalc for that composed query is explicitly mixed execution.
-
-
-Function-engine diagnostics include TRY_CAST explicitly, alongside CAST. Both native and
-JVM-backed TRY_CAST calls therefore name their actual route; an empty function-name list
-cannot serve as evidence that a runtime TRY_CAST kernel executed. The collection tests require
-the named root function plus an empty JVM list and consumed native Calc input. Runtime STRING
-ELEMENT checks use source arrays, including cardinality failures, rather than relying only on
-a singleton constructor expression.
-
-
-### Temporal collection copy categories
-
-Direct column projections retain source field metadata through pruning, aliases, reordering
-and repeated references. Generated JVM argument batches retain that metadata as well. This
-preserves the generic copy category of NOT NULL DATE/TIME arrays emitted by collection
-aggregates, including mixed array projections, formatting, conditional expressions and
-retained/shared Java callbacks. Logical output types and element nullability remain Flink's;
-computed expressions use their own result representation. Unverified stateful, UNNEST and
-native-writer collection boundaries keep their existing planning guards.
-
-Collection aggregation retains host execution when an input Calc reads a NOT NULL supported
-scalar hint in a predicate or materializes it in a non-identity projection. Released Flink can expose
-the source row's unchecked primitive payload beneath an actual NULL slot, which Arrow validity
-does not retain. This guard is scoped to collection aggregate admission. Direct source hints,
-key-only identity filters and COALESCE from nullable input remain verified aggregate contexts.
-
-
-Collection aggregate input guards also cover TIMESTAMP/TIMESTAMP_LTZ and both interval families.
-A materializing Calc over unsupported NOT NULL source hints retains released Flink execution;
-nullable inputs and explicitly matching timestamp comparison kinds retain their verified paths.
-The [timestamp/interval aggregate contract](group-by.md#timestamp-and-interval-collection-elements)
-also documents the released four-digit DAY precision planning error and native exchange copy
-semantics. The existing 1.18 mixed timestamp comparison normalization remains unchanged.
-
-
-### External STRUCTURED collection inputs
-
-Built-in collection programs admit source fields declared STRUCTURED, recursively inside
-ARRAY, ROW, MAP keys/values and MULTISET elements, through the existing represented-ROW
-converter. Resolved implementation classes, attributes and nullability stay in Flink's logical
-types. The existing Arrow struct fields and kind/string/array metadata carry their internal
-RowData values; no new operator, native kernel, JNI ownership handoff or state format is added.
-The planner validates this input context separately from the default converter admission used
-by other operators.
-
-CAST/TRY_CAST between ROW and STRUCTURED, matching structured/collection containers and character
-targets use the existing generated evaluator inside NativeCalc when they require Flink's
-representation. Runtime ROW-to-STRUCTURED casts also work through the Table API on both released
-lines. Constructors and composed built-in collection functions use the same boundary. On 2.2,
-source objects can feed OBJECT_OF/OBJECT_UPDATE; those functions remain absent on 1.18. This
-adds coverage without describing the Java evaluator as a Rust cast kernel. A final MAP_VALUES
-that reads primitive values without observing STRUCTURED keys can use the existing Rust child
-view and omit the unobserved key caches.
-
-This admission requires an enabled built-in collection program and a verified encoded input
-boundary. Plain structured projections/filters and programs containing user callbacks retain
-their previous fallback. Unverified leaves, fixed-BINARY/nullability release gates, metadata
-names, columnar producers, state/order/exchange consumers and native writers keep their existing
-restrictions. In particular, this does not admit structured grouping keys or retained structured
-payloads. Derived scalar results can feed native grouping and its shuffle, including repeated
-heap/native RocksDB restore. The updating MAP/MULTISET extension in
-[#437](https://github.com/datafusion-contrib/StreamFusion/issues/437) stays deferred.
-
-Runtime-source checks verify inherited Java fields, NULL/empty parents and children, repeated
-object references, nested objects and arrays, maps with structured keys/values, multiset counts,
-resolved types and ordered per-key RowKinds. Twelve profiles per line additionally retain
-released behavior for actual NULLs under NOT NULL hints on structured parents/fields, array
-elements, map keys/values and multiset elements. Strict casts retain conversion failures; TRY_CAST
-retains whole-result NULLs and errors evaluating its input. CASE/filter and empty-source checks
-retain evaluation boundaries. Flink 1.18 rejects a CASE branch containing `ROW(p,10/id)` during
-its own SQL validation; that original query retains an explicit host/native planning-failure
-assertion. A separate CASE inside the ROW argument verifies division short-circuiting on both
-lines. NativeCalc consumption is required for populated admitted queries; unverified callbacks,
-structured state and a disabled collection option require fallback.
-
-The structured suite passes 53 checks on 2.2 and 51 with two absent-function skips on 1.18.
-The existing six computed-object regressions pass on 2.2 and are catalog skips on 1.18. The
-unchanged released miscellaneous-cast suite additionally passes 58/41 result regressions;
-these are not counted as positive evidence for the new source boundary.
-
-[Release comparisons and the closed two-capture investigation](../benchmarks/scalar-functions.md#external-structured-collection-inputs)
-retain the slower stock/previous/native results and production conversion costs under the
-accepted collection-extension tradeoff. Further standalone performance work stays in #392.
-
-### Scalar arrays across native expansion
-
-Verified collection-preserving Calc outputs can feed the
-[preserved scalar-array UNNEST boundary](unnest-correlate.md#preserved-scalar-array-expansion).
-Nullable STRING/CHAR arrays retain their Arrow representation through Rust fan-out and native
-NULL filters. Cache-sensitive scalar consumers use the existing generated evaluator, preserving
-UTF-16 behavior rather than treating a string carrier as a logical ROW or discarding its cache.
-Native ARRAY construction matches BinaryArrayWriter by clearing string caches and retaining its
-binary-copy marker under NULL elements. Unverified nested/state/writer boundaries remain guarded.
-
-### Character search endpoints
-
-Native expansion of `IN` and `NOT IN` search predicates preserves the exact
-character endpoints stored by the released Flink planner, including the spaces
-in explicitly cast `CHAR` constants. This uses the same search normalization
-across filters, projections, UNNEST predicates and join conditions. It does not
-change string ordering admission or add unsupported comparison signatures.
-
-### Collection references beside native scalar expressions
-
-A pure native projection can pass a verified collection input column through beside
-unrelated scalar numeric expressions, retaining the input field metadata and Arrow
-buffers. The structural check requires a verified columnar producer, no condition,
-no JVM calls and direct references for sensitive fields. It does not widen generated
-collection evaluation or state/writer boundaries. COLLECT formatting over binary or
-nested elements
-retains the whole stock plan because Java key order is observable; see
-[binary](group-by.md#binary-collection-elements) and
-[nested collection elements](group-by.md#nested-collection-elements).
-
-The verified exchange into a JVM collection group preserves supported nested input
-representations. This shares the generated-container schema and released value
-serializers with expression evaluation. It admits the documented MAP and MULTISET
-aggregate elements without widening unrelated stateful consumers or user-function
-argument contracts. ARRAY, ROW and STRUCTURED aggregate elements remain unverified;
-array support requires a container copy-class representation that also covers empty
-arrays.
-
-A preserving consumer's layout requirement also upgrades an existing source transpose
-through a direct native projection and exchange. An earlier pruning pass may have
-created that transpose before the consumer was selected; the transition pass carries
-the inherited requirement into its final schema. Existing batch-size, source-pruning,
-JSON and scalar string-cache settings survive the upgrade. This fixes the requested
-representation boundary without changing collection element admission.
-
-Generated collection values may also enter a columnar sink that explicitly accepts and
-canonicalizes their representation for its wire format. This preserves the existing Doris
-Arrow writer and sink-materializer contract; ordinary native sinks retain their row-sink
-guard. Native DISTINCT-array groups retain their separately verified input contract.
-
-Batch projections with no output columns preserve the filtered row count, including existential and scalar-subquery intermediates.
-
-Flink multiple-input fusion stays outside native batch regions because its internal serializers require `RowData`. Arrow boundaries are preserved for every native batch task, including plans without joins.
-
-The native Calc type probe admits expression trees up to 32 levels deep. Deeper trees, including large `IN` predicates expanded into nested conditions, retain Flink evaluation before crossing JNI. Wide projections and grouped reductions with shallow expressions remain eligible.
+## Topic pages
+
+- [Routing](calc-filter-routing.md)
+- [Jvm collections](calc-filter-jvm-collections.md)
+- [Temporal](calc-filter-temporal.md)
+- [Strings](calc-filter-strings.md)
+- [Numeric](calc-filter-numeric.md)
+
+## Published section links
+
+Existing bookmarks remain valid. Follow a section to its topic page.
+
+<a id="admission-and-routing"></a>
+
+[Admission and routing](calc-filter-routing.md#admission-and-routing)
+
+<a id="nested-java-scalar-results"></a>
+
+[Nested Java scalar results](calc-filter-jvm-collections.md#nested-java-scalar-results)
+
+<a id="recursive-external-scalar-conversions"></a>
+
+[Recursive external scalar conversions](calc-filter-jvm-collections.md#recursive-external-scalar-conversions)
+
+<a id="237-stays-open"></a>
+
+[237 stays open.](calc-filter-jvm-collections.md#237-stays-open)
+
+<a id="failure-order-across-rows"></a>
+
+[Failure order across rows](calc-filter-routing.md#failure-order-across-rows)
+
+<a id="from_unixtime-literal-formats"></a>
+
+[FROM_UNIXTIME literal formats](calc-filter-temporal.md#from_unixtime-literal-formats)
+
+<a id="like-escape-and-similar-to"></a>
+
+[LIKE ESCAPE and SIMILAR TO](calc-filter-strings.md#like-escape-and-similar-to)
+
+<a id="generated-processing-time"></a>
+
+[Generated processing time](calc-filter-temporal.md#generated-processing-time)
+
+<a id="coalesce"></a>
+
+[COALESCE](calc-filter-strings.md#coalesce)
+
+<a id="if"></a>
+
+[IF](calc-filter-strings.md#if)
+
+<a id="ifnull"></a>
+
+[IFNULL](calc-filter-strings.md#ifnull)
+
+<a id="uuid"></a>
+
+[UUID](calc-filter-strings.md#uuid)
+
+<a id="rand-and-rand_integer"></a>
+
+[RAND and RAND_INTEGER](calc-filter-strings.md#rand-and-rand_integer)
+
+<a id="type-and-database-metadata"></a>
+
+[Type and database metadata](calc-filter-strings.md#type-and-database-metadata)
+
+<a id="user-scalar-functions"></a>
+
+[User scalar functions](calc-filter-jvm-collections.md#user-scalar-functions)
+
+<a id="temporal-scalar-functions"></a>
+
+[Temporal scalar functions](calc-filter-jvm-collections.md#temporal-scalar-functions)
+
+<a id="temporal-scalar-conversion"></a>
+
+[Temporal scalar conversion](calc-filter-jvm-collections.md#temporal-scalar-conversion)
+
+<a id="string-ordering"></a>
+
+[String ordering](calc-filter-strings.md#string-ordering)
+
+<a id="string-concatenation-and-hashes"></a>
+
+[String concatenation and hashes](calc-filter-strings.md#string-concatenation-and-hashes)
+
+<a id="byte-preserving-string-input"></a>
+
+[Byte-preserving string input](calc-filter-strings.md#byte-preserving-string-input)
+
+<a id="utf8-concatenation-and-hash-diagnostics"></a>
+
+[Utf8 concatenation and hash diagnostics](calc-filter-strings.md#utf8-concatenation-and-hash-diagnostics)
+
+<a id="hash_code"></a>
+
+[HASH_CODE](calc-filter-strings.md#hash_code)
+
+<a id="declared-type-guard"></a>
+
+[Declared-type guard](calc-filter-routing.md#declared-type-guard)
+
+<a id="collection-subscripts"></a>
+
+[Collection subscripts](calc-filter-jvm-collections.md#collection-subscripts)
+
+<a id="integer-division"></a>
+
+[Integer division](calc-filter-numeric.md#integer-division)
+
+<a id="sign"></a>
+
+[SIGN](calc-filter-numeric.md#sign)
+
+<a id="floating-comparisons"></a>
+
+[Floating comparisons](calc-filter-numeric.md#floating-comparisons)
+
+<a id="casts"></a>
+
+[Casts](calc-filter-numeric.md#casts)
+
+<a id="stringvarcharchar-to-boolean"></a>
+
+[STRING/VARCHAR/CHAR to BOOLEAN](calc-filter-numeric.md#stringvarcharchar-to-boolean)
+
+<a id="integer-try_cast"></a>
+
+[Integer TRY_CAST](calc-filter-numeric.md#integer-try_cast)
+
+<a id="boolean-to-integer-try_cast"></a>
+
+[BOOLEAN-to-integer TRY_CAST](calc-filter-numeric.md#boolean-to-integer-try_cast)
+
+<a id="integer-to-boolean-try_cast"></a>
+
+[Integer-to-BOOLEAN TRY_CAST](calc-filter-numeric.md#integer-to-boolean-try_cast)
+
+<a id="character-consumers-of-integer-truth"></a>
+
+[Character consumers of integer truth](calc-filter-numeric.md#character-consumers-of-integer-truth)
+
+<a id="decimal-to-boolean-try_cast"></a>
+
+[DECIMAL-to-BOOLEAN TRY_CAST](calc-filter-numeric.md#decimal-to-boolean-try_cast)
+
+<a id="character-consumers-of-decimal-truth"></a>
+
+[Character consumers of decimal truth](calc-filter-numeric.md#character-consumers-of-decimal-truth)
+
+<a id="character-consumers-of-direct-decimal-predicates"></a>
+
+[Character consumers of direct decimal predicates](calc-filter-numeric.md#character-consumers-of-direct-decimal-predicates)
+
+<a id="integerstring-casts"></a>
+
+[Integer/string casts](calc-filter-numeric.md#integerstring-casts)
+
+<a id="temporal-try_cast"></a>
+
+[Temporal TRY_CAST](calc-filter-numeric.md#temporal-try_cast)
+
+<a id="binary-casts-and-fixed-width-generated-expressions"></a>
+
+[Binary casts and fixed-width generated expressions](calc-filter-numeric.md#binary-casts-and-fixed-width-generated-expressions)
+
+<a id="decimal-from-proven-integer-text"></a>
+
+[DECIMAL from proven integer text](calc-filter-numeric.md#decimal-from-proven-integer-text)
+
+<a id="decimal-try_cast"></a>
+
+[DECIMAL TRY_CAST](calc-filter-numeric.md#decimal-try_cast)
+
+<a id="the-host-exact-jvm-upcall"></a>
+
+[The host-exact JVM upcall](calc-filter-numeric.md#the-host-exact-jvm-upcall)
+
+<a id="still-falling-back"></a>
+
+[Still falling back](calc-filter-numeric.md#still-falling-back)
+
+<a id="decimal-arithmetic"></a>
+
+[Decimal arithmetic](calc-filter-numeric.md#decimal-arithmetic)
+
+<a id="integer-floor-ceil-ceiling"></a>
+
+[Integer FLOOR / CEIL / CEILING](calc-filter-numeric.md#integer-floor-ceil-ceiling)
+
+<a id="single-argument-integer-round"></a>
+
+[Single-argument integer ROUND](calc-filter-numeric.md#single-argument-integer-round)
+
+<a id="integer-round-with-a-literal-position"></a>
+
+[Integer ROUND with a literal position](calc-filter-numeric.md#integer-round-with-a-literal-position)
+
+<a id="integer-round-with-a-bounded-runtime-position"></a>
+
+[Integer ROUND with a bounded runtime position](calc-filter-numeric.md#integer-round-with-a-bounded-runtime-position)
+
+<a id="single-argument-integer-truncate"></a>
+
+[Single-argument integer TRUNCATE](calc-filter-numeric.md#single-argument-integer-truncate)
+
+<a id="integer-truncate-with-a-literal-position"></a>
+
+[Integer TRUNCATE with a literal position](calc-filter-numeric.md#integer-truncate-with-a-literal-position)
+
+<a id="integer-truncate-with-a-bounded-runtime-position"></a>
+
+[Integer TRUNCATE with a bounded runtime position](calc-filter-numeric.md#integer-truncate-with-a-bounded-runtime-position)
+
+<a id="exact-unary-and-integral-functions"></a>
+
+[Exact unary and integral functions](calc-filter-numeric.md#exact-unary-and-integral-functions)
+
+<a id="decimal-round-truncate-and-literals"></a>
+
+[Decimal ROUND, TRUNCATE and literals](calc-filter-numeric.md#decimal-round-truncate-and-literals)
+
+<a id="arithmetic-operators"></a>
+
+[Arithmetic operators](calc-filter-numeric.md#arithmetic-operators)
+
+<a id="string-and-calendar-functions"></a>
+
+[String and calendar functions](calc-filter-strings.md#string-and-calendar-functions)
+
+<a id="startswith"></a>
+
+[STARTSWITH](calc-filter-strings.md#startswith)
+
+<a id="endswith"></a>
+
+[ENDSWITH](calc-filter-strings.md#endswith)
+
+<a id="instr"></a>
+
+[INSTR](calc-filter-strings.md#instr)
+
+<a id="locate"></a>
+
+[LOCATE](calc-filter-strings.md#locate)
+
+<a id="ascii"></a>
+
+[ASCII](calc-filter-strings.md#ascii)
+
+<a id="chr"></a>
+
+[CHR](calc-filter-strings.md#chr)
+
+<a id="bin"></a>
+
+[BIN](calc-filter-strings.md#bin)
+
+<a id="hex"></a>
+
+[HEX](calc-filter-strings.md#hex)
+
+<a id="to_base64"></a>
+
+[TO_BASE64](calc-filter-strings.md#to_base64)
+
+<a id="from_base64"></a>
+
+[FROM_BASE64](calc-filter-strings.md#from_base64)
+
+<a id="is_decimal-is_digit-and-is_alpha"></a>
+
+[IS_DECIMAL, IS_DIGIT and IS_ALPHA](calc-filter-strings.md#is_decimal-is_digit-and-is_alpha)
+
+<a id="unhex"></a>
+
+[UNHEX](calc-filter-strings.md#unhex)
+
+<a id="greatest"></a>
+
+[GREATEST](calc-filter-strings.md#greatest)
+
+<a id="least"></a>
+
+[LEAST](calc-filter-strings.md#least)
+
+<a id="initcap"></a>
+
+[INITCAP](calc-filter-strings.md#initcap)
+
+<a id="translate"></a>
+
+[TRANSLATE](calc-filter-strings.md#translate)
+
+<a id="btrim"></a>
+
+[BTRIM](calc-filter-strings.md#btrim)
+
+<a id="trim"></a>
+
+[TRIM](calc-filter-strings.md#trim)
+
+<a id="elt"></a>
+
+[ELT](calc-filter-strings.md#elt)
+
+<a id="url_encode"></a>
+
+[URL_ENCODE](calc-filter-strings.md#url_encode)
+
+<a id="overlay"></a>
+
+[OVERLAY](calc-filter-strings.md#overlay)
+
+<a id="parse_url"></a>
+
+[PARSE_URL](calc-filter-strings.md#parse_url)
+
+<a id="printf"></a>
+
+[PRINTF](calc-filter-strings.md#printf)
+
+<a id="url_decode"></a>
+
+[URL_DECODE](calc-filter-strings.md#url_decode)
+
+<a id="encode"></a>
+
+[ENCODE](calc-filter-strings.md#encode)
+
+<a id="decode"></a>
+
+[DECODE](calc-filter-strings.md#decode)
+
+<a id="sqljson-evaluation"></a>
+
+[SQL/JSON evaluation](calc-filter-strings.md#sqljson-evaluation)
+
+<a id="json_query"></a>
+
+[JSON_QUERY](calc-filter-strings.md#json_query)
+
+<a id="json_quote"></a>
+
+[JSON_QUOTE](calc-filter-strings.md#json_quote)
+
+<a id="json_unquote"></a>
+
+[JSON_UNQUOTE](calc-filter-strings.md#json_unquote)
+
+<a id="json_string"></a>
+
+[JSON_STRING](calc-filter-strings.md#json_string)
+
+<a id="json_object"></a>
+
+[JSON_OBJECT](calc-filter-strings.md#json_object)
+
+<a id="json_array"></a>
+
+[JSON_ARRAY](calc-filter-strings.md#json_array)
+
+<a id="is-json"></a>
+
+[IS JSON](calc-filter-strings.md#is-json)
+
+<a id="json_value"></a>
+
+[JSON_VALUE](calc-filter-strings.md#json_value)
+
+<a id="json_exists"></a>
+
+[JSON_EXISTS](calc-filter-strings.md#json_exists)
+
+<a id="collection-expressions"></a>
+
+[Collection expressions](calc-filter-strings.md#collection-expressions)
+
+<a id="exact-numeric-array-cast-and-try_cast"></a>
+
+[Exact numeric ARRAY CAST and TRY_CAST](calc-filter-strings.md#exact-numeric-array-cast-and-try_cast)
+
+<a id="collection-casts-to-character-types"></a>
+
+[Collection casts to character types](calc-filter-strings.md#collection-casts-to-character-types)
+
+<a id="array_distinct"></a>
+
+[ARRAY_DISTINCT](calc-filter-strings.md#array_distinct)
+
+<a id="split"></a>
+
+[SPLIT](calc-filter-strings.md#split)
+
+<a id="substring"></a>
+
+[SUBSTRING](calc-filter-strings.md#substring)
+
+<a id="left"></a>
+
+[LEFT](calc-filter-strings.md#left)
+
+<a id="right"></a>
+
+[RIGHT](calc-filter-strings.md#right)
+
+<a id="lpad"></a>
+
+[LPAD](calc-filter-strings.md#lpad)
+
+<a id="rpad"></a>
+
+[RPAD](calc-filter-strings.md#rpad)
+
+<a id="split_index"></a>
+
+[SPLIT_INDEX](calc-filter-strings.md#split_index)
+
+<a id="temporal-parsing-extraction-and-rounding"></a>
+
+[Temporal parsing, extraction and rounding](calc-filter-strings.md#temporal-parsing-extraction-and-rounding)
+
+<a id="ltrim"></a>
+
+[LTRIM](calc-filter-strings.md#ltrim)
+
+<a id="rtrim"></a>
+
+[RTRIM](calc-filter-strings.md#rtrim)
+
+<a id="case-folding-regex"></a>
+
+[Case folding &amp; regex](calc-filter-strings.md#case-folding-regex)
+
+<a id="datetime"></a>
+
+[Date/time](calc-filter-temporal.md#datetime)
+
+<a id="power-and-sqrt"></a>
+
+[POWER and SQRT](calc-filter-numeric.md#power-and-sqrt)
+
+<a id="exact-floating-math"></a>
+
+[Exact floating math](calc-filter-numeric.md#exact-floating-math)
+
+<a id="literalarity-guards"></a>
+
+[Literal/arity guards](calc-filter-numeric.md#literalarity-guards)
+
+<a id="generated-helper-performance"></a>
+
+[Generated helper performance](calc-filter-jvm-collections.md#generated-helper-performance)
+
+<a id="flink-118-compatibility"></a>
+
+[Flink 1.18 compatibility](calc-filter-temporal.md#flink-118-compatibility)
+
+<a id="legacy-encode-result-representation"></a>
+
+[Legacy ENCODE result representation](calc-filter-temporal.md#legacy-encode-result-representation)
+
+<a id="flink-118-mixed-timestamp-comparison-compatibility"></a>
+
+[Flink 1.18 mixed timestamp comparison compatibility](calc-filter-temporal.md#flink-118-mixed-timestamp-comparison-compatibility)
+
+<a id="exact-double-truncate"></a>
+
+[Exact DOUBLE TRUNCATE](calc-filter-temporal.md#exact-double-truncate)
+
+<a id="binary-elt-and-raw-payload-boundaries"></a>
+
+[Binary ELT and raw payload boundaries](calc-filter-temporal.md#binary-elt-and-raw-payload-boundaries)
+
+<a id="operator-format-performance-admission-2026-10-19"></a>
+
+[Operator-format performance admission, 2026-10-19](calc-filter-temporal.md#operator-format-performance-admission-2026-10-19)
+
+<a id="binary-elt-default-admission-2026-10-20"></a>
+
+[Binary ELT default admission, 2026-10-20](calc-filter-temporal.md#binary-elt-default-admission-2026-10-20)
+
+<a id="map-lookup-after-retained-row-operators"></a>
+
+[Map lookup after retained-row operators](calc-filter-temporal.md#map-lookup-after-retained-row-operators)
+
+<a id="java-array-scalar-signatures"></a>
+
+[Java ARRAY scalar signatures](calc-filter-temporal.md#java-array-scalar-signatures)
+
+<a id="fixed-binary-multiset-elements"></a>
+
+[Fixed BINARY MULTISET elements](calc-filter-temporal.md#fixed-binary-multiset-elements)
+
+<a id="not-null-fixed-binary-map-leaves"></a>
+
+[NOT NULL fixed BINARY map leaves](calc-filter-temporal.md#not-null-fixed-binary-map-leaves)
+
+<a id="java-map-scalar-signatures"></a>
+
+[Java MAP scalar signatures](calc-filter-temporal.md#java-map-scalar-signatures)
+
+<a id="verified-native-map-keys"></a>
+
+[Verified native map keys](calc-filter-temporal.md#verified-native-map-keys)
+
+<a id="native-container-cast-bounds"></a>
+
+[Native container cast bounds](calc-filter-temporal.md#native-container-cast-bounds)
+
+<a id="temporal-collection-copy-categories"></a>
+
+[Temporal collection copy categories](calc-filter-temporal.md#temporal-collection-copy-categories)
+
+<a id="external-structured-collection-inputs"></a>
+
+[External STRUCTURED collection inputs](calc-filter-temporal.md#external-structured-collection-inputs)
+
+<a id="scalar-arrays-across-native-expansion"></a>
+
+[Scalar arrays across native expansion](calc-filter-temporal.md#scalar-arrays-across-native-expansion)
+
+<a id="character-search-endpoints"></a>
+
+[Character search endpoints](calc-filter-temporal.md#character-search-endpoints)
+
+<a id="collection-references-beside-native-scalar-expressions"></a>
+
+[Collection references beside native scalar expressions](calc-filter-temporal.md#collection-references-beside-native-scalar-expressions)

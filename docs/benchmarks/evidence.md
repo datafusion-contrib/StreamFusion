@@ -62,6 +62,7 @@ complete-job observations. The linked reports explain which comparisons are vali
 | Iceberg selection ownership and dynamic routing | [Second boundary investigation](iceberg-boundary-round2-20261017/README.md); includes an abandoned combined-size prototype and earlier generator references corrected in the checked comparison |
 | Iceberg writer-only v2/v3 diagnostics | [Format v2](iceberg-dynamic-v2-20261017/README.md) and [format v3](iceberg-dynamic-v3-20261017/README.md); these are not Nexmark matrix cells |
 | Iceberg state/checkpoint and I/O investigations | [Profile guide and cohort reports](iceberg-profile-20261017/README.md); profiled, compressed and previous-I/O runs stay separate |
+| Iceberg allocation and bounded routing follow-ups | [Method and cohort index](iceberg-perf-followups-20261018/README.md); component routing measurements and complete writer comparisons retain their separate boundaries |
 | Iceberg correctness validation | [Recorded test inventory and reports](iceberg-validation-20261017/README.md); Criterion smoke checks fixtures, not throughput |
 | Superseded Iceberg completion protocol | [Interrupted canonical-export sweep](iceberg-canonical-20261017/README.md); excluded from final aggregates |
 
@@ -77,6 +78,7 @@ repository's `.claude/wontdos/` directory.
 | Hyperbolic compiler specialization | [Prototype comparison](hyperbolic-specialization.md): isolated kernel gains did not establish broad complete-job admission |
 | Reserved primitive entry | [Rejected entry-only experiment](primitive-reserved-entry-experiment.md): mixed full-job changes did not resolve typed math regressions |
 | Primitive and binary boundary experiments | [Criterion diagnostics](native-criterion.md#narrow-primitive-exit-rejection) and [scalar BINARY exit experiments](scalar-functions.md#rejected-manual-binary-exit-projection) retain their unfavorable results |
+| Interrupted, contended Iceberg sweep | [Recorded interruption](iceberg-followups-nexmark-20261018/README.md); partial cells and overlapping host activity are retained and excluded from complete performance comparisons |
 
 ## Maintaining the evidence
 
@@ -89,14 +91,15 @@ durable public artifact storage. A `.gz` suffix alone does not distinguish a tes
 fixture or canonical data source from a disposable generated export.
 
 The [artifact manifest](artifacts.json) records paths, byte sizes and SHA-256 hashes
-for 1,766 historical evidence files. Each bundle records its source revision:
+for 1,778 historical evidence files. Each bundle records its source revision:
 
 | Source revision | Evidence release | Files | Scope |
 | --- | --- | ---: | --- |
 | `87d6edbf0` | [Initial archive](https://github.com/datafusion-contrib/StreamFusion/releases/tag/benchmark-evidence-2026-11-10-87d6edbf0) | 1,426 | Historical logs, plans and profiler outputs |
+| `099d27102` | [Embedded-plan originals](https://github.com/datafusion-contrib/StreamFusion/releases/tag/benchmark-evidence-2026-11-19-099d27102) | 12 | Complete original reports containing 466 plans; [versioned references and compatible readers](report-schema.md) |
 | `97f7b08de` | [Remaining run outputs](https://github.com/datafusion-contrib/StreamFusion/releases/tag/benchmark-evidence-2026-11-12-97f7b08de) | 340 | 335 original plans, test reports, allocation stacks, command/activity snapshots and evidence files; five distinct inline log bodies |
 
-Both releases preserve exact bytes, including superseded runs and failed
+All releases preserve exact bytes, including superseded runs and failed
 experiments. They are evidence archives, not runtime releases or measurements of
 current main. Published bundle assets are never overwritten.
 
@@ -111,7 +114,7 @@ cached under `target/benchmark-artifacts`; restored run outputs are ignored by G
 The tool checks the bundle and individual file hashes, rejects unsafe archive paths,
 and refuses to replace conflicting local evidence. Historical verifiers and log
 summarizers retrieve their required evidence automatically. The first retrieval
-downloads the bundles needed by the requested paths (about 147 MiB and 4.3 MiB);
+downloads the bundles needed by the requested paths (about 147 MiB, 4.3 MiB and 0.56 MiB);
 subsequent retrievals reuse their verified caches, including offline. It never
 executes the archived SQL or contacts its sources.
 

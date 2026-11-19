@@ -124,7 +124,7 @@ def main():
         parser.error(
             "sizes, warmups and trials must be positive; prefix length must be nonnegative"
         )
-    args.profile = "bench" + (",flink-1.18" if args.flink_line == "1.18" else "")
+    args.profile = "bench,benchmarks" + (",flink-1.18" if args.flink_line == "1.18" else "")
     args.output = args.output.resolve()
     args.output.mkdir(parents=True, exist_ok=True)
     library = (

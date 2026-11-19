@@ -1061,32 +1061,32 @@ mod codec_tests {
         for (kind, fixture) in [
             (
                 48,
-                include_bytes!("../../../../src/test/resources/collection-state-v1/kind-48.json")
+                include_bytes!("../../../../streamfusion-runtime/src/test/resources/collection-state-v1/kind-48.json")
                     .as_slice(),
             ),
             (
                 49,
-                include_bytes!("../../../../src/test/resources/collection-state-v1/kind-49.json")
+                include_bytes!("../../../../streamfusion-runtime/src/test/resources/collection-state-v1/kind-49.json")
                     .as_slice(),
             ),
             (
                 50,
-                include_bytes!("../../../../src/test/resources/collection-state-v1/kind-50.json")
+                include_bytes!("../../../../streamfusion-runtime/src/test/resources/collection-state-v1/kind-50.json")
                     .as_slice(),
             ),
             (
                 51,
-                include_bytes!("../../../../src/test/resources/collection-state-v1/kind-51.json")
+                include_bytes!("../../../../streamfusion-runtime/src/test/resources/collection-state-v1/kind-51.json")
                     .as_slice(),
             ),
             (
                 52,
-                include_bytes!("../../../../src/test/resources/collection-state-v1/kind-52.json")
+                include_bytes!("../../../../streamfusion-runtime/src/test/resources/collection-state-v1/kind-52.json")
                     .as_slice(),
             ),
             (
                 53,
-                include_bytes!("../../../../src/test/resources/collection-state-v1/kind-53.json")
+                include_bytes!("../../../../streamfusion-runtime/src/test/resources/collection-state-v1/kind-53.json")
                     .as_slice(),
             ),
         ] {

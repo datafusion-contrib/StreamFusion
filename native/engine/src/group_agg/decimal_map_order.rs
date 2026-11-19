@@ -118,7 +118,7 @@ mod tests {
     #[test]
     fn matches_released_jdk_decimal_map_fixtures() {
         let fixtures: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../../src/test/resources/decimal-map-order.json"
+            "../../../../streamfusion-runtime/src/test/resources/decimal-map-order.json"
         ))
         .unwrap();
         for case in fixtures.as_array().unwrap() {

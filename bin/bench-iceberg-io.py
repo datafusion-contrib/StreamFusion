@@ -16,7 +16,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT / 'target/iceberg-io'
 MODULE = ROOT / 'streamfusion-iceberg'
-BENCHMARK = MODULE / 'src/test/java/tech/streamfusion/iceberg/IcebergIoBenchmark.java'
+BENCHMARK = MODULE / 'src/benchmark/java/tech/streamfusion/iceberg/IcebergIoBenchmark.java'
 
 
 def files(*directories, glob=None):
@@ -82,7 +82,7 @@ def build(force):
         print('Preparing Java classes and dependency classpath (once per core/dependency change).', flush=True)
         environment = dict(os.environ, MAVEN_OPTS=os.environ.get('MAVEN_OPTS', '-Xmx512m'),
                            SF_ICEBERG_IO_PREPARE='true', SF_ICEBERG_IO_CLASSPATH=str(classpath_file))
-        run(['mvn', '-B', '-ntp', '-Piceberg,bench', '-pl', 'streamfusion-iceberg', '-am',
+        run(['mvn', '-B', '-ntp', '-Piceberg,bench,benchmarks', '-pl', 'streamfusion-iceberg', '-am',
              '-Dtest=IcebergIoBenchmark', '-Dsurefire.failIfNoSpecifiedTests=false',
              '-Dmaven.javadoc.skip=true', '-Dnative.build.skip=true',
              '-Dnative.resource.directory=' + current['nativeDirectory'],

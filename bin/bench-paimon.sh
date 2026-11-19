@@ -44,7 +44,7 @@ export SF_BENCHMARK=true SF_PAIMON_MATCHED=true SF_PAIMON_RELEASE_CONFIRMED=true
 export SF_ROWS="${SF_ROWS:-2000000}" SF_WARMUP="${SF_WARMUP:-1}" SF_RUNS="${SF_RUNS:-3}"
 export SF_PARALLELISM=4 SF_KAFKA_PARTITIONS=4 SF_LAKE_STATE_BACKEND=disk
 export SF_BENCH_MANAGED_MEMORY="${SF_BENCH_MANAGED_MEMORY:-512 mb}"
-mvn -B -ntp -f "${REPO_ROOT}/pom.xml" -Ppaimon,bench \
+mvn -B -ntp -f "${REPO_ROOT}/pom.xml" -Ppaimon,bench,benchmarks \
   -pl streamfusion-paimon -am -Dtest=NexmarkPaimonMatchedBenchmark \
   -Dsurefire.failIfNoSpecifiedTests=false -Dmaven.javadoc.skip=true -Dnative.build.skip=true \
   "-Dnative.resource.directory=${staged}" "-Dsf.extraJvmArgs=-Djava.library.path='${staged}' -Xmx${SF_PAIMON_JAVA_HEAP:-4g}" \
