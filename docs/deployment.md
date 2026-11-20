@@ -343,7 +343,7 @@ normal dependency version mediation alone cannot detect duplicate classes inside
 Maven's dependency ordering can expose this difference, so reusing a successful local cache
 is not evidence that a fresh image reactor will select the same classes.
 
-`python3 bin/test_paimon_host_classpath.py` resolves the production dependency declarations
+`python3 dev/tools/tests/test_paimon_host_classpath.py` resolves the production dependency declarations
 against canonical released artifacts on both supported Flink lines. It checks the loaded
 `RowData`/`ArrayData` origins and variant APIs and compiles the actual core `PrunedRowData`
 with each compatibility adapter. Its negative control puts the fat connector first and
@@ -369,7 +369,7 @@ assembly consuming these real artifacts and does not compile duplicate productio
 Package names, service-provider names and serialized operator identities remain stable.
 
 The compiler also uses `-implicit:none` as a defensive guard against accidental source-path
-expansion. `python3 bin/test_module_source_ownership.py` checks the physical layout and recreates
+expansion. `python3 dev/tools/tests/test_module_source_ownership.py` checks the physical layout and recreates
 an old-timestamp dependency JAR with newer source as a negative control: javac must not implicitly
 copy the dependency into a connector. A runtime probe verifies that the dependency resolves from
 the core JAR. Image CI runs these checks before packaging; artifact validation rejects duplicate

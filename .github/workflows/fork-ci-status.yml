@@ -41,9 +41,9 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /.github/scripts/fork-ci-status.py
-            /bin/test_fork_ci_status.py
+            /dev/tools/tests/test_fork_ci_status.py
       - name: Test fork result reporting
-        run: python3 -m unittest discover -s bin -p test_fork_ci_status.py
+        run: python3 -m unittest discover -s dev/tools/tests -p test_fork_ci_status.py
       - name: Mirror fork results for the current PR head
         env:
           GH_TOKEN: ${{ github.token }}

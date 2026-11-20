@@ -5,6 +5,11 @@ shards still discover compiled classes in `streamfusion-runtime/target/test-clas
 ownership does not change the selected test identities or native/recovery assertions. See
 [test ownership and repository contents](development.md) for version adapters and benchmark rules.
 
+Python tool implementations and unit tests live in `dev/tools/`. The ordinary tooling step uses
+`python3 -m dev.tools.tests` with explicit exclusions for checks owned by other stages, so new
+validation tests cannot be omitted by a stale per-file list. The runner rejects empty selections
+and test modules. See [developer tools](developer-tools.md) for entry points and side effects.
+
 Contributor builds and tests run in **personal forks**, using each fork owner's GitHub Actions
 quota instead of the shared `datafusion-contrib` quota. Opening or updating a PR does not launch
 the test matrix in the canonical repository. Source-changing canonical `main` pushes still run
@@ -527,7 +532,7 @@ The full Java suite includes every connector and format tag on both Flink lines 
 JDKs. Its default Surefire execution runs untagged tests and every tag except ORC; a second
 execution runs ORC with its isolated protobuf classpath. These same tests do not need six
 additional tagged-module jobs. Standalone native package checks remain in the Rust job.
-`bin/test_ci_module_groups.py` exercises the actual runtime Surefire configuration with one
+`dev/tools/tests/test_ci_module_groups.py` exercises the actual runtime Surefire configuration with one
 fixture for every declared module tag and one untagged fixture, requiring each to run once.
 
 ## Java test memory budget

@@ -55,7 +55,7 @@ jobs:
           path: |
             .flink-suite/${{ inputs.line }}/m2
             .flink-suite/${{ inputs.line }}/maven-wrapper
-          key: upstream-m2-${{ runner.os }}-${{ runner.arch }}-jdk17-${{ inputs.version }}-${{ hashFiles('**/pom.xml', 'dev/flink-suite/settings.xml', 'bin/flink-suite.sh', 'bin/ci-maven-dependencies.py') }}
+          key: upstream-m2-${{ runner.os }}-${{ runner.arch }}-jdk17-${{ inputs.version }}-${{ hashFiles('**/pom.xml', 'dev/flink-suite/settings.xml', 'bin/flink-suite.sh', 'bin/ci-maven-dependencies.py', 'dev/tools/ci/maven_dependencies.py') }}
           restore-keys: |
             upstream-m2-${{ runner.os }}-${{ runner.arch }}-jdk17-${{ inputs.version }}-
       - name: Restore the compiled pinned Flink checkout
