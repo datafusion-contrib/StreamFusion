@@ -5348,7 +5348,7 @@ dependencies = [
 
 [[package]]
 name = "streamfusion"
-version = "0.1.0-rc4"
+version = "0.1.0-rc5"
 dependencies = [
  "ahash",
  "arrow 58.4.1",
@@ -5390,7 +5390,7 @@ dependencies = [
 
 [[package]]
 name = "streamfusion-avro"
-version = "0.1.0-rc4"
+version = "0.1.0-rc5"
 dependencies = [
  "arrow 58.4.1",
  "arrow-avro",
@@ -5406,14 +5406,14 @@ dependencies = [
 
 [[package]]
 name = "streamfusion-benchmark-support"
-version = "0.1.0-rc4"
+version = "0.1.0-rc5"
 dependencies = [
  "arrow 58.4.1",
 ]
 
 [[package]]
 name = "streamfusion-bridge"
-version = "0.1.0-rc4"
+version = "0.1.0-rc5"
 dependencies = [
  "ahash",
  "arrow 58.4.1",
@@ -5428,7 +5428,7 @@ dependencies = [
 
 [[package]]
 name = "streamfusion-csv"
-version = "0.1.0-rc4"
+version = "0.1.0-rc5"
 dependencies = [
  "arrow 58.4.1",
  "base64 0.22.1",
@@ -5444,7 +5444,7 @@ dependencies = [
 
 [[package]]
 name = "streamfusion-fluss"
-version = "0.1.0-rc4"
+version = "0.1.0-rc5"
 dependencies = [
  "arrow 58.4.1",
  "arrow-ord 58.4.1",
@@ -5459,7 +5459,7 @@ dependencies = [
 
 [[package]]
 name = "streamfusion-format-support"
-version = "0.1.0-rc4"
+version = "0.1.0-rc5"
 dependencies = [
  "arrow 58.4.1",
  "chrono",
@@ -5471,7 +5471,7 @@ dependencies = [
 
 [[package]]
 name = "streamfusion-iceberg"
-version = "0.1.0-rc4"
+version = "0.1.0-rc5"
 dependencies = [
  "arrow 58.4.1",
  "async-trait",
@@ -5498,7 +5498,7 @@ dependencies = [
 
 [[package]]
 name = "streamfusion-integration-tests"
-version = "0.1.0-rc4"
+version = "0.1.0-rc5"
 dependencies = [
  "arrow 58.4.1",
  "base64 0.22.1",
@@ -5516,7 +5516,7 @@ dependencies = [
 
 [[package]]
 name = "streamfusion-json"
-version = "0.1.0-rc4"
+version = "0.1.0-rc5"
 dependencies = [
  "arrow 58.4.1",
  "base64 0.22.1",
@@ -5539,7 +5539,7 @@ dependencies = [
 
 [[package]]
 name = "streamfusion-kafka"
-version = "0.1.0-rc4"
+version = "0.1.0-rc5"
 dependencies = [
  "arrow 58.4.1",
  "jni",
@@ -5550,14 +5550,14 @@ dependencies = [
 
 [[package]]
 name = "streamfusion-native-build"
-version = "0.1.0-rc4"
+version = "0.1.0-rc5"
 dependencies = [
  "cc",
 ]
 
 [[package]]
 name = "streamfusion-orc"
-version = "0.1.0-rc4"
+version = "0.1.0-rc5"
 dependencies = [
  "arrow 58.4.1",
  "arrow 59.3.0",
@@ -5574,7 +5574,7 @@ dependencies = [
 
 [[package]]
 name = "streamfusion-paimon"
-version = "0.1.0-rc4"
+version = "0.1.0-rc5"
 dependencies = [
  "arrow 58.4.1",
  "async-trait",
@@ -5592,7 +5592,7 @@ dependencies = [
 
 [[package]]
 name = "streamfusion-parquet"
-version = "0.1.0-rc4"
+version = "0.1.0-rc5"
 dependencies = [
  "arrow 58.4.1",
  "bytes",
@@ -5607,7 +5607,7 @@ dependencies = [
 
 [[package]]
 name = "streamfusion-protobuf"
-version = "0.1.0-rc4"
+version = "0.1.0-rc5"
 dependencies = [
  "arrow 58.4.1",
  "base64 0.22.1",
@@ -5626,7 +5626,7 @@ dependencies = [
 
 [[package]]
 name = "streamfusion-raw"
-version = "0.1.0-rc4"
+version = "0.1.0-rc5"
 dependencies = [
  "arrow 58.4.1",
  "jni",

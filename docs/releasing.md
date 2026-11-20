@@ -1,9 +1,10 @@
 # Releasing
 
-StreamFusion publishes the Java reactor, including the optional Delta and Paimon modules, to Maven
-Central and attaches a universal deployment bundle to the matching GitHub release. The release
-builder and publisher explicitly enable the `delta,paimon` profiles. Artifact checks verify Paimon's
-separate native library and that Delta shares the Parquet module without bundling another library.
+StreamFusion publishes the Java reactor to Maven Central and attaches a universal deployment
+bundle to the matching GitHub release. The release builder and publisher enable the optional Delta,
+Paimon, Iceberg and Doris modules through the `delta,paimon,iceberg,doris` profiles. Artifact checks
+verify Paimon's separate native library and that Delta shares the Parquet module without bundling
+another library.
 Releases are immutable: prepare and verify a version in a commit before creating its tag.
 
 Every runtime payload carries `StreamFusion-Module` and `StreamFusion-Flink-Line` manifest entries.
@@ -38,10 +39,11 @@ gpg --keyserver keyserver.ubuntu.com --send-keys KEY_ID
 Maven and Cargo versions deliberately live in source control so the JVM/native compatibility stamp
 matches the immutable coordinate. Update all occurrences of the prior version, including the root
 and loader POMs, `native/Cargo.toml`, `native/Cargo.lock`, deployment examples, and the upstream-suite
-classpath POM. Confirm there are no stale values and run the normal release gates:
+classpath POM. Check tracked files for the prior version, preserving historical evidence,
+then run the normal release gates:
 
 ```sh
-rg '0\.1\.0-rc3'
+git grep -lF '0.1.0-rc4'
 mvn test
 bin/build-release.sh --host-only
 bin/check-artifacts.sh --host-only
@@ -67,8 +69,8 @@ working directory; the default is `target/release` in the repository.
 Before publishing the first candidate, push a signed dry-run tag to the canonical repository:
 
 ```sh
-git tag -s dry-run-v0.1.0-rc4 -m 'Dry run StreamFusion 0.1.0-rc4'
-git push upstream dry-run-v0.1.0-rc4
+git tag -s dry-run-v0.1.0-rc5 -m 'Dry run StreamFusion 0.1.0-rc5'
+git push upstream dry-run-v0.1.0-rc5
 ```
 
 The `dry-run-v<version>` path runs the same Linux and macOS runner builds, artifact checks, signing,
@@ -80,8 +82,8 @@ the coordinate in a real release. Delete the draft release and dry-run tag after
 Once the dry run passes, push the signed version tag only after the version commit is on `main`:
 
 ```sh
-git tag -s v0.1.0-rc4 -m 'StreamFusion 0.1.0-rc4'
-git push upstream v0.1.0-rc4
+git tag -s v0.1.0-rc5 -m 'StreamFusion 0.1.0-rc5'
+git push upstream v0.1.0-rc5
 ```
 
 The release workflow rejects either tag form unless its value exactly matches both Maven projects
@@ -91,7 +93,7 @@ When the signing key is available only in the repository's release secrets, the 
 also accepts a manual dispatch from `main`:
 
 ```sh
-gh workflow run release.yml --repo datafusion-contrib/StreamFusion --ref main -f tag=v0.1.0-rc4
+gh workflow run release.yml --repo datafusion-contrib/StreamFusion --ref main -f tag=v0.1.0-rc5
 ```
 
 Complete the normal release gates before dispatching. The workflow validates the requested tag
@@ -120,7 +122,7 @@ build inherits its host's libc requirements; do not build a deployment for an ol
 on Ubuntu 24.04. Both Java payload lines use the host SLF4J 1.7 API and provider, avoiding a
 conflicting SLF4J 2 API in Flink’s global classpath. The workflow merges those binaries into the release
 JARs, validates the artifact boundaries, signs and publishes the reactor through the Central Portal,
-and only then creates the GitHub release. A version containing a hyphen, such as `0.1.0-rc4`, becomes
+and only then creates the GitHub release. A version containing a hyphen, such as `0.1.0-rc5`, becomes
 a GitHub prerelease.
 
 If a release fails before Central reports it as published, fix the cause, delete the unpublished tag,
