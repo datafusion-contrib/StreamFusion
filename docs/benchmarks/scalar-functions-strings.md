@@ -2473,3 +2473,100 @@ SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench,benchmarks \
   -Dsurefire.failIfNoSpecifiedTests=false -Dbyte.concat.rows=500000 \
   -Dbyte.concat.width=192 -Dbyte.concat.warmups=2 -Dbyte.concat.runs=5
 ```
+
+## Cache-aware string comparison {#cache-aware-string-comparison}
+
+The prepared comparison benchmark ran on Apple M4 with released Flink 2.2.1,
+Temurin 17.0.17 and an optimized Rust build with mimalloc. Flink times
+`BinaryStringData.compareTo` or `equals` on prebuilt GenericRowData. StreamFusion
+times the corresponding production Calc over prebuilt Arrow Binary arrays and
+original UTF-16 sidecars. Both engines count true results. The counts matched
+for all 64 inputs.
+
+Each input has 1,024 pairs, with a null left operand every 31 rows. The corpus
+uses ASCII or CJK prefixes of 24 or 192 bytes, with early and late mismatches.
+The Unicode ordering pairs also exercise the different order of U+10000 and
+U+E000. Equality has equal and unequal pairs. Two runs per engine alternate
+which engine goes first. Each run uses five warmups and nine measured trials,
+each repeating the same batch 384 times.
+
+| Pair cache distribution | Ordering, Flink/native median ratio | Equality, Flink/native median ratio |
+| --- | ---: | ---: |
+| Neither column has caches | 1.93–16.18× | 3.52–5.38× |
+| Cache in exactly one operand per pair | 2.73–21.00× | 3.33–6.06× |
+| Both operands cached in every non-null pair | 1.17–2.25× | 1.32–2.79× |
+| Mixed, with both operands cached in a quarter of the pairs | 1.47–13.33× | 1.80–3.13× |
+
+For 192-byte Unicode prefixes, ordering medians in ns/pair were 86.04
+(85.78–86.28) stock and 5.32 (5.20–5.52) native without caches, 15.08
+(14.42–15.88) stock and 6.71 (6.62–6.75) native with both caches, and 96.64
+(92.90–96.90) stock and 7.25 (7.13–7.31) native in the mixed case.
+For the mixed case at this width, equality was 15.82 (15.10–16.30) stock
+and 5.28 (5.21–5.36) native.
+
+Run both drivers on the same idle host. Use `lt` or `eq` for the operation and
+`unicode` or `ascii` for the corpus. The Java class uses the released
+`flink-table-common`, `flink-core`, `flink-core-api` and SLF4J API jars.
+
+```sh
+cargo build --manifest-path native/Cargo.toml --locked --release --features mimalloc \
+  -p streamfusion --example pairwise_string_comparison
+native/target/release/examples/pairwise_string_comparison 384 9 lt unicode
+javac -cp "$FLINK_CLASSPATH" -d "$TMPDIR" \
+  streamfusion-runtime/src/benchmark/java/tech/streamfusion/PairwiseStringComparisonBenchmark.java
+java -cp "$TMPDIR:$FLINK_CLASSPATH" tech.streamfusion.PairwiseStringComparisonBenchmark 384 9 lt unicode
+```
+
+### Complete streaming jobs
+
+The row source emits 500,000 Unicode pairs with a 192-byte common prefix. A
+cached value starts as a Java string. The query writes the comparison to a row
+sink, with a second variant that also writes the sum of both byte-backed
+character lengths. Each job uses one task per operator. The native timings
+include both transposes and job startup. Native metrics prove Calc consumption.
+The previous control uses revision `d931b6e8d`, whose ordering query runs in
+Flink and whose equality query uses on-demand validation and generated Flink
+evaluation. Each comparison uses two warmups and five interleaved trials.
+
+| Job | Operation | Cache | Stock median (range), ms | Previous median (range), ms | Pairwise prototype median (range), ms |
+| --- | --- | --- | ---: | ---: | ---: |
+| Standalone | `<` | Bytes | 156.0 (145.6–156.7) | 140.6 (138.2–148.7) | 139.0 (127.2–142.3) |
+| Standalone | `<` | Mixed | 172.0 (170.5–172.2) | 174.7 (165.9–179.7) | 178.0 (176.3–189.7) |
+| Standalone | `<` | Cached | 180.3 (173.5–186.0) | 180.2 (171.1–183.7) | 211.6 (208.7–219.5) |
+| Standalone | `=` | Bytes | 121.5 (120.9–133.2) | 253.7 (245.1–279.3) | 136.1 (125.6–148.2) |
+| Standalone | `=` | Mixed | 151.9 (142.9–156.0) | 2364.3 (2345.5–2405.5) | 180.8 (171.6–185.1) |
+| Standalone | `=` | Cached | 178.1 (176.5–194.7) | 320.4 (319.9–320.6) | 234.8 (233.2–235.8) |
+| With lengths | `<` | Bytes | 207.8 (201.4–220.5) | 193.5 (188.1–199.3) | 163.7 (159.6–167.2) |
+| With lengths | `<` | Mixed | 227.1 (224.0–234.5) | 222.9 (219.7–228.3) | 201.4 (200.0–202.3) |
+| With lengths | `<` | Cached | 235.1 (228.8–242.4) | 232.7 (220.9–236.4) | 234.4 (232.4–244.0) |
+| With lengths | `=` | Bytes | 167.5 (156.0–182.2) | 263.5 (255.0–275.7) | 161.2 (160.4–169.0) |
+| With lengths | `=` | Mixed | 197.7 (196.5–206.4) | 2808.3 (2805.7–2830.1) | 205.4 (203.1–213.2) |
+| With lengths | `=` | Cached | 240.0 (228.8–240.7) | 387.4 (374.9–390.8) | 269.1 (258.7–271.5) |
+
+Pairwise equality reduces the previous execution cost in every measured job.
+Standalone byte-only ordering can benefit, but preparing both representations
+at the row boundary can outweigh the faster kernel on mixed and cached inputs.
+Ordering with both length operations improved the byte-only and mixed jobs
+over both controls. The cached ordering ranges overlap. The planner uses pairwise
+equality in place of the previous adapter and uses native ordering when both
+operands share the Calc's byte-based work. The standalone ordering numbers are
+from the prototype and explain why that shape stays with Flink.
+
+The final planner configuration reproduced the main effects in a second run.
+Mixed standalone equality took 181.4 ms (180.1–191.9) native and 145.4 ms
+(142.5–154.7) stock. Ordering with lengths took 166.3 ms (165.3–168.1) native
+and 210.4 ms (197.7–211.6) stock without caches, and 205.6 ms (195.8–214.6)
+native and 227.2 ms (224.0–227.9) stock with mixed caches. Fully cached
+ordering with lengths was 246.1 ms (236.6–252.7) native and 239.4 ms
+(229.8–248.9) stock.
+
+Run the complete-job harness with `lt` and both lengths, or use `eq` and set
+`string.compare.withLength` to choose either shape.
+
+```sh
+SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench,benchmarks \
+  -Dtest=PairwiseStringComparisonPipelineBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
+  -Dstring.compare.operator=lt -Dstring.compare.withLength=true \
+  -Dstring.compare.rows=500000 -Dstring.compare.width=192 \
+  -Dstring.compare.warmups=2 -Dstring.compare.runs=5
+```

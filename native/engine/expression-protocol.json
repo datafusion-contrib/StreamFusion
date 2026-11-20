@@ -188,6 +188,10 @@
     {
       "name": "DECIMAL_IF",
       "code": 47
+    },
+    {
+      "name": "STRING_COMPARISON",
+      "code": 48
     }
   ],
   "reservedNodeKinds": [

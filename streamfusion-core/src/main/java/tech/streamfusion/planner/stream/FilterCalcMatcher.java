@@ -49,6 +49,7 @@ final class FilterCalcMatcher {
 
   private static Admission<EncodedExpression> prepareCondition(Calc calc) {
     if (!hasFilterShape(calc)) return Admission.noMatch();
+    if (ExpressionPlanning.usesPairwiseStringComparison(calc)) return Admission.noMatch();
     if (CollectionExpressionSemantics.unverifiedInput(calc))
       return Admission.declined("Calc: collection input representation is unverified for this columnar producer");
     if (CollectionExpressionSemantics.requiresStringCarrierEvaluation(calc))
