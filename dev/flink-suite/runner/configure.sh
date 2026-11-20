@@ -221,17 +221,17 @@ case "${SUITE_MODE}" in
     REPORT_ROOT="${DELTA_TEST_OUTPUT}/surefire-reports"
     ;;
   all)
-    "${BASH_SOURCE[0]}" formats || exit $?
-    FLINK_SUITE_REUSE_BUILD=true "${BASH_SOURCE[0]}" parquet || exit $?
-    FLINK_SUITE_REUSE_BUILD=true "${BASH_SOURCE[0]}" orc || exit $?
-    FLINK_SUITE_REUSE_BUILD=true "${BASH_SOURCE[0]}" runtime || exit $?
-    FLINK_SUITE_REUSE_BUILD=true "${BASH_SOURCE[0]}" state || exit $?
-    "${BASH_SOURCE[0]}" paimon || exit $?
+    "${REPO_ROOT}/bin/flink-suite.sh" formats || exit $?
+    FLINK_SUITE_REUSE_BUILD=true "${REPO_ROOT}/bin/flink-suite.sh" parquet || exit $?
+    FLINK_SUITE_REUSE_BUILD=true "${REPO_ROOT}/bin/flink-suite.sh" orc || exit $?
+    FLINK_SUITE_REUSE_BUILD=true "${REPO_ROOT}/bin/flink-suite.sh" runtime || exit $?
+    FLINK_SUITE_REUSE_BUILD=true "${REPO_ROOT}/bin/flink-suite.sh" state || exit $?
+    "${REPO_ROOT}/bin/flink-suite.sh" paimon || exit $?
     if [[ "${FLINK_LINE}" == "2.2" ]]; then
-      "${BASH_SOURCE[0]}" delta || exit $?
-      "${BASH_SOURCE[0]}" iceberg || exit $?
+      "${REPO_ROOT}/bin/flink-suite.sh" delta || exit $?
+      "${REPO_ROOT}/bin/flink-suite.sh" iceberg || exit $?
     fi
-    "${BASH_SOURCE[0]}" kafka
+    "${REPO_ROOT}/bin/flink-suite.sh" kafka
     exit $?
     ;;
   *)
