@@ -59,12 +59,10 @@ final class IcebergSinkAdapter {
       throw new IllegalArgumentException("Iceberg writer adapter requires released Iceberg 1.12.0");
     }
     FlinkWriteConf writeConf = new FlinkWriteConf(table, options, configuration);
-    if ((writeConf.distributionMode() != DistributionMode.NONE
-            && writeConf.distributionMode() != DistributionMode.HASH
-            && writeConf.distributionMode() != DistributionMode.RANGE)
-        || writeConf.overwriteMode()) {
-      throw new IllegalArgumentException(
-          "Iceberg streaming adapter requires none/hash/range distribution");
+    if (writeConf.distributionMode() != DistributionMode.NONE
+        && writeConf.distributionMode() != DistributionMode.HASH
+        && writeConf.distributionMode() != DistributionMode.RANGE) {
+      throw new IllegalArgumentException("Iceberg adapter requires none/hash/range distribution");
     }
     // No RowData crosses this edge: replace the sole writer consumer before graph serialization.
     DataStream<RowData> hostInput =

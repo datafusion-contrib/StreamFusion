@@ -6,6 +6,7 @@ import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.streaming.api.transformations.PartitionTransformation;
 import org.apache.flink.streaming.api.transformations.StreamExchangeMode;
 import org.apache.flink.table.planner.delegation.PlannerBase;
+import org.apache.flink.table.planner.plan.nodes.exec.ExecEdge;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNodeBase;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNodeConfig;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNodeContext;
@@ -36,6 +37,14 @@ final class BatchHashExchangeExecNode extends ExecNodeBase<ArrowBatch>
         outputType,
         description);
     this.keys = keys.clone();
+  }
+
+  BatchHashExchangeExecNode splitForInputPriority(ReadableConfig config) {
+    var split =
+        new BatchHashExchangeExecNode(config, (RowType) getOutputType(), getDescription(), keys);
+    split.setInputEdges(
+        List.of(ExecEdge.builder().source(getInputEdges().get(0).getSource()).target(split).build()));
+    return split;
   }
 
   @Override

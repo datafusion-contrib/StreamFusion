@@ -160,7 +160,7 @@ class NativeIcebergNestedSqlTest {
     table.newAppend().appendFile(writer.toDataFile()).commit();
   }
 
-  private static void addNestedEqualities(Table table) throws Exception {
+  static void addNestedEqualities(Table table) throws Exception {
     var keys = table.schema().select("profile.n");
     var factory =
         new GenericFileWriterFactory.Builder(table)
@@ -184,8 +184,7 @@ class NativeIcebergNestedSqlTest {
     table.newRowDelta().addDeletes(writer.toDeleteFile()).commit();
   }
 
-  private static Map<Integer, org.apache.iceberg.data.Record> records(Table table)
-      throws Exception {
+  static Map<Integer, org.apache.iceberg.data.Record> records(Table table) throws Exception {
     table.refresh();
     var records = new TreeMap<Integer, org.apache.iceberg.data.Record>();
     try (var input = IcebergGenerics.read(table).build()) {

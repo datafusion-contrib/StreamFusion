@@ -217,7 +217,7 @@ JAR and its platform-specific native payload. Host, macOS and container staging,
 artifact isolation checks and Maven publication all include it. Flink 1.18 builds
 omit Iceberg because the released adapter targets 2.2/JDK 17. The bytecode check
 retains the Java 11 limit for core and other modules, with a Java 17 limit only
-for Iceberg. Ordinary PR CI runs the Iceberg/upstream streaming selection on JDK 17;
+for Iceberg. Ordinary PR CI runs the Iceberg and upstream batch and streaming selections on JDK 17;
 the native workspace check also verifies Iceberg's package and JNI export ownership.
 
 The release build enables `mimalloc` by default. Its thread-local allocator state uses dynamic

@@ -13,6 +13,7 @@ import tech.streamfusion.planner.NativeConfig;
 import tech.streamfusion.planner.NativePlannerExtension;
 import tech.streamfusion.planner.NativePlannerExtensions;
 import tech.streamfusion.planner.common.NativeRelDigests;
+import tech.streamfusion.planner.common.SourceReusePolicy;
 
 /** Applies optional connector boundaries independently of the batch compute island's coverage. */
 final class BatchConnectorPlans {
@@ -39,6 +40,7 @@ final class BatchConnectorPlans {
     if (!NativeConfig.nativeEnabled()) return roots;
     var result = new ArrayList<RelNode>();
     for (var root : roots) result.add(lower(root));
+    if (roots.isEmpty() || !SourceReusePolicy.enabled(roots.get(0))) return result;
     var counts = new IdentityHashMap<RelNode, Integer>();
     var seen = new IdentityHashMap<RelNode, Boolean>();
     for (var root : result) count(root, counts, seen);
@@ -125,8 +127,14 @@ final class BatchConnectorPlans {
       changed |= child != replacement;
     }
     RelNode result = changed ? node.copy(node.getTraitSet(), inputs) : node;
-    if (node instanceof BatchPhysicalNativeConnectorSource && counts.getOrDefault(node, 0) > 1)
+    if (result instanceof BatchPhysicalNativeConnectorSource && counts.getOrDefault(node, 0) > 1) {
+      // Flink clones reused relational inputs before reconstructing the DAG from digests.
+      BatchPhysicalNativeSingleRel.allowSharedCopiesOf(result);
       result = new BatchPhysicalNativeShare(result, counts.get(node), NativeRelDigests.nextId());
+    } else if (result instanceof BatchPhysicalNativeShare) {
+      // Connector lowering can insert new sources inside a previously marked shared subtree.
+      BatchPhysicalNativeSingleRel.allowSharedCopiesOf(result.getInput(0));
+    }
     shared.put(node, result);
     return result;
   }

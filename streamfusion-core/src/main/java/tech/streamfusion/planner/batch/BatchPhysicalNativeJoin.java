@@ -20,7 +20,8 @@ final class BatchPhysicalNativeJoin extends BiRel
   private final RelDataType outputType;
   private final BatchJoinSpec spec;
   private final NativePlanDetails details;
-  private final long reuseBarrier = NativeRelDigests.nextId();
+  private final long reuseBarrier;
+  private boolean shared;
 
   BatchPhysicalNativeJoin(RelNode original, RelNode left, RelNode right, BatchJoinSpec spec) {
     this(original, left, right, spec, NativePlanDetails.from(original));
@@ -36,6 +37,14 @@ final class BatchPhysicalNativeJoin extends BiRel
     outputType = original.getRowType();
     this.spec = spec;
     this.details = details;
+    shared =
+        original instanceof BatchPhysicalNativeJoin && ((BatchPhysicalNativeJoin) original).shared;
+    reuseBarrier =
+        shared ? ((BatchPhysicalNativeJoin) original).reuseBarrier : NativeRelDigests.nextId();
+  }
+
+  void markSharedCopies() {
+    shared = true;
   }
 
   @Override

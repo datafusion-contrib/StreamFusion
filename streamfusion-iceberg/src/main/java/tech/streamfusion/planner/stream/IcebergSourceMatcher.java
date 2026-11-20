@@ -23,29 +23,31 @@ final class IcebergSourceMatcher {
       context.decline(Substitution.disabledReason("icebergSource"));
       return null;
     }
-    var table = scan.getTable().unwrap(TableSourceTable.class);
-    if (!table.isStreamingMode()) {
-      context.decline("Iceberg reads support streaming jobs only");
-      return null;
-    }
-    for (var ability : table.abilitySpecs()) {
-      if (!Set.of("ProjectPushDownSpec", "FilterPushDownSpec", "SourceWatermarkSpec")
-          .contains(ability.getClass().getSimpleName())) {
-        context.decline(
-            "Iceberg source ability is not admitted: " + ability.getClass().getSimpleName());
-        return null;
-      }
-    }
     try {
-      var plan =
-          IcebergSourcePlan.capture(
-              (IcebergTableSource) table.tableSource(),
-              FlinkTypeFactory.toLogicalRowType(scan.getRowType()));
+      var plan = plan(scan, scan.getTable().unwrap(TableSourceTable.class), false);
       return new StreamPhysicalNativeIcebergSource(
           scan.getCluster(), scan.getTraitSet(), scan.getRowType(), plan);
     } catch (IllegalArgumentException | LinkageError e) {
       context.decline("Iceberg source: " + e.getMessage());
       return null;
     }
+  }
+
+  static IcebergSourcePlan plan(RelNode scan, TableSourceTable table, boolean bounded) {
+    if (table.isStreamingMode() == bounded)
+      throw new IllegalArgumentException("Iceberg scan mode must match the job mode");
+    var abilities =
+        bounded
+            ? Set.of("ProjectPushDownSpec", "FilterPushDownSpec")
+            : Set.of("ProjectPushDownSpec", "FilterPushDownSpec", "SourceWatermarkSpec");
+    for (var ability : table.abilitySpecs()) {
+      String name = ability.getClass().getSimpleName();
+      if (!abilities.contains(name))
+        throw new IllegalArgumentException("Iceberg source ability is not admitted: " + name);
+    }
+    return IcebergSourcePlan.capture(
+        (IcebergTableSource) table.tableSource(),
+        FlinkTypeFactory.toLogicalRowType(scan.getRowType()),
+        bounded);
   }
 }

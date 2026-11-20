@@ -33,11 +33,18 @@ final class BatchArrowGraphBoundaries {
             if (original.getInputProperties().get(0).getRequiredDistribution().getType()
                 != InputProperty.DistributionType.ANY)
               throw new IllegalStateException("unverified inserted Arrow exchange distribution");
-            var replacement =
-                new BatchForwardExchangeExecNode(
-                    config, (RowType) original.getOutputType(), original.getDescription());
-            replacement.setInputEdges(
-                List.of(ExecEdge.builder().source(input).target(replacement).build()));
+            ExecNode<?> replacement;
+            if (input instanceof BatchHashExchangeExecNode) {
+              // A forward exchange on top of a virtual hash exchange replaces its partitioner.
+              // Split the blocking hash boundary, as Flink does for a reused row exchange.
+              replacement = ((BatchHashExchangeExecNode) input).splitForInputPriority(config);
+            } else {
+              replacement =
+                  new BatchForwardExchangeExecNode(
+                      config, (RowType) original.getOutputType(), original.getDescription());
+              replacement.setInputEdges(
+                  List.of(ExecEdge.builder().source(input).target(replacement).build()));
+            }
             target.replaceInputEdge(
                 index, ExecEdge.builder().source(replacement).target(target).build());
             source = replacement;
