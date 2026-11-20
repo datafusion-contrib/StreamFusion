@@ -22,6 +22,7 @@ import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import tech.streamfusion.runtime.common.NativeParity;
 
 @Execution(ExecutionMode.SAME_THREAD)
 class FlinkTableFunctionSqlHarnessTest {

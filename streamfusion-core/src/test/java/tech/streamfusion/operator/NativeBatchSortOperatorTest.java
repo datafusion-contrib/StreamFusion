@@ -85,9 +85,12 @@ class NativeBatchSortOperatorTest {
       pushDescending(harness, count);
       assertTrue(harness.getOutput().isEmpty());
       assertTrue(spillFiles(harness) > 0, "must spill before EOF");
-      var statsField = NativeBoundedBatchOperator.class.getDeclaredField("executionStats");
-      statsField.setAccessible(true);
-      long[] stats = (long[]) statsField.get(harness.getOperator());
+      var executionField = NativeBoundedBatchOperator.class.getDeclaredField("execution");
+      executionField.setAccessible(true);
+      long[] stats =
+          ((tech.streamfusion.operator.batch.BoundedExecution)
+                  executionField.get(harness.getOperator()))
+              .statistics();
       assertTrue(
           stats[0] > 0 && stats[1] > 0, "spill metrics must report actual native spill work");
       harness.endInput();

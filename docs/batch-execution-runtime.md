@@ -97,13 +97,21 @@ authority. They do not reuse streaming event-time bins, timers or retraction sta
 Expand evaluates multiple projections over a borrowed batch, and unordered limits
 slice owned Arrow views; neither introduces a row conversion.
 
+The bounded operator adapter keeps its deployed class, inheritance and durable configuration.
+Its private transient `operator.batch.BoundedExecution` owns schema initialization, native
+input demand, EOF, output draining, statistics and close. The adapter retains Flink lifecycle and
+metric registration. Streaming window calendar conversion lives in
+`operator.window.stream.WindowCalendarRuntime`, behind the existing `WindowCalendar` Java callback
+class used by Rust and local native harnesses. These helpers add no per-row JNI transition or
+row conversion; they preserve the existing batch handoff and failure boundaries.
+
 Only non-serializable implementation helpers move. Their references in deployed
 operators remain private and transient. Serializable operators keep their existing
 class names, inheritance and configuration field placement, including bounded
 EOF/input-demand adapters and streaming timer/checkpoint adapters. Arrow transport,
 allocator authority, JNI callback classes, state descriptors and serializer
-snapshots keep their shared identities. The layout does not duplicate kernels,
-introduce extra calls or alter the stream/batch lifecycle. The compatibility test
+snapshots keep their shared identities. The layout does not duplicate kernels or alter the
+stream/batch lifecycle. The compatibility test
 compares all 73 pre-refactor operator serialization descriptors captured from
 upstream `e1d71357c`, before moving runtime helpers. The descriptor inventory must
 match that baseline on both released Flink lines, including upstream canonical-state

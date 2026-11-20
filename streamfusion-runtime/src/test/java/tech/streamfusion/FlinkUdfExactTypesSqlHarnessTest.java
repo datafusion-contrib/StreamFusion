@@ -19,6 +19,7 @@ import org.apache.flink.table.data.DecimalData;
 import org.apache.flink.table.functions.ScalarFunction;
 import org.apache.flink.types.Row;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.runtime.common.NativeParity;
 
 class FlinkUdfExactTypesSqlHarnessTest {
   @Test

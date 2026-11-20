@@ -19,6 +19,7 @@ import org.apache.flink.table.sources.LookupableTableSource;
 import org.apache.flink.types.Row;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import tech.streamfusion.runtime.common.NativeParity;
 
 class FlinkLegacyLookupSqlHarnessTest {
   private static final TypeInformation<Row> DIM_TYPE =

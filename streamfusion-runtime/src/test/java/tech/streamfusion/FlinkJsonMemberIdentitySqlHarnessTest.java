@@ -3,6 +3,7 @@ package tech.streamfusion;
 import org.apache.flink.table.api.TableEnvironment;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import tech.streamfusion.runtime.common.NativeParity;
 
 class FlinkJsonMemberIdentitySqlHarnessTest {
   @ParameterizedTest

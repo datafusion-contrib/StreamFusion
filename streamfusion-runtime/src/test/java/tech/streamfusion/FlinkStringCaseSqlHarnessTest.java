@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import tech.streamfusion.runtime.common.NativeParity;
 
 /**
  * Default case conversion uses released Flink expressions inside columnar Calc, retaining both

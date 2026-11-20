@@ -1,10 +1,11 @@
 package tech.streamfusion;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static tech.streamfusion.NativeParity.assertParity;
+import static tech.streamfusion.runtime.common.NativeParity.assertParity;
 
 import org.junit.jupiter.api.Test;
 import tech.streamfusion.planner.NativePlanner;
+import tech.streamfusion.runtime.common.NativeParity;
 
 class FlinkJsonValueSqlHarnessTest {
   @Test

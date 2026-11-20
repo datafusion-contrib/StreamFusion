@@ -23,6 +23,7 @@ import tech.streamfusion.proto.EventColor;
 import tech.streamfusion.proto.Row;
 import tech.streamfusion.proto.Scalars;
 import tech.streamfusion.proto.WithNested;
+import tech.streamfusion.runtime.common.NativeParity;
 
 /**
  * End-to-end parity tests for the protobuf native-decode path: a {@code CREATE TABLE ...

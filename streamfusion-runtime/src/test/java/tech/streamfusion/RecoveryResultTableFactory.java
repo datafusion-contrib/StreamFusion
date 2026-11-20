@@ -24,6 +24,7 @@ import org.apache.flink.types.Row;
 import org.apache.flink.types.RowKind;
 import tech.streamfusion.compat.RichSinkFunction;
 import tech.streamfusion.compat.SinkFunctionProvider;
+import tech.streamfusion.runtime.common.NativeParity;
 
 /**
  * Checkpointed result sink for recovery parity tests. The optional drop-update-before mode requests

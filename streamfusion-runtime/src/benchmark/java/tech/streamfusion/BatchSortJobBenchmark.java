@@ -7,6 +7,7 @@ import java.util.List;
 import org.apache.flink.configuration.Configuration;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import tech.streamfusion.runtime.batch.sql.BatchSqlTestSupport;
 
 /** Complete sort jobs retain datagen, both transposes, blocking shuffle, JNI and a rowwise sink. */
 @EnabledIfEnvironmentVariable(named = "SF_BENCHMARK", matches = "true")
@@ -25,8 +26,8 @@ class BatchSortJobBenchmark {
     config.setString("taskmanager.memory.managed.size", "1024m");
     try (var metrics = new RecoveryExecutionMetrics()) {
       metrics.setAsContext(config, 2, 128L << 20);
-      var stock = BatchSortSqlTest.environment(false, rows, config);
-      var nativeEnv = BatchSortSqlTest.environment(true, rows, config);
+      var stock = BatchSqlTestSupport.environment(false, rows, config);
+      var nativeEnv = BatchSqlTestSupport.environment(true, rows, config);
       for (var env : List.of(stock, nativeEnv)) {
         env.getConfig().set("table.exec.resource.sort.memory", "128m");
         env.executeSql(

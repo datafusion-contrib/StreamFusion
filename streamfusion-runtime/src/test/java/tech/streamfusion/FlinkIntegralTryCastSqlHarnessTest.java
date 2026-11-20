@@ -8,6 +8,7 @@ import org.apache.flink.types.Row;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import tech.streamfusion.runtime.common.NativeParity;
 
 class FlinkIntegralTryCastSqlHarnessTest {
   @ParameterizedTest

@@ -17,6 +17,7 @@ import org.apache.flink.types.Row;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import tech.streamfusion.planner.NativePlanner;
+import tech.streamfusion.runtime.common.NativeParity;
 
 class FlinkTemporalRowNumberSqlHarnessTest {
   @ParameterizedTest

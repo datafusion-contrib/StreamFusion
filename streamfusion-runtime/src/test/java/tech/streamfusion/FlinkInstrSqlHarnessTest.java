@@ -17,6 +17,7 @@ import org.apache.flink.types.Row;
 import org.junit.jupiter.api.Test;
 import tech.streamfusion.planner.NativePlanner;
 import tech.streamfusion.planner.PhysicalPlanScan;
+import tech.streamfusion.runtime.common.NativeParity;
 
 class FlinkInstrSqlHarnessTest {
   @Test

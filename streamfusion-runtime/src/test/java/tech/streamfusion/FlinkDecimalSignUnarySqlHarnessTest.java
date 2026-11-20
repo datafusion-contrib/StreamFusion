@@ -5,6 +5,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import tech.streamfusion.runtime.common.NativeParity;
 
 class FlinkDecimalSignUnarySqlHarnessTest {
   @ParameterizedTest

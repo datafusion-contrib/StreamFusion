@@ -18,6 +18,7 @@ import org.apache.flink.table.api.TableResult;
 import tech.streamfusion.compat.ListCollectors;
 import tech.streamfusion.planner.NativePlanner;
 import tech.streamfusion.planner.PhysicalPlanScan;
+import tech.streamfusion.runtime.common.NativeParity;
 
 /** Independent executions: a host exception must never prevent the native-enabled run. */
 final class NativeFailureParity {

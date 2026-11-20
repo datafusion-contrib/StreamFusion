@@ -7,6 +7,7 @@ import java.util.List;
 import org.apache.flink.configuration.Configuration;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import tech.streamfusion.runtime.batch.sql.BatchSqlTestSupport;
 
 @EnabledIfEnvironmentVariable(named = "SF_BENCHMARK", matches = "true")
 class BatchGroupedAggregateJobBenchmark {
@@ -26,8 +27,8 @@ class BatchGroupedAggregateJobBenchmark {
     config.setString("table.optimizer.agg-phase-strategy", "TWO_PHASE");
     try (var metrics = new RecoveryExecutionMetrics()) {
       metrics.setAsContext(config, 2, 128L << 20);
-      var stock = BatchSortSqlTest.environment(false, rows, config);
-      var nativeEnv = BatchSortSqlTest.environment(true, rows, config);
+      var stock = BatchSqlTestSupport.environment(false, rows, config);
+      var nativeEnv = BatchSqlTestSupport.environment(true, rows, config);
       for (var env : List.of(stock, nativeEnv))
         env.executeSql(
             distinct

@@ -11,6 +11,7 @@ import org.apache.flink.table.functions.ScalarFunction;
 import org.apache.flink.types.Row;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import tech.streamfusion.runtime.common.NativeParity;
 
 class FlinkUdfLifecycleSqlHarnessTest {
   @org.junit.jupiter.api.Test

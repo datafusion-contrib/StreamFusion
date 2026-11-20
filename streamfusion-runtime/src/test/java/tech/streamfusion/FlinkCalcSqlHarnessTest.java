@@ -14,6 +14,7 @@ import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.types.Row;
 import org.junit.jupiter.api.Test;
 import tech.streamfusion.planner.NativePlanner;
+import tech.streamfusion.runtime.common.NativeParity;
 
 /** General Calc (computed/constant projections, with and without a filter) matches the host. */
 class FlinkCalcSqlHarnessTest {

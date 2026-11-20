@@ -29,6 +29,7 @@ import org.apache.flink.types.RowKind;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import tech.streamfusion.runtime.common.NativeParity;
 
 /** External conversions use independently instantiated released converters in both engines. */
 class FlinkRecursiveTableFunctionSqlHarnessTest {

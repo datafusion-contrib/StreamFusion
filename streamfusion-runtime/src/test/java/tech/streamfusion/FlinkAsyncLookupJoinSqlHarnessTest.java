@@ -19,6 +19,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import tech.streamfusion.compat.FlinkTestCapabilities;
 import tech.streamfusion.compat.FlinkTestSources;
+import tech.streamfusion.runtime.common.NativeParity;
 
 /**
  * Nexmark q13's shape against an <b>async</b> lookup connector: the planner picks the async path, and

@@ -12,6 +12,7 @@ import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.types.Row;
 import org.junit.jupiter.api.Test;
 import tech.streamfusion.compat.FlinkTestSources;
+import tech.streamfusion.runtime.common.NativeParity;
 
 class FlinkStateBackendAdmissionTest {
   private static final String GROUP = "SELECT k, SUM(v) FROM t GROUP BY k";

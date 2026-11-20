@@ -3,12 +3,12 @@ package tech.streamfusion;
 import static org.junit.jupiter.api.Assertions.*;
 import static tech.streamfusion.compat.FlinkTestSources.fromData;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.nio.file.Path;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.table.api.DataTypes;
@@ -18,12 +18,13 @@ import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.table.connector.ChangelogMode;
 import org.apache.flink.types.Row;
 import org.apache.flink.types.RowKind;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
-import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import tech.streamfusion.planner.NativePlanner;
+import tech.streamfusion.runtime.common.NativeParity;
 
 /** Final UNION forwarding must match Flink's serialized strings at the row sink. */
 class FlinkJsonUnionSqlHarnessTest {

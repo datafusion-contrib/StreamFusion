@@ -13,6 +13,7 @@ import org.apache.flink.types.Row;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import tech.streamfusion.planner.NativePlanner;
+import tech.streamfusion.runtime.common.NativeParity;
 
 /** Row-fed keep-first dedup with candidates pending until the bounded source's terminal watermark. */
 @EnabledIfEnvironmentVariable(named = "SF_BENCHMARK", matches = "true")

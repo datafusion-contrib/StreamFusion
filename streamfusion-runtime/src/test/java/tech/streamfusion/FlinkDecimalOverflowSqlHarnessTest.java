@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import tech.streamfusion.planner.NativePlanner;
+import tech.streamfusion.runtime.common.NativeParity;
 
 /** Decimal overflow must be SQL NULL, including when observed by a downstream expression. */
 class FlinkDecimalOverflowSqlHarnessTest {

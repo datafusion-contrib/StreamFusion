@@ -6,6 +6,34 @@ root `src/test` tree. Test fixtures do not ship in deployable core or connector 
 
 ## Test owners and dependencies
 
+Runtime implementation ownership follows Flink's functional families, with mode-specific helpers
+under `operator.aggregate.stream`, `operator.join.stream`, `operator.window.stream`, and the
+bounded execution protocol under `operator.batch`. Arrow transport and allocation are shared.
+`dev/runtime-layout/operators.tsv` records every core runtime class's family, lifecycle mode and
+identity contract. These ownership modes describe implementation responsibilities, not SQL
+admission; the operator coverage pages remain the support authority.
+For example, adaptive text Calc belongs to streaming execution even though it buffers Arrow batches.
+
+SQL integration groups with closed fixture dependencies live in `runtime.batch.sql` and
+`runtime.stream.sql` beneath `tech.streamfusion`. Cross-mode contracts use `runtime.common`.
+The initial migration includes every root `Batch*` fixture and its LZ4 shuffle tests, and the
+independent streaming SQL group. Tests still coupled to package-private shared fixtures remain
+with those fixtures until their entire dependency group can move; filenames alone do not determine
+execution mode. Core harnesses that exercise package-private runtime contracts retain that package.
+Do not widen production access just to relocate a test or duplicate a fixture into each mode.
+
+`dev/runtime-layout/test-relocations.tsv` maps previous binary names to current owners. Ordinary
+CI verifies each source has exactly one owner, discovers nested test classes, and applies the map
+when reading historical duration estimates. The measured duration files retain their original
+names and values. Existing canonical worker selectors and complete invocation audits remain active.
+Relocations apply to each estimate/measurement layer before combining them, so line-specific
+measurements and provisional floors keep their priority. Within a layer, an observation under the
+current name takes precedence over an older alias.
+The shared `NativeParity` assertion API lives in `runtime.common`; `RecoveryExecutionMetrics`
+exports its test-scoped cross-package contract from the core-neutral utility artifact. Bounded
+benchmarks reuse the general and fixed-type environments in `BatchSqlTestSupport` rather than
+reaching into a package-private test class.
+
 | Path | Responsibility |
 | --- | --- |
 | `streamfusion-core/src/test` | Core-internal Arrow, operator, planner and state unit tests; native resource accounting; frozen runtime compatibility and compact protocol inputs |

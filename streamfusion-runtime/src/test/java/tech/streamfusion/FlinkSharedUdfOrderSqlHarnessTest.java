@@ -6,6 +6,7 @@ import org.apache.flink.table.functions.ScalarFunction;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
+import tech.streamfusion.runtime.common.NativeParity;
 
 class FlinkSharedUdfOrderSqlHarnessTest {
   @TestFactory

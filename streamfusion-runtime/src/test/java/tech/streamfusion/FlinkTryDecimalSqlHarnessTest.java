@@ -14,6 +14,7 @@ import org.apache.flink.types.Row;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
+import tech.streamfusion.runtime.common.NativeParity;
 
 class FlinkTryDecimalSqlHarnessTest {
   @TestFactory

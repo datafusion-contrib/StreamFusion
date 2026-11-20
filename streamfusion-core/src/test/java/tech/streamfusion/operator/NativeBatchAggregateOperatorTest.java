@@ -325,9 +325,11 @@ class NativeBatchAggregateOperatorTest {
         assertEquals(0, NativeAllocator.SHARED.getAllocatedMemory());
         assertTrue(TaskOffHeapMemory.reservedBytes() <= 2L << 20);
       }
-      var statsField = NativeBoundedBatchOperator.class.getDeclaredField("executionStats");
-      statsField.setAccessible(true);
-      long[] stats = (long[]) statsField.get(operator);
+      var executionField = NativeBoundedBatchOperator.class.getDeclaredField("execution");
+      executionField.setAccessible(true);
+      long[] stats =
+          ((tech.streamfusion.operator.batch.BoundedExecution) executionField.get(operator))
+              .statistics();
       assertTrue(stats[0] > 0 && stats[1] > 0, "Native grouped spill must occur before EOF");
       harness.endInput();
       assertEquals(65536, seen.cardinality());
