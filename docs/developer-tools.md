@@ -1,8 +1,9 @@
 # Developer tools
 
 `bin/` contains stable command entry points. Python implementations live in the importable
-`dev.tools` package and their tests in `dev/tools/tests/`. No Python installation or third-party
-Python dependency is required. Run commands from a source checkout; command entry points resolve
+`dev.tools` package and their tests in `dev/tools/tests/`. Python entry points use the standard
+library and require no package installation or third-party Python dependencies. Run commands from
+a source checkout; command entry points resolve
 their own repository even when invoked from another working directory. Individual experiment
 commands can still require a clean checkout, a particular working directory or a controlled host
 as documented in their methodology.
@@ -30,6 +31,10 @@ Keep experiments with different input, measurement or validation contracts separ
 mechanical process execution, paired order and timing; retain each experiment's test identities,
 native witnesses, report schema and failure assertions. Report modules expose `report(root)` and
 an explicit `main()`; importing them does not consume command-line arguments or write artifacts.
+
+Runtime and canonical JVM profiles share child-process timing and alternating trial order in
+`dev/tools/profiling/process.py`. The reference-cache experiment retains its wider elapsed-time
+boundary, which also includes report and worker enumeration; it shares only trial ordering.
 
 ## Build, release and installation
 

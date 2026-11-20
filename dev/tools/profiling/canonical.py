@@ -6,15 +6,13 @@ from collections import Counter
 import json
 import os
 from pathlib import Path
-import resource
 import shutil
 import subprocess
 import tempfile
-import time
 import xml.etree.ElementTree as ET
 
 from dev.tools.ci import java_build as ci_java_build
-
+from dev.tools.profiling.process import alternating, run_logged
 
 ROOT = Path(__file__).resolve().parents[3]
 SELECTION = ("CanonicalRegularJoinJobTest#regularStateContinuesAcrossCleanEngineProcesses"
@@ -45,9 +43,7 @@ def profile(output, repetitions, cds=False, parallel=False, gc=False, line="2.2"
     for index in range(repetitions):
         modes = (("gc-g1", "gc-serial") if gc else ("cds-two", "cds-four") if parallel else
                  ("default", "startup", "cds") if cds else ("default", "startup"))
-        if index % 2:
-            modes = tuple(reversed(modes))
-        schedule.extend((mode, index, "measurement") for mode in modes)
+        schedule.extend((mode, index, "measurement") for mode in alternating(modes, index))
     try:
         for mode, index, phase in schedule:
             suffix = f"ci-profile-{index}-{mode}-{phase}"
@@ -79,14 +75,9 @@ def profile(output, repetitions, cds=False, parallel=False, gc=False, line="2.2"
             if not (parallel or worker_mix):
                 command.extend(["-Dstreamfusion.test.regularJoinJobSmoke=true",
                                 "-Dsf.canonical.wideKeys.job.smoke=true"])
-            before = resource.getrusage(resource.RUSAGE_CHILDREN)
-            start = time.monotonic()
             log = output / (suffix + ".log")
-            with log.open("w") as stream:
-                result = subprocess.run(command, cwd=ROOT, stdout=stream, stderr=subprocess.STDOUT,
-                                        env=environment)
-            elapsed = time.monotonic() - start
-            after = resource.getrusage(resource.RUSAGE_CHILDREN)
+            result, timing = run_logged(command, root=ROOT, log=log, environment=environment)
+            elapsed = timing["elapsed_seconds"]
             cases = Counter()
             totals = Counter()
             classes = {}
@@ -104,7 +95,7 @@ def profile(output, repetitions, cds=False, parallel=False, gc=False, line="2.2"
                              for case in suite.iter("testcase"))
             trial = {"mode": mode, "pair": index + 1, "phase": phase, "flink_line": line,
                      "forks": forks, "heap": heap, "elapsed_seconds": elapsed,
-                     "cpu_seconds": after.ru_utime + after.ru_stime - before.ru_utime - before.ru_stime,
+                     "cpu_seconds": timing["cpu_seconds"],
                      "outcomes": dict(totals), "classes": classes, "class_outcomes": class_outcomes, "exit_code": result.returncode}
             if use_archive:
                 cache = Path(environment["SF_CANONICAL_CDS_DIR"])

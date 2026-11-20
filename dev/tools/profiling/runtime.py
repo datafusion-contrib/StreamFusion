@@ -6,16 +6,13 @@ from collections import Counter
 import json
 import os
 from pathlib import Path
-import resource
 import re
 import shutil
-import subprocess
-import time
 import xml.etree.ElementTree as ET
 
 from dev.tools.ci import java_build as ci_java_build
 from dev.tools.profiling import jfr as ci_jfr
-
+from dev.tools.profiling.process import alternating, run_logged
 
 ROOT = Path(__file__).resolve().parents[3]
 CLASSES = {
@@ -92,7 +89,7 @@ def profile(output, repetitions, line, parallel=False, jfr=False, hotspots=False
         if jfr:
             ci_jfr.configuration(java_home, temporary / "runtime.jfc")
         for pair in range(repetitions):
-            for mode in (modes if pair % 2 == 0 else tuple(reversed(modes))):
+            for mode in alternating(modes, pair):
                 suffix = f"runtime-profile-{line}-{pair}-{mode}"
                 options = os.environ.get("JAVA_TOOL_OPTIONS", "")
                 options += f' -Djava.io.tmpdir="{temporary}"'
@@ -123,13 +120,8 @@ def profile(output, repetitions, line, parallel=False, jfr=False, hotspots=False
                 if cluster_startup:
                     command.append(f"-Dsf.test.lazyCluster={str(mode == 'lazy').lower()}")
                 log = output / (suffix + ".log")
-                before = resource.getrusage(resource.RUSAGE_CHILDREN)
-                start = time.monotonic()
-                with log.open("w") as stream:
-                    result = subprocess.run(command, cwd=ROOT, stdout=stream,
-                                            stderr=subprocess.STDOUT, env=environment)
-                elapsed = time.monotonic() - start
-                after = resource.getrusage(resource.RUSAGE_CHILDREN)
+                result, timing = run_logged(command, root=ROOT, log=log, environment=environment)
+                elapsed = timing["elapsed_seconds"]
                 if result.returncode:
                     raise RuntimeError(f"Runtime profile failed: {log}")
                 cases, counts, classes = outcomes(reports, suffix, line, selection)
@@ -140,7 +132,7 @@ def profile(output, repetitions, line, parallel=False, jfr=False, hotspots=False
                          "forks": forks, "heap": heap, "instrumented": jfr,
                          "fixture_plan_cache": fixture_cache,
                          "elapsed_seconds": elapsed,
-                         "cpu_seconds": after.ru_utime + after.ru_stime - before.ru_utime - before.ru_stime,
+                         "cpu_seconds": timing["cpu_seconds"],
                          "outcomes": counts, "classes": classes}
                 if cluster_startup:
                     starts = log.read_text().count("StreamFusion test MiniCluster started pid=")

@@ -212,4 +212,3 @@ else
   flink_mvn ${FLINK_TARGET_PROFILE:+-P${FLINK_TARGET_PROFILE}} "${MAVEN_TEST_ARGS[@]}"
 fi
 readonly TEST_STATUS=$?
-

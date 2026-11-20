@@ -239,4 +239,3 @@ case "${SUITE_MODE}" in
     exit 2
     ;;
 esac
-

@@ -305,4 +305,3 @@ if [[ "${SUITE_MODE}" == "prepare" ]]; then
   echo "Shared Flink ${FLINK_VERSION} and StreamFusion build is ready."
   exit 0
 fi
-

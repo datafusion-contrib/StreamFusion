@@ -13,6 +13,7 @@ import time
 import xml.etree.ElementTree as ET
 
 from dev.tools.ci import java_build as ci_java_build
+from dev.tools.profiling.process import alternating
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -59,7 +60,7 @@ def profile(output, repetitions, line):
         schedule = [(0, False, "preparation")]
         for pair in range(1, repetitions + 1):
             schedule.extend((pair, cached, "measurement") for cached in
-                            ([False, True] if pair % 2 else [True, False]))
+                            alternating((False, True), pair - 1))
         for pair, cached, phase in schedule:
             for family in ("materializer", "count"):
                 name = f"{phase}-{pair}-{cached}-{family}"
@@ -68,6 +69,7 @@ def profile(output, repetitions, line):
                 if cached:
                     env["SF_CANONICAL_REFERENCE_DIR"] = str(references)
                 log = output / (name + ".log")
+                # This experiment includes report and worker enumeration in elapsed time.
                 before = resource.getrusage(resource.RUSAGE_CHILDREN)
                 start = time.monotonic()
                 with log.open("w") as stream:
