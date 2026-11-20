@@ -947,6 +947,15 @@ as missing. Other jobs resolved those releases successfully. Separating download
 allows transient resolution failures to recover without rerunning test code; forcing missing-release
 checks prevents Maven's failed-lookup cache from defeating the next setup attempt.
 
+Kafka consumers also collect the released connector's mediated dependency graph before
+`test-compile`, using the same wrapper, host Flink version and isolated Maven repository as
+compilation. This puts parent, imported BOM and transitive descriptor downloads through the
+bounded dependency setup retries, including a missing-release cache refresh after failure.
+The shared Flink preparation does not cover each connector's full graph: #680's two Kafka
+jobs stopped on published Jackson, Testcontainers and CEL BOMs before any SQL ran. The graph
+goal invokes no compile or test lifecycle. Persistent resolution failure remains blocking;
+compilation and tests still execute once, with their original failure and native-route checks.
+
 The upstream suite transfers its prepared pinned Maven distribution to its consumer runners
 and verifies that it starts with downloads blocked. See the
 [shared-build guide](upstream-flink-suite.md#shared-builds-and-runtime-shards).

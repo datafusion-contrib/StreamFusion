@@ -14,6 +14,19 @@ kafka_mvn() {
   })
 }
 
+prepare_kafka_maven() {
+  local wrapper_root="${FLINK_ROOT}"
+  if [[ -x "${KAFKA_CONNECTOR_ROOT}/mvnw" ]]; then
+    wrapper_root="${KAFKA_CONNECTOR_ROOT}"
+  fi
+  (
+    cd "${wrapper_root}" &&
+      MAVEN_USER_HOME="${SUITE_MAVEN_USER_HOME}" python3 "${REPO_ROOT}/bin/ci-maven-dependencies.py" \
+        --maven ./mvnw --graph --repository "${SUITE_MAVEN_REPO}" \
+        --pom "${KAFKA_CONNECTOR_ROOT}/flink-connector-kafka/pom.xml" --define "flink.version=${FLINK_VERSION}"
+  )
+}
+
 mkdir -p "${SUITE_ROOT}"
 if [[ ! -d "${FLINK_ROOT}/.git" ]]; then
   git clone --depth 1 --branch "${FLINK_TAG}" https://github.com/apache/flink.git "${FLINK_ROOT}" || exit $?
@@ -219,6 +232,8 @@ fi
 
 if [[ "${FLINK_SUITE_REUSE_BUILD:-false}" != "true" ]]; then
   if [[ "${SUITE_MODE}" == "kafka" ]]; then
+    echo "Resolving the upstream Kafka connector dependency descriptors before compilation..."
+    prepare_kafka_maven || exit $?
     echo "Compiling the untouched upstream Kafka connector SQL integration tests..."
     kafka_mvn -B -ntp -s "${MAVEN_SETTINGS}" \
       -f "${KAFKA_CONNECTOR_ROOT}/flink-connector-kafka/pom.xml" -Dmaven.repo.local="${SUITE_MAVEN_REPO}" \

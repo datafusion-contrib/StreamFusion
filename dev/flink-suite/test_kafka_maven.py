@@ -11,6 +11,64 @@ RUNNER = Path(__file__).resolve().parents[2] / "bin/flink-suite.sh"
 
 
 class KafkaMavenTest(unittest.TestCase):
+    def test_dependency_setup_precedes_compilation_and_keeps_the_pinned_environment(self):
+        source = (RUNNER.parents[1] / "dev/flink-suite/runner/prepare.sh").read_text()
+        functions = source[source.index("flink_mvn() {"):source.index('mkdir -p "${SUITE_ROOT}"')]
+        start = source.index('  if [[ "${SUITE_MODE}" == "kafka" ]]; then\n')
+        end = source.index('  if [[ "${SUITE_MODE}" == "paimon" ]]; then\n', start)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            flink, kafka, commands = (root / name for name in ("flink with spaces", "kafka with spaces", "commands"))
+            for path in (flink, kafka, commands):
+                path.mkdir()
+            recorder = (
+                '#!/bin/bash\nprintf "%s\\n" "$MAVEN_USER_HOME" "$PWD" "$@" >> "$CALL_LOG"\n'
+                'printf "end\\n" >> "$CALL_LOG"\n'
+            )
+            python = commands / "python3"
+            python.write_text(recorder + 'exit "$RESOLVE_STATUS"\n')
+            python.chmod(0o755)
+            wrapper = recorder + 'exit "$COMPILE_STATUS"\n'
+            (flink / "mvnw").write_text(wrapper)
+            (flink / "mvnw").chmod(0o755)
+            for kafka_wrapper in (False, True):
+                if kafka_wrapper:
+                    (kafka / "mvnw").write_text(wrapper)
+                    (kafka / "mvnw").chmod(0o755)
+                for resolve_status, compile_status in ((0, 0), (17, 0), (0, 23)):
+                    with self.subTest(kafka_wrapper=kafka_wrapper, resolve=resolve_status, compile=compile_status):
+                        call_log = root / "calls"
+                        call_log.write_text("")
+                        result = subprocess.run(
+                            ["bash", "-c", functions + source[start:end]],
+                            env={**os.environ, "FLINK_ROOT": str(flink), "KAFKA_CONNECTOR_ROOT": str(kafka),
+                                 "SUITE_MAVEN_USER_HOME": str(root / "wrapper home"), "CALL_LOG": str(call_log),
+                                 "SUITE_MAVEN_REPO": str(root / "isolated m2"), "SUITE_MODE": "kafka",
+                                 "FLINK_VERSION": "2.2.1" if kafka_wrapper else "1.18.1",
+                                 "REPO_ROOT": str(RUNNER.parents[1]), "MAVEN_SETTINGS": str(root / "settings.xml"),
+                                 "RESOLVE_STATUS": str(resolve_status), "COMPILE_STATUS": str(compile_status),
+                                 "PATH": str(commands) + os.pathsep + os.environ["PATH"]},
+                            capture_output=True, text=True,
+                        )
+                        self.assertEqual(resolve_status or compile_status, result.returncode, result.stderr)
+                        calls = [call.splitlines() for call in call_log.read_text().split("end\n")[:-1]]
+                        self.assertEqual(1 if resolve_status else 2, len(calls))
+                        version = "2.2.1" if kafka_wrapper else "1.18.1"
+                        self.assertEqual([
+                            str(root / "wrapper home"), str(kafka if kafka_wrapper else flink),
+                            str(RUNNER.parents[1] / "bin/ci-maven-dependencies.py"), "--maven", "./mvnw", "--graph",
+                            "--repository", str(root / "isolated m2"),
+                            "--pom", str(kafka / "flink-connector-kafka/pom.xml"), "--define", f"flink.version={version}",
+                        ], calls[0])
+                        if not resolve_status:
+                            self.assertEqual([
+                                str(root / "wrapper home"), str(kafka if kafka_wrapper else flink),
+                                "-B", "-ntp", "-s", str(root / "settings.xml"),
+                                "-f", str(kafka / "flink-connector-kafka/pom.xml"),
+                                f"-Dmaven.repo.local={root / 'isolated m2'}", f"-Dflink.version={version}",
+                                "-DskipTests", "test-compile",
+                            ], calls[1])
+
     def invoke(self, kafka_wrapper):
         source = (RUNNER.parents[1] / "dev/flink-suite/runner/prepare.sh").read_text()
         functions = source[source.index("flink_mvn() {"):source.index('mkdir -p "${SUITE_ROOT}"')]
