@@ -55,7 +55,7 @@
     </scm>
 
     <properties>
-        <revision>0.1.0-rc4</revision>
+        <revision>0.1.0-rc5</revision>
         <maven.compiler.release>11</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <junit.version>5.10.2</junit.version>
